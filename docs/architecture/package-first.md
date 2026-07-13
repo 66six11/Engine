@@ -278,6 +278,11 @@ project + asharia.packages.lock.json + conan.lock + asharia.build.json
 
 ## Package Manifest
 
+Installable Capability Package 的 v2 可移植作者合同、独立 build descriptor 边界和明确后置的
+source/integrity 证据，见 [ADR：Installable Package Manifest v2](adr-installable-package-manifest-v2.md)。当前已落地
+JSON Schema、semantic validator 和 synthetic fixtures；ADR 仍为 `Proposed`，不表示 resolver、Host Profile、
+lockfile 或任何生产 catalog entry 已经落地。
+
 当前每个已落地的 engine、source package、app 和 root-built tool 入口都维护一个名为 `asharia.package.json` 的边界清单。
 这是当前仓库事实，不表示它们都能成为 Package Manager 安装项：
 
@@ -334,12 +339,13 @@ v1 的 `ownerDomain` 取值为 `foundation/platform/observability/data/content/w
 必须使用 `test`，其他 target 不能借用该 role。新增 domain 或 role 必须先有真实 owner 差异，并同步 validator 和本文；不能用自由字符串
 掩盖分类困难。
 
-`python tools/check_package_topology.py` 从全部 manifests 生成确定排序的内存 inventory，验证 package identity、dependency
+`python tools/check_package_topology.py` 从全部 v1 manifests 生成确定排序的内存 inventory，验证 package identity、dependency
 DAG、target owner/role、`targetDependencies` 和直接 CMake target 声明；`--output build/package-topology.json` 可为审查或后续 resolver
 生成机器可读快照。生成物位于 `build/`，不提交，避免维护第二份手写事实源。当前 CMake 仍是链接和 target 创建真相；validator
-负责发现 manifest 漂移，不从 manifest 生成构建系统。
+负责发现 manifest 漂移，不从 manifest 生成构建系统。v2 manifests 由 `python tools/check_package_contracts.py` 按
+`schemas/package-runtime/installable-package-v2.schema.json` 与跨字段语义规则独立验证。
 
-当前仓库的多个物理 `asharia.package.json` 仍可能共同构成一个未来完整系统，例如 renderer、RenderGraph、Vulkan RHI、materials 和 shader tools。迁移期间这些 manifests 用于审查 source/build 边界；它们不自动获得 Package Manager 用户条目。目标 Installable Capability Package manifest 位于 `packages/systems`、`packages/features`、`packages/integrations`、`packages/asset-packs` 或 `packages/templates` 下的发行根，汇总其内部 source packages/targets/modules/contributions，并成为 `asharia.packages.json` 可直接依赖的能力身份。
+当前仓库的多个物理 `asharia.package.json` 仍可能共同构成一个未来完整系统，例如 renderer、RenderGraph、Vulkan RHI、materials 和 shader tools。迁移期间这些 manifests 用于审查 source/build 边界；它们不自动获得 Package Manager 用户条目。目标 Installable Capability Package manifest 位于 `packages/systems`、`packages/features`、`packages/integrations`、`packages/asset-packs` 或 `packages/templates` 下的发行根，只描述 dependencies、logical modules、platform/host applicability、entry modules、content roots 和 contributions，并成为 `asharia.packages.json` 可直接依赖的能力身份。source-boundary 与 CMake target 的目标映射进入独立 `asharia.package.build.json`，不进入可移植 v2 作者合同。
 
 `engine/*` 是 bootstrap component，不是用户可选能力。其 source-boundary manifest 使用
 `sourceRole: "engine-component"`，并同样保持 `selectable: false` 和 `catalogVisible: false`；Package Manager catalog 不得显示这些条目。

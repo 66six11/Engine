@@ -1,0 +1,489 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.asharia.dev/package-runtime/installable-package-v2.schema.json",
+  "title": "Asharia Installable Capability Package Manifest v2",
+  "description": "Portable author contract for one installable Asharia capability package.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "packageKind",
+    "id",
+    "version",
+    "displayName",
+    "description",
+    "catalogType",
+    "engineApi",
+    "dependencies",
+    "options",
+    "modules",
+    "entryModules",
+    "contentRoots",
+    "contributions"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 2
+    },
+    "packageKind": {
+      "const": "installable-capability"
+    },
+    "id": {
+      "$ref": "#/$defs/packageId"
+    },
+    "version": {
+      "$ref": "#/$defs/semanticVersion"
+    },
+    "displayName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500
+    },
+    "catalogType": {
+      "enum": [
+        "system",
+        "feature",
+        "integration",
+        "content",
+        "template"
+      ]
+    },
+    "engineApi": {
+      "$ref": "#/$defs/versionConstraint"
+    },
+    "dependencies": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/dependency"
+      }
+    },
+    "options": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/option"
+      }
+    },
+    "modules": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/module"
+      }
+    },
+    "entryModules": {
+      "$ref": "#/$defs/entryModules"
+    },
+    "contentRoots": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/contentRoot"
+      }
+    },
+    "contributions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/contribution"
+      }
+    }
+  },
+  "$defs": {
+    "semanticVersion": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+    },
+    "packageId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:\\.[a-z](?:[a-z0-9-]*[a-z0-9])?){2,}$"
+    },
+    "localId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"
+    },
+    "hostKind": {
+      "enum": [
+        "minimal",
+        "editor",
+        "runtime",
+        "dedicated-server",
+        "asset-worker"
+      ]
+    },
+    "platformId": {
+      "type": "string",
+      "pattern": "^com\\.asharia\\.platform\\.[a-z](?:[a-z0-9-]*[a-z0-9])?$"
+    },
+    "platformList": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/platformId"
+      }
+    },
+    "shippingClass": {
+      "enum": [
+        "runtime",
+        "editor",
+        "tool",
+        "development-only"
+      ]
+    },
+    "exactVersionConstraint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "version"
+      ],
+      "properties": {
+        "kind": {
+          "const": "exact"
+        },
+        "version": {
+          "$ref": "#/$defs/semanticVersion"
+        }
+      }
+    },
+    "rangeVersionConstraint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "minimumInclusive",
+        "maximumExclusive",
+        "allowPrerelease"
+      ],
+      "properties": {
+        "kind": {
+          "const": "range"
+        },
+        "minimumInclusive": {
+          "$ref": "#/$defs/semanticVersion"
+        },
+        "maximumExclusive": {
+          "$ref": "#/$defs/semanticVersion"
+        },
+        "allowPrerelease": {
+          "type": "boolean"
+        }
+      }
+    },
+    "versionConstraint": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/exactVersionConstraint"
+        },
+        {
+          "$ref": "#/$defs/rangeVersionConstraint"
+        }
+      ]
+    },
+    "dependency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/packageId"
+        },
+        "version": {
+          "$ref": "#/$defs/versionConstraint"
+        }
+      }
+    },
+    "optionBase": {
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "default",
+        "affects"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/localId"
+        },
+        "affects": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "build",
+              "activation",
+              "cook"
+            ]
+          }
+        }
+      }
+    },
+    "booleanOption": {
+      "type": "object",
+      "required": [
+        "type",
+        "default"
+      ],
+      "properties": {
+        "type": {
+          "const": "boolean"
+        },
+        "default": {
+          "type": "boolean"
+        }
+      }
+    },
+    "integerOption": {
+      "type": "object",
+      "required": [
+        "type",
+        "default"
+      ],
+      "properties": {
+        "type": {
+          "const": "integer"
+        },
+        "default": {
+          "type": "integer"
+        },
+        "minimum": {
+          "type": "integer"
+        },
+        "maximum": {
+          "type": "integer"
+        }
+      }
+    },
+    "stringOption": {
+      "type": "object",
+      "required": [
+        "type",
+        "default"
+      ],
+      "properties": {
+        "type": {
+          "const": "string"
+        },
+        "default": {
+          "type": "string"
+        },
+        "minimumLength": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "maximumLength": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "enumOption": {
+      "type": "object",
+      "required": [
+        "type",
+        "default",
+        "values"
+      ],
+      "properties": {
+        "type": {
+          "const": "enum"
+        },
+        "default": {
+          "type": "string"
+        },
+        "values": {
+          "type": "array",
+          "minItems": 2,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "option": {
+      "type": "object",
+      "unevaluatedProperties": false,
+      "allOf": [
+        {
+          "$ref": "#/$defs/optionBase"
+        },
+        {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/booleanOption"
+            },
+            {
+              "$ref": "#/$defs/integerOption"
+            },
+            {
+              "$ref": "#/$defs/stringOption"
+            },
+            {
+              "$ref": "#/$defs/enumOption"
+            }
+          ]
+        }
+      ]
+    },
+    "module": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "role",
+        "dependsOn",
+        "hostKinds",
+        "platforms",
+        "shippingClass",
+        "requiredCapabilities"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/localId"
+        },
+        "role": {
+          "enum": [
+            "contract",
+            "runtime",
+            "implementation",
+            "editor",
+            "tool",
+            "cook",
+            "diagnostics",
+            "content"
+          ]
+        },
+        "dependsOn": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/localId"
+          }
+        },
+        "hostKinds": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/hostKind"
+          }
+        },
+        "platforms": {
+          "$ref": "#/$defs/platformList"
+        },
+        "shippingClass": {
+          "$ref": "#/$defs/shippingClass"
+        },
+        "requiredCapabilities": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/packageId"
+          }
+        }
+      }
+    },
+    "moduleReferenceList": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/localId"
+      }
+    },
+    "entryModules": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "runtime": {
+          "$ref": "#/$defs/moduleReferenceList"
+        },
+        "authoring": {
+          "$ref": "#/$defs/moduleReferenceList"
+        },
+        "cook": {
+          "$ref": "#/$defs/moduleReferenceList"
+        },
+        "diagnostics": {
+          "$ref": "#/$defs/moduleReferenceList"
+        }
+      }
+    },
+    "contentRoot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "path",
+        "role",
+        "platforms",
+        "shippingClass"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/localId"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?!/)(?![A-Za-z]:)(?!.*\\\\).+$"
+        },
+        "role": {
+          "enum": [
+            "runtime",
+            "editor",
+            "source",
+            "template"
+          ]
+        },
+        "platforms": {
+          "$ref": "#/$defs/platformList"
+        },
+        "shippingClass": {
+          "$ref": "#/$defs/shippingClass"
+        }
+      }
+    },
+    "contribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "module",
+        "hostKinds",
+        "shippingClass"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/packageId"
+        },
+        "kind": {
+          "$ref": "#/$defs/packageId"
+        },
+        "module": {
+          "$ref": "#/$defs/localId"
+        },
+        "hostKinds": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/hostKind"
+          }
+        },
+        "shippingClass": {
+          "$ref": "#/$defs/shippingClass"
+        }
+      }
+    }
+  }
+}

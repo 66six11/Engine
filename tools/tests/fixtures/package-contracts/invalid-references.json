@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 2,
+  "packageKind": "installable-capability",
+  "id": "com.asharia.system.invalid-references",
+  "version": "0.1.0",
+  "displayName": "Invalid References",
+  "description": "Contains unresolved package-local references.",
+  "catalogType": "system",
+  "engineApi": {
+    "kind": "exact",
+    "version": "0.1.0"
+  },
+  "dependencies": [],
+  "options": [],
+  "modules": [
+    {
+      "id": "runtime",
+      "role": "runtime",
+      "dependsOn": [
+        "missing"
+      ],
+      "hostKinds": [
+        "runtime"
+      ],
+      "platforms": [
+        "com.asharia.platform.any"
+      ],
+      "shippingClass": "runtime",
+      "requiredCapabilities": []
+    }
+  ],
+  "entryModules": {
+    "runtime": [
+      "runtime"
+    ],
+    "diagnostics": [
+      "missing"
+    ]
+  },
+  "contentRoots": [],
+  "contributions": [
+    {
+      "id": "com.asharia.contribution.invalid-owner",
+      "kind": "com.asharia.contribution.system-factory",
+      "module": "missing",
+      "hostKinds": [
+        "runtime"
+      ],
+      "shippingClass": "runtime"
+    }
+  ]
+}
