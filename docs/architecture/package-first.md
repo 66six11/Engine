@@ -59,6 +59,7 @@ AshariaEngine/
   packages/
     systems/
       desktop-platform/
+      memory/
       runtime-storage/
       settings/
       data-model/

@@ -205,12 +205,20 @@ AshariaEngine/
     host-runtime/
   packages/
     systems/
+      desktop-platform/
+      memory/
+      runtime-storage/
+      settings/
       data-model/
       content/
       world/
+      tasks/
+      input/
+      scripting-dotnet/
       rendering-vulkan/
       editor/
       project-product/
+      observability/
     features/
     integrations/
     asset-packs/
