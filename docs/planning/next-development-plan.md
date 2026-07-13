@@ -2,7 +2,7 @@
 
 更新日期：2026-07-13
 
-本文是全项目下一阶段的唯一**功能交付主路线图**；目标系统框架、package/target 收敛方向、跨系统契约和架构迁移门禁见 `docs/planning/system-architecture-roadmap.md`，Kernel、Host Runtime、Foundation Systems、scope/activation 和基础门禁见 `docs/architecture/foundation-framework.md`。RenderGraph 专项细节见 `docs/rendergraph/roadmap.md`；Editor 子阶段见 `docs/planning/editor-development-plan.md`；资产系统细节见 `docs/systems/asset-architecture.md`；shader/material authoring 路线见 `docs/systems/shader-material-authoring.md`，V2 规格见 `docs/specs/ashader-v2.md` 和 `docs/specs/material-runtime-products-v2.md`，近期 MVP 计划见 `docs/planning/shader-material-mvp-plan.md`。历史进度、跨 PR 状态和清理记录维护在 GitHub Issues / Project，不在本文重复展开。
+本文是全项目下一阶段的唯一**功能阶段路线图**；目标系统框架、package/target 收敛方向、跨系统契约和架构迁移门禁见 `docs/planning/system-architecture-roadmap.md`，Kernel、Host Runtime、Foundation Systems、scope/activation 和基础门禁见 `docs/architecture/foundation-framework.md`。RenderGraph 当前语义见 `docs/rendergraph/mvp.md` 与 `docs/rendergraph/rhi-boundary.md`，可编程管线边界见 `docs/rendergraph/programmable-pipeline.md`；Editor 当前事实见 `docs/architecture/editor.md`；资产系统见 `docs/systems/asset-architecture.md`；shader/material authoring 见 `docs/systems/shader-material-authoring.md` 及 V2 specs。实际 Slice 顺序、状态、阻塞和 Done evidence 维护在 GitHub Issues / Project，不在本文重复。
 
 ## 规划依据
 
@@ -229,23 +229,6 @@ System Package 的 `asharia.packages.json`、`asharia.packages.lock.json`、reso
 - transient aliasing / graph template cache。
 
 这些方向必须先有设计 ADR、feature query、fallback、smoke 和 profiling evidence；不在当前主线提前铺宽 API。
-
-## 下一批 PR-sized Slice
-
-1. `#163 [Slice] Materials: cook Slang compile/reflection products`：继续 shader/material MVP
-   Milestone 5，复用 #158 的 `shader-authoring-product.v1` generated Slang payload 和 entry
-   manifest facts，生成 deterministic Slang compile/reflection product facts；已完成 request-level dependency
-   product bytes contract，并新增 `shader-compile-reflection-product.v1` writer/reader：通过
-   `shader.authoringProductPath` 消费上游 authoring product bytes，调用 `slangc -reflection-json`，再用
-   `spirv-val` 验证 SPIR-V，覆盖 SPIR-V/reflection payload hash、缺失上游 product bytes 和 bad product
-   diagnostics；当前增量继续记录 `slangc` / `spirv-val` exit code、diagnostic payload size/hash 和坏
-   generated Slang source 的 deterministic compiler diagnostic；本轮又补齐同一 compile request 两次执行的
-   manifest/product/payload determinism smoke。官方 Slang 资料中更结构化的 diagnostic flags 暂不作为 hard
-   dependency，因为当前 Vulkan SDK 1.4.321.1 的 `slangc` 不支持这些选项。该 Slice 仍不做 material
-   signature product、cross-asset dependency invalidation、renderer/RHI 或 editor UI。下一步收敛
-   manifest-selected entries 的产品契约边界，并准备 material signature product 的独立 Slice。
-2. `[Slice] Editor: make Hierarchy consume real scene snapshot`：从 read-only shell 进入真实 scene data display。
-3. `[Slice] Editor: add transaction-backed transform edit`：最小 Inspector writable field、dirty state、save/reload gate。
 
 ## 暂缓事项
 

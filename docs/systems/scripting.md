@@ -1,6 +1,7 @@
 # 脚本系统架构
 
 研究日期：2026-05-10
+状态：Target Architecture；完整 Scripting System 与 managed runtime host 尚未落地。
 
 本文定义 Asharia Engine 后续脚本系统的边界。脚本系统不是后期给 C++ 随便绑定几个函数，也不是直接访问
 Vulkan/RHI 的逃生口。它应作为一等系统，通过 schema/script context、scene public API、
@@ -9,7 +10,8 @@ asset public API 和 editor transaction 操作引擎数据。
 Managed extension 的长期分层和第一版 ABI 收窄见
 [../architecture/managed-extension-model.md](../architecture/managed-extension-model.md)。该 ADR 将
 `PreRenderConfig` / renderer scripting 明确后置为 future ADR，并把早期 permission 术语收敛为
-`FacadeCapability`。本文保留较宽的脚本系统背景和未来上下文清单；实现入口以 managed extension ADR 的阶段门槛为准。
+`FacadeCapability`。本文保留较宽的脚本系统背景和未来上下文清单；实现入口以 managed extension ADR
+的实现门禁为准。
 
 在目标系统框架中，脚本是 first-party bundled 完整 System Package。首个 Package Manager 条目是
 `com.asharia.system.scripting-dotnet`：一次导入共同获得 contracts、runtime scheduler、`.NET` implementation、

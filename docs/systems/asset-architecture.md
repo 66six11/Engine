@@ -1,11 +1,12 @@
-# Asset-core 架构与基线计划
+# Asset 与 Resource 架构
 
 资料核对日期：2026-05-12
+状态：Current boundary + Target Architecture；实现状态以 package/tests 与 GitHub Issues 为准。
 
-本文定义 `packages/asset-core` 的第一版边界、资料依据、数据模型和实施切片。它补齐
-`docs/architecture/engine-systems.md` 中提到的 asset pipeline 前置设计，用来支撑后续 mesh/texture
-resource、material、asset browser、scene persistence 和 scripting metadata，但第一版不做完整
-AssetDatabase、不做 editor UI、不做 GPU resource owner。
+本文定义 `packages/asset-core` 的当前边界、资料依据和数据模型，并与
+`docs/architecture/foundation-framework.md`、`docs/planning/system-architecture-roadmap.md` 的目标系统边界对齐。
+它支撑后续 mesh/texture resource、material、asset browser、scene persistence 和 scripting metadata，
+但 `asset-core` 不拥有完整 AssetDatabase、editor UI 或 GPU resource。
 
 核心结论：`asset-core` 先负责稳定身份、source metadata、import settings、product/cache key、依赖摘要和
 runtime-safe asset handle。文件修改监听、source hash、metadata IO、import 调度、product cache manifest
@@ -133,7 +134,7 @@ flowchart TD
     AssetPipeline["packages/asset-pipeline"]
     ImportTool["future tools/asset-processor"]
     ResourceRuntime["packages/resource-runtime"]
-    Editor["apps/editor / editor-core"]
+    Editor["apps/editor / editor_domain"]
 
     ProjectCore --> Core
     ProjectCoreIo --> ProjectCore
@@ -188,7 +189,7 @@ flowchart TD
   未来可扩展为开发期/后台进程或 CLI host，使用文件 watcher 调用 `asset-pipeline`，执行具体 importer，
   写入 `build/asset-cache/` 或项目 `.asharia/cache/`，并向
   editor/resource runtime 发布 product 更新通知。
-- `apps/editor` / 未来 `editor-core`：只发出 reimport、rename、move、import settings 修改等命令，并展示
+- `apps/editor` / 未来 `packages/systems/editor` 内部 `editor_domain`：只发出 reimport、rename、move、import settings 修改等命令，并展示
   pipeline 状态和诊断；不直接扫描 source tree，不直接写 product cache。
 - `asset-core`：继续保持纯身份和数据模型，不拥有 watcher、后台线程、importer、product 文件写入或热更新发布。
 

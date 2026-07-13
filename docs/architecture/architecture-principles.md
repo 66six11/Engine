@@ -251,7 +251,7 @@ Package 边界正确不代表架构已经健康。跨系统功能还必须检查
 | `renderer_basic_vulkan` | Vulkan command recording、pipeline、descriptor、GPU resource binding | editor panel state、script object ownership |
 | `shader-slang` | Slang compile、SPIR-V validation、shader metadata/reflection product | runtime material ownership、Vulkan pipeline policy |
 | planned `scripting` | script host/context/binding/diagnostics/permission model | editor UI implementation、Vulkan/RHI escape hatch、GPU ownership |
-| planned `editor-core` | editor id、selection、transaction、service facade、action metadata | ImGui backend、Vulkan backend、renderer implementation |
+| planned `packages/systems/editor` internal `editor_domain` | editor id、selection、transaction、service facade、action metadata | ImGui/Avalonia backend、Vulkan backend、renderer implementation |
 | `apps/editor` | panels、actions、tools、workspace、viewport coordination、ImGui integration | runtime serialization truth、renderer backend internals |
 
 ## 推荐数据流
@@ -342,9 +342,9 @@ flowchart LR
 | package / target / manifest 依赖 | `package-first.md`、`flow.md` | `tools\check-doc-sync.ps1`、`git diff --check`、相关 CMake preset build |
 | RenderGraph pass/resource/transition | `flow.md`、`render-layer.md`、RenderGraph 系统文档 | `--smoke-rendergraph`、相关 renderer/RHI smoke、clangcl + msvc build |
 | Vulkan sync / swapchain / frame loop | `overview.md`、`flow.md`、`frame-loop-threading.md` | frame/swapchain/resize/deferred-deletion smoke、Vulkan review script |
-| editor shell / panel / action / asset browser / viewport | `editor.md`、`editor-extension-architecture.md` | `--smoke-editor-shell`、`--smoke-editor-asset-browser`、viewport / frame-debugger smoke |
+| editor shell / panel / action / asset browser / viewport | `editor.md`、`editor-ui-scripting.md`、`managed-extension-model.md` | `--smoke-editor-shell`、`--smoke-editor-asset-browser`、viewport / frame-debugger smoke |
 | asset identity / product / hot reload | `docs/systems/asset-architecture.md` | package-local asset tests、metadata/product/dependency smoke |
-| schema / archive / persistence / migration | `docs/systems/reflection-serialization.md`、`naming.md` | serialization roundtrip、json archive、migration smoke |
+| schema / archive / persistence / migration | `docs/systems/reflection-serialization.md`、`docs/standards/naming.md` | serialization roundtrip、json archive、migration smoke |
 | script binding / editor script extension | `docs/systems/scripting.md`、`editor-ui-scripting.md` | permission、transaction、reload 和 diagnostics smoke |
 | threading / worker / RenderThread | `frame-loop-threading.md`、`flow.md` | owner/fallback 文档、single-thread fallback smoke、profiler counter |
 

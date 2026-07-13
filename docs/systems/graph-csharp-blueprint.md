@@ -1,6 +1,7 @@
-# Graph C# 与蓝图技术验证计划
+# Graph C# 与蓝图技术验证方向
 
 研究日期：2026-05-15
+状态：Research proposal；不表示 runtime、Roslyn host、Behavior IR 或蓝图编辑器已经存在。
 
 本文定义 Asharia Engine 后续脚本/蓝图互通的技术验证路线。目标不是立刻把当前引擎 runtime
 接入 C#，也不是实现完整可视化编辑器；目标是先验证一条可长期演进的语言与蓝图共同模型：
@@ -380,7 +381,7 @@ public static class Transform
 
 产物：
 
-- `docs/graph-csharp-v0.md` 或等价规范。
+- 进入正式实现前新增版本化 Graph C# / Behavior IR 规格；本研究文档不充当格式合同。
 - 10 个合法样例。
 - 10 个非法样例。
 

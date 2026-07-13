@@ -2,7 +2,7 @@
 
 状态：Partial（迁移期 UI 实现规范）
 
-更新日期：2026-07-11
+更新日期：2026-07-13
 
 > 本文仍可用于当前 Dialog、Command、Shortcut、Background Task、样式和部分 Shell 行为，但其中关于 native viewport、Play Mode、provider/extension 延后以及长期分层的结论不再是目标架构。正式框架合同以 [architecture/README.md](architecture/README.md) 为入口。
 
@@ -15,8 +15,6 @@
 - [architecture/editor-worlds-and-play-mode.md](architecture/editor-worlds-and-play-mode.md)：Edit/Play/Preview World 和 Game View。
 - [architecture/viewport-rendering.md](architecture/viewport-rendering.md)：跨平台 production viewport。
 
-- [Studio框架设计.md](Studio框架设计.md)：Superseded 的 v0 顶层框架背景。
-- [Studio代码分类.md](Studio代码分类.md)：新增或整理代码时的目录分类、放置决策和当前 v0 例外。
 - [项目规范.md](项目规范.md)：目录、命名空间、MVVM、性能和合入规则。
 - [控件开发指南.md](控件开发指南.md)：Avalonia 控件、样式、`Design.PreviewWith` 和主题覆盖规则。
 - [Dock系统指南.md](Dock系统指南.md)：Dock、panel、workbench action 和当前实现事实。
@@ -569,44 +567,11 @@ UI-sensitive 改动还需要手工或截图确认：
 
 涉及 root architecture docs、GitHub Issue、Project 或 PR 元数据时，还必须按 `docs/planning/project-management.md` 做查重、Project 字段和 #20 同步。
 
-## 13. 推荐下一阶段切片
+## 13. 工作跟踪
 
-按稳定性和当前缺口排序：
-
-1. `[Slice] Studio: status debug message surface`
-   - 把 `WorkbenchCommandExecutionResult` 作为第一类 producer 显示到状态栏 latest status/debug message。
-   - Console/debug producer 后续通过 `TargetPanelId = "console"` 复用同一路由。
-   - Problems / Console 的完整数据接入先写 UI-level contract，不急着做完整面板或 shell command line。
-   - 不做 toast 动画系统，不做 notification center。
-
-2. `[Slice] Studio: background tasks panel`
-   - 新增后台任务面板，消费 `IEditorBackgroundTaskService` snapshots。
-   - 状态栏入口打开或聚焦面板。
-   - 不实现真实 asset import、shader compile 或 native load。
-
-3. `[Slice] Studio: diagnostic feedback route`
-   - 将 command/background/dialog 失败统一成 diagnostics records。
-   - Console/Problems 先接 UI-level diagnostics，不接 native engine。
-
-4. `[Slice] Studio: lifecycle event diagnostics projection`
-   - 将 `IEditorLifecycleEventService` 的 Shell window lifecycle snapshots 显示为只读 diagnostics/debug route。
-   - 不扩展到 feature unload、provider reload、Play Session 或 native runtime lifecycle。
-
-5. `[Slice] Studio: DI composition root`
-   - 集中注册 Shell services、feature modules、registries、dispatcher 和 root view model。
-   - 不改变 UI 行为，不引入外部 plugin loader。
-
-6. `[Slice] Studio: view resolution and compiled binding audit`
-   - 明确新增 View/DataTemplate 的 `x:DataType` 和显式 mapping 策略。
-   - 只处理 Studio UI 层，不做 Native AOT 发布切片。
-
-7. `[Slice] Studio: design preview coverage`
-   - 给通用控件和 overlay surfaces 补 design preview。
-   - 只做 preview data，不做视觉重设计。
-
-8. `[Slice] Studio: shortcut profile contract`
-   - 定义默认快捷键、冲突检测和上下文 scope model。
-   - 不做完整设置 UI。
+本文不维护“下一阶段切片”。Dialog、Command、Shortcut、Dock、extension、Viewport 与 Play Mode 的
+实施顺序、状态和 Done evidence 以 GitHub Issues / Project 为准；边界变化回写本目录 Architecture/ADR，
+当前行为变化回写对应 Current guide。
 
 ## 14. 参考资料
 
@@ -615,11 +580,6 @@ UI-sensitive 改动还需要手工或截图确认：
 - [项目规范.md](项目规范.md)
 - [控件开发指南.md](控件开发指南.md)
 - [Dock系统指南.md](Dock系统指南.md)
-- [superpowers/plans/2026-06-20-studio-runtime-editor-foundation.md](superpowers/plans/2026-06-20-studio-runtime-editor-foundation.md)
-- [superpowers/plans/2026-06-21-studio-command-palette-follow-up.md](superpowers/plans/2026-06-21-studio-command-palette-follow-up.md)
-- [superpowers/plans/2026-06-21-studio-dock-tab-strip-overflow.md](superpowers/plans/2026-06-21-studio-dock-tab-strip-overflow.md)
-- [superpowers/plans/2026-06-22-studio-editor-lifecycle-events.md](superpowers/plans/2026-06-22-studio-editor-lifecycle-events.md)
-- [superpowers/plans/2026-06-24-studio-panel-lifecycle-and-frame-update.md](superpowers/plans/2026-06-24-studio-panel-lifecycle-and-frame-update.md)
 - [architecture/studio-extension-model.md](architecture/studio-extension-model.md)
 - [architecture/editor-extension-authoring.md](architecture/editor-extension-authoring.md)
 

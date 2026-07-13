@@ -6,113 +6,12 @@
 工程决策优先参考一手资料。社区文章可以辅助理解，但不能替代 Vulkan 规范、Khronos
 仓库、GPUOpen 文档、CMake/Conan/MSVC 官方文档。
 
-## Current architecture audit
+## 使用规则
 
-本次核对日期：2026-05-23
-
-一手资料：
-
-- CMake `target_link_libraries`：https://cmake.org/cmake/help/latest/command/target_link_libraries.html
-- CMake presets manual：https://cmake.org/cmake/help/latest/manual/cmake-presets.7.html
-- Conan 2 lockfiles：https://docs.conan.io/2/tutorial/versioning/lockfiles.html
-- Vulkan Guide threading：https://docs.vulkan.org/guide/latest/threading.html
-- Khronos command buffer usage sample：https://docs.vulkan.org/samples/latest/samples/performance/command_buffer_usage/README.html
-- Vulkan dynamic rendering sample：https://docs.vulkan.org/samples/latest/samples/extensions/dynamic_rendering/README.html
-- Vulkan Guide push constants：https://docs.vulkan.org/guide/latest/push_constants.html
-- Vulkan descriptor sets：https://docs.vulkan.org/spec/latest/chapters/descriptors.html
-
-仓库事实依据：
-
-- 根 `CMakeLists.txt` 和各 package `CMakeLists.txt`。
-- 各 `asharia.package.json` 的 `dependencies` / `targetDependencies`。
-- `packages/rendergraph/include/asharia/rendergraph/render_graph.hpp`。
-- `packages/rhi-vulkan/include/asharia/rhi_vulkan/*` 与
-  `packages/rhi-vulkan/include-rendergraph/asharia/rhi_vulkan_rendergraph/vulkan_render_graph.hpp`。
-- `packages/renderer-basic/include/asharia/renderer_basic/*` 与
-  `packages/renderer-basic/include/asharia/renderer_basic_vulkan/*`。
-- `apps/editor/src/editor_viewport*.{hpp,cpp}`、`apps/editor/src/panels/scene_view_panel.cpp`。
-
-结论：
-
-- CMake target usage requirements 是当前构建边界的事实来源；manifest 作为 package registry 前置数据时，
-  必须用 `targetDependencies` 表达多 target package 的真实边界，不能只看 package-level `dependencies`。
-- Conan lockfile 固定依赖解析；`build/conan/` 和 CMake generated presets/toolchain 是生成物，不是架构 source
-  of truth。
-- Vulkan threading / command buffer samples 支持当前“frame loop 拥有 submit/present，未来多线程 command
-  recording 必须有 per-thread command/descriptor pool 所有权”的边界。
-- Vulkan dynamic rendering 支持当前不引入传统 render pass/framebuffer 抽象的主路径；RenderGraph 仍只描述
-  abstract attachment/resource state，Vulkan adapter 再翻译 layout/stage/access。
-- Vulkan descriptor sets / push constants 资料支持把 camera、model、material 和 frame data 作为显式 shader
-  input 合同；diagnostics snapshot 只能观测，不能成为后续 pass 的数据来源。
-- 本次本地审查未发现 `packages/rendergraph` 或 `asharia::renderer_basic` public API 暴露 Vulkan type，也未发现
-  base `asharia::rhi_vulkan` target 公开链接 RenderGraph；已知缺口是 `renderer_basic_vulkan` 的 RenderView
-  camera 仍停留在 diagnostics，per-view constants / pass input 合同尚未落地。
-
-## Internal code design gate
-
-本次核对日期：2026-06-04
-
-一手资料：
-
-- Unity Render Graph fundamentals：https://docs.unity.cn/Packages/com.unity.render-pipelines.core%4017.0/manual/render-graph-fundamentals.html
-- Unreal Render Dependency Graph：https://dev.epicgames.com/documentation/en-us/unreal-engine/render-dependency-graph-in-unreal-engine
-- O3DE Atom RPI overview：https://docs.o3de.org/docs/atom-guide/dev-guide/rpi/rpi/
-- Vulkan formats：https://docs.vulkan.org/spec/latest/chapters/formats.html
-- Vulkan synchronization：https://github.khronos.org/Vulkan-Site/spec/latest/chapters/synchronization.html
-- Vulkan descriptor sets：https://docs.vulkan.org/spec/latest/chapters/descriptors.html
-- C++ Core Guidelines：https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines
-- Game Programming Patterns：https://gameprogrammingpatterns.com/contents.html
-- Game Programming Patterns Component：https://gameprogrammingpatterns.com/component.html
-- Game Programming Patterns Data Locality：https://gameprogrammingpatterns.com/data-locality.html
-- Game Programming Patterns Service Locator：https://gameprogrammingpatterns.com/service-locator.html
-- Unity DOTS overview：https://unity.com/dots
-- Unity Entities concepts：https://docs.unity3d.com/Packages/com.unity.entities%401.0/manual/concepts-intro.html
-- Data-Oriented Design online book：https://www.dataorienteddesign.com/dodbook/
-
-仓库事实依据：
-
-- `docs/workflow/review.md` 是提交前 review gate 的 authority。
-- `docs/planning/next-development-plan.md` 维护阶段顺序和跨 editor / renderer / RenderGraph / RHI 的 route control。
-- `docs/planning/editor-development-plan.md` 维护 editor host、panel/action/event、viewport texture registry 和后续 editor-core 边界。
-- GitHub Project #31 / draft PR #43 跟踪当前 shell integration baseline；#40 只保留为 workflow / review gate 文档历史证据。
-- `packages/rhi-vulkan/src/vulkan_frame_loop.cpp` 的 surface format 选择仍可 fallback 到 surface 首项；
-  `packages/renderer-basic/include/asharia/renderer_basic_vulkan/frame_graph_vulkan.hpp` 已把
-  `basicRenderGraphImageFormat()` 收敛为 `Result<RenderGraphImageFormat>`，unsupported format 会在
-  renderer/RG import 前 fail early。`--smoke-renderer-format-contract` 覆盖当前负向路径。
-- `apps/editor/src/editor_viewport_coordinator.*` 已把 viewport request 收敛为 `panelId + EditorViewportKind`
-  keyed slot；同帧多 view / 多 panel 需求不再被单个 `requestedViewport_` 覆盖。`--smoke-editor-viewport`
-  合成 Scene + Game + Preview 请求验证该闭环。
-- `apps/editor/src/editor_viewport_overlay_provider.cpp`、`apps/editor/src/panels/scene_view_panel.cpp` 和
-  renderer diagnostics 路径已经传递 camera / overlay / debug line intent。B.1 后，
-  `packages/renderer-basic/src/basic_renderers/fullscreen_texture_renderer.inl` 会在存在 debug world-line 数据时记录
-  `builtin.render-view-overlay` pass，把 camera/frame/debug-line count 纳入 typed params 与 command summary；Scene View
-  grid intent 已转为 `builtin.render-view-world-grid` fullscreen pass。
-- `packages/renderer-basic/src/basic_renderers/compute_dispatch_renderer.inl` 在 graph 录制前使用
-  `vkCmdFillBuffer` 做外部 GPU work；该路径需要进入 RenderGraph command/pass 或 named external pre-pass
-  diagnostics。
-- `apps/editor/src/editor_panel.hpp` 和 `apps/editor/src/editor_app.cpp` 显示 editor 仍有 app glue
-  聚合风险；过渡期 `editor_context.hpp/.cpp` 已删除，后续 asset/material/script/editor persistence 前仍需要
-  command/transaction 与 capability-scoped context，避免重新引入宽 app context。
-- `packages/rendergraph/include/asharia/rendergraph/render_graph.hpp` 仍是大型 public header，后续继续扩展
-  cache、alias、multi-queue 或 unsafe/native pass 前需要 API / implementation split 计划。
-
-结论：
-
-- Unity / Unreal RenderGraph 资料支持把 pass data、resource access 和执行函数分开审查；Asharia Engine
-  不能只因为 package 边界正确就接受 hidden pre-pass 或 diagnostics-only data path。
-- O3DE RPI 的 Scene / Render Pipeline / View 分离支持把 Scene View、Game View 和 Preview View 统一建模为
-  RenderView 输入；单 optional viewport request 是过渡实现，不能作为多视图架构基础。
-- Vulkan format、descriptor 和 synchronization 资料支持把 format/capability、layout/stage/access、descriptor
-  signature 作为 fail-early 合同；fallback format、undefined RenderGraph format 或 descriptor mismatch 不能留到
-  GPU recording 时才失败。
-- C++ Core Guidelines 支持把接口、类不变量、所有权和资源生命周期作为审查对象；这不意味着每个改动都要新增类层次，
-  反而要求 `class`、`virtual`、RAII owner 和全局访问边界有明确语义。
-- Game Programming Patterns 支持按真实问题选择 Component、Command、Event Queue、State 等模式；同一资料也提醒
-  Service Locator / Singleton 这类全局访问会隐藏依赖，因此只出现 `Manager`、`Context` 或全局 facade 不能算设计通过。
-- Unity DOTS / Entities 和 Data-Oriented Design 资料支持把热路径、批处理、资产/渲染数据流按数据布局、迭代顺序、
-  stable id/handle、cache locality 和批量 transform 审查；不能只按对象名或设计模式名判断。
-- 因此 `docs/workflow/review.md` 必须把内部代码设计审查列为架构审查必选项，`docs/planning/next-development-plan.md`
-  必须在继续推进 gizmo、selection、asset preview、material editor、multi-view diagnostics 前加入内部设计门禁。
+本文只保存外部资料入口和它们对设计的约束，不是当前代码事实来源。各节日期表示资料核对时间，
+不表示实现状态。当前 target graph、模块边界和阶段顺序分别以
+`docs/architecture/flow.md`、`docs/architecture/overview.md`、
+`docs/planning/system-architecture-roadmap.md` 和 GitHub Issues / Project 为准。
 
 ## 引擎系统架构与线程设计
 
@@ -169,7 +68,8 @@
 - 资产管线、反射序列化、scene/world、resource lifetime、input、event/command、editor transaction、
   material/pipeline 和 diagnostics 是完整引擎不可缺少的架构前置项，但不应全部进入当前 MVP 实现。
 - Dear ImGui 的 platform backend、renderer backend 和 core 分层支持把 ImGui integration 留在
-  `apps/editor`；panel/action/event、selection 和 transaction 才是未来 `editor-core` 的候选职责。
+  `apps/editor`；panel/action/event、selection 和 transaction 才是未来
+  `packages/systems/editor` 内部 `editor_domain` 的候选职责。
 - Unity、Unreal 和 Godot 的 editor window/dock 模型都支持按 id/type 注册和复用 panel，而不是让菜单直接
   创建任意 UI 实例。
 - Dear ImGui multi-viewports 是 platform window / docking 能力；Asharia 的 Scene/Game/Preview sampled viewport

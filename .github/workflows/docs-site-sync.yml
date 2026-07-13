@@ -3,13 +3,13 @@ name: Docs Site Sync
 on:
   pull_request:
     paths:
-      - docs/developer-documentation-system/**
+      - docs/**
       - .github/workflows/docs-site-sync.yml
   push:
     branches:
       - main
     paths:
-      - docs/developer-documentation-system/**
+      - docs/**
       - .github/workflows/docs-site-sync.yml
   workflow_dispatch:
     inputs:
@@ -80,7 +80,7 @@ jobs:
           DOCS_SITE_REPOSITORY: ${{ vars.DOCS_SITE_REPOSITORY || '66six11/VkEngine-docs-site' }}
           ENGINE_REPOSITORY: ${{ github.repository }}
           ENGINE_REF: ${{ steps.engine.outputs.ref }}
-          ENGINE_DOCS_DIR: docs/developer-documentation-system
+          ENGINE_DOCS_DIR: docs
           SOURCE_SHA: ${{ github.sha }}
           SOURCE_RUN_ID: ${{ github.run_id }}
         run: |

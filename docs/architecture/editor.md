@@ -1,12 +1,12 @@
 # Editor 架构
 
-更新日期：2026-06-08
+更新日期：2026-07-13
 
 本文记录当前 `apps/editor` 的真实架构边界。它描述已经落地的 editor host、ImGui
 integration、panel/action/event、Scene View viewport、input/shortcut routing、ImGui texture registry 和验证入口。
-阶段拆分见 `docs/planning/editor-development-plan.md`；脚本扩展和 C++/脚本协作边界见
-`docs/architecture/editor-ui-scripting.md`；工具、插件、viewport overlay 和 hot reload 的后续 contract 见
-`docs/architecture/editor-extension-architecture.md`。
+近期阶段顺序见 `docs/planning/next-development-plan.md`；脚本扩展和 C++/脚本协作边界见
+`docs/architecture/editor-ui-scripting.md`；完整 package、managed host、hot reload 和 native bridge
+方向见 `docs/architecture/managed-extension-model.md` 与 `docs/planning/system-architecture-roadmap.md`。
 
 ## 目的
 
@@ -603,12 +603,12 @@ overlay/debug gizmo flags for future runtime diagnostics.
 
 Game View 不能隐式包含 grid、transform gizmo、wire overlay、selection outline 这类 Scene View authoring pass；如果用户需要在 Game View 里看 runtime debug gizmo，必须通过明确的 debug overlay/debug gizmo flag 进入 graph。
 
-### 未来 `editor-core`
+### 未来 `editor_domain`
 
 Do not extract `editor_domain` just to move files. Extract it into the complete Editor System Package only when there is durable backend-neutral state with real
 consumers, such as selection, transaction, inspector data model or editor service facade.
 
-`editor-core` may own:
+`packages/systems/editor` 内部 `editor_domain` may own:
 
 - `EditorId`
 - action/event metadata

@@ -1,55 +1,64 @@
 # Asharia Engine 文档索引
 
-本目录是项目知识入口。根目录 `README.md` 面向快速上手；这里只保留稳定入口、维护规则和当前事实来源，历史进度放在 GitHub Issues / Project。
+本目录是仓库唯一的工程文档源。这里保留当前合同、长期设计依据、可执行工作流和目标架构；
+实际进度、阻塞、负责人及 Done evidence 只维护在 GitHub Issues / Project。
 
-## 主要入口
+## 权威范围
 
-| 主题 | 先读 |
+| 范围 | 权威文档 | 状态 |
+| --- | --- | --- |
+| 当前 target graph、启动和 frame flow | [architecture/flow.md](architecture/flow.md) | current |
+| 当前模块边界、所有权和生命周期 | [architecture/overview.md](architecture/overview.md) | current |
+| package、manifest 与 CMake 约定 | [architecture/package-first.md](architecture/package-first.md) | current |
+| 构建与提交门禁 | [workflow/build.md](workflow/build.md)、[workflow/review.md](workflow/review.md) | current |
+| GitHub Project、Epic、Slice 与 Done evidence | [planning/project-management.md](planning/project-management.md) | current |
+| 目标基础框架 | [architecture/foundation-framework.md](architecture/foundation-framework.md) | proposal |
+| 目标系统框架与迁移门禁 | [planning/system-architecture-roadmap.md](planning/system-architecture-roadmap.md) | proposal |
+| 近期功能阶段顺序 | [planning/next-development-plan.md](planning/next-development-plan.md) | plan |
+
+代码、CMake target 或 manifest 与文档冲突时，先确认真实行为，再修正文档或实现。proposal/plan
+不得被引用为已落地能力。
+
+## 按主题阅读
+
+| 主题 | 文档 |
 | --- | --- |
-| 构建、门禁和日常 workflow | [workflow/build.md](workflow/build.md)、[workflow/review.md](workflow/review.md)、[workflow/technical-stack.md](workflow/technical-stack.md) |
-| 编码、文档和文本规则 | [standards/coding.md](standards/coding.md)、[standards/documentation.md](standards/documentation.md)、[standards/encoding.md](standards/encoding.md)、[standards/naming.md](standards/naming.md) |
-| 文档站部署 | [workflow/documentation-site.md](workflow/documentation-site.md)、[standards/documentation.md](standards/documentation.md) |
-| 当前架构、真实数据流与目标基础框架 | [architecture/overview.md](architecture/overview.md)、[architecture/flow.md](architecture/flow.md)、[architecture/package-first.md](architecture/package-first.md)、[architecture/foundation-framework.md](architecture/foundation-framework.md) |
-| 项目构建、打包与启动目标架构 | [architecture/project-build-and-launch.md](architecture/project-build-and-launch.md) |
-| RenderGraph / RHI / 可编程管线边界 | [rendergraph/mvp.md](rendergraph/mvp.md)、[rendergraph/rhi-boundary.md](rendergraph/rhi-boundary.md)、[rendergraph/roadmap.md](rendergraph/roadmap.md)、[rendergraph/programmable-pipeline.md](rendergraph/programmable-pipeline.md) |
-| Editor 架构和 UI | [architecture/editor.md](architecture/editor.md)、[architecture/editor-ui-style-v1.md](architecture/editor-ui-style-v1.md)、[architecture/editor-ui-visual-target.md](architecture/editor-ui-visual-target.md)、[planning/editor-development-plan.md](planning/editor-development-plan.md) |
-| 系统设计 | [systems/reflection-serialization.md](systems/reflection-serialization.md)、[systems/asset-architecture.md](systems/asset-architecture.md)、[resource-runtime package 技术设计](../packages/resource-runtime/README.md)、[systems/shader-material-authoring.md](systems/shader-material-authoring.md)、[systems/scene-world.md](systems/scene-world.md)、[systems/scripting.md](systems/scripting.md)、[architecture/managed-extension-model.md](architecture/managed-extension-model.md)、[systems/performance-profiling.md](systems/performance-profiling.md) |
-| 格式规格 | [specs/ashader-v2.md](specs/ashader-v2.md)、[specs/material-runtime-products-v2.md](specs/material-runtime-products-v2.md) |
-| 计划和项目管理 | [planning/system-architecture-roadmap.md](planning/system-architecture-roadmap.md)、[planning/next-development-plan.md](planning/next-development-plan.md)、[planning/shader-material-mvp-plan.md](planning/shader-material-mvp-plan.md)、[planning/project-management.md](planning/project-management.md) |
-| 研究资料 | [research/sources.md](research/sources.md) |
+| 架构原则与 package 边界 | [architecture/architecture-principles.md](architecture/architecture-principles.md)、[architecture/package-first.md](architecture/package-first.md) |
+| Runtime、线程与 frame loop | [architecture/frame-loop-threading.md](architecture/frame-loop-threading.md)、[architecture/flow.md](architecture/flow.md) |
+| RenderGraph、RHI 与 renderer | [rendergraph/mvp.md](rendergraph/mvp.md)、[rendergraph/rhi-boundary.md](rendergraph/rhi-boundary.md)、[architecture/render-layer.md](architecture/render-layer.md) |
+| 可编程渲染管线 | [rendergraph/programmable-pipeline.md](rendergraph/programmable-pipeline.md) |
+| Editor 与扩展 | [architecture/editor.md](architecture/editor.md)、[architecture/editor-ui-scripting.md](architecture/editor-ui-scripting.md)、[architecture/managed-extension-model.md](architecture/managed-extension-model.md) |
+| Editor UI 规范 | [architecture/editor-ui-style-v1.md](architecture/editor-ui-style-v1.md)、[architecture/editor-ui-visual-target.md](architecture/editor-ui-visual-target.md) |
+| Studio 实现细节 | [apps/studio 架构入口](../apps/studio/docs/architecture/README.md) |
+| 项目 build/cook/package/launch | [architecture/project-build-and-launch.md](architecture/project-build-and-launch.md) |
+| Asset 与 runtime resource | [systems/asset-architecture.md](systems/asset-architecture.md)、[resource-runtime package 设计](../packages/resource-runtime/README.md) |
+| Scene / World | [systems/scene-world.md](systems/scene-world.md) |
+| Schema、反射与持久化 | [systems/reflection-serialization.md](systems/reflection-serialization.md) |
+| Shader / Material | [systems/shader-material-authoring.md](systems/shader-material-authoring.md)、[specs/ashader-v2.md](specs/ashader-v2.md)、[specs/material-runtime-products-v2.md](specs/material-runtime-products-v2.md) |
+| Scripting 与 graph authoring | [systems/scripting.md](systems/scripting.md)、[systems/graph-csharp-blueprint.md](systems/graph-csharp-blueprint.md) |
+| Profiling | [systems/performance-profiling.md](systems/performance-profiling.md) |
+| 技术栈与独立 package 构建 | [workflow/technical-stack.md](workflow/technical-stack.md)、[workflow/package-standalone-build.md](workflow/package-standalone-build.md) |
+| 文档写作与发布 | [standards/documentation.md](standards/documentation.md)、[workflow/documentation-site.md](workflow/documentation-site.md) |
+| 外部资料 | [research/sources.md](research/sources.md) |
 
-## 阅读顺序
+## 推荐阅读顺序
 
-1. [workflow/build.md](workflow/build.md) - bootstrap、configure、build 和 preset。
-2. [workflow/review.md](workflow/review.md) - 提交前门禁和 smoke 清单。
-3. [standards/encoding.md](standards/encoding.md) - BOM / UTF-8 规则。
-4. [architecture/overview.md](architecture/overview.md) - 模块边界、所有权和生命周期。
-5. [architecture/flow.md](architecture/flow.md) - 当前包依赖、启动、frame loop 和 RenderGraph/RHI 数据流。
-6. [rendergraph/rhi-boundary.md](rendergraph/rhi-boundary.md) - RenderGraph 与 Vulkan backend 的职责边界。
-7. [architecture/foundation-framework.md](architecture/foundation-framework.md) - 目标 Kernel、Host Runtime、Foundation Systems、scope/activation 和基础门禁。
-8. [architecture/editor.md](architecture/editor.md) - 当前 editor shell、panel、viewport 和验证入口。
-9. [planning/system-architecture-roadmap.md](planning/system-architecture-roadmap.md) - 目标系统框架、package/target 收敛方向和迁移门禁。
-10. [architecture/project-build-and-launch.md](architecture/project-build-and-launch.md) - Editor 项目的 Build/Cook/Stage/Package/Deploy/Launch 目标闭环。
-11. [planning/next-development-plan.md](planning/next-development-plan.md) - 下一阶段功能交付主路线。
+1. [workflow/build.md](workflow/build.md)
+2. [workflow/review.md](workflow/review.md)
+3. [architecture/overview.md](architecture/overview.md)
+4. [architecture/flow.md](architecture/flow.md)
+5. [architecture/package-first.md](architecture/package-first.md)
+6. [architecture/foundation-framework.md](architecture/foundation-framework.md)
+7. [planning/system-architecture-roadmap.md](planning/system-architecture-roadmap.md)
 
-专项开发时再读对应目录下的细化文档，不把专项文档当成第二套路线路线图。
+专项开发再进入对应系统、规格或工作流文档。不要把专项设计当成第二套全局路线图。
 
-## 当前事实来源
+## 维护规则
 
-- 真实架构和 frame flow 以 [architecture/flow.md](architecture/flow.md) 为准。
-- package 边界以 [architecture/package-first.md](architecture/package-first.md) 和 CMake target 为准。
-- 提交门禁以 [workflow/review.md](workflow/review.md) 为准。
-- 全局阶段顺序以 [planning/next-development-plan.md](planning/next-development-plan.md) 为准。
-- GitHub Project、Issue、PR、Epic/Slice、blocker 和 Done evidence 规则以 [planning/project-management.md](planning/project-management.md) 为准。
-
-## 文档维护规则
-
-- 本地文档保留当前合同、入口、门禁和设计依据；不要长期维护进度流水账。
-- 已完成阶段、历史风险、跨 PR 清理项和状态同步写到 GitHub Issues / Project，优先同步到 #20 `[Epic] Workflow: roadmap, docs, and Project sync`。
-- 新增 smoke、包依赖、frame loop、RenderGraph 语义或 Vulkan 生命周期变化时，同步更新事实来源文档和 [workflow/review.md](workflow/review.md)。
-- Markdown 文件使用 UTF-8 without BOM；验证入口是 `powershell -ExecutionPolicy Bypass -File tools\check-text-encoding.ps1`。
-
-## 历史资料
-
-- `full-diagnosis-2026-05-05.md` 是一次性诊断快照，结论已合并到当前架构、review 和计划文档，不再维护。
-- [architecture/architecture-review-2026-05-23.md](architecture/architecture-review-2026-05-23.md) 和 [planning/issues-and-solutions.md](planning/issues-and-solutions.md) 仅保留历史审查语境；当前执行顺序仍以 [planning/next-development-plan.md](planning/next-development-plan.md) 和 GitHub Project 为准。
+- 一个主题只保留一个当前事实源；其他文档通过链接引用，不复制正文。
+- 当前事实先写，planned/proposal/future 内容必须单独标注。
+- PR 状态、完成百分比、临时 blocker 和逐提交日志不进入长期文档。
+- 已完成且不再提供合同价值的计划、审查快照和 agent 执行清单直接删除；历史由 Git 与 GitHub Issues 保留。
+- 文档站从整个 `docs/` 单向同步，发布侧负责导航、翻译和公开筛选，不在仓库内维护平行正文树。
+- Markdown 使用 UTF-8 without BOM。最低验证为
+  `powershell -ExecutionPolicy Bypass -File tools\check-text-encoding.ps1` 和 `git diff --check`。
