@@ -1,0 +1,255 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.asharia.dev/package-runtime/package-artifact-manifest-v1.schema.json",
+  "title": "Asharia Package Artifact Manifest v1",
+  "description": "Canonical verified file evidence for the selected products of one exact package and source build plan.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "schemaVersion",
+    "package",
+    "context",
+    "provenance",
+    "modules",
+    "integrity"
+  ],
+  "properties": {
+    "schema": {
+      "const": "com.asharia.package-artifact-manifest"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "package": {
+      "$ref": "#/$defs/package"
+    },
+    "context": {
+      "$ref": "#/$defs/context"
+    },
+    "provenance": {
+      "$ref": "#/$defs/provenance"
+    },
+    "modules": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/module"
+      }
+    },
+    "integrity": {
+      "$ref": "#/$defs/integrity"
+    }
+  },
+  "$defs": {
+    "integrity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "algorithm",
+        "digest"
+      ],
+      "properties": {
+        "algorithm": {
+          "const": "sha256"
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "package": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/packageId"
+        },
+        "version": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/semanticVersion"
+        }
+      }
+    },
+    "context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "hostKind",
+        "targetPlatform",
+        "configuration"
+      ],
+      "properties": {
+        "hostKind": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/hostKind"
+        },
+        "targetPlatform": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/platformId"
+        },
+        "configuration": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "hostCompositionIntegrity",
+        "sourceBuildPlanIntegrity",
+        "productDeclarationIntegrity"
+      ],
+      "properties": {
+        "kind": {
+          "const": "source-build"
+        },
+        "hostCompositionIntegrity": {
+          "$ref": "#/$defs/integrity"
+        },
+        "sourceBuildPlanIntegrity": {
+          "$ref": "#/$defs/integrity"
+        },
+        "productDeclarationIntegrity": {
+          "$ref": "#/$defs/integrity"
+        }
+      }
+    },
+    "artifactPath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500
+    },
+    "mediaType": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 200,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9!#$&^_.+\\-]*/[A-Za-z0-9][A-Za-z0-9!#$&^_.+\\-]*$"
+    },
+    "file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "role",
+        "mediaType",
+        "size",
+        "integrity"
+      ],
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/artifactPath"
+        },
+        "role": {
+          "enum": [
+            "primary",
+            "link-companion",
+            "runtime-dependency",
+            "debug-symbol",
+            "metadata"
+          ]
+        },
+        "mediaType": {
+          "$ref": "#/$defs/mediaType"
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "integrity": {
+          "$ref": "#/$defs/integrity"
+        }
+      }
+    },
+    "product": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "purpose",
+        "files"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/localId"
+        },
+        "purpose": {
+          "enum": [
+            "link-input",
+            "runtime-binary",
+            "build-tool",
+            "runtime-content",
+            "metadata"
+          ]
+        },
+        "files": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/file"
+          }
+        }
+      }
+    },
+    "noArtifacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "const": "no-artifacts"
+        }
+      }
+    },
+    "artifactSet": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "products"
+      ],
+      "properties": {
+        "kind": {
+          "const": "artifact-set"
+        },
+        "products": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/product"
+          }
+        }
+      }
+    },
+    "module": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "moduleId",
+        "delivery"
+      ],
+      "properties": {
+        "moduleId": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/localId"
+        },
+        "delivery": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/noArtifacts"
+            },
+            {
+              "$ref": "#/$defs/artifactSet"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

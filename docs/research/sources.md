@@ -387,6 +387,31 @@
   `entryModules` 数组不能直接当作启动顺序。
 - package-level dependency-first order 只适合确定性 IR、diff 与 handoff，不代表跨 package system activation order。
 
+## Package product 与 artifact evidence 分层
+
+本次核对日期：2026-07-14
+
+一手资料：
+
+- CMake 3.28 `install()`：https://cmake.org/cmake/help/v3.28/command/install.html
+- OCI Image Descriptor：https://github.com/opencontainers/image-spec/blob/main/descriptor.md
+- in-toto Statement v1：https://in-toto.io/Statement/v1
+- SLSA Build Provenance v1.2：https://slsa.dev/spec/v1.2/build-provenance
+
+结论：
+
+- CMake build-tree output 与 install product 是两层权威；`RUNTIME`、`LIBRARY`、`ARCHIVE`、component 和 relative
+  destination 等 install facts 不能由 codemodel artifact path 或扩展名稳定推导。
+- package 作者应声明 backend-neutral logical product intent；platform/configuration-specific filename、path、size 和 digest 属于一次
+  build/acquisition 后生成的 Artifact Manifest。
+- content evidence 至少需要 independently verified byte size 与 digest；Asharia v1 固定 SHA-256 和 portable relative path，并在同一
+  package root 内拒绝 exact/Unicode case-fold collision。
+- Source Build Plan 属于 build definition evidence，Package Artifact Manifest 属于 output subject evidence；两者以 fingerprint 显式关联，
+  但不因此声明 SLSA、OCI 或 in-toto compliance。
+- Package Artifact Manifest、Content pipeline 的 Asset Product Manifest 和 Project Product Pipeline 的 `asharia.stage.json` 是三种不同
+  identity/invalidation/publication authority，不能复用一个 schema。
+- verified runtime binary 不自动等于可 dynamic load；ABI、factory、scope、lifecycle、trust 和 rollback 必须由独立 contract/plan 决定。
+
 ## 项目 Build、Cook、Package 与 Launch
 
 本次核对日期：2026-07-12

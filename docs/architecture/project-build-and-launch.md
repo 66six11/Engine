@@ -52,10 +52,14 @@ Editor 的 Build、Build & Run、Cook、Package 和 Launch Profiles 只是这条
 | Source Project | 项目描述、source assets、项目代码、embedded packages 和版本化配置 | 否 |
 | Resolved Project | `asharia.packages.lock.json` 与 Host Profile 过滤后的精确 package/module graph | 否 |
 | Native Build Tree | CMake/Ninja/MSVC/ClangCL 的 object、library、tool 和 executable 输出 | 否 |
+| Package Artifact Manifest | exact package/module/product 对 package-relative files、size、SHA-256 与 Source Build Plan provenance 的中间证据 | 否，仍需 composition/stage |
 | Cook Cache | 由 source、settings、tool version 和 target profile 决定的可重建 artifact cache | 否 |
 | Stage Layout | executable、runtime libraries、runtime config、cooked content、license 与符号策略组成的可运行目录树 | 是，经过验证后 |
 | Distribution Artifact | 从 stage 生成的 archive、installer、platform bundle 或 store payload | 是 |
 | Launch Session | 对一次本地或远程运行的身份、进程、日志、ready、exit、crash 和停止状态的记录 | 否 |
+
+[Package Product & Artifact Evidence v1](adr-package-product-artifact-evidence-v1.md) 已实现 Package Artifact Manifest 的 closed schema
+与纯内存 verifier；它不执行 Build/Stage，也不替代本表中的最终 `Stage Layout`。
 
 ### 4.1 流水线阶段
 

@@ -134,8 +134,8 @@ powershell -ExecutionPolicy Bypass -File tools\count-code-lines.ps1
   `--output build/package-topology.json`，不要提交该生成文件。
 - `check_package_contracts.py` 使用 Draft 2020-12 schema、显式 discriminator dispatcher 和跨字段 semantic rules 验证
   installable v2、Feature Set v2、Project Manifest v1、Package Lockfile v1、Host Profile v1、Package Source Build v1、
-  Source Topology Snapshot v1、CMake Codemodel Snapshot v1 与 Source Build Plan v1 contracts；也可以显式传入一个或多个
-  fixture/manifest 路径。
+  Package Product Declaration v1、Package Artifact Manifest v1、Source Topology Snapshot v1、CMake Codemodel Snapshot v1 与
+  Source Build Plan v1 contracts；也可以显式传入一个或多个 fixture/manifest 路径。
 - `tools/tests/test_package_topology.py` 覆盖正常 inventory、missing dependency、cycle、duplicate identity、
   catalog 泄漏和未声明 CMake target 等负向路径。
 - `tools/tests/test_package_contracts.py` 覆盖 portable v2 system/integration、封闭 schema、引用、module cycle、
@@ -152,4 +152,8 @@ powershell -ExecutionPolicy Bypass -File tools\count-code-lines.ps1
   cross-document drift、selected payload 重哈希、原子失败、排列确定性以及 no-resolver/no-write 边界。
 - `tools/tests/test_host_profile_contracts.py` 覆盖五个固定 Host policies、normalized writer、module/contribution filtering、
   capability grants 与 platform/role/shipping closure rejection。
+- `tools/tests/test_package_product_contracts.py` 覆盖 Product Declaration exact binding、closed fields、module/product uniqueness、
+  canonical normalization、Artifact Manifest portable paths 与 candidate/locked snapshot drift。
+- `tools/tests/test_package_artifact_evidence.py` 覆盖 pure per-package verifier 的 coverage、path/size/SHA-256、stale provenance、
+  determinism、atomicity、immutability、no-IO 与 Discovery → Source Build Plan synthetic handoff。
 - `count-code-lines.ps1` 只统计 Git tracked 文本文件，默认排除 Markdown；需要把文档纳入统计时加 `-IncludeDocs`。
