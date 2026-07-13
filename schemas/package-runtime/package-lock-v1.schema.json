@@ -1,0 +1,248 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.asharia.dev/package-runtime/package-lock-v1.schema.json",
+  "title": "Asharia Package Lockfile v1",
+  "description": "Canonical exact package graph selected for one Project Manifest and engine API version.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "schemaVersion",
+    "resolver",
+    "inputs",
+    "roots",
+    "nodes"
+  ],
+  "properties": {
+    "schema": {
+      "const": "com.asharia.package-lock"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "resolver": {
+      "$ref": "#/$defs/resolver"
+    },
+    "inputs": {
+      "$ref": "#/$defs/inputs"
+    },
+    "roots": {
+      "$ref": "#/$defs/roots"
+    },
+    "nodes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/node"
+      }
+    }
+  },
+  "$defs": {
+    "integrity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "algorithm",
+        "digest"
+      ],
+      "properties": {
+        "algorithm": {
+          "const": "sha256"
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "resolver": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "policyVersion"
+      ],
+      "properties": {
+        "version": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/semanticVersion"
+        },
+        "policyVersion": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "inputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "engineApiVersion",
+        "projectManifestIntegrity"
+      ],
+      "properties": {
+        "engineApiVersion": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/semanticVersion"
+        },
+        "projectManifestIntegrity": {
+          "$ref": "#/$defs/integrity"
+        }
+      }
+    },
+    "packageKind": {
+      "enum": [
+        "installable-capability",
+        "feature-set"
+      ]
+    },
+    "exactNodeReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "packageKind"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/packageId"
+        },
+        "version": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/semanticVersion"
+        },
+        "packageKind": {
+          "$ref": "#/$defs/packageKind"
+        }
+      }
+    },
+    "roots": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "directPackages",
+        "directFeatureSets"
+      ],
+      "properties": {
+        "directPackages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/exactNodeReference"
+          }
+        },
+        "directFeatureSets": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/exactNodeReference"
+          }
+        }
+      }
+    },
+    "relativePath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?![A-Za-z]:)(?!.*\\\\).+$"
+    },
+    "bundledSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "distributionId",
+        "relativePath"
+      ],
+      "properties": {
+        "kind": {
+          "const": "bundled"
+        },
+        "distributionId": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/packageId"
+        },
+        "relativePath": {
+          "$ref": "#/$defs/relativePath"
+        }
+      }
+    },
+    "projectEmbeddedSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "relativePath"
+      ],
+      "properties": {
+        "kind": {
+          "const": "project-embedded"
+        },
+        "relativePath": {
+          "$ref": "#/$defs/relativePath"
+        }
+      }
+    },
+    "localSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "sourceId"
+      ],
+      "properties": {
+        "kind": {
+          "const": "local"
+        },
+        "sourceId": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/packageId"
+        }
+      }
+    },
+    "source": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/bundledSource"
+        },
+        {
+          "$ref": "#/$defs/projectEmbeddedSource"
+        },
+        {
+          "$ref": "#/$defs/localSource"
+        }
+      ]
+    },
+    "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "packageKind",
+        "source",
+        "manifestIntegrity",
+        "payloadIntegrity",
+        "dependencies"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/packageId"
+        },
+        "version": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/semanticVersion"
+        },
+        "packageKind": {
+          "$ref": "#/$defs/packageKind"
+        },
+        "source": {
+          "$ref": "#/$defs/source"
+        },
+        "manifestIntegrity": {
+          "$ref": "#/$defs/integrity"
+        },
+        "payloadIntegrity": {
+          "$ref": "#/$defs/integrity"
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/exactNodeReference"
+          }
+        }
+      }
+    }
+  }
+}

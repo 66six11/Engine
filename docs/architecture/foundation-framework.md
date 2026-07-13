@@ -401,6 +401,10 @@ F0 的第一项已由 `asharia.package.json` schema v1 与 `tools/check_package_
 `plannedOwnershipRoot` 聚合到未来完整系统。F0 尚未因为这项落地而整体完成：Kernel allowlist、public consumers、optional dependency
 和完整 Host role 标注仍需后续 Slice；它们不得被猜测后一次性写入空字段。
 
+F1 的数据合同基线已经覆盖 installable/Feature Set/Project Manifest/Package Lockfile 与五种 Host Profile v1，并提供
+deterministic logical module/contribution projection。它仍不代表 F1 完成：candidate discovery、resolver、生产 lock/profile、
+build/artifact descriptor 与 generated Build/Activation Plan 尚未实现；Host Runtime 也不会在这些可执行合同存在前解释逻辑 IDs。
+
 ## 拒绝的替代方案
 
 ### 巨型 `engine` / `EngineContext`

@@ -2,6 +2,12 @@
 
 本项目使用 Conan 2 + CMake Presets。日常开发以 MSVC 预设为主，代码检查以 ClangCL 预设为主；四个入口全部使用 Ninja 生成器。
 
+仓库 Python 工具依赖单独安装：
+
+```powershell
+python -m pip install -r tools\requirements.txt
+```
+
 ## 预设约定
 
 - `msvc-debug`：日常 Debug 构建。
@@ -114,7 +120,12 @@ powershell -ExecutionPolicy Bypass -File tools\check-text-encoding.ps1
 powershell -ExecutionPolicy Bypass -File tools\check-doc-sync.ps1
 powershell -ExecutionPolicy Bypass -File tools\check-asset-boundaries.ps1
 python tools\check_package_topology.py
+python tools\check_package_contracts.py
 python -m unittest discover -s tools\tests -p "test_package_topology.py"
+python -m unittest discover -s tools\tests -p "test_package_contracts.py"
+python -m unittest discover -s tools\tests -p "test_package_project_contracts.py"
+python -m unittest discover -s tools\tests -p "test_package_lock_contracts.py"
+python -m unittest discover -s tools\tests -p "test_host_profile_contracts.py"
 powershell -ExecutionPolicy Bypass -File tools\count-code-lines.ps1
 ```
 
@@ -125,6 +136,17 @@ powershell -ExecutionPolicy Bypass -File tools\count-code-lines.ps1
 - `check_package_topology.py` 验证全部 source-boundary manifests 的 identity、dependency DAG、target owner/role、
   target dependency keys 和直接 CMake target 声明；需要机器快照时使用
   `--output build/package-topology.json`，不要提交该生成文件。
+- `check_package_contracts.py` 使用 Draft 2020-12 schema、显式 discriminator dispatcher 和跨字段 semantic rules 验证
+  installable v2、Feature Set v2、Project Manifest v1、Package Lockfile v1 与 Host Profile v1 contracts；也可以显式传入一个或多个
+  fixture/manifest 路径。
 - `tools/tests/test_package_topology.py` 覆盖正常 inventory、missing dependency、cycle、duplicate identity、
   catalog 泄漏和未声明 CMake target 等负向路径。
+- `tools/tests/test_package_contracts.py` 覆盖 portable v2 system/integration、封闭 schema、引用、module cycle、
+  catalog policy 和 deterministic diagnostics。
+- `tools/tests/test_package_project_contracts.py` 覆盖 Project Manifest、Feature Set、dispatcher isolation、selected graph cycle
+  与 normalized writer determinism/encoding。
+- `tools/tests/test_package_lock_contracts.py` 覆盖 exact graph closure、source/integrity、cross-document selected-result validation、
+  package tree digest 与 normalized lock writer determinism。
+- `tools/tests/test_host_profile_contracts.py` 覆盖五个固定 Host policies、normalized writer、module/contribution filtering、
+  capability grants 与 platform/role/shipping closure rejection。
 - `count-code-lines.ps1` 只统计 Git tracked 文本文件，默认排除 Markdown；需要把文档纳入统计时加 `-IncludeDocs`。

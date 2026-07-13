@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.asharia.dev/package-runtime/project-package-manifest-v1.schema.json",
+  "title": "Asharia Project Package Manifest v1",
+  "description": "Portable project intent containing direct package selections, Feature Sets, and package option overrides.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "schemaVersion",
+    "directPackages",
+    "directFeatureSets",
+    "packageOptions"
+  ],
+  "properties": {
+    "schema": {
+      "const": "com.asharia.project-packages"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "directPackages": {
+      "type": "array",
+      "items": {
+        "$ref": "package-contract-common-v1.schema.json#/$defs/packageRequirement"
+      }
+    },
+    "directFeatureSets": {
+      "type": "array",
+      "items": {
+        "$ref": "package-contract-common-v1.schema.json#/$defs/packageRequirement"
+      }
+    },
+    "packageOptions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/packageOptions"
+      }
+    }
+  },
+  "$defs": {
+    "packageOptions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "packageId",
+        "values"
+      ],
+      "properties": {
+        "packageId": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/packageId"
+        },
+        "values": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/optionValue"
+          }
+        }
+      }
+    },
+    "optionValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "value"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/localId"
+        },
+        "value": {
+          "oneOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

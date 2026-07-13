@@ -1,0 +1,25 @@
+{
+  "schema": "com.asharia.project-packages",
+  "schemaVersion": 1,
+  "directPackages": [],
+  "directFeatureSets": [
+    {
+      "id": "com.asharia.features.standard3d",
+      "version": {
+        "kind": "exact",
+        "version": "0.1.0"
+      }
+    }
+  ],
+  "packageOptions": [
+    {
+      "packageId": "com.asharia.system.rendering-vulkan",
+      "values": [
+        {
+          "id": "validation",
+          "value": false
+        }
+      ]
+    }
+  ]
+}

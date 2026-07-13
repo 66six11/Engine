@@ -1,0 +1,26 @@
+{
+  "schema": "com.asharia.host-profile",
+  "schemaVersion": 1,
+  "hostKind": "dedicated-server",
+  "targetPlatform": "com.asharia.platform.windows",
+  "requiredRoles": [
+    "contract",
+    "runtime",
+    "implementation",
+    "content"
+  ],
+  "allowedRoles": [
+    "contract",
+    "runtime",
+    "implementation",
+    "diagnostics",
+    "content"
+  ],
+  "allowedShippingClasses": [
+    "runtime"
+  ],
+  "contributionFilter": {
+    "mode": "allow-compatible"
+  },
+  "grantedCapabilities": []
+}

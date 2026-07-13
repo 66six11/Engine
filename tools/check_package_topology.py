@@ -140,6 +140,9 @@ def inspect_repository(root: Path) -> tuple[dict[str, Any], list[str]]:
             _error(errors, relative_path, "manifest root must be an object")
             continue
 
+        if manifest.get("schemaVersion") == 2 or manifest.get("packageKind") == "installable-capability":
+            continue
+
         if manifest.get("schemaVersion") != 1:
             _error(errors, relative_path, "schemaVersion must be 1")
         if manifest.get("packageKind") != "source-boundary":

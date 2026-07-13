@@ -30,9 +30,9 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install Conan
+      - name: Install Python tooling
         shell: pwsh
-        run: python -m pip install "conan==2.26.2"
+        run: python -m pip install "conan==2.26.2" -r tools\requirements.txt
 
       - name: Install Vulkan SDK
         shell: pwsh
@@ -90,11 +90,16 @@ jobs:
             exit $whitespaceExitCode
           }
 
-      - name: Check package topology
+      - name: Check package manifests
         shell: pwsh
         run: |
           python -m unittest discover -s tools\tests -p "test_package_topology.py"
+          python -m unittest discover -s tools\tests -p "test_package_contracts.py"
+          python -m unittest discover -s tools\tests -p "test_package_project_contracts.py"
+          python -m unittest discover -s tools\tests -p "test_package_lock_contracts.py"
+          python -m unittest discover -s tools\tests -p "test_host_profile_contracts.py"
           python tools\check_package_topology.py
+          python tools\check_package_contracts.py
 
       - name: Check asset package boundaries
         shell: pwsh

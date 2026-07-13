@@ -1,0 +1,20 @@
+{
+  "schema": "com.asharia.package-lock",
+  "schemaVersion": 1,
+  "resolver": {
+    "version": "0.1.0",
+    "policyVersion": 1
+  },
+  "inputs": {
+    "engineApiVersion": "0.1.0",
+    "projectManifestIntegrity": {
+      "algorithm": "sha256",
+      "digest": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  },
+  "roots": {
+    "directPackages": [],
+    "directFeatureSets": []
+  },
+  "nodes": []
+}

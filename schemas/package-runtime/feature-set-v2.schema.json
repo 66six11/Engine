@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.asharia.dev/package-runtime/feature-set-v2.schema.json",
+  "title": "Asharia Feature Set Manifest v2",
+  "description": "Portable author contract for one versioned set of complete installable packages and nested Feature Sets.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "packageKind",
+    "id",
+    "version",
+    "displayName",
+    "description",
+    "engineApi",
+    "packages",
+    "featureSets"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 2
+    },
+    "packageKind": {
+      "const": "feature-set"
+    },
+    "id": {
+      "$ref": "package-contract-common-v1.schema.json#/$defs/packageId"
+    },
+    "version": {
+      "$ref": "package-contract-common-v1.schema.json#/$defs/semanticVersion"
+    },
+    "displayName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500
+    },
+    "engineApi": {
+      "$ref": "package-contract-common-v1.schema.json#/$defs/versionConstraint"
+    },
+    "packages": {
+      "type": "array",
+      "items": {
+        "$ref": "package-contract-common-v1.schema.json#/$defs/packageRequirement"
+      }
+    },
+    "featureSets": {
+      "type": "array",
+      "items": {
+        "$ref": "package-contract-common-v1.schema.json#/$defs/packageRequirement"
+      }
+    }
+  }
+}

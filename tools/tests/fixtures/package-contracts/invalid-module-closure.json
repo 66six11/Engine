@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 2,
+  "packageKind": "installable-capability",
+  "id": "com.asharia.system.invalid-module-closure",
+  "version": "0.1.0",
+  "displayName": "Invalid Module Closure",
+  "description": "A runtime module depends on an editor-only module unavailable to every runtime host.",
+  "catalogType": "system",
+  "engineApi": {
+    "kind": "exact",
+    "version": "0.1.0"
+  },
+  "dependencies": [],
+  "options": [],
+  "modules": [
+    {
+      "id": "runtime",
+      "role": "runtime",
+      "dependsOn": [
+        "editor-support"
+      ],
+      "hostKinds": [
+        "editor",
+        "runtime"
+      ],
+      "platforms": [
+        "com.asharia.platform.windows",
+        "com.asharia.platform.linux"
+      ],
+      "shippingClass": "runtime",
+      "requiredCapabilities": []
+    },
+    {
+      "id": "editor-support",
+      "role": "editor",
+      "dependsOn": [],
+      "hostKinds": [
+        "editor"
+      ],
+      "platforms": [
+        "com.asharia.platform.windows"
+      ],
+      "shippingClass": "editor",
+      "requiredCapabilities": []
+    }
+  ],
+  "entryModules": {
+    "runtime": [
+      "runtime"
+    ],
+    "authoring": [
+      "editor-support"
+    ]
+  },
+  "contentRoots": [],
+  "contributions": []
+}

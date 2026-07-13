@@ -67,6 +67,27 @@ class PackageTopologyTests(unittest.TestCase):
         self.assertEqual(1, inventory["summary"]["packageCount"])
         self.assertEqual("packages/example/asharia.package.json", inventory["packages"][0]["path"])
 
+    def test_installable_v2_manifest_is_left_to_the_contract_validator(self) -> None:
+        self.write_package("packages/example", "com.asharia.example")
+        installable_root = self.root / "packages/installable"
+        installable_root.mkdir(parents=True)
+        (installable_root / "asharia.package.json").write_text(
+            json.dumps(
+                {
+                    "schemaVersion": 2,
+                    "packageKind": "installable-capability",
+                },
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        inventory, errors = self.inspect()
+
+        self.assertEqual([], errors)
+        self.assertEqual(1, inventory["summary"]["packageCount"])
+
     def test_unknown_dependency_is_rejected(self) -> None:
         self.write_package(
             "packages/example",

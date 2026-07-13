@@ -186,7 +186,9 @@ package 用来承载可选能力：
 
 ## 目标 Package Manager 体验
 
-状态：Planned Architecture。当前 manifests 仍以文档化和审查边界为主，尚未实现完整 resolver、lockfile 或 Editor Package Manager。
+状态：Planned Architecture。source-boundary、installable、Project Manifest、Feature Set、Package Lockfile 与 Host Profile v1
+的合同/校验基线已经落地，尚未实现 resolver、candidate discovery、Build/Activation Plan、生产 catalog/lockfile 或 Editor
+Package Manager。
 
 长期目标是让用户通过 Editor Package Manager 为项目添加、移除和升级**完整可安装能力**。Data、Content、World、Input、Rendering、Physics 等基础能力各自以完整 System Package 表达；Advanced Camera、Dialogue、Weather 等附加能力以完整 Feature Package 表达；跨可选包桥接使用 Integration Package。三者都不能拆成需要用户手工拼装的 contract/runtime/editor/backend fragments。
 
@@ -196,7 +198,7 @@ package 用来承载可选能力：
 flowchart LR
     Editor["Editor Package Manager UI"]
     CLI["CLI / CI"]
-    Manifest["asharia.packages.json<br/>complete Systems + Features + Integrations"]
+    Manifest["asharia.packages.json<br/>direct packages + Feature Sets + options"]
     Resolver["Headless Resolver"]
     Lock["asharia.packages.lock.json"]
     Build["Conan / CMake / Cook Plan"]
@@ -237,13 +239,23 @@ flowchart LR
 
 推荐的默认组合不是硬编码 Host 依赖，而是版本化 Feature Set meta-packages：
 
-- `Asharia.Minimal`：Kernel、Host Runtime 和测试所需最小 contracts/implementations；
+- `com.asharia.features.minimal`：Kernel、Host Runtime 和测试所需最小 contracts/implementations；
 - `com.asharia.features.standard3d`：完整 Runtime Storage & IO、Settings & Console、Data/Content/World/Tasks/Input/Desktop Platform Support/Scripting (.NET)/Rendering (Vulkan)/Physics/Animation/Audio/Observability systems；
 - `com.asharia.features.editor-authoring`：Standard3D 加完整 Editor & Authoring、Project Product Pipeline systems；asset/shader tools 已随所属 Content/Rendering systems 交付；
 - `com.asharia.features.dedicated-server`：Runtime Storage、Settings、Data、Content、World、Tasks、Scripting、Physics、Networking、Observability，排除 renderer/audio/editor；
-- `Asharia.AssetWorker`：asset/shader tool pipeline，排除 runtime world/rendering。
+- `com.asharia.features.asset-worker`：asset/shader tool pipeline，排除 runtime world/rendering。
 
 Feature Set 持续存在于 `asharia.packages.json`；成员是间接依赖，不能在仍被 Feature Set 要求时单独删除。Project Template 则只在创建项目时一次性写入 direct dependencies、设置和样例内容，之后不持续约束成员。需要自由增删 Standard3D 成员时，应使用 Project Template 展开，而不是保留 Standard3D Feature Set。
+
+`asharia.packages.json` 的 direct intent、独立 package option overrides、Feature Set author contract 与 constraint
+合并语义见 [ADR：Project Package Manifest v1](adr-project-package-manifest-v1.md)。该 ADR 当前为 `Proposed`；Project Manifest
+v1 / Feature Set v2 schemas、validator、normalized writer 与 synthetic fixtures 已实现，但 resolver、生产 lockfile 与任何生产
+Feature Set 尚未实现。Candidate source、exact graph、integrity byte domain 与 stale-lock 规则见
+[ADR：Package Candidate 与 Lockfile v1](adr-package-candidate-lockfile-v1.md)；其 schema、validator、digest helpers、normalized
+writer 与 synthetic fixtures 已实现，但没有生产 resolver 或 lockfile。
+
+[ADR：Host Profile v1](adr-host-profile-v1.md) 冻结五个标准宿主的 required/allowed roles、shipping/contribution policy、
+capability grants 与确定性 module/contribution 投影；当前输出仍只是逻辑 identities，不是 Build/Activation Plan。
 
 ### Feature Package 不是 API 包装器
 
@@ -277,6 +289,13 @@ project + asharia.packages.lock.json + conan.lock + asharia.build.json
 完整设计见 [project-build-and-launch.md](project-build-and-launch.md)。
 
 ## Package Manifest
+
+Installable Capability Package 的 v2 可移植作者合同、独立 build descriptor 边界和明确后置的
+source/integrity 证据，见 [ADR：Installable Package Manifest v2](adr-installable-package-manifest-v2.md)。当前已落地
+JSON Schema、semantic validator 和 synthetic fixtures；ADR 仍为 `Proposed`，不表示 resolver、production plans/lockfile
+或任何生产 catalog entry 已经落地。精确 lock 合同见
+[ADR：Package Candidate 与 Lockfile v1](adr-package-candidate-lockfile-v1.md)，Host 过滤合同见
+[ADR：Host Profile v1](adr-host-profile-v1.md)。
 
 当前每个已落地的 engine、source package、app 和 root-built tool 入口都维护一个名为 `asharia.package.json` 的边界清单。
 这是当前仓库事实，不表示它们都能成为 Package Manager 安装项：
@@ -334,12 +353,14 @@ v1 的 `ownerDomain` 取值为 `foundation/platform/observability/data/content/w
 必须使用 `test`，其他 target 不能借用该 role。新增 domain 或 role 必须先有真实 owner 差异，并同步 validator 和本文；不能用自由字符串
 掩盖分类困难。
 
-`python tools/check_package_topology.py` 从全部 manifests 生成确定排序的内存 inventory，验证 package identity、dependency
+`python tools/check_package_topology.py` 从全部 v1 manifests 生成确定排序的内存 inventory，验证 package identity、dependency
 DAG、target owner/role、`targetDependencies` 和直接 CMake target 声明；`--output build/package-topology.json` 可为审查或后续 resolver
 生成机器可读快照。生成物位于 `build/`，不提交，避免维护第二份手写事实源。当前 CMake 仍是链接和 target 创建真相；validator
-负责发现 manifest 漂移，不从 manifest 生成构建系统。
+负责发现 manifest 漂移，不从 manifest 生成构建系统。installable v2、Feature Set v2 与 Project Manifest v1 author
+contracts 与 Host Profile v1 由 `python tools/check_package_contracts.py` 按 `schemas/package-runtime/` 中的 Draft 2020-12
+schemas、显式 discriminator dispatcher 与跨字段语义规则独立验证。
 
-当前仓库的多个物理 `asharia.package.json` 仍可能共同构成一个未来完整系统，例如 renderer、RenderGraph、Vulkan RHI、materials 和 shader tools。迁移期间这些 manifests 用于审查 source/build 边界；它们不自动获得 Package Manager 用户条目。目标 Installable Capability Package manifest 位于 `packages/systems`、`packages/features`、`packages/integrations`、`packages/asset-packs` 或 `packages/templates` 下的发行根，汇总其内部 source packages/targets/modules/contributions，并成为 `asharia.packages.json` 可直接依赖的能力身份。
+当前仓库的多个物理 `asharia.package.json` 仍可能共同构成一个未来完整系统，例如 renderer、RenderGraph、Vulkan RHI、materials 和 shader tools。迁移期间这些 manifests 用于审查 source/build 边界；它们不自动获得 Package Manager 用户条目。目标 Installable Capability Package manifest 位于 `packages/systems`、`packages/features`、`packages/integrations`、`packages/asset-packs` 或 `packages/templates` 下的发行根，只描述 dependencies、logical modules、platform/host applicability、entry modules、content roots 和 contributions，并成为 `asharia.packages.json` 可直接依赖的能力身份。source-boundary 与 CMake target 的目标映射进入独立 `asharia.package.build.json`，不进入可移植 v2 作者合同。
 
 `engine/*` 是 bootstrap component，不是用户可选能力。其 source-boundary manifest 使用
 `sourceRole: "engine-component"`，并同样保持 `selectable: false` 和 `catalogVisible: false`；Package Manager catalog 不得显示这些条目。

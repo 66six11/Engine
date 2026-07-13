@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 2,
+  "packageKind": "installable-capability",
+  "id": "com.asharia.system.invalid-schema",
+  "version": "0.1.0",
+  "displayName": "Invalid Schema",
+  "description": "Contains a build-system field that is not portable author metadata.",
+  "catalogType": "system",
+  "engineApi": {
+    "kind": "exact",
+    "version": "0.1.0"
+  },
+  "dependencies": [],
+  "options": [],
+  "modules": [],
+  "entryModules": {},
+  "contentRoots": [],
+  "contributions": [],
+  "sourceBoundaries": [
+    "com.asharia.invalid.source"
+  ]
+}

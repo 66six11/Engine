@@ -1,0 +1,77 @@
+{
+  "schemaVersion": 2,
+  "packageKind": "installable-capability",
+  "id": "com.asharia.integration.synthetic-bridge",
+  "version": "1.0.0-beta.1",
+  "displayName": "Synthetic Bridge",
+  "description": "Validates a portable integration contribution.",
+  "catalogType": "integration",
+  "engineApi": {
+    "kind": "exact",
+    "version": "1.0.0"
+  },
+  "dependencies": [
+    {
+      "id": "com.asharia.system.rendering",
+      "version": {
+        "kind": "range",
+        "minimumInclusive": "1.0.0",
+        "maximumExclusive": "2.0.0",
+        "allowPrerelease": false
+      }
+    },
+    {
+      "id": "com.asharia.system.world",
+      "version": {
+        "kind": "exact",
+        "version": "1.4.0"
+      }
+    }
+  ],
+  "options": [
+    {
+      "id": "quality",
+      "type": "enum",
+      "default": "balanced",
+      "values": [
+        "balanced",
+        "quality"
+      ],
+      "affects": [
+        "build"
+      ]
+    }
+  ],
+  "modules": [
+    {
+      "id": "bridge",
+      "role": "implementation",
+      "dependsOn": [],
+      "hostKinds": [
+        "editor",
+        "runtime"
+      ],
+      "platforms": [
+        "com.asharia.platform.any"
+      ],
+      "shippingClass": "runtime",
+      "requiredCapabilities": [
+        "com.asharia.capability.registry-read"
+      ]
+    }
+  ],
+  "entryModules": {},
+  "contentRoots": [],
+  "contributions": [
+    {
+      "id": "com.asharia.contribution.synthetic-bridge",
+      "kind": "com.asharia.contribution.system-bridge",
+      "module": "bridge",
+      "hostKinds": [
+        "editor",
+        "runtime"
+      ],
+      "shippingClass": "runtime"
+    }
+  ]
+}
