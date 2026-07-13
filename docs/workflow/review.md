@@ -41,6 +41,7 @@
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools\check-text-encoding.ps1
 powershell -ExecutionPolicy Bypass -File tools\check-doc-sync.ps1
+python tools\check_package_topology.py
 git diff --check
 python tools\review-vulkan-cpp.py . --exclude apps/studio --exclude apps/editor/src/native_bridge --exclude-glob "apps/editor/src/editor_shared_viewport*" --fail-on warning
 cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --preset clangcl-debug && cmake --build --preset clangcl-debug"
@@ -56,7 +57,8 @@ cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --pre
 
 ClangCL test gate 将 production/test translation units 的所有 clang-tidy diagnostics 作为 error。
 `.github/workflows/native-code-quality.yml` 固定在包含 Visual Studio 2022 的 `windows-2022` hosted runner 上运行 encoding、diff whitespace、
-asset boundary、Vulkan package boundary/safety heuristic review、两编译器 build 和 CTest。Vulkan review
+package topology、asset boundary、Vulkan package boundary/safety heuristic review、两编译器 build 和 CTest。Package topology
+从 source-boundary manifests 生成 inventory 并对证直接 CMake target；Vulkan review
 脚本只产生需要人工确认的保守提示；CI 以 `--fail-on warning` 阻止 warning/error，info 不阻塞。ClangCL hosted build 使用 `--parallel 2`，避免并发 clang-tidy 超出 runner 内存。Hosted CI 不运行 GPU/window smokes；下方相关 smoke matrix
 仍是 local pre-commit gate，并且需要使用两个 standard debug presets 运行。
 

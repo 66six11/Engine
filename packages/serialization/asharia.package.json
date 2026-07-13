@@ -1,4 +1,11 @@
 {
+  "schemaVersion": 1,
+  "packageKind": "source-boundary",
+  "sourceRole": "module-group",
+  "ownerDomain": "data",
+  "plannedOwnershipRoot": "com.asharia.system.data-model",
+  "selectable": false,
+  "catalogVisible": false,
   "name": "com.asharia.serialization",
   "version": "0.1.0",
   "displayName": "Asharia Engine Serialization",
@@ -6,6 +13,10 @@
   "dependencies": ["com.asharia.core", "com.asharia.reflection"],
   "targets": ["asharia-serialization"],
   "testTargets": ["asharia-serialization-smoke-tests"],
+  "targetRoles": {
+    "asharia-serialization": "compatibility",
+    "asharia-serialization-smoke-tests": "test"
+  },
   "targetDependencies": {
     "asharia-serialization": ["asharia-core", "asharia-reflection"],
     "asharia-serialization-smoke-tests": ["asharia-serialization"]

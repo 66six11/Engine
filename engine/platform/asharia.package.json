@@ -1,10 +1,20 @@
 {
+  "schemaVersion": 1,
+  "packageKind": "source-boundary",
+  "sourceRole": "engine-component",
+  "ownerDomain": "platform",
+  "plannedOwnershipRoot": "engine/platform",
+  "selectable": false,
+  "catalogVisible": false,
   "name": "com.asharia.platform",
   "version": "0.1.0",
   "displayName": "Asharia Engine Platform",
   "description": "Reserved platform abstraction boundary shared by host applications and packages.",
   "dependencies": ["com.asharia.core"],
   "targets": ["asharia-platform"],
+  "targetRoles": {
+    "asharia-platform": "contract"
+  },
   "targetDependencies": {
     "asharia-platform": ["asharia-core"]
   }

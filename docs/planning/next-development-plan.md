@@ -65,6 +65,10 @@
 - memory domain/budget/pressure 与 bootstrap-to-runtime diagnostics；
 - synthetic Minimal/Runtime/Server/Tool Host composition tests。
 
+第一项从 machine classification 开始：当前 manifests 只表示 `source-boundary`，通过 target role 与
+`plannedOwnershipRoot` 映射未来完整系统，并由 topology gate 对证 CMake；物理目录合并、resolver 和 Host activation
+分别属于后续 Slice，不能在这一步混做。
+
 验收：
 
 - Editor/CLI/CI 对同一 manifest 生成相同 lock/activation graph；

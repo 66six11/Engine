@@ -1,4 +1,11 @@
 {
+  "schemaVersion": 1,
+  "packageKind": "source-boundary",
+  "sourceRole": "module-group",
+  "ownerDomain": "data",
+  "plannedOwnershipRoot": "com.asharia.system.data-model",
+  "selectable": false,
+  "catalogVisible": false,
   "name": "com.asharia.cpp-binding",
   "version": "0.1.0",
   "displayName": "Asharia Engine C++ Binding",
@@ -6,6 +13,10 @@
   "dependencies": ["com.asharia.core", "com.asharia.schema"],
   "targets": ["asharia-cpp-binding"],
   "testTargets": ["asharia-cpp-binding-smoke-tests"],
+  "targetRoles": {
+    "asharia-cpp-binding": "runtime",
+    "asharia-cpp-binding-smoke-tests": "test"
+  },
   "targetDependencies": {
     "asharia-cpp-binding": ["asharia-core", "asharia-schema"],
     "asharia-cpp-binding-smoke-tests": ["asharia-cpp-binding"]

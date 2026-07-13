@@ -90,6 +90,12 @@ jobs:
             exit $whitespaceExitCode
           }
 
+      - name: Check package topology
+        shell: pwsh
+        run: |
+          python -m unittest discover -s tools\tests -p "test_package_topology.py"
+          python tools\check_package_topology.py
+
       - name: Check asset package boundaries
         shell: pwsh
         run: powershell -ExecutionPolicy Bypass -File tools\check-asset-boundaries.ps1

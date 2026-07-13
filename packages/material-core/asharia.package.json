@@ -1,4 +1,11 @@
 {
+  "schemaVersion": 1,
+  "packageKind": "source-boundary",
+  "sourceRole": "module-group",
+  "ownerDomain": "rendering",
+  "plannedOwnershipRoot": "com.asharia.system.rendering-vulkan",
+  "selectable": false,
+  "catalogVisible": false,
   "name": "com.asharia.material-core",
   "version": "0.1.0",
   "displayName": "Asharia Engine Material Core",
@@ -6,6 +13,10 @@
   "dependencies": ["com.asharia.core"],
   "targets": ["asharia-material-core"],
   "testTargets": ["asharia-material-core-smoke-tests"],
+  "targetRoles": {
+    "asharia-material-core": "contract",
+    "asharia-material-core-smoke-tests": "test"
+  },
   "targetDependencies": {
     "asharia-material-core": ["asharia-core"],
     "asharia-material-core-smoke-tests": ["asharia-material-core"]

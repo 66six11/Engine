@@ -1,4 +1,11 @@
 {
+  "schemaVersion": 1,
+  "packageKind": "source-boundary",
+  "sourceRole": "module-group",
+  "ownerDomain": "product",
+  "plannedOwnershipRoot": "com.asharia.system.project-product",
+  "selectable": false,
+  "catalogVisible": false,
   "name": "com.asharia.project-core",
   "version": "0.1.0",
   "displayName": "Asharia Engine Project Core",
@@ -6,6 +13,11 @@
   "dependencies": ["com.asharia.core", "com.asharia.archive"],
   "targets": ["asharia-project-core", "asharia-project-core-io"],
   "testTargets": ["asharia-project-core-smoke-tests"],
+  "targetRoles": {
+    "asharia-project-core": "contract",
+    "asharia-project-core-io": "runtime",
+    "asharia-project-core-smoke-tests": "test"
+  },
   "targetDependencies": {
     "asharia-project-core": ["asharia-core"],
     "asharia-project-core-io": ["asharia-project-core", "asharia-archive"],

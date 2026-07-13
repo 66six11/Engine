@@ -1,4 +1,11 @@
 {
+  "schemaVersion": 1,
+  "packageKind": "source-boundary",
+  "sourceRole": "module-group",
+  "ownerDomain": "data",
+  "plannedOwnershipRoot": "com.asharia.system.data-model",
+  "selectable": false,
+  "catalogVisible": false,
   "name": "com.asharia.persistence",
   "version": "0.1.0",
   "displayName": "Asharia Engine Persistence",
@@ -11,6 +18,10 @@
   ],
   "targets": ["asharia-persistence"],
   "testTargets": ["asharia-persistence-smoke-tests"],
+  "targetRoles": {
+    "asharia-persistence": "runtime",
+    "asharia-persistence-smoke-tests": "test"
+  },
   "targetDependencies": {
     "asharia-persistence": [
       "asharia-core",

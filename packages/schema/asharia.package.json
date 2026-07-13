@@ -1,4 +1,11 @@
 {
+  "schemaVersion": 1,
+  "packageKind": "source-boundary",
+  "sourceRole": "module-group",
+  "ownerDomain": "data",
+  "plannedOwnershipRoot": "com.asharia.system.data-model",
+  "selectable": false,
+  "catalogVisible": false,
   "name": "com.asharia.schema",
   "version": "0.1.0",
   "displayName": "Asharia Engine Schema",
@@ -6,6 +13,10 @@
   "dependencies": ["com.asharia.core"],
   "targets": ["asharia-schema"],
   "testTargets": ["asharia-schema-smoke-tests"],
+  "targetRoles": {
+    "asharia-schema": "contract",
+    "asharia-schema-smoke-tests": "test"
+  },
   "targetDependencies": {
     "asharia-schema": ["asharia-core"],
     "asharia-schema-smoke-tests": ["asharia-schema"]
