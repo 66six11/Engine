@@ -6,7 +6,9 @@ Proposed。本文设计项目根 `asharia.packages.json` 与它直接引用的 F
 Project Manifest v1 / Feature Set v2 Draft 2020-12 schemas、共享 identity/version definitions、显式 contract dispatcher、
 semantic validator、normalized writer 与 synthetic fixtures。后续 [Package Candidate 与 Lockfile v1](adr-package-candidate-lockfile-v1.md)
 也已实现 schema/validator/digest/writer 基线；[Host Profile v1](adr-host-profile-v1.md) 的 schema、固定策略与纯数据投影器
-同样已落地。尚未实现 resolver、candidate discovery、生产 Feature Set/lockfile 或 Build/Activation Plan。
+同样已落地；[Deterministic in-memory Package Resolver v1](adr-package-resolver-v1.md) 已实现 caller-supplied candidates 的稳定
+回溯与 canonical exact graph 物化。candidate discovery、locked reuse/update、生产 Feature Set/lockfile 或 Build/Activation Plan
+仍未实现。
 
 Installable Capability Package 的作者合同已经由
 [Installable Package Manifest v2](adr-installable-package-manifest-v2.md) 定义。本文只处理第二层“项目希望安装什么”，

@@ -6,8 +6,8 @@ Proposed。本文定义第一阶段可执行合同；当前 26 个 `asharia.pack
 `schemaVersion: 1`、`packageKind: "source-boundary"` 的仓库拓扑事实，不会在本阶段批量迁移。
 
 当前仓库已经实现本合同的 JSON Schema、跨字段语义校验和 synthetic fixtures；Project Manifest、Lockfile 与
-Host Profile v1 也已按独立 ADR 实现合同/校验基线。候选发现、resolver、build/artifact plan、activation plan 与生产
-catalog entry 仍后置。
+Host Profile v1 也已按独立 ADR 实现合同/校验基线；纯内存 Package Resolver v1 已支持 caller-supplied candidates 的确定性
+求解。候选发现、locked reuse/update、build/artifact plan、activation plan 与生产 catalog entry 仍后置。
 
 ## 背景
 

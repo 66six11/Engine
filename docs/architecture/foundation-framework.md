@@ -402,8 +402,9 @@ F0 的第一项已由 `asharia.package.json` schema v1 与 `tools/check_package_
 和完整 Host role 标注仍需后续 Slice；它们不得被猜测后一次性写入空字段。
 
 F1 的数据合同基线已经覆盖 installable/Feature Set/Project Manifest/Package Lockfile 与五种 Host Profile v1，并提供
-deterministic logical module/contribution projection。它仍不代表 F1 完成：candidate discovery、resolver、生产 lock/profile、
-build/artifact descriptor 与 generated Build/Activation Plan 尚未实现；Host Runtime 也不会在这些可执行合同存在前解释逻辑 IDs。
+deterministic in-memory resolver 和 logical module/contribution projection。它仍不代表 F1 完成：candidate discovery、locked
+reuse/update、生产 lock/profile、build/artifact descriptor 与 generated Build/Activation Plan 尚未实现；Host Runtime 也不会在
+这些可执行合同存在前解释逻辑 IDs。
 
 ## 拒绝的替代方案
 

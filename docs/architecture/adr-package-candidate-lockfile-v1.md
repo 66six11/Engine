@@ -4,8 +4,9 @@
 
 Proposed。本文冻结 future `engine/package-runtime` 使用的 `PackageCandidate` 内存记录与项目根
 `asharia.packages.lock.json` v1 合同。当前仓库已经实现对应 Draft 2020-12 schema、dispatcher、lock-local/cross-document
-validator、normalized writer、payload tree digest 与 synthetic fixtures；尚未实现 resolver、candidate discovery adapter 或生产
-lockfile。
+validator、normalized writer、payload tree digest 与 synthetic fixtures；
+[Deterministic in-memory Package Resolver v1](adr-package-resolver-v1.md) 也已实现 caller-supplied candidates 到 canonical exact
+lock graph 的求解基线。candidate discovery adapter、locked reuse/update workflow 与生产 lockfile 仍未实现。
 
 本文是 [Project Package Manifest v1](adr-project-package-manifest-v1.md) 的下一层：Project Manifest 保存用户直接意图，
 Candidate 表达 discovery adapter 提供的可选精确 payload，Lockfile 只保存一次成功求解选择出的精确、可验证图。
