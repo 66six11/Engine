@@ -1,0 +1,93 @@
+{
+  "schema": "com.asharia.package-lock",
+  "schemaVersion": 1,
+  "resolver": {
+    "version": "0.1.0",
+    "policyVersion": 1
+  },
+  "inputs": {
+    "engineApiVersion": "0.1.0",
+    "projectManifestIntegrity": {
+      "algorithm": "sha256",
+      "digest": "d5a0ba4466bce987c60d8030d9585d51d9e6ccfeaad9abfac6a5c9d27e5b055a"
+    }
+  },
+  "roots": {
+    "directPackages": [],
+    "directFeatureSets": [
+      {
+        "id": "com.asharia.features.standard3d",
+        "version": "0.1.0",
+        "packageKind": "feature-set"
+      }
+    ]
+  },
+  "nodes": [
+    {
+      "id": "com.asharia.features.standard3d",
+      "version": "0.1.0",
+      "packageKind": "feature-set",
+      "source": {
+        "kind": "bundled",
+        "distributionId": "com.asharia.distribution.engine-0-1",
+        "relativePath": "package-registry/features/standard3d"
+      },
+      "manifestIntegrity": {
+        "algorithm": "sha256",
+        "digest": "1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      "payloadIntegrity": {
+        "algorithm": "sha256",
+        "digest": "2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      "dependencies": [
+        {
+          "id": "com.asharia.system.input",
+          "version": "0.1.0",
+          "packageKind": "installable-capability"
+        },
+        {
+          "id": "com.asharia.system.rendering-vulkan",
+          "version": "0.1.0",
+          "packageKind": "installable-capability"
+        }
+      ]
+    },
+    {
+      "id": "com.asharia.system.input",
+      "version": "0.1.0",
+      "packageKind": "installable-capability",
+      "source": {
+        "kind": "project-embedded",
+        "relativePath": "Packages/input"
+      },
+      "manifestIntegrity": {
+        "algorithm": "sha256",
+        "digest": "3333333333333333333333333333333333333333333333333333333333333333"
+      },
+      "payloadIntegrity": {
+        "algorithm": "sha256",
+        "digest": "4444444444444444444444444444444444444444444444444444444444444444"
+      },
+      "dependencies": []
+    },
+    {
+      "id": "com.asharia.system.rendering-vulkan",
+      "version": "0.1.0",
+      "packageKind": "installable-capability",
+      "source": {
+        "kind": "local",
+        "sourceId": "com.asharia.source.rendering-workspace"
+      },
+      "manifestIntegrity": {
+        "algorithm": "sha256",
+        "digest": "5555555555555555555555555555555555555555555555555555555555555555"
+      },
+      "payloadIntegrity": {
+        "algorithm": "sha256",
+        "digest": "6666666666666666666666666666666666666666666666666666666666666666"
+      },
+      "dependencies": []
+    }
+  ]
+}

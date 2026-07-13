@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
-"""Validate Asharia package-runtime author contracts."""
+"""Validate Asharia package-runtime contracts."""
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
+import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
@@ -24,6 +26,7 @@ except ImportError as exc:  # pragma: no cover - exercised only in an unbootstra
 
 PACKAGE_MANIFEST_NAME = "asharia.package.json"
 PROJECT_MANIFEST_NAME = "asharia.packages.json"
+PACKAGE_LOCK_NAME = "asharia.packages.lock.json"
 IGNORED_PATH_PARTS = {".git", "build", "generated"}
 REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_SCHEMA_ROOT = REPOSITORY_ROOT / "schemas/package-runtime"
@@ -31,6 +34,9 @@ COMMON_SCHEMA_NAME = "package-contract-common-v1.schema.json"
 INSTALLABLE_SCHEMA_NAME = "installable-package-v2.schema.json"
 FEATURE_SET_SCHEMA_NAME = "feature-set-v2.schema.json"
 PROJECT_SCHEMA_NAME = "project-package-manifest-v1.schema.json"
+LOCK_SCHEMA_NAME = "package-lock-v1.schema.json"
+PACKAGE_TREE_HEADER = b"asharia-package-tree-v1\0"
+PACKAGE_TREE_ROOT_EXCLUDES = {".git", ".hg", ".svn", "build", "generated"}
 ANY_PLATFORM_ID = "com.asharia.platform.any"
 SEMANTIC_VERSION_PATTERN = re.compile(
     r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
@@ -98,6 +104,7 @@ class ContractValidators:
     installable: Draft202012Validator
     feature_set: Draft202012Validator
     project: Draft202012Validator
+    lock: Draft202012Validator
 
 
 def _json_pointer(parts: Iterable[Any]) -> str:
@@ -177,6 +184,7 @@ def load_contract_validators(schema_root: Path = DEFAULT_SCHEMA_ROOT) -> Contrac
         installable=create(INSTALLABLE_SCHEMA_NAME),
         feature_set=create(FEATURE_SET_SCHEMA_NAME),
         project=create(PROJECT_SCHEMA_NAME),
+        lock=create(LOCK_SCHEMA_NAME),
     )
 
 
@@ -880,13 +888,562 @@ def _feature_set_semantic_diagnostics(
     return sorted(diagnostics, key=_diagnostic_sort_key)
 
 
+def _is_normalized_relative_path(value: str) -> bool:
+    if unicodedata.normalize("NFC", value) != value or "\\" in value or ":" in value:
+        return False
+    segments = value.split("/")
+    return bool(value) and not value.startswith("/") and all(
+        segment not in {"", ".", ".."} for segment in segments
+    )
+
+
+def _check_lock_reference(
+    reference: dict[str, Any],
+    pointer: str,
+    nodes_by_id: dict[str, dict[str, Any]],
+    manifest_path: str,
+    diagnostics: list[Diagnostic],
+) -> bool:
+    identity = reference["id"]
+    node = nodes_by_id.get(identity)
+    if node is None:
+        diagnostics.append(
+            Diagnostic(
+                code="lock.reference.missing-node",
+                manifest_path=manifest_path,
+                pointer=pointer,
+                message=f"exact reference '{identity}' does not exist in nodes",
+            )
+        )
+        return False
+    valid = True
+    if reference["version"] != node["version"]:
+        diagnostics.append(
+            Diagnostic(
+                code="lock.reference.version-mismatch",
+                manifest_path=manifest_path,
+                pointer=f"{pointer}/version",
+                message=(
+                    f"reference version '{reference['version']}' does not match locked node "
+                    f"version '{node['version']}'"
+                ),
+            )
+        )
+        valid = False
+    if reference["packageKind"] != node["packageKind"]:
+        diagnostics.append(
+            Diagnostic(
+                code="lock.reference.kind-mismatch",
+                manifest_path=manifest_path,
+                pointer=f"{pointer}/packageKind",
+                message=(
+                    f"reference kind '{reference['packageKind']}' does not match locked node "
+                    f"kind '{node['packageKind']}'"
+                ),
+            )
+        )
+        valid = False
+    return valid
+
+
+def _lock_semantic_diagnostics(manifest: dict[str, Any], manifest_path: str) -> list[Diagnostic]:
+    diagnostics: list[Diagnostic] = []
+    nodes_by_id: dict[str, dict[str, Any]] = {}
+    node_indices: dict[str, int] = {}
+    dependency_indices: dict[tuple[str, str], int] = {}
+
+    for node_index, node in enumerate(manifest["nodes"]):
+        identity = node["id"]
+        previous = nodes_by_id.get(identity)
+        if previous is not None:
+            code = (
+                "lock.node.duplicate-id"
+                if previous["version"] == node["version"]
+                else "lock.node.multiple-versions"
+            )
+            diagnostics.append(
+                Diagnostic(
+                    code=code,
+                    manifest_path=manifest_path,
+                    pointer=f"/nodes/{node_index}/id",
+                    message=(
+                        f"node identity '{identity}' was first declared at index "
+                        f"{node_indices[identity]} with version '{previous['version']}'"
+                    ),
+                )
+            )
+            continue
+        nodes_by_id[identity] = node
+        node_indices[identity] = node_index
+
+        source = node["source"]
+        relative_path = source.get("relativePath")
+        if relative_path is not None and not _is_normalized_relative_path(relative_path):
+            diagnostics.append(
+                Diagnostic(
+                    code="lock.source.invalid-relative-path",
+                    manifest_path=manifest_path,
+                    pointer=f"/nodes/{node_index}/source/relativePath",
+                    message=f"'{relative_path}' must be a normalized portable relative path",
+                )
+            )
+
+    root_ids: dict[str, tuple[str, int]] = {}
+    reachable_roots: set[str] = set()
+    for collection, required_kind in (
+        ("directPackages", "installable-capability"),
+        ("directFeatureSets", "feature-set"),
+    ):
+        for root_index, reference in enumerate(manifest["roots"][collection]):
+            pointer = f"/roots/{collection}/{root_index}"
+            identity = reference["id"]
+            if identity in root_ids:
+                previous_collection, previous_index = root_ids[identity]
+                diagnostics.append(
+                    Diagnostic(
+                        code="lock.root.duplicate-id",
+                        manifest_path=manifest_path,
+                        pointer=f"{pointer}/id",
+                        message=(
+                            f"root '{identity}' was first declared at "
+                            f"/roots/{previous_collection}/{previous_index}"
+                        ),
+                    )
+                )
+            else:
+                root_ids[identity] = (collection, root_index)
+            if reference["packageKind"] != required_kind:
+                diagnostics.append(
+                    Diagnostic(
+                        code="lock.root.invalid-kind",
+                        manifest_path=manifest_path,
+                        pointer=f"{pointer}/packageKind",
+                        message=f"{collection} requires package kind '{required_kind}'",
+                    )
+                )
+            if _check_lock_reference(
+                reference,
+                pointer,
+                nodes_by_id,
+                manifest_path,
+                diagnostics,
+            ):
+                reachable_roots.add(identity)
+
+    for identity, node in nodes_by_id.items():
+        node_index = node_indices[identity]
+        dependency_ids: dict[str, int] = {}
+        for dependency_index, reference in enumerate(node["dependencies"]):
+            dependency = reference["id"]
+            pointer = f"/nodes/{node_index}/dependencies/{dependency_index}"
+            if dependency in dependency_ids:
+                diagnostics.append(
+                    Diagnostic(
+                        code="lock.dependency.duplicate-id",
+                        manifest_path=manifest_path,
+                        pointer=f"{pointer}/id",
+                        message=(
+                            f"dependency '{dependency}' was first declared at index "
+                            f"{dependency_ids[dependency]}"
+                        ),
+                    )
+                )
+            else:
+                dependency_ids[dependency] = dependency_index
+                dependency_indices[(identity, dependency)] = dependency_index
+            if dependency == identity:
+                diagnostics.append(
+                    Diagnostic(
+                        code="lock.dependency.self",
+                        manifest_path=manifest_path,
+                        pointer=f"{pointer}/id",
+                        message=f"node '{identity}' cannot depend on itself",
+                    )
+                )
+                continue
+            if node["packageKind"] == "installable-capability" and reference[
+                "packageKind"
+            ] != "installable-capability":
+                diagnostics.append(
+                    Diagnostic(
+                        code="lock.dependency.invalid-kind",
+                        manifest_path=manifest_path,
+                        pointer=f"{pointer}/packageKind",
+                        message="installable nodes cannot depend on Feature Set nodes",
+                    )
+                )
+            _check_lock_reference(
+                reference,
+                pointer,
+                nodes_by_id,
+                manifest_path,
+                diagnostics,
+            )
+
+    state: dict[str, int] = {}
+    stack: list[str] = []
+    reported_edges: set[tuple[str, str]] = set()
+
+    def visit(identity: str) -> None:
+        state[identity] = 1
+        stack.append(identity)
+        for reference in nodes_by_id[identity]["dependencies"]:
+            dependency = reference["id"]
+            if dependency == identity or dependency not in nodes_by_id:
+                continue
+            if state.get(dependency, 0) == 0:
+                visit(dependency)
+            elif state.get(dependency) == 1 and (identity, dependency) not in reported_edges:
+                cycle_start = stack.index(dependency)
+                cycle = stack[cycle_start:] + [dependency]
+                dependency_index = dependency_indices.get((identity, dependency), 0)
+                diagnostics.append(
+                    Diagnostic(
+                        code="lock.dependency.cycle",
+                        manifest_path=manifest_path,
+                        pointer=(
+                            f"/nodes/{node_indices[identity]}/dependencies/"
+                            f"{dependency_index}/id"
+                        ),
+                        message=f"locked dependency cycle: {' -> '.join(cycle)}",
+                    )
+                )
+                reported_edges.add((identity, dependency))
+        stack.pop()
+        state[identity] = 2
+
+    for identity in sorted(nodes_by_id):
+        if state.get(identity, 0) == 0:
+            visit(identity)
+
+    reachable: set[str] = set()
+    pending = list(reachable_roots)
+    while pending:
+        identity = pending.pop()
+        if identity in reachable or identity not in nodes_by_id:
+            continue
+        reachable.add(identity)
+        pending.extend(reference["id"] for reference in nodes_by_id[identity]["dependencies"])
+    for identity in sorted(nodes_by_id.keys() - reachable):
+        diagnostics.append(
+            Diagnostic(
+                code="lock.node.unreachable",
+                manifest_path=manifest_path,
+                pointer=f"/nodes/{node_indices[identity]}/id",
+                message=f"node '{identity}' is not reachable from a direct root",
+            )
+        )
+    return sorted(diagnostics, key=_diagnostic_sort_key)
+
+
+def _version_satisfies_constraint(version: str, constraint: dict[str, Any]) -> bool:
+    if constraint["kind"] == "exact":
+        return version == constraint["version"]
+    parsed = _parse_semantic_version(version)
+    if parsed.prerelease and not constraint["allowPrerelease"]:
+        return False
+    return (
+        _compare_semantic_versions(version, constraint["minimumInclusive"]) >= 0
+        and _compare_semantic_versions(version, constraint["maximumExclusive"]) < 0
+    )
+
+
+def _option_value_is_valid(option: dict[str, Any], value: Any) -> bool:
+    option_type = option["type"]
+    if option_type == "boolean":
+        return type(value) is bool
+    if option_type == "integer":
+        if type(value) is not int:
+            return False
+        minimum = option.get("minimum")
+        maximum = option.get("maximum")
+        return (minimum is None or value >= minimum) and (maximum is None or value <= maximum)
+    if not isinstance(value, str):
+        return False
+    if option_type == "enum":
+        return value in option["values"]
+    minimum_length = option.get("minimumLength")
+    maximum_length = option.get("maximumLength")
+    return (minimum_length is None or len(value) >= minimum_length) and (
+        maximum_length is None or len(value) <= maximum_length
+    )
+
+
+def validate_locked_result_data(
+    lock: Any,
+    project: Any,
+    author_manifests: Iterable[Any],
+    validators: ContractValidators,
+    lock_path: str = PACKAGE_LOCK_NAME,
+    project_path: str = PROJECT_MANIFEST_NAME,
+) -> list[Diagnostic]:
+    """Validate a selected result against Project and pinned author manifests without solving."""
+
+    diagnostics = validate_manifest_data(lock, lock_path, validators)
+    diagnostics.extend(validate_manifest_data(project, project_path, validators))
+    if diagnostics:
+        return sorted(diagnostics, key=_diagnostic_sort_key)
+
+    manifests_by_id: dict[str, dict[str, Any]] = {}
+    for manifest_index, manifest in enumerate(author_manifests):
+        manifest_path = f"candidate-{manifest_index}/{PACKAGE_MANIFEST_NAME}"
+        manifest_diagnostics = validate_manifest_data(manifest, manifest_path, validators)
+        diagnostics.extend(manifest_diagnostics)
+        if manifest_diagnostics:
+            continue
+        identity = manifest["id"]
+        if identity in manifests_by_id:
+            diagnostics.append(
+                Diagnostic(
+                    code="lock.candidate.duplicate-manifest",
+                    manifest_path=lock_path,
+                    pointer="/nodes",
+                    message=f"multiple pinned author manifests were provided for '{identity}'",
+                )
+            )
+        else:
+            manifests_by_id[identity] = manifest
+    if diagnostics:
+        return sorted(diagnostics, key=_diagnostic_sort_key)
+
+    expected_project_integrity = compute_project_manifest_integrity(project)
+    if lock["inputs"]["projectManifestIntegrity"] != expected_project_integrity:
+        diagnostics.append(
+            Diagnostic(
+                code="lock.input.project-manifest-stale",
+                manifest_path=lock_path,
+                pointer="/inputs/projectManifestIntegrity",
+                message="lock does not match the normalized Project Manifest",
+            )
+        )
+
+    nodes_by_id = {node["id"]: node for node in lock["nodes"]}
+    node_indices = {node["id"]: index for index, node in enumerate(lock["nodes"])}
+
+    for collection, project_collection in (
+        ("directPackages", "directPackages"),
+        ("directFeatureSets", "directFeatureSets"),
+    ):
+        requirements = {item["id"]: item for item in project[project_collection]}
+        roots = {item["id"]: item for item in lock["roots"][collection]}
+        for identity in sorted(requirements.keys() - roots.keys()):
+            diagnostics.append(
+                Diagnostic(
+                    code="lock.root.missing-project-selection",
+                    manifest_path=lock_path,
+                    pointer=f"/roots/{collection}",
+                    message=f"direct project selection '{identity}' is absent from lock roots",
+                )
+            )
+        for root_index, root in enumerate(lock["roots"][collection]):
+            identity = root["id"]
+            requirement = requirements.get(identity)
+            if requirement is None:
+                diagnostics.append(
+                    Diagnostic(
+                        code="lock.root.undeclared-project-selection",
+                        manifest_path=lock_path,
+                        pointer=f"/roots/{collection}/{root_index}/id",
+                        message=f"lock root '{identity}' is not directly selected by the project",
+                    )
+                )
+            elif not _version_satisfies_constraint(root["version"], requirement["version"]):
+                diagnostics.append(
+                    Diagnostic(
+                        code="lock.root.constraint-mismatch",
+                        manifest_path=lock_path,
+                        pointer=f"/roots/{collection}/{root_index}/version",
+                        message=(
+                            f"locked version '{root['version']}' does not satisfy the direct "
+                            f"constraint for '{identity}'"
+                        ),
+                    )
+                )
+
+    engine_api_version = lock["inputs"]["engineApiVersion"]
+    for node_index, node in enumerate(lock["nodes"]):
+        identity = node["id"]
+        manifest = manifests_by_id.get(identity)
+        if manifest is None:
+            diagnostics.append(
+                Diagnostic(
+                    code="lock.candidate.missing-manifest",
+                    manifest_path=lock_path,
+                    pointer=f"/nodes/{node_index}/id",
+                    message=f"no pinned author manifest was provided for '{identity}'",
+                )
+            )
+            continue
+        if manifest["version"] != node["version"]:
+            diagnostics.append(
+                Diagnostic(
+                    code="lock.candidate.version-mismatch",
+                    manifest_path=lock_path,
+                    pointer=f"/nodes/{node_index}/version",
+                    message=(
+                        f"locked version '{node['version']}' does not match pinned manifest "
+                        f"version '{manifest['version']}'"
+                    ),
+                )
+            )
+        if manifest["packageKind"] != node["packageKind"]:
+            diagnostics.append(
+                Diagnostic(
+                    code="lock.candidate.kind-mismatch",
+                    manifest_path=lock_path,
+                    pointer=f"/nodes/{node_index}/packageKind",
+                    message=(
+                        f"locked kind '{node['packageKind']}' does not match pinned manifest "
+                        f"kind '{manifest['packageKind']}'"
+                    ),
+                )
+            )
+        if not _version_satisfies_constraint(engine_api_version, manifest["engineApi"]):
+            diagnostics.append(
+                Diagnostic(
+                    code="lock.candidate.engine-api-mismatch",
+                    manifest_path=lock_path,
+                    pointer=f"/nodes/{node_index}/version",
+                    message=(
+                        f"engine API '{engine_api_version}' does not satisfy '{identity}' "
+                        "engineApi constraint"
+                    ),
+                )
+            )
+
+        expected_dependencies: dict[str, tuple[dict[str, Any], str]] = {}
+        if manifest["packageKind"] == "installable-capability":
+            expected_dependencies.update(
+                (requirement["id"], (requirement, "installable-capability"))
+                for requirement in manifest["dependencies"]
+            )
+        else:
+            expected_dependencies.update(
+                (requirement["id"], (requirement, "installable-capability"))
+                for requirement in manifest["packages"]
+            )
+            expected_dependencies.update(
+                (requirement["id"], (requirement, "feature-set"))
+                for requirement in manifest["featureSets"]
+            )
+        locked_dependencies = {item["id"]: item for item in node["dependencies"]}
+        for dependency in sorted(expected_dependencies.keys() - locked_dependencies.keys()):
+            diagnostics.append(
+                Diagnostic(
+                    code="lock.edge.missing-author-dependency",
+                    manifest_path=lock_path,
+                    pointer=f"/nodes/{node_index}/dependencies",
+                    message=f"author dependency '{dependency}' is absent from exact edges",
+                )
+            )
+        for dependency_index, reference in enumerate(node["dependencies"]):
+            dependency = reference["id"]
+            expected = expected_dependencies.get(dependency)
+            pointer = f"/nodes/{node_index}/dependencies/{dependency_index}"
+            if expected is None:
+                diagnostics.append(
+                    Diagnostic(
+                        code="lock.edge.undeclared-author-dependency",
+                        manifest_path=lock_path,
+                        pointer=f"{pointer}/id",
+                        message=f"exact edge '{dependency}' is not declared by the author manifest",
+                    )
+                )
+                continue
+            requirement, required_kind = expected
+            if reference["packageKind"] != required_kind:
+                diagnostics.append(
+                    Diagnostic(
+                        code="lock.edge.author-kind-mismatch",
+                        manifest_path=lock_path,
+                        pointer=f"{pointer}/packageKind",
+                        message=f"author dependency '{dependency}' requires kind '{required_kind}'",
+                    )
+                )
+            selected = nodes_by_id.get(dependency)
+            if selected is not None and not _version_satisfies_constraint(
+                selected["version"], requirement["version"]
+            ):
+                diagnostics.append(
+                    Diagnostic(
+                        code="lock.edge.constraint-mismatch",
+                        manifest_path=lock_path,
+                        pointer=f"{pointer}/version",
+                        message=(
+                            f"selected version '{selected['version']}' does not satisfy "
+                            f"'{identity}' constraint for '{dependency}'"
+                        ),
+                    )
+                )
+
+    for option_group_index, option_group in enumerate(project["packageOptions"]):
+        package_id = option_group["packageId"]
+        node = nodes_by_id.get(package_id)
+        if node is None:
+            diagnostics.append(
+                Diagnostic(
+                    code="lock.option.orphan-package",
+                    manifest_path=project_path,
+                    pointer=f"/packageOptions/{option_group_index}/packageId",
+                    message=f"option target '{package_id}' is not present in the locked graph",
+                )
+            )
+            continue
+        if node["packageKind"] != "installable-capability":
+            diagnostics.append(
+                Diagnostic(
+                    code="lock.option.invalid-package-kind",
+                    manifest_path=project_path,
+                    pointer=f"/packageOptions/{option_group_index}/packageId",
+                    message=f"option target '{package_id}' is not an installable package",
+                )
+            )
+            continue
+        manifest = manifests_by_id.get(package_id)
+        if manifest is None or manifest["packageKind"] != "installable-capability":
+            continue
+        options_by_id = {option["id"]: option for option in manifest["options"]}
+        for option_index, option_value in enumerate(option_group["values"]):
+            option = options_by_id.get(option_value["id"])
+            pointer = f"/packageOptions/{option_group_index}/values/{option_index}"
+            if option is None:
+                diagnostics.append(
+                    Diagnostic(
+                        code="lock.option.unknown-id",
+                        manifest_path=project_path,
+                        pointer=f"{pointer}/id",
+                        message=(
+                            f"package '{package_id}' does not declare option "
+                            f"'{option_value['id']}'"
+                        ),
+                    )
+                )
+            elif not _option_value_is_valid(option, option_value["value"]):
+                diagnostics.append(
+                    Diagnostic(
+                        code="lock.option.invalid-value",
+                        manifest_path=project_path,
+                        pointer=f"{pointer}/value",
+                        message=(
+                            f"value for '{package_id}:{option_value['id']}' does not satisfy "
+                            f"declared option type '{option['type']}'"
+                        ),
+                    )
+                )
+    return sorted(diagnostics, key=_diagnostic_sort_key)
+
+
 def _contract_kind(manifest: Any, manifest_path: str) -> str | None:
+    if Path(manifest_path).name == PACKAGE_LOCK_NAME:
+        return "lock"
     if Path(manifest_path).name == PROJECT_MANIFEST_NAME:
         return "project"
     if not isinstance(manifest, dict):
         return None
     if manifest.get("schema") == "com.asharia.project-packages":
         return "project"
+    if manifest.get("schema") == "com.asharia.package-lock":
+        return "lock"
     if manifest.get("schemaVersion") == 1 and manifest.get("packageKind") == "source-boundary":
         return "source-boundary"
     package_kind = manifest.get("packageKind")
@@ -922,7 +1479,11 @@ def validate_manifest_data(
                 message="manifest does not declare a supported package-runtime author contract",
             )
         ]
-    if kind == "project":
+    if kind == "lock":
+        validator = validators.lock
+        schema_code = "lock.manifest.schema"
+        semantic_validator = _lock_semantic_diagnostics
+    elif kind == "project":
         validator = validators.project
         schema_code = "project.manifest.schema"
         semantic_validator = _project_semantic_diagnostics
@@ -962,10 +1523,14 @@ def validate_manifest_file(
 
 
 def discover_contract_manifests(root: Path) -> list[Path]:
-    """Discover project and package author contracts while routing v1 boundaries elsewhere."""
+    """Discover package-runtime contracts while routing v1 source boundaries elsewhere."""
 
     paths: list[Path] = []
-    candidates = list(root.rglob(PACKAGE_MANIFEST_NAME)) + list(root.rglob(PROJECT_MANIFEST_NAME))
+    candidates = (
+        list(root.rglob(PACKAGE_MANIFEST_NAME))
+        + list(root.rglob(PROJECT_MANIFEST_NAME))
+        + list(root.rglob(PACKAGE_LOCK_NAME))
+    )
     for path in candidates:
         relative = path.relative_to(root)
         if any(part in IGNORED_PATH_PARTS for part in relative.parts):
@@ -1119,9 +1684,211 @@ def write_normalized_project_manifest(path: Path, manifest: dict[str, Any]) -> N
     path.write_text(render_normalized_project_manifest(manifest), encoding="utf-8", newline="\n")
 
 
+def _normalize_integrity(integrity: dict[str, Any]) -> dict[str, Any]:
+    return {"algorithm": integrity["algorithm"], "digest": integrity["digest"]}
+
+
+def _normalize_exact_reference(reference: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": reference["id"],
+        "version": reference["version"],
+        "packageKind": reference["packageKind"],
+    }
+
+
+def _normalize_lock_source(source: dict[str, Any]) -> dict[str, Any]:
+    if source["kind"] == "bundled":
+        return {
+            "kind": "bundled",
+            "distributionId": source["distributionId"],
+            "relativePath": source["relativePath"],
+        }
+    if source["kind"] == "project-embedded":
+        return {"kind": "project-embedded", "relativePath": source["relativePath"]}
+    return {"kind": "local", "sourceId": source["sourceId"]}
+
+
+def normalize_lock_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
+    """Return the deterministic representation of an already-validated lockfile."""
+
+    def normalize_references(references: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        return [
+            _normalize_exact_reference(reference)
+            for reference in sorted(references, key=lambda value: value["id"])
+        ]
+
+    return {
+        "schema": "com.asharia.package-lock",
+        "schemaVersion": 1,
+        "resolver": {
+            "version": manifest["resolver"]["version"],
+            "policyVersion": manifest["resolver"]["policyVersion"],
+        },
+        "inputs": {
+            "engineApiVersion": manifest["inputs"]["engineApiVersion"],
+            "projectManifestIntegrity": _normalize_integrity(
+                manifest["inputs"]["projectManifestIntegrity"]
+            ),
+        },
+        "roots": {
+            "directPackages": normalize_references(manifest["roots"]["directPackages"]),
+            "directFeatureSets": normalize_references(
+                manifest["roots"]["directFeatureSets"]
+            ),
+        },
+        "nodes": [
+            {
+                "id": node["id"],
+                "version": node["version"],
+                "packageKind": node["packageKind"],
+                "source": _normalize_lock_source(node["source"]),
+                "manifestIntegrity": _normalize_integrity(node["manifestIntegrity"]),
+                "payloadIntegrity": _normalize_integrity(node["payloadIntegrity"]),
+                "dependencies": normalize_references(node["dependencies"]),
+            }
+            for node in sorted(manifest["nodes"], key=lambda value: value["id"])
+        ],
+    }
+
+
+def render_normalized_lock_manifest(manifest: dict[str, Any]) -> str:
+    """Render normalized lockfile JSON as UTF-8-compatible LF text."""
+
+    return json.dumps(normalize_lock_manifest(manifest), ensure_ascii=False, indent=2) + "\n"
+
+
+def write_normalized_lock_manifest(path: Path, manifest: dict[str, Any]) -> None:
+    """Write one normalized lockfile using UTF-8 without BOM and LF endings."""
+
+    path.write_text(render_normalized_lock_manifest(manifest), encoding="utf-8", newline="\n")
+
+
+def compute_bytes_integrity(data: bytes) -> dict[str, str]:
+    """Compute the v1 structured SHA-256 integrity record for exact bytes."""
+
+    return {"algorithm": "sha256", "digest": hashlib.sha256(data).hexdigest()}
+
+
+def compute_project_manifest_integrity(manifest: dict[str, Any]) -> dict[str, str]:
+    """Hash normalized Project Manifest UTF-8 bytes."""
+
+    return compute_bytes_integrity(render_normalized_project_manifest(manifest).encode("utf-8"))
+
+
+def compute_manifest_file_integrity(path: Path) -> dict[str, str]:
+    """Hash exact author-manifest file bytes."""
+
+    return compute_bytes_integrity(path.read_bytes())
+
+
+def compute_package_tree_integrity(root: Path) -> dict[str, str]:
+    """Hash one package payload using the asharia-package-tree-v1 byte domain."""
+
+    manifest_path = root / PACKAGE_MANIFEST_NAME
+    if not manifest_path.is_file() or manifest_path.is_symlink():
+        raise ValueError(f"package payload root must contain regular file '{PACKAGE_MANIFEST_NAME}'")
+
+    entries: list[tuple[bytes, Path]] = []
+    case_folded_paths: dict[str, str] = {}
+
+    def visit(directory: Path, relative_parts: tuple[str, ...]) -> None:
+        for child in sorted(directory.iterdir(), key=lambda value: value.name.encode("utf-8")):
+            if not relative_parts and child.name in PACKAGE_TREE_ROOT_EXCLUDES:
+                continue
+            is_junction = getattr(child, "is_junction", lambda: False)()
+            if child.is_symlink() or is_junction:
+                raise ValueError(f"package payload cannot contain link '{child}'")
+            normalized_name = unicodedata.normalize("NFC", child.name)
+            if normalized_name != child.name:
+                raise ValueError(f"package payload path is not Unicode NFC: '{child}'")
+            child_parts = relative_parts + (child.name,)
+            relative_path = "/".join(child_parts)
+            if not _is_normalized_relative_path(relative_path):
+                raise ValueError(f"package payload path is not portable: '{relative_path}'")
+            folded = relative_path.casefold()
+            previous = case_folded_paths.get(folded)
+            if previous is not None and previous != relative_path:
+                raise ValueError(
+                    f"package payload paths collide by case: '{previous}' and '{relative_path}'"
+                )
+            case_folded_paths[folded] = relative_path
+            if child.is_dir():
+                visit(child, child_parts)
+            elif child.is_file():
+                entries.append((relative_path.encode("utf-8"), child))
+            else:
+                raise ValueError(f"package payload contains non-regular entry '{child}'")
+
+    visit(root, ())
+    digest = hashlib.sha256()
+    digest.update(PACKAGE_TREE_HEADER)
+    for relative_path_bytes, path in sorted(entries, key=lambda item: item[0]):
+        content = path.read_bytes()
+        digest.update(len(relative_path_bytes).to_bytes(8, "big"))
+        digest.update(relative_path_bytes)
+        digest.update(len(content).to_bytes(8, "big"))
+        digest.update(content)
+    return {"algorithm": "sha256", "digest": digest.hexdigest()}
+
+
+def validate_locked_candidate_integrity(
+    lock: dict[str, Any],
+    candidate_roots: dict[str, Path],
+    lock_path: str = PACKAGE_LOCK_NAME,
+) -> list[Diagnostic]:
+    """Verify selected candidate payloads for an already schema-valid lockfile."""
+
+    diagnostics: list[Diagnostic] = []
+    for node_index, node in enumerate(lock["nodes"]):
+        identity = node["id"]
+        root = candidate_roots.get(identity)
+        if root is None:
+            diagnostics.append(
+                Diagnostic(
+                    code="lock.source.unavailable",
+                    manifest_path=lock_path,
+                    pointer=f"/nodes/{node_index}/source",
+                    message=f"selected source for '{identity}' is unavailable",
+                )
+            )
+            continue
+        try:
+            manifest_integrity = compute_manifest_file_integrity(root / PACKAGE_MANIFEST_NAME)
+            payload_integrity = compute_package_tree_integrity(root)
+        except (OSError, ValueError) as exc:
+            diagnostics.append(
+                Diagnostic(
+                    code="lock.integrity.payload-unreadable",
+                    manifest_path=lock_path,
+                    pointer=f"/nodes/{node_index}/payloadIntegrity",
+                    message=f"cannot verify payload for '{identity}': {exc}",
+                )
+            )
+            continue
+        if manifest_integrity != node["manifestIntegrity"]:
+            diagnostics.append(
+                Diagnostic(
+                    code="lock.integrity.manifest-mismatch",
+                    manifest_path=lock_path,
+                    pointer=f"/nodes/{node_index}/manifestIntegrity",
+                    message=f"author manifest bytes changed for '{identity}'",
+                )
+            )
+        if payload_integrity != node["payloadIntegrity"]:
+            diagnostics.append(
+                Diagnostic(
+                    code="lock.integrity.payload-mismatch",
+                    manifest_path=lock_path,
+                    pointer=f"/nodes/{node_index}/payloadIntegrity",
+                    message=f"package payload tree changed for '{identity}'",
+                )
+            )
+    return sorted(diagnostics, key=_diagnostic_sort_key)
+
+
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("manifests", nargs="*", type=Path, help="explicit author contracts to validate")
+    parser.add_argument("manifests", nargs="*", type=Path, help="explicit contracts to validate")
     parser.add_argument("--root", type=Path, default=REPOSITORY_ROOT, help="repository root")
     parser.add_argument(
         "--schema-root",
@@ -1153,7 +1920,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  - {diagnostic.render()}", file=sys.stderr)
         return 1
 
-    print(f"Package contracts OK: author-contracts={len(paths)} schema=draft-2020-12")
+    print(f"Package contracts OK: contracts={len(paths)} schema=draft-2020-12")
     return 0
 
 

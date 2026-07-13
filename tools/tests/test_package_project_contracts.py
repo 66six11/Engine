@@ -191,6 +191,7 @@ class ProjectPackageContractTests(unittest.TestCase):
                 "installable/asharia.package.json": self.load("valid-system.json"),
                 "feature-set/asharia.package.json": self.load("valid-feature-set.json"),
                 "project/asharia.packages.json": self.load("valid-empty-project.json"),
+                "project/asharia.packages.lock.json": self.load("valid-empty-lock.json"),
             }
             for relative_path, manifest in manifests.items():
                 path = root / relative_path
@@ -207,6 +208,7 @@ class ProjectPackageContractTests(unittest.TestCase):
                 "feature-set/asharia.package.json",
                 "installable/asharia.package.json",
                 "project/asharia.packages.json",
+                "project/asharia.packages.lock.json",
             ],
             discovered,
         )

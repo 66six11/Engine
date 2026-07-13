@@ -4,7 +4,8 @@
 
 Proposed。本文设计项目根 `asharia.packages.json` 与它直接引用的 Feature Set author contract。当前仓库已经实现
 Project Manifest v1 / Feature Set v2 Draft 2020-12 schemas、共享 identity/version definitions、显式 contract dispatcher、
-semantic validator、normalized writer 与 synthetic fixtures；尚未实现 resolver、candidate catalog、lockfile 或生产 Feature Set。
+semantic validator、normalized writer 与 synthetic fixtures。后续 [Package Candidate 与 Lockfile v1](adr-package-candidate-lockfile-v1.md)
+也已实现 schema/validator/digest/writer 基线；尚未实现 resolver、candidate discovery 或生产 Feature Set/lockfile。
 
 Installable Capability Package 的作者合同已经由
 [Installable Package Manifest v2](adr-installable-package-manifest-v2.md) 定义。本文只处理第二层“项目希望安装什么”，
