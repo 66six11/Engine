@@ -5,7 +5,8 @@
 Proposed。本文冻结 `Minimal`、`Editor`、`Runtime`、`DedicatedServer` 与 `AssetWorker` 五个 Host Profile 的第一版
 机器可读策略，以及 verified lock graph 到逻辑 module/contribution selection 的确定性投影。当前仓库已经实现 schema、语义校验、
 normalized writer、纯数据投影器与 synthetic fixtures；仍不生成 Build Plan 或 Activation Plan，也不创建 Host、module、service
-或 contribution runtime instance。
+或 contribution runtime instance。后继 [Host Composition Plan v1](adr-host-composition-plan-v1.md) 已实现 canonical logical IR
+与 pure planner，但该 IR 仍不是可执行 Activation Plan。
 
 本文接续 [Package Candidate 与 Lockfile v1](adr-package-candidate-lockfile-v1.md)：lock 固定与 Host 无关的 exact package graph，
 Host Profile 再从 pinned installable manifests 中选择当前进程允许使用的内部逻辑单元。两者不得合并为 per-host lockfile。
@@ -188,6 +189,9 @@ development-only module 依赖 editor，但 AssetWorker policy 明确不允许 `
 
 它没有 dependency order、load phase、factory symbol、artifact path、thread affinity、scope、instance key、rollback step 或 lifecycle state。
 这些字段必须等待 build descriptor、artifact manifest、factory/contribution contract 与 Host Runtime 设计后进入独立 Build/Activation Plan。
+
+[Host Composition Plan v1](adr-host-composition-plan-v1.md) 只在此投影之上补充 package/module dependency-first order、entry labels、
+input fingerprints 与 canonical bytes；它明确不补充上述执行字段。
 
 ### 9. Normalized writer 不赋予输入数组顺序语义
 

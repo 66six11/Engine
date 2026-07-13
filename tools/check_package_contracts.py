@@ -37,6 +37,7 @@ FEATURE_SET_SCHEMA_NAME = "feature-set-v2.schema.json"
 PROJECT_SCHEMA_NAME = "project-package-manifest-v1.schema.json"
 LOCK_SCHEMA_NAME = "package-lock-v1.schema.json"
 HOST_PROFILE_SCHEMA_NAME = "host-profile-v1.schema.json"
+HOST_COMPOSITION_PLAN_SCHEMA_NAME = "host-composition-plan-v1.schema.json"
 PACKAGE_TREE_HEADER = b"asharia-package-tree-v1\0"
 PACKAGE_TREE_ROOT_EXCLUDES = {".git", ".hg", ".svn", "build", "generated"}
 ANY_PLATFORM_ID = "com.asharia.platform.any"
@@ -175,6 +176,7 @@ class ContractValidators:
     project: Draft202012Validator
     lock: Draft202012Validator
     host_profile: Draft202012Validator
+    host_composition_plan: Draft202012Validator
 
 
 @dataclass(frozen=True, order=True)
@@ -292,6 +294,7 @@ def load_contract_validators(schema_root: Path = DEFAULT_SCHEMA_ROOT) -> Contrac
         project=create(PROJECT_SCHEMA_NAME),
         lock=create(LOCK_SCHEMA_NAME),
         host_profile=create(HOST_PROFILE_SCHEMA_NAME),
+        host_composition_plan=create(HOST_COMPOSITION_PLAN_SCHEMA_NAME),
     )
 
 

@@ -33,23 +33,26 @@ flowchart LR
     Host["Host / Build Policy\n平台与能力约束"]
     Resolver["Resolver"]
     Lock["Exact Lock\n确定解析证据"]
+    Composition["Host Composition Plan\n逻辑有序 IR"]
     Build["Build / Artifact Plan"]
     Activate["Activation Plan"]
 
     Project --> Resolver
     Candidate --> Resolver
     Package --> Resolver
-    Host --> Resolver
     Resolver --> Lock
-    Resolver --> Build
-    Resolver --> Activate
+    Lock --> Composition
+    Host --> Composition
+    Composition --> Build
+    Composition --> Activate
 ```
 
 - Project Manifest 只保存用户选择的完整 package identity、版本约束和 package options。
 - Catalog Candidate 说明某个 exact version 从哪里取得，并携带可验证的 manifest/payload integrity。
 - Installable Manifest v2 是作者发布的可移植语义合同。
 - Host / Build Policy 描述当前宿主、平台、工具链和允许能力；不是 package 自己声称宿主满足什么。
-- resolver 输出 exact lock、build/artifact plan 和 activation plan。运行时不直接解释作者 manifest。
+- resolver 输出 exact lock；Host planner 再生成 backend-neutral logical composition。Build/Artifact 与 Activation adapters 分别补充
+  target/artifact 和 factory/lifecycle 事实。运行时不直接解释作者 manifest。
 
 这五层可以持久化为不同文件，也可以由 bundled catalog 在内存中提供，但其数据模型和所有权必须分开。
 
@@ -107,7 +110,8 @@ v2 顶层合同包括：
 module 不声明 CMake target、source directory、binary filename 或加载函数。第一阶段冻结
 `minimal/editor/runtime/dedicated-server/asset-worker` 五个 host kind 名称；后续
 [Host Profile v1](adr-host-profile-v1.md) 已定义固定 required/allowed roles、shipping/contribution filters、exact grants 与
-确定性逻辑投影。capability token API 和 runtime enforcement 仍未冻结。
+确定性逻辑投影，[Host Composition Plan v1](adr-host-composition-plan-v1.md) 已实现 dependency order、entry references 与
+canonical logical IR。capability token API 和 runtime enforcement 仍未冻结。
 
 `entryModules` 只引用上述 logical modules，维度不存在表示 package 不提供该入口。manifest 不保存
 `complete: true` 或 `not-applicable` 之类自我证明状态。结构完整性由 validator 从 catalog type、entry references、
