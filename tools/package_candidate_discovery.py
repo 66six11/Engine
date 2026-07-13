@@ -428,7 +428,33 @@ def _descriptor_diagnostics(
     ]
 
 
-def _read_optional_descriptor_bytes(path: Path) -> tuple[str, bytes | None]:
+def _product_declaration_diagnostics(
+    declaration: Any,
+    manifest: Any,
+    source_key: str,
+    validators: contracts.ContractValidators,
+) -> list[CandidateDiscoveryDiagnostic]:
+    diagnostics = contracts.validate_package_product_declaration_binding(
+        declaration,
+        manifest,
+        validators,
+    )
+    return [
+        CandidateDiscoveryDiagnostic(
+            code=diagnostic.code,
+            source_key=source_key,
+            location=(
+                f"{contracts.PACKAGE_PRODUCTS_NAME}{diagnostic.pointer}"
+                if diagnostic.pointer
+                else contracts.PACKAGE_PRODUCTS_NAME
+            ),
+            message=diagnostic.message,
+        )
+        for diagnostic in diagnostics
+    ]
+
+
+def _read_optional_contract_bytes(path: Path) -> tuple[str, bytes | None]:
     try:
         if not path.exists():
             return "absent", None
@@ -537,7 +563,7 @@ def _load_candidate(
         ]
 
     descriptor_path = location.payload_root / contracts.PACKAGE_SOURCE_BUILD_NAME
-    descriptor_state, descriptor_bytes = _read_optional_descriptor_bytes(
+    descriptor_state, descriptor_bytes = _read_optional_contract_bytes(
         descriptor_path
     )
     if descriptor_state == "invalid":
@@ -574,6 +600,46 @@ def _load_candidate(
         assert isinstance(parsed_descriptor, dict)
         descriptor = parsed_descriptor
 
+    product_declaration_path = location.payload_root / contracts.PACKAGE_PRODUCTS_NAME
+    product_declaration_state, product_declaration_bytes = (
+        _read_optional_contract_bytes(product_declaration_path)
+    )
+    if product_declaration_state == "invalid":
+        return None, [
+            CandidateDiscoveryDiagnostic(
+                code="discovery.product-declaration.unreadable",
+                source_key=location.source_key,
+                location=contracts.PACKAGE_PRODUCTS_NAME,
+                message="product declaration must be a readable regular file",
+            )
+        ]
+
+    product_declaration: dict[str, Any] | None = None
+    if product_declaration_bytes is not None:
+        try:
+            parsed_product_declaration = json.loads(
+                product_declaration_bytes.decode("utf-8")
+            )
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return None, [
+                CandidateDiscoveryDiagnostic(
+                    code="contract.manifest.json",
+                    source_key=location.source_key,
+                    location=contracts.PACKAGE_PRODUCTS_NAME,
+                    message="product declaration must be valid UTF-8 JSON",
+                )
+            ]
+        product_diagnostics = _product_declaration_diagnostics(
+            parsed_product_declaration,
+            manifest,
+            location.source_key,
+            validators,
+        )
+        if product_diagnostics:
+            return None, product_diagnostics
+        assert isinstance(parsed_product_declaration, dict)
+        product_declaration = parsed_product_declaration
+
     manifest_integrity = contracts.compute_bytes_integrity(manifest_bytes)
     try:
         payload_integrity = contracts.compute_package_tree_integrity(location.payload_root)
@@ -602,7 +668,7 @@ def _load_candidate(
             )
         ]
 
-    final_descriptor_state, final_descriptor_bytes = _read_optional_descriptor_bytes(
+    final_descriptor_state, final_descriptor_bytes = _read_optional_contract_bytes(
         descriptor_path
     )
     if (
@@ -614,6 +680,22 @@ def _load_candidate(
                 code="discovery.source.changed",
                 source_key=location.source_key,
                 location=contracts.PACKAGE_SOURCE_BUILD_NAME,
+                message="package source changed while candidate evidence was collected",
+            )
+        ]
+
+    final_product_state, final_product_bytes = _read_optional_contract_bytes(
+        product_declaration_path
+    )
+    if (
+        final_product_state != product_declaration_state
+        or final_product_bytes != product_declaration_bytes
+    ):
+        return None, [
+            CandidateDiscoveryDiagnostic(
+                code="discovery.source.changed",
+                source_key=location.source_key,
+                location=contracts.PACKAGE_PRODUCTS_NAME,
                 message="package source changed while candidate evidence was collected",
             )
         ]
@@ -635,6 +717,13 @@ def _load_candidate(
                 else None
             ),
             build_descriptor_bytes=descriptor_bytes,
+            product_declaration=copy.deepcopy(product_declaration),
+            product_declaration_integrity=(
+                contracts.compute_bytes_integrity(product_declaration_bytes)
+                if product_declaration_bytes is not None
+                else None
+            ),
+            product_declaration_bytes=product_declaration_bytes,
             payload_location=location.payload_root,
         ),
         [],

@@ -26,6 +26,8 @@ except ImportError as exc:  # pragma: no cover - exercised only in an unbootstra
 
 PACKAGE_MANIFEST_NAME = "asharia.package.json"
 PACKAGE_SOURCE_BUILD_NAME = "asharia.package.build.json"
+PACKAGE_PRODUCTS_NAME = "asharia.package.products.json"
+PACKAGE_ARTIFACT_MANIFEST_NAME = "asharia.package.artifacts.json"
 PROJECT_MANIFEST_NAME = "asharia.packages.json"
 PACKAGE_LOCK_NAME = "asharia.packages.lock.json"
 HOST_PROFILE_NAME = "asharia.host-profile.json"
@@ -40,6 +42,8 @@ LOCK_SCHEMA_NAME = "package-lock-v1.schema.json"
 HOST_PROFILE_SCHEMA_NAME = "host-profile-v1.schema.json"
 HOST_COMPOSITION_PLAN_SCHEMA_NAME = "host-composition-plan-v1.schema.json"
 PACKAGE_SOURCE_BUILD_SCHEMA_NAME = "package-source-build-v1.schema.json"
+PACKAGE_PRODUCTS_SCHEMA_NAME = "package-products-v1.schema.json"
+PACKAGE_ARTIFACT_MANIFEST_SCHEMA_NAME = "package-artifact-manifest-v1.schema.json"
 SOURCE_TOPOLOGY_SNAPSHOT_SCHEMA_NAME = "source-topology-snapshot-v1.schema.json"
 CMAKE_CODEMODEL_SNAPSHOT_SCHEMA_NAME = "cmake-codemodel-snapshot-v1.schema.json"
 SOURCE_BUILD_PLAN_SCHEMA_NAME = "source-build-plan-v1.schema.json"
@@ -183,6 +187,8 @@ class ContractValidators:
     host_profile: Draft202012Validator
     host_composition_plan: Draft202012Validator
     package_source_build: Draft202012Validator
+    package_products: Draft202012Validator
+    package_artifact_manifest: Draft202012Validator
     source_topology_snapshot: Draft202012Validator
     cmake_codemodel_snapshot: Draft202012Validator
     source_build_plan: Draft202012Validator
@@ -305,6 +311,8 @@ def load_contract_validators(schema_root: Path = DEFAULT_SCHEMA_ROOT) -> Contrac
         host_profile=create(HOST_PROFILE_SCHEMA_NAME),
         host_composition_plan=create(HOST_COMPOSITION_PLAN_SCHEMA_NAME),
         package_source_build=create(PACKAGE_SOURCE_BUILD_SCHEMA_NAME),
+        package_products=create(PACKAGE_PRODUCTS_SCHEMA_NAME),
+        package_artifact_manifest=create(PACKAGE_ARTIFACT_MANIFEST_SCHEMA_NAME),
         source_topology_snapshot=create(SOURCE_TOPOLOGY_SNAPSHOT_SCHEMA_NAME),
         cmake_codemodel_snapshot=create(CMAKE_CODEMODEL_SNAPSHOT_SCHEMA_NAME),
         source_build_plan=create(SOURCE_BUILD_PLAN_SCHEMA_NAME),
@@ -1798,9 +1806,183 @@ def _cmake_codemodel_semantic_diagnostics(
     return sorted(diagnostics, key=_diagnostic_sort_key)
 
 
+def _package_products_semantic_diagnostics(
+    declaration: dict[str, Any], declaration_path: str
+) -> list[Diagnostic]:
+    diagnostics: list[Diagnostic] = []
+    module_indices: dict[str, int] = {}
+    for module_index, module in enumerate(declaration["modules"]):
+        module_id = module["moduleId"]
+        previous_module = module_indices.get(module_id)
+        if previous_module is not None:
+            diagnostics.append(
+                Diagnostic(
+                    code="product.declaration.duplicate-module",
+                    manifest_path=declaration_path,
+                    pointer=f"/modules/{module_index}/moduleId",
+                    message=(
+                        f"logical module '{module_id}' was first declared at index "
+                        f"{previous_module}"
+                    ),
+                )
+            )
+        else:
+            module_indices[module_id] = module_index
+
+        delivery = module["delivery"]
+        if delivery["kind"] != "artifact-set":
+            continue
+        product_indices: dict[str, int] = {}
+        for product_index, product in enumerate(delivery["products"]):
+            product_id = product["id"]
+            previous_product = product_indices.get(product_id)
+            if previous_product is not None:
+                diagnostics.append(
+                    Diagnostic(
+                        code="product.declaration.duplicate-product",
+                        manifest_path=declaration_path,
+                        pointer=(
+                            f"/modules/{module_index}/delivery/products/"
+                            f"{product_index}/id"
+                        ),
+                        message=(
+                            f"logical product '{module_id}:{product_id}' was first "
+                            f"declared at index {previous_product}"
+                        ),
+                    )
+                )
+            else:
+                product_indices[product_id] = product_index
+    return sorted(diagnostics, key=_diagnostic_sort_key)
+
+
+def _package_artifact_manifest_semantic_diagnostics(
+    manifest: dict[str, Any], manifest_path: str
+) -> list[Diagnostic]:
+    diagnostics: list[Diagnostic] = []
+    module_indices: dict[str, int] = {}
+    exact_paths: dict[str, str] = {}
+    folded_paths: dict[str, str] = {}
+
+    for module_index, module in enumerate(manifest["modules"]):
+        module_id = module["moduleId"]
+        previous_module = module_indices.get(module_id)
+        if previous_module is not None:
+            diagnostics.append(
+                Diagnostic(
+                    code="artifact.manifest.duplicate-module",
+                    manifest_path=manifest_path,
+                    pointer=f"/modules/{module_index}/moduleId",
+                    message=(
+                        f"logical module '{module_id}' was first declared at index "
+                        f"{previous_module}"
+                    ),
+                )
+            )
+        else:
+            module_indices[module_id] = module_index
+
+        delivery = module["delivery"]
+        if delivery["kind"] != "artifact-set":
+            continue
+        product_indices: dict[str, int] = {}
+        for product_index, product in enumerate(delivery["products"]):
+            product_id = product["id"]
+            previous_product = product_indices.get(product_id)
+            if previous_product is not None:
+                diagnostics.append(
+                    Diagnostic(
+                        code="artifact.manifest.duplicate-product",
+                        manifest_path=manifest_path,
+                        pointer=(
+                            f"/modules/{module_index}/delivery/products/"
+                            f"{product_index}/id"
+                        ),
+                        message=(
+                            f"logical product '{module_id}:{product_id}' was first "
+                            f"declared at index {previous_product}"
+                        ),
+                    )
+                )
+            else:
+                product_indices[product_id] = product_index
+
+            primary_count = sum(
+                artifact["role"] == "primary" for artifact in product["files"]
+            )
+            if primary_count != 1:
+                diagnostics.append(
+                    Diagnostic(
+                        code="artifact.manifest.primary-cardinality",
+                        manifest_path=manifest_path,
+                        pointer=(
+                            f"/modules/{module_index}/delivery/products/"
+                            f"{product_index}/files"
+                        ),
+                        message=(
+                            f"logical product '{module_id}:{product_id}' must contain "
+                            "exactly one primary file"
+                        ),
+                    )
+                )
+
+            for file_index, artifact in enumerate(product["files"]):
+                path = artifact["path"]
+                pointer = (
+                    f"/modules/{module_index}/delivery/products/{product_index}/"
+                    f"files/{file_index}/path"
+                )
+                if not _is_normalized_relative_path(path):
+                    diagnostics.append(
+                        Diagnostic(
+                            code="artifact.manifest.invalid-path",
+                            manifest_path=manifest_path,
+                            pointer=pointer,
+                            message=(
+                                f"'{path}' must be a Unicode NFC portable relative path"
+                            ),
+                        )
+                    )
+                    continue
+                previous_exact = exact_paths.get(path)
+                if previous_exact is not None:
+                    diagnostics.append(
+                        Diagnostic(
+                            code="artifact.manifest.duplicate-path",
+                            manifest_path=manifest_path,
+                            pointer=pointer,
+                            message=f"artifact path '{path}' is already used by {previous_exact}",
+                        )
+                    )
+                    continue
+                owner = f"'{module_id}:{product_id}'"
+                exact_paths[path] = owner
+                folded = path.casefold()
+                previous_folded = folded_paths.get(folded)
+                if previous_folded is not None and previous_folded != path:
+                    diagnostics.append(
+                        Diagnostic(
+                            code="artifact.manifest.path-collision",
+                            manifest_path=manifest_path,
+                            pointer=pointer,
+                            message=(
+                                f"artifact paths '{previous_folded}' and '{path}' "
+                                "collide by Unicode case-folding"
+                            ),
+                        )
+                    )
+                else:
+                    folded_paths[folded] = path
+    return sorted(diagnostics, key=_diagnostic_sort_key)
+
+
 def _contract_kind(manifest: Any, manifest_path: str) -> str | None:
     if Path(manifest_path).name == PACKAGE_SOURCE_BUILD_NAME:
         return "package-source-build"
+    if Path(manifest_path).name == PACKAGE_PRODUCTS_NAME:
+        return "package-products"
+    if Path(manifest_path).name == PACKAGE_ARTIFACT_MANIFEST_NAME:
+        return "package-artifact-manifest"
     if Path(manifest_path).name == HOST_PROFILE_NAME:
         return "host-profile"
     if Path(manifest_path).name == PACKAGE_LOCK_NAME:
@@ -1817,6 +1999,10 @@ def _contract_kind(manifest: Any, manifest_path: str) -> str | None:
         return "host-profile"
     if manifest.get("schema") == "com.asharia.package-source-build":
         return "package-source-build"
+    if manifest.get("schema") == "com.asharia.package-products":
+        return "package-products"
+    if manifest.get("schema") == "com.asharia.package-artifact-manifest":
+        return "package-artifact-manifest"
     if manifest.get("schema") == "com.asharia.source-topology-snapshot":
         return "source-topology-snapshot"
     if manifest.get("schema") == "com.asharia.cmake-codemodel-snapshot":
@@ -1862,6 +2048,14 @@ def validate_manifest_data(
         validator = validators.package_source_build
         schema_code = "build.descriptor.schema"
         semantic_validator = _package_source_build_semantic_diagnostics
+    elif kind == "package-products":
+        validator = validators.package_products
+        schema_code = "product.declaration.schema"
+        semantic_validator = _package_products_semantic_diagnostics
+    elif kind == "package-artifact-manifest":
+        validator = validators.package_artifact_manifest
+        schema_code = "artifact.manifest.schema"
+        semantic_validator = _package_artifact_manifest_semantic_diagnostics
     elif kind == "source-topology-snapshot":
         validator = validators.source_topology_snapshot
         schema_code = "build.topology.schema"
@@ -1990,6 +2184,80 @@ def validate_package_source_build_binding(
     return sorted(diagnostics, key=_diagnostic_sort_key)
 
 
+def validate_package_product_declaration_binding(
+    declaration: Any,
+    author_manifest: Any,
+    validators: ContractValidators,
+    declaration_path: str = PACKAGE_PRODUCTS_NAME,
+    manifest_path: str = PACKAGE_MANIFEST_NAME,
+) -> list[Diagnostic]:
+    """Validate one product declaration and its exact author-manifest binding."""
+
+    diagnostics = validate_manifest_data(declaration, declaration_path, validators)
+    diagnostics.extend(
+        validate_manifest_data(author_manifest, manifest_path, validators)
+    )
+    if diagnostics:
+        return sorted(diagnostics, key=_diagnostic_sort_key)
+
+    assert isinstance(declaration, dict)
+    assert isinstance(author_manifest, dict)
+    if author_manifest["packageKind"] != "installable-capability":
+        return [
+            Diagnostic(
+                code="product.declaration.unsupported-package-kind",
+                manifest_path=declaration_path,
+                pointer="/package/id",
+                message="product declarations require an installable-capability package",
+            )
+        ]
+
+    for field, manifest_field in (("id", "id"), ("version", "version")):
+        if declaration["package"][field] != author_manifest[manifest_field]:
+            diagnostics.append(
+                Diagnostic(
+                    code=f"product.declaration.package-{field}-mismatch",
+                    manifest_path=declaration_path,
+                    pointer=f"/package/{field}",
+                    message=(
+                        f"product declaration package {field} "
+                        f"'{declaration['package'][field]}' does not match author "
+                        f"manifest '{author_manifest[manifest_field]}'"
+                    ),
+                )
+            )
+
+    declaration_modules = {
+        module["moduleId"] for module in declaration["modules"]
+    }
+    manifest_modules = {module["id"] for module in author_manifest["modules"]}
+    for module_id in sorted(
+        manifest_modules - declaration_modules,
+        key=lambda value: value.encode("utf-8"),
+    ):
+        diagnostics.append(
+            Diagnostic(
+                code="product.declaration.missing-module",
+                manifest_path=declaration_path,
+                pointer="/modules",
+                message=f"author logical module '{module_id}' has no product declaration",
+            )
+        )
+    for module_id in sorted(
+        declaration_modules - manifest_modules,
+        key=lambda value: value.encode("utf-8"),
+    ):
+        diagnostics.append(
+            Diagnostic(
+                code="product.declaration.unknown-module",
+                manifest_path=declaration_path,
+                pointer="/modules",
+                message=f"product declaration binds unknown logical module '{module_id}'",
+            )
+        )
+    return sorted(diagnostics, key=_diagnostic_sort_key)
+
+
 def discover_contract_manifests(root: Path) -> list[Path]:
     """Discover package-runtime contracts while routing v1 source boundaries elsewhere."""
 
@@ -1997,6 +2265,8 @@ def discover_contract_manifests(root: Path) -> list[Path]:
     candidates = (
         list(root.rglob(PACKAGE_MANIFEST_NAME))
         + list(root.rglob(PACKAGE_SOURCE_BUILD_NAME))
+        + list(root.rglob(PACKAGE_PRODUCTS_NAME))
+        + list(root.rglob(PACKAGE_ARTIFACT_MANIFEST_NAME))
         + list(root.rglob(PROJECT_MANIFEST_NAME))
         + list(root.rglob(PACKAGE_LOCK_NAME))
         + list(root.rglob(HOST_PROFILE_NAME))
@@ -2123,6 +2393,27 @@ def validate_manifest_files(paths: Iterable[Path], validators: ContractValidator
                 manifest_path=author_manifest_path.as_posix(),
             )
         )
+    for declaration_path, declaration in sorted(
+        (
+            (path, manifest)
+            for path, manifest in valid_contracts.items()
+            if path.name == PACKAGE_PRODUCTS_NAME
+        ),
+        key=lambda item: item[0].as_posix(),
+    ):
+        author_manifest_path = declaration_path.with_name(PACKAGE_MANIFEST_NAME)
+        author_manifest = valid_contracts.get(author_manifest_path)
+        if author_manifest is None:
+            continue
+        diagnostics.extend(
+            validate_package_product_declaration_binding(
+                declaration,
+                author_manifest,
+                validators,
+                declaration_path=declaration_path.as_posix(),
+                manifest_path=author_manifest_path.as_posix(),
+            )
+        )
     diagnostics.extend(validate_feature_set_graph(valid_feature_sets))
     return sorted(diagnostics, key=_diagnostic_sort_key)
 
@@ -2136,6 +2427,54 @@ def _normalize_version_constraint(constraint: dict[str, Any]) -> dict[str, Any]:
         "maximumExclusive": constraint["maximumExclusive"],
         "allowPrerelease": constraint["allowPrerelease"],
     }
+
+
+def normalize_package_product_declaration(
+    declaration: dict[str, Any],
+) -> dict[str, Any]:
+    """Return the deterministic semantic representation of product declarations."""
+
+    modules: list[dict[str, Any]] = []
+    for module in sorted(
+        declaration["modules"], key=lambda value: value["moduleId"].encode("utf-8")
+    ):
+        delivery = module["delivery"]
+        normalized_delivery: dict[str, Any] = {"kind": delivery["kind"]}
+        if delivery["kind"] == "artifact-set":
+            normalized_delivery["products"] = [
+                {"id": product["id"], "purpose": product["purpose"]}
+                for product in sorted(
+                    delivery["products"],
+                    key=lambda value: value["id"].encode("utf-8"),
+                )
+            ]
+        modules.append(
+            {
+                "moduleId": module["moduleId"],
+                "delivery": normalized_delivery,
+            }
+        )
+    return {
+        "schema": "com.asharia.package-products",
+        "schemaVersion": 1,
+        "package": {
+            "id": declaration["package"]["id"],
+            "version": declaration["package"]["version"],
+        },
+        "modules": modules,
+    }
+
+
+def render_normalized_package_product_declaration(
+    declaration: dict[str, Any],
+) -> str:
+    """Render normalized product declaration JSON with LF and a final newline."""
+
+    return json.dumps(
+        normalize_package_product_declaration(declaration),
+        ensure_ascii=False,
+        indent=2,
+    ) + "\n"
 
 
 def normalize_package_source_build_descriptor(

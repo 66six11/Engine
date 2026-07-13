@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.asharia.dev/package-runtime/package-products-v1.schema.json",
+  "title": "Asharia Package Product Declaration v1",
+  "description": "Portable author declaration of logical products delivered by each module of one exact installable package.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "schemaVersion",
+    "package",
+    "modules"
+  ],
+  "properties": {
+    "schema": {
+      "const": "com.asharia.package-products"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "package": {
+      "$ref": "#/$defs/package"
+    },
+    "modules": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/module"
+      }
+    }
+  },
+  "$defs": {
+    "package": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/packageId"
+        },
+        "version": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/semanticVersion"
+        }
+      }
+    },
+    "product": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "purpose"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/localId"
+        },
+        "purpose": {
+          "enum": [
+            "link-input",
+            "runtime-binary",
+            "build-tool",
+            "runtime-content",
+            "metadata"
+          ]
+        }
+      }
+    },
+    "noArtifacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "const": "no-artifacts"
+        }
+      }
+    },
+    "artifactSet": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "products"
+      ],
+      "properties": {
+        "kind": {
+          "const": "artifact-set"
+        },
+        "products": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/product"
+          }
+        }
+      }
+    },
+    "module": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "moduleId",
+        "delivery"
+      ],
+      "properties": {
+        "moduleId": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/localId"
+        },
+        "delivery": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/noArtifacts"
+            },
+            {
+              "$ref": "#/$defs/artifactSet"
+            }
+          ]
+        }
+      }
+    }
+  }
+}
