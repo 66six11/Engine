@@ -1,4 +1,11 @@
 {
+  "schemaVersion": 1,
+  "packageKind": "source-boundary",
+  "sourceRole": "module-group",
+  "ownerDomain": "rendering",
+  "plannedOwnershipRoot": "com.asharia.system.rendering-vulkan",
+  "selectable": false,
+  "catalogVisible": false,
   "name": "com.asharia.shader-material-adapter",
   "version": "0.1.0",
   "displayName": "Asharia Engine Shader Material Adapter",
@@ -14,6 +21,11 @@
     "asharia-shader-material-adapter-smoke-tests",
     "asharia-generated-slang-reflection-smoke-tests"
   ],
+  "targetRoles": {
+    "asharia-shader-material-adapter": "adapter",
+    "asharia-shader-material-adapter-smoke-tests": "test",
+    "asharia-generated-slang-reflection-smoke-tests": "test"
+  },
   "targetDependencies": {
     "asharia-shader-material-adapter": [
       "asharia-core",

@@ -300,6 +300,7 @@ try {
         $docSyncCommand += " -IncludeUntracked"
     }
     Write-Host "  $docSyncCommand"
+    Write-Host "  python tools\check_package_topology.py"
     Write-Host "  git diff --check"
     Write-Host "  cmd /c `"build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --preset clangcl-debug && cmake --build --preset clangcl-debug`""
     Write-Host "  cmd /c `"build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake --preset msvc-debug && cmake --build --preset msvc-debug`""
@@ -348,6 +349,9 @@ try {
             } else {
                 powershell -ExecutionPolicy Bypass -File tools\check-doc-sync.ps1
             }
+        }
+        Invoke-CheapGate "package topology check" {
+            python tools\check_package_topology.py
         }
         Invoke-CheapGate "git diff whitespace check" {
             git diff --check

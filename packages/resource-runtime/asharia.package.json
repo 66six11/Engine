@@ -1,4 +1,11 @@
 {
+  "schemaVersion": 1,
+  "packageKind": "source-boundary",
+  "sourceRole": "module-group",
+  "ownerDomain": "content",
+  "plannedOwnershipRoot": "com.asharia.system.content",
+  "selectable": false,
+  "catalogVisible": false,
   "name": "com.asharia.resource-runtime",
   "version": "0.1.0",
   "displayName": "Asharia Engine Resource Runtime",
@@ -6,6 +13,10 @@
   "dependencies": ["com.asharia.asset-core"],
   "targets": ["asharia-resource-runtime"],
   "testTargets": ["asharia-resource-runtime-smoke-tests"],
+  "targetRoles": {
+    "asharia-resource-runtime": "runtime",
+    "asharia-resource-runtime-smoke-tests": "test"
+  },
   "targetDependencies": {
     "asharia-resource-runtime": ["asharia-asset-core"],
     "asharia-resource-runtime-smoke-tests": ["asharia-resource-runtime"]

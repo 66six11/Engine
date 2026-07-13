@@ -1,4 +1,11 @@
 {
+  "schemaVersion": 1,
+  "packageKind": "source-boundary",
+  "sourceRole": "module-group",
+  "ownerDomain": "rendering",
+  "plannedOwnershipRoot": "com.asharia.system.rendering-vulkan",
+  "selectable": false,
+  "catalogVisible": false,
   "name": "com.asharia.renderer-basic",
   "version": "0.1.0",
   "displayName": "Asharia Engine Basic Renderer",
@@ -15,6 +22,11 @@
     "asharia-renderer-basic-vulkan",
     "asharia-renderer-basic-shaders"
   ],
+  "targetRoles": {
+    "asharia-renderer-basic": "contract",
+    "asharia-renderer-basic-vulkan": "backend",
+    "asharia-renderer-basic-shaders": "content-build"
+  },
   "targetDependencies": {
     "asharia-renderer-basic": ["asharia-core", "asharia-rendergraph", "asharia-shader-slang"],
     "asharia-renderer-basic-vulkan": [

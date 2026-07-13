@@ -113,6 +113,8 @@ build\cmake\msvc-debug\tools\asset-processor\asharia-asset-processor.exe execute
 powershell -ExecutionPolicy Bypass -File tools\check-text-encoding.ps1
 powershell -ExecutionPolicy Bypass -File tools\check-doc-sync.ps1
 powershell -ExecutionPolicy Bypass -File tools\check-asset-boundaries.ps1
+python tools\check_package_topology.py
+python -m unittest discover -s tools\tests -p "test_package_topology.py"
 powershell -ExecutionPolicy Bypass -File tools\count-code-lines.ps1
 ```
 
@@ -120,4 +122,9 @@ powershell -ExecutionPolicy Bypass -File tools\count-code-lines.ps1
 - `check-doc-sync.ps1` 在 code/build/tooling 变更缺少文档同步时失败；临时验证未跟踪文件时可加 `-IncludeUntracked`。
 - `check-asset-boundaries.ps1` 验证 `asset-core` 没有重新引入 texture profile/importer 解释或 `asset-pipeline`
   依赖。
+- `check_package_topology.py` 验证全部 source-boundary manifests 的 identity、dependency DAG、target owner/role、
+  target dependency keys 和直接 CMake target 声明；需要机器快照时使用
+  `--output build/package-topology.json`，不要提交该生成文件。
+- `tools/tests/test_package_topology.py` 覆盖正常 inventory、missing dependency、cycle、duplicate identity、
+  catalog 泄漏和未声明 CMake target 等负向路径。
 - `count-code-lines.ps1` 只统计 Git tracked 文本文件，默认排除 Markdown；需要把文档纳入统计时加 `-IncludeDocs`。

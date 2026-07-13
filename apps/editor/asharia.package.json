@@ -1,4 +1,11 @@
 {
+  "schemaVersion": 1,
+  "packageKind": "source-boundary",
+  "sourceRole": "host-application",
+  "ownerDomain": "editor",
+  "plannedOwnershipRoot": "host/editor",
+  "selectable": false,
+  "catalogVisible": false,
   "name": "com.asharia.apps.editor",
   "version": "0.1.0",
   "displayName": "Asharia Engine Editor",
@@ -15,7 +22,12 @@
     "com.asharia.window-glfw",
     "com.asharia.rhi-vulkan"
   ],
-  "targets": ["asharia-editor", "asharia-editor-imgui-shaders"],
+  "targets": ["asharia-editor", "editor-native", "asharia-editor-imgui-shaders"],
+  "targetRoles": {
+    "asharia-editor": "host",
+    "editor-native": "adapter",
+    "asharia-editor-imgui-shaders": "content-build"
+  },
   "targetDependencies": {
     "asharia-editor": [
       "asharia-archive",
@@ -31,6 +43,11 @@
       "asharia-shader-slang",
       "asharia-window-glfw",
       "asharia-editor-imgui-shaders"
+    ],
+    "editor-native": [
+      "asharia-archive",
+      "asharia-renderer-basic-vulkan",
+      "asharia-rhi-vulkan"
     ],
     "asharia-editor-imgui-shaders": ["asharia-editor-imgui-frag"]
   }

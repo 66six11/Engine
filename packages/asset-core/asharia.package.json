@@ -1,4 +1,11 @@
 {
+  "schemaVersion": 1,
+  "packageKind": "source-boundary",
+  "sourceRole": "module-group",
+  "ownerDomain": "content",
+  "plannedOwnershipRoot": "com.asharia.system.content",
+  "selectable": false,
+  "catalogVisible": false,
   "name": "com.asharia.asset-core",
   "version": "0.1.0",
   "displayName": "Asharia Engine Asset Core",
@@ -6,6 +13,11 @@
   "dependencies": ["com.asharia.core", "com.asharia.archive"],
   "targets": ["asharia-asset-core", "asharia-asset-core-io"],
   "testTargets": ["asharia-asset-core-smoke-tests"],
+  "targetRoles": {
+    "asharia-asset-core": "contract",
+    "asharia-asset-core-io": "runtime",
+    "asharia-asset-core-smoke-tests": "test"
+  },
   "targetDependencies": {
     "asharia-asset-core": ["asharia-core"],
     "asharia-asset-core-io": ["asharia-asset-core", "asharia-archive"],

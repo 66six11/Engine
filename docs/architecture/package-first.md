@@ -213,9 +213,9 @@ flowchart LR
 
 - Editor UI 不是 package graph 的事实来源；`asharia.packages.json` 和 `asharia.packages.lock.json` 才是。
 - Package Manager 的导入单位是完整 Installable Capability Package，catalog type 至少区分 `system`、`feature`、`integration`、`content` 和 `template`。
-- System Package 共同交付基础领域的 runtime owner、public APIs、Editor、tool/cook、diagnostics 和当前 backend/provider modules；Host Profile 只激活兼容部分。
-- Feature Package 基于一个或多个 System public APIs，完整交付自己的状态/算法、schema/assets、runtime、Editor authoring、cook 和 diagnostics，例如 Advanced Camera Rig。它不需要拥有新的基础系统。
-- Integration Package 显式依赖被桥接的包，交付窄 contribution 和兼容测试，不拥有任一侧状态。
+- System Package 共同交付基础领域的 runtime owner、public APIs 和当前 implementation；Editor、tool/cook、diagnostics、backend/provider 等角色只在该系统确实适用时共同交付，Host Profile 只激活兼容部分。
+- Feature Package 基于一个或多个 System public APIs，完整交付自己的状态/算法，以及实际适用的 schema/assets、runtime、Editor authoring、cook 和 diagnostics，例如 Advanced Camera Rig。它不需要拥有新的基础系统。
+- Integration Package 只在两个独立可选包之间存在真实桥接需求时创建；它显式依赖双方，交付窄 contribution 和兼容测试，不拥有任一侧状态。只有一个依赖方或没有桥接行为时，不创建空 Integration Package。
 - CMake target、contract、runtime module、Editor adapter、cook tool、Vulkan bridge 或脚本 VM provider 都不是独立安装条目。它们可以保持硬 target 边界，但共享所属 System Package 的版本、获取和移除生命周期。
 - 完整能力可以自动依赖其他完整 packages；“完整”不代表没有依赖，而是用户不会得到缺少其声明能力所需 implementation 或 authoring/cook 支持的半安装状态。
 - 安装、升级、降级、移除和 lockfile rollback 以完整 installable package 为原子事务。Host Profile 可以不激活 Editor/cook/backend module，但这不是把能力拆成多个安装状态。
@@ -282,6 +282,13 @@ project + asharia.packages.lock.json + conan.lock + asharia.build.json
 
 ```json
 {
+  "schemaVersion": 1,
+  "packageKind": "source-boundary",
+  "sourceRole": "module-group",
+  "ownerDomain": "rendering",
+  "plannedOwnershipRoot": "com.asharia.system.rendering-vulkan",
+  "selectable": false,
+  "catalogVisible": false,
   "name": "com.asharia.rendergraph",
   "version": "0.1.0",
   "displayName": "Asharia Engine Render Graph",
@@ -291,17 +298,50 @@ project + asharia.packages.lock.json + conan.lock + asharia.build.json
   ],
   "targets": [
     "asharia-rendergraph"
-  ]
+  ],
+  "testTargets": [
+    "asharia-rendergraph-compile-tests",
+    "asharia-rendergraph-header-tests"
+  ],
+  "targetRoles": {
+    "asharia-rendergraph": "runtime",
+    "asharia-rendergraph-compile-tests": "test",
+    "asharia-rendergraph-header-tests": "test"
+  },
+  "targetDependencies": {
+    "asharia-rendergraph": ["asharia-core"],
+    "asharia-rendergraph-compile-tests": ["asharia-rendergraph"],
+    "asharia-rendergraph-header-tests": ["asharia-rendergraph"]
+  }
 }
 ```
 
-manifest 的第一阶段用途是文档化边界、shipping target、test target 和 target-level dependency；
-当前 CMake 仍以显式 `CMakeLists.txt` 为准，后续再评估由脚本或 CMake helper 读取 manifest。
+schema v1 明确描述**当前源码/构建边界**，不是安装 schema：
+
+| 字段 | 当前语义 |
+| --- | --- |
+| `packageKind` | v1 固定为 `source-boundary`，禁止把当前物理目录误当 catalog entry |
+| `sourceRole` | `engine-component`、`module-group`、`host-application` 或 `tool` |
+| `ownerDomain` | 当前 primary system domain；与 Project primary area 对齐，但不是用户安装 identity |
+| `plannedOwnershipRoot` | 未来 ownership/发行聚合根；可以是完整 package identity，也可以是 `engine/*` 或 `host/*` |
+| `selectable` / `catalogVisible` | 当前必须为 `false`；Package Manager 不显示或直接选择 source boundary |
+| `targetRoles` | 每个 shipping/test target 的单一实现角色；role 不等于独立安装项 |
+| `dependencies` / `targetDependencies` | package 粗边界与 target 实际边界，两者都由门禁对证 |
+
+v1 的 `ownerDomain` 取值为 `foundation/platform/observability/data/content/world/rendering/editor/product`；target role
+取值为 `bootstrap/contract/runtime/adapter/backend/host/tool/content-build/compatibility/diagnostics/test`。`testTargets`
+必须使用 `test`，其他 target 不能借用该 role。新增 domain 或 role 必须先有真实 owner 差异，并同步 validator 和本文；不能用自由字符串
+掩盖分类困难。
+
+`python tools/check_package_topology.py` 从全部 manifests 生成确定排序的内存 inventory，验证 package identity、dependency
+DAG、target owner/role、`targetDependencies` 和直接 CMake target 声明；`--output build/package-topology.json` 可为审查或后续 resolver
+生成机器可读快照。生成物位于 `build/`，不提交，避免维护第二份手写事实源。当前 CMake 仍是链接和 target 创建真相；validator
+负责发现 manifest 漂移，不从 manifest 生成构建系统。
 
 当前仓库的多个物理 `asharia.package.json` 仍可能共同构成一个未来完整系统，例如 renderer、RenderGraph、Vulkan RHI、materials 和 shader tools。迁移期间这些 manifests 用于审查 source/build 边界；它们不自动获得 Package Manager 用户条目。目标 Installable Capability Package manifest 位于 `packages/systems`、`packages/features`、`packages/integrations`、`packages/asset-packs` 或 `packages/templates` 下的发行根，汇总其内部 source packages/targets/modules/contributions，并成为 `asharia.packages.json` 可直接依赖的能力身份。
 
-`engine/*` 是 bootstrap component，不是用户可选能力。迁移期间如果继续复用同一 manifest schema，必须明确
-`kind: "engine-component"`、`selectable: false` 和 `catalogVisible: false`；Package Manager catalog 不得显示这些条目。
+`engine/*` 是 bootstrap component，不是用户可选能力。其 source-boundary manifest 使用
+`sourceRole: "engine-component"`，并同样保持 `selectable: false` 和 `catalogVisible: false`；Package Manager catalog 不得显示这些条目。
 
 当前 manifest 已包含 `targetDependencies` 字段。审查时需要同时看两层：
 
@@ -398,3 +438,14 @@ app integration 层，不能为了方便把 package/private 实现直接并进 a
 - `.ashader` authoring parser 与 generated Slang skeleton 位于 `packages/shader-authoring`，与 Slang 编译和
   material runtime model 分离。
 - 不出现 `src/engine_all.cpp` 这类聚合一切的巨型实现文件。
+
+## 资料依据
+
+- Unity package layout 允许一个发行包同时包含 Runtime、Editor、Tests 和 Samples；这支持“一个安装单元、多内部角色”，不要求每个包机械具备全部目录：<https://docs.unity3d.com/Manual/cus-layout.html>
+- Unity project manifest 与 lock file 分别记录 direct dependencies 和确定解析结果；Asharia 因此也把 UI 与 graph 事实源分开：<https://docs.unity3d.com/Manual/upm-manifestPrj.html>、<https://docs.unity3d.com/Manual/upm-conflicts-auto.html>
+- Unreal Plugin 可以包含多个 Runtime/Editor/Developer modules；这支持 package 与编译 module/target 非一一对应：<https://dev.epicgames.com/documentation/en-us/unreal-engine/plugins-in-unreal-engine>
+- O3DE Code Gem 可以共同交付代码、资产、runtime/editor modules，并由 Project Manager 或 CLI 配置；native 代码变更需要重建：<https://docs.o3de.org/docs/user-guide/programming/gems/code-gems/>、<https://docs.o3de.org/docs/user-guide/project-config/add-remove-gems/>
+- CMake package/export 可以聚合并发布多个 targets；源码 target 边界无需等同安装条目：<https://cmake.org/cmake/help/latest/guide/importing-exporting/index.html>
+
+这些资料验证的是发行单元、内部模块和确定性依赖图的共同模式；`source-boundary`、`plannedOwnershipRoot`、Host Profiles
+及最小 `engine/` 分层是 Asharia 为当前静态 C++23/CMake 仓库选择的具体约束，不声称是行业统一 schema。

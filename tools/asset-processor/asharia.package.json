@@ -1,4 +1,11 @@
 {
+  "schemaVersion": 1,
+  "packageKind": "source-boundary",
+  "sourceRole": "tool",
+  "ownerDomain": "content",
+  "plannedOwnershipRoot": "com.asharia.system.content",
+  "selectable": false,
+  "catalogVisible": false,
   "name": "com.asharia.tools.asset-processor",
   "version": "0.1.0",
   "displayName": "Asharia Engine Asset Processor",
@@ -10,6 +17,9 @@
     "com.asharia.project-core"
   ],
   "targets": ["asharia-asset-processor"],
+  "targetRoles": {
+    "asharia-asset-processor": "tool"
+  },
   "targetDependencies": {
     "asharia-asset-processor": [
       "asharia-core",

@@ -1,4 +1,11 @@
 {
+  "schemaVersion": 1,
+  "packageKind": "source-boundary",
+  "sourceRole": "module-group",
+  "ownerDomain": "content",
+  "plannedOwnershipRoot": "com.asharia.system.content",
+  "selectable": false,
+  "catalogVisible": false,
   "name": "com.asharia.asset-pipeline",
   "version": "0.1.0",
   "displayName": "Asharia Engine Asset Pipeline",
@@ -15,6 +22,11 @@
     "asharia-asset-pipeline-smoke-tests",
     "asharia-asset-pipeline-header-tests"
   ],
+  "targetRoles": {
+    "asharia-asset-pipeline": "tool",
+    "asharia-asset-pipeline-smoke-tests": "test",
+    "asharia-asset-pipeline-header-tests": "test"
+  },
   "targetDependencies": {
     "asharia-asset-pipeline": [
       "asharia-core",

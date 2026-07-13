@@ -1,4 +1,11 @@
 {
+  "schemaVersion": 1,
+  "packageKind": "source-boundary",
+  "sourceRole": "module-group",
+  "ownerDomain": "rendering",
+  "plannedOwnershipRoot": "com.asharia.system.rendering-vulkan",
+  "selectable": false,
+  "catalogVisible": false,
   "name": "com.asharia.shader-authoring",
   "version": "0.1.0",
   "displayName": "Asharia Engine Shader Authoring",
@@ -6,6 +13,10 @@
   "dependencies": ["com.asharia.core"],
   "targets": ["asharia-shader-authoring"],
   "testTargets": ["asharia-shader-authoring-smoke-tests"],
+  "targetRoles": {
+    "asharia-shader-authoring": "contract",
+    "asharia-shader-authoring-smoke-tests": "test"
+  },
   "targetDependencies": {
     "asharia-shader-authoring": ["asharia-core"],
     "asharia-shader-authoring-smoke-tests": ["asharia-shader-authoring"]

@@ -1,4 +1,11 @@
 {
+  "schemaVersion": 1,
+  "packageKind": "source-boundary",
+  "sourceRole": "host-application",
+  "ownerDomain": "product",
+  "plannedOwnershipRoot": "host/sample-viewer",
+  "selectable": false,
+  "catalogVisible": false,
   "name": "com.asharia.apps.sample-viewer",
   "version": "0.1.0",
   "displayName": "Asharia Engine Sample Viewer",
@@ -16,6 +23,9 @@
     "com.asharia.renderer-basic"
   ],
   "targets": ["asharia-sample-viewer"],
+  "targetRoles": {
+    "asharia-sample-viewer": "host"
+  },
   "targetDependencies": {
     "asharia-sample-viewer": [
       "asharia-asset-pipeline",

@@ -1,4 +1,11 @@
 {
+  "schemaVersion": 1,
+  "packageKind": "source-boundary",
+  "sourceRole": "module-group",
+  "ownerDomain": "world",
+  "plannedOwnershipRoot": "com.asharia.system.world",
+  "selectable": false,
+  "catalogVisible": false,
   "name": "com.asharia.scene-core",
   "version": "0.1.0",
   "displayName": "Asharia Engine Scene Core",
@@ -6,6 +13,10 @@
   "dependencies": ["com.asharia.core"],
   "targets": ["asharia-scene-core"],
   "testTargets": ["asharia-scene-core-smoke-tests"],
+  "targetRoles": {
+    "asharia-scene-core": "runtime",
+    "asharia-scene-core-smoke-tests": "test"
+  },
   "targetDependencies": {
     "asharia-scene-core": ["asharia-core"],
     "asharia-scene-core-smoke-tests": ["asharia-scene-core"]

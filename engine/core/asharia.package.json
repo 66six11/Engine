@@ -1,4 +1,11 @@
 {
+  "schemaVersion": 1,
+  "packageKind": "source-boundary",
+  "sourceRole": "engine-component",
+  "ownerDomain": "foundation",
+  "plannedOwnershipRoot": "engine/core",
+  "selectable": false,
+  "catalogVisible": false,
   "name": "com.asharia.core",
   "version": "0.1.0",
   "displayName": "Asharia Engine Core",
@@ -6,6 +13,10 @@
   "dependencies": [],
   "targets": ["asharia-core"],
   "testTargets": ["asharia-core-file-io-tests"],
+  "targetRoles": {
+    "asharia-core": "bootstrap",
+    "asharia-core-file-io-tests": "test"
+  },
   "targetDependencies": {
     "asharia-core": [],
     "asharia-core-file-io-tests": ["asharia-core"]

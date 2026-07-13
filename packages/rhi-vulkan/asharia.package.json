@@ -1,4 +1,11 @@
 {
+  "schemaVersion": 1,
+  "packageKind": "source-boundary",
+  "sourceRole": "module-group",
+  "ownerDomain": "rendering",
+  "plannedOwnershipRoot": "com.asharia.system.rendering-vulkan",
+  "selectable": false,
+  "catalogVisible": false,
   "name": "com.asharia.rhi-vulkan",
   "version": "0.1.0",
   "displayName": "Asharia Engine Vulkan RHI",
@@ -6,6 +13,11 @@
   "dependencies": ["com.asharia.core", "com.asharia.rendergraph"],
   "targets": ["asharia-rhi-vulkan", "asharia-rhi-vulkan-rendergraph"],
   "testTargets": ["asharia-rhi-vulkan-enumeration-tests"],
+  "targetRoles": {
+    "asharia-rhi-vulkan": "backend",
+    "asharia-rhi-vulkan-rendergraph": "adapter",
+    "asharia-rhi-vulkan-enumeration-tests": "test"
+  },
   "targetDependencies": {
     "asharia-rhi-vulkan": ["asharia-core"],
     "asharia-rhi-vulkan-rendergraph": ["asharia-rhi-vulkan", "asharia-rendergraph"],
