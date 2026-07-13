@@ -25,6 +25,7 @@ except ImportError as exc:  # pragma: no cover - exercised only in an unbootstra
 
 
 PACKAGE_MANIFEST_NAME = "asharia.package.json"
+PACKAGE_SOURCE_BUILD_NAME = "asharia.package.build.json"
 PROJECT_MANIFEST_NAME = "asharia.packages.json"
 PACKAGE_LOCK_NAME = "asharia.packages.lock.json"
 HOST_PROFILE_NAME = "asharia.host-profile.json"
@@ -38,6 +39,10 @@ PROJECT_SCHEMA_NAME = "project-package-manifest-v1.schema.json"
 LOCK_SCHEMA_NAME = "package-lock-v1.schema.json"
 HOST_PROFILE_SCHEMA_NAME = "host-profile-v1.schema.json"
 HOST_COMPOSITION_PLAN_SCHEMA_NAME = "host-composition-plan-v1.schema.json"
+PACKAGE_SOURCE_BUILD_SCHEMA_NAME = "package-source-build-v1.schema.json"
+SOURCE_TOPOLOGY_SNAPSHOT_SCHEMA_NAME = "source-topology-snapshot-v1.schema.json"
+CMAKE_CODEMODEL_SNAPSHOT_SCHEMA_NAME = "cmake-codemodel-snapshot-v1.schema.json"
+SOURCE_BUILD_PLAN_SCHEMA_NAME = "source-build-plan-v1.schema.json"
 PACKAGE_TREE_HEADER = b"asharia-package-tree-v1\0"
 PACKAGE_TREE_ROOT_EXCLUDES = {".git", ".hg", ".svn", "build", "generated"}
 ANY_PLATFORM_ID = "com.asharia.platform.any"
@@ -177,6 +182,10 @@ class ContractValidators:
     lock: Draft202012Validator
     host_profile: Draft202012Validator
     host_composition_plan: Draft202012Validator
+    package_source_build: Draft202012Validator
+    source_topology_snapshot: Draft202012Validator
+    cmake_codemodel_snapshot: Draft202012Validator
+    source_build_plan: Draft202012Validator
 
 
 @dataclass(frozen=True, order=True)
@@ -295,6 +304,10 @@ def load_contract_validators(schema_root: Path = DEFAULT_SCHEMA_ROOT) -> Contrac
         lock=create(LOCK_SCHEMA_NAME),
         host_profile=create(HOST_PROFILE_SCHEMA_NAME),
         host_composition_plan=create(HOST_COMPOSITION_PLAN_SCHEMA_NAME),
+        package_source_build=create(PACKAGE_SOURCE_BUILD_SCHEMA_NAME),
+        source_topology_snapshot=create(SOURCE_TOPOLOGY_SNAPSHOT_SCHEMA_NAME),
+        cmake_codemodel_snapshot=create(CMAKE_CODEMODEL_SNAPSHOT_SCHEMA_NAME),
+        source_build_plan=create(SOURCE_BUILD_PLAN_SCHEMA_NAME),
     )
 
 
@@ -1609,7 +1622,185 @@ def validate_locked_result_data(
     return sorted(diagnostics, key=_diagnostic_sort_key)
 
 
+def _package_source_build_semantic_diagnostics(
+    descriptor: dict[str, Any], descriptor_path: str
+) -> list[Diagnostic]:
+    diagnostics: list[Diagnostic] = []
+    module_indices: dict[str, int] = {}
+    for module_index, module in enumerate(descriptor["modules"]):
+        module_id = module["moduleId"]
+        previous = module_indices.get(module_id)
+        if previous is not None:
+            diagnostics.append(
+                Diagnostic(
+                    code="build.descriptor.duplicate-module",
+                    manifest_path=descriptor_path,
+                    pointer=f"/modules/{module_index}/moduleId",
+                    message=(
+                        f"duplicate logical module '{module_id}'; first declared at "
+                        f"index {previous}"
+                    ),
+                )
+            )
+        else:
+            module_indices[module_id] = module_index
+
+        build = module["build"]
+        if build["kind"] != "target-roots":
+            continue
+        target_indices: dict[str, int] = {}
+        for target_index, target in enumerate(build["targets"]):
+            target_name = target["name"]
+            previous_target = target_indices.get(target_name)
+            if previous_target is not None:
+                diagnostics.append(
+                    Diagnostic(
+                        code="build.descriptor.duplicate-target",
+                        manifest_path=descriptor_path,
+                        pointer=(
+                            f"/modules/{module_index}/build/targets/"
+                            f"{target_index}/name"
+                        ),
+                        message=(
+                            f"duplicate build root '{target_name}'; first declared at "
+                            f"index {previous_target}"
+                        ),
+                    )
+                )
+            else:
+                target_indices[target_name] = target_index
+    return sorted(diagnostics, key=_diagnostic_sort_key)
+
+
+def _source_topology_semantic_diagnostics(
+    snapshot: dict[str, Any], snapshot_path: str
+) -> list[Diagnostic]:
+    diagnostics: list[Diagnostic] = []
+    package_indices: dict[str, int] = {}
+    path_indices: dict[str, int] = {}
+    target_owners: dict[str, tuple[int, int]] = {}
+    owner_counts: dict[str, int] = {}
+    planned_root_counts: dict[str, int] = {}
+
+    for package_index, package in enumerate(snapshot["packages"]):
+        package_name = package["name"]
+        package_path = package["path"]
+        for value, indices, code, field in (
+            (package_name, package_indices, "build.topology.duplicate-package", "name"),
+            (package_path, path_indices, "build.topology.duplicate-path", "path"),
+        ):
+            previous = indices.get(value)
+            if previous is not None:
+                diagnostics.append(
+                    Diagnostic(
+                        code=code,
+                        manifest_path=snapshot_path,
+                        pointer=f"/packages/{package_index}/{field}",
+                        message=f"'{value}' was first declared at package index {previous}",
+                    )
+                )
+            else:
+                indices[value] = package_index
+
+        owner = package["ownerDomain"]
+        planned_root = package["plannedOwnershipRoot"]
+        owner_counts[owner] = owner_counts.get(owner, 0) + 1
+        planned_root_counts[planned_root] = planned_root_counts.get(planned_root, 0) + 1
+        for target_index, target in enumerate(package["targets"]):
+            target_name = target["name"]
+            previous_owner = target_owners.get(target_name)
+            if previous_owner is not None:
+                diagnostics.append(
+                    Diagnostic(
+                        code="build.topology.duplicate-target",
+                        manifest_path=snapshot_path,
+                        pointer=f"/packages/{package_index}/targets/{target_index}/name",
+                        message=(
+                            f"target '{target_name}' was first declared at package/target "
+                            f"indices {previous_owner[0]}/{previous_owner[1]}"
+                        ),
+                    )
+                )
+            else:
+                target_owners[target_name] = (package_index, target_index)
+            if target["test"] != (target["role"] == "test"):
+                diagnostics.append(
+                    Diagnostic(
+                        code="build.topology.target-role-mismatch",
+                        manifest_path=snapshot_path,
+                        pointer=f"/packages/{package_index}/targets/{target_index}",
+                        message="target test flag and role must agree",
+                    )
+                )
+
+    package_names = set(package_indices)
+    for package_index, package in enumerate(snapshot["packages"]):
+        for dependency_index, dependency in enumerate(package["dependencies"]):
+            if dependency not in package_names:
+                diagnostics.append(
+                    Diagnostic(
+                        code="build.topology.unknown-package-dependency",
+                        manifest_path=snapshot_path,
+                        pointer=f"/packages/{package_index}/dependencies/{dependency_index}",
+                        message=f"unknown source-boundary dependency '{dependency}'",
+                    )
+                )
+    expected_summary = {
+        "packageCount": len(snapshot["packages"]),
+        "targetCount": sum(len(package["targets"]) for package in snapshot["packages"]),
+        "ownerDomains": dict(sorted(owner_counts.items())),
+        "plannedOwnershipRoots": dict(sorted(planned_root_counts.items())),
+    }
+    if snapshot["summary"] != expected_summary:
+        diagnostics.append(
+            Diagnostic(
+                code="build.topology.summary-mismatch",
+                manifest_path=snapshot_path,
+                pointer="/summary",
+                message="topology summary does not match package and target records",
+            )
+        )
+    return sorted(diagnostics, key=_diagnostic_sort_key)
+
+
+def _cmake_codemodel_semantic_diagnostics(
+    snapshot: dict[str, Any], snapshot_path: str
+) -> list[Diagnostic]:
+    diagnostics: list[Diagnostic] = []
+    target_indices: dict[str, int] = {}
+    for target_index, target in enumerate(snapshot["targets"]):
+        target_name = target["name"]
+        previous = target_indices.get(target_name)
+        if previous is not None:
+            diagnostics.append(
+                Diagnostic(
+                    code="build.codemodel.duplicate-target",
+                    manifest_path=snapshot_path,
+                    pointer=f"/targets/{target_index}/name",
+                    message=f"target '{target_name}' was first declared at index {previous}",
+                )
+            )
+        else:
+            target_indices[target_name] = target_index
+
+    target_names = set(target_indices)
+    for target_index, target in enumerate(snapshot["targets"]):
+        for dependency_index, dependency in enumerate(target["dependencies"]):
+            if dependency not in target_names:
+                diagnostics.append(
+                    Diagnostic(
+                        code="build.codemodel.dangling-dependency",
+                        manifest_path=snapshot_path,
+                        pointer=f"/targets/{target_index}/dependencies/{dependency_index}",
+                        message=f"dependency target '{dependency}' is absent from the snapshot",
+                    )
+                )
+    return sorted(diagnostics, key=_diagnostic_sort_key)
+
+
 def _contract_kind(manifest: Any, manifest_path: str) -> str | None:
+    if Path(manifest_path).name == PACKAGE_SOURCE_BUILD_NAME:
+        return "package-source-build"
     if Path(manifest_path).name == HOST_PROFILE_NAME:
         return "host-profile"
     if Path(manifest_path).name == PACKAGE_LOCK_NAME:
@@ -1624,6 +1815,14 @@ def _contract_kind(manifest: Any, manifest_path: str) -> str | None:
         return "lock"
     if manifest.get("schema") == "com.asharia.host-profile":
         return "host-profile"
+    if manifest.get("schema") == "com.asharia.package-source-build":
+        return "package-source-build"
+    if manifest.get("schema") == "com.asharia.source-topology-snapshot":
+        return "source-topology-snapshot"
+    if manifest.get("schema") == "com.asharia.cmake-codemodel-snapshot":
+        return "cmake-codemodel-snapshot"
+    if manifest.get("schema") == "com.asharia.source-build-plan":
+        return "source-build-plan"
     if manifest.get("schemaVersion") == 1 and manifest.get("packageKind") == "source-boundary":
         return "source-boundary"
     package_kind = manifest.get("packageKind")
@@ -1659,7 +1858,23 @@ def validate_manifest_data(
                 message="manifest does not declare a supported package-runtime author contract",
             )
         ]
-    if kind == "host-profile":
+    if kind == "package-source-build":
+        validator = validators.package_source_build
+        schema_code = "build.descriptor.schema"
+        semantic_validator = _package_source_build_semantic_diagnostics
+    elif kind == "source-topology-snapshot":
+        validator = validators.source_topology_snapshot
+        schema_code = "build.topology.schema"
+        semantic_validator = _source_topology_semantic_diagnostics
+    elif kind == "cmake-codemodel-snapshot":
+        validator = validators.cmake_codemodel_snapshot
+        schema_code = "build.codemodel.schema"
+        semantic_validator = _cmake_codemodel_semantic_diagnostics
+    elif kind == "source-build-plan":
+        validator = validators.source_build_plan
+        schema_code = "build.plan.schema"
+        semantic_validator = lambda value, path: []
+    elif kind == "host-profile":
         validator = validators.host_profile
         schema_code = "host-profile.manifest.schema"
         semantic_validator = _host_profile_semantic_diagnostics
@@ -1706,12 +1921,82 @@ def validate_manifest_file(
     return validate_manifest_data(manifest, manifest_path, validators)
 
 
+def validate_package_source_build_binding(
+    descriptor: Any,
+    author_manifest: Any,
+    validators: ContractValidators,
+    descriptor_path: str = PACKAGE_SOURCE_BUILD_NAME,
+    manifest_path: str = PACKAGE_MANIFEST_NAME,
+) -> list[Diagnostic]:
+    """Validate one descriptor and its exact installable author-manifest binding."""
+
+    diagnostics = validate_manifest_data(descriptor, descriptor_path, validators)
+    manifest_diagnostics = validate_manifest_data(
+        author_manifest,
+        manifest_path,
+        validators,
+    )
+    diagnostics.extend(manifest_diagnostics)
+    if diagnostics:
+        return sorted(diagnostics, key=_diagnostic_sort_key)
+
+    assert isinstance(descriptor, dict)
+    assert isinstance(author_manifest, dict)
+    if author_manifest["packageKind"] != "installable-capability":
+        diagnostics.append(
+            Diagnostic(
+                code="build.descriptor.unsupported-package-kind",
+                manifest_path=descriptor_path,
+                pointer="/package/id",
+                message="source build descriptors require an installable-capability package",
+            )
+        )
+        return diagnostics
+
+    for field, manifest_field in (("id", "id"), ("version", "version")):
+        if descriptor["package"][field] != author_manifest[manifest_field]:
+            diagnostics.append(
+                Diagnostic(
+                    code=f"build.descriptor.package-{field}-mismatch",
+                    manifest_path=descriptor_path,
+                    pointer=f"/package/{field}",
+                    message=(
+                        f"descriptor package {field} '{descriptor['package'][field]}' "
+                        f"does not match author manifest '{author_manifest[manifest_field]}'"
+                    ),
+                )
+            )
+
+    descriptor_modules = {module["moduleId"] for module in descriptor["modules"]}
+    manifest_modules = {module["id"] for module in author_manifest["modules"]}
+    for module_id in sorted(manifest_modules - descriptor_modules):
+        diagnostics.append(
+            Diagnostic(
+                code="build.descriptor.missing-module",
+                manifest_path=descriptor_path,
+                pointer="/modules",
+                message=f"author logical module '{module_id}' has no source build binding",
+            )
+        )
+    for module_id in sorted(descriptor_modules - manifest_modules):
+        diagnostics.append(
+            Diagnostic(
+                code="build.descriptor.unknown-module",
+                manifest_path=descriptor_path,
+                pointer="/modules",
+                message=f"descriptor binds unknown logical module '{module_id}'",
+            )
+        )
+    return sorted(diagnostics, key=_diagnostic_sort_key)
+
+
 def discover_contract_manifests(root: Path) -> list[Path]:
     """Discover package-runtime contracts while routing v1 source boundaries elsewhere."""
 
     paths: list[Path] = []
     candidates = (
         list(root.rglob(PACKAGE_MANIFEST_NAME))
+        + list(root.rglob(PACKAGE_SOURCE_BUILD_NAME))
         + list(root.rglob(PROJECT_MANIFEST_NAME))
         + list(root.rglob(PACKAGE_LOCK_NAME))
         + list(root.rglob(HOST_PROFILE_NAME))
@@ -1795,6 +2080,7 @@ def validate_manifest_files(paths: Iterable[Path], validators: ContractValidator
 
     diagnostics: list[Diagnostic] = []
     valid_feature_sets: list[tuple[str, dict[str, Any]]] = []
+    valid_contracts: dict[Path, dict[str, Any]] = {}
     for path in paths:
         manifest_path = path.as_posix()
         try:
@@ -1811,8 +2097,32 @@ def validate_manifest_files(paths: Iterable[Path], validators: ContractValidator
             continue
         file_diagnostics = validate_manifest_data(manifest, manifest_path, validators)
         diagnostics.extend(file_diagnostics)
+        if not file_diagnostics and isinstance(manifest, dict):
+            valid_contracts[path.resolve()] = manifest
         if not file_diagnostics and _contract_kind(manifest, manifest_path) == "feature-set":
             valid_feature_sets.append((manifest_path, manifest))
+
+    for descriptor_path, descriptor in sorted(
+        (
+            (path, manifest)
+            for path, manifest in valid_contracts.items()
+            if path.name == PACKAGE_SOURCE_BUILD_NAME
+        ),
+        key=lambda item: item[0].as_posix(),
+    ):
+        author_manifest_path = descriptor_path.with_name(PACKAGE_MANIFEST_NAME)
+        author_manifest = valid_contracts.get(author_manifest_path)
+        if author_manifest is None:
+            continue
+        diagnostics.extend(
+            validate_package_source_build_binding(
+                descriptor,
+                author_manifest,
+                validators,
+                descriptor_path=descriptor_path.as_posix(),
+                manifest_path=author_manifest_path.as_posix(),
+            )
+        )
     diagnostics.extend(validate_feature_set_graph(valid_feature_sets))
     return sorted(diagnostics, key=_diagnostic_sort_key)
 
@@ -1826,6 +2136,127 @@ def _normalize_version_constraint(constraint: dict[str, Any]) -> dict[str, Any]:
         "maximumExclusive": constraint["maximumExclusive"],
         "allowPrerelease": constraint["allowPrerelease"],
     }
+
+
+def normalize_package_source_build_descriptor(
+    descriptor: dict[str, Any],
+) -> dict[str, Any]:
+    """Return the deterministic semantic representation of a source build descriptor."""
+
+    modules: list[dict[str, Any]] = []
+    for module in sorted(
+        descriptor["modules"], key=lambda value: value["moduleId"].encode("utf-8")
+    ):
+        build = module["build"]
+        normalized_build: dict[str, Any] = {"kind": build["kind"]}
+        if build["kind"] == "target-roots":
+            normalized_build["targets"] = [
+                {"name": target["name"], "type": target["type"]}
+                for target in sorted(
+                    build["targets"],
+                    key=lambda value: value["name"].encode("utf-8"),
+                )
+            ]
+        modules.append(
+            {
+                "moduleId": module["moduleId"],
+                "sourceBoundaries": sorted(
+                    module["sourceBoundaries"], key=lambda value: value.encode("utf-8")
+                ),
+                "build": normalized_build,
+            }
+        )
+    return {
+        "schema": "com.asharia.package-source-build",
+        "schemaVersion": 1,
+        "package": {
+            "id": descriptor["package"]["id"],
+            "version": descriptor["package"]["version"],
+        },
+        "modules": modules,
+    }
+
+
+def render_normalized_package_source_build_descriptor(
+    descriptor: dict[str, Any],
+) -> str:
+    """Render one normalized source build descriptor with LF and a final newline."""
+
+    return json.dumps(
+        normalize_package_source_build_descriptor(descriptor),
+        ensure_ascii=False,
+        indent=2,
+    ) + "\n"
+
+
+def normalize_source_topology_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
+    """Return deterministic source-boundary and target ownership evidence."""
+
+    packages = [
+        {
+            "path": package["path"],
+            "name": package["name"],
+            "packageKind": package["packageKind"],
+            "sourceRole": package["sourceRole"],
+            "ownerDomain": package["ownerDomain"],
+            "plannedOwnershipRoot": package["plannedOwnershipRoot"],
+            "selectable": package["selectable"],
+            "catalogVisible": package["catalogVisible"],
+            "dependencies": sorted(
+                package["dependencies"], key=lambda value: value.encode("utf-8")
+            ),
+            "targets": [
+                {
+                    "name": target["name"],
+                    "role": target["role"],
+                    "test": target["test"],
+                    "dependencies": sorted(
+                        target["dependencies"],
+                        key=lambda value: value.encode("utf-8"),
+                    ),
+                }
+                for target in sorted(
+                    package["targets"],
+                    key=lambda value: value["name"].encode("utf-8"),
+                )
+            ],
+        }
+        for package in sorted(
+            snapshot["packages"],
+            key=lambda value: (
+                value["name"].encode("utf-8"),
+                value["path"].encode("utf-8"),
+            ),
+        )
+    ]
+    owner_counts: dict[str, int] = {}
+    planned_root_counts: dict[str, int] = {}
+    for package in packages:
+        owner = package["ownerDomain"]
+        planned_root = package["plannedOwnershipRoot"]
+        owner_counts[owner] = owner_counts.get(owner, 0) + 1
+        planned_root_counts[planned_root] = planned_root_counts.get(planned_root, 0) + 1
+    return {
+        "schema": "com.asharia.source-topology-snapshot",
+        "schemaVersion": 1,
+        "summary": {
+            "packageCount": len(packages),
+            "targetCount": sum(len(package["targets"]) for package in packages),
+            "ownerDomains": dict(sorted(owner_counts.items())),
+            "plannedOwnershipRoots": dict(sorted(planned_root_counts.items())),
+        },
+        "packages": packages,
+    }
+
+
+def render_normalized_source_topology_snapshot(snapshot: dict[str, Any]) -> str:
+    """Render normalized source topology JSON with LF and a final newline."""
+
+    return json.dumps(
+        normalize_source_topology_snapshot(snapshot),
+        ensure_ascii=False,
+        indent=2,
+    ) + "\n"
 
 
 def normalize_project_manifest(manifest: dict[str, Any]) -> dict[str, Any]:

@@ -93,12 +93,7 @@ jobs:
       - name: Check package manifests
         shell: pwsh
         run: |
-          python -m unittest discover -s tools\tests -p "test_package_topology.py"
-          python -m unittest discover -s tools\tests -p "test_package_contracts.py"
-          python -m unittest discover -s tools\tests -p "test_package_project_contracts.py"
-          python -m unittest discover -s tools\tests -p "test_package_lock_contracts.py"
-          python -m unittest discover -s tools\tests -p "test_package_resolver.py"
-          python -m unittest discover -s tools\tests -p "test_host_profile_contracts.py"
+          python -m unittest discover -s tools\tests -p "test_*.py"
           python tools\check_package_topology.py
           python tools\check_package_contracts.py
 

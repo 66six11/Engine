@@ -361,12 +361,14 @@
 
 ## Package graph、build graph 与 runtime lifecycle 分层
 
-本次核对日期：2026-07-13
+本次核对日期：2026-07-14
 
 一手资料：
 
 - Cargo `metadata`：https://doc.rust-lang.org/cargo/commands/cargo-metadata.html
 - CMake File API codemodel：https://cmake.org/cmake/help/latest/manual/cmake-file-api.7.html
+- CMake 3.28 File API：https://cmake.org/cmake/help/v3.28/manual/cmake-file-api.7.html
+- CMake 3.28 build CLI：https://cmake.org/cmake/help/v3.28/manual/cmake.1.html#build-a-project
 - Unreal Engine Modules：https://dev.epicgames.com/documentation/en-us/unreal-engine/unreal-engine-modules
 - O3DE Gem Module System：https://docs.o3de.org/docs/user-guide/programming/gems/overview/
 - O3DE System Components：https://docs.o3de.org/docs/user-guide/programming/components/system-components/
@@ -376,6 +378,11 @@
 - exact resolved package graph、CMake target/build graph 与 runtime factory/lifecycle graph 是三种不同权威，不能由同一组依赖边推导。
 - Host Profile 过滤后的 module identities 可以先形成 backend-neutral canonical Host Composition Plan，供 build 与 activation adapters 共用。
 - Build Plan 需要独立 build descriptor 与 CMake codemodel 对证；author package manifest 不应复制 target graph。
+- CMake File API client 必须跟随 reply index 的 `jsonFile` references；target ID 与 reply filename 不是可持久化 identity。
+- codemodel dependency closure 是 configured build graph evidence，可能包含传递或生成 edges；它不等于 package、direct-link 或 activation graph。
+- 当前 CMake 3.28.0-rc5/Ninja/MSVC Debug codemodel v2.6 实测有 42 个 buildsystem targets（23 STATIC_LIBRARY、14 UTILITY、
+  4 EXECUTABLE、1 SHARED_LIBRARY）；alias/INTERFACE identities 不在该 reply 中，因此 build roots 使用真实非 alias target name，
+  contract-only module 显式 `no-build`。
 - 可执行 Activation Plan 需要 artifact、entry point/factory、scope、phase、service dependency、rollback 等显式合同；module DAG 或
   `entryModules` 数组不能直接当作启动顺序。
 - package-level dependency-first order 只适合确定性 IR、diff 与 handoff，不代表跨 package system activation order。

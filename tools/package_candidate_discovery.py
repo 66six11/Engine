@@ -402,6 +402,43 @@ def _manifest_diagnostics(
     ]
 
 
+def _descriptor_diagnostics(
+    descriptor: Any,
+    manifest: Any,
+    source_key: str,
+    validators: contracts.ContractValidators,
+) -> list[CandidateDiscoveryDiagnostic]:
+    diagnostics = contracts.validate_package_source_build_binding(
+        descriptor,
+        manifest,
+        validators,
+    )
+    return [
+        CandidateDiscoveryDiagnostic(
+            code=diagnostic.code,
+            source_key=source_key,
+            location=(
+                f"{contracts.PACKAGE_SOURCE_BUILD_NAME}{diagnostic.pointer}"
+                if diagnostic.pointer
+                else contracts.PACKAGE_SOURCE_BUILD_NAME
+            ),
+            message=diagnostic.message,
+        )
+        for diagnostic in diagnostics
+    ]
+
+
+def _read_optional_descriptor_bytes(path: Path) -> tuple[str, bytes | None]:
+    try:
+        if not path.exists():
+            return "absent", None
+        if _is_link(path) or not path.is_file():
+            return "invalid", None
+        return "regular", path.read_bytes()
+    except OSError:
+        return "invalid", None
+
+
 def _tree_integrity_diagnostic(
     failure: contracts.PackageTreeIntegrityError,
     source_key: str,
@@ -499,6 +536,44 @@ def _load_candidate(
             )
         ]
 
+    descriptor_path = location.payload_root / contracts.PACKAGE_SOURCE_BUILD_NAME
+    descriptor_state, descriptor_bytes = _read_optional_descriptor_bytes(
+        descriptor_path
+    )
+    if descriptor_state == "invalid":
+        return None, [
+            CandidateDiscoveryDiagnostic(
+                code="discovery.build-descriptor.unreadable",
+                source_key=location.source_key,
+                location=contracts.PACKAGE_SOURCE_BUILD_NAME,
+                message="source build descriptor must be a readable regular file",
+            )
+        ]
+
+    descriptor: dict[str, Any] | None = None
+    if descriptor_bytes is not None:
+        try:
+            parsed_descriptor = json.loads(descriptor_bytes.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return None, [
+                CandidateDiscoveryDiagnostic(
+                    code="contract.manifest.json",
+                    source_key=location.source_key,
+                    location=contracts.PACKAGE_SOURCE_BUILD_NAME,
+                    message="source build descriptor must be valid UTF-8 JSON",
+                )
+            ]
+        descriptor_diagnostics = _descriptor_diagnostics(
+            parsed_descriptor,
+            manifest,
+            location.source_key,
+            validators,
+        )
+        if descriptor_diagnostics:
+            return None, descriptor_diagnostics
+        assert isinstance(parsed_descriptor, dict)
+        descriptor = parsed_descriptor
+
     manifest_integrity = contracts.compute_bytes_integrity(manifest_bytes)
     try:
         payload_integrity = contracts.compute_package_tree_integrity(location.payload_root)
@@ -527,6 +602,22 @@ def _load_candidate(
             )
         ]
 
+    final_descriptor_state, final_descriptor_bytes = _read_optional_descriptor_bytes(
+        descriptor_path
+    )
+    if (
+        final_descriptor_state != descriptor_state
+        or final_descriptor_bytes != descriptor_bytes
+    ):
+        return None, [
+            CandidateDiscoveryDiagnostic(
+                code="discovery.source.changed",
+                source_key=location.source_key,
+                location=contracts.PACKAGE_SOURCE_BUILD_NAME,
+                message="package source changed while candidate evidence was collected",
+            )
+        ]
+
     return (
         PackageCandidate(
             identity=manifest["id"],
@@ -537,6 +628,13 @@ def _load_candidate(
             manifest_integrity=manifest_integrity,
             payload_integrity=payload_integrity,
             manifest=copy.deepcopy(manifest),
+            build_descriptor=copy.deepcopy(descriptor),
+            build_descriptor_integrity=(
+                contracts.compute_bytes_integrity(descriptor_bytes)
+                if descriptor_bytes is not None
+                else None
+            ),
+            build_descriptor_bytes=descriptor_bytes,
             payload_location=location.payload_root,
         ),
         [],

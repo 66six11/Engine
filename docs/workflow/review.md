@@ -41,7 +41,7 @@
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools\check-text-encoding.ps1
 powershell -ExecutionPolicy Bypass -File tools\check-doc-sync.ps1
-python -m unittest discover -s tools\tests -p "test_package_*.py"
+python -m unittest discover -s tools\tests -p "test_*.py"
 python tools\check_package_topology.py
 python tools\check_package_contracts.py
 git diff --check

@@ -65,6 +65,98 @@ def _stable_json(value: Any) -> str | None:
         return None
 
 
+def _validate_build_descriptor_snapshot(
+    candidate: PackageCandidate,
+    validators: contracts.ContractValidators,
+) -> list[contracts.Diagnostic]:
+    descriptor_path = f"candidate/{candidate.identity}/{contracts.PACKAGE_SOURCE_BUILD_NAME}"
+    values = (
+        candidate.build_descriptor,
+        candidate.build_descriptor_integrity,
+        candidate.build_descriptor_bytes,
+    )
+    present_count = sum(value is not None for value in values)
+    diagnostics: list[contracts.Diagnostic] = []
+    if present_count not in {0, 3}:
+        diagnostics.append(
+            contracts.Diagnostic(
+                code="lock.candidate.build-descriptor-incomplete",
+                manifest_path=descriptor_path,
+                pointer="",
+                message="candidate build descriptor snapshot must be wholly present or absent",
+            )
+        )
+        return diagnostics
+
+    root = candidate.payload_location
+    if not isinstance(root, Path):
+        return diagnostics
+    on_disk_path = root / contracts.PACKAGE_SOURCE_BUILD_NAME
+    try:
+        on_disk_bytes = on_disk_path.read_bytes() if on_disk_path.is_file() else None
+    except OSError:
+        on_disk_bytes = None
+
+    if present_count == 0:
+        if on_disk_path.exists():
+            diagnostics.append(
+                contracts.Diagnostic(
+                    code="lock.candidate.build-descriptor-mismatch",
+                    manifest_path=descriptor_path,
+                    pointer="",
+                    message="payload contains a build descriptor absent from candidate snapshot",
+                )
+            )
+        return diagnostics
+
+    assert isinstance(candidate.build_descriptor, dict)
+    assert isinstance(candidate.build_descriptor_integrity, dict)
+    assert isinstance(candidate.build_descriptor_bytes, bytes)
+    if contracts.compute_bytes_integrity(
+        candidate.build_descriptor_bytes
+    ) != candidate.build_descriptor_integrity:
+        diagnostics.append(
+            contracts.Diagnostic(
+                code="lock.candidate.build-descriptor-integrity-mismatch",
+                manifest_path=descriptor_path,
+                pointer="",
+                message="candidate build descriptor bytes do not match their integrity",
+            )
+        )
+    try:
+        parsed = json.loads(candidate.build_descriptor_bytes.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        parsed = None
+    if parsed != candidate.build_descriptor:
+        diagnostics.append(
+            contracts.Diagnostic(
+                code="lock.candidate.build-descriptor-snapshot-mismatch",
+                manifest_path=descriptor_path,
+                pointer="",
+                message="candidate build descriptor data does not match captured bytes",
+            )
+        )
+    diagnostics.extend(
+        contracts.validate_package_source_build_binding(
+            candidate.build_descriptor,
+            candidate.manifest,
+            validators,
+            descriptor_path=descriptor_path,
+            manifest_path=f"candidate/{candidate.identity}/{contracts.PACKAGE_MANIFEST_NAME}",
+        )
+    )
+    if on_disk_bytes != candidate.build_descriptor_bytes:
+        diagnostics.append(
+            contracts.Diagnostic(
+                code="lock.candidate.build-descriptor-mismatch",
+                manifest_path=descriptor_path,
+                pointer="",
+                message="payload build descriptor bytes changed after discovery",
+            )
+        )
+    return diagnostics
+
+
 def _bind_locked_candidates(
     lock: dict[str, Any],
     candidates: tuple[PackageCandidate, ...],
@@ -195,6 +287,10 @@ def _bind_locked_candidates(
                     f"{node_pointer}/source",
                     f"selected source for '{identity}' has no verifiable payload location",
                 )
+            )
+        else:
+            diagnostics.extend(
+                _validate_build_descriptor_snapshot(candidate, validators)
             )
 
         if len(diagnostics) == diagnostic_count:

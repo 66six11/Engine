@@ -121,14 +121,7 @@ powershell -ExecutionPolicy Bypass -File tools\check-doc-sync.ps1
 powershell -ExecutionPolicy Bypass -File tools\check-asset-boundaries.ps1
 python tools\check_package_topology.py
 python tools\check_package_contracts.py
-python -m unittest discover -s tools\tests -p "test_package_topology.py"
-python -m unittest discover -s tools\tests -p "test_package_contracts.py"
-python -m unittest discover -s tools\tests -p "test_package_project_contracts.py"
-python -m unittest discover -s tools\tests -p "test_package_lock_contracts.py"
-python -m unittest discover -s tools\tests -p "test_package_resolver.py"
-python -m unittest discover -s tools\tests -p "test_package_candidate_discovery.py"
-python -m unittest discover -s tools\tests -p "test_package_lock_verification.py"
-python -m unittest discover -s tools\tests -p "test_host_profile_contracts.py"
+python -m unittest discover -s tools\tests -p "test_*.py"
 powershell -ExecutionPolicy Bypass -File tools\count-code-lines.ps1
 ```
 
@@ -140,7 +133,8 @@ powershell -ExecutionPolicy Bypass -File tools\count-code-lines.ps1
   target dependency keys 和直接 CMake target 声明；需要机器快照时使用
   `--output build/package-topology.json`，不要提交该生成文件。
 - `check_package_contracts.py` 使用 Draft 2020-12 schema、显式 discriminator dispatcher 和跨字段 semantic rules 验证
-  installable v2、Feature Set v2、Project Manifest v1、Package Lockfile v1 与 Host Profile v1 contracts；也可以显式传入一个或多个
+  installable v2、Feature Set v2、Project Manifest v1、Package Lockfile v1、Host Profile v1、Package Source Build v1、
+  Source Topology Snapshot v1、CMake Codemodel Snapshot v1 与 Source Build Plan v1 contracts；也可以显式传入一个或多个
   fixture/manifest 路径。
 - `tools/tests/test_package_topology.py` 覆盖正常 inventory、missing dependency、cycle、duplicate identity、
   catalog 泄漏和未声明 CMake target 等负向路径。

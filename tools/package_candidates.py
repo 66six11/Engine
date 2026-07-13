@@ -18,4 +18,7 @@ class PackageCandidate:
     manifest_integrity: dict[str, Any]
     payload_integrity: dict[str, Any]
     manifest: dict[str, Any]
+    build_descriptor: dict[str, Any] | None = None
+    build_descriptor_integrity: dict[str, Any] | None = None
+    build_descriptor_bytes: bytes | None = field(default=None, repr=False)
     payload_location: Any = field(default=None, compare=False, repr=False)

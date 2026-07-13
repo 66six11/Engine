@@ -1,0 +1,192 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.asharia.dev/package-runtime/source-topology-snapshot-v1.schema.json",
+  "title": "Asharia Source Topology Snapshot v1",
+  "description": "Canonical repository source-boundary and declared CMake target ownership evidence.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "schemaVersion",
+    "summary",
+    "packages"
+  ],
+  "properties": {
+    "schema": {
+      "const": "com.asharia.source-topology-snapshot"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "summary": {
+      "$ref": "#/$defs/summary"
+    },
+    "packages": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/package"
+      }
+    }
+  },
+  "$defs": {
+    "relativePath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*\\\\)(?!.*(^|/)\\.\\.?(/|$))(?!.*:).+$"
+    },
+    "cmakeTargetName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "pattern": "^[A-Za-z0-9_.+\\-]+$"
+    },
+    "countMap": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "packageCount",
+        "targetCount",
+        "ownerDomains",
+        "plannedOwnershipRoots"
+      ],
+      "properties": {
+        "packageCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "targetCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ownerDomains": {
+          "$ref": "#/$defs/countMap"
+        },
+        "plannedOwnershipRoots": {
+          "$ref": "#/$defs/countMap"
+        }
+      }
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "role",
+        "test",
+        "dependencies"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/cmakeTargetName"
+        },
+        "role": {
+          "enum": [
+            "adapter",
+            "backend",
+            "bootstrap",
+            "compatibility",
+            "content-build",
+            "contract",
+            "diagnostics",
+            "host",
+            "runtime",
+            "test",
+            "tool"
+          ]
+        },
+        "test": {
+          "type": "boolean"
+        },
+        "dependencies": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/cmakeTargetName"
+          }
+        }
+      }
+    },
+    "package": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "name",
+        "packageKind",
+        "sourceRole",
+        "ownerDomain",
+        "plannedOwnershipRoot",
+        "selectable",
+        "catalogVisible",
+        "dependencies",
+        "targets"
+      ],
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/relativePath"
+        },
+        "name": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/packageId"
+        },
+        "packageKind": {
+          "const": "source-boundary"
+        },
+        "sourceRole": {
+          "enum": [
+            "engine-component",
+            "host-application",
+            "module-group",
+            "tool"
+          ]
+        },
+        "ownerDomain": {
+          "enum": [
+            "content",
+            "data",
+            "editor",
+            "foundation",
+            "observability",
+            "platform",
+            "product",
+            "rendering",
+            "world"
+          ]
+        },
+        "plannedOwnershipRoot": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.+/\\-]*$"
+        },
+        "selectable": {
+          "const": false
+        },
+        "catalogVisible": {
+          "const": false
+        },
+        "dependencies": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "package-contract-common-v1.schema.json#/$defs/packageId"
+          }
+        },
+        "targets": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/target"
+          }
+        }
+      }
+    }
+  }
+}
