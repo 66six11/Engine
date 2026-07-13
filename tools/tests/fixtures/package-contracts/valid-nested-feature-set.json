@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 2,
+  "packageKind": "feature-set",
+  "id": "com.asharia.features.editor-authoring",
+  "version": "0.1.0",
+  "displayName": "Asharia Editor Authoring",
+  "description": "A maintained authoring environment layered on the standard 3D Feature Set.",
+  "engineApi": {
+    "kind": "range",
+    "minimumInclusive": "0.1.0",
+    "maximumExclusive": "0.2.0",
+    "allowPrerelease": false
+  },
+  "packages": [],
+  "featureSets": [
+    {
+      "id": "com.asharia.features.standard3d",
+      "version": {
+        "kind": "exact",
+        "version": "0.1.0"
+      }
+    }
+  ]
+}

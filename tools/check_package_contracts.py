@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate portable installable package manifests against the v2 contract."""
+"""Validate Asharia package-runtime author contracts."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ from typing import Any, Iterable
 try:
     from jsonschema import Draft202012Validator
     from jsonschema.exceptions import SchemaError
+    from referencing import Registry, Resource
 except ImportError as exc:  # pragma: no cover - exercised only in an unbootstrapped environment.
     raise SystemExit(
         "Package contract validation requires tools/requirements.txt; "
@@ -21,10 +22,15 @@ except ImportError as exc:  # pragma: no cover - exercised only in an unbootstra
     ) from exc
 
 
-MANIFEST_NAME = "asharia.package.json"
+PACKAGE_MANIFEST_NAME = "asharia.package.json"
+PROJECT_MANIFEST_NAME = "asharia.packages.json"
 IGNORED_PATH_PARTS = {".git", "build", "generated"}
 REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_SCHEMA_PATH = REPOSITORY_ROOT / "schemas/package-runtime/installable-package-v2.schema.json"
+DEFAULT_SCHEMA_ROOT = REPOSITORY_ROOT / "schemas/package-runtime"
+COMMON_SCHEMA_NAME = "package-contract-common-v1.schema.json"
+INSTALLABLE_SCHEMA_NAME = "installable-package-v2.schema.json"
+FEATURE_SET_SCHEMA_NAME = "feature-set-v2.schema.json"
+PROJECT_SCHEMA_NAME = "project-package-manifest-v1.schema.json"
 ANY_PLATFORM_ID = "com.asharia.platform.any"
 SEMANTIC_VERSION_PATTERN = re.compile(
     r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
@@ -85,6 +91,15 @@ class SemanticVersion:
     prerelease: tuple[int | str, ...]
 
 
+@dataclass(frozen=True)
+class ContractValidators:
+    """Preloaded validators sharing one offline schema registry."""
+
+    installable: Draft202012Validator
+    feature_set: Draft202012Validator
+    project: Draft202012Validator
+
+
 def _json_pointer(parts: Iterable[Any]) -> str:
     encoded = []
     for part in parts:
@@ -142,22 +157,48 @@ def _compare_semantic_versions(left: str, right: str) -> int:
     return -1 if len(lhs.prerelease) < len(rhs.prerelease) else 1
 
 
-def load_schema_validator(schema_path: Path = DEFAULT_SCHEMA_PATH) -> Draft202012Validator:
-    """Load and meta-validate the checked-in package schema."""
-
-    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+def _load_schema(path: Path) -> dict[str, Any]:
+    schema = json.loads(path.read_text(encoding="utf-8"))
     Draft202012Validator.check_schema(schema)
-    return Draft202012Validator(schema)
+    return schema
+
+
+def load_contract_validators(schema_root: Path = DEFAULT_SCHEMA_ROOT) -> ContractValidators:
+    """Load all author-contract schemas with offline-only reference resolution."""
+
+    common = _load_schema(schema_root / COMMON_SCHEMA_NAME)
+    registry = Registry().with_resource(common["$id"], Resource.from_contents(common))
+
+    def create(schema_name: str) -> Draft202012Validator:
+        schema = _load_schema(schema_root / schema_name)
+        return Draft202012Validator(schema, registry=registry)
+
+    return ContractValidators(
+        installable=create(INSTALLABLE_SCHEMA_NAME),
+        feature_set=create(FEATURE_SET_SCHEMA_NAME),
+        project=create(PROJECT_SCHEMA_NAME),
+    )
+
+
+def load_schema_validator(
+    schema_path: Path = DEFAULT_SCHEMA_ROOT / INSTALLABLE_SCHEMA_NAME,
+) -> Draft202012Validator:
+    """Load one schema with shared definitions; retained for focused callers."""
+
+    common = _load_schema(schema_path.parent / COMMON_SCHEMA_NAME)
+    registry = Registry().with_resource(common["$id"], Resource.from_contents(common))
+    return Draft202012Validator(_load_schema(schema_path), registry=registry)
 
 
 def _schema_diagnostics(
     manifest: Any,
     manifest_path: str,
     validator: Draft202012Validator,
+    code: str = "package.manifest.schema",
 ) -> list[Diagnostic]:
     diagnostics = [
         Diagnostic(
-            code="package.manifest.schema",
+            code=code,
             manifest_path=manifest_path,
             pointer=_json_pointer(error.absolute_path),
             message=error.message,
@@ -194,6 +235,7 @@ def _check_version_constraint(
     pointer: str,
     manifest_path: str,
     diagnostics: list[Diagnostic],
+    code: str = "package.version.invalid-range",
 ) -> None:
     if constraint["kind"] != "range":
         return
@@ -202,7 +244,7 @@ def _check_version_constraint(
     if _compare_semantic_versions(minimum, maximum) >= 0:
         diagnostics.append(
             Diagnostic(
-                code="package.version.invalid-range",
+                code=code,
                 manifest_path=manifest_path,
                 pointer=pointer,
                 message=f"minimumInclusive '{minimum}' must be lower than maximumExclusive '{maximum}'",
@@ -631,7 +673,9 @@ def _check_catalog_policy(
             )
 
 
-def _semantic_diagnostics(manifest: dict[str, Any], manifest_path: str) -> list[Diagnostic]:
+def _installable_semantic_diagnostics(
+    manifest: dict[str, Any], manifest_path: str
+) -> list[Diagnostic]:
     diagnostics: list[Diagnostic] = []
     for collection in ("dependencies", "options", "modules", "contentRoots", "contributions"):
         _check_unique_ids(manifest[collection], collection, manifest_path, diagnostics)
@@ -668,21 +712,239 @@ def _semantic_diagnostics(manifest: dict[str, Any], manifest_path: str) -> list[
     return sorted(diagnostics, key=_diagnostic_sort_key)
 
 
+def _check_requirement_collection(
+    requirements: list[dict[str, Any]],
+    collection: str,
+    code_prefix: str,
+    manifest_path: str,
+    diagnostics: list[Diagnostic],
+) -> dict[str, int]:
+    first_indices: dict[str, int] = {}
+    for index, requirement in enumerate(requirements):
+        identity = requirement["id"]
+        if identity in first_indices:
+            diagnostics.append(
+                Diagnostic(
+                    code=f"{code_prefix}.duplicate-id",
+                    manifest_path=manifest_path,
+                    pointer=f"/{collection}/{index}/id",
+                    message=(
+                        f"duplicate id '{identity}'; first declared at index "
+                        f"{first_indices[identity]}"
+                    ),
+                )
+            )
+        else:
+            first_indices[identity] = index
+        _check_version_constraint(
+            requirement["version"],
+            f"/{collection}/{index}/version",
+            manifest_path,
+            diagnostics,
+            code=f"{code_prefix}.invalid-range",
+        )
+    return first_indices
+
+
+def _project_semantic_diagnostics(
+    manifest: dict[str, Any], manifest_path: str
+) -> list[Diagnostic]:
+    diagnostics: list[Diagnostic] = []
+    package_indices = _check_requirement_collection(
+        manifest["directPackages"],
+        "directPackages",
+        "project.package",
+        manifest_path,
+        diagnostics,
+    )
+    feature_set_indices = _check_requirement_collection(
+        manifest["directFeatureSets"],
+        "directFeatureSets",
+        "project.feature-set",
+        manifest_path,
+        diagnostics,
+    )
+    for identity in sorted(package_indices.keys() & feature_set_indices.keys()):
+        diagnostics.append(
+            Diagnostic(
+                code="project.selection.cross-kind-id",
+                manifest_path=manifest_path,
+                pointer=f"/directFeatureSets/{feature_set_indices[identity]}/id",
+                message=(
+                    f"identity '{identity}' is already selected as a direct package at index "
+                    f"{package_indices[identity]}"
+                ),
+            )
+        )
+
+    option_package_indices: dict[str, int] = {}
+    for package_index, package_options in enumerate(manifest["packageOptions"]):
+        package_id = package_options["packageId"]
+        if package_id in option_package_indices:
+            diagnostics.append(
+                Diagnostic(
+                    code="project.option.duplicate-package-id",
+                    manifest_path=manifest_path,
+                    pointer=f"/packageOptions/{package_index}/packageId",
+                    message=(
+                        f"duplicate package option group '{package_id}'; first declared at index "
+                        f"{option_package_indices[package_id]}"
+                    ),
+                )
+            )
+        else:
+            option_package_indices[package_id] = package_index
+
+        option_indices: dict[str, int] = {}
+        for option_index, option in enumerate(package_options["values"]):
+            option_id = option["id"]
+            if option_id in option_indices:
+                diagnostics.append(
+                    Diagnostic(
+                        code="project.option.duplicate-id",
+                        manifest_path=manifest_path,
+                        pointer=f"/packageOptions/{package_index}/values/{option_index}/id",
+                        message=(
+                            f"duplicate option id '{option_id}'; first declared at index "
+                            f"{option_indices[option_id]}"
+                        ),
+                    )
+                )
+            else:
+                option_indices[option_id] = option_index
+    return sorted(diagnostics, key=_diagnostic_sort_key)
+
+
+def _feature_set_semantic_diagnostics(
+    manifest: dict[str, Any], manifest_path: str
+) -> list[Diagnostic]:
+    diagnostics: list[Diagnostic] = []
+    package_indices = _check_requirement_collection(
+        manifest["packages"],
+        "packages",
+        "feature-set.package",
+        manifest_path,
+        diagnostics,
+    )
+    feature_set_indices = _check_requirement_collection(
+        manifest["featureSets"],
+        "featureSets",
+        "feature-set.feature-set",
+        manifest_path,
+        diagnostics,
+    )
+    for identity in sorted(package_indices.keys() & feature_set_indices.keys()):
+        diagnostics.append(
+            Diagnostic(
+                code="feature-set.member.cross-kind-id",
+                manifest_path=manifest_path,
+                pointer=f"/featureSets/{feature_set_indices[identity]}/id",
+                message=(
+                    f"identity '{identity}' is already declared as a package member at index "
+                    f"{package_indices[identity]}"
+                ),
+            )
+        )
+
+    feature_set_id = manifest["id"]
+    for collection, indices in (
+        ("packages", package_indices),
+        ("featureSets", feature_set_indices),
+    ):
+        if feature_set_id in indices:
+            diagnostics.append(
+                Diagnostic(
+                    code="feature-set.member.self",
+                    manifest_path=manifest_path,
+                    pointer=f"/{collection}/{indices[feature_set_id]}/id",
+                    message=f"Feature Set '{feature_set_id}' cannot contain itself",
+                )
+            )
+
+    if not manifest["packages"] and not manifest["featureSets"]:
+        diagnostics.append(
+            Diagnostic(
+                code="feature-set.member.empty",
+                manifest_path=manifest_path,
+                pointer="",
+                message="a Feature Set must contain at least one package or nested Feature Set",
+            )
+        )
+    _check_version_constraint(
+        manifest["engineApi"],
+        "/engineApi",
+        manifest_path,
+        diagnostics,
+        code="feature-set.engine-api.invalid-range",
+    )
+    return sorted(diagnostics, key=_diagnostic_sort_key)
+
+
+def _contract_kind(manifest: Any, manifest_path: str) -> str | None:
+    if Path(manifest_path).name == PROJECT_MANIFEST_NAME:
+        return "project"
+    if not isinstance(manifest, dict):
+        return None
+    if manifest.get("schema") == "com.asharia.project-packages":
+        return "project"
+    if manifest.get("schemaVersion") == 1 and manifest.get("packageKind") == "source-boundary":
+        return "source-boundary"
+    package_kind = manifest.get("packageKind")
+    if package_kind == "installable-capability":
+        return "installable"
+    if package_kind == "feature-set":
+        return "feature-set"
+    return None
+
+
 def validate_manifest_data(
     manifest: Any,
     manifest_path: str,
-    validator: Draft202012Validator,
+    validators: ContractValidators | Draft202012Validator,
 ) -> list[Diagnostic]:
     """Validate already-parsed JSON and return stable, sorted diagnostics."""
 
-    schema_diagnostics = _schema_diagnostics(manifest, manifest_path, validator)
+    if isinstance(validators, Draft202012Validator):
+        schema_diagnostics = _schema_diagnostics(manifest, manifest_path, validators)
+        if schema_diagnostics:
+            return schema_diagnostics
+        return _installable_semantic_diagnostics(manifest, manifest_path)
+
+    kind = _contract_kind(manifest, manifest_path)
+    if kind == "source-boundary":
+        return []
+    if kind is None:
+        return [
+            Diagnostic(
+                code="contract.manifest.unsupported-kind",
+                manifest_path=manifest_path,
+                pointer="",
+                message="manifest does not declare a supported package-runtime author contract",
+            )
+        ]
+    if kind == "project":
+        validator = validators.project
+        schema_code = "project.manifest.schema"
+        semantic_validator = _project_semantic_diagnostics
+    elif kind == "feature-set":
+        validator = validators.feature_set
+        schema_code = "feature-set.manifest.schema"
+        semantic_validator = _feature_set_semantic_diagnostics
+    else:
+        validator = validators.installable
+        schema_code = "package.manifest.schema"
+        semantic_validator = _installable_semantic_diagnostics
+
+    schema_diagnostics = _schema_diagnostics(manifest, manifest_path, validator, schema_code)
     if schema_diagnostics:
         return schema_diagnostics
-    return _semantic_diagnostics(manifest, manifest_path)
+    return semantic_validator(manifest, manifest_path)
 
 
-def validate_manifest_file(path: Path, validator: Draft202012Validator) -> list[Diagnostic]:
-    """Read and validate one explicit v2 manifest file."""
+def validate_manifest_file(
+    path: Path, validators: ContractValidators | Draft202012Validator
+) -> list[Diagnostic]:
+    """Read and validate one package-runtime author contract."""
 
     manifest_path = path.as_posix()
     try:
@@ -690,20 +952,21 @@ def validate_manifest_file(path: Path, validator: Draft202012Validator) -> list[
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         return [
             Diagnostic(
-                code="package.manifest.json",
+                code="contract.manifest.json",
                 manifest_path=manifest_path,
                 pointer="",
                 message=f"cannot read JSON: {exc}",
             )
         ]
-    return validate_manifest_data(manifest, manifest_path, validator)
+    return validate_manifest_data(manifest, manifest_path, validators)
 
 
-def discover_installable_manifests(root: Path) -> list[Path]:
-    """Route exact v1 manifests to topology validation and all other manifests here."""
+def discover_contract_manifests(root: Path) -> list[Path]:
+    """Discover project and package author contracts while routing v1 boundaries elsewhere."""
 
     paths: list[Path] = []
-    for path in root.rglob(MANIFEST_NAME):
+    candidates = list(root.rglob(PACKAGE_MANIFEST_NAME)) + list(root.rglob(PROJECT_MANIFEST_NAME))
+    for path in candidates:
         relative = path.relative_to(root)
         if any(part in IGNORED_PATH_PARTS for part in relative.parts):
             continue
@@ -721,39 +984,176 @@ def discover_installable_manifests(root: Path) -> list[Path]:
     return sorted(paths, key=lambda item: item.relative_to(root).as_posix())
 
 
+def discover_installable_manifests(root: Path) -> list[Path]:
+    """Compatibility alias for callers predating Project Manifest support."""
+
+    return discover_contract_manifests(root)
+
+
+def validate_feature_set_graph(
+    manifests: Iterable[tuple[str, dict[str, Any]]],
+) -> list[Diagnostic]:
+    """Reject cycles in a caller-provided graph containing one selected version per identity."""
+
+    grouped: dict[str, list[tuple[str, dict[str, Any]]]] = {}
+    for manifest_path, manifest in manifests:
+        grouped.setdefault(manifest["id"], []).append((manifest_path, manifest))
+    selected = {
+        identity: candidates[0]
+        for identity, candidates in grouped.items()
+        if len(candidates) == 1
+    }
+
+    state: dict[str, int] = {}
+    stack: list[str] = []
+    diagnostics: list[Diagnostic] = []
+    reported_edges: set[tuple[str, str]] = set()
+
+    def visit(identity: str) -> None:
+        state[identity] = 1
+        stack.append(identity)
+        manifest_path, manifest = selected[identity]
+        for member_index, member in enumerate(manifest["featureSets"]):
+            dependency = member["id"]
+            if dependency == identity or dependency not in selected:
+                continue
+            if state.get(dependency, 0) == 0:
+                visit(dependency)
+            elif state.get(dependency) == 1 and (identity, dependency) not in reported_edges:
+                cycle_start = stack.index(dependency)
+                cycle = stack[cycle_start:] + [dependency]
+                diagnostics.append(
+                    Diagnostic(
+                        code="feature-set.member.cycle",
+                        manifest_path=manifest_path,
+                        pointer=f"/featureSets/{member_index}/id",
+                        message=f"Feature Set cycle: {' -> '.join(cycle)}",
+                    )
+                )
+                reported_edges.add((identity, dependency))
+        stack.pop()
+        state[identity] = 2
+
+    for identity in sorted(selected):
+        if state.get(identity, 0) == 0:
+            visit(identity)
+    return sorted(diagnostics, key=_diagnostic_sort_key)
+
+
+def validate_manifest_files(paths: Iterable[Path], validators: ContractValidators) -> list[Diagnostic]:
+    """Validate contracts and graph-local Feature Set cycles without resolving candidates."""
+
+    diagnostics: list[Diagnostic] = []
+    valid_feature_sets: list[tuple[str, dict[str, Any]]] = []
+    for path in paths:
+        manifest_path = path.as_posix()
+        try:
+            manifest = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            diagnostics.append(
+                Diagnostic(
+                    code="contract.manifest.json",
+                    manifest_path=manifest_path,
+                    pointer="",
+                    message=f"cannot read JSON: {exc}",
+                )
+            )
+            continue
+        file_diagnostics = validate_manifest_data(manifest, manifest_path, validators)
+        diagnostics.extend(file_diagnostics)
+        if not file_diagnostics and _contract_kind(manifest, manifest_path) == "feature-set":
+            valid_feature_sets.append((manifest_path, manifest))
+    diagnostics.extend(validate_feature_set_graph(valid_feature_sets))
+    return sorted(diagnostics, key=_diagnostic_sort_key)
+
+
+def _normalize_version_constraint(constraint: dict[str, Any]) -> dict[str, Any]:
+    if constraint["kind"] == "exact":
+        return {"kind": "exact", "version": constraint["version"]}
+    return {
+        "kind": "range",
+        "minimumInclusive": constraint["minimumInclusive"],
+        "maximumExclusive": constraint["maximumExclusive"],
+        "allowPrerelease": constraint["allowPrerelease"],
+    }
+
+
+def normalize_project_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
+    """Return the deterministic semantic representation used for writing and hashing."""
+
+    def normalize_requirements(requirements: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        return [
+            {"id": item["id"], "version": _normalize_version_constraint(item["version"])}
+            for item in sorted(requirements, key=lambda value: value["id"])
+        ]
+
+    return {
+        "schema": "com.asharia.project-packages",
+        "schemaVersion": 1,
+        "directPackages": normalize_requirements(manifest["directPackages"]),
+        "directFeatureSets": normalize_requirements(manifest["directFeatureSets"]),
+        "packageOptions": [
+            {
+                "packageId": package_options["packageId"],
+                "values": [
+                    {"id": option["id"], "value": option["value"]}
+                    for option in sorted(package_options["values"], key=lambda value: value["id"])
+                ],
+            }
+            for package_options in sorted(
+                manifest["packageOptions"], key=lambda value: value["packageId"]
+            )
+        ],
+    }
+
+
+def render_normalized_project_manifest(manifest: dict[str, Any]) -> str:
+    """Render normalized Project Manifest JSON as UTF-8-compatible LF text."""
+
+    return json.dumps(normalize_project_manifest(manifest), ensure_ascii=False, indent=2) + "\n"
+
+
+def write_normalized_project_manifest(path: Path, manifest: dict[str, Any]) -> None:
+    """Write one normalized Project Manifest using UTF-8 without BOM and LF endings."""
+
+    path.write_text(render_normalized_project_manifest(manifest), encoding="utf-8", newline="\n")
+
+
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("manifests", nargs="*", type=Path, help="explicit v2 manifests to validate")
+    parser.add_argument("manifests", nargs="*", type=Path, help="explicit author contracts to validate")
     parser.add_argument("--root", type=Path, default=REPOSITORY_ROOT, help="repository root")
-    parser.add_argument("--schema", type=Path, default=DEFAULT_SCHEMA_PATH, help="v2 JSON Schema path")
+    parser.add_argument(
+        "--schema-root",
+        type=Path,
+        default=DEFAULT_SCHEMA_ROOT,
+        help="directory containing package-runtime JSON Schemas",
+    )
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     root = args.root.resolve()
-    schema_path = args.schema if args.schema.is_absolute() else root / args.schema
+    schema_root = args.schema_root if args.schema_root.is_absolute() else root / args.schema_root
     try:
-        validator = load_schema_validator(schema_path)
+        validators = load_contract_validators(schema_root)
     except (OSError, UnicodeError, json.JSONDecodeError, SchemaError) as exc:
-        print(f"Package contract schema is invalid: {exc}", file=sys.stderr)
+        print(f"Package contract schemas are invalid: {exc}", file=sys.stderr)
         return 2
 
     paths = [path if path.is_absolute() else root / path for path in args.manifests]
     if not paths:
-        paths = discover_installable_manifests(root)
+        paths = discover_contract_manifests(root)
 
-    diagnostics: list[Diagnostic] = []
-    for path in paths:
-        diagnostics.extend(validate_manifest_file(path, validator))
-    diagnostics.sort(key=_diagnostic_sort_key)
+    diagnostics = validate_manifest_files(paths, validators)
     if diagnostics:
         print(f"Package contract validation failed with {len(diagnostics)} error(s):", file=sys.stderr)
         for diagnostic in diagnostics:
             print(f"  - {diagnostic.render()}", file=sys.stderr)
         return 1
 
-    print(f"Package contracts OK: installable-manifests={len(paths)} schema=draft-2020-12")
+    print(f"Package contracts OK: author-contracts={len(paths)} schema=draft-2020-12")
     return 0
 
 

@@ -29,10 +29,10 @@
       "const": "installable-capability"
     },
     "id": {
-      "$ref": "#/$defs/packageId"
+      "$ref": "package-contract-common-v1.schema.json#/$defs/packageId"
     },
     "version": {
-      "$ref": "#/$defs/semanticVersion"
+      "$ref": "package-contract-common-v1.schema.json#/$defs/semanticVersion"
     },
     "displayName": {
       "type": "string",
@@ -54,7 +54,7 @@
       ]
     },
     "engineApi": {
-      "$ref": "#/$defs/versionConstraint"
+      "$ref": "package-contract-common-v1.schema.json#/$defs/versionConstraint"
     },
     "dependencies": {
       "type": "array",
@@ -91,18 +91,6 @@
     }
   },
   "$defs": {
-    "semanticVersion": {
-      "type": "string",
-      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
-    },
-    "packageId": {
-      "type": "string",
-      "pattern": "^[a-z][a-z0-9]*(?:\\.[a-z](?:[a-z0-9-]*[a-z0-9])?){2,}$"
-    },
-    "localId": {
-      "type": "string",
-      "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"
-    },
     "hostKind": {
       "enum": [
         "minimal",
@@ -132,56 +120,6 @@
         "development-only"
       ]
     },
-    "exactVersionConstraint": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "kind",
-        "version"
-      ],
-      "properties": {
-        "kind": {
-          "const": "exact"
-        },
-        "version": {
-          "$ref": "#/$defs/semanticVersion"
-        }
-      }
-    },
-    "rangeVersionConstraint": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "kind",
-        "minimumInclusive",
-        "maximumExclusive",
-        "allowPrerelease"
-      ],
-      "properties": {
-        "kind": {
-          "const": "range"
-        },
-        "minimumInclusive": {
-          "$ref": "#/$defs/semanticVersion"
-        },
-        "maximumExclusive": {
-          "$ref": "#/$defs/semanticVersion"
-        },
-        "allowPrerelease": {
-          "type": "boolean"
-        }
-      }
-    },
-    "versionConstraint": {
-      "oneOf": [
-        {
-          "$ref": "#/$defs/exactVersionConstraint"
-        },
-        {
-          "$ref": "#/$defs/rangeVersionConstraint"
-        }
-      ]
-    },
     "dependency": {
       "type": "object",
       "additionalProperties": false,
@@ -191,10 +129,10 @@
       ],
       "properties": {
         "id": {
-          "$ref": "#/$defs/packageId"
+          "$ref": "package-contract-common-v1.schema.json#/$defs/packageId"
         },
         "version": {
-          "$ref": "#/$defs/versionConstraint"
+          "$ref": "package-contract-common-v1.schema.json#/$defs/versionConstraint"
         }
       }
     },
@@ -208,7 +146,7 @@
       ],
       "properties": {
         "id": {
-          "$ref": "#/$defs/localId"
+          "$ref": "package-contract-common-v1.schema.json#/$defs/localId"
         },
         "affects": {
           "type": "array",
@@ -347,7 +285,7 @@
       ],
       "properties": {
         "id": {
-          "$ref": "#/$defs/localId"
+          "$ref": "package-contract-common-v1.schema.json#/$defs/localId"
         },
         "role": {
           "enum": [
@@ -365,7 +303,7 @@
           "type": "array",
           "uniqueItems": true,
           "items": {
-            "$ref": "#/$defs/localId"
+            "$ref": "package-contract-common-v1.schema.json#/$defs/localId"
           }
         },
         "hostKinds": {
@@ -386,7 +324,7 @@
           "type": "array",
           "uniqueItems": true,
           "items": {
-            "$ref": "#/$defs/packageId"
+            "$ref": "package-contract-common-v1.schema.json#/$defs/packageId"
           }
         }
       }
@@ -396,7 +334,7 @@
       "minItems": 1,
       "uniqueItems": true,
       "items": {
-        "$ref": "#/$defs/localId"
+        "$ref": "package-contract-common-v1.schema.json#/$defs/localId"
       }
     },
     "entryModules": {
@@ -429,7 +367,7 @@
       ],
       "properties": {
         "id": {
-          "$ref": "#/$defs/localId"
+          "$ref": "package-contract-common-v1.schema.json#/$defs/localId"
         },
         "path": {
           "type": "string",
@@ -464,13 +402,13 @@
       ],
       "properties": {
         "id": {
-          "$ref": "#/$defs/packageId"
+          "$ref": "package-contract-common-v1.schema.json#/$defs/packageId"
         },
         "kind": {
-          "$ref": "#/$defs/packageId"
+          "$ref": "package-contract-common-v1.schema.json#/$defs/packageId"
         },
         "module": {
-          "$ref": "#/$defs/localId"
+          "$ref": "package-contract-common-v1.schema.json#/$defs/localId"
         },
         "hostKinds": {
           "type": "array",

@@ -189,7 +189,7 @@ rollback 和 lifecycle；Memory、Storage、Settings、Tasks、Data、Observabil
 5. renderer、scene、editor 之间已有契约雏形，但仍可能由 host 进行临时拼接；
 6. editor executable 承担过多领域规则，难以做 headless 测试；
 7. 当前单线程基线尚未完全显式化 owner thread、snapshot 和销毁时序；
-8. `asharia.package.json` schema v1 已把当前目录分类为不可选择的 source boundaries，并可校验 package/target/CMake topology；尚无 `asharia.packages.json`、package resolver/lockfile、Host Profile 和 Editor Package Manager 闭环；
+8. `asharia.package.json` schema v1 已把当前目录分类为不可选择的 source boundaries；installable v2、Project Manifest v1 与 Feature Set v2 的 author-contract schema/validator/fixtures 已落地，但尚无生产 `asharia.packages.json`、package resolver/lockfile、Host Profile 和 Editor Package Manager 闭环；
 9. scripting、input、tasks、physics、animation、audio 等已进入目标 first-party system catalog，但尚未形成可由同一 package activation 模型创建和停止的完整实现；
 10. `engine/platform` 仍是空 `INTERFACE` target，应用 lifecycle 与 immutable platform capability generation 没有 runtime owner；
 11. 尚无复用的 Host scope、system factory、activation lease、typed contribution registry 和 failure rollback；
@@ -252,8 +252,8 @@ rollback 和 lifecycle；Memory、Storage、Settings、Tasks、Data、Observabil
 | Project Template | 创建项目时一次性写入 direct dependencies、设置和样例内容的初始化方案 | 持续约束成员版本的 Feature Set |
 | Host Profile | 某类进程允许和要求的 module/contribution 集合 | 用户机器上的临时 UI 状态 |
 | Source Boundary Manifest | schema v1 的 `asharia.package.json`；记录当前 source role、owner、planned ownership root、target role 和构建依赖，且不可选择/不可见 | Installable Capability Package 或 Package Manager catalog entry |
-| Package Manifest | 每个 Installable Capability Package 的 `asharia.package.json`，描述 catalog type、完整能力 identity、内部 targets/modules/contributions 和 package dependencies | 每个 target 各自的安装清单 |
-| Project Package Manifest | `asharia.packages.json`；团队提交的 direct installable packages、Feature Sets、version ranges 和 package options | 内部 module 选择表、`asharia.project.json` 的同义词或 Build Profile |
+| Package Manifest | 每个 Installable Capability Package 的 `asharia.package.json`，描述 catalog type、完整能力 identity、logical modules/contributions 和 package dependencies；source/target 映射属于独立 build descriptor | 每个 target 各自的安装清单 |
+| Project Package Manifest | `asharia.packages.json`；团队提交的 direct installable packages、Feature Sets、version ranges 和独立 package option overrides | 内部 module 选择表、`asharia.project.json` 的同义词、exact graph 或 Build Profile |
 | Package Lockfile | `asharia.packages.lock.json`；团队提交的精确版本、来源、完整性和依赖图 | 可由 Editor 私有缓存替代的文件 |
 | Bundled Package | 随引擎/编辑器发行、无需下载的 first-party package | 必须启用的 package |
 | Project-embedded Package | 位于项目目录、由项目版本控制并可编辑的 package | 随引擎发行的 built-in package |

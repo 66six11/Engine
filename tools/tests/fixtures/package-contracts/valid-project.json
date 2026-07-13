@@ -1,0 +1,64 @@
+{
+  "schema": "com.asharia.project-packages",
+  "schemaVersion": 1,
+  "directPackages": [
+    {
+      "id": "com.asharia.system.rendering-vulkan",
+      "version": {
+        "kind": "range",
+        "minimumInclusive": "0.1.0",
+        "maximumExclusive": "0.2.0",
+        "allowPrerelease": false
+      }
+    },
+    {
+      "id": "com.asharia.feature.advanced-camera",
+      "version": {
+        "kind": "exact",
+        "version": "1.2.0"
+      }
+    }
+  ],
+  "directFeatureSets": [
+    {
+      "id": "com.asharia.features.standard3d",
+      "version": {
+        "kind": "exact",
+        "version": "0.1.0"
+      }
+    }
+  ],
+  "packageOptions": [
+    {
+      "packageId": "com.asharia.system.rendering-vulkan",
+      "values": [
+        {
+          "id": "validation",
+          "value": true
+        },
+        {
+          "id": "frames-in-flight",
+          "value": 2
+        }
+      ]
+    },
+    {
+      "packageId": "com.asharia.feature.advanced-camera",
+      "values": [
+        {
+          "id": "default-mode",
+          "value": "orbit"
+        }
+      ]
+    },
+    {
+      "packageId": "com.asharia.system.input",
+      "values": [
+        {
+          "id": "default-dead-zone",
+          "value": 12
+        }
+      ]
+    }
+  ]
+}
