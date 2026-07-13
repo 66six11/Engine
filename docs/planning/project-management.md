@@ -240,7 +240,7 @@ AshariaEngine/
 - Gate 4 Validation：build、shader validation、Vulkan validation 已运行或明确阻塞原因。
 - Gate 5 Review：记录 findings、风险和后续任务。
 
-## 历史进度记录
+## 进度记录归属
 
 本文件只维护 Project / Issue / PR 的操作规则，不再保存已完成任务拆分、阶段 DoD 或风险流水账。
 

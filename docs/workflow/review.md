@@ -215,13 +215,10 @@ foreach ($preset in @("clangcl-debug", "msvc-debug")) {
 1. Khronos Vulkan spec、refpage、Vulkan Guide。
 2. VMA、Slang、SPIR-V、shader toolchain 官方文档。
 3. 成熟案例：Frostbite FrameGraph、Granite、Diligent Engine、RenderDoc/Nsight 的资源视图思路。
-4. 本仓库当前部署文档：`docs/developer-documentation-system/zh/architecture/overview.md`、
-   `docs/developer-documentation-system/zh/architecture/package-dependency-map.md`、
-   `docs/developer-documentation-system/zh/architecture/data-model-and-persistence.md`、
-   `docs/developer-documentation-system/zh/architecture/editor-runtime-boundaries.md`、
-   `docs/developer-documentation-system/zh/architecture/rendering-and-frame-flow.md`、
-   `docs/developer-documentation-system/zh/design/rendergraph-design.md`、
-   `docs/developer-documentation-system/zh/workflow/review.md`；英文审查同步检查 `en/` 对应文件。
+4. 本仓库当前事实与设计边界：`docs/architecture/overview.md`、
+   `docs/architecture/flow.md`、`docs/architecture/package-first.md`、
+   `docs/rendergraph/rhi-boundary.md`、`docs/architecture/editor.md` 和对应
+   `docs/systems/` 文档。
 5. C++ Core Guidelines、Game Programming Patterns、Unity DOTS / Entities 和 Data-Oriented Design 资料，用于内部代码设计、
    设计模式和数据导向审查。
 
@@ -333,29 +330,18 @@ rg -n "debugWorldLines|camera|viewProjection|viewportSlots_|requestedViewport_|R
 必须在 PR 模板中说明原因；本地临时验证可使用 `-NoDocsReason` 显式给出原因。脚本默认只检查 tracked
 diff；需要把未跟踪文件也纳入本地自检时，显式使用 `-IncludeUntracked`。
 
-优先更新 `docs/developer-documentation-system/zh/` 与 `docs/developer-documentation-system/en/` 的对应文件：
+按改动范围更新唯一事实源：
 
-- `architecture/overview.md`
-- `architecture/package-dependency-map.md`
-- `architecture/data-model-and-persistence.md`
-- `architecture/editor-runtime-boundaries.md`
-- `architecture/rendering-and-frame-flow.md`
-- `architecture/asset-and-material-flow.md`
-- `design/platform-window-design.md`
-- `design/asset-pipeline-design.md`
-- `design/material-shader-design.md`
-- `design/reflection-serialization-design.md`
-- `design/scene-resource-design.md`
-- `design/rendergraph-design.md`
-- `design/rhi-vulkan-design.md`
-- `design/renderer-basic-design.md`
-- `design/editor-host-design.md`
-- `design/studio-shell-design.md`
-- `api/rendergraph-api.md`
-- `api/rhi-vulkan-api.md`
-- `workflow/build.md`
-- `workflow/review.md`
-- `standards/documentation.md`
+- package/target/manifest：`docs/architecture/package-first.md`、`docs/architecture/flow.md`。
+- frame loop、RHI、renderer、RenderGraph：`docs/architecture/flow.md`、
+  `docs/rendergraph/rhi-boundary.md`、`docs/architecture/render-layer.md`。
+- asset/resource/scene/schema/material/script：对应 `docs/systems/` 文档和稳定规格。
+- native editor：`docs/architecture/editor.md`；Studio 实现细节：
+  `apps/studio/docs/architecture/README.md` 及其直接链接文档。
+- 构建、smoke、CI：`docs/workflow/build.md`、`docs/workflow/review.md`。
+- 新增或删除稳定入口：`docs/README.md`。
+
+不要为了发布或翻译复制第二套工程事实；文档站从 `docs/` 单向同步。
 
 ## 提交规则
 

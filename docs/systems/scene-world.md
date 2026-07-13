@@ -1,9 +1,10 @@
 # Scene / World 架构
 
 研究日期：2026-05-10
+状态：Target Architecture；`scene-core` 的当前能力必须以代码和 `docs/architecture/flow.md` 为准。
 
 本文定义 Asharia Engine 后续 scene、world、entity、component、selection、transaction、render snapshot 和
-Play Mode 的边界。它不是完整 ECS 实现说明，而是约束后续 `scene-core`、`editor-core`、`scripting`、
+Play Mode 的边界。它不是完整 ECS 实现说明，而是约束后续 `scene-core`、Editor System、Scripting System、
 `asset-core` 和 renderer 之间的数据流。核心原则是：World 持有可变游戏/编辑数据，renderer 只消费
 不可变 frame snapshot 或 render packet。
 
@@ -86,9 +87,9 @@ flowchart TD
 约束：
 
 - `scene-core` 不依赖 ImGui、Vulkan、renderer implementation 或 scripting runtime。
-- `editor-core` 不依赖 ImGui、Vulkan 或 renderer implementation。
+- Editor System 内部 `editor_domain` 不依赖 ImGui、Vulkan 或 renderer implementation。
 - renderer 可以依赖后端无关的 render packet 类型，不能依赖 mutable `World`。
-- `apps/editor` 负责 ImGui integration 和 editor viewport host，不把 ImGui 类型塞进 `editor-core`。
+- `apps/editor` 负责 ImGui integration 和 editor viewport host，不把 ImGui 类型塞进 `editor_domain`。
 
 ## 总体流程
 
@@ -357,7 +358,7 @@ Command 类型：
 
 ## Selection
 
-Selection 属于 editor-core，不属于 scene-core；但保存 selection preset 或 editor layout 时可序列化 editor-only 数据。
+Selection 属于 Editor System 的 `editor_domain`，不属于 scene-core；但保存 selection preset 或 editor layout 时可序列化 editor-only 数据。
 
 ```cpp
 struct SelectionSet {

@@ -6,8 +6,8 @@
 
 本文只保留 shader/material authoring 的系统边界、所有权、数据流和路线判断。具体格式合同见
 [`docs/specs/ashader-v2.md`](../specs/ashader-v2.md) 和
-[`docs/specs/material-runtime-products-v2.md`](../specs/material-runtime-products-v2.md)；近期执行计划见
-[`docs/planning/shader-material-mvp-plan.md`](../planning/shader-material-mvp-plan.md)。
+[`docs/specs/material-runtime-products-v2.md`](../specs/material-runtime-products-v2.md)。近期实施状态与
+Done evidence 只维护在 GitHub Issues / Project；本文不跟踪具体 PR。
 
 ## V1 弃用
 
@@ -268,11 +268,11 @@ Preview service 服务三种入口：
 
 - [specs/ashader-v2.md](../specs/ashader-v2.md)
 - [specs/material-runtime-products-v2.md](../specs/material-runtime-products-v2.md)
-- [planning/shader-material-mvp-plan.md](../planning/shader-material-mvp-plan.md)
 - [workflow/technical-stack.md](../workflow/technical-stack.md)
 - [architecture/overview.md](../architecture/overview.md)
 - [architecture/package-first.md](../architecture/package-first.md)
-- [architecture/engine-systems.md](../architecture/engine-systems.md)
+- [architecture/foundation-framework.md](../architecture/foundation-framework.md)
 - [systems/asset-architecture.md](asset-architecture.md)
 - [standards/naming.md](../standards/naming.md)
 - [planning/next-development-plan.md](../planning/next-development-plan.md)
+- [planning/system-architecture-roadmap.md](../planning/system-architecture-roadmap.md)

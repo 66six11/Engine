@@ -95,16 +95,16 @@
   buffer，不读取 source path、`.ameta`、importer 或 product cache。真实 mesh/texture runtime resource owner
   仍是后续切片。
 
-## 执行计划
-
-长期执行顺序记录在 `docs/planning/render-layer-refactor-plan.md`。后续不能机械照计划做，每个阶段开始前必须先检查该切片是否仍然合理、是否保持 package 边界、是否能用明确 smoke 验证。
-
 ## 下一步收敛
 
-1. 后续再评估是否把 RenderView 路径从 `BasicFullscreenTextureRenderer` 中独立成更明确的 view renderer，fullscreen composite 只保留为消费 sampled texture 的 pass。
-2. 如果新增 scene mesh、selection 或 gizmo pass，先扩展 `render_view_pass_policy.inl` 的 pass policy 和 `render_view_recording.inl` 的 insertion helper，再决定是否需要更正式的 RenderView recorder owner。
-3. 保持 `renderer_basic` 后端无关，把 Vulkan 录制和资源生命周期继续限制在 `renderer_basic_vulkan` / `rhi_vulkan`。
-4. SRP 相关设计只作为依赖方向和 API 余量检查；当前 RenderView/Grid/Frame Debug/overlay 阶段完成不以实现 SRP 为条件。
+后续顺序由 [system-architecture-roadmap.md](../planning/system-architecture-roadmap.md)、
+[next-development-plan.md](../planning/next-development-plan.md) 和 GitHub Issues / Project 决定。本文件
+只保留渲染层合同：
+
+1. 评估是否把 RenderView 路径从 `BasicFullscreenTextureRenderer` 中独立成明确的 view renderer，fullscreen composite 只消费 sampled texture。
+2. 新增 scene mesh、selection 或 gizmo pass 时，先扩展 renderer-owned pass policy、typed input、execution event 和 smoke，再决定是否需要新的 recorder owner。
+3. 保持 `renderer_basic` 后端无关，把 Vulkan 录制和资源生命周期限制在 `renderer_basic_vulkan` / `rhi_vulkan`。
+4. 可编程管线必须遵守 [programmable-pipeline.md](../rendergraph/programmable-pipeline.md)，不能绕过 RenderGraph/RHI 边界。
 
 ## 后续接入门禁
 

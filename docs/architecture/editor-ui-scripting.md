@@ -1,6 +1,6 @@
 # Editor UI 与脚本协作架构
 
-更新日期：2026-05-19
+更新日期：2026-07-13
 
 本文定义 Asharia Editor UI 的 C++ / 脚本分层。结论是：第一版 editor UI 由 C++ 写，
 基于 Dear ImGui；脚本后续只能通过受控的 editor contribution、action、transaction 和
@@ -8,9 +8,10 @@ schema-driven view model 扩展 editor，不能直接控制 ImGui frame loop、V
 viewport texture lifetime。
 
 本文是脚本扩展边界约束，不替代 `docs/architecture/editor.md` 的当前 editor 架构说明，
-不替代 `docs/planning/editor-development-plan.md` 的阶段拆分，也不替代
-`docs/systems/scripting.md` 的脚本系统 ABI 设计。工具、插件、viewport overlay、renderer bridge 和 hot reload
-的分层 contract 见 `docs/architecture/editor-extension-architecture.md`。
+不替代 `docs/planning/next-development-plan.md` 的阶段顺序，也不替代
+`docs/systems/scripting.md` 的脚本系统 ABI 设计。完整 package、managed host、viewport contribution、
+renderer bridge 和 hot reload 的长期边界见 `docs/architecture/managed-extension-model.md` 与
+`docs/planning/system-architecture-roadmap.md`。
 
 长期 managed plugin / script / Avalonia Studio 分层见
 [managed-extension-model.md](managed-extension-model.md)。该 ADR 将第一版 managed 扩展范围收窄为
@@ -21,7 +22,7 @@ contract-only 方向，并要求 `PluginHost`、`ScriptExecutionHost`、`Managed
 
 - 保持 `apps/editor` 是 editor host，不让 runtime app 链接 editor UI。
 - 让 ImGui、GLFW、Vulkan backend、descriptor registration 和 viewport texture lifetime 留在 C++。
-- 让 `editor-core` 只拥有 backend-neutral editor state，例如 action、event、panel metadata、
+- 让 `packages/systems/editor` 内部 `editor_domain` 只拥有 backend-neutral editor state，例如 action、event、panel metadata、
   selection 和 transaction。
 - 让脚本扩展 editor 行为，但不暴露 ImGui、GLFW、Vulkan、RHI、renderer implementation 或裸对象指针。
 - 所有 scene、asset、material、project 设置修改都通过 command / transaction / public package API。
@@ -305,16 +306,17 @@ Script reload is a contribution registry operation, not an editor UI restart:
 - Vulkan command pools, descriptor pools, swapchain, ImGui renderer backend and viewport descriptors remain owned by the
   C++ editor/render path.
 
-## Stage Plan
+## 接入门禁
 
-| Stage | Work | Gate |
-| --- | --- | --- |
-| 16-17 | Build C++ editor shell, panel registry, action registry, viewport registry and editor smokes | No script-controlled UI |
-| 20 | Add selection and transaction in editor-core | Editor mutations become undoable |
-| Script ABI | Add Scripting System host/context/binding/diagnostics targets | No editor UI exposure yet |
-| Script action bridge | Register script actions and menu items in `apps/editor` | Permission and transaction smokes |
-| Declarative panel model | Let scripts return validated panel models | C++ still draws ImGui |
-| Inspector/asset hooks | Script contributes validators/context actions | Schema and asset APIs are stable |
+实际 Slice 状态由 GitHub Issues / Project 维护。脚本扩展按依赖关系进入，不使用旧阶段编号：
+
+| 能力 | 进入条件 |
+| --- | --- |
+| Editor action bridge | `editor_domain` 已有 transaction、safe point 和 diagnostics |
+| Declarative panel contribution | Host 验证模型并继续拥有 ImGui/Avalonia 控件生命周期 |
+| Inspector / asset hooks | Schema、asset command 和 undo/redo 合同稳定 |
+| Managed reload | Scripting System 已有 generation、取消、卸载和 last-known-good 验证 |
+| Runtime gameplay scripting | Play Session 与 World scope 已定义，不能复用 Editor mutation context |
 
 ## Smoke Suggestions
 

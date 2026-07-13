@@ -2,20 +2,19 @@
 
 状态：Current
 
-更新日期：2026-07-11
+更新日期：2026-07-13
 
 本目录是 `apps/studio` 的正式框架技术文档入口。目标读者是修改 Studio 框架、编辑器功能、native bridge、Viewport、Play Mode 或扩展系统的开发者。
 
 ## 权威性规则
 
-Studio 文档分为四类，不能混用：
+Studio 文档分为三类，不能混用：
 
 | 文档类型 | 回答的问题 | 权威性 |
 | --- | --- | --- |
 | Architecture | 稳定目标合同、所有权和依赖方向是什么 | 目标架构的权威来源 |
 | ADR | 为什么选择这项不可逆或高成本决策 | 决策理由的权威来源 |
 | Current guide | 当前源码实际上如何工作 | 当前实现说明；必须与源码和测试一致 |
-| Dated spec/plan | 某次设计或实施切片当时准备做什么 | 历史执行材料；不得覆盖 Architecture/ADR |
 
 当文档与源码不一致时：
 
@@ -54,19 +53,17 @@ Studio 文档分为四类，不能混用：
 - [ADR-0004：采用统一 Editor Extension Framework](../adr/0004-unified-editor-extension-framework.md)
 - [ADR-0005：采用隔离构建、generation reload 与 last-known-good](../adr/0005-managed-editor-module-build-and-reload.md)
 
-## 设计基线
+## Current guides
 
-[Studio Framework vNext Design](../superpowers/specs/2026-07-11-studio-framework-vnext-design.md) 记录第一轮框架校正的需求、备选方案和迁移阶段。后续统一 Editor Extension Framework 决策以 ADR-0004、本目录的代码框架、扩展模型和 authoring 文档为准。
+- [项目规范](../项目规范.md)：通用编码、MVVM、性能和合入规则。
+- [编辑器 UI 平台规范](../编辑器UI平台规范.md)：Partial；只约束仍成立的 Dialog、Command、Shortcut、
+  Background Task、样式和 Shell 行为。
+- [Code-first UI 设计](../Code-first%20UI设计.md)：Code-first authoring 与 Host ownership。
+- [Dock 系统指南](../Dock系统指南.md)：当前 Dock 结构和交互事实。
+- [Dock 手工回归清单](../Dock手工回归清单.md)：UI-sensitive 合并前检查。
 
-[Studio Editor Framework Structural Refactor Implementation Plan](../superpowers/plans/2026-07-11-studio-editor-framework-refactor.md) 把上述目标拆为保持可构建、测试优先的 Wave 1 结构重构，并列出 Package build/load/reload、ProjectSession/Play Mode 与三平台 Viewport 的后续独立 Slice。
-
-## 旧文档关系
-
-- `docs/Studio框架设计.md`：Superseded；描述 2026-07-01 以前的 v0 总纲。
-- `docs/编辑器UI平台规范.md`：Partial；仍可说明部分当前 UI 实现，但其 native/Play 延后结论已失效。
-- `docs/Studio代码分类.md`：Partial；仍可用于当前单项目目录放置，不能替代目标项目边界。
-- `docs/项目规范.md`：Current；通用编码、MVVM 和合入规则继续有效，框架边界以本目录为准。
-- `docs/superpowers/specs` 与 `plans`：Historical/Execution；按日期保留。
+已被当前 Architecture/ADR 吸收的 v0 总纲、日期化 spec 和 agent execution plan 不在活动文档树保留；
+需要审计历史时使用 Git、GitHub Issues 和 PR。
 
 ## 维护要求
 

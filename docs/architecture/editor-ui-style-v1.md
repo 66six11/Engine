@@ -3,7 +3,7 @@
 更新日期：2026-06-08
 
 本文定义 Asharia Editor 第一版视觉与交互风格目标。它是设计规范和后续实现约束，不替代
-`docs/architecture/editor.md` 的当前架构事实，也不替代 `docs/planning/editor-development-plan.md` 的阶段拆分。
+`docs/architecture/editor.md` 的当前架构事实，也不维护实现阶段或 Issue 状态。
 
 配色值以当前 `Unity 6 Dark` 默认主题实现为准。本文不重新定义具体 hex 色表，重点约束布局、
 密度、组件状态、viewport 视觉系统、主题数据结构和颜色空间接入方式。

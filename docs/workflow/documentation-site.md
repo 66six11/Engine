@@ -1,6 +1,7 @@
 # 文档站部署工作流
 
-状态：proposal。本文定义双仓库文档站的目标形态；在独立 docs-site 仓库创建前，不把其中的仓库名、URL 或 CI 状态写成当前事实。
+状态：Partial。Engine 侧 `.github/workflows/docs-site-sync.yml` 已存在，并以完整 `docs/` 为同步源；
+外部 docs-site 仓库、凭据和实际部署状态未在本仓库验证时仍按 proposal 处理。
 
 ## 目标
 
@@ -64,8 +65,8 @@ flowchart LR
 
 ## CI 流程
 
-Engine 仓库负责在 `docs/**` 变更后通知 docs-site。推荐在 Engine 仓库维护
-`.github/workflows/docs-site-sync.yml`：
+Engine 仓库通过 `.github/workflows/docs-site-sync.yml` 在 `docs/**` 变更后验证文档，并在非 PR
+事件中按配置通知 docs-site：
 
 - `pull_request`：只验证文档编码和 whitespace。
 - `push` 到 `main`：验证后触发 docs-site 同步。
@@ -159,7 +160,7 @@ npm run dev
 
 - 改正文、架构事实、API 合同、规范和工作流，提交到 `VkEngine`。
 - 改站点主题、导航、搜索、部署平台或筛选规则，提交到 docs-site。
-- 如果 docs-site 的导航暴露了新的稳定文档入口，同时检查 `VkEngine/docs/README.md` 是否也需要更新。
+- 如果 docs-site 的导航暴露了新的稳定文档入口，同时检查 `docs/README.md` 是否也需要更新。
 - 如果 `VkEngine/docs` 删除或重命名文档，docs-site CI 必须失败或报告断链，不允许静默发布旧内容。
 
 ## 验证

@@ -3,6 +3,7 @@
 研究日期：2026-05-10
 
 重置日期：2026-05-14
+状态：Current schema-first boundary + Target completion；support matrix 必须与当前 packages/tests 同步。
 
 本文定义 Asharia Engine 后续 schema、C++ binding、archive、persistence、Inspector、脚本绑定、
 scene 保存和 asset metadata 的共同边界。当前 `packages/reflection` / `packages/serialization`
@@ -16,7 +17,7 @@ Editor、scene、asset、scripting 都是消费者，不拥有底层类型事实
 命名遵循 `docs/standards/naming.md`：持久化 schema 使用 `com.asharia`，文件后缀使用 `.ascene`、
 `.aprefab`、`.ameta`、`.amat`、`.agraph`。C++ / CMake 实现名统一使用 `asharia`。
 
-实施切片、旧代码处理和 smoke 路线见 `docs/systems/reflection-serialization-plan.md`。
+实施顺序由 `docs/planning/next-development-plan.md` 和 GitHub Issues / Project 维护；本文只定义长期数据合同。
 
 ## 设计目标
 
@@ -71,7 +72,7 @@ archive
 persistence
   schema + binding + archive -> save/load/defaults/migration
 
-editor-core
+editor_domain
   editor metadata -> Inspector model / transaction
 
 scripting
@@ -128,7 +129,7 @@ flowchart TD
 - `archive` 不依赖 schema、C++ binding、editor、asset、scene、script、Vulkan 或 ImGui。
 - `cpp-binding` 不依赖 archive 或 persistence；它只声明 C++ 对象如何读写 schema 字段。
 - `persistence` 可以依赖 schema、archive 和 cpp-binding；它不依赖 editor、script runtime、asset database 或 renderer。
-- `editor-core` 和 `scripting` 只消费 typed metadata projection，不拥有底层 schema registry。
+- Editor System 的 `editor_domain` 和 Scripting System 只消费 typed metadata projection，不拥有底层 schema registry。
 
 ## Schema 模型
 
@@ -217,7 +218,7 @@ ColorSpec
   colorSpace / componentOrder
 ```
 
-消费者只读自己的 metadata block。`editor-core` 不解析 `ScriptSpec`，`scripting` 不解析 `EditorSpec`，
+消费者只读自己的 metadata block。`editor_domain` 不解析 `ScriptSpec`，Scripting System 不解析 `EditorSpec`，
 `archive` 不解析任何 metadata。
 
 ## C++ Binding
