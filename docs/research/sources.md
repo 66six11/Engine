@@ -359,6 +359,27 @@
 - Project 字段与 Issue labels 应各自只有一个事实 owner：Status/Priority/Size 放 Project，primary system area 放 labels，不重复创建 `System` 字段。
 - Project 自动化适合 auto-add、状态同步和完成后归档，但不应替代验收标准、Done evidence 或人工确认真实 blocker。
 
+## Package graph、build graph 与 runtime lifecycle 分层
+
+本次核对日期：2026-07-13
+
+一手资料：
+
+- Cargo `metadata`：https://doc.rust-lang.org/cargo/commands/cargo-metadata.html
+- CMake File API codemodel：https://cmake.org/cmake/help/latest/manual/cmake-file-api.7.html
+- Unreal Engine Modules：https://dev.epicgames.com/documentation/en-us/unreal-engine/unreal-engine-modules
+- O3DE Gem Module System：https://docs.o3de.org/docs/user-guide/programming/gems/overview/
+- O3DE System Components：https://docs.o3de.org/docs/user-guide/programming/components/system-components/
+
+结论：
+
+- exact resolved package graph、CMake target/build graph 与 runtime factory/lifecycle graph 是三种不同权威，不能由同一组依赖边推导。
+- Host Profile 过滤后的 module identities 可以先形成 backend-neutral canonical Host Composition Plan，供 build 与 activation adapters 共用。
+- Build Plan 需要独立 build descriptor 与 CMake codemodel 对证；author package manifest 不应复制 target graph。
+- 可执行 Activation Plan 需要 artifact、entry point/factory、scope、phase、service dependency、rollback 等显式合同；module DAG 或
+  `entryModules` 数组不能直接当作启动顺序。
+- package-level dependency-first order 只适合确定性 IR、diff 与 handoff，不代表跨 package system activation order。
+
 ## 项目 Build、Cook、Package 与 Launch
 
 本次核对日期：2026-07-12
