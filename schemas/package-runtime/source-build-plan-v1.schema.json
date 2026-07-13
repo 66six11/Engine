@@ -1,0 +1,474 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.asharia.dev/package-runtime/source-build-plan-v1.schema.json",
+  "title": "Asharia Source Build Plan v1",
+  "description": "Canonical verified CMake build-root handoff for one Host Composition Plan.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "schemaVersion",
+    "inputs",
+    "host",
+    "configuration",
+    "packages",
+    "buildRoots",
+    "targetClosure",
+    "buildOptions",
+    "integrity"
+  ],
+  "properties": {
+    "schema": {
+      "const": "com.asharia.source-build-plan"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "inputs": {
+      "$ref": "#/$defs/inputs"
+    },
+    "host": {
+      "$ref": "#/$defs/host"
+    },
+    "configuration": {
+      "$ref": "#/$defs/configuration"
+    },
+    "packages": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/package"
+      }
+    },
+    "buildRoots": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/targetReference"
+      }
+    },
+    "targetClosure": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/closureTarget"
+      }
+    },
+    "buildOptions": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/effectiveOption"
+      }
+    },
+    "integrity": {
+      "$ref": "#/$defs/integrity"
+    }
+  },
+  "$defs": {
+    "integrity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "algorithm",
+        "digest"
+      ],
+      "properties": {
+        "algorithm": {
+          "const": "sha256"
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "inputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "hostCompositionIntegrity",
+        "descriptorSetIntegrity",
+        "topologyIntegrity",
+        "codemodelIntegrity",
+        "configurationIntegrity"
+      ],
+      "properties": {
+        "hostCompositionIntegrity": {
+          "$ref": "#/$defs/integrity"
+        },
+        "descriptorSetIntegrity": {
+          "$ref": "#/$defs/integrity"
+        },
+        "topologyIntegrity": {
+          "$ref": "#/$defs/integrity"
+        },
+        "codemodelIntegrity": {
+          "$ref": "#/$defs/integrity"
+        },
+        "configurationIntegrity": {
+          "$ref": "#/$defs/integrity"
+        }
+      }
+    },
+    "host": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "hostKind",
+        "targetPlatform"
+      ],
+      "properties": {
+        "hostKind": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/hostKind"
+        },
+        "targetPlatform": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/platformId"
+        }
+      }
+    },
+    "generator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "multiConfig"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "multiConfig": {
+          "type": "boolean"
+        }
+      }
+    },
+    "toolchain": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "compilerId",
+        "compilerVersion",
+        "targetSystem",
+        "targetArchitecture"
+      ],
+      "properties": {
+        "compilerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "compilerVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "targetSystem": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "targetArchitecture": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        }
+      }
+    },
+    "configuration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "generator",
+        "toolchain"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "generator": {
+          "$ref": "#/$defs/generator"
+        },
+        "toolchain": {
+          "$ref": "#/$defs/toolchain"
+        }
+      }
+    },
+    "cmakeTargetName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "pattern": "^[A-Za-z0-9_.+\\-]+$"
+    },
+    "buildableTargetType": {
+      "enum": [
+        "EXECUTABLE",
+        "STATIC_LIBRARY",
+        "SHARED_LIBRARY",
+        "MODULE_LIBRARY",
+        "OBJECT_LIBRARY",
+        "UTILITY"
+      ]
+    },
+    "targetReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "type"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/cmakeTargetName"
+        },
+        "type": {
+          "$ref": "#/$defs/buildableTargetType"
+        }
+      }
+    },
+    "closureTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "type",
+        "dependencies"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/cmakeTargetName"
+        },
+        "type": {
+          "enum": [
+            "EXECUTABLE",
+            "STATIC_LIBRARY",
+            "SHARED_LIBRARY",
+            "MODULE_LIBRARY",
+            "OBJECT_LIBRARY",
+            "INTERFACE_LIBRARY",
+            "UTILITY"
+          ]
+        },
+        "dependencies": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/cmakeTargetName"
+          }
+        }
+      }
+    },
+    "noBuild": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "const": "no-build"
+        }
+      }
+    },
+    "targetRoots": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "targets"
+      ],
+      "properties": {
+        "kind": {
+          "const": "target-roots"
+        },
+        "targets": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/targetReference"
+          }
+        }
+      }
+    },
+    "module": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "moduleId",
+        "sourceBoundaries",
+        "build"
+      ],
+      "properties": {
+        "moduleId": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/localId"
+        },
+        "sourceBoundaries": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "package-contract-common-v1.schema.json#/$defs/packageId"
+          }
+        },
+        "build": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/noBuild"
+            },
+            {
+              "$ref": "#/$defs/targetRoots"
+            }
+          ]
+        }
+      }
+    },
+    "package": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "modules"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/packageId"
+        },
+        "version": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/semanticVersion"
+        },
+        "modules": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/module"
+          }
+        }
+      }
+    },
+    "effectiveOptionBase": {
+      "type": "object",
+      "required": [
+        "packageId",
+        "id",
+        "type",
+        "affects",
+        "value"
+      ],
+      "properties": {
+        "packageId": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/packageId"
+        },
+        "id": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/localId"
+        },
+        "affects": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "contains": {
+            "const": "build"
+          },
+          "items": {
+            "enum": [
+              "build",
+              "activation",
+              "cook"
+            ]
+          }
+        }
+      }
+    },
+    "booleanOption": {
+      "type": "object",
+      "required": [
+        "type",
+        "value"
+      ],
+      "properties": {
+        "type": {
+          "const": "boolean"
+        },
+        "value": {
+          "type": "boolean"
+        }
+      }
+    },
+    "integerOption": {
+      "type": "object",
+      "required": [
+        "type",
+        "value"
+      ],
+      "properties": {
+        "type": {
+          "const": "integer"
+        },
+        "value": {
+          "type": "integer"
+        }
+      }
+    },
+    "stringOption": {
+      "type": "object",
+      "required": [
+        "type",
+        "value"
+      ],
+      "properties": {
+        "type": {
+          "const": "string"
+        },
+        "value": {
+          "type": "string"
+        }
+      }
+    },
+    "enumOption": {
+      "type": "object",
+      "required": [
+        "type",
+        "value"
+      ],
+      "properties": {
+        "type": {
+          "const": "enum"
+        },
+        "value": {
+          "type": "string"
+        }
+      }
+    },
+    "effectiveOption": {
+      "type": "object",
+      "unevaluatedProperties": false,
+      "allOf": [
+        {
+          "$ref": "#/$defs/effectiveOptionBase"
+        },
+        {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/booleanOption"
+            },
+            {
+              "$ref": "#/$defs/integerOption"
+            },
+            {
+              "$ref": "#/$defs/stringOption"
+            },
+            {
+              "$ref": "#/$defs/enumOption"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

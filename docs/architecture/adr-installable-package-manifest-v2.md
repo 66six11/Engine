@@ -8,7 +8,7 @@ Proposed。本文定义第一阶段可执行合同；当前 26 个 `asharia.pack
 当前仓库已经实现本合同的 JSON Schema、跨字段语义校验和 synthetic fixtures；Project Manifest、Lockfile 与
 Host Profile v1 也已按独立 ADR 实现合同/校验基线；纯内存 Package Resolver v1 已支持 caller-supplied candidates 的确定性
 求解，显式来源 Candidate Discovery v1 已实现 strict loader，Locked Graph Verification & Reuse v1 已实现只读复用边界。
-上游 catalog/index、lock update/apply、build/artifact plan、
+Source Build Plan v1 的 control-plane schema/reader/planner 已实现；上游 catalog/index、lock update/apply、artifact plan、
 activation plan 与生产 catalog entry 仍后置。
 
 ## 背景
@@ -140,16 +140,18 @@ module graph 和 content roots 推导；更严格的第一方发布要求由 cat
 ### 6. source/CMake 映射属于独立 build descriptor
 
 源码发行可以在 package 根提供独立的 `asharia.package.build.json`，将 v2 logical module 映射到当前
-source-boundary identities、CMake targets、生成步骤和平台变体。它是开发/构建合同，不是通用安装 identity：
+source-boundary identities 与真实 CMake build roots。它是开发/构建合同，不是通用安装 identity：
 
 - v1 source-boundary manifest 仍是当前仓库目录与 CMake ownership 的事实源；
 - build descriptor 必须引用 v2 logical module，不能产生新的用户可选项；
 - CMake 仍是 target/link truth；descriptor 用于核对和生成 build plan，不反向替代 CMake；
-- 预编译或纯内容 candidate 可以没有 CMake build descriptor；
+- contract/header-only module 使用显式 `no-build`；生成步骤由真实 CMake `UTILITY` roots 表达，不在 descriptor 中复制 command；
+- 预编译或 artifact-only candidate 可以没有 CMake build descriptor，并等待独立 Artifact Manifest 路径；
 - generated artifact manifest 把 logical module 映射到最终 binary/data products。
 
-本阶段只冻结该边界，不实现 build descriptor schema。这样后续可以在不修改 package identity 的前提下支持 CMake、
-预编译 native artifact、managed assembly 与 content-only delivery。
+[Source Build Plan v1](adr-source-build-plan-v1.md) 已为 #276 实现 descriptor、normalized CMake codemodel snapshot 与 pure planner
+合同。该独立边界允许后续在不修改 package identity 的前提下支持 CMake、预编译 native
+artifact、managed assembly 与 content-only delivery。
 
 ### 7. source、integrity 与 artifacts 属于候选和锁定证据
 

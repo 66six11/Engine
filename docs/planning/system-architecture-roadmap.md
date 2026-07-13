@@ -189,7 +189,7 @@ rollback 和 lifecycle；Memory、Storage、Settings、Tasks、Data、Observabil
 5. renderer、scene、editor 之间已有契约雏形，但仍可能由 host 进行临时拼接；
 6. editor executable 承担过多领域规则，难以做 headless 测试；
 7. 当前单线程基线尚未完全显式化 owner thread、snapshot 和销毁时序；
-8. `asharia.package.json` schema v1 已把当前目录分类为不可选择的 source boundaries；installable v2、Project Manifest v1、Feature Set v2、Package Lockfile v1、五种 Host Profile v1、explicit-source Candidate Discovery v1、deterministic in-memory resolver、fail-closed Locked Graph Verification & Reuse v1 与 Host Composition Plan v1 pure planner 已落地；当前仍无上游 catalog/index、lock update/apply、生产 `asharia.packages.json` / lock/profile、Build/Activation Plan 和 Editor Package Manager 闭环；
+8. `asharia.package.json` schema v1 已把当前目录分类为不可选择的 source boundaries；installable v2、Project Manifest v1、Feature Set v2、Package Lockfile v1、五种 Host Profile v1、explicit-source Candidate Discovery v1、deterministic in-memory resolver、fail-closed Locked Graph Verification & Reuse v1、Host Composition Plan v1 与 Source Build Plan v1 pure planners 已落地；当前仍无上游 catalog/index、lock update/apply、生产 `asharia.packages.json` / lock/profile、Artifact/Activation Plan 和 Editor Package Manager 闭环；
 9. scripting、input、tasks、physics、animation、audio 等已进入目标 first-party system catalog，但尚未形成可由同一 package activation 模型创建和停止的完整实现；
 10. `engine/platform` 仍是空 `INTERFACE` target，应用 lifecycle 与 immutable platform capability generation 没有 runtime owner；
 11. 尚无复用的 Host scope、system factory、activation lease、typed contribution registry 和 failure rollback；
@@ -917,7 +917,7 @@ sequenceDiagram
 - 定义 `asharia.packages.json` 与 committed `asharia.packages.lock.json`；
 - 实现 headless `discover -> solve/reuse -> compose -> verify` library/CLI，第一阶段只支持 bundled/project-embedded/local sources；
 - 先输出 canonical per-host logical composition，再由独立 adapters 输出 CMake build plan 和 per-host activation plan；不实现任意 native hot load；
-- 建立 `Minimal`、`Editor`、`Runtime`、`DedicatedServer`、`AssetWorker` Host Profiles，以及 versioned Standard3D/EditorAuthoring/DedicatedServer Feature Sets；五种 Host Profile 的 v1 schema/固定策略/纯数据投影基线与 Host Composition Plan v1 pure planner 已落地，生产 profiles 与后继 Build/Activation plans 仍待后续 Slice；
+- 建立 `Minimal`、`Editor`、`Runtime`、`DedicatedServer`、`AssetWorker` Host Profiles，以及 versioned Standard3D/EditorAuthoring/DedicatedServer Feature Sets；五种 Host Profile 的 v1 schema/固定策略/纯数据投影基线、Host Composition Plan v1 与 Source Build Plan v1 pure planners 已落地，生产 profiles 与后继 Artifact/Activation plans 仍待后续 Slice；
 - 检查全部 `PUBLIC` / `PRIVATE` / `INTERFACE` 依赖；
 - 使 optional target 的 package config 依赖保持 optional；
 - 增加禁止 include 其他 package `src/`、禁止 Vulkan 类型越层、禁止 RHI base 依赖 RG 的检查；

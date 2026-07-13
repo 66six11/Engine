@@ -64,8 +64,10 @@ class PackageTopologyTests(unittest.TestCase):
         inventory, errors = self.inspect()
 
         self.assertEqual([], errors)
+        self.assertEqual("com.asharia.source-topology-snapshot", inventory["schema"])
         self.assertEqual(1, inventory["summary"]["packageCount"])
         self.assertEqual("packages/example/asharia.package.json", inventory["packages"][0]["path"])
+        self.assertEqual([], inventory["packages"][0]["targets"][0]["dependencies"])
 
     def test_installable_v2_manifest_is_left_to_the_contract_validator(self) -> None:
         self.write_package("packages/example", "com.asharia.example")
