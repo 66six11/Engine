@@ -15,6 +15,9 @@ Accepted for #272。本文冻结第一版 resolver policy，以及 candidate dis
 确定的 exact lock graph 或稳定 diagnostics。目录枚举、source configuration、下载、lock reuse、build planning 和 activation
 属于独立 policy boundary，不能泄漏进 solver。
 
+相邻的 [Explicit-source Package Candidate Discovery v1](adr-package-candidate-discovery-v1.md) 已实现从调用方给出的
+exact payload roots 产生 candidates；它不改变 Resolver 的纯内存、无 filesystem IO 边界。
+
 ## 决策
 
 ### 1. Resolver 是纯内存边界

@@ -7,6 +7,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from tools import check_package_contracts
 
@@ -201,6 +202,21 @@ class PackageLockContractTests(unittest.TestCase):
             root = Path(temporary_directory)
             with self.assertRaisesRegex(ValueError, "must contain regular file"):
                 check_package_contracts.compute_package_tree_integrity(root)
+
+    def test_package_tree_rejects_a_link_root(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            original_is_symlink = Path.is_symlink
+
+            def mark_root_as_link(path: Path) -> bool:
+                return path == root or original_is_symlink(path)
+
+            with mock.patch.object(Path, "is_symlink", new=mark_root_as_link):
+                with self.assertRaises(check_package_contracts.PackageTreeIntegrityError) as raised:
+                    check_package_contracts.compute_package_tree_integrity(root)
+
+        self.assertEqual("link", raised.exception.code)
+        self.assertEqual("", raised.exception.relative_path)
 
     def test_locked_candidate_integrity_detects_missing_and_changed_payloads(self) -> None:
         lock = self.load("valid-lock.json")

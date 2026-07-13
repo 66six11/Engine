@@ -4,30 +4,16 @@ from __future__ import annotations
 
 import copy
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from functools import cmp_to_key
 from typing import Any, Iterable
 
 from tools import check_package_contracts as contracts
+from tools.package_candidates import PackageCandidate
 
 
 RESOLVER_VERSION = "0.1.0"
 RESOLUTION_POLICY_VERSION = 1
-
-
-@dataclass(frozen=True)
-class PackageCandidate:
-    """One exact candidate supplied by a discovery adapter."""
-
-    identity: str
-    version: str
-    package_kind: str
-    origin: str
-    source: dict[str, Any]
-    manifest_integrity: dict[str, Any]
-    payload_integrity: dict[str, Any]
-    manifest: dict[str, Any]
-    payload_location: Any = field(default=None, compare=False, repr=False)
 
 
 @dataclass(frozen=True)
