@@ -92,17 +92,10 @@
   },
   "$defs": {
     "hostKind": {
-      "enum": [
-        "minimal",
-        "editor",
-        "runtime",
-        "dedicated-server",
-        "asset-worker"
-      ]
+      "$ref": "package-contract-common-v1.schema.json#/$defs/hostKind"
     },
     "platformId": {
-      "type": "string",
-      "pattern": "^com\\.asharia\\.platform\\.[a-z](?:[a-z0-9-]*[a-z0-9])?$"
+      "$ref": "package-contract-common-v1.schema.json#/$defs/platformId"
     },
     "platformList": {
       "type": "array",
@@ -113,12 +106,7 @@
       }
     },
     "shippingClass": {
-      "enum": [
-        "runtime",
-        "editor",
-        "tool",
-        "development-only"
-      ]
+      "$ref": "package-contract-common-v1.schema.json#/$defs/shippingClass"
     },
     "dependency": {
       "type": "object",
@@ -288,16 +276,7 @@
           "$ref": "package-contract-common-v1.schema.json#/$defs/localId"
         },
         "role": {
-          "enum": [
-            "contract",
-            "runtime",
-            "implementation",
-            "editor",
-            "tool",
-            "cook",
-            "diagnostics",
-            "content"
-          ]
+          "$ref": "package-contract-common-v1.schema.json#/$defs/moduleRole"
         },
         "dependsOn": {
           "type": "array",

@@ -158,6 +158,7 @@ class ProjectPackageContractTests(unittest.TestCase):
         self.assertEqual([], self.validate("valid-system.json"))
         self.assertEqual([], self.validate("valid-feature-set.json"))
         self.assertEqual([], self.validate("valid-project.json"))
+        self.assertEqual([], self.validate("valid-host-profile-runtime.json"))
 
         source_boundary = {"schemaVersion": 1, "packageKind": "source-boundary"}
         self.assertEqual(
@@ -192,6 +193,9 @@ class ProjectPackageContractTests(unittest.TestCase):
                 "feature-set/asharia.package.json": self.load("valid-feature-set.json"),
                 "project/asharia.packages.json": self.load("valid-empty-project.json"),
                 "project/asharia.packages.lock.json": self.load("valid-empty-lock.json"),
+                "profiles/asharia.host-profile.json": self.load(
+                    "valid-host-profile-runtime.json"
+                ),
             }
             for relative_path, manifest in manifests.items():
                 path = root / relative_path
@@ -207,6 +211,7 @@ class ProjectPackageContractTests(unittest.TestCase):
             [
                 "feature-set/asharia.package.json",
                 "installable/asharia.package.json",
+                "profiles/asharia.host-profile.json",
                 "project/asharia.packages.json",
                 "project/asharia.packages.lock.json",
             ],

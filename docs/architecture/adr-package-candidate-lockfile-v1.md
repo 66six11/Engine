@@ -45,7 +45,7 @@ flowchart LR
     Candidate["PackageCandidate records\nproposal: exact payload evidence"]
     Resolver["Headless resolver\nfuture"]
     Lock["asharia.packages.lock.json\nexact selected graph"]
-    Profile["Host Profile\nfuture filtering input"]
+    Profile["Host Profile v1\nimplemented filtering contract"]
 
     Project -->|"provides constraints"| Resolver
     Discovery -->|"produces"| Candidate
@@ -222,8 +222,10 @@ locked mode 先规范化当前 `asharia.packages.json` 并计算 digest；与 `i
 
 ### 9. Host Profile 不进入 lock graph
 
-同一 lock 必须供 Minimal、Editor、Runtime、DedicatedServer 与 AssetWorker 使用。Host Profile 消费 verified exact nodes 与 pinned
-author manifests，按 module role、host/platform applicability、shipping class、capability 与 contribution filters 生成 Activation Plan。
+同一 lock 必须供 Minimal、Editor、Runtime、DedicatedServer 与 AssetWorker 使用。后续
+[Host Profile v1](adr-host-profile-v1.md) 已实现 fixed policy schema 与纯数据 projector：它消费 verified exact nodes 与 pinned
+author manifests，按 module role、host/platform applicability、shipping class、capability 与 contribution filters 生成逻辑选择；
+Activation Plan 仍未实现。
 
 Host-specific active modules、dependency order、denied capabilities、build target 或 process state 都是派生 plan，不写回 lock。
 

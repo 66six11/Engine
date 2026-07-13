@@ -1,0 +1,31 @@
+{
+  "schema": "com.asharia.host-profile",
+  "schemaVersion": 1,
+  "hostKind": "asset-worker",
+  "targetPlatform": "com.asharia.platform.windows",
+  "requiredRoles": [
+    "contract",
+    "tool",
+    "cook",
+    "diagnostics",
+    "content"
+  ],
+  "allowedRoles": [
+    "contract",
+    "runtime",
+    "implementation",
+    "tool",
+    "cook",
+    "diagnostics",
+    "content"
+  ],
+  "allowedShippingClasses": [
+    "runtime",
+    "tool",
+    "development-only"
+  ],
+  "contributionFilter": {
+    "mode": "allow-compatible"
+  },
+  "grantedCapabilities": []
+}

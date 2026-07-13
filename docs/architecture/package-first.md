@@ -186,8 +186,9 @@ package 用来承载可选能力：
 
 ## 目标 Package Manager 体验
 
-状态：Planned Architecture。source-boundary、installable、Project Manifest、Feature Set 与 Package Lockfile 的合同/校验基线
-已经落地，尚未实现 resolver、candidate discovery、生产 catalog/lockfile 或 Editor Package Manager。
+状态：Planned Architecture。source-boundary、installable、Project Manifest、Feature Set、Package Lockfile 与 Host Profile v1
+的合同/校验基线已经落地，尚未实现 resolver、candidate discovery、Build/Activation Plan、生产 catalog/lockfile 或 Editor
+Package Manager。
 
 长期目标是让用户通过 Editor Package Manager 为项目添加、移除和升级**完整可安装能力**。Data、Content、World、Input、Rendering、Physics 等基础能力各自以完整 System Package 表达；Advanced Camera、Dialogue、Weather 等附加能力以完整 Feature Package 表达；跨可选包桥接使用 Integration Package。三者都不能拆成需要用户手工拼装的 contract/runtime/editor/backend fragments。
 
@@ -253,6 +254,9 @@ Feature Set 尚未实现。Candidate source、exact graph、integrity byte domai
 [ADR：Package Candidate 与 Lockfile v1](adr-package-candidate-lockfile-v1.md)；其 schema、validator、digest helpers、normalized
 writer 与 synthetic fixtures 已实现，但没有生产 resolver 或 lockfile。
 
+[ADR：Host Profile v1](adr-host-profile-v1.md) 冻结五个标准宿主的 required/allowed roles、shipping/contribution policy、
+capability grants 与确定性 module/contribution 投影；当前输出仍只是逻辑 identities，不是 Build/Activation Plan。
+
 ### Feature Package 不是 API 包装器
 
 API 由 System Package 拥有；Package Manager 只负责 capability package 的分发和装配。Feature Package 会通过公共 API 工作，但还必须拥有自己的状态、算法、schema/assets、runtime lifecycle、Editor workflow、cook 和 diagnostics。
@@ -288,9 +292,10 @@ project + asharia.packages.lock.json + conan.lock + asharia.build.json
 
 Installable Capability Package 的 v2 可移植作者合同、独立 build descriptor 边界和明确后置的
 source/integrity 证据，见 [ADR：Installable Package Manifest v2](adr-installable-package-manifest-v2.md)。当前已落地
-JSON Schema、semantic validator 和 synthetic fixtures；ADR 仍为 `Proposed`，不表示 resolver、Host Profile、
-生产 lockfile 或任何生产 catalog entry 已经落地。精确 lock 合同见
-[ADR：Package Candidate 与 Lockfile v1](adr-package-candidate-lockfile-v1.md)。
+JSON Schema、semantic validator 和 synthetic fixtures；ADR 仍为 `Proposed`，不表示 resolver、production plans/lockfile
+或任何生产 catalog entry 已经落地。精确 lock 合同见
+[ADR：Package Candidate 与 Lockfile v1](adr-package-candidate-lockfile-v1.md)，Host 过滤合同见
+[ADR：Host Profile v1](adr-host-profile-v1.md)。
 
 当前每个已落地的 engine、source package、app 和 root-built tool 入口都维护一个名为 `asharia.package.json` 的边界清单。
 这是当前仓库事实，不表示它们都能成为 Package Manager 安装项：
@@ -352,8 +357,8 @@ v1 的 `ownerDomain` 取值为 `foundation/platform/observability/data/content/w
 DAG、target owner/role、`targetDependencies` 和直接 CMake target 声明；`--output build/package-topology.json` 可为审查或后续 resolver
 生成机器可读快照。生成物位于 `build/`，不提交，避免维护第二份手写事实源。当前 CMake 仍是链接和 target 创建真相；validator
 负责发现 manifest 漂移，不从 manifest 生成构建系统。installable v2、Feature Set v2 与 Project Manifest v1 author
-contracts 由 `python tools/check_package_contracts.py` 按 `schemas/package-runtime/` 中的 Draft 2020-12 schemas、显式
-discriminator dispatcher 与跨字段语义规则独立验证。
+contracts 与 Host Profile v1 由 `python tools/check_package_contracts.py` 按 `schemas/package-runtime/` 中的 Draft 2020-12
+schemas、显式 discriminator dispatcher 与跨字段语义规则独立验证。
 
 当前仓库的多个物理 `asharia.package.json` 仍可能共同构成一个未来完整系统，例如 renderer、RenderGraph、Vulkan RHI、materials 和 shader tools。迁移期间这些 manifests 用于审查 source/build 边界；它们不自动获得 Package Manager 用户条目。目标 Installable Capability Package manifest 位于 `packages/systems`、`packages/features`、`packages/integrations`、`packages/asset-packs` 或 `packages/templates` 下的发行根，只描述 dependencies、logical modules、platform/host applicability、entry modules、content roots 和 contributions，并成为 `asharia.packages.json` 可直接依赖的能力身份。source-boundary 与 CMake target 的目标映射进入独立 `asharia.package.build.json`，不进入可移植 v2 作者合同。
 

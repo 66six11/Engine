@@ -27,6 +27,7 @@ except ImportError as exc:  # pragma: no cover - exercised only in an unbootstra
 PACKAGE_MANIFEST_NAME = "asharia.package.json"
 PROJECT_MANIFEST_NAME = "asharia.packages.json"
 PACKAGE_LOCK_NAME = "asharia.packages.lock.json"
+HOST_PROFILE_NAME = "asharia.host-profile.json"
 IGNORED_PATH_PARTS = {".git", "build", "generated"}
 REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_SCHEMA_ROOT = REPOSITORY_ROOT / "schemas/package-runtime"
@@ -35,6 +36,7 @@ INSTALLABLE_SCHEMA_NAME = "installable-package-v2.schema.json"
 FEATURE_SET_SCHEMA_NAME = "feature-set-v2.schema.json"
 PROJECT_SCHEMA_NAME = "project-package-manifest-v1.schema.json"
 LOCK_SCHEMA_NAME = "package-lock-v1.schema.json"
+HOST_PROFILE_SCHEMA_NAME = "host-profile-v1.schema.json"
 PACKAGE_TREE_HEADER = b"asharia-package-tree-v1\0"
 PACKAGE_TREE_ROOT_EXCLUDES = {".git", ".hg", ".svn", "build", "generated"}
 ANY_PLATFORM_ID = "com.asharia.platform.any"
@@ -73,6 +75,64 @@ COLLECTION_ID_NAMES = {
     "contentRoots": "content-root",
     "contributions": "contribution",
 }
+MODULE_ROLE_ORDER = (
+    "contract",
+    "runtime",
+    "implementation",
+    "editor",
+    "tool",
+    "cook",
+    "diagnostics",
+    "content",
+)
+SHIPPING_CLASS_ORDER = ("runtime", "editor", "tool", "development-only")
+HOST_PROFILE_POLICIES = {
+    "minimal": {
+        "requiredRoles": ("contract",),
+        "allowedRoles": ("contract",),
+        "allowedShippingClasses": ("runtime",),
+        "contributionMode": "deny-all",
+    },
+    "editor": {
+        "requiredRoles": (
+            "contract",
+            "runtime",
+            "implementation",
+            "editor",
+            "diagnostics",
+            "content",
+        ),
+        "allowedRoles": MODULE_ROLE_ORDER,
+        "allowedShippingClasses": SHIPPING_CLASS_ORDER,
+        "contributionMode": "allow-compatible",
+    },
+    "runtime": {
+        "requiredRoles": ("contract", "runtime", "implementation", "content"),
+        "allowedRoles": ("contract", "runtime", "implementation", "diagnostics", "content"),
+        "allowedShippingClasses": ("runtime",),
+        "contributionMode": "allow-compatible",
+    },
+    "dedicated-server": {
+        "requiredRoles": ("contract", "runtime", "implementation", "content"),
+        "allowedRoles": ("contract", "runtime", "implementation", "diagnostics", "content"),
+        "allowedShippingClasses": ("runtime",),
+        "contributionMode": "allow-compatible",
+    },
+    "asset-worker": {
+        "requiredRoles": ("contract", "tool", "cook", "diagnostics", "content"),
+        "allowedRoles": (
+            "contract",
+            "runtime",
+            "implementation",
+            "tool",
+            "cook",
+            "diagnostics",
+            "content",
+        ),
+        "allowedShippingClasses": ("runtime", "tool", "development-only"),
+        "contributionMode": "allow-compatible",
+    },
+}
 
 
 @dataclass(frozen=True)
@@ -105,6 +165,37 @@ class ContractValidators:
     feature_set: Draft202012Validator
     project: Draft202012Validator
     lock: Draft202012Validator
+    host_profile: Draft202012Validator
+
+
+@dataclass(frozen=True, order=True)
+class HostModuleSelection:
+    """One logical package module selected for a Host Profile."""
+
+    package_id: str
+    package_version: str
+    module_id: str
+
+
+@dataclass(frozen=True, order=True)
+class HostContributionSelection:
+    """One contribution whose owner module is present in the Host selection."""
+
+    package_id: str
+    package_version: str
+    contribution_id: str
+    contribution_kind: str
+    owner_module_id: str
+
+
+@dataclass(frozen=True)
+class HostProjection:
+    """Deterministic logical selection; deliberately not an Activation Plan."""
+
+    host_kind: str
+    target_platform: str
+    modules: tuple[HostModuleSelection, ...]
+    contributions: tuple[HostContributionSelection, ...]
 
 
 def _json_pointer(parts: Iterable[Any]) -> str:
@@ -185,6 +276,7 @@ def load_contract_validators(schema_root: Path = DEFAULT_SCHEMA_ROOT) -> Contrac
         feature_set=create(FEATURE_SET_SCHEMA_NAME),
         project=create(PROJECT_SCHEMA_NAME),
         lock=create(LOCK_SCHEMA_NAME),
+        host_profile=create(HOST_PROFILE_SCHEMA_NAME),
     )
 
 
@@ -1136,6 +1228,62 @@ def _lock_semantic_diagnostics(manifest: dict[str, Any], manifest_path: str) -> 
     return sorted(diagnostics, key=_diagnostic_sort_key)
 
 
+def _host_profile_semantic_diagnostics(
+    manifest: dict[str, Any], manifest_path: str
+) -> list[Diagnostic]:
+    diagnostics: list[Diagnostic] = []
+    policy = HOST_PROFILE_POLICIES[manifest["hostKind"]]
+    collection_policies = (
+        (
+            "requiredRoles",
+            "host.profile.required-roles-mismatch",
+            "required role",
+        ),
+        (
+            "allowedRoles",
+            "host.profile.allowed-roles-mismatch",
+            "allowed role",
+        ),
+        (
+            "allowedShippingClasses",
+            "host.profile.shipping-policy-mismatch",
+            "allowed shipping class",
+        ),
+    )
+    for field, code, label in collection_policies:
+        actual = set(manifest[field])
+        expected = set(policy[field])
+        if actual != expected:
+            missing = sorted(expected - actual)
+            unexpected = sorted(actual - expected)
+            diagnostics.append(
+                Diagnostic(
+                    code=code,
+                    manifest_path=manifest_path,
+                    pointer=f"/{field}",
+                    message=(
+                        f"standard host '{manifest['hostKind']}' {label} policy differs; "
+                        f"missing={missing}, unexpected={unexpected}"
+                    ),
+                )
+            )
+
+    contribution_mode = manifest["contributionFilter"]["mode"]
+    if contribution_mode != policy["contributionMode"]:
+        diagnostics.append(
+            Diagnostic(
+                code="host.profile.contribution-policy-mismatch",
+                manifest_path=manifest_path,
+                pointer="/contributionFilter/mode",
+                message=(
+                    f"standard host '{manifest['hostKind']}' requires contribution mode "
+                    f"'{policy['contributionMode']}'"
+                ),
+            )
+        )
+    return sorted(diagnostics, key=_diagnostic_sort_key)
+
+
 def _version_satisfies_constraint(version: str, constraint: dict[str, Any]) -> bool:
     if constraint["kind"] == "exact":
         return version == constraint["version"]
@@ -1434,6 +1582,8 @@ def validate_locked_result_data(
 
 
 def _contract_kind(manifest: Any, manifest_path: str) -> str | None:
+    if Path(manifest_path).name == HOST_PROFILE_NAME:
+        return "host-profile"
     if Path(manifest_path).name == PACKAGE_LOCK_NAME:
         return "lock"
     if Path(manifest_path).name == PROJECT_MANIFEST_NAME:
@@ -1444,6 +1594,8 @@ def _contract_kind(manifest: Any, manifest_path: str) -> str | None:
         return "project"
     if manifest.get("schema") == "com.asharia.package-lock":
         return "lock"
+    if manifest.get("schema") == "com.asharia.host-profile":
+        return "host-profile"
     if manifest.get("schemaVersion") == 1 and manifest.get("packageKind") == "source-boundary":
         return "source-boundary"
     package_kind = manifest.get("packageKind")
@@ -1479,7 +1631,11 @@ def validate_manifest_data(
                 message="manifest does not declare a supported package-runtime author contract",
             )
         ]
-    if kind == "lock":
+    if kind == "host-profile":
+        validator = validators.host_profile
+        schema_code = "host-profile.manifest.schema"
+        semantic_validator = _host_profile_semantic_diagnostics
+    elif kind == "lock":
         validator = validators.lock
         schema_code = "lock.manifest.schema"
         semantic_validator = _lock_semantic_diagnostics
@@ -1530,6 +1686,7 @@ def discover_contract_manifests(root: Path) -> list[Path]:
         list(root.rglob(PACKAGE_MANIFEST_NAME))
         + list(root.rglob(PROJECT_MANIFEST_NAME))
         + list(root.rglob(PACKAGE_LOCK_NAME))
+        + list(root.rglob(HOST_PROFILE_NAME))
     )
     for path in candidates:
         relative = path.relative_to(root)
@@ -1763,6 +1920,41 @@ def write_normalized_lock_manifest(path: Path, manifest: dict[str, Any]) -> None
     path.write_text(render_normalized_lock_manifest(manifest), encoding="utf-8", newline="\n")
 
 
+def normalize_host_profile(manifest: dict[str, Any]) -> dict[str, Any]:
+    """Return the deterministic representation of an already-validated Host Profile."""
+
+    role_order = {role: index for index, role in enumerate(MODULE_ROLE_ORDER)}
+    shipping_order = {
+        shipping_class: index
+        for index, shipping_class in enumerate(SHIPPING_CLASS_ORDER)
+    }
+    return {
+        "schema": "com.asharia.host-profile",
+        "schemaVersion": 1,
+        "hostKind": manifest["hostKind"],
+        "targetPlatform": manifest["targetPlatform"],
+        "requiredRoles": sorted(manifest["requiredRoles"], key=role_order.__getitem__),
+        "allowedRoles": sorted(manifest["allowedRoles"], key=role_order.__getitem__),
+        "allowedShippingClasses": sorted(
+            manifest["allowedShippingClasses"], key=shipping_order.__getitem__
+        ),
+        "contributionFilter": {"mode": manifest["contributionFilter"]["mode"]},
+        "grantedCapabilities": sorted(manifest["grantedCapabilities"]),
+    }
+
+
+def render_normalized_host_profile(manifest: dict[str, Any]) -> str:
+    """Render normalized Host Profile JSON as UTF-8-compatible LF text."""
+
+    return json.dumps(normalize_host_profile(manifest), ensure_ascii=False, indent=2) + "\n"
+
+
+def write_normalized_host_profile(path: Path, manifest: dict[str, Any]) -> None:
+    """Write one normalized Host Profile using UTF-8 without BOM and LF endings."""
+
+    path.write_text(render_normalized_host_profile(manifest), encoding="utf-8", newline="\n")
+
+
 def compute_bytes_integrity(data: bytes) -> dict[str, str]:
     """Compute the v1 structured SHA-256 integrity record for exact bytes."""
 
@@ -1884,6 +2076,274 @@ def validate_locked_candidate_integrity(
                 )
             )
     return sorted(diagnostics, key=_diagnostic_sort_key)
+
+
+def _module_supports_host_target(module: dict[str, Any], profile: dict[str, Any]) -> bool:
+    platforms = module["platforms"]
+    return profile["hostKind"] in module["hostKinds"] and (
+        ANY_PLATFORM_ID in platforms or profile["targetPlatform"] in platforms
+    )
+
+
+def select_host_profile_data(
+    lock: Any,
+    author_manifests: Iterable[Any],
+    profile: Any,
+    validators: ContractValidators,
+    lock_path: str = PACKAGE_LOCK_NAME,
+    profile_path: str = HOST_PROFILE_NAME,
+) -> tuple[HostProjection | None, list[Diagnostic]]:
+    """Project a verified lock into logical Host selections without creating a plan."""
+
+    diagnostics = validate_manifest_data(lock, lock_path, validators)
+    diagnostics.extend(validate_manifest_data(profile, profile_path, validators))
+    if diagnostics:
+        return None, sorted(diagnostics, key=_diagnostic_sort_key)
+
+    manifests_by_id: dict[str, dict[str, Any]] = {}
+    manifest_paths_by_id: dict[str, str] = {}
+    for manifest_index, manifest in enumerate(author_manifests):
+        manifest_path = f"candidate-{manifest_index}/{PACKAGE_MANIFEST_NAME}"
+        manifest_diagnostics = validate_manifest_data(manifest, manifest_path, validators)
+        diagnostics.extend(manifest_diagnostics)
+        if manifest_diagnostics:
+            continue
+        kind = _contract_kind(manifest, manifest_path)
+        if kind not in {"installable", "feature-set"}:
+            diagnostics.append(
+                Diagnostic(
+                    code="host.package.invalid-manifest-kind",
+                    manifest_path=manifest_path,
+                    pointer="",
+                    message="Host projection accepts only pinned installable or Feature Set manifests",
+                )
+            )
+            continue
+        identity = manifest["id"]
+        if identity in manifests_by_id:
+            diagnostics.append(
+                Diagnostic(
+                    code="host.package.duplicate-manifest",
+                    manifest_path=manifest_path,
+                    pointer="/id",
+                    message=f"multiple pinned author manifests were provided for '{identity}'",
+                )
+            )
+            continue
+        manifests_by_id[identity] = manifest
+        manifest_paths_by_id[identity] = manifest_path
+    if diagnostics:
+        return None, sorted(diagnostics, key=_diagnostic_sort_key)
+
+    installable_nodes: list[tuple[int, dict[str, Any], dict[str, Any]]] = []
+    for node_index, node in enumerate(lock["nodes"]):
+        if node["packageKind"] != "installable-capability":
+            continue
+        identity = node["id"]
+        manifest = manifests_by_id.get(identity)
+        if manifest is None:
+            diagnostics.append(
+                Diagnostic(
+                    code="host.package.missing-manifest",
+                    manifest_path=lock_path,
+                    pointer=f"/nodes/{node_index}/id",
+                    message=f"no pinned installable manifest was provided for '{identity}'",
+                )
+            )
+            continue
+        if manifest["packageKind"] != "installable-capability":
+            diagnostics.append(
+                Diagnostic(
+                    code="host.package.kind-mismatch",
+                    manifest_path=lock_path,
+                    pointer=f"/nodes/{node_index}/packageKind",
+                    message=(
+                        f"locked installable '{identity}' is backed by manifest kind "
+                        f"'{manifest['packageKind']}'"
+                    ),
+                )
+            )
+        if manifest["version"] != node["version"]:
+            diagnostics.append(
+                Diagnostic(
+                    code="host.package.version-mismatch",
+                    manifest_path=lock_path,
+                    pointer=f"/nodes/{node_index}/version",
+                    message=(
+                        f"locked version '{node['version']}' does not match pinned manifest "
+                        f"version '{manifest['version']}' for '{identity}'"
+                    ),
+                )
+            )
+        installable_nodes.append((node_index, node, manifest))
+    if diagnostics:
+        return None, sorted(diagnostics, key=_diagnostic_sort_key)
+
+    required_roles = set(profile["requiredRoles"])
+    allowed_roles = set(profile["allowedRoles"])
+    allowed_shipping = set(profile["allowedShippingClasses"])
+    granted_capabilities = set(profile["grantedCapabilities"])
+    module_selections: list[HostModuleSelection] = []
+    contribution_selections: list[HostContributionSelection] = []
+
+    for _, node, manifest in sorted(installable_nodes, key=lambda item: item[1]["id"]):
+        package_id = node["id"]
+        package_version = node["version"]
+        manifest_path = manifest_paths_by_id[package_id]
+        modules = manifest["modules"]
+        modules_by_id = {module["id"]: module for module in modules}
+        module_indices = {module["id"]: index for index, module in enumerate(modules)}
+        roots = {
+            module["id"]
+            for module in modules
+            if module["role"] in required_roles
+            and _module_supports_host_target(module, profile)
+        }
+        compatible_contributions: list[dict[str, Any]] = []
+        if profile["contributionFilter"]["mode"] == "allow-compatible":
+            for contribution in manifest["contributions"]:
+                owner = modules_by_id[contribution["module"]]
+                if (
+                    profile["hostKind"] in contribution["hostKinds"]
+                    and _module_supports_host_target(owner, profile)
+                    and owner["role"] in allowed_roles
+                    and owner["shippingClass"] in allowed_shipping
+                    and contribution["shippingClass"] in allowed_shipping
+                ):
+                    compatible_contributions.append(contribution)
+                    roots.add(owner["id"])
+
+        processed: set[str] = set()
+        selected: set[str] = set()
+
+        def visit(
+            module_id: str,
+            parent_module_id: str | None = None,
+            dependency_index: int | None = None,
+        ) -> None:
+            if module_id in processed:
+                return
+            processed.add(module_id)
+            module = modules_by_id[module_id]
+            module_index = module_indices[module_id]
+            edge_pointer = (
+                f"/modules/{module_indices[parent_module_id]}/dependsOn/{dependency_index}"
+                if parent_module_id is not None and dependency_index is not None
+                else None
+            )
+            valid = True
+            if profile["hostKind"] not in module["hostKinds"]:
+                diagnostics.append(
+                    Diagnostic(
+                        code="host.module.host-closure",
+                        manifest_path=manifest_path,
+                        pointer=edge_pointer or f"/modules/{module_index}/hostKinds",
+                        message=(
+                            f"selected module '{module_id}' is unavailable for host "
+                            f"'{profile['hostKind']}'"
+                        ),
+                    )
+                )
+                valid = False
+            platforms = module["platforms"]
+            if ANY_PLATFORM_ID not in platforms and profile["targetPlatform"] not in platforms:
+                diagnostics.append(
+                    Diagnostic(
+                        code="host.module.platform-closure",
+                        manifest_path=manifest_path,
+                        pointer=edge_pointer or f"/modules/{module_index}/platforms",
+                        message=(
+                            f"selected module '{module_id}' is unavailable for platform "
+                            f"'{profile['targetPlatform']}'"
+                        ),
+                    )
+                )
+                valid = False
+            if module["role"] not in allowed_roles:
+                diagnostics.append(
+                    Diagnostic(
+                        code="host.module.role-closure",
+                        manifest_path=manifest_path,
+                        pointer=edge_pointer or f"/modules/{module_index}/role",
+                        message=(
+                            f"selected module '{module_id}' role '{module['role']}' is not allowed "
+                            f"by host '{profile['hostKind']}'"
+                        ),
+                    )
+                )
+                valid = False
+            if module["shippingClass"] not in allowed_shipping:
+                diagnostics.append(
+                    Diagnostic(
+                        code="host.module.shipping-closure",
+                        manifest_path=manifest_path,
+                        pointer=edge_pointer or f"/modules/{module_index}/shippingClass",
+                        message=(
+                            f"selected module '{module_id}' shipping class "
+                            f"'{module['shippingClass']}' is not allowed by host "
+                            f"'{profile['hostKind']}'"
+                        ),
+                    )
+                )
+                valid = False
+            for capability_index, capability in sorted(
+                enumerate(module["requiredCapabilities"]), key=lambda item: item[1]
+            ):
+                if capability not in granted_capabilities:
+                    diagnostics.append(
+                        Diagnostic(
+                            code="host.module.capability-denied",
+                            manifest_path=manifest_path,
+                            pointer=(
+                                f"/modules/{module_index}/requiredCapabilities/"
+                                f"{capability_index}"
+                            ),
+                            message=(
+                                f"selected module '{module_id}' requires capability "
+                                f"'{capability}' that the Host Profile does not grant"
+                            ),
+                        )
+                    )
+                    valid = False
+            if not valid:
+                return
+
+            selected.add(module_id)
+            for child_index, dependency in sorted(
+                enumerate(module["dependsOn"]), key=lambda item: item[1]
+            ):
+                visit(dependency, module_id, child_index)
+
+        for root in sorted(roots):
+            visit(root)
+
+        module_selections.extend(
+            HostModuleSelection(package_id, package_version, module_id)
+            for module_id in sorted(selected)
+        )
+        contribution_selections.extend(
+            HostContributionSelection(
+                package_id,
+                package_version,
+                contribution["id"],
+                contribution["kind"],
+                contribution["module"],
+            )
+            for contribution in compatible_contributions
+            if contribution["module"] in selected
+        )
+
+    if diagnostics:
+        return None, sorted(diagnostics, key=_diagnostic_sort_key)
+    return (
+        HostProjection(
+            host_kind=profile["hostKind"],
+            target_platform=profile["targetPlatform"],
+            modules=tuple(sorted(module_selections)),
+            contributions=tuple(sorted(contribution_selections)),
+        ),
+        [],
+    )
 
 
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:

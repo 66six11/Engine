@@ -1,0 +1,45 @@
+{
+  "schema": "com.asharia.package-lock",
+  "schemaVersion": 1,
+  "resolver": {
+    "version": "0.1.0",
+    "policyVersion": 1
+  },
+  "inputs": {
+    "engineApiVersion": "0.1.0",
+    "projectManifestIntegrity": {
+      "algorithm": "sha256",
+      "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  },
+  "roots": {
+    "directPackages": [
+      {
+        "id": "com.asharia.system.synthetic-hosted",
+        "version": "0.1.0",
+        "packageKind": "installable-capability"
+      }
+    ],
+    "directFeatureSets": []
+  },
+  "nodes": [
+    {
+      "id": "com.asharia.system.synthetic-hosted",
+      "version": "0.1.0",
+      "packageKind": "installable-capability",
+      "source": {
+        "kind": "local",
+        "sourceId": "com.asharia.source.synthetic-hosted"
+      },
+      "manifestIntegrity": {
+        "algorithm": "sha256",
+        "digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "payloadIntegrity": {
+        "algorithm": "sha256",
+        "digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      },
+      "dependencies": []
+    }
+  ]
+}

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://schemas.asharia.dev/package-runtime/package-contract-common-v1.schema.json",
   "title": "Asharia Package Contract Common Definitions v1",
-  "description": "Shared identity and version constraint definitions for package-runtime author contracts.",
+  "description": "Shared identity, version, host, platform, module role, and shipping definitions for package-runtime contracts.",
   "$defs": {
     "semanticVersion": {
       "type": "string",
@@ -15,6 +15,39 @@
     "localId": {
       "type": "string",
       "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"
+    },
+    "hostKind": {
+      "enum": [
+        "minimal",
+        "editor",
+        "runtime",
+        "dedicated-server",
+        "asset-worker"
+      ]
+    },
+    "platformId": {
+      "type": "string",
+      "pattern": "^com\\.asharia\\.platform\\.[a-z](?:[a-z0-9-]*[a-z0-9])?$"
+    },
+    "moduleRole": {
+      "enum": [
+        "contract",
+        "runtime",
+        "implementation",
+        "editor",
+        "tool",
+        "cook",
+        "diagnostics",
+        "content"
+      ]
+    },
+    "shippingClass": {
+      "enum": [
+        "runtime",
+        "editor",
+        "tool",
+        "development-only"
+      ]
     },
     "exactVersionConstraint": {
       "type": "object",

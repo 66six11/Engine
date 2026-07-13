@@ -189,7 +189,7 @@ rollback 和 lifecycle；Memory、Storage、Settings、Tasks、Data、Observabil
 5. renderer、scene、editor 之间已有契约雏形，但仍可能由 host 进行临时拼接；
 6. editor executable 承担过多领域规则，难以做 headless 测试；
 7. 当前单线程基线尚未完全显式化 owner thread、snapshot 和销毁时序；
-8. `asharia.package.json` schema v1 已把当前目录分类为不可选择的 source boundaries；installable v2、Project Manifest v1、Feature Set v2 与 Package Lockfile v1 的 schema/validator/fixtures 已落地，但尚无生产 `asharia.packages.json` / lock、package resolver、Host Profile 和 Editor Package Manager 闭环；
+8. `asharia.package.json` schema v1 已把当前目录分类为不可选择的 source boundaries；installable v2、Project Manifest v1、Feature Set v2、Package Lockfile v1 与五种 Host Profile v1 的 schema/validator/fixtures 已落地，但尚无生产 `asharia.packages.json` / lock/profile、package resolver、Build/Activation Plan 和 Editor Package Manager 闭环；
 9. scripting、input、tasks、physics、animation、audio 等已进入目标 first-party system catalog，但尚未形成可由同一 package activation 模型创建和停止的完整实现；
 10. `engine/platform` 仍是空 `INTERFACE` target，应用 lifecycle 与 immutable platform capability generation 没有 runtime owner；
 11. 尚无复用的 Host scope、system factory、activation lease、typed contribution registry 和 failure rollback；
@@ -571,10 +571,13 @@ flowchart LR
 | 名称 | 类型 | 用途 | 典型 package 集合 |
 | --- | --- | --- | --- |
 | `Asharia.Minimal` | Host Profile | 单元测试、headless tools、定制 Host | Kernel + 已导入 System Packages 的 contract modules；不隐式带 rendering/editor |
+| `Asharia.Editor` | Host Profile | 完整作者工作流与 runtime preview | 激活适用的 contract/runtime/implementation/editor/diagnostics/content roots；tool/cook 只通过依赖或 compatible contribution 进入 |
+| `Asharia.Runtime` | Host Profile | shipping client/runtime | 只允许 runtime shipping closure，排除 editor/tool/development-only modules |
+| `Asharia.DedicatedServer` | Host Profile | 无窗口 shipping server | 使用 dedicated-server applicability 与 runtime shipping closure；rendering/audio/editor modules 由 manifest host policy 过滤 |
+| `Asharia.AssetWorker` | Host Profile | 导入/cook worker | 激活已导入 Data、Content、Rendering 等系统的 contract/tool/cook/diagnostics/content roots；runtime support 只通过依赖进入，排除 editor role/class |
 | `com.asharia.features.standard3d` | versioned Feature Set | 常规 3D runtime 的完整系统组合 | Data、Memory & Budget、Runtime Storage & IO、Settings & Console、Content、World、Tasks、Input、Desktop Platform Support、Scripting (.NET)、Rendering (Vulkan)、Physics、Animation、Audio、Observability System Packages |
 | `com.asharia.features.editor-authoring` | versioned Feature Set | 完整编辑能力 | Standard3D + Editor & Authoring + Project Product Pipeline System Packages；工具 modules 已随所属系统交付 |
 | `com.asharia.features.dedicated-server` | versioned Feature Set | 无窗口服务器 | Data、Memory & Budget、Runtime Storage & IO、Settings & Console、Content、World、Tasks、Scripting、Physics、Networking、Observability；Host 过滤 rendering/audio/editor modules |
-| `Asharia.AssetWorker` | Host Profile | 导入/cook worker | 激活已导入 Data、Content、Rendering 等系统的 tool/cook modules；排除 world/frame runtime modules |
 
 Feature Set 是持续存在于 `asharia.packages.json` 中的 meta-package。其成员是间接依赖，并在 UI 中显示 `Required by Feature Set`；移除成员前必须先移除依赖它的 Feature Set。项目可以在兼容范围内覆盖成员版本，lockfile 同时记录 Feature Set 和展开后的完整依赖图。
 
@@ -911,7 +914,7 @@ sequenceDiagram
 - 定义 `asharia.packages.json` 与 committed `asharia.packages.lock.json`；
 - 实现 headless `discover -> solve -> plan -> verify` library/CLI，第一阶段只支持 bundled/project-embedded/local sources；
 - 输出 CMake build plan 和 per-host activation plan，不实现任意 native hot load；
-- 建立 `Minimal`、`Editor`、`Runtime`、`DedicatedServer`、`AssetWorker` Host Profiles，以及 versioned Standard3D/EditorAuthoring/DedicatedServer Feature Sets；
+- 建立 `Minimal`、`Editor`、`Runtime`、`DedicatedServer`、`AssetWorker` Host Profiles，以及 versioned Standard3D/EditorAuthoring/DedicatedServer Feature Sets；五种 Host Profile 的 v1 schema/固定策略/纯数据投影基线已落地，生产 profiles 与 plans 仍待后续 Slice；
 - 检查全部 `PUBLIC` / `PRIVATE` / `INTERFACE` 依赖；
 - 使 optional target 的 package config 依赖保持 optional；
 - 增加禁止 include 其他 package `src/`、禁止 Vulkan 类型越层、禁止 RHI base 依赖 RG 的检查；

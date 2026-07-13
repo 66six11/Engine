@@ -5,8 +5,9 @@
 Proposed。本文定义第一阶段可执行合同；当前 26 个 `asharia.package.json` 仍是
 `schemaVersion: 1`、`packageKind: "source-boundary"` 的仓库拓扑事实，不会在本阶段批量迁移。
 
-本阶段实现 JSON Schema、跨字段语义校验和 synthetic fixtures。Project Manifest、Host Profile、候选发现、
-resolver、lockfile、build/artifact plan 与生产 catalog entry 后续分步完成。
+当前仓库已经实现本合同的 JSON Schema、跨字段语义校验和 synthetic fixtures；Project Manifest、Lockfile 与
+Host Profile v1 也已按独立 ADR 实现合同/校验基线。候选发现、resolver、build/artifact plan、activation plan 与生产
+catalog entry 仍后置。
 
 ## 背景
 
@@ -101,9 +102,10 @@ v2 顶层合同包括：
 - `shippingClass`：`runtime/editor/tool/development-only`；
 - namespaced `requiredCapabilities`。
 
-module 不声明 CMake target、source directory、binary filename 或加载函数。第一阶段只冻结
-`minimal/editor/runtime/dedicated-server/asset-worker` 五个 host kind 名称；Host Profile 后续定义实际 profile、
-grant/deny 与 compatibility。capability ID 在本阶段只做 namespaced 语法验证，不提前冻结运行时 token API。
+module 不声明 CMake target、source directory、binary filename 或加载函数。第一阶段冻结
+`minimal/editor/runtime/dedicated-server/asset-worker` 五个 host kind 名称；后续
+[Host Profile v1](adr-host-profile-v1.md) 已定义固定 required/allowed roles、shipping/contribution filters、exact grants 与
+确定性逻辑投影。capability token API 和 runtime enforcement 仍未冻结。
 
 `entryModules` 只引用上述 logical modules，维度不存在表示 package 不提供该入口。manifest 不保存
 `complete: true` 或 `not-applicable` 之类自我证明状态。结构完整性由 validator 从 catalog type、entry references、
@@ -247,7 +249,7 @@ JSON Schema Draft 2020-12 负责字段、类型、封闭枚举和局部 shape。
 2. synthetic v2 fixtures 先验证 schema 与 diagnostics，不创建虚假生产 catalog entry。
 3. 建立真实完整 ownership root 后，再为其添加 v2 manifest 和 build descriptor。
 4. 生产 package 进入 catalog 前，必须通过 contract validator、publication policy 与 artifact integrity gate。
-5. Project Manifest / Feature Set author contracts 由独立 ADR 冻结；Host Profile、resolver 与 lockfile 继续按独立 Slice
+5. Project Manifest / Feature Set、Lockfile 与 Host Profile contracts 由独立 ADR 冻结；resolver 与 plans 继续按独立 Slice
    推进，不从本 schema 猜测。
 
 ## 取舍
