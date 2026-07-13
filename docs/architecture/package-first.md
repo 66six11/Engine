@@ -188,7 +188,8 @@ package 用来承载可选能力：
 
 状态：Planned Architecture。source-boundary、installable、Project Manifest、Feature Set、Package Lockfile 与 Host Profile v1
 的合同/校验基线已经落地；explicit-source Candidate Discovery v1 已能从调用方提供的 exact roots 生成 candidates，deterministic
-in-memory Package Resolver v1 已能把 candidates 求解为 canonical exact lock graph。上游 catalog/index、locked reuse/update、
+in-memory Package Resolver v1 已能把 candidates 求解为 canonical exact lock graph；Locked Graph Verification & Reuse v1 已能
+在 current Project/engine/candidate/payload 全部对证后只读复用 existing exact graph。上游 catalog/index、lock update/apply、
 Build/Activation Plan、生产 catalog/lockfile 与 Editor Package Manager 尚未实现。
 
 长期目标是让用户通过 Editor Package Manager 为项目添加、移除和升级**完整可安装能力**。Data、Content、World、Input、Rendering、Physics 等基础能力各自以完整 System Package 表达；Advanced Camera、Dialogue、Weather 等附加能力以完整 Feature Package 表达；跨可选包桥接使用 Integration Package。三者都不能拆成需要用户手工拼装的 contract/runtime/editor/backend fragments。
@@ -255,7 +256,8 @@ integrity byte domain 与 stale-lock 规则见
 [ADR：Package Candidate 与 Lockfile v1](adr-package-candidate-lockfile-v1.md)；其 schema、validator、digest helpers、normalized
 writer 与 synthetic fixtures 已实现。显式来源 strict loader 见
 [ADR：Package Candidate Discovery v1](adr-package-candidate-discovery-v1.md)；candidate 选择策略、回溯、diagnostics 与 exact lock
-物化见 [ADR：Deterministic in-memory Package Resolver v1](adr-package-resolver-v1.md)。上游 catalog/index、locked reuse/update、
+物化见 [ADR：Deterministic in-memory Package Resolver v1](adr-package-resolver-v1.md)，只读 locked graph 复用边界见
+[ADR：Locked Package Graph Verification & Reuse v1](adr-package-lock-verification-v1.md)。上游 catalog/index、lock update/apply、
 生产 Feature Set/lockfile 仍未实现。
 
 [ADR：Host Profile v1](adr-host-profile-v1.md) 冻结五个标准宿主的 required/allowed roles、shipping/contribution policy、

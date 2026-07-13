@@ -235,7 +235,9 @@ resolver 选中的 exact graph 能持久化为项目 lock。
 - candidate → resolver → canonical lock → locked candidate integrity validator 合成交接测试已落地；
 - 提交前仍运行 package contracts、topology、encoding、doc-sync、whitespace、ClangCL 与 MSVC gates。
 
-上游 catalog/index、locked reuse/update 与 production Package Manager 仍未实现，不能由本 Slice 的 strict loader 推断为已落地。
+后继 [Locked Graph Verification & Reuse v1](adr-package-lock-verification-v1.md) 已实现只读 exact graph 复用与 selected payload
+重哈希；上游 catalog/index、lock update/apply 与 production Package Manager 仍未实现，不能由本 Slice 的 strict loader
+推断为已落地。
 
 ## 后果
 

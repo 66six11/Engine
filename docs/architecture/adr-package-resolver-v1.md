@@ -17,6 +17,8 @@ Accepted for #272。本文冻结第一版 resolver policy，以及 candidate dis
 
 相邻的 [Explicit-source Package Candidate Discovery v1](adr-package-candidate-discovery-v1.md) 已实现从调用方给出的
 exact payload roots 产生 candidates；它不改变 Resolver 的纯内存、无 filesystem IO 边界。
+[Locked Graph Verification & Reuse v1](adr-package-lock-verification-v1.md) 也已实现 existing lock 的只读、fail-closed 复用；
+它组合现有 validators 并重新读取 selected payload，但不会调用本 Resolver。
 
 ## 决策
 
