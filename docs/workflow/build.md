@@ -126,6 +126,8 @@ python -m unittest discover -s tools\tests -p "test_package_contracts.py"
 python -m unittest discover -s tools\tests -p "test_package_project_contracts.py"
 python -m unittest discover -s tools\tests -p "test_package_lock_contracts.py"
 python -m unittest discover -s tools\tests -p "test_package_resolver.py"
+python -m unittest discover -s tools\tests -p "test_package_candidate_discovery.py"
+python -m unittest discover -s tools\tests -p "test_package_lock_verification.py"
 python -m unittest discover -s tools\tests -p "test_host_profile_contracts.py"
 powershell -ExecutionPolicy Bypass -File tools\count-code-lines.ps1
 ```
@@ -150,6 +152,10 @@ powershell -ExecutionPolicy Bypass -File tools\count-code-lines.ps1
   package tree digest 与 normalized lock writer determinism。
 - `tools/tests/test_package_resolver.py` 覆盖纯内存 candidate validation、最高兼容版本、稳定回溯、嵌套 Feature Set、
   prerelease/engine API、requirement chain、source ambiguity、cycle、输入不变性与 canonical lock byte determinism。
+- `tools/tests/test_package_candidate_discovery.py` 覆盖三类显式来源、containment、source/physical alias、原子失败、
+  payload tree 限制、TOCTOU 与 resolver/lock validator 合成交接。
+- `tools/tests/test_package_lock_verification.py` 覆盖 existing lock 成功复用、stale inputs、exact source binding、
+  cross-document drift、selected payload 重哈希、原子失败、排列确定性以及 no-resolver/no-write 边界。
 - `tools/tests/test_host_profile_contracts.py` 覆盖五个固定 Host policies、normalized writer、module/contribution filtering、
   capability grants 与 platform/role/shipping closure rejection。
 - `count-code-lines.ps1` 只统计 Git tracked 文本文件，默认排除 Markdown；需要把文档纳入统计时加 `-IncludeDocs`。
