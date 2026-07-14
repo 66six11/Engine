@@ -44,6 +44,7 @@ PROJECT_SCHEMA_NAME = "project-package-manifest-v2.schema.json"
 LOCK_SCHEMA_NAME = "package-lock-v2.schema.json"
 HOST_PROFILE_SCHEMA_NAME = "host-profile-v1.schema.json"
 HOST_COMPOSITION_PLAN_SCHEMA_NAME = "host-composition-plan-v1.schema.json"
+HOST_ACTIVATION_BLUEPRINT_SCHEMA_NAME = "host-activation-blueprint-v1.schema.json"
 PACKAGE_SOURCE_BUILD_SCHEMA_NAME = "package-source-build-v1.schema.json"
 PACKAGE_PRODUCTS_SCHEMA_NAME = "package-products-v1.schema.json"
 PACKAGE_FACTORIES_SCHEMA_NAME = "package-factories-v1.schema.json"
@@ -202,6 +203,7 @@ class ContractValidators:
     lock: Draft202012Validator
     host_profile: Draft202012Validator
     host_composition_plan: Draft202012Validator
+    host_activation_blueprint: Draft202012Validator
     package_source_build: Draft202012Validator
     package_products: Draft202012Validator
     package_factories: Draft202012Validator
@@ -328,6 +330,7 @@ def load_contract_validators(schema_root: Path = DEFAULT_SCHEMA_ROOT) -> Contrac
         lock=create(LOCK_SCHEMA_NAME),
         host_profile=create(HOST_PROFILE_SCHEMA_NAME),
         host_composition_plan=create(HOST_COMPOSITION_PLAN_SCHEMA_NAME),
+        host_activation_blueprint=create(HOST_ACTIVATION_BLUEPRINT_SCHEMA_NAME),
         package_source_build=create(PACKAGE_SOURCE_BUILD_SCHEMA_NAME),
         package_products=create(PACKAGE_PRODUCTS_SCHEMA_NAME),
         package_factories=create(PACKAGE_FACTORIES_SCHEMA_NAME),
@@ -2520,6 +2523,8 @@ def _contract_kind(manifest: Any, manifest_path: str) -> str | None:
         return "cmake-codemodel-snapshot"
     if manifest.get("schema") == "com.asharia.source-build-plan":
         return "source-build-plan"
+    if manifest.get("schema") == "com.asharia.host-activation-blueprint":
+        return "host-activation-blueprint"
     if manifest.get("schemaVersion") == 1 and manifest.get("packageKind") == "source-boundary":
         return "source-boundary"
     package_kind = manifest.get("packageKind")
@@ -2586,6 +2591,10 @@ def validate_manifest_data(
     elif kind == "source-build-plan":
         validator = validators.source_build_plan
         schema_code = "build.plan.schema"
+        semantic_validator = lambda value, path: []
+    elif kind == "host-activation-blueprint":
+        validator = validators.host_activation_blueprint
+        schema_code = "activation.blueprint.schema"
         semantic_validator = lambda value, path: []
     elif kind == "host-profile":
         validator = validators.host_profile

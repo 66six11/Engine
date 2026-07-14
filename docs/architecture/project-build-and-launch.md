@@ -230,8 +230,10 @@ CMake Workflow Preset 可以作为 native 子流程实现，但不能替代 Asha
 
 第一版优先采用**生成的薄组合根 + 静态/启动期注册 modules**：
 
-- generator 根据 Host Profile 和 lock graph 选择 runtime-compatible modules；
-- 生成只包含注册表、entry point glue 和 build metadata 的 source/CMake；
+- generator 只接受已经对证的 Host Composition Plan 与 Host Activation Blueprint，不重新解释 Host Profile 或 lock graph；
+- Blueprint 固定 logical factory、scope、依赖顺序与 contribution bindings，但不假装 artifact 或 native symbol 已存在；
+- 生成只包含注册表、entry point glue 和 build metadata 的 source/CMake；构建完成后再由 artifact/factory binding
+  receipt 把 logical factory reference 绑定到实际静态注册入口；
 - 每个 C++ module 默认保持独立静态库或工具 target；用户安装完整 package，而不是内部 target；
 - 用户项目不手工复制 engine main loop，也不维护一份容易漂移的 module list；
 - 平台 adapter 可以重命名 executable、嵌入 icon/version metadata 或包裹为平台 application bundle；
@@ -335,7 +337,7 @@ Packager 只读取 validated stage，不回到 source project 临时补文件。
 2. 初始化最小 logging、crash capture 和 platform error presentation；
 3. 读取并验证 `asharia.stage.json`、runtime config 和 target compatibility；
 4. 验证静态 module registry 或受信 dynamic modules 与 stage manifest 一致；
-5. 按 activation plan 注册 Bootstrap/Runtime contributions；
+5. 按构建后验证的 bound activation input 注册 Bootstrap/Runtime contributions；
 6. 打开 cooked content catalog，验证 startup roots；
 7. 创建 application/runtime services、World 和 startup scene/state；
 8. 按 Host Profile 创建 window/input/render/audio/network 等系统；
@@ -534,9 +536,10 @@ asharia-launch --project <path> --profile standalone-game
 
 ### Stage A：Profile 与计划模型
 
-- Engine Distribution Manifest v1、`EngineGenerationId`、Project Manifest / Lock v2 硬切、Effective Session v1 与
-  Distribution Assembler v1、Installed Distribution Repair Verifier v1 已经完成；下一步冻结静态薄 composition root 或
-  Bootstrap/Session adapter；
+- Engine Distribution Manifest v1、`EngineGenerationId`、Project Manifest / Lock v2 硬切、Effective Session v1、
+  Distribution Assembler v1、Installed Distribution Repair Verifier v1、Package Factory Declaration v1 与
+  Host Activation Blueprint v1 已经完成；下一步冻结 generated static composition root、构建后 activation binding receipt
+  或 Bootstrap/Session adapter；
 - Effective Editor Session v1 已建立 Ready/Upgrade/Repair/SafeMode 与 exact Profile binding；轻量启动检查和实际 UI/进程状态仍待实现；
 - 冻结 `asharia.build.json` v1 的 owner、Build/Launch Profile 与 local override 规则；
 - 建立 CPU-only parser/validator、BuildPlan/BuildReport、LaunchPlan/SessionReport；
@@ -586,9 +589,11 @@ asharia-launch --project <path> --profile standalone-game
 
 在创建实现 Epic/Slice 前，先完成以下 ADR/设计决策：
 
-1. Engine Distribution Manifest v1、`EngineGenerationId`、Project Manifest / Lock v2、Effective Session v1 与
-   Distribution Assembler v1、Installed Distribution Repair Verifier v1 已完成；
-2. generated composition root 的 target/module registration 方式，以及 verifier 到 Bootstrap/Session 的 adapter；
+1. Engine Distribution Manifest v1、`EngineGenerationId`、Project Manifest / Lock v2、Effective Session v1、
+   Distribution Assembler v1、Installed Distribution Repair Verifier v1、Package Factory Declaration v1 与
+   Host Activation Blueprint v1 已完成；
+2. generated composition root 的 target/module registration 方式、构建后 activation binding receipt，以及 verifier 到
+   Bootstrap/Session 的 adapter；
 3. `asharia.build.json` v1 schema、inheritance 与 local override；
 4. `asharia.stage.json` v1 与 Build/Stage fingerprint；
 5. development stage 的目录布局和原子发布；

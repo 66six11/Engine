@@ -78,7 +78,7 @@ flowchart TB
 
 `Effective Session Plan` 可以为 diagnostics、缓存或可复现测试进行 canonical serialization，但只能由输入 fingerprint
 重新派生；它不是需要人工维护或提交的第三个 lockfile。现有 `Host Composition Plan`、`Source Build Plan` 和未来
-`Activation Plan` 是该派生过程中的职责明确的子计划，不合并成一个万能文档。
+构建前 `Host Activation Blueprint` 与构建后 activation binding receipt 是该派生过程中的职责明确子计划，不合并成一个万能文档。
 
 ### 2. Editor Image 必须先于项目激活可用
 
@@ -175,7 +175,7 @@ Installable Package
 - Host Profile 选择 modules，Source Build Plan 映射真实 CMake roots；
 - C++ modules 默认编译为独立静态库，保持增量编译和链接闭包边界；
 - 项目专属 Editor/Runtime/Server/Tool target 链接生成的薄 composition root；
-- artifact manifest 证明构建 generation，Activation Plan 绑定 factory/contribution/lifecycle；
+- Host Activation Blueprint 在构建前绑定 factory/contribution/lifecycle；artifact manifest 与后继 binding receipt 在构建后证明 exact generation；
 - native graph 变化采用 `PendingBuild -> PendingRestart`，v1 不承诺 hot unload。
 
 未来若 Editor 重链接成为实际瓶颈，可以增加与精确 `EngineGenerationId`、工具链、runtime library、platform 和
@@ -240,5 +240,5 @@ Package Artifact collector 可以：
 1. #278 artifact publication、#279 Engine Distribution Manifest、#280 Project Lock v2 硬切、#281 Effective Session 与
    #282 Distribution Assembler、#283 Installed Distribution Repair Verifier 已完成。
 2. 独立设计轻量启动 receipt / Bootstrap adapter，或先冻结静态薄 composition root 的生成边界。
-3. 再设计 factory reference、Activation Plan 与 Host Runtime lifecycle。
+3. Factory declaration 与 Host Activation Blueprint v1 已完成；下一步生成 static composition root，再建立 post-build binding receipt 与 Host Runtime。
 4. 只有真实链接耗时和 ABI 需求出现后，再评估 exact-build `ProjectEditorModules` 动态模块。
