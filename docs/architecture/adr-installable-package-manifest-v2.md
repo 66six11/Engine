@@ -93,7 +93,7 @@ v2 顶层合同包括：
 | `contributions` | 由 logical module 拥有的声明式扩展点 |
 
 `feature-set` 不属于此枚举。它是项目选择层的 versioned meta-package，由
-[Project Package Manifest v1](adr-project-package-manifest-v1.md) 单独设计，不能用一个空的 installable capability
+[Project Manifest 与 Package Lock v2](adr-project-manifest-lock-v2-hard-cut.md) 单独设计，不能用一个空的 installable capability
 伪装成完整能力。
 
 ### 4. logical module 不是 acquisition unit
@@ -255,7 +255,7 @@ JSON Schema Draft 2020-12 负责字段、类型、封闭枚举和局部 shape。
 ## 兼容和迁移
 
 1. source-boundary v1 与 package author contract v2 可以并存；topology validator 只审计 source-boundary v1，package
-   contract dispatcher 审计 installable v2、Feature Set v2 与独立的 Project Manifest v1。
+   contract dispatcher 审计 installable v2、Feature Set v2 与独立的 Project Manifest v2。
 2. synthetic v2 fixtures 先验证 schema 与 diagnostics，不创建虚假生产 catalog entry。
 3. 建立真实完整 ownership root 后，再为其添加 v2 manifest 和 build descriptor。
 4. 生产 package 进入 catalog 前，必须通过 contract validator、publication policy 与 artifact integrity gate。

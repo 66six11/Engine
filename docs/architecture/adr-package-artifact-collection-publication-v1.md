@@ -205,8 +205,8 @@ composition 与 Host Runtime。
 
 ## 后续
 
-1. Engine Distribution Manifest v1 与 `EngineGenerationId`；
-2. Project Lock 中过渡 `bundled` 节点的迁移和 Effective Session Plan 状态；
+1. Engine Distribution Manifest v1、`EngineGenerationId` 与 Project Lock v2 硬切已完成；
+2. Effective Session Plan 状态与 Host Composition handoff；
 3. 静态薄 composition root generation；
 4. Factory/Scope/Lifecycle contracts 与 Activation Plan；
 5. 真实 prebuilt/remote acquisition 出现后再定义 signature/trust、cross-process cache lock 与 crash-durable publication。

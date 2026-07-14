@@ -1,4 +1,4 @@
-"""Package Lockfile v1 contract and selected-result tests."""
+"""Package Lockfile v2 contract and selected-result tests."""
 
 from __future__ import annotations
 
@@ -56,10 +56,22 @@ class PackageLockContractTests(unittest.TestCase):
         self.assertEqual([], self.validate_data(self.load("valid-empty-lock.json")))
         self.assertEqual([], self.validate_data(self.load("valid-lock.json")))
 
+    def test_v1_lock_is_rejected_without_an_adapter(self) -> None:
+        lock = self.load("valid-empty-lock.json")
+        lock["schemaVersion"] = 1
+        lock["inputs"] = {
+            "engineApiVersion": "0.1.0",
+            "projectManifestIntegrity": lock["inputs"]["projectManifestIntegrity"],
+        }
+
+        diagnostics = self.validate_data(lock)
+
+        self.assertEqual({"lock.manifest.schema"}, {item.code for item in diagnostics})
+
     def test_lock_schema_rejects_unknown_fields_invalid_integrity_and_free_source(self) -> None:
         lock = self.load("valid-lock.json")
         lock["generatedAt"] = "2026-07-13T00:00:00Z"
-        lock["nodes"][0]["manifestIntegrity"]["digest"] = "SHA256:abc"
+        lock["nodes"][1]["manifestIntegrity"]["digest"] = "SHA256:abc"
         lock["nodes"][1]["source"] = {"kind": "registry", "url": "https://example.test"}
 
         diagnostics = self.validate_data(lock)
@@ -135,7 +147,7 @@ class PackageLockContractTests(unittest.TestCase):
         )
 
         invalid_path = self.load("valid-lock.json")
-        invalid_path["nodes"][0]["source"]["relativePath"] = "../outside"
+        invalid_path["nodes"][1]["source"]["relativePath"] = "../outside"
         self.assertEqual(
             ["lock.source.invalid-relative-path"],
             [item.code for item in self.validate_data(invalid_path)],
@@ -223,6 +235,7 @@ class PackageLockContractTests(unittest.TestCase):
         manifests = {manifest["id"]: manifest for manifest in self.author_manifests()}
         with tempfile.TemporaryDirectory() as temporary_directory:
             candidate_roots: dict[str, Path] = {}
+            distribution = {"bundledPackages": []}
             for node in lock["nodes"]:
                 identity = node["id"]
                 root = Path(temporary_directory) / identity
@@ -232,24 +245,50 @@ class PackageLockContractTests(unittest.TestCase):
                     encoding="utf-8",
                 )
                 (root / "payload.bin").write_bytes(identity.encode("utf-8"))
-                node["manifestIntegrity"] = (
-                    check_package_contracts.compute_manifest_file_integrity(
-                        root / "asharia.package.json"
+                if node["source"]["kind"] != "engine-distribution":
+                    node["manifestIntegrity"] = (
+                        check_package_contracts.compute_manifest_file_integrity(
+                            root / "asharia.package.json"
+                        )
                     )
-                )
-                node["payloadIntegrity"] = (
-                    check_package_contracts.compute_package_tree_integrity(root)
-                )
+                    node["payloadIntegrity"] = (
+                        check_package_contracts.compute_package_tree_integrity(root)
+                    )
+                else:
+                    distribution["bundledPackages"].append(
+                        {
+                            "id": identity,
+                            "manifestIntegrity": (
+                                check_package_contracts.compute_manifest_file_integrity(
+                                    root / "asharia.package.json"
+                                )
+                            ),
+                            "payloadIntegrity": (
+                                check_package_contracts.compute_package_tree_integrity(root)
+                            ),
+                        }
+                    )
                 candidate_roots[identity] = root
 
+            self.assertIn(
+                "lock.engine.distribution-required",
+                {
+                    item.code
+                    for item in check_package_contracts.validate_locked_candidate_integrity(
+                        lock,
+                        candidate_roots,
+                    )
+                },
+            )
             self.assertEqual(
                 [],
                 check_package_contracts.validate_locked_candidate_integrity(
                     lock,
                     candidate_roots,
+                    distribution=distribution,
                 ),
             )
-            changed_identity = lock["nodes"][0]["id"]
+            changed_identity = lock["nodes"][1]["id"]
             (candidate_roots[changed_identity] / "payload.bin").write_bytes(b"changed")
             self.assertEqual(
                 ["lock.integrity.payload-mismatch"],
@@ -258,6 +297,7 @@ class PackageLockContractTests(unittest.TestCase):
                     for item in check_package_contracts.validate_locked_candidate_integrity(
                         lock,
                         candidate_roots,
+                        distribution=distribution,
                     )
                 ],
             )
@@ -269,6 +309,7 @@ class PackageLockContractTests(unittest.TestCase):
                     for item in check_package_contracts.validate_locked_candidate_integrity(
                         lock,
                         candidate_roots,
+                        distribution=distribution,
                     )
                 },
             )
@@ -307,6 +348,32 @@ class PackageLockContractTests(unittest.TestCase):
                 item.code
                 for item in self.validate_selected_result(lock, invalid_option_project)
             ],
+        )
+
+    def test_selected_result_binds_project_engine_requirement(self) -> None:
+        project = self.load("valid-lock-project.json")
+        lock = self.load("valid-lock.json")
+        project["engine"]["distributionId"] = "com.asharia.distribution.other-engine"
+        lock["inputs"]["projectManifestIntegrity"] = (
+            check_package_contracts.compute_project_manifest_integrity(project)
+        )
+        distribution_mismatch = self.validate_selected_result(lock, project)
+
+        project = self.load("valid-lock-project.json")
+        project["engine"]["apiVersion"] = {"kind": "exact", "version": "0.2.0"}
+        lock = self.load("valid-lock.json")
+        lock["inputs"]["projectManifestIntegrity"] = (
+            check_package_contracts.compute_project_manifest_integrity(project)
+        )
+        api_mismatch = self.validate_selected_result(lock, project)
+
+        self.assertEqual(
+            ["lock.input.project-distribution-mismatch"],
+            [item.code for item in distribution_mismatch],
+        )
+        self.assertEqual(
+            ["lock.input.project-engine-api-mismatch"],
+            [item.code for item in api_mismatch],
         )
 
     def test_selected_result_detects_author_constraint_and_edge_mismatches(self) -> None:

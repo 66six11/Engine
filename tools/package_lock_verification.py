@@ -252,9 +252,13 @@ def _validate_product_declaration_snapshot(
 
 def _bind_locked_candidates(
     lock: dict[str, Any],
+    distribution: dict[str, Any],
     candidates: tuple[PackageCandidate, ...],
     validators: contracts.ContractValidators,
 ) -> tuple[tuple[PackageCandidate, ...], list[contracts.Diagnostic]]:
+    inventory = {
+        package["id"]: package for package in distribution["bundledPackages"]
+    }
     candidates_by_source: dict[str, list[PackageCandidate]] = {}
     for candidate in candidates:
         source_key = _stable_json(candidate.source)
@@ -263,11 +267,45 @@ def _bind_locked_candidates(
 
     selected: list[PackageCandidate] = []
     diagnostics: list[contracts.Diagnostic] = []
+    for candidate in candidates:
+        source_kind = (
+            candidate.source.get("kind")
+            if isinstance(candidate.source, dict)
+            else None
+        )
+        inventory_package = inventory.get(candidate.identity)
+        if inventory_package is not None and source_kind != "engine-distribution":
+            diagnostics.append(
+                _lock_diagnostic(
+                    "lock.engine.distribution-shadowed",
+                    "/nodes",
+                    (
+                        f"project-owned source cannot shadow Engine Distribution package "
+                        f"'{candidate.identity}'"
+                    ),
+                )
+            )
+        elif inventory_package is None and source_kind == "engine-distribution":
+            diagnostics.append(
+                _lock_diagnostic(
+                    "lock.engine.package-not-distributed",
+                    "/nodes",
+                    (
+                        f"candidate '{candidate.identity}' is not present in the current "
+                        "Engine Distribution inventory"
+                    ),
+                )
+            )
+
     for node_index, node in enumerate(lock["nodes"]):
         identity = node["id"]
         node_pointer = f"/nodes/{node_index}"
         source_key = _stable_json(node["source"])
         matching = candidates_by_source.get(source_key or "", [])
+        if node["source"]["kind"] == "engine-distribution":
+            matching = [
+                candidate for candidate in matching if candidate.identity == identity
+            ]
         if not matching:
             diagnostics.append(
                 _lock_diagnostic(
@@ -349,22 +387,63 @@ def _bind_locked_candidates(
                         )
                     )
 
-        if candidate.manifest_integrity != node["manifestIntegrity"]:
-            diagnostics.append(
-                _lock_diagnostic(
-                    "lock.integrity.manifest-mismatch",
-                    f"{node_pointer}/manifestIntegrity",
-                    f"candidate manifest evidence changed for '{identity}'",
+        if node["source"]["kind"] == "engine-distribution":
+            inventory_package = inventory.get(identity)
+            if inventory_package is None:
+                diagnostics.append(
+                    _lock_diagnostic(
+                        "lock.engine.package-not-distributed",
+                        f"{node_pointer}/source",
+                        f"locked package '{identity}' is absent from Engine Distribution",
+                    )
                 )
-            )
-        if candidate.payload_integrity != node["payloadIntegrity"]:
-            diagnostics.append(
-                _lock_diagnostic(
-                    "lock.integrity.payload-mismatch",
-                    f"{node_pointer}/payloadIntegrity",
-                    f"candidate payload evidence changed for '{identity}'",
+            elif (
+                node["version"] != inventory_package["version"]
+                or node["packageKind"] != inventory_package["packageKind"]
+                or candidate.origin
+                != f"engine-distribution:{inventory_package['root']}"
+                or candidate.manifest_integrity
+                != inventory_package["manifestIntegrity"]
+                or candidate.payload_integrity != inventory_package["payloadIntegrity"]
+            ):
+                diagnostics.append(
+                    _lock_diagnostic(
+                        "lock.engine.distribution-candidate-mismatch",
+                        node_pointer,
+                        (
+                            f"locked candidate '{identity}' does not match current Engine "
+                            "Distribution inventory"
+                        ),
+                    )
                 )
-            )
+        else:
+            if identity in inventory:
+                diagnostics.append(
+                    _lock_diagnostic(
+                        "lock.engine.distribution-shadowed",
+                        f"{node_pointer}/source",
+                        (
+                            f"locked project-owned source cannot shadow Engine Distribution "
+                            f"package '{identity}'"
+                        ),
+                    )
+                )
+            if candidate.manifest_integrity != node["manifestIntegrity"]:
+                diagnostics.append(
+                    _lock_diagnostic(
+                        "lock.integrity.manifest-mismatch",
+                        f"{node_pointer}/manifestIntegrity",
+                        f"candidate manifest evidence changed for '{identity}'",
+                    )
+                )
+            if candidate.payload_integrity != node["payloadIntegrity"]:
+                diagnostics.append(
+                    _lock_diagnostic(
+                        "lock.integrity.payload-mismatch",
+                        f"{node_pointer}/payloadIntegrity",
+                        f"candidate payload evidence changed for '{identity}'",
+                    )
+                )
         if not isinstance(candidate.origin, str) or not candidate.origin:
             diagnostics.append(
                 _lock_diagnostic(
@@ -397,7 +476,7 @@ def _bind_locked_candidates(
 
 def verify_locked_package_graph(
     project: Any,
-    engine_api_version: str,
+    distribution: Any,
     existing_lock: Any,
     candidates: Iterable[PackageCandidate],
     validators: contracts.ContractValidators,
@@ -409,6 +488,13 @@ def verify_locked_package_graph(
         contracts.validate_manifest_data(
             project,
             contracts.PROJECT_MANIFEST_NAME,
+            validators,
+        )
+    )
+    diagnostics.extend(
+        contracts.validate_manifest_data(
+            distribution,
+            contracts.ENGINE_DISTRIBUTION_MANIFEST_NAME,
             validators,
         )
     )
@@ -426,17 +512,6 @@ def verify_locked_package_graph(
                 existing_lock,
                 contracts.PACKAGE_LOCK_NAME,
                 validators,
-            )
-        )
-
-    try:
-        contracts.compare_semantic_versions(engine_api_version, engine_api_version)
-    except (TypeError, ValueError):
-        diagnostics.append(
-            _lock_diagnostic(
-                "lock.input.engine-api-invalid",
-                "/inputs/engineApiVersion",
-                "current engine API version must be exact Semantic Version",
             )
         )
 
@@ -465,17 +540,57 @@ def verify_locked_package_graph(
 
     assert isinstance(existing_lock, dict)
     normalized_lock = contracts.normalize_lock_manifest(existing_lock)
-    if normalized_lock["inputs"]["engineApiVersion"] != engine_api_version:
+    normalized_distribution = contracts.normalize_engine_distribution_manifest(
+        distribution
+    )
+    engine = normalized_distribution["distribution"]
+    project_engine = project["engine"]
+    if project_engine["distributionId"] != engine["id"]:
         diagnostics.append(
             _lock_diagnostic(
-                "lock.input.engine-api-stale",
-                "/inputs/engineApiVersion",
+                "lock.engine.distribution-mismatch",
+                "/engine/distributionId",
                 (
-                    f"lock engine API '{normalized_lock['inputs']['engineApiVersion']}' "
-                    f"does not match current engine API '{engine_api_version}'"
+                    f"project requires Distribution '{project_engine['distributionId']}' "
+                    f"but current Distribution is '{engine['id']}'"
                 ),
             )
         )
+    if not contracts.version_satisfies_constraint(
+        engine["engineApiVersion"], project_engine["apiVersion"]
+    ):
+        diagnostics.append(
+            _lock_diagnostic(
+                "lock.engine.api-incompatible",
+                "/engine/apiVersion",
+                (
+                    f"Engine API '{engine['engineApiVersion']}' does not satisfy the "
+                    "project requirement"
+                ),
+            )
+        )
+    expected_engine_input = {
+        "distributionId": engine["id"],
+        "engineApiVersion": engine["engineApiVersion"],
+        "engineGenerationId": normalized_distribution["engineGenerationId"],
+    }
+    actual_engine_input = normalized_lock["inputs"]["engine"]
+    for field, code in (
+        ("distributionId", "lock.input.engine-distribution-stale"),
+        ("engineApiVersion", "lock.input.engine-api-stale"),
+        ("engineGenerationId", "lock.input.engine-generation-stale"),
+    ):
+        if actual_engine_input[field] != expected_engine_input[field]:
+            diagnostics.append(
+                _lock_diagnostic(
+                    code,
+                    f"/inputs/engine/{field}",
+                    (
+                        f"lock value '{actual_engine_input[field]}' does not match current "
+                        f"Engine Distribution value '{expected_engine_input[field]}'"
+                    ),
+                )
+            )
     if normalized_lock["inputs"][
         "projectManifestIntegrity"
     ] != contracts.compute_project_manifest_integrity(project):
@@ -491,6 +606,7 @@ def verify_locked_package_graph(
 
     selected_candidates, binding_diagnostics = _bind_locked_candidates(
         normalized_lock,
+        normalized_distribution,
         candidate_snapshot,
         validators,
     )
@@ -512,6 +628,7 @@ def verify_locked_package_graph(
     integrity_diagnostics = contracts.validate_locked_candidate_integrity(
         normalized_lock,
         payload_roots,
+        distribution=normalized_distribution,
     )
     if integrity_diagnostics:
         return _failure(integrity_diagnostics)

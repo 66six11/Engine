@@ -13,6 +13,7 @@ from tools import check_package_contracts as contracts
 from tools import package_candidate_discovery as discovery
 from tools import package_resolver
 from tools.package_lock_verification import verify_locked_package_graph
+from tools.tests import package_test_support
 
 
 FIXTURE_ROOT = Path(__file__).parent / "fixtures/package-contracts"
@@ -270,7 +271,8 @@ class PackageProductContractTests(unittest.TestCase):
 
             project = {
                 "schema": "com.asharia.project-packages",
-                "schemaVersion": 1,
+                "schemaVersion": 2,
+                "engine": package_test_support.engine_requirement(),
                 "directPackages": [
                     {
                         "id": self.manifest["id"],
@@ -282,7 +284,7 @@ class PackageProductContractTests(unittest.TestCase):
             }
             resolution = package_resolver.resolve_package_graph(
                 project,
-                "0.1.0",
+                package_test_support.make_engine_distribution(),
                 discovered.candidates,
                 self.validators,
             )
@@ -297,7 +299,7 @@ class PackageProductContractTests(unittest.TestCase):
 
             verified = verify_locked_package_graph(
                 project,
-                "0.1.0",
+                package_test_support.make_engine_distribution(),
                 resolution.lock,
                 discovered.candidates,
                 self.validators,

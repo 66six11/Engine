@@ -11,12 +11,13 @@ Accepted and implemented for #279。
 - 内容派生的 `EngineGenerationId`；
 - synthetic fixture 与正反向 tests。
 
-当前尚未实现 Distribution assembler、installer/repair service、Project Lock migration adapter、Effective Session Plan、
-Factory/Activation 或 Host Runtime。现有 Package Lockfile v1 的 `bundled` 节点仍是兼容期输入，不能据此宣称迁移已经完成。
+当前尚未实现 Distribution assembler、installer/repair service、Effective Session Plan、Factory/Activation 或 Host Runtime。
+[Project Manifest 与 Package Lock v2 硬切](adr-project-manifest-lock-v2-hard-cut.md) 已完成发行库存所有权迁移；v1
+reader/adapter/双写与 `bundled` lock source 已删除。
 
 ## 问题
 
-Package Lockfile v1 回答“某个项目解析到了哪些 exact packages”，Package Artifact Manifest 回答“某次 source build 为
+Project Package Lock 回答“某个项目解析到了哪些 exact packages”，Package Artifact Manifest 回答“某次 source build 为
 一个 exact package 产生了哪些 bytes”。两者都不能单独回答：
 
 - 当前安装的 Engine/Editor generation 究竟包含哪些固定 bytes；
@@ -192,33 +193,19 @@ hash 全部 bytes。项目 source mode 的每次保存不产生新的完整 Dist
 
 本 Slice只实现 inventory contract 与 pure validation，不实现上述 filesystem verifier 或轻量 receipt。
 
-## Package Lock v1 迁移边界
+## Project Lock v2 绑定边界
 
-### 当前兼容状态
+#280 已采用早期硬切完成所有权迁移：
 
-现有 Package Lockfile v1 仍保存 `bundled` node：
+1. Project Manifest v2 声明 Distribution ID 与 Engine API requirement，不固定 generation；
+2. Project Lock v2 的 `inputs.engine` 固定 exact Distribution ID、Engine API version 与 `EngineGenerationId`；
+3. 发行 node 只保存 `source.kind = engine-distribution` 和 exact graph，不复制 root/hash；
+4. resolver/verifier 以 Distribution `bundledPackages` 的 path/integrity 为唯一权威，并拒绝同 identity
+   project-embedded/local shadow；
+5. v1 schema、reader、adapter 和双写均不存在，旧项目必须重新解析生成 v2 lock。
 
-```text
-source.kind = bundled
-source.distributionId
-source.relativePath
-```
-
-现有 resolver、locked verification 与 Host Composition Plan 继续消费该统一图。本 Slice 不修改这些生产路径，也不向 lock v1
-加入 Editor Image、toolchain、Host Profile 或 Engine generation inventory。
-
-### 后继 Project Lock migration
-
-独立 follow-up 必须完成：
-
-1. Project Manifest 表达项目对 Engine API/generation 的兼容要求，而不是复制发行库存；
-2. Project Lock 只固定项目解析得到的 graph、project-embedded/local/third-party sources 与所引用的 bundled identities；
-3. bundled reference 必须解析到当前 Engine Distribution 中 exact id/version/kind，项目不能用同 identity package 覆盖发行库存；
-4. Distribution mismatch 产生 `UpgradeRequired`/兼容诊断，不静默重写 lock 或换 Engine generation；
-5. 迁移 adapter 在兼容期读取 lock v1 `bundled` nodes，但 authoritative path/integrity 来自 Distribution；
-6. 所有 consumer 迁移后，使用独立 Slice 删除 lock v1 对发行库存的重复所有权。
-
-本 Slice 不提前选择 Project Lock v2 的最终 wire shape，避免在 Effective Session invariants 尚未实现时冻结错误的第二套 schema。
+具体 wire contract 和失败语义见
+[Project Manifest 与 Package Lock v2 硬切](adr-project-manifest-lock-v2-hard-cut.md)。
 
 ### 后继 Effective Session
 
@@ -288,12 +275,11 @@ v1 继续采用独立静态 targets + 薄 composition root + 启动期注册。
 
 ## 后续顺序
 
-1. 实现 Distribution assembler/installer verification boundary；
-2. 独立设计并实现 Project Lock migration adapter 与 Engine requirement；
-3. 定义 Effective Session Plan 和轻量启动状态检查；
-4. 生成静态薄 composition root；
-5. 再定义 Factory reference、Activation Plan、Scope/Lifecycle 与 Host Runtime；
-6. 只有出现真实重链接瓶颈和 ABI 需求后，再评估 exact-build native dynamic module。
+1. 定义 Effective Session Plan，并让 Host Composition 消费其 verified resolved graph；
+2. 实现 Distribution assembler/installer verification boundary 与轻量启动状态检查；
+3. 生成静态薄 composition root；
+4. 再定义 Factory reference、Activation Plan、Scope/Lifecycle 与 Host Runtime；
+5. 只有出现真实重链接瓶颈和 ABI 需求后，再评估 exact-build native dynamic module。
 
 ## 参考资料
 

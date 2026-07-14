@@ -525,8 +525,13 @@ def _verified_snapshot(
             candidate.version != node["version"]
             or candidate.package_kind != node["packageKind"]
             or candidate.source != node["source"]
-            or candidate.manifest_integrity != node["manifestIntegrity"]
-            or candidate.payload_integrity != node["payloadIntegrity"]
+            or (
+                node["source"]["kind"] != "engine-distribution"
+                and (
+                    candidate.manifest_integrity != node["manifestIntegrity"]
+                    or candidate.payload_integrity != node["payloadIntegrity"]
+                )
+            )
         ):
             binding_diagnostics.append(
                 _diagnostic(
@@ -816,7 +821,7 @@ def plan_host_package_composition(
         "utf-8"
     )
     plan = HostCompositionPlan(
-        engine_api_version=lock["inputs"]["engineApiVersion"],
+        engine_api_version=lock["inputs"]["engine"]["engineApiVersion"],
         project_manifest_integrity=_integrity_record(
             lock["inputs"]["projectManifestIntegrity"]
         ),

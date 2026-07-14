@@ -32,6 +32,19 @@ class ProjectPackageContractTests(unittest.TestCase):
         self.assertEqual([], self.validate("valid-empty-project.json"))
         self.assertEqual([], self.validate("valid-project.json"))
 
+    def test_v1_project_manifest_is_rejected_without_an_adapter(self) -> None:
+        manifest = self.load("valid-empty-project.json")
+        manifest["schemaVersion"] = 1
+        del manifest["engine"]
+
+        diagnostics = check_package_contracts.validate_manifest_data(
+            manifest,
+            "asharia.packages.json",
+            self.validators,
+        )
+
+        self.assertEqual({"project.manifest.schema"}, {item.code for item in diagnostics})
+
     def test_valid_feature_sets_and_unresolved_external_members_are_accepted(self) -> None:
         self.assertEqual([], self.validate("valid-feature-set.json"))
         self.assertEqual([], self.validate("valid-nested-feature-set.json"))
@@ -92,6 +105,25 @@ class ProjectPackageContractTests(unittest.TestCase):
         )
 
         self.assertEqual(["project.package.invalid-range"], [item.code for item in diagnostics])
+
+        invalid_engine = self.load("valid-project.json")
+        invalid_engine["engine"]["apiVersion"] = {
+            "kind": "range",
+            "minimumInclusive": "0.2.0",
+            "maximumExclusive": "0.2.0",
+            "allowPrerelease": False,
+        }
+        self.assertEqual(
+            ["project.engine.invalid-api-range"],
+            [
+                item.code
+                for item in check_package_contracts.validate_manifest_data(
+                    invalid_engine,
+                    "asharia.packages.json",
+                    self.validators,
+                )
+            ],
+        )
 
     def test_feature_set_membership_rules_are_rejected(self) -> None:
         empty = self.load("valid-feature-set.json")

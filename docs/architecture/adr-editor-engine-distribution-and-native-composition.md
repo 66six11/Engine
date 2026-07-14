@@ -2,13 +2,12 @@
 
 ## 状态
 
-Accepted architecture baseline。本文冻结后续 Engine Distribution、Effective Session Plan、Activation/Factory 与
-Editor Safe Mode 的所有权边界；这些数据合同和完整运行时尚未实现。
+Accepted architecture baseline。Engine Distribution Manifest v1 与 Project Manifest / Package Lock v2 已实现；
+Effective Session Plan、Activation/Factory、Editor Safe Mode runtime 与完整 installer 尚未实现。
 
-当前 `Package Lockfile v1` 仍允许 `bundled` 节点，`Host Composition Plan v1` 也仍消费单一 verified lock。
-这是已经落地的过渡期统一图表示，不等于本文所定义的最终发行/项目分层。后续不得继续向该 lock 增加 Editor
-发行库存职责；在设计 Activation/Factory 前，必须先为 Engine Distribution 建立独立合同，并给现有 composition
-输入提供明确迁移路径。
+Project Lock v2 已移除 `bundled` path/hash 所有权，发行 node 只引用 `engine-distribution`，并精确绑定
+`EngineGenerationId`。Host Composition 目前消费 verified Project Lock v2；下一 Slice 将由 Effective Session 组合
+verified Distribution、Project Lock 与 Host Profile，再把 resolved graph 交给 Host Composition。
 
 ## 问题
 
@@ -115,8 +114,8 @@ Project Manifest 记录直接 package intent、Feature Sets 与允许范围；Pr
 sources、dependency closure 与 artifact generation references。项目对 bundled capability 的声明只能引用
 Engine Distribution 中的事实，不能复制或覆盖其 artifact 库存。
 
-现有 v1 lock 中的 `bundled` 节点在迁移期可以作为兼容输入，但新的发行字段、Editor artifact 和核心 package inventory
-不得继续写入其中。最终 composition 应分别验证 Distribution 与 Project Lock，再在内存中绑定二者。
+Project Lock v2 中的发行 node 只保存 exact graph 和 `source.kind = engine-distribution`。root、manifest hash 与 payload hash
+只由 Engine Distribution Manifest 保存；项目/local source 不得用同 identity 覆盖发行 package。v1 不作为兼容输入。
 
 `project-embedded` / `local` package 明确处于 source mode：源码目录是开发真相；只有 Build/Run、CI、安装、缓存发布或
 Activation 边界才产生并验证不可变 artifact generation。每次保存源码不生成完整 package artifact，也不全量重算 hash。
@@ -216,15 +215,14 @@ Package Artifact collector 可以：
 - Editor/Engine 可以继续静态链接和深度集成，同时项目错误不再决定基础 Editor 是否存在。
 - 项目图裁剪、可复现 build 与 immutable activation evidence 保留，但 Distribution 与 Project 不再复制事实。
 - 需要新增 Engine Distribution Manifest、`EngineGenerationId`、Engine compatibility 与 Effective Session 状态合同。
-- 现有 Package Lockfile/Host Composition v1 需要兼容适配或 schema 升级；在该迁移完成前不得实现假定单一 lock
-  拥有全部发行事实的 Activation/Factory。
+- Host Composition 仍需迁入 Effective Session 派生边界；在此之前不得实现绕开 Distribution/Project 双重验证的
+  Activation/Factory。
 - #278 的 collector/publication 只实现 package artifact generation 证据，不能顺带确定 Editor 引导架构。
 
 ## 后续 Slice 顺序
 
-1. 完成 #278：流式收集和不可变 package artifact publication，并以命名/API 明确它不是 Engine generation。
-2. 定义 Engine Distribution Manifest v1 与 `EngineGenerationId`，包含安装库存和修复验证边界。
-3. 将 Project Lock 的最终所有权从 Distribution inventory 中分离，并为现有 `bundled` v1 节点定义迁移。
-4. 定义 Effective Editor Session Plan 状态机及轻量启动检查。
-5. 生成静态 composition root，再设计 factory reference、Activation Plan 与 Host Runtime lifecycle。
-6. 只有真实链接耗时和 ABI 需求出现后，再评估 exact-build `ProjectEditorModules` 动态模块。
+1. #278 artifact publication、#279 Engine Distribution Manifest 和 #280 Project Lock v2 硬切已经完成。
+2. 定义 Effective Editor Session Plan 状态机及 Host Composition handoff。
+3. 实现 Distribution assembler/repair verification 与轻量启动检查。
+4. 生成静态 composition root，再设计 factory reference、Activation Plan 与 Host Runtime lifecycle。
+5. 只有真实链接耗时和 ABI 需求出现后，再评估 exact-build `ProjectEditorModules` 动态模块。

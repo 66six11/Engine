@@ -1,13 +1,14 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://schemas.asharia.dev/package-runtime/project-package-manifest-v1.schema.json",
-  "title": "Asharia Project Package Manifest v1",
-  "description": "Portable project intent containing direct package selections, Feature Sets, and package option overrides.",
+  "$id": "https://schemas.asharia.dev/package-runtime/project-package-manifest-v2.schema.json",
+  "title": "Asharia Project Package Manifest v2",
+  "description": "Portable project intent bound to one Engine Distribution family and API requirement.",
   "type": "object",
   "additionalProperties": false,
   "required": [
     "schema",
     "schemaVersion",
+    "engine",
     "directPackages",
     "directFeatureSets",
     "packageOptions"
@@ -17,7 +18,10 @@
       "const": "com.asharia.project-packages"
     },
     "schemaVersion": {
-      "const": 1
+      "const": 2
+    },
+    "engine": {
+      "$ref": "#/$defs/engineRequirement"
     },
     "directPackages": {
       "type": "array",
@@ -39,6 +43,22 @@
     }
   },
   "$defs": {
+    "engineRequirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "distributionId",
+        "apiVersion"
+      ],
+      "properties": {
+        "distributionId": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/packageId"
+        },
+        "apiVersion": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/versionConstraint"
+        }
+      }
+    },
     "packageOptions": {
       "type": "object",
       "additionalProperties": false,

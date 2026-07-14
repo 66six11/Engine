@@ -13,6 +13,7 @@ from tools import check_package_contracts
 from tools import package_candidate_discovery
 from tools import package_candidates
 from tools import package_resolver
+from tools.tests import package_test_support
 
 
 FIXTURE_ROOT = Path(__file__).parent / "fixtures/package-contracts"
@@ -97,9 +98,8 @@ class PackageCandidateDiscoveryTests(unittest.TestCase):
                     source_id="com.asharia.source.physics-workspace",
                     payload_root=local_root,
                 ),
-                package_candidate_discovery.BundledCandidateLocation(
+                package_candidate_discovery.EngineDistributedCandidateLocation(
                     distribution_root=distribution_root,
-                    distribution_id="com.asharia.distribution.engine-1",
                     relative_path="packages/rendering",
                 ),
             ]
@@ -116,7 +116,7 @@ class PackageCandidateDiscoveryTests(unittest.TestCase):
             self.assertEqual(locations_before, locations)
             self.assertEqual(
                 [
-                    "bundled:com.asharia.distribution.engine-1:packages/rendering",
+                    "engine-distribution:packages/rendering",
                     "local:com.asharia.source.physics-workspace",
                     "project-embedded:Packages/audio",
                 ],
@@ -124,11 +124,7 @@ class PackageCandidateDiscoveryTests(unittest.TestCase):
             )
             self.assertEqual(
                 [
-                    {
-                        "kind": "bundled",
-                        "distributionId": "com.asharia.distribution.engine-1",
-                        "relativePath": "packages/rendering",
-                    },
+                    {"kind": "engine-distribution"},
                     {
                         "kind": "local",
                         "sourceId": "com.asharia.source.physics-workspace",
@@ -225,7 +221,8 @@ class PackageCandidateDiscoveryTests(unittest.TestCase):
                 json.dumps(
                     {
                         "schema": "com.asharia.project-packages",
-                        "schemaVersion": 1,
+                        "schemaVersion": 2,
+                        "engine": package_test_support.engine_requirement(),
                         "directPackages": [],
                         "directFeatureSets": [],
                         "packageOptions": [],
@@ -434,7 +431,8 @@ class PackageCandidateDiscoveryTests(unittest.TestCase):
             )
             project = {
                 "schema": "com.asharia.project-packages",
-                "schemaVersion": 1,
+                "schemaVersion": 2,
+                "engine": package_test_support.engine_requirement(),
                 "directPackages": [{"id": identity, "version": exact("1.0.0")}],
                 "directFeatureSets": [],
                 "packageOptions": [],
@@ -442,7 +440,7 @@ class PackageCandidateDiscoveryTests(unittest.TestCase):
 
             resolution = package_resolver.resolve_package_graph(
                 project,
-                ENGINE_API_VERSION,
+                package_test_support.make_engine_distribution(discovery.candidates),
                 discovery.candidates,
                 self.validators,
             )
@@ -480,14 +478,15 @@ class PackageCandidateDiscoveryTests(unittest.TestCase):
             )
             project = {
                 "schema": "com.asharia.project-packages",
-                "schemaVersion": 1,
+                "schemaVersion": 2,
+                "engine": package_test_support.engine_requirement(),
                 "directPackages": [{"id": identity, "version": exact("1.0.0")}],
                 "directFeatureSets": [],
                 "packageOptions": [],
             }
             resolution = package_resolver.resolve_package_graph(
                 project,
-                ENGINE_API_VERSION,
+                package_test_support.make_engine_distribution(discovery.candidates),
                 discovery.candidates,
                 self.validators,
             )

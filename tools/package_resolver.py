@@ -145,24 +145,30 @@ def _validate_candidate_evidence(
         "version": candidate.version,
         "packageKind": candidate.package_kind,
     }
+    node = {
+        **reference,
+        "source": candidate.source,
+        "dependencies": [],
+    }
+    if not isinstance(candidate.source, dict) or candidate.source.get("kind") != (
+        "engine-distribution"
+    ):
+        node["manifestIntegrity"] = candidate.manifest_integrity
+        node["payloadIntegrity"] = candidate.payload_integrity
     lock = {
         "schema": "com.asharia.package-lock",
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "resolver": {"version": RESOLVER_VERSION, "policyVersion": 1},
         "inputs": {
-            "engineApiVersion": "0.0.0",
+            "engine": {
+                "distributionId": "com.asharia.distribution.placeholder",
+                "engineApiVersion": "0.0.0",
+                "engineGenerationId": f"sha256-{'0' * 64}",
+            },
             "projectManifestIntegrity": {"algorithm": "sha256", "digest": "0" * 64},
         },
         "roots": {root_collection: [reference], empty_collection: []},
-        "nodes": [
-            {
-                **reference,
-                "source": candidate.source,
-                "manifestIntegrity": candidate.manifest_integrity,
-                "payloadIntegrity": candidate.payload_integrity,
-                "dependencies": [],
-            }
-        ],
+        "nodes": [node],
     }
     chain = ((f"candidate origin '{candidate.origin}'",),)
     diagnostics = contracts.validate_manifest_data(
@@ -188,7 +194,7 @@ def _validate_candidate_evidence(
 
 def _validate_inputs(
     project: Any,
-    engine_api_version: str,
+    distribution: Any,
     candidates: tuple[PackageCandidate, ...],
     validators: contracts.ContractValidators,
     resolver_version: str,
@@ -201,17 +207,22 @@ def _validate_inputs(
         validators,
     )
     diagnostics.extend(_contract_diagnostic(item) for item in project_diagnostics)
+    distribution_diagnostics = contracts.validate_manifest_data(
+        distribution,
+        contracts.ENGINE_DISTRIBUTION_MANIFEST_NAME,
+        validators,
+    )
+    diagnostics.extend(_contract_diagnostic(item) for item in distribution_diagnostics)
 
-    for value, label, code in (
-        (engine_api_version, "engine API version", "resolver.input.engine-api-invalid"),
-        (resolver_version, "resolver version", "resolver.input.resolver-version-invalid"),
-    ):
-        try:
-            contracts.compare_semantic_versions(value, value)
-        except (TypeError, ValueError):
-            diagnostics.append(
-                ResolverDiagnostic(code=code, message=f"{label} '{value}' is not Semantic Version")
+    try:
+        contracts.compare_semantic_versions(resolver_version, resolver_version)
+    except (TypeError, ValueError):
+        diagnostics.append(
+            ResolverDiagnostic(
+                code="resolver.input.resolver-version-invalid",
+                message=f"resolver version '{resolver_version}' is not Semantic Version",
             )
+        )
     if type(policy_version) is not int or policy_version != RESOLUTION_POLICY_VERSION:
         diagnostics.append(
             ResolverDiagnostic(
@@ -222,6 +233,43 @@ def _validate_inputs(
                 ),
             )
         )
+
+    normalized_distribution: dict[str, Any] | None = None
+    inventory: dict[str, dict[str, Any]] = {}
+    if not project_diagnostics and not distribution_diagnostics:
+        normalized_distribution = contracts.normalize_engine_distribution_manifest(
+            distribution
+        )
+        engine = normalized_distribution["distribution"]
+        requirement = project["engine"]
+        if requirement["distributionId"] != engine["id"]:
+            diagnostics.append(
+                ResolverDiagnostic(
+                    code="resolver.engine.distribution-mismatch",
+                    location=f"{contracts.PROJECT_MANIFEST_NAME}/engine/distributionId",
+                    message=(
+                        f"project requires Distribution '{requirement['distributionId']}' "
+                        f"but current Distribution is '{engine['id']}'"
+                    ),
+                )
+            )
+        if not contracts.version_satisfies_constraint(
+            engine["engineApiVersion"], requirement["apiVersion"]
+        ):
+            diagnostics.append(
+                ResolverDiagnostic(
+                    code="resolver.engine.api-incompatible",
+                    location=f"{contracts.PROJECT_MANIFEST_NAME}/engine/apiVersion",
+                    message=(
+                        f"Engine API '{engine['engineApiVersion']}' does not satisfy the "
+                        "project requirement"
+                    ),
+                )
+            )
+        inventory = {
+            package["id"]: package
+            for package in normalized_distribution["bundledPackages"]
+        }
 
     valid_candidates: list[PackageCandidate] = []
     for candidate in sorted(candidates, key=_candidate_input_key):
@@ -272,7 +320,63 @@ def _validate_inputs(
 
         evidence_diagnostics = _validate_candidate_evidence(candidate, validators)
         diagnostics.extend(evidence_diagnostics)
-        if not evidence_diagnostics:
+        authority_valid = True
+        inventory_package = inventory.get(candidate.identity)
+        source_kind = (
+            candidate.source.get("kind")
+            if isinstance(candidate.source, dict)
+            else None
+        )
+        if normalized_distribution is not None and inventory_package is not None:
+            if source_kind != "engine-distribution":
+                authority_valid = False
+                diagnostics.append(
+                    ResolverDiagnostic(
+                        code="resolver.engine.distribution-shadowed",
+                        identity=candidate.identity,
+                        location=candidate_path,
+                        message=(
+                            f"project-owned source cannot shadow Engine Distribution package "
+                            f"'{candidate.identity}'"
+                        ),
+                    )
+                )
+            elif (
+                candidate.version != inventory_package["version"]
+                or candidate.package_kind != inventory_package["packageKind"]
+                or candidate.origin
+                != f"engine-distribution:{inventory_package['root']}"
+                or candidate.manifest_integrity
+                != inventory_package["manifestIntegrity"]
+                or candidate.payload_integrity != inventory_package["payloadIntegrity"]
+            ):
+                authority_valid = False
+                diagnostics.append(
+                    ResolverDiagnostic(
+                        code="resolver.engine.distribution-candidate-mismatch",
+                        identity=candidate.identity,
+                        location=candidate_path,
+                        message=(
+                            "candidate metadata or bytes do not match the current Engine "
+                            "Distribution inventory"
+                        ),
+                    )
+                )
+        elif normalized_distribution is not None and source_kind == "engine-distribution":
+            authority_valid = False
+            diagnostics.append(
+                ResolverDiagnostic(
+                    code="resolver.engine.package-not-distributed",
+                    identity=candidate.identity,
+                    location=candidate_path,
+                    message=(
+                        f"candidate '{candidate.identity}' is not present in the current "
+                        "Engine Distribution inventory"
+                    ),
+                )
+            )
+
+        if not evidence_diagnostics and authority_valid:
             valid_candidates.append(candidate)
 
     kinds_by_identity: dict[str, set[str]] = {}
@@ -646,7 +750,7 @@ def _exact_reference(candidate: PackageCandidate) -> dict[str, Any]:
 
 def _materialize_lock(
     project: dict[str, Any],
-    engine_api_version: str,
+    distribution: dict[str, Any],
     selected: dict[str, PackageCandidate],
     resolver_version: str,
     policy_version: int,
@@ -654,25 +758,30 @@ def _materialize_lock(
     nodes = []
     for identity in sorted(selected):
         candidate = selected[identity]
-        nodes.append(
-            {
-                **_exact_reference(candidate),
-                "source": copy.deepcopy(candidate.source),
-                "manifestIntegrity": copy.deepcopy(candidate.manifest_integrity),
-                "payloadIntegrity": copy.deepcopy(candidate.payload_integrity),
-                "dependencies": [
-                    _exact_reference(selected[dependency])
-                    for dependency, _ in _candidate_dependencies(candidate)
-                ],
-            }
-        )
+        node = {
+            **_exact_reference(candidate),
+            "source": copy.deepcopy(candidate.source),
+            "dependencies": [
+                _exact_reference(selected[dependency])
+                for dependency, _ in _candidate_dependencies(candidate)
+            ],
+        }
+        if candidate.source["kind"] != "engine-distribution":
+            node["manifestIntegrity"] = copy.deepcopy(candidate.manifest_integrity)
+            node["payloadIntegrity"] = copy.deepcopy(candidate.payload_integrity)
+        nodes.append(node)
 
+    engine = distribution["distribution"]
     lock = {
         "schema": "com.asharia.package-lock",
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "resolver": {"version": resolver_version, "policyVersion": policy_version},
         "inputs": {
-            "engineApiVersion": engine_api_version,
+            "engine": {
+                "distributionId": engine["id"],
+                "engineApiVersion": engine["engineApiVersion"],
+                "engineGenerationId": distribution["engineGenerationId"],
+            },
             "projectManifestIntegrity": contracts.compute_project_manifest_integrity(project),
         },
         "roots": {
@@ -692,7 +801,7 @@ def _materialize_lock(
 
 def resolve_package_graph(
     project: Any,
-    engine_api_version: str,
+    distribution: Any,
     candidates: Iterable[PackageCandidate],
     validators: contracts.ContractValidators,
     *,
@@ -704,7 +813,7 @@ def resolve_package_graph(
     candidate_snapshot = tuple(candidates)
     valid_candidates, diagnostics = _validate_inputs(
         project,
-        engine_api_version,
+        distribution,
         candidate_snapshot,
         validators,
         resolver_version,
@@ -716,6 +825,9 @@ def resolve_package_graph(
             selected_candidates=(),
             diagnostics=tuple(sorted(diagnostics, key=_diagnostic_sort_key)),
         )
+
+    normalized_distribution = contracts.normalize_engine_distribution_manifest(distribution)
+    engine_api_version = normalized_distribution["distribution"]["engineApiVersion"]
 
     catalog_lists: dict[str, list[PackageCandidate]] = {}
     for candidate in valid_candidates:
@@ -769,7 +881,7 @@ def resolve_package_graph(
 
     lock = _materialize_lock(
         project,
-        engine_api_version,
+        normalized_distribution,
         selected,
         resolver_version,
         policy_version,

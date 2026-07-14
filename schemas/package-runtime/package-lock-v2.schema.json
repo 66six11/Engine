@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://schemas.asharia.dev/package-runtime/package-lock-v1.schema.json",
-  "title": "Asharia Package Lockfile v1",
-  "description": "Canonical exact package graph selected for one Project Manifest and engine API version.",
+  "$id": "https://schemas.asharia.dev/package-runtime/package-lock-v2.schema.json",
+  "title": "Asharia Package Lockfile v2",
+  "description": "Canonical exact project package graph bound to one immutable Engine Distribution generation.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -18,7 +18,7 @@
       "const": "com.asharia.package-lock"
     },
     "schemaVersion": {
-      "const": 1
+      "const": 2
     },
     "resolver": {
       "$ref": "#/$defs/resolver"
@@ -71,16 +71,37 @@
         }
       }
     },
+    "engineInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "distributionId",
+        "engineApiVersion",
+        "engineGenerationId"
+      ],
+      "properties": {
+        "distributionId": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/packageId"
+        },
+        "engineApiVersion": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/semanticVersion"
+        },
+        "engineGenerationId": {
+          "type": "string",
+          "pattern": "^sha256-[0-9a-f]{64}$"
+        }
+      }
+    },
     "inputs": {
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "engineApiVersion",
+        "engine",
         "projectManifestIntegrity"
       ],
       "properties": {
-        "engineApiVersion": {
-          "$ref": "package-contract-common-v1.schema.json#/$defs/semanticVersion"
+        "engine": {
+          "$ref": "#/$defs/engineInput"
         },
         "projectManifestIntegrity": {
           "$ref": "#/$defs/integrity"
@@ -140,23 +161,15 @@
       "minLength": 1,
       "pattern": "^(?!/)(?![A-Za-z]:)(?!.*\\\\).+$"
     },
-    "bundledSource": {
+    "engineDistributionSource": {
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "kind",
-        "distributionId",
-        "relativePath"
+        "kind"
       ],
       "properties": {
         "kind": {
-          "const": "bundled"
-        },
-        "distributionId": {
-          "$ref": "package-contract-common-v1.schema.json#/$defs/packageId"
-        },
-        "relativePath": {
-          "$ref": "#/$defs/relativePath"
+          "const": "engine-distribution"
         }
       }
     },
@@ -192,20 +205,38 @@
         }
       }
     },
-    "source": {
-      "oneOf": [
-        {
-          "$ref": "#/$defs/bundledSource"
+    "engineDistributedNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "packageKind",
+        "source",
+        "dependencies"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/packageId"
         },
-        {
-          "$ref": "#/$defs/projectEmbeddedSource"
+        "version": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/semanticVersion"
         },
-        {
-          "$ref": "#/$defs/localSource"
+        "packageKind": {
+          "$ref": "#/$defs/packageKind"
+        },
+        "source": {
+          "$ref": "#/$defs/engineDistributionSource"
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/exactNodeReference"
+          }
         }
-      ]
+      }
     },
-    "node": {
+    "projectOwnedNode": {
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -228,7 +259,14 @@
           "$ref": "#/$defs/packageKind"
         },
         "source": {
-          "$ref": "#/$defs/source"
+          "oneOf": [
+            {
+              "$ref": "#/$defs/projectEmbeddedSource"
+            },
+            {
+              "$ref": "#/$defs/localSource"
+            }
+          ]
         },
         "manifestIntegrity": {
           "$ref": "#/$defs/integrity"
@@ -243,6 +281,16 @@
           }
         }
       }
+    },
+    "node": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/engineDistributedNode"
+        },
+        {
+          "$ref": "#/$defs/projectOwnedNode"
+        }
+      ]
     }
   }
 }

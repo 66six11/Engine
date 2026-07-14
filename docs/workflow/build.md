@@ -133,7 +133,7 @@ powershell -ExecutionPolicy Bypass -File tools\count-code-lines.ps1
   target dependency keys 和直接 CMake target 声明；需要机器快照时使用
   `--output build/package-topology.json`，不要提交该生成文件。
 - `check_package_contracts.py` 使用 Draft 2020-12 schema、显式 discriminator dispatcher 和跨字段 semantic rules 验证
-  installable v2、Feature Set v2、Project Manifest v1、Package Lockfile v1、Host Profile v1、Package Source Build v1、
+  installable v2、Feature Set v2、Project Manifest v2、Package Lockfile v2、Host Profile v1、Package Source Build v1、
   Package Product Declaration v1、Package Artifact Manifest v1、Engine Distribution Manifest v1、Source Topology Snapshot v1、
   CMake Codemodel Snapshot v1 与 Source Build Plan v1 contracts；也可以显式传入一个或多个 fixture/manifest 路径。
 - `tools/tests/test_package_topology.py` 覆盖正常 inventory、missing dependency、cycle、duplicate identity、

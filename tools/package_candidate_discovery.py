@@ -1,4 +1,4 @@
-"""Strict explicit-source Package Candidate Discovery v1 loader."""
+"""Strict explicit-source Package Candidate Discovery loader."""
 
 from __future__ import annotations
 
@@ -14,11 +14,10 @@ from tools.package_candidates import PackageCandidate
 
 
 @dataclass(frozen=True)
-class BundledCandidateLocation:
-    """One package root relative to a trusted engine distribution root."""
+class EngineDistributedCandidateLocation:
+    """One inventory-selected package root under an Engine Distribution."""
 
     distribution_root: Path
-    distribution_id: str
     relative_path: str
 
 
@@ -39,7 +38,9 @@ class LocalCandidateLocation:
 
 
 CandidateLocation: TypeAlias = (
-    BundledCandidateLocation | ProjectEmbeddedCandidateLocation | LocalCandidateLocation
+    EngineDistributedCandidateLocation
+    | ProjectEmbeddedCandidateLocation
+    | LocalCandidateLocation
 )
 
 
@@ -105,24 +106,28 @@ def _source_validation_lock(source: Any) -> dict[str, Any]:
         "version": "0.0.0",
         "packageKind": "installable-capability",
     }
+    node = {
+        **reference,
+        "source": source,
+        "dependencies": [],
+    }
+    if isinstance(source, dict) and source.get("kind") != "engine-distribution":
+        node["manifestIntegrity"] = {"algorithm": "sha256", "digest": "0" * 64}
+        node["payloadIntegrity"] = {"algorithm": "sha256", "digest": "0" * 64}
     return {
         "schema": "com.asharia.package-lock",
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "resolver": {"version": "0.0.0", "policyVersion": 1},
         "inputs": {
-            "engineApiVersion": "0.0.0",
+            "engine": {
+                "distributionId": "com.asharia.distribution.placeholder",
+                "engineApiVersion": "0.0.0",
+                "engineGenerationId": f"sha256-{'0' * 64}",
+            },
             "projectManifestIntegrity": {"algorithm": "sha256", "digest": "0" * 64},
         },
         "roots": {"directPackages": [reference], "directFeatureSets": []},
-        "nodes": [
-            {
-                **reference,
-                "source": source,
-                "manifestIntegrity": {"algorithm": "sha256", "digest": "0" * 64},
-                "payloadIntegrity": {"algorithm": "sha256", "digest": "0" * 64},
-                "dependencies": [],
-            }
-        ],
+        "nodes": [node],
     }
 
 
@@ -163,12 +168,8 @@ def _invalid_source_key(location: CandidateLocation) -> str:
             return fallback
         return value
 
-    if isinstance(location, BundledCandidateLocation):
-        distribution_id = safe_fragment(
-            location.distribution_id,
-            "<invalid-distribution-id>",
-        )
-        return f"bundled:{distribution_id}:<invalid-relative-path>"
+    if isinstance(location, EngineDistributedCandidateLocation):
+        return "engine-distribution:<invalid-relative-path>"
     if isinstance(location, ProjectEmbeddedCandidateLocation):
         return "project-embedded:<invalid-relative-path>"
     if isinstance(location, LocalCandidateLocation):
@@ -181,12 +182,8 @@ def _prepare_location(
     location: object,
     validators: contracts.ContractValidators,
 ) -> tuple[_PreparedLocation | None, list[CandidateDiscoveryDiagnostic]]:
-    if isinstance(location, BundledCandidateLocation):
-        source = {
-            "kind": "bundled",
-            "distributionId": location.distribution_id,
-            "relativePath": location.relative_path,
-        }
+    if isinstance(location, EngineDistributedCandidateLocation):
+        source = {"kind": "engine-distribution"}
         root = location.distribution_root
         base_root = root
         relative_path = location.relative_path
@@ -225,8 +222,8 @@ def _prepare_location(
     if diagnostics:
         return None, diagnostics
 
-    if isinstance(location, BundledCandidateLocation):
-        source_key = f"bundled:{location.distribution_id}:{location.relative_path}"
+    if isinstance(location, EngineDistributedCandidateLocation):
+        source_key = f"engine-distribution:{location.relative_path}"
     elif isinstance(location, ProjectEmbeddedCandidateLocation):
         source_key = f"project-embedded:{location.relative_path}"
     else:

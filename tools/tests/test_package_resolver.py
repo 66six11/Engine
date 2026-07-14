@@ -10,6 +10,7 @@ from pathlib import Path
 
 from tools import check_package_contracts
 from tools import package_resolver
+from tools.tests import package_test_support
 
 
 FIXTURE_ROOT = Path(__file__).parent / "fixtures/package-contracts"
@@ -58,7 +59,8 @@ class PackageResolverTests(unittest.TestCase):
     ) -> dict[str, object]:
         return {
             "schema": "com.asharia.project-packages",
-            "schemaVersion": 1,
+            "schemaVersion": 2,
+            "engine": package_test_support.engine_requirement(),
             "directPackages": packages or [],
             "directFeatureSets": feature_sets or [],
             "packageOptions": options or [],
@@ -130,6 +132,17 @@ class PackageResolverTests(unittest.TestCase):
             manifest=manifest,
         )
 
+    def distributed_candidate(
+        self,
+        manifest: dict[str, object],
+        *,
+        root: str = "packages/rendering",
+    ) -> package_resolver.PackageCandidate:
+        candidate = self.candidate(manifest, origin=f"engine-distribution:{root}")
+        return package_resolver.PackageCandidate(
+            **{**candidate.__dict__, "source": {"kind": "engine-distribution"}}
+        )
+
     def resolve(
         self,
         project: dict[str, object],
@@ -139,7 +152,10 @@ class PackageResolverTests(unittest.TestCase):
     ) -> package_resolver.ResolutionResult:
         return package_resolver.resolve_package_graph(
             project,
-            engine_api_version,
+            package_test_support.make_engine_distribution(
+                candidates,
+                engine_api_version=engine_api_version,
+            ),
             candidates,
             self.validators,
         )
@@ -156,6 +172,69 @@ class PackageResolverTests(unittest.TestCase):
             "asharia.packages.lock.json",
             self.validators,
         ))
+
+    def test_distributed_nodes_reference_inventory_without_copying_evidence(self) -> None:
+        identity = "com.asharia.system.distributed-rendering"
+        project = self.project(packages=[requirement(identity, exact("1.0.0"))])
+        candidate = self.distributed_candidate(
+            self.installable(identity, "1.0.0")
+        )
+
+        result = self.resolve(project, [candidate])
+
+        self.assertTrue(result.succeeded)
+        node = result.lock["nodes"][0]
+        self.assertEqual({"kind": "engine-distribution"}, node["source"])
+        self.assertNotIn("manifestIntegrity", node)
+        self.assertNotIn("payloadIntegrity", node)
+        distribution = package_test_support.make_engine_distribution([candidate])
+        self.assertEqual(
+            distribution["engineGenerationId"],
+            result.lock["inputs"]["engine"]["engineGenerationId"],
+        )
+
+    def test_project_owned_candidate_cannot_shadow_distribution_inventory(self) -> None:
+        identity = "com.asharia.system.distributed-rendering"
+        manifest = self.installable(identity, "1.0.0")
+        project = self.project(packages=[requirement(identity, exact("1.0.0"))])
+        distributed = self.distributed_candidate(copy.deepcopy(manifest))
+        shadow = self.candidate(
+            copy.deepcopy(manifest),
+            source_id="com.asharia.source.shadow",
+        )
+
+        result = self.resolve(project, [distributed, shadow])
+
+        self.assertFalse(result.succeeded)
+        self.assertIn(
+            "resolver.engine.distribution-shadowed",
+            {diagnostic.code for diagnostic in result.diagnostics},
+        )
+
+    def test_project_engine_requirement_is_checked_before_solving(self) -> None:
+        project = self.project()
+        wrong_distribution = package_test_support.make_engine_distribution(
+            distribution_id="com.asharia.distribution.other-engine"
+        )
+        incompatible_api = package_test_support.make_engine_distribution(
+            engine_api_version="0.2.0"
+        )
+
+        wrong = package_resolver.resolve_package_graph(
+            project, wrong_distribution, [], self.validators
+        )
+        incompatible = package_resolver.resolve_package_graph(
+            project, incompatible_api, [], self.validators
+        )
+
+        self.assertIn(
+            "resolver.engine.distribution-mismatch",
+            {diagnostic.code for diagnostic in wrong.diagnostics},
+        )
+        self.assertIn(
+            "resolver.engine.api-incompatible",
+            {diagnostic.code for diagnostic in incompatible.diagnostics},
+        )
 
     def test_highest_compatible_version_and_candidate_order_are_deterministic(self) -> None:
         identity = "com.asharia.system.rendering"

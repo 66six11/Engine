@@ -2,8 +2,10 @@
 
 ## 状态
 
-Accepted for #272。本文冻结第一版 resolver policy，以及 candidate discovery、版本求解、lock 验证与后续 planning
-阶段之间的边界。
+Accepted for #272；其中版本求解、回溯和确定性诊断仍有效。裸 `engineApiVersion` 输入、`bundled` candidate
+所有权和 Lock v1 物化已由
+[Project Manifest 与 Package Lock v2 硬切](adr-project-manifest-lock-v2-hard-cut.md) 取代。当前 resolver 接收 verified
+Engine Distribution，并只写 Project Lock v2。
 
 ## 背景
 

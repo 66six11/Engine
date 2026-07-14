@@ -198,7 +198,8 @@ codemodel evidence 与 pure planner 边界也已实现；[Package Product & Arti
 流式 staged verification 与不可变 artifact generation publication；
 [Engine Distribution Manifest v1](adr-engine-distribution-manifest-v1.md) 的只读发行库存、内容派生 `EngineGenerationId`、
 semantic validator 与 canonical writer 也已实现。上游 catalog/index、lock update/apply、生产 Distribution assembly、
-Project Lock migration、Effective Session、Activation Plan、生产 catalog/lockfile 与 Editor Package Manager 尚未实现。
+Effective Session、Activation Plan、生产 catalog/lockfile 与 Editor Package Manager 尚未实现。Project Manifest / Lock v2
+硬切已经完成，不保留 v1 reader 或 migration adapter。
 
 长期目标是让用户通过 Editor Package Manager 为项目添加、移除和升级**完整可安装能力**。Data、Content、World、Input、Rendering、Physics 等基础能力各自以完整 System Package 表达；Advanced Camera、Dialogue、Weather 等附加能力以完整 Feature Package 表达；跨可选包桥接使用 Integration Package。三者都不能拆成需要用户手工拼装的 contract/runtime/editor/backend fragments。
 
@@ -249,10 +250,9 @@ flowchart LR
 - `engine/host-runtime` 消费 activation plan，负责 scope/instance/contribution 的创建、撤销和失败回滚；它不重新解析版本，也不取得系统领域状态所有权。
 - `asharia.project.json` 继续由 `project-core` 保存项目身份、资产源和缓存；package-runtime 不解析它。
 - `asharia.packages.json` / lock 使用 package-runtime 自己拥有的窄 schema，不能依赖由它负责解析的可选 Data Model package。
-- “引擎自带”使用 `bundled` / `built-in` 表达并由 Engine Distribution Manifest 固定；`project-embedded` 专指位于
-  项目内、由项目版本控制并可编辑的 package。项目可以引用 bundled capability，但不能用同 identity 的项目包覆盖
-  Bootstrap 或强绑定核心。现有 lock v1 `bundled` node 只是迁移兼容输入，不得继续吸收 Editor Image、Host Profile
-  或发行 artifact evidence。
+- “引擎自带”由 Engine Distribution Manifest 的 `bundledPackages` 固定；Project Lock v2 只用
+  `source.kind = engine-distribution` 引用其 identity，不复制 root/hash。`project-embedded` 专指位于项目内、由项目版本控制
+  并可编辑的 package。项目/local source 不能用同 identity 覆盖发行 package；v1 `bundled` lock source 不再接受。
 - `required`、`default` 和 `optional` 表达 Host/Profile 选择策略，不把默认系统塞进 Kernel。
 - 一个 system package 可以包含 runtime、editor、tool、content 和 test modules；Host Profile 只选择兼容 modules。Module 是逻辑 activation unit，可以静态链接、启动时注册、动态加载或由 managed host 加载，不天然支持 hot unload。
 - resolver v0 只使用具名完整 package dependencies，例如 Feature Set 直接依赖 `com.asharia.system.rendering-vulkan`、`com.asharia.system.scripting-dotnet` 或 `com.asharia.feature.advanced-camera`；不得直接依赖裸 `rhi-vulkan`、RenderGraph bridge、`.NET provider` 或 `camera-editor` 片段。等第二个真实完整实现出现并完成 ADR 后，再启用 `provides` / `requires capability` 求解。
@@ -275,12 +275,10 @@ flowchart LR
 
 Feature Set 持续存在于 `asharia.packages.json`；成员是间接依赖，不能在仍被 Feature Set 要求时单独删除。Project Template 则只在创建项目时一次性写入 direct dependencies、设置和样例内容，之后不持续约束成员。需要自由增删 Standard3D 成员时，应使用 Project Template 展开，而不是保留 Standard3D Feature Set。
 
-`asharia.packages.json` 的 direct intent、独立 package option overrides、Feature Set author contract 与 constraint
-合并语义见 [ADR：Project Package Manifest v1](adr-project-package-manifest-v1.md)。该 ADR 当前为 `Proposed`；Project Manifest
-v1 / Feature Set v2 schemas、validator、normalized writer 与 synthetic fixtures 已实现。Candidate source、exact graph、
-integrity byte domain 与 stale-lock 规则见
-[ADR：Package Candidate 与 Lockfile v1](adr-package-candidate-lockfile-v1.md)；其 schema、validator、digest helpers、normalized
-writer 与 synthetic fixtures 已实现。显式来源 strict loader 见
+`asharia.packages.json` 的 Engine requirement、direct intent、独立 package option overrides、Feature Set author contract，
+以及 `asharia.packages.lock.json` 的 exact Engine generation/project graph 所有权见
+[ADR：Project Manifest 与 Package Lock v2 硬切](adr-project-manifest-lock-v2-hard-cut.md)。Project/Lock v2 schemas、validator、
+normalized writer、resolver/verifier 绑定与 synthetic fixtures 已实现；v1 合同仅保留为历史 ADR。显式来源 strict loader 见
 [ADR：Package Candidate Discovery v1](adr-package-candidate-discovery-v1.md)；candidate 选择策略、回溯、diagnostics 与 exact lock
 物化见 [ADR：Deterministic in-memory Package Resolver v1](adr-package-resolver-v1.md)，只读 locked graph 复用边界见
 [ADR：Locked Package Graph Verification & Reuse v1](adr-package-lock-verification-v1.md)。上游 catalog/index、lock update/apply、
@@ -296,7 +294,7 @@ package-relative file/size/SHA-256 evidence 的纯验证边界；它不执行 bu
 [ADR：Package Artifact Collection & Publication v1](adr-package-artifact-collection-publication-v1.md) 则为 #278 执行显式 root
 的流式 collect/staged verification/immutable publication，但仍不执行 build、Session composition 或 Activation。
 [ADR：Engine Distribution Manifest v1](adr-engine-distribution-manifest-v1.md) 已为 #279 实现固定 Editor Image、bundled package、
-package artifact reference 与 Host Profile inventory，并明确 Project Lock/Effective Session 迁移边界；Distribution 不是第二个 lock。
+package artifact reference 与 Host Profile inventory；Project Lock v2 已与其完成所有权分离。Distribution 不是第二个 lock。
 
 ### Feature Package 不是 API 包装器
 
@@ -406,7 +404,7 @@ v1 的 `ownerDomain` 取值为 `foundation/platform/observability/data/content/w
 `python tools/check_package_topology.py` 从全部 v1 manifests 生成确定排序的内存 inventory，验证 package identity、dependency
 DAG、target owner/role、`targetDependencies` 和直接 CMake target 声明；`--output build/package-topology.json` 可为审查或后续 resolver
 生成机器可读快照。生成物位于 `build/`，不提交，避免维护第二份手写事实源。当前 CMake 仍是链接和 target 创建真相；validator
-负责发现 manifest 漂移，不从 manifest 生成构建系统。installable v2、Feature Set v2 与 Project Manifest v1 author
+负责发现 manifest 漂移，不从 manifest 生成构建系统。installable v2、Feature Set v2 与 Project Manifest v2 author
 contracts 与 Host Profile v1 由 `python tools/check_package_contracts.py` 按 `schemas/package-runtime/` 中的 Draft 2020-12
 schemas、显式 discriminator dispatcher 与跨字段语义规则独立验证。
 

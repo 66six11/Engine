@@ -1,12 +1,16 @@
 {
   "schema": "com.asharia.package-lock",
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "resolver": {
     "version": "0.1.0",
     "policyVersion": 1
   },
   "inputs": {
-    "engineApiVersion": "0.1.0",
+    "engine": {
+      "distributionId": "com.asharia.distribution.engine-0-1",
+      "engineApiVersion": "0.1.0",
+      "engineGenerationId": "sha256-6cde7eeb2af326e09c2183700fbb4ef36ef5fc6ab7ab3361e1a19564e013b409"
+    },
     "projectManifestIntegrity": {
       "algorithm": "sha256",
       "digest": "0000000000000000000000000000000000000000000000000000000000000000"

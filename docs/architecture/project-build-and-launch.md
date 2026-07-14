@@ -530,7 +530,7 @@ asharia-launch --project <path> --profile standalone-game
 
 ### Stage A：Profile 与计划模型
 
-- Engine Distribution Manifest v1 与 `EngineGenerationId` 合同已经冻结；下一步实现 Distribution assembler/installer verification boundary，并迁移现有 `bundled` lock 节点；
+- Engine Distribution Manifest v1、`EngineGenerationId` 与 Project Manifest / Lock v2 硬切已经完成；下一步建立 Effective Session，再实现 Distribution assembler/installer verification boundary；
 - 建立 Effective Editor Session Plan 状态机和轻量启动验证，禁止把它持久化为第三个 lock；
 - 冻结 `asharia.build.json` v1 的 owner、Build/Launch Profile 与 local override 规则；
 - 建立 CPU-only parser/validator、BuildPlan/BuildReport、LaunchPlan/SessionReport；
@@ -580,7 +580,7 @@ asharia-launch --project <path> --profile standalone-game
 
 在创建实现 Epic/Slice 前，先完成以下 ADR/设计决策：
 
-1. Engine Distribution Manifest v1 与 `EngineGenerationId` 已完成；继续冻结 Project Lock migration 与 Engine requirement；
+1. Engine Distribution Manifest v1、`EngineGenerationId` 与 Project Manifest / Lock v2 已完成；
 2. Effective Session Plan 状态和 Host Composition 输入迁移；
 3. `asharia.build.json` v1 schema、inheritance 与 local override；
 4. generated composition root 的 target/module registration 方式；

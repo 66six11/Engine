@@ -195,7 +195,7 @@ rollback 和 lifecycle；Memory、Storage、Settings、Tasks、Data、Observabil
 5. renderer、scene、editor 之间已有契约雏形，但仍可能由 host 进行临时拼接；
 6. editor executable 承担过多领域规则，难以做 headless 测试；
 7. 当前单线程基线尚未完全显式化 owner thread、snapshot 和销毁时序；
-8. `asharia.package.json` schema v1 已把当前目录分类为不可选择的 source boundaries；installable v2、Project Manifest v1、Feature Set v2、Package Lockfile v1、五种 Host Profile v1、explicit-source Candidate Discovery v1、deterministic in-memory resolver、fail-closed Locked Graph Verification & Reuse v1、Host Composition Plan v1、Source Build Plan v1、Package Product & Artifact Evidence v1、显式流式 Artifact Collection/Publication v1，以及 Engine Distribution Manifest v1 / content-derived `EngineGenerationId` contract 已落地；当前仍无上游 catalog/index、lock update/apply、生产 `asharia.packages.json` / lock/profile/distribution assembly、Project Lock migration、Effective Session、Activation Plan 和 Editor Package Manager 闭环；
+8. `asharia.package.json` schema v1 已把当前目录分类为不可选择的 source boundaries；installable v2、Project Manifest v2、Feature Set v2、Package Lockfile v2、五种 Host Profile v1、explicit-source Candidate Discovery、deterministic in-memory resolver、fail-closed Locked Graph Verification & Reuse、Host Composition Plan v1、Source Build Plan v1、Package Product & Artifact Evidence v1、显式流式 Artifact Collection/Publication v1，以及 Engine Distribution Manifest v1 / content-derived `EngineGenerationId` contract 已落地；Project/Lock v1 reader、adapter、双写和 `bundled` lock evidence 已删除；当前仍无上游 catalog/index、lock update/apply、生产 manifest/lock/profile/distribution assembly、Effective Session、Activation Plan 和 Editor Package Manager 闭环；
 9. scripting、input、tasks、physics、animation、audio 等已进入目标 first-party system catalog，但尚未形成可由同一 package activation 模型创建和停止的完整实现；
 10. `engine/platform` 仍是空 `INTERFACE` target，应用 lifecycle 与 immutable platform capability generation 没有 runtime owner；
 11. 尚无复用的 Host scope、system factory、activation lease、typed contribution registry 和 failure rollback；
@@ -263,7 +263,7 @@ rollback 和 lifecycle；Memory、Storage、Settings、Tasks、Data、Observabil
 | Source Boundary Manifest | schema v1 的 `asharia.package.json`；记录当前 source role、owner、planned ownership root、target role 和构建依赖，且不可选择/不可见 | Installable Capability Package 或 Package Manager catalog entry |
 | Package Manifest | 每个 Installable Capability Package 的 `asharia.package.json`，描述 catalog type、完整能力 identity、logical modules/contributions 和 package dependencies；source/target 映射属于独立 build descriptor | 每个 target 各自的安装清单 |
 | Project Package Manifest | `asharia.packages.json`；团队提交的 direct installable packages、Feature Sets、version ranges 和独立 package option overrides | 内部 module 选择表、`asharia.project.json` 的同义词、exact graph 或 Build Profile |
-| Package Lockfile | `asharia.packages.lock.json`；当前 v1 保存精确 resolved graph，`bundled` nodes 为迁移兼容输入；目标 Project Lock 只拥有项目图和对发行 package 的引用 | Editor Image 或 Engine Distribution inventory、可由 Editor 私有缓存替代的文件 |
+| Package Lockfile | `asharia.packages.lock.json` v2；保存精确 project graph、精确 Engine generation 输入和对发行 package 的 `engine-distribution` 引用；project/local nodes 自带 source integrity | Editor Image、Engine Distribution path/hash inventory、可由 Editor 私有缓存替代的文件 |
 | Effective Session Plan | Engine Distribution + Project Lock + Host Profile 派生的会话组合状态；可重建，不提交为第三个 lock | 新的 dependency truth、resolver output 或 Activation Plan |
 | Host Composition Plan | Effective Session 派生过程中的 backend-neutral canonical logical IR；保留 package/module order、entries 和 contributions，但不含可执行生命周期 | Activation Plan、CMake target list 或第二份 lockfile |
 | Source Build Plan | Host Composition selected modules 经 source descriptor/topology/CMake codemodel 对证后的 build roots、closure 与 fingerprints | build command、artifact path、install layout 或 Activation Plan |
@@ -950,7 +950,7 @@ sequenceDiagram
 - 定义 `asharia.packages.json` 与 committed `asharia.packages.lock.json`；
 - 实现 headless `discover -> solve/reuse -> compose -> verify` library/CLI，第一阶段只支持 bundled/project-embedded/local sources；
 - 先输出 canonical per-host logical composition，再由独立 adapters 输出 CMake build plan 和 per-host activation plan；不实现任意 native hot load；
-- 建立 `Minimal`、`Editor`、`Runtime`、`DedicatedServer`、`AssetWorker` Host Profiles，以及 versioned Standard3D/EditorAuthoring/DedicatedServer Feature Sets；五种 Host Profile 的 v1 schema/固定策略/纯数据投影基线、Host Composition Plan v1、Source Build Plan v1、Package Product & Artifact Evidence v1、Artifact Collection/Publication v1 与 Engine Distribution Manifest v1 / `EngineGenerationId` contracts 已落地，生产 profiles/distribution assembly、Project Lock migration、Effective Session 与后继 Activation Plan 仍待后续 Slice；
+- 建立 `Minimal`、`Editor`、`Runtime`、`DedicatedServer`、`AssetWorker` Host Profiles，以及 versioned Standard3D/EditorAuthoring/DedicatedServer Feature Sets；五种 Host Profile 的 v1 schema/固定策略/纯数据投影基线、Host Composition Plan v1、Source Build Plan v1、Package Product & Artifact Evidence v1、Artifact Collection/Publication v1、Engine Distribution Manifest v1 / `EngineGenerationId` 与 Project Lock v2 硬切已落地，生产 profiles/distribution assembly、Effective Session 与后继 Activation Plan 仍待后续 Slice；
 - 检查全部 `PUBLIC` / `PRIVATE` / `INTERFACE` 依赖；
 - 使 optional target 的 package config 依赖保持 optional；
 - 增加禁止 include 其他 package `src/`、禁止 Vulkan 类型越层、禁止 RHI base 依赖 RG 的检查；

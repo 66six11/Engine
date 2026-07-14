@@ -1,6 +1,13 @@
 {
   "schema": "com.asharia.project-packages",
-  "schemaVersion": 1,
+  "schemaVersion": 2,
+  "engine": {
+    "distributionId": "com.asharia.distribution.engine-0-1",
+    "apiVersion": {
+      "kind": "exact",
+      "version": "0.1.0"
+    }
+  },
   "directPackages": [],
   "directFeatureSets": [
     {

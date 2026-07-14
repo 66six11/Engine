@@ -38,8 +38,8 @@ DEFAULT_SCHEMA_ROOT = REPOSITORY_ROOT / "schemas/package-runtime"
 COMMON_SCHEMA_NAME = "package-contract-common-v1.schema.json"
 INSTALLABLE_SCHEMA_NAME = "installable-package-v2.schema.json"
 FEATURE_SET_SCHEMA_NAME = "feature-set-v2.schema.json"
-PROJECT_SCHEMA_NAME = "project-package-manifest-v1.schema.json"
-LOCK_SCHEMA_NAME = "package-lock-v1.schema.json"
+PROJECT_SCHEMA_NAME = "project-package-manifest-v2.schema.json"
+LOCK_SCHEMA_NAME = "package-lock-v2.schema.json"
 HOST_PROFILE_SCHEMA_NAME = "host-profile-v1.schema.json"
 HOST_COMPOSITION_PLAN_SCHEMA_NAME = "host-composition-plan-v1.schema.json"
 PACKAGE_SOURCE_BUILD_SCHEMA_NAME = "package-source-build-v1.schema.json"
@@ -893,6 +893,13 @@ def _project_semantic_diagnostics(
     manifest: dict[str, Any], manifest_path: str
 ) -> list[Diagnostic]:
     diagnostics: list[Diagnostic] = []
+    _check_version_constraint(
+        manifest["engine"]["apiVersion"],
+        "/engine/apiVersion",
+        manifest_path,
+        diagnostics,
+        code="project.engine.invalid-api-range",
+    )
     package_indices = _check_requirement_collection(
         manifest["directPackages"],
         "directPackages",
@@ -1712,6 +1719,35 @@ def validate_locked_result_data(
             )
         )
 
+    project_engine = project["engine"]
+    lock_engine = lock["inputs"]["engine"]
+    if project_engine["distributionId"] != lock_engine["distributionId"]:
+        diagnostics.append(
+            Diagnostic(
+                code="lock.input.project-distribution-mismatch",
+                manifest_path=lock_path,
+                pointer="/inputs/engine/distributionId",
+                message=(
+                    f"lock Distribution '{lock_engine['distributionId']}' does not match "
+                    f"project requirement '{project_engine['distributionId']}'"
+                ),
+            )
+        )
+    if not _version_satisfies_constraint(
+        lock_engine["engineApiVersion"], project_engine["apiVersion"]
+    ):
+        diagnostics.append(
+            Diagnostic(
+                code="lock.input.project-engine-api-mismatch",
+                manifest_path=lock_path,
+                pointer="/inputs/engine/engineApiVersion",
+                message=(
+                    f"locked Engine API '{lock_engine['engineApiVersion']}' does not "
+                    "satisfy the project requirement"
+                ),
+            )
+        )
+
     nodes_by_id = {node["id"]: node for node in lock["nodes"]}
     node_indices = {node["id"]: index for index, node in enumerate(lock["nodes"])}
 
@@ -1755,7 +1791,7 @@ def validate_locked_result_data(
                     )
                 )
 
-    engine_api_version = lock["inputs"]["engineApiVersion"]
+    engine_api_version = lock["inputs"]["engine"]["engineApiVersion"]
     for node_index, node in enumerate(lock["nodes"]):
         identity = node["id"]
         manifest = manifests_by_id.get(identity)
@@ -2916,7 +2952,13 @@ def normalize_project_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
 
     return {
         "schema": "com.asharia.project-packages",
-        "schemaVersion": 1,
+        "schemaVersion": 2,
+        "engine": {
+            "distributionId": manifest["engine"]["distributionId"],
+            "apiVersion": _normalize_version_constraint(
+                manifest["engine"]["apiVersion"]
+            ),
+        },
         "directPackages": normalize_requirements(manifest["directPackages"]),
         "directFeatureSets": normalize_requirements(manifest["directFeatureSets"]),
         "packageOptions": [
@@ -3106,12 +3148,8 @@ def _normalize_exact_reference(reference: dict[str, Any]) -> dict[str, Any]:
 
 
 def _normalize_lock_source(source: dict[str, Any]) -> dict[str, Any]:
-    if source["kind"] == "bundled":
-        return {
-            "kind": "bundled",
-            "distributionId": source["distributionId"],
-            "relativePath": source["relativePath"],
-        }
+    if source["kind"] == "engine-distribution":
+        return {"kind": "engine-distribution"}
     if source["kind"] == "project-embedded":
         return {"kind": "project-embedded", "relativePath": source["relativePath"]}
     return {"kind": "local", "sourceId": source["sourceId"]}
@@ -3126,15 +3164,39 @@ def normalize_lock_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
             for reference in sorted(references, key=lambda value: value["id"])
         ]
 
+    nodes: list[dict[str, Any]] = []
+    for node in sorted(manifest["nodes"], key=lambda value: value["id"]):
+        normalized_node = {
+            "id": node["id"],
+            "version": node["version"],
+            "packageKind": node["packageKind"],
+            "source": _normalize_lock_source(node["source"]),
+        }
+        if node["source"]["kind"] != "engine-distribution":
+            normalized_node["manifestIntegrity"] = _normalize_integrity(
+                node["manifestIntegrity"]
+            )
+            normalized_node["payloadIntegrity"] = _normalize_integrity(
+                node["payloadIntegrity"]
+            )
+        normalized_node["dependencies"] = normalize_references(node["dependencies"])
+        nodes.append(normalized_node)
+
     return {
         "schema": "com.asharia.package-lock",
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "resolver": {
             "version": manifest["resolver"]["version"],
             "policyVersion": manifest["resolver"]["policyVersion"],
         },
         "inputs": {
-            "engineApiVersion": manifest["inputs"]["engineApiVersion"],
+            "engine": {
+                "distributionId": manifest["inputs"]["engine"]["distributionId"],
+                "engineApiVersion": manifest["inputs"]["engine"]["engineApiVersion"],
+                "engineGenerationId": manifest["inputs"]["engine"][
+                    "engineGenerationId"
+                ],
+            },
             "projectManifestIntegrity": _normalize_integrity(
                 manifest["inputs"]["projectManifestIntegrity"]
             ),
@@ -3145,18 +3207,7 @@ def normalize_lock_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
                 manifest["roots"]["directFeatureSets"]
             ),
         },
-        "nodes": [
-            {
-                "id": node["id"],
-                "version": node["version"],
-                "packageKind": node["packageKind"],
-                "source": _normalize_lock_source(node["source"]),
-                "manifestIntegrity": _normalize_integrity(node["manifestIntegrity"]),
-                "payloadIntegrity": _normalize_integrity(node["payloadIntegrity"]),
-                "dependencies": normalize_references(node["dependencies"]),
-            }
-            for node in sorted(manifest["nodes"], key=lambda value: value["id"])
-        ],
+        "nodes": nodes,
     }
 
 
@@ -3311,10 +3362,20 @@ def validate_locked_candidate_integrity(
     lock: dict[str, Any],
     candidate_roots: dict[str, Path],
     lock_path: str = PACKAGE_LOCK_NAME,
+    *,
+    distribution: dict[str, Any] | None = None,
 ) -> list[Diagnostic]:
-    """Verify selected candidate payloads for an already schema-valid lockfile."""
+    """Rehash selected payloads against project lock or Distribution evidence."""
 
     diagnostics: list[Diagnostic] = []
+    distribution_inventory = (
+        {
+            package["id"]: package
+            for package in distribution.get("bundledPackages", [])
+        }
+        if isinstance(distribution, dict)
+        else {}
+    )
     for node_index, node in enumerate(lock["nodes"]):
         identity = node["id"]
         root = candidate_roots.get(identity)
@@ -3328,6 +3389,30 @@ def validate_locked_candidate_integrity(
                 )
             )
             continue
+        distributed = node["source"]["kind"] == "engine-distribution"
+        expected_evidence = distribution_inventory.get(identity) if distributed else node
+        if distributed and distribution is None:
+            diagnostics.append(
+                Diagnostic(
+                    code="lock.engine.distribution-required",
+                    manifest_path=lock_path,
+                    pointer=f"/nodes/{node_index}/source",
+                    message=(
+                        f"Engine Distribution evidence is required to verify '{identity}'"
+                    ),
+                )
+            )
+            continue
+        if distributed and expected_evidence is None:
+            diagnostics.append(
+                Diagnostic(
+                    code="lock.engine.package-not-distributed",
+                    manifest_path=lock_path,
+                    pointer=f"/nodes/{node_index}/source",
+                    message=f"package '{identity}' is absent from Engine Distribution",
+                )
+            )
+            continue
         try:
             manifest_integrity = compute_manifest_file_integrity(root / PACKAGE_MANIFEST_NAME)
             payload_integrity = compute_package_tree_integrity(root)
@@ -3336,12 +3421,33 @@ def validate_locked_candidate_integrity(
                 Diagnostic(
                     code="lock.integrity.payload-unreadable",
                     manifest_path=lock_path,
-                    pointer=f"/nodes/{node_index}/payloadIntegrity",
+                    pointer=(
+                        f"/nodes/{node_index}/source"
+                        if distributed
+                        else f"/nodes/{node_index}/payloadIntegrity"
+                    ),
                     message=f"cannot verify payload for '{identity}': {exc}",
                 )
             )
             continue
-        if manifest_integrity != node["manifestIntegrity"]:
+        assert expected_evidence is not None
+        if distributed and (
+            manifest_integrity != expected_evidence["manifestIntegrity"]
+            or payload_integrity != expected_evidence["payloadIntegrity"]
+        ):
+            diagnostics.append(
+                Diagnostic(
+                    code="lock.engine.distribution-candidate-mismatch",
+                    manifest_path=lock_path,
+                    pointer=f"/nodes/{node_index}",
+                    message=(
+                        f"installed bytes for '{identity}' no longer match the current "
+                        "Engine Distribution inventory"
+                    ),
+                )
+            )
+            continue
+        if not distributed and manifest_integrity != expected_evidence["manifestIntegrity"]:
             diagnostics.append(
                 Diagnostic(
                     code="lock.integrity.manifest-mismatch",
@@ -3350,7 +3456,7 @@ def validate_locked_candidate_integrity(
                     message=f"author manifest bytes changed for '{identity}'",
                 )
             )
-        if payload_integrity != node["payloadIntegrity"]:
+        if not distributed and payload_integrity != expected_evidence["payloadIntegrity"]:
             diagnostics.append(
                 Diagnostic(
                     code="lock.integrity.payload-mismatch",

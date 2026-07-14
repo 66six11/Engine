@@ -2,9 +2,10 @@
 
 ## 状态
 
-Accepted and implemented for #273。本文冻结 Candidate Discovery 第一版的最小职责：从调用方明确给出的 bundled、project-embedded 或
-local package root 加载一个不可变 `PackageCandidate` 快照。它不冻结 catalog、目录扫描、source precedence 或 locked
-reuse/update workflow。
+Accepted and implemented for #273。strict explicit-root loader 的职责保持不变；来源 wire shape 已由
+[Project Manifest 与 Package Lock v2 硬切](adr-project-manifest-lock-v2-hard-cut.md) 更新为
+`engine-distribution`、`project-embedded` 与 `local`。本文后续出现的 `BundledCandidateLocation` / `bundled` 描述只保留
+历史背景，不是活动 API。loader 仍不冻结 catalog、目录扫描、source precedence 或 locked reuse/update workflow。
 
 本文位于 [Package Candidate / Lockfile v1](adr-package-candidate-lockfile-v1.md) 与
 [Deterministic in-memory Package Resolver v1](adr-package-resolver-v1.md) 之间。前者定义 candidate evidence 与持久 lock，

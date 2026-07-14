@@ -2,7 +2,9 @@
 
 ## 状态
 
-Proposed。本文冻结 future `engine/package-runtime` 使用的 `PackageCandidate` 内存记录与项目根
+Superseded by [Project Manifest 与 Package Lock v2 硬切](adr-project-manifest-lock-v2-hard-cut.md)。本文只记录 v1
+统一图的历史形态；活动 lock schema、`bundled` source 与重复发行 evidence 已删除，不提供兼容 adapter。本文原冻结
+`engine/package-runtime` 使用的 `PackageCandidate` 内存记录与项目根
 `asharia.packages.lock.json` v1 合同。当前仓库已经实现对应 Draft 2020-12 schema、dispatcher、lock-local/cross-document
 validator、normalized writer、payload tree digest 与 synthetic fixtures；
 [Deterministic in-memory Package Resolver v1](adr-package-resolver-v1.md) 也已实现 caller-supplied candidates 到 canonical exact

@@ -26,6 +26,7 @@ from tools.package_lock_verification import (
     LockedGraphVerificationResult,
     verify_locked_package_graph,
 )
+from tools.tests import package_test_support
 
 
 FIXTURE_ROOT = Path(__file__).parent / "fixtures/package-contracts"
@@ -131,7 +132,8 @@ class SourceBuildPlanTests(unittest.TestCase):
     def project(self) -> dict[str, object]:
         return {
             "schema": "com.asharia.project-packages",
-            "schemaVersion": 1,
+            "schemaVersion": 2,
+            "engine": package_test_support.engine_requirement(),
             "directPackages": [{"id": PACKAGE_ID, "version": exact()}],
             "directFeatureSets": [],
             "packageOptions": [],
@@ -251,7 +253,7 @@ class SourceBuildPlanTests(unittest.TestCase):
         project = self.project()
         resolution = package_resolver.resolve_package_graph(
             project,
-            ENGINE_API_VERSION,
+            package_test_support.make_engine_distribution(),
             [candidate],
             self.validators,
         )
@@ -542,14 +544,14 @@ class SourceBuildPlanTests(unittest.TestCase):
             project = self.project()
             resolution = package_resolver.resolve_package_graph(
                 project,
-                ENGINE_API_VERSION,
+                package_test_support.make_engine_distribution(),
                 discovered.candidates,
                 self.validators,
             )
             self.assertTrue(resolution.succeeded)
             verified = verify_locked_package_graph(
                 project,
-                ENGINE_API_VERSION,
+                package_test_support.make_engine_distribution(),
                 resolution.lock,
                 discovered.candidates,
                 self.validators,

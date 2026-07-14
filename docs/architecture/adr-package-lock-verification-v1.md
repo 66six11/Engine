@@ -2,8 +2,10 @@
 
 ## 状态
 
-Accepted and implemented for #274。本文冻结只读 locked graph verification/reuse 的架构、API 与验收边界；
-`tools/package_lock_verification.py` 和对应单元测试已经实现该合同。
+Accepted and implemented for #274；只读、fail-closed、绝不隐式 resolve/write 的原则仍有效。裸
+`engineApiVersion` 输入、`bundled` source binding 与 Lock v1 evidence 已由
+[Project Manifest 与 Package Lock v2 硬切](adr-project-manifest-lock-v2-hard-cut.md) 取代。当前 verifier 同时验证
+Engine Distribution、Project Manifest v2 与 Project Lock v2。
 
 已有合同和实现已经能：
 

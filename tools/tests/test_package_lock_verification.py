@@ -1,4 +1,4 @@
-"""Locked Package Graph Verification & Reuse v1 tests."""
+"""Locked Package Graph Verification & Reuse tests for Package Lock v2."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ from tools import check_package_contracts
 from tools import package_candidate_discovery
 from tools import package_lock_verification
 from tools import package_resolver
+from tools.tests import package_test_support
 
 
 FIXTURE_ROOT = Path(__file__).parent / "fixtures/package-contracts"
@@ -93,14 +94,15 @@ class PackageLockVerificationTests(unittest.TestCase):
         self.assertTrue(discovery.succeeded, [item.render() for item in discovery.diagnostics])
         project = {
             "schema": "com.asharia.project-packages",
-            "schemaVersion": 1,
+            "schemaVersion": 2,
+            "engine": package_test_support.engine_requirement(),
             "directPackages": [{"id": root_id, "version": exact("1.0.0")}],
             "directFeatureSets": [],
             "packageOptions": [],
         }
         resolution = package_resolver.resolve_package_graph(
             project,
-            ENGINE_API_VERSION,
+            package_test_support.make_engine_distribution(),
             discovery.candidates,
             self.validators,
         )
@@ -117,7 +119,9 @@ class PackageLockVerificationTests(unittest.TestCase):
     ) -> package_lock_verification.LockedGraphVerificationResult:
         return package_lock_verification.verify_locked_package_graph(
             project,
-            engine_api_version,
+            package_test_support.make_engine_distribution(
+                engine_api_version=engine_api_version
+            ),
             lock,
             candidates,
             self.validators,
@@ -163,6 +167,117 @@ class PackageLockVerificationTests(unittest.TestCase):
         self.assertEqual(lock_before, reordered_lock)
         self.assertEqual(candidates_before, candidates)
 
+    def test_distributed_lock_binding_uses_inventory_and_rejects_shadowing(self) -> None:
+        identity = "com.asharia.system.distributed-locked"
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            distribution_root = Path(temporary_directory) / "distribution"
+            self.write_package(
+                distribution_root / "packages/distributed-locked",
+                self.installable(identity),
+            )
+            discovery = package_candidate_discovery.load_package_candidates(
+                [
+                    package_candidate_discovery.EngineDistributedCandidateLocation(
+                        distribution_root,
+                        "packages/distributed-locked",
+                    )
+                ],
+                self.validators,
+            )
+            self.assertTrue(discovery.succeeded)
+            candidate = discovery.candidates[0]
+            distribution = package_test_support.make_engine_distribution(
+                discovery.candidates
+            )
+            project = {
+                "schema": "com.asharia.project-packages",
+                "schemaVersion": 2,
+                "engine": package_test_support.engine_requirement(),
+                "directPackages": [{"id": identity, "version": exact("1.0.0")}],
+                "directFeatureSets": [],
+                "packageOptions": [],
+            }
+            resolution = package_resolver.resolve_package_graph(
+                project,
+                distribution,
+                discovery.candidates,
+                self.validators,
+            )
+            self.assertTrue(resolution.succeeded)
+            verified = package_lock_verification.verify_locked_package_graph(
+                project,
+                distribution,
+                resolution.lock,
+                discovery.candidates,
+                self.validators,
+            )
+
+            payload_path = candidate.payload_location / "payload.bin"
+            original_payload = payload_path.read_bytes()
+            payload_path.write_bytes(b"changed-after-distribution-discovery")
+            drifted = package_lock_verification.verify_locked_package_graph(
+                project,
+                distribution,
+                resolution.lock,
+                discovery.candidates,
+                self.validators,
+            )
+            payload_path.write_bytes(original_payload)
+
+            changed = replace(
+                candidate,
+                payload_integrity={"algorithm": "sha256", "digest": "0" * 64},
+            )
+            mismatched = package_lock_verification.verify_locked_package_graph(
+                project,
+                distribution,
+                resolution.lock,
+                [changed],
+                self.validators,
+            )
+            shadow = replace(
+                candidate,
+                origin="local:com.asharia.source.shadow",
+                source={"kind": "local", "sourceId": "com.asharia.source.shadow"},
+            )
+            shadowed = package_lock_verification.verify_locked_package_graph(
+                project,
+                distribution,
+                resolution.lock,
+                [candidate, shadow],
+                self.validators,
+            )
+            stale_distribution = copy.deepcopy(distribution)
+            stale_distribution["context"]["toolchain"]["compilerVersion"] = "0.2.0"
+            stale_distribution["engineGenerationId"] = (
+                check_package_contracts.compute_engine_generation_id(stale_distribution)
+            )
+            stale = package_lock_verification.verify_locked_package_graph(
+                project,
+                stale_distribution,
+                resolution.lock,
+                discovery.candidates,
+                self.validators,
+            )
+
+        self.assertTrue(verified.succeeded)
+        self.assertIn(
+            "lock.engine.distribution-candidate-mismatch",
+            {item.code for item in drifted.diagnostics},
+        )
+        self.assertIn(
+            "lock.engine.distribution-candidate-mismatch",
+            {item.code for item in mismatched.diagnostics},
+        )
+        self.assertIn(
+            "lock.engine.distribution-shadowed",
+            {item.code for item in shadowed.diagnostics},
+        )
+        self.assertIn(
+            "lock.input.engine-generation-stale",
+            {item.code for item in stale.diagnostics},
+        )
+
     def test_missing_invalid_and_stale_inputs_fail_before_binding(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             project, candidates, lock, _ = self.resolved_graph(Path(temporary_directory))
@@ -196,12 +311,16 @@ class PackageLockVerificationTests(unittest.TestCase):
             self.assert_atomic_failure(result)
         self.assertIn("lock.input.missing", {item.code for item in missing.diagnostics})
         self.assertIn(
-            "lock.input.engine-api-invalid",
+            "distribution.manifest.schema",
             {item.code for item in invalid_engine.diagnostics},
         )
-        self.assertEqual(
-            ["lock.input.engine-api-stale"],
-            [item.code for item in stale_engine.diagnostics],
+        self.assertIn(
+            "lock.input.engine-api-stale",
+            {item.code for item in stale_engine.diagnostics},
+        )
+        self.assertIn(
+            "lock.input.engine-generation-stale",
+            {item.code for item in stale_engine.diagnostics},
         )
         self.assertEqual(
             ["lock.input.project-manifest-stale"],
@@ -407,14 +526,15 @@ class PackageLockVerificationTests(unittest.TestCase):
     def test_invalid_candidate_collection_fails_atomically(self) -> None:
         project = {
             "schema": "com.asharia.project-packages",
-            "schemaVersion": 1,
+            "schemaVersion": 2,
+            "engine": package_test_support.engine_requirement(),
             "directPackages": [],
             "directFeatureSets": [],
             "packageOptions": [],
         }
         empty_lock = package_resolver.resolve_package_graph(
             project,
-            ENGINE_API_VERSION,
+            package_test_support.make_engine_distribution(),
             [],
             self.validators,
         ).lock

@@ -2,7 +2,9 @@
 
 ## 状态
 
-Proposed。本文设计项目根 `asharia.packages.json` 与它直接引用的 Feature Set author contract。当前仓库已经实现
+Superseded by [Project Manifest 与 Package Lock v2 硬切](adr-project-manifest-lock-v2-hard-cut.md)。本文仅保留 v1
+历史决策；活动 reader、schema、fixtures 和 writer 已删除，不提供兼容 adapter。本文原设计项目根
+`asharia.packages.json` 与它直接引用的 Feature Set author contract。当前仓库曾实现
 Project Manifest v1 / Feature Set v2 Draft 2020-12 schemas、共享 identity/version definitions、显式 contract dispatcher、
 semantic validator、normalized writer 与 synthetic fixtures。后续 [Package Candidate 与 Lockfile v1](adr-package-candidate-lockfile-v1.md)
 也已实现 schema/validator/digest/writer 基线；[Host Profile v1](adr-host-profile-v1.md) 的 schema、固定策略与纯数据投影器

@@ -606,8 +606,13 @@ def _verify_control_plane_inputs(
             or candidate.version != node["version"]
             or candidate.package_kind != node["packageKind"]
             or candidate.source != node["source"]
-            or candidate.manifest_integrity != node["manifestIntegrity"]
-            or candidate.payload_integrity != node["payloadIntegrity"]
+            or (
+                node["source"]["kind"] != "engine-distribution"
+                and (
+                    candidate.manifest_integrity != node["manifestIntegrity"]
+                    or candidate.payload_integrity != node["payloadIntegrity"]
+                )
+            )
         ):
             diagnostics.append(
                 _diagnostic(
