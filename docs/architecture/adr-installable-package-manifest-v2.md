@@ -8,9 +8,9 @@ Proposed。本文定义第一阶段可执行合同；当前 26 个 `asharia.pack
 当前仓库已经实现本合同的 JSON Schema、跨字段语义校验和 synthetic fixtures；Project Manifest、Lockfile 与
 Host Profile v1 也已按独立 ADR 实现合同/校验基线；纯内存 Package Resolver v1 已支持 caller-supplied candidates 的确定性
 求解，显式来源 Candidate Discovery v1 已实现 strict loader，Locked Graph Verification & Reuse v1 已实现只读复用边界。
-Source Build Plan v1 的 control-plane schema/reader/planner 与 Package Product & Artifact Evidence v1 的作者声明、候选快照、
-per-package artifact manifest/pure verifier 已实现；上游 catalog/index、lock update/apply、artifact collector/publication、
-activation plan 与生产 catalog entry 仍后置。
+Source Build Plan v1 的 control-plane schema/reader/planner、Package Product & Artifact Evidence v1 的作者声明/纯 verifier，
+以及 #278 的显式流式 artifact collector/publication 已实现；上游 catalog/index、lock update/apply、Engine Distribution /
+Effective Session contracts、activation plan 与生产 catalog entry 仍后置。
 
 ## 背景
 

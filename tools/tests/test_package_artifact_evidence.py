@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import copy
 import json
+import os
+import stat
 import tempfile
 import unittest
 from dataclasses import replace
@@ -13,6 +15,7 @@ from unittest import mock
 from tools import check_package_contracts as contracts
 from tools import host_package_composition as composition
 from tools import package_artifact_evidence as artifacts
+from tools import package_artifact_publication as publication
 from tools import package_candidate_discovery as discovery
 from tools import package_resolver
 from tools import source_build_plan
@@ -335,6 +338,62 @@ class PackageArtifactEvidenceTests(unittest.TestCase):
             ),
         )
 
+    def collection(
+        self,
+        artifact_root: Path,
+        observations: tuple[artifacts.ProductArtifactObservation, ...] | None = None,
+    ) -> publication.PackageArtifactCollection:
+        selected = observations or self.observations()
+        return publication.PackageArtifactCollection(
+            package_id=PACKAGE_ID,
+            package_version="0.1.0",
+            artifact_root=artifact_root,
+            products=tuple(
+                publication.ProductArtifactCollectionBinding(
+                    module_id=observation.module_id,
+                    product_id=observation.product_id,
+                    files=tuple(
+                        publication.ArtifactFileCollectionBinding(
+                            path=file.path,
+                            role=file.role,
+                            media_type=file.media_type,
+                        )
+                        for file in observation.files
+                    ),
+                )
+                for observation in selected
+            ),
+        )
+
+    def write_collection_root(
+        self,
+        artifact_root: Path,
+        observations: tuple[artifacts.ProductArtifactObservation, ...] | None = None,
+    ) -> None:
+        artifact_root.mkdir()
+        for observation in observations or self.observations():
+            for file in observation.files:
+                path = artifact_root.joinpath(*file.path.split("/"))
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(file.content)
+
+    def publish(
+        self,
+        host_plan: composition.HostCompositionPlan,
+        source_plan: source_build_plan.SourceBuildPlan,
+        verified: LockedGraphVerificationResult,
+        collection: publication.PackageArtifactCollection,
+        publication_root: Path,
+    ) -> publication.PackageArtifactPublicationResult:
+        return publication.collect_and_publish_package_artifacts(
+            host_plan,
+            source_plan,
+            verified,
+            (collection,),
+            publication_root,
+            self.validators,
+        )
+
     def verify(
         self,
         host_plan: composition.HostCompositionPlan,
@@ -471,6 +530,12 @@ class PackageArtifactEvidenceTests(unittest.TestCase):
             "../runtime.lib",
             "lib\\runtime.lib",
             "lib/e\u0301.lib",
+            contracts.PACKAGE_ARTIFACT_MANIFEST_NAME,
+            "lib/NUL.txt",
+            "NUL/runtime.lib",
+            "lib/runtime.lib.",
+            "lib/run*time.lib",
+            "lib/control\u0001.lib",
         ):
             with self.subTest(path=path):
                 invalid = replace(
@@ -503,6 +568,23 @@ class PackageArtifactEvidenceTests(unittest.TestCase):
         self.assertFalse(result.succeeded)
         self.assertIn(
             "artifact.path.collision",
+            {item.code for item in result.diagnostics},
+        )
+
+        ancestor_collision = replace(
+            valid[0],
+            files=valid[0].files
+            + (self.file("lib/runtime.lib/debug", "metadata", b"nested"),),
+        )
+        result = self.verify(
+            host_plan,
+            source_plan,
+            verified,
+            (ancestor_collision, valid[1]),
+        )
+        self.assertFalse(result.succeeded)
+        self.assertIn(
+            "artifact.path.ancestor-collision",
             {item.code for item in result.diagnostics},
         )
 
@@ -587,6 +669,423 @@ class PackageArtifactEvidenceTests(unittest.TestCase):
 
         self.assertTrue(result.succeeded)
         self.assertEqual(before, (host_plan, source_plan, verified, observations))
+
+    def test_streaming_publication_is_deterministic_and_reuses_generation(
+        self,
+    ) -> None:
+        host_plan, source_plan, verified = self.prepare()
+        large_content = b"x" * (publication._COPY_CHUNK_SIZE * 2 + 17)
+        base = self.observations()
+        large_library = replace(
+            base[0],
+            files=(
+                self.file("lib/runtime.lib", "primary", large_content),
+                base[0].files[1],
+            ),
+        )
+        observations = (large_library, base[1])
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            source_root = temporary_root / "source"
+            publication_root = temporary_root / "publication"
+            publication_root.mkdir()
+            self.write_collection_root(source_root, observations)
+            collection = self.collection(source_root, observations)
+
+            with mock.patch.object(
+                Path,
+                "read_bytes",
+                side_effect=AssertionError("publication loaded a whole artifact"),
+            ):
+                first = self.publish(
+                    host_plan,
+                    source_plan,
+                    verified,
+                    collection,
+                    publication_root,
+                )
+
+            self.assertTrue(
+                first.succeeded,
+                [item.render() for item in first.diagnostics],
+            )
+            assert first.receipt is not None
+            self.assertFalse(first.receipt.reused)
+            self.assertTrue(
+                first.receipt.artifact_generation_id.startswith("sha256-")
+            )
+            generation_root = first.receipt.artifact_generation_path
+            manifest_path = (
+                generation_root
+                / "packages"
+                / PACKAGE_ID
+                / contracts.PACKAGE_ARTIFACT_MANIFEST_NAME
+            )
+            self.assertTrue(manifest_path.is_file())
+            manifest_text = manifest_path.read_text(encoding="utf-8")
+            self.assertNotIn(str(source_root), manifest_text)
+            self.assertEqual(
+                large_content,
+                (generation_root / "packages" / PACKAGE_ID / "lib/runtime.lib").read_bytes(),
+            )
+
+            reordered = replace(
+                collection,
+                products=tuple(
+                    replace(product, files=tuple(reversed(product.files)))
+                    for product in reversed(collection.products)
+                ),
+            )
+            second = self.publish(
+                host_plan,
+                source_plan,
+                verified,
+                reordered,
+                publication_root,
+            )
+
+            self.assertTrue(
+                second.succeeded,
+                [item.render() for item in second.diagnostics],
+            )
+            assert second.receipt is not None
+            self.assertTrue(second.receipt.reused)
+            self.assertEqual(
+                first.receipt.artifact_generation_id,
+                second.receipt.artifact_generation_id,
+            )
+            self.assertEqual(
+                first.receipt.artifact_generation_path,
+                second.receipt.artifact_generation_path,
+            )
+
+    def test_publication_preflight_and_closed_roots_fail_before_commit(self) -> None:
+        host_plan, source_plan, verified = self.prepare()
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            source_root = temporary_root / "source"
+            publication_root = temporary_root / "publication"
+            publication_root.mkdir()
+            self.write_collection_root(source_root)
+            incomplete = replace(
+                self.collection(source_root),
+                products=self.collection(source_root).products[1:],
+            )
+
+            result = self.publish(
+                host_plan,
+                source_plan,
+                verified,
+                incomplete,
+                publication_root,
+            )
+
+            self.assertFalse(result.succeeded)
+            self.assertIn(
+                "artifact.product.missing",
+                {item.code for item in result.diagnostics},
+            )
+            self.assertEqual([], list(publication_root.iterdir()))
+
+        cases = ("extra", "missing", "overlap")
+        for case in cases:
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as temporary_directory:
+                temporary_root = Path(temporary_directory)
+                source_root = temporary_root / "source"
+                self.write_collection_root(source_root)
+                if case == "overlap":
+                    publication_root = source_root / "publication"
+                    publication_root.mkdir()
+                    expected_code = "artifact.collection.root-overlap"
+                else:
+                    publication_root = temporary_root / "publication"
+                    publication_root.mkdir()
+                    if case == "extra":
+                        (source_root / "extra.bin").write_bytes(b"extra")
+                        expected_code = "artifact.collection.file-extra"
+                    else:
+                        (source_root / "symbols/runtime.pdb").unlink()
+                        expected_code = "artifact.collection.file-missing"
+
+                result = self.publish(
+                    host_plan,
+                    source_plan,
+                    verified,
+                    self.collection(source_root),
+                    publication_root,
+                )
+
+                self.assertFalse(result.succeeded)
+                self.assertIn(
+                    expected_code,
+                    {item.code for item in result.diagnostics},
+                )
+                if case != "overlap":
+                    self.assertFalse(
+                        any(
+                            path.is_dir() and any(path.iterdir())
+                            for path in publication_root.iterdir()
+                        )
+                    )
+
+    def test_rename_failure_cleans_staging_without_exposing_generation(self) -> None:
+        host_plan, source_plan, verified = self.prepare()
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            source_root = temporary_root / "source"
+            publication_root = temporary_root / "publication"
+            publication_root.mkdir()
+            self.write_collection_root(source_root)
+
+            with mock.patch.object(
+                publication.os,
+                "rename",
+                side_effect=OSError("injected rename failure"),
+            ):
+                result = self.publish(
+                    host_plan,
+                    source_plan,
+                    verified,
+                    self.collection(source_root),
+                    publication_root,
+                )
+
+            self.assertFalse(result.succeeded)
+            self.assertIn(
+                "artifact.publication.rename-failed",
+                {item.code for item in result.diagnostics},
+            )
+            self.assertEqual(
+                [],
+                list(
+                    (publication_root / publication._GENERATIONS_DIRECTORY_NAME).iterdir()
+                ),
+            )
+            self.assertEqual(
+                [],
+                list(
+                    (publication_root / publication._STAGING_DIRECTORY_NAME).iterdir()
+                ),
+            )
+
+    def test_concurrent_winner_is_fully_validated_before_reuse(self) -> None:
+        host_plan, source_plan, verified = self.prepare()
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            source_root = temporary_root / "source"
+            publication_root = temporary_root / "publication"
+            publication_root.mkdir()
+            self.write_collection_root(source_root)
+
+            def publish_competing_generation(source: Path, destination: Path) -> None:
+                publication.shutil.copytree(source, destination)
+                raise FileExistsError("injected concurrent winner")
+
+            with mock.patch.object(
+                publication.os,
+                "rename",
+                side_effect=publish_competing_generation,
+            ):
+                result = self.publish(
+                    host_plan,
+                    source_plan,
+                    verified,
+                    self.collection(source_root),
+                    publication_root,
+                )
+
+            self.assertTrue(
+                result.succeeded,
+                [item.render() for item in result.diagnostics],
+            )
+            assert result.receipt is not None
+            self.assertTrue(result.receipt.reused)
+            self.assertTrue(result.receipt.artifact_generation_path.is_dir())
+            self.assertEqual(
+                [],
+                list(
+                    (publication_root / publication._STAGING_DIRECTORY_NAME).iterdir()
+                ),
+            )
+
+    def test_staged_rehash_mismatch_cleans_without_commit(self) -> None:
+        host_plan, source_plan, verified = self.prepare()
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            source_root = temporary_root / "source"
+            publication_root = temporary_root / "publication"
+            publication_root.mkdir()
+            self.write_collection_root(source_root)
+            original_hash = publication._hash_staged_file
+
+            def mismatched_hash(
+                path: Path,
+            ) -> tuple[int, artifacts.IntegrityRecord, publication._FileFingerprint]:
+                size, _, fingerprint = original_hash(path)
+                return size, artifacts.IntegrityRecord("sha256", "0" * 64), fingerprint
+
+            with mock.patch.object(
+                publication,
+                "_hash_staged_file",
+                side_effect=mismatched_hash,
+            ):
+                result = self.publish(
+                    host_plan,
+                    source_plan,
+                    verified,
+                    self.collection(source_root),
+                    publication_root,
+                )
+
+            self.assertFalse(result.succeeded)
+            self.assertIn(
+                "artifact.publication.staging-integrity-mismatch",
+                {item.code for item in result.diagnostics},
+            )
+            self.assertEqual(
+                [],
+                list(
+                    (publication_root / publication._GENERATIONS_DIRECTORY_NAME).iterdir()
+                ),
+            )
+
+    def test_existing_corrupt_generation_is_rejected_without_overwrite(self) -> None:
+        host_plan, source_plan, verified = self.prepare()
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            source_root = temporary_root / "source"
+            publication_root = temporary_root / "publication"
+            publication_root.mkdir()
+            self.write_collection_root(source_root)
+            collection = self.collection(source_root)
+            first = self.publish(
+                host_plan,
+                source_plan,
+                verified,
+                collection,
+                publication_root,
+            )
+            self.assertTrue(first.succeeded)
+            assert first.receipt is not None
+            published_library = (
+                first.receipt.artifact_generation_path
+                / "packages"
+                / PACKAGE_ID
+                / "lib/runtime.lib"
+            )
+            extra_file = first.receipt.artifact_generation_path / "unexpected.bin"
+            extra_file.write_bytes(b"unexpected")
+
+            extra_result = self.publish(
+                host_plan,
+                source_plan,
+                verified,
+                collection,
+                publication_root,
+            )
+            self.assertFalse(extra_result.succeeded)
+            self.assertIn(
+                "artifact.publication.layout-mismatch",
+                {item.code for item in extra_result.diagnostics},
+            )
+            extra_file.unlink()
+            published_library.write_bytes(b"corrupt")
+
+            second = self.publish(
+                host_plan,
+                source_plan,
+                verified,
+                collection,
+                publication_root,
+            )
+
+            self.assertFalse(second.succeeded)
+            self.assertIn(
+                "artifact.publication.existing-corrupt",
+                {item.code for item in second.diagnostics},
+            )
+            self.assertEqual(b"corrupt", published_library.read_bytes())
+
+    def test_source_drift_and_link_or_reparse_entries_are_rejected(self) -> None:
+        host_plan, source_plan, verified = self.prepare()
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            source_root = temporary_root / "source"
+            publication_root = temporary_root / "publication"
+            publication_root.mkdir()
+            self.write_collection_root(source_root)
+            original_copy = publication._copy_file_to_staging
+            mutated = False
+
+            def copy_then_mutate(
+                source: Path,
+                destination: Path,
+            ) -> tuple[int, artifacts.IntegrityRecord, publication._FileFingerprint]:
+                nonlocal mutated
+                result = original_copy(source, destination)
+                if not mutated:
+                    source.write_bytes(b"changed during publication")
+                    mutated = True
+                return result
+
+            with mock.patch.object(
+                publication,
+                "_copy_file_to_staging",
+                side_effect=copy_then_mutate,
+            ):
+                result = self.publish(
+                    host_plan,
+                    source_plan,
+                    verified,
+                    self.collection(source_root),
+                    publication_root,
+                )
+
+            self.assertFalse(result.succeeded)
+            self.assertIn(
+                "artifact.collection.source-drift",
+                {item.code for item in result.diagnostics},
+            )
+            self.assertEqual(
+                [],
+                list(
+                    (publication_root / publication._GENERATIONS_DIRECTORY_NAME).iterdir()
+                ),
+            )
+
+        reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+        fake_status = mock.Mock(
+            st_mode=stat.S_IFREG,
+            st_file_attributes=reparse_flag,
+        )
+        self.assertTrue(publication._is_link_or_reparse(fake_status))
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            source_root = temporary_root / "source"
+            publication_root = temporary_root / "publication"
+            publication_root.mkdir()
+            self.write_collection_root(source_root)
+            link_path = source_root / "linked-extra"
+            try:
+                os.symlink(source_root / "lib/runtime.lib", link_path)
+            except (NotImplementedError, OSError):
+                return
+
+            result = self.publish(
+                host_plan,
+                source_plan,
+                verified,
+                self.collection(source_root),
+                publication_root,
+            )
+            self.assertFalse(result.succeeded)
+            self.assertIn(
+                "artifact.collection.entry-link",
+                {item.code for item in result.diagnostics},
+            )
 
     def test_full_discovery_to_artifact_manifest_handoff(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

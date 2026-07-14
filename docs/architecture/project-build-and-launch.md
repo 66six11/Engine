@@ -1,7 +1,7 @@
 # Project Build、Cook、Package 与 Launch 架构
 
 状态：Target Architecture Proposal，不表示当前仓库已经实现本文流水线。
-更新日期：2026-07-13
+更新日期：2026-07-14
 
 ## 1. 文档目标
 
@@ -34,6 +34,11 @@ Editor 的 Build、Build & Run、Cook、Package 和 Launch Profiles 只是这条
 - **Play In Editor 不等于 Standalone Launch。** Play Session 可在 Editor host 内运行隔离的 runtime world；Standalone 必须是独立子进程，使用与产品相同的 runtime bootstrap。
 - **Package Manager 不拥有构建执行。** 它以完整 System/Feature/Integration/Content Package 为导入单位并锁定 capability graph；Project Product Pipeline 根据 lockfile 选择各包内部 modules/contributions，生成 build/cook/stage plan。
 - **shipping runtime 不读取 source project。** 它只消费 stage manifest、runtime config、locked module facts 和 cooked content catalog。
+- **Editor Image 不由项目图组装。** Editor executable、最小 UI Shell、Package Manager、诊断、Build/Repair 入口和 Safe Mode
+  随 Engine/Editor 发行；项目 graph 失败只能影响项目会话，不能移除修复它的基础 Editor。
+- **Engine Distribution 与 Project Lock 分属不同 owner。** 只读 Engine Distribution Manifest 固定
+  `EngineGenerationId` 和 bundled inventory；项目 manifest/lock 只拥有项目依赖。两者与 Host Profile 只在启动时派生
+  Effective Session Plan，不保存第三份依赖真相。
 
 ## 3. 外部资料校准
 
@@ -44,13 +49,27 @@ Editor 的 Build、Build & Run、Cook、Package 和 Launch Profiles 只是这条
 - O3DE Project Export 同时支持 Project Manager 与 CLI，并分别处理 launcher build、asset processing/bundling、release layout 与 archive。这验证了 Editor 一键操作应覆盖同一 headless export API，而不是实现第二条流水线：<https://docs.o3de.org/docs/user-guide/packaging/project-export/project-export-pc/>
 - O3DE Asset Bundler 从实际使用的内容和依赖生成 release bundles，而不是复制整个 source tree。这与 Asharia 的 dependency closure、cook manifest 和 source-free runtime 原则一致：<https://docs.o3de.org/docs/user-guide/packaging/asset-bundler/>
 - CMake Presets 区分可提交的 `CMakePresets.json` 与用户本地 `CMakeUserPresets.json`，Workflow Presets 可以组合 configure/build/test/package steps。这支持“共享 profile 与 machine-local override 分离”，但 Asharia Build Profile 仍负责 CMake 之外的 package graph、cook、stage、deploy 和 launch：<https://cmake.org/cmake/help/latest/manual/cmake-presets.7.html>
+- Unity 将随 Editor 分发的 Core/Built-in packages 与项目 manifest/lock 分开，并在项目或 package code 失败时提供
+  Safe Mode；embedded packages 又保留了 source-first 开发态。这些可观察行为支持“基础 Editor 先启动，发行库存与项目图
+  分属不同 owner”的边界，但本文不据此断言 Unity 未公开的内部 bootstrap 实现：
+  <https://docs.unity3d.com/6000.0/Documentation/Manual/pack-core.html>、
+  <https://docs.unity3d.com/6000.0/Documentation/Manual/pack-build.html>、
+  <https://docs.unity3d.com/6000.0/Documentation/Manual/SafeMode.html>、
+  <https://docs.unity3d.com/ja/2023.2/Manual/upm-embed.html>。
+
+发行、项目与原生组合的完整决策见
+[Editor Image、Engine Distribution 与原生组合 ADR](adr-editor-engine-distribution-and-native-composition.md)。
 
 ## 4. 术语与产物层级
 
 | 名称 | 定义 | 是否可直接分发 |
 | --- | --- | --- |
+| Editor Image | 可先于项目激活启动的 Editor executable、最小 UI、diagnostics、Package Manager、Build/Repair 与 Safe Mode | 是，属于 Engine/Editor 发行 |
+| Engine Distribution Manifest | `EngineGenerationId`、Editor/核心 artifacts、bundled packages、Host Profiles 与兼容范围的只读安装库存 | 是，随发行版验证 |
 | Source Project | 项目描述、source assets、项目代码、embedded packages 和版本化配置 | 否 |
-| Resolved Project | `asharia.packages.lock.json` 与 Host Profile 过滤后的精确 package/module graph | 否 |
+| Project Package Lock | 项目拥有的 exact package graph、来源、依赖闭包与 artifact generation references；不复制 Engine inventory | 否 |
+| Effective Session Plan | Distribution、Project Lock 与 Host Profile 派生的状态及 Host/Build/Activation handoff；不是第三份 lock | 否，可丢弃重建 |
+| Resolved Project | Project Package Lock 与 Distribution references 对证后的精确项目 package/module graph | 否 |
 | Native Build Tree | CMake/Ninja/MSVC/ClangCL 的 object、library、tool 和 executable 输出 | 否 |
 | Package Artifact Manifest | exact package/module/product 对 package-relative files、size、SHA-256 与 Source Build Plan provenance 的中间证据 | 否，仍需 composition/stage |
 | Cook Cache | 由 source、settings、tool version 和 target profile 决定的可重建 artifact cache | 否 |
@@ -59,14 +78,16 @@ Editor 的 Build、Build & Run、Cook、Package 和 Launch Profiles 只是这条
 | Launch Session | 对一次本地或远程运行的身份、进程、日志、ready、exit、crash 和停止状态的记录 | 否 |
 
 [Package Product & Artifact Evidence v1](adr-package-product-artifact-evidence-v1.md) 已实现 Package Artifact Manifest 的 closed schema
-与纯内存 verifier；它不执行 Build/Stage，也不替代本表中的最终 `Stage Layout`。
+与纯内存 verifier；artifact collector/publication 只在 build/install/cache/repair/activation 边界发布不可变 package artifact
+generation。它不执行 Build/Stage、不替代最终 `Stage Layout`，也不是 Editor 每次启动的全量 hash gate。
 
 ### 4.1 流水线阶段
 
 | 阶段 | 输入 | 输出 | 失败时保证 |
 | --- | --- | --- | --- |
-| Resolve | project/package manifests、package sources | exact lock graph、Host-filtered graph | 不修改现有可用 lock，或以原子方式提交新 lock |
-| Generate | lock graph、Build Profile、host template | generated composition root、CMake/build metadata | generated tree 可整体丢弃 |
+| Resolve | project/package manifests、package sources | project-owned exact lock graph | 不修改现有可用 lock，或以原子方式提交新 lock |
+| Compose | Engine Distribution Manifest、Project Lock、Host Profile | Effective Session/Host Composition 与状态 | 不修改三项输入，不把派生计划提交为 lock |
+| Generate | effective composition、Build Profile、host template | generated composition root、CMake/build metadata | generated tree 可整体丢弃 |
 | Build | `conan.lock`、toolchain、generated targets | tools、runtime executable、libraries、symbols | 不污染已验证 stage |
 | Cook | asset roots、dependency graph、cook profile、tools | immutable target artifacts、content catalog | publication 原子；旧 artifact 保持可用 |
 | Stage | native outputs、cooked closure、runtime metadata | deterministic relative directory tree、stage manifest | 写入临时目录，验证成功后发布 |
@@ -194,7 +215,7 @@ Build 和 Cook 在工具可用后可以并行；Stage 必须等待目标 runtime
 
 1. 验证 `conan.lock`、目标 profile 和 package third-party requirements 一致；
 2. 运行或复用已验证的 Conan bootstrap output；
-3. 由 locked package graph 生成 composition targets；
+3. 由 Engine Distribution、Project Lock 与 Host Profile 派生 composition，再生成 targets；
 4. 使用明确的 CMake configure/build preset；
 5. 记录 compiler、SDK、Conan/CMake 版本和实际 preset 到 Build Report。
 
@@ -206,9 +227,12 @@ CMake Workflow Preset 可以作为 native 子流程实现，但不能替代 Asha
 
 - generator 根据 Host Profile 和 lock graph 选择 runtime-compatible modules；
 - 生成只包含注册表、entry point glue 和 build metadata 的 source/CMake；
+- 每个 C++ module 默认保持独立静态库或工具 target；用户安装完整 package，而不是内部 target；
 - 用户项目不手工复制 engine main loop，也不维护一份容易漂移的 module list；
 - 平台 adapter 可以重命名 executable、嵌入 icon/version metadata 或包裹为平台 application bundle；
-- dynamic modules 仅在明确 ABI、trust、lifetime 与 platform policy 后作为可选 linking mode 引入。
+- dynamic modules 仅在明确 ABI、trust、lifetime 与 platform policy 后作为可选 linking mode 引入；若未来采用
+  `ProjectEditorModules`，它必须绑定精确 `EngineGenerationId`/toolchain/configuration，启动时加载且修改后重启，
+  不承诺通用 ABI 或任意 hot unload。
 
 这允许每个项目得到精确链接闭包，同时保持 `apps/*` 只是组合根、系统逻辑仍位于 packages。
 
@@ -323,18 +347,20 @@ Dedicated Server Profile 跳过 window/render/audio；Tool Profile 可以跳过 
 
 “启动项目”还包括启动 Editor 并打开 source project。目标入口应是明确的参数协议，例如 `asharia-editor --project <project-root-or-descriptor>`；当前 `ASHARIA_EDITOR_PROJECT` 环境变量只属于现状集成方式，不应成为长期唯一公共入口。
 
-Editor project-open bootstrap：
+Editor project-open bootstrap 分为固定 Image 启动和项目会话派生：
 
 1. Project Manager 或 CLI 用 argument vector 启动 Editor，并创建 open-session/crash metadata；
-2. Editor 初始化最小 platform、logging 和 recovery；
-3. 定位并验证 `asharia.project.json`，再读取 package manifest/lock；
-4. 使用 Editor Host Profile 验证 locked modules、engine compatibility、integrity 与本机可用 toolchain；
-5. 缺失 bundled/local package、lock mismatch 或 native module 未构建时进入明确的 Repair/PendingBuild/PendingRestart 流程；不得静默改 lock；
-6. 激活 Editor-compatible modules/contributions，打开 catalog/cache/watchers；
+2. Editor Image 初始化最小 platform、logging、UI Shell、package diagnostics、Package Manager 和 Build/Repair 入口；
+3. 读取并轻量验证只读 Engine Distribution Manifest；Image 本身损坏由外部 launcher/installer 修复；
+4. 定位 `asharia.project.json`，读取项目 package manifest/lock，但不允许项目覆盖 Bootstrap/核心 distribution nodes；
+5. 将 Distribution、Project Lock 与 Editor Host Profile 派生为 Effective Session Plan，得到 `Ready`、`PendingBuild`、
+   `PendingRestart`、`RepairRequired`、`UpgradeRequired` 或 `SafeMode`；不得静默改 lock；
+6. 只有 `Ready` 才激活项目 Editor-compatible modules/contributions 并打开项目 catalog/cache/watchers；
 7. 恢复 workspace 和 documents；用户本地 workspace failure 不得破坏项目事实；
-8. 发布 `ProjectReady`，此后 Package Manager、Build Profiles 和 authoring commands 才进入可用状态。
+8. 发布结构化 session state；完整项目会话发布 `ProjectReady`，其他状态仍保留基础 UI、diagnostics、Package Manager 与
+   Build/Repair/Restart commands。
 
-v0 允许切换含 native module graph 的项目时重启 Editor。只有 package/module lifetime、thread join、ABI 与 document teardown 均可证明安全后，才支持同进程任意切换或 hot unload。`--safe-mode` 应只加载 Kernel、package diagnostics 和最小修复 UI，使损坏 package/editor contribution 不会阻止用户修复项目。
+v0 允许切换含 native module graph 的项目时重启 Editor。只有 package/module lifetime、thread join、ABI 与 document teardown 均可证明安全后，才支持同进程任意切换或 hot unload。`--safe-mode` 不执行项目及其 packages 的 native contributions，但继续运行 Editor Image 的最小 Shell、diagnostics、Package Manager 与修复入口，使损坏 package/editor contribution 不会阻止用户修复项目。
 
 ### 11.2 三种运行语义
 
@@ -501,6 +527,8 @@ asharia-launch --project <path> --profile standalone-game
 
 ### Stage A：Profile 与计划模型
 
+- 先冻结 Engine Distribution Manifest v1、`EngineGenerationId` 与现有 `bundled` lock 节点迁移；
+- 建立 Effective Editor Session Plan 状态机和轻量启动验证，禁止把它持久化为第三个 lock；
 - 冻结 `asharia.build.json` v1 的 owner、Build/Launch Profile 与 local override 规则；
 - 建立 CPU-only parser/validator、BuildPlan/BuildReport、LaunchPlan/SessionReport；
 - 先以当前仓库 preset 和 sample/runtime host 作为 adapter，不改现有开发者 build 入口。
@@ -549,12 +577,14 @@ asharia-launch --project <path> --profile standalone-game
 
 在创建实现 Epic/Slice 前，先完成以下 ADR/设计决策：
 
-1. `asharia.build.json` v1 schema、inheritance 与 local override；
-2. generated composition root 的 target/module registration 方式；
-3. `asharia.stage.json` v1 与 Build/Stage fingerprint；
-4. development stage 的目录布局和原子发布；
-5. local ready/log/stop protocol；
-6. Build UI、CLI、CI 共用 service 的进程内/进程外边界。
+1. Engine Distribution Manifest v1、`EngineGenerationId` 与 Project Lock migration；
+2. Effective Session Plan 状态和 Host Composition 输入迁移；
+3. `asharia.build.json` v1 schema、inheritance 与 local override；
+4. generated composition root 的 target/module registration 方式；
+5. `asharia.stage.json` v1 与 Build/Stage fingerprint；
+6. development stage 的目录布局和原子发布；
+7. local ready/log/stop protocol；
+8. Build UI、CLI、CI 共用 service 的进程内/进程外边界。
 
 首个 vertical slice 应严格限制为：
 

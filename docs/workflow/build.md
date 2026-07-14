@@ -154,6 +154,9 @@ powershell -ExecutionPolicy Bypass -File tools\count-code-lines.ps1
   capability grants 与 platform/role/shipping closure rejection。
 - `tools/tests/test_package_product_contracts.py` 覆盖 Product Declaration exact binding、closed fields、module/product uniqueness、
   canonical normalization、Artifact Manifest portable paths 与 candidate/locked snapshot drift。
-- `tools/tests/test_package_artifact_evidence.py` 覆盖 pure per-package verifier 的 coverage、path/size/SHA-256、stale provenance、
-  determinism、atomicity、immutability、no-IO 与 Discovery → Source Build Plan synthetic handoff。
+- `tools/tests/test_package_artifact_evidence.py` 覆盖 pure per-package verifier 的 coverage、portable path/size/SHA-256、
+  stale provenance、determinism、immutability、no-IO 与 Discovery → Source Build Plan synthetic handoff；同时覆盖 #278
+  collector 的大文件分块 copy/rehash、closed roots、link/reparse、source drift、single-rename publication、失败清理、
+  content-addressed generation 复用与 corrupt existing generation 拒绝。collector 是 build/install/cache evidence 边界，
+  不执行 CMake/Conan，也不参与 Editor Bootstrap 或每次源码编辑。
 - `count-code-lines.ps1` 只统计 Git tracked 文本文件，默认排除 Markdown；需要把文档纳入统计时加 `-IncludeDocs`。

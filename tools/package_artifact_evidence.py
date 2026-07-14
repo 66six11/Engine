@@ -6,6 +6,7 @@ import json
 import re
 import unicodedata
 from dataclasses import dataclass, field, replace
+from pathlib import PureWindowsPath
 from typing import Any, Iterable
 
 from tools import check_package_contracts as contracts
@@ -30,6 +31,7 @@ MEDIA_TYPE_PATTERN = re.compile(
     r"^[A-Za-z0-9][A-Za-z0-9!#$&^_.+\-]*/"
     r"[A-Za-z0-9][A-Za-z0-9!#$&^_.+\-]*$"
 )
+_WINDOWS_INVALID_FILENAME_CHARACTERS = frozenset('<>:"\\|?*')
 
 IntegrityRecord = source_build.IntegrityRecord
 
@@ -57,6 +59,19 @@ class ProductArtifactObservation:
     target_platform: str
     configuration: str
     files: tuple[ArtifactFileObservation, ...]
+
+
+@dataclass(frozen=True)
+class _CollectedProductArtifactEvidence:
+    """Process-local descriptor handoff from the owned streaming collector."""
+
+    package_id: str
+    package_version: str
+    module_id: str
+    product_id: str
+    target_platform: str
+    configuration: str
+    files: tuple[ArtifactFileEvidence, ...]
 
 
 @dataclass(frozen=True, order=True)
@@ -308,7 +323,9 @@ def render_package_artifact_manifest_set(
     ) + "\n"
 
 
-def _portable_relative_path(value: Any) -> bool:
+def is_portable_artifact_path(value: Any) -> bool:
+    """Return whether a manifest path has one portable filesystem spelling."""
+
     if not isinstance(value, str):
         return False
     if unicodedata.normalize("NFC", value) != value or "\\" in value or ":" in value:
@@ -318,8 +335,24 @@ def _portable_relative_path(value: Any) -> bool:
     except UnicodeEncodeError:
         return False
     segments = value.split("/")
-    return bool(value) and not value.startswith("/") and all(
-        segment not in {"", ".", ".."} for segment in segments
+    if (
+        not value
+        or value.startswith("/")
+        or any(segment in {"", ".", ".."} for segment in segments)
+    ):
+        return False
+    if value.casefold() == contracts.PACKAGE_ARTIFACT_MANIFEST_NAME.casefold():
+        return False
+    if any(PureWindowsPath(segment).is_reserved() for segment in segments):
+        return False
+    return all(
+        not segment.endswith((" ", "."))
+        and not any(
+            character in _WINDOWS_INVALID_FILENAME_CHARACTERS
+            or ord(character) < 32
+            for character in segment
+        )
+        for segment in segments
     )
 
 
@@ -625,8 +658,60 @@ def _verify_control_plane_inputs(
     return host_plan, source_plan, verified_candidates, []
 
 
-def _validate_observation_files(
-    observation: ProductArtifactObservation,
+def _path_registration_diagnostic(
+    path: str,
+    owner: str,
+    package_paths: dict[str, tuple[str, str]],
+) -> contracts.Diagnostic | None:
+    folded = path.casefold()
+    previous = package_paths.get(folded)
+    if previous is not None:
+        previous_path, previous_owner = previous
+        code = "artifact.path.duplicate" if previous_path == path else "artifact.path.collision"
+        pair = sorted(
+            ((previous_path, previous_owner), (path, owner)),
+            key=lambda value: (_utf8_key(value[0]), _utf8_key(value[1])),
+        )
+        return _diagnostic(
+            code,
+            "/modules",
+            (
+                f"artifact path '{pair[0][0]}' from '{pair[0][1]}' collides with "
+                f"'{pair[1][0]}' from '{pair[1][1]}'"
+            ),
+        )
+
+    segments = tuple(segment.casefold() for segment in path.split("/"))
+    for previous_path, previous_owner in package_paths.values():
+        previous_segments = tuple(
+            segment.casefold() for segment in previous_path.split("/")
+        )
+        shared_length = min(len(segments), len(previous_segments))
+        if (
+            segments[:shared_length] == previous_segments[:shared_length]
+            and len(segments) != len(previous_segments)
+        ):
+            if len(previous_segments) < len(segments):
+                ancestor = (previous_path, previous_owner)
+                descendant = (path, owner)
+            else:
+                ancestor = (path, owner)
+                descendant = (previous_path, previous_owner)
+            return _diagnostic(
+                "artifact.path.ancestor-collision",
+                "/modules",
+                (
+                    f"artifact path '{ancestor[0]}' from '{ancestor[1]}' conflicts "
+                    f"with descendant '{descendant[0]}' from '{descendant[1]}'"
+                ),
+            )
+
+    package_paths[folded] = (path, owner)
+    return None
+
+
+def _validate_collected_files(
+    observation: _CollectedProductArtifactEvidence,
     package_paths: dict[str, tuple[str, str]],
 ) -> tuple[tuple[ArtifactFileEvidence, ...], list[contracts.Diagnostic]]:
     diagnostics: list[contracts.Diagnostic] = []
@@ -641,8 +726,9 @@ def _validate_observation_files(
 
     evidence: list[ArtifactFileEvidence] = []
     primary_count = 0
+    typed_files: list[ArtifactFileEvidence] = []
     for artifact in observation.files:
-        if not isinstance(artifact, ArtifactFileObservation):
+        if not isinstance(artifact, ArtifactFileEvidence):
             diagnostics.append(
                 _diagnostic(
                     "artifact.observation.file-invalid",
@@ -651,8 +737,19 @@ def _validate_observation_files(
                 )
             )
             continue
+        typed_files.append(artifact)
+
+    for artifact in sorted(
+        typed_files,
+        key=lambda value: (
+            0 if isinstance(value.path, str) else 1,
+            _utf8_key(value.path) if isinstance(value.path, str) else b"",
+            value.role if isinstance(value.role, str) else "",
+            value.media_type if isinstance(value.media_type, str) else "",
+        ),
+    ):
         file_diagnostic_count = len(diagnostics)
-        if not _portable_relative_path(artifact.path):
+        if not is_portable_artifact_path(artifact.path):
             diagnostics.append(
                 _diagnostic(
                     "artifact.path.invalid",
@@ -661,31 +758,14 @@ def _validate_observation_files(
                 )
             )
         else:
-            folded = artifact.path.casefold()
-            previous = package_paths.get(folded)
-            owner = (observation.module_id, observation.product_id)
-            if previous is not None:
-                previous_path, previous_owner = previous
-                code = (
-                    "artifact.path.duplicate"
-                    if previous_path == artifact.path
-                    else "artifact.path.collision"
-                )
-                diagnostics.append(
-                    _diagnostic(
-                        code,
-                        "/modules",
-                        (
-                            f"artifact path '{artifact.path}' collides with "
-                            f"'{previous_path}' from '{previous_owner}'"
-                        ),
-                    )
-                )
-            else:
-                package_paths[folded] = (
-                    artifact.path,
-                    f"{owner[0]}:{owner[1]}",
-                )
+            owner = f"{observation.module_id}:{observation.product_id}"
+            path_diagnostic = _path_registration_diagnostic(
+                artifact.path,
+                owner,
+                package_paths,
+            )
+            if path_diagnostic is not None:
+                diagnostics.append(path_diagnostic)
 
         if not isinstance(artifact.role, str) or artifact.role not in ARTIFACT_FILE_ROLES:
             diagnostics.append(
@@ -707,15 +787,6 @@ def _validate_observation_files(
                     f"artifact media type '{artifact.media_type}' is invalid",
                 )
             )
-        if not isinstance(artifact.content, bytes):
-            diagnostics.append(
-                _diagnostic(
-                    "artifact.content.invalid",
-                    "/modules",
-                    "artifact content must be immutable bytes",
-                )
-            )
-            continue
         if (
             isinstance(artifact.size, bool)
             or not isinstance(artifact.size, int)
@@ -728,14 +799,6 @@ def _validate_observation_files(
                     "artifact size must be a non-negative integer",
                 )
             )
-        elif artifact.size != len(artifact.content):
-            diagnostics.append(
-                _diagnostic(
-                    "artifact.size.mismatch",
-                    "/modules",
-                    f"artifact '{artifact.path}' size does not match its bytes",
-                )
-            )
         if not isinstance(artifact.integrity, IntegrityRecord):
             diagnostics.append(
                 _diagnostic(
@@ -745,13 +808,15 @@ def _validate_observation_files(
                 )
             )
             continue
-        actual_integrity = contracts.compute_bytes_integrity(artifact.content)
-        if _integrity_data(artifact.integrity) != actual_integrity:
+        if (
+            artifact.integrity.algorithm != "sha256"
+            or re.fullmatch(r"[0-9a-f]{64}", artifact.integrity.digest) is None
+        ):
             diagnostics.append(
                 _diagnostic(
-                    "artifact.integrity.mismatch",
+                    "artifact.integrity.invalid",
                     "/modules",
-                    f"artifact '{artifact.path}' digest does not match its bytes",
+                    f"artifact '{artifact.path}' integrity is not canonical SHA-256",
                 )
             )
         if len(diagnostics) == file_diagnostic_count:
@@ -782,57 +847,113 @@ def _validate_observation_files(
     )
 
 
-def verify_package_artifacts(
-    host_plan: Any,
-    source_plan: Any,
-    verified_graph: Any,
-    observations: Iterable[ProductArtifactObservation],
+def _collect_exact_byte_evidence(
+    observation: ProductArtifactObservation,
+) -> tuple[_CollectedProductArtifactEvidence | None, list[contracts.Diagnostic]]:
+    if not isinstance(observation.files, tuple) or not observation.files:
+        return None, [
+            _diagnostic(
+                "artifact.observation.files-invalid",
+                "/modules",
+                f"product '{observation.module_id}:{observation.product_id}' needs files",
+            )
+        ]
+
+    diagnostics: list[contracts.Diagnostic] = []
+    evidence: list[ArtifactFileEvidence] = []
+    for artifact in observation.files:
+        if not isinstance(artifact, ArtifactFileObservation):
+            diagnostics.append(
+                _diagnostic(
+                    "artifact.observation.file-invalid",
+                    "/modules",
+                    "product observation contains an invalid file record",
+                )
+            )
+            continue
+        if not isinstance(artifact.content, bytes):
+            diagnostics.append(
+                _diagnostic(
+                    "artifact.content.invalid",
+                    "/modules",
+                    "artifact content must be immutable bytes",
+                )
+            )
+            continue
+        if (
+            isinstance(artifact.size, bool)
+            or not isinstance(artifact.size, int)
+            or artifact.size < 0
+        ):
+            diagnostics.append(
+                _diagnostic(
+                    "artifact.size.invalid",
+                    "/modules",
+                    "artifact size must be a non-negative integer",
+                )
+            )
+            continue
+        if artifact.size != len(artifact.content):
+            diagnostics.append(
+                _diagnostic(
+                    "artifact.size.mismatch",
+                    "/modules",
+                    f"artifact '{artifact.path}' size does not match its bytes",
+                )
+            )
+            continue
+        if not isinstance(artifact.integrity, IntegrityRecord):
+            diagnostics.append(
+                _diagnostic(
+                    "artifact.integrity.invalid",
+                    "/modules",
+                    f"artifact '{artifact.path}' has no structured integrity",
+                )
+            )
+            continue
+        actual_integrity = contracts.compute_bytes_integrity(artifact.content)
+        if _integrity_data(artifact.integrity) != actual_integrity:
+            diagnostics.append(
+                _diagnostic(
+                    "artifact.integrity.mismatch",
+                    "/modules",
+                    f"artifact '{artifact.path}' digest does not match its bytes",
+                )
+            )
+            continue
+        evidence.append(
+            ArtifactFileEvidence(
+                path=artifact.path,
+                role=artifact.role,
+                media_type=artifact.media_type,
+                size=artifact.size,
+                integrity=artifact.integrity,
+            )
+        )
+
+    if diagnostics:
+        return None, diagnostics
+    return (
+        _CollectedProductArtifactEvidence(
+            package_id=observation.package_id,
+            package_version=observation.package_version,
+            module_id=observation.module_id,
+            product_id=observation.product_id,
+            target_platform=observation.target_platform,
+            configuration=observation.configuration,
+            files=tuple(evidence),
+        ),
+        [],
+    )
+
+
+def _verify_collected_with_inputs(
+    verified_source_plan: source_build.SourceBuildPlan,
+    candidates_by_id: dict[str, PackageCandidate],
+    observation_values: tuple[_CollectedProductArtifactEvidence, ...],
     validators: contracts.ContractValidators,
 ) -> PackageArtifactVerificationResult:
-    """Verify exact bytes into canonical per-package manifests without IO."""
-
-    (
-        verified_host_plan,
-        verified_source_plan,
-        candidates_by_id,
-        diagnostics,
-    ) = _verify_control_plane_inputs(
-        host_plan,
-        source_plan,
-        verified_graph,
-        validators,
-    )
-    if diagnostics:
-        return _failure(diagnostics)
-    assert verified_host_plan is not None
-    assert verified_source_plan is not None
-
-    try:
-        observation_values = tuple(observations)
-    except TypeError:
-        return _failure(
-            [
-                _diagnostic(
-                    "artifact.observation.input-invalid",
-                    "/modules",
-                    "artifact observations must be an iterable snapshot",
-                )
-            ]
-        )
-    if any(
-        not isinstance(observation, ProductArtifactObservation)
-        for observation in observation_values
-    ):
-        return _failure(
-            [
-                _diagnostic(
-                    "artifact.observation.input-invalid",
-                    "/modules",
-                    "every artifact observation must use the typed immutable contract",
-                )
-            ]
-        )
-
+    diagnostics: list[contracts.Diagnostic] = []
     observation_diagnostics: list[contracts.Diagnostic] = []
     for observation in observation_values:
         for field_name, value in (
@@ -855,7 +976,7 @@ def verify_package_artifacts(
         return _failure(observation_diagnostics)
 
     observations_by_key: dict[
-        tuple[str, str, str, str], list[ProductArtifactObservation]
+        tuple[str, str, str, str], list[_CollectedProductArtifactEvidence]
     ] = {}
     for observation in observation_values:
         key = (
@@ -950,7 +1071,7 @@ def verify_package_artifacts(
                                 ),
                             )
                         )
-                    files, file_diagnostics = _validate_observation_files(
+                    files, file_diagnostics = _validate_collected_files(
                         observation,
                         package_paths,
                     )
@@ -1028,4 +1149,131 @@ def verify_package_artifacts(
         manifests=ordered_manifests,
         manifest_set_integrity=set_integrity,
         diagnostics=(),
+    )
+
+
+def _verify_collected_package_artifacts(
+    host_plan: Any,
+    source_plan: Any,
+    verified_graph: Any,
+    observations: Iterable[_CollectedProductArtifactEvidence],
+    validators: contracts.ContractValidators,
+) -> PackageArtifactVerificationResult:
+    """Verify descriptors already rehashed from an owned staging generation."""
+
+    (
+        verified_host_plan,
+        verified_source_plan,
+        candidates_by_id,
+        diagnostics,
+    ) = _verify_control_plane_inputs(
+        host_plan,
+        source_plan,
+        verified_graph,
+        validators,
+    )
+    if diagnostics:
+        return _failure(diagnostics)
+    assert verified_host_plan is not None
+    assert verified_source_plan is not None
+
+    try:
+        observation_values = tuple(observations)
+    except TypeError:
+        return _failure(
+            [
+                _diagnostic(
+                    "artifact.observation.input-invalid",
+                    "/modules",
+                    "collected artifact evidence must be an iterable snapshot",
+                )
+            ]
+        )
+    if any(
+        not isinstance(observation, _CollectedProductArtifactEvidence)
+        for observation in observation_values
+    ):
+        return _failure(
+            [
+                _diagnostic(
+                    "artifact.observation.input-invalid",
+                    "/modules",
+                    "collected artifact evidence must use the owned typed handoff",
+                )
+            ]
+        )
+    return _verify_collected_with_inputs(
+        verified_source_plan,
+        candidates_by_id,
+        observation_values,
+        validators,
+    )
+
+
+def verify_package_artifacts(
+    host_plan: Any,
+    source_plan: Any,
+    verified_graph: Any,
+    observations: Iterable[ProductArtifactObservation],
+    validators: contracts.ContractValidators,
+) -> PackageArtifactVerificationResult:
+    """Verify exact bytes into canonical per-package manifests without IO."""
+
+    (
+        verified_host_plan,
+        verified_source_plan,
+        candidates_by_id,
+        diagnostics,
+    ) = _verify_control_plane_inputs(
+        host_plan,
+        source_plan,
+        verified_graph,
+        validators,
+    )
+    if diagnostics:
+        return _failure(diagnostics)
+    assert verified_host_plan is not None
+    assert verified_source_plan is not None
+
+    try:
+        observation_values = tuple(observations)
+    except TypeError:
+        return _failure(
+            [
+                _diagnostic(
+                    "artifact.observation.input-invalid",
+                    "/modules",
+                    "artifact observations must be an iterable snapshot",
+                )
+            ]
+        )
+    if any(
+        not isinstance(observation, ProductArtifactObservation)
+        for observation in observation_values
+    ):
+        return _failure(
+            [
+                _diagnostic(
+                    "artifact.observation.input-invalid",
+                    "/modules",
+                    "every artifact observation must use the typed immutable contract",
+                )
+            ]
+        )
+
+    collected: list[_CollectedProductArtifactEvidence] = []
+    observation_diagnostics: list[contracts.Diagnostic] = []
+    for observation in observation_values:
+        evidence, evidence_diagnostics = _collect_exact_byte_evidence(observation)
+        observation_diagnostics.extend(evidence_diagnostics)
+        if evidence is not None:
+            collected.append(evidence)
+    if observation_diagnostics:
+        return _failure(observation_diagnostics)
+
+    return _verify_collected_with_inputs(
+        verified_source_plan,
+        candidates_by_id,
+        tuple(collected),
+        validators,
     )

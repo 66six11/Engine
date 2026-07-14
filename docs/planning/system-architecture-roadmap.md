@@ -34,7 +34,7 @@
 
 ## 2. 总体结论
 
-Asharia 不应被定义成七个固定链接进所有进程的系统。目标执行栈收敛为四层，并由 Host Profiles 正交选择：
+Asharia 不应被定义成七个固定链接进所有进程的系统。可激活系统栈收敛为四层，并由 Host Profiles 正交选择：
 
 1. **Bootstrap Kernel**：启动 package 系统所必需、不可由 package manager 卸载的最小基础；
 2. **Host Foundation**：作用域、激活/撤销、typed contributions、应用生命周期和 safe point；
@@ -44,6 +44,12 @@ Asharia 不应被定义成七个固定链接进所有进程的系统。目标执
 **Host Profiles** 不是第五套实现层，而是 Editor、Standard Runtime、Dedicated Server、Asset Processor 等进程对
 完整 packages 的要求，以及对包内 modules/contributions 的激活过滤规则。基础框架详细边界见
 `docs/architecture/foundation-framework.md`。
+
+系统栈的四层不能与 Editor 启动所有权混为一谈。Editor/项目组合另采用“三层所有权 + 一层派生计划”：固定
+Editor Image、只读 Engine Distribution Manifest、项目拥有的 Manifest/Lock，以及由三者和 Host Profile 派生且可丢弃的
+Effective Session Plan。基础 Editor 先于项目 graph 激活；项目失败进入 `PendingBuild`、`PendingRestart`、
+`UpgradeRequired` 或 `SafeMode`，不能移除 Package Manager、diagnostics 与修复入口。完整决策见
+`docs/architecture/adr-editor-engine-distribution-and-native-composition.md`。
 
 面向用户的理想工作流是：
 
@@ -189,7 +195,7 @@ rollback 和 lifecycle；Memory、Storage、Settings、Tasks、Data、Observabil
 5. renderer、scene、editor 之间已有契约雏形，但仍可能由 host 进行临时拼接；
 6. editor executable 承担过多领域规则，难以做 headless 测试；
 7. 当前单线程基线尚未完全显式化 owner thread、snapshot 和销毁时序；
-8. `asharia.package.json` schema v1 已把当前目录分类为不可选择的 source boundaries；installable v2、Project Manifest v1、Feature Set v2、Package Lockfile v1、五种 Host Profile v1、explicit-source Candidate Discovery v1、deterministic in-memory resolver、fail-closed Locked Graph Verification & Reuse v1、Host Composition Plan v1、Source Build Plan v1 与 Package Product & Artifact Evidence v1 已落地；当前仍无上游 catalog/index、lock update/apply、生产 `asharia.packages.json` / lock/profile、artifact collector/publication、Activation Plan 和 Editor Package Manager 闭环；
+8. `asharia.package.json` schema v1 已把当前目录分类为不可选择的 source boundaries；installable v2、Project Manifest v1、Feature Set v2、Package Lockfile v1、五种 Host Profile v1、explicit-source Candidate Discovery v1、deterministic in-memory resolver、fail-closed Locked Graph Verification & Reuse v1、Host Composition Plan v1、Source Build Plan v1、Package Product & Artifact Evidence v1 与显式流式 Artifact Collection/Publication v1 已落地；当前仍无上游 catalog/index、lock update/apply、生产 `asharia.packages.json` / lock/profile、Engine Distribution/Effective Session、Activation Plan 和 Editor Package Manager 闭环；
 9. scripting、input、tasks、physics、animation、audio 等已进入目标 first-party system catalog，但尚未形成可由同一 package activation 模型创建和停止的完整实现；
 10. `engine/platform` 仍是空 `INTERFACE` target，应用 lifecycle 与 immutable platform capability generation 没有 runtime owner；
 11. 尚无复用的 Host scope、system factory、activation lease、typed contribution registry 和 failure rollback；
@@ -254,11 +260,15 @@ rollback 和 lifecycle；Memory、Storage、Settings、Tasks、Data、Observabil
 | Source Boundary Manifest | schema v1 的 `asharia.package.json`；记录当前 source role、owner、planned ownership root、target role 和构建依赖，且不可选择/不可见 | Installable Capability Package 或 Package Manager catalog entry |
 | Package Manifest | 每个 Installable Capability Package 的 `asharia.package.json`，描述 catalog type、完整能力 identity、logical modules/contributions 和 package dependencies；source/target 映射属于独立 build descriptor | 每个 target 各自的安装清单 |
 | Project Package Manifest | `asharia.packages.json`；团队提交的 direct installable packages、Feature Sets、version ranges 和独立 package option overrides | 内部 module 选择表、`asharia.project.json` 的同义词、exact graph 或 Build Profile |
-| Package Lockfile | `asharia.packages.lock.json`；团队提交的精确版本、来源、完整性和依赖图 | 可由 Editor 私有缓存替代的文件 |
-| Host Composition Plan | verified lock 与一个 Host Profile 生成的 backend-neutral canonical logical IR；保留 package/module order、entries 和 contributions，但不含可执行生命周期 | Activation Plan、CMake target list 或第二份 lockfile |
+| Editor Image | 随 Engine/Editor 发行、可先于项目激活启动的 executable、最小 UI、diagnostics、Package Manager、Build/Repair 与 Safe Mode | 由当前项目 lock 从零组装的 Host |
+| Engine Distribution Manifest | 安装/构建生成的只读 `EngineGenerationId`、Editor/核心 artifacts、bundled package inventory、Host Profiles 与兼容范围 | resolver 维护的第二个项目 lock |
+| EngineGenerationId | 一个兼容且可修复的 Engine/Editor 发行组合 identity | 单个 package artifact publication ID |
+| Package Lockfile | `asharia.packages.lock.json`；团队提交的项目精确版本、来源、完整性和依赖图。当前 v1 仍含过渡期 `bundled` 节点，后续必须与 Distribution inventory 分离 | Editor Image/Engine Distribution 的安装库存，或可由 Editor 私有缓存替代的文件 |
+| Effective Session Plan | Distribution、Project Lock 与 Host Profile 派生的会话状态及 Host/Build/Activation handoff；可以 canonical 输出但总能重建 | 第三份依赖真相或 lockfile |
+| Host Composition Plan | Effective Session 派生过程中的 backend-neutral canonical logical IR；保留 package/module order、entries 和 contributions，但不含可执行生命周期 | Activation Plan、CMake target list 或第二份 lockfile |
 | Source Build Plan | Host Composition selected modules 经 source descriptor/topology/CMake codemodel 对证后的 build roots、closure 与 fingerprints | build command、artifact path、install layout 或 Activation Plan |
 | Package Product Declaration | `asharia.package.products.json`；exact package 每个 logical module 的 product intent，显式 `artifact-set` / `no-artifacts` | CMake target、platform filename、hash、factory 或 stage layout |
-| Package Artifact Manifest | 一次 source build 对一个 exact package 的 selected module/product files、size、SHA-256 与 plan provenance | Asset Product Manifest、最终 `asharia.stage.json`、ABI 或 dynamic loading 承诺 |
+| Package Artifact Manifest | 一次 source build 对一个 exact package 的 selected module/product files、size、SHA-256 与 plan provenance | Asset Product Manifest、最终 `asharia.stage.json`、EngineGenerationId、ABI 或 dynamic loading 承诺 |
 | Bundled Package | 随引擎/编辑器发行、无需下载的 first-party package | 必须启用的 package |
 | Project-embedded Package | 位于项目目录、由项目版本控制并可编辑的 package | 随引擎发行的 built-in package |
 | Package Manager | 操作 manifest/lock、acquire、validate、build plan 和 activation plan 的 control plane | 系统状态 owner 或 service locator |
@@ -279,10 +289,14 @@ rollback 和 lifecycle；Memory、Storage、Settings、Tasks、Data、Observabil
 flowchart LR
     EditorUI["Editor Package Manager UI"]
     CLI["Package CLI / CI"]
-    Manifest["asharia.packages.json<br/>direct packages + Feature Sets + package options"]
+    Image["Editor Image<br/>bootstrap + Safe Mode + repair"]
+    Distribution["Engine Distribution Manifest<br/>fixed generation + bundled inventory"]
+    Manifest["Project asharia.packages.json<br/>direct packages + Feature Sets + package options"]
     Sources["Embedded / Local / Registry Sources"]
     Service["Package Service<br/>discover + resolve + validate"]
-    Lock["asharia.packages.lock.json<br/>exact graph + integrity"]
+    Lock["Project asharia.packages.lock.json<br/>exact graph + integrity"]
+    Profile["Host Profile"]
+    Session["Effective Session Plan<br/>derived state + handoff"]
     Composition["Host Composition Plan<br/>logical packages + modules + entries"]
     BuildPlan["Build Plan<br/>targets + tools + generated config"]
     Activation["Activation Plan<br/>modules + contributions + order"]
@@ -294,7 +308,11 @@ flowchart LR
     Manifest --> Service
     Sources --> Service
     Service --> Lock
-    Lock --> Composition
+    Image --> Session
+    Distribution --> Session
+    Lock --> Session
+    Profile --> Session
+    Session --> Composition
     Composition --> BuildPlan
     Composition --> Activation
     BuildPlan --> Build
@@ -303,12 +321,16 @@ flowchart LR
 
 规则：
 
-- `asharia.packages.json` 和 `asharia.packages.lock.json` 是团队可提交的 package graph 事实；Editor UI 只是前端。
+- 项目 `asharia.packages.json` / lock 与只读 Engine Distribution Manifest 分别拥有项目 graph 和发行库存；Editor UI 只是
+  前端，Effective Session/Host Composition 是可重建派生状态。
 - resolver 必须是 headless library/CLI，不能依赖 ImGui、Avalonia、Vulkan 或 editor document state。
-- Host Composition Plan 先固定某个 Host 的逻辑 packages/modules/entries/contributions；build plan 决定编译哪些 targets；activation plan 再绑定 artifacts、factories 与 lifecycle。Module 可以是静态或动态实现，activation 不承诺 hot unload。
+- Effective Session 先将 Distribution、Project Lock 与 Host Profile 对证并报告状态；Host Composition Plan 再固定逻辑
+  packages/modules/entries/contributions；build plan 决定编译哪些 targets；activation plan 绑定 artifacts、factories 与
+  lifecycle。Module 默认通过独立静态 CMake target 和薄 composition root 进入 v1 Host，activation 不承诺 DLL 或 hot unload。
 - native code package 的 add/remove/update 可以进入 `PendingBuild` / `PendingRestart`，不能伪装成安全热加载。
 - 系统实例仍由对应 system owner 创建和销毁；Package Service 只提供 descriptor、factory reference 和有序 activation plan。
-- 当前 Editor Profile 自身要求的 Package Runtime、Editor Domain 和 Package Manager UI 在界面中标记为 `Required by Profile`，不能由正在运行的 UI 卸载；引擎/编辑器发行版更新与项目 package 选择是不同工作流。
+- Package Runtime、最小 Editor Shell、Package Manager、diagnostics 与修复入口属于 Editor Image/Distribution，不能由项目
+  lock 或正在运行的 UI 卸载；引擎/编辑器 generation 更新与项目 package 选择是不同工作流。
 
 ### 6.2 核心 package 依赖方向
 
@@ -800,9 +822,12 @@ flowchart LR
 必须固定以下边界：
 
 - `asharia.build.json` 保存可提交的 Build/Launch Profiles；个人输出路径、设备、调试器和敏感值位于 ignored local override 或外部 credential store；
-- Project Manager/CLI 应以明确 `--project` 参数启动 Editor；当前环境变量入口只视为过渡实现。Editor 先验证 project/package lock 与 Editor Host Profile，再激活 contributions；损坏 package 可用最小 safe mode 修复；
-- package resolver 决定精确 system/module graph，Conan 锁定第三方依赖，Project Build 只消费二者，不建立第二张依赖图；
-- v0 根据 lock graph 与 Host Profile 生成薄 composition root，使项目得到精确 native link/activation closure；
+- Project Manager/CLI 应以明确 `--project` 参数启动 Editor；当前环境变量入口只视为过渡实现。Editor Image 先启动最小
+  Shell/diagnostics/Package Manager/repair，再验证 Engine Distribution、Project Lock 与 Editor Host Profile；损坏项目进入
+  Safe Mode，不卸载修复入口；
+- project package resolver 决定项目 exact graph，Engine Distribution Manifest 固定 bundled inventory，Conan 锁定第三方
+  C/C++ 依赖；Project Build 只消费派生 composition 与这些既有事实，不建立第二张依赖图；
+- v0 根据 Distribution、Project Lock 与 Host Profile 生成薄 composition root，使项目得到精确 native link/activation closure；
 - Build 产生 executable/library/tool，Cook 产生 target runtime products，Stage 把两者组成可直接运行且可验证的相对目录树，Package 从 validated stage 生成发行物；
 - shipping runtime 只读取 `asharia.stage.json`、runtime config、module registry 和 cooked catalog，不读取 source project 或 Editor cache；
 - Play In Editor 是 Editor 内隔离 world session；Build & Run 默认创建独立 Standalone process，走产品 runtime bootstrap；
@@ -920,7 +945,7 @@ sequenceDiagram
 - 定义 `asharia.packages.json` 与 committed `asharia.packages.lock.json`；
 - 实现 headless `discover -> solve/reuse -> compose -> verify` library/CLI，第一阶段只支持 bundled/project-embedded/local sources；
 - 先输出 canonical per-host logical composition，再由独立 adapters 输出 CMake build plan 和 per-host activation plan；不实现任意 native hot load；
-- 建立 `Minimal`、`Editor`、`Runtime`、`DedicatedServer`、`AssetWorker` Host Profiles，以及 versioned Standard3D/EditorAuthoring/DedicatedServer Feature Sets；五种 Host Profile 的 v1 schema/固定策略/纯数据投影基线、Host Composition Plan v1、Source Build Plan v1 与 Package Product & Artifact Evidence v1 pure boundaries 已落地，生产 profiles、artifact collector/publication 与后继 Activation Plan 仍待后续 Slice；
+- 建立 `Minimal`、`Editor`、`Runtime`、`DedicatedServer`、`AssetWorker` Host Profiles，以及 versioned Standard3D/EditorAuthoring/DedicatedServer Feature Sets；五种 Host Profile 的 v1 schema/固定策略/纯数据投影基线、Host Composition Plan v1、Source Build Plan v1、Package Product & Artifact Evidence v1 与 Artifact Collection/Publication v1 已落地，生产 profiles、Engine Distribution/Effective Session 与后继 Activation Plan 仍待后续 Slice；
 - 检查全部 `PUBLIC` / `PRIVATE` / `INTERFACE` 依赖；
 - 使 optional target 的 package config 依赖保持 optional；
 - 增加禁止 include 其他 package `src/`、禁止 Vulkan 类型越层、禁止 RHI base 依赖 RG 的检查；

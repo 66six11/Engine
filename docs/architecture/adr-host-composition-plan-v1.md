@@ -5,6 +5,11 @@
 Accepted and implemented for #275。本文冻结每宿主逻辑组合计划的架构、数据所有权、排序与失败合同；
 `host-composition-plan-v1.schema.json`、`tools/host_package_composition.py` 和对应单元测试已经实现该合同。
 
+当前 v1 仍从单一 verified lock 与 Host Profile 生成 IR。后续
+[Editor Image、Engine Distribution 与原生组合 ADR](adr-editor-engine-distribution-and-native-composition.md) 已冻结迁移目标：
+先分别验证只读 Engine Distribution Manifest 与 Project Lock，再把本计划作为 Effective Session 派生过程中的逻辑子计划。
+在新的 Distribution contract/兼容 adapter 落地前，不修改 v1 schema 假装该分层已经实现。
+
 本文接续 [Locked Package Graph Verification & Reuse v1](adr-package-lock-verification-v1.md)、
 [Project Package Manifest v1](adr-project-package-manifest-v1.md) 与 [Host Profile v1](adr-host-profile-v1.md)：第一项证明 exact package
 graph、stable source 和 payload 在本次检查边界仍可复用，Project Manifest 保存 package option overrides，Host Profile 则筛选逻辑

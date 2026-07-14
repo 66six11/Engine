@@ -2,7 +2,7 @@
 
 ## 状态
 
-Accepted and implemented for #276。本 ADR 冻结 source build descriptor、规范化 CMake codemodel evidence 与 canonical Source Build Plan 的职责边界；closed schemas、只读 reader、pure planner、候选快照/锁定复验和 synthetic tests 已落地。后继 [Package Product & Artifact Evidence v1](adr-package-product-artifact-evidence-v1.md) 已为 #277 冻结 logical product 与 exact file evidence，但仓库仍没有生产 installable descriptors、上游 catalog/index、artifact collector/publication 或执行 build/activation 的 adapter，因此不能据此宣称完整 Package Manager 已可供生产使用。
+Accepted and implemented for #276。本 ADR 冻结 source build descriptor、规范化 CMake codemodel evidence 与 canonical Source Build Plan 的职责边界；closed schemas、只读 reader、pure planner、候选快照/锁定复验和 synthetic tests 已落地。后继 [Package Product & Artifact Evidence v1](adr-package-product-artifact-evidence-v1.md) 已为 #277 冻结 logical product 与 exact file evidence，[Package Artifact Collection & Publication v1](adr-package-artifact-collection-publication-v1.md) 已为 #278 实现显式流式收集与不可变 publication；但仓库仍没有生产 installable descriptors、上游 catalog/index、Engine Distribution/Effective Session 或执行 build/activation 的 adapter，因此不能据此宣称完整 Package Manager 已可供生产使用。
 
 本文接续 [Host Composition Plan v1](adr-host-composition-plan-v1.md) 与 [Installable Package Manifest v2](adr-installable-package-manifest-v2.md)。前者已经给出某个 Host 的 exact logical packages、modules、entries、contributions 与 build-affecting options；后者已经决定 portable author manifest 不携带 CMake target、artifact 或 runtime lifecycle 细节。当前缺少的是一层经过真实 buildsystem 对证、但仍然不执行构建的 source build handoff。
 
@@ -48,8 +48,8 @@ Source build control plane 由三个独立、版本化的值对象组成：
 2. **CMake Codemodel Snapshot v1**：把一次成功 configure 的 File API reply 规范化为 machine-neutral evidence；
 3. **Source Build Plan v1**：纯 planner 对证 Host Composition、verified descriptor snapshots、source topology 与 codemodel 后输出的 canonical handoff。
 
-Package Product Declaration 与 Artifact Manifest 已由 #277 的独立 ADR 实现；installed/exported collector/publication、
-factory/scope/lifecycle contract 与 Activation Plan 保持为后续独立设计。
+Package Product Declaration 与 Artifact Manifest 已由 #277 的独立 ADR 实现；#278 已实现 installed/acquisition root 的本地
+collector/publication。Engine Distribution/Effective Session、factory/scope/lifecycle contract 与 Activation Plan 保持为后续独立设计。
 
 ```mermaid
 flowchart LR
@@ -503,12 +503,14 @@ schema 是 closed contract，明确拒绝：
 
 ## 后续边界
 
-#276 之后的边界按顺序设计；其中第 1 项已由 #277 完成：
+#276 之后的边界按顺序设计；其中第 1 项已由 #277/#278 完成：
 
-1. **Product Declaration + Package Artifact Manifest**：#277 已把 logical products 与 exact package/module/file size/SHA-256/plan provenance 绑定；collector/publication、ABI 与 acquired/prebuilt trust 仍后置；
-2. **Factory / Scope / Lifecycle contract**：定义可执行 Activation Plan 所需的 entry point、scope、phase、service dependency、lease 与 rollback；
-3. **Activation Plan**：对证 Host Composition 与 verified artifacts/factories，生成 Host Runtime 可消费的计划；
-4. **Host Runtime**：执行 activation/deactivation 并拥有 instance、contribution handles、lease、rollback 与 shutdown。
+1. **Product Declaration + Artifact publication**：#277 已绑定 logical products 与 exact file evidence；#278 已从显式
+   quiescent roots 流式发布不可变 package artifact generation；ABI 与 acquired/prebuilt trust 仍后置；
+2. **Engine Distribution + Effective Session**：分离只读发行库存与 Project Lock，冻结 `EngineGenerationId`、Safe Mode 和状态；
+3. **Factory / Scope / Lifecycle contract**：定义可执行 Activation Plan 所需的 entry point、scope、phase、service dependency、lease 与 rollback；
+4. **Activation Plan**：对证 Distribution、Project Host Composition 与 verified artifacts/factories，生成 Host Runtime 可消费的计划；
+5. **Host Runtime**：执行 activation/deactivation 并拥有 instance、contribution handles、lease、rollback 与 shutdown。
 
 Source Build Plan 只为 build adapter 提供 verified roots/closure，不替代以上任何权威。
 

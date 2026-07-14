@@ -10,6 +10,11 @@ lock graph 的求解基线。[Explicit-source Package Candidate Discovery v1](ad
 candidate loader；[Locked Graph Verification & Reuse v1](adr-package-lock-verification-v1.md) 也已实现只读、fail-closed 的
 exact graph 复用边界。上游 catalog/index、lock update/apply workflow 与生产 lockfile 仍未实现。
 
+架构校准：v1 允许 `bundled` candidate/node，因此当前实现是过渡期统一 exact graph。后续
+[Editor Image、Engine Distribution 与原生组合 ADR](adr-editor-engine-distribution-and-native-composition.md) 已冻结新的所有权：
+Engine/Editor 安装库存属于只读 Engine Distribution Manifest，Project Lock 只拥有项目 graph。v1 继续作为当前已实现合同，
+但不得增加 Editor artifact 或核心发行库存字段；在 Activation/Factory 前必须定义 `bundled` 节点迁移/兼容 adapter。
+
 本文是 [Project Package Manifest v1](adr-project-package-manifest-v1.md) 的下一层：Project Manifest 保存用户直接意图，
 Candidate 表达 discovery adapter 提供的可选精确 payload，Lockfile 只保存一次成功求解选择出的精确、可验证图。
 
