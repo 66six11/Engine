@@ -134,14 +134,16 @@ powershell -ExecutionPolicy Bypass -File tools\count-code-lines.ps1
   `--output build/package-topology.json`，不要提交该生成文件。
 - `check_package_contracts.py` 使用 Draft 2020-12 schema、显式 discriminator dispatcher 和跨字段 semantic rules 验证
   installable v2、Feature Set v2、Project Manifest v1、Package Lockfile v1、Host Profile v1、Package Source Build v1、
-  Package Product Declaration v1、Package Artifact Manifest v1、Source Topology Snapshot v1、CMake Codemodel Snapshot v1 与
-  Source Build Plan v1 contracts；也可以显式传入一个或多个 fixture/manifest 路径。
+  Package Product Declaration v1、Package Artifact Manifest v1、Engine Distribution Manifest v1、Source Topology Snapshot v1、
+  CMake Codemodel Snapshot v1 与 Source Build Plan v1 contracts；也可以显式传入一个或多个 fixture/manifest 路径。
 - `tools/tests/test_package_topology.py` 覆盖正常 inventory、missing dependency、cycle、duplicate identity、
   catalog 泄漏和未声明 CMake target 等负向路径。
 - `tools/tests/test_package_contracts.py` 覆盖 portable v2 system/integration、封闭 schema、引用、module cycle、
   catalog policy 和 deterministic diagnostics。
 - `tools/tests/test_package_project_contracts.py` 覆盖 Project Manifest、Feature Set、dispatcher isolation、selected graph cycle
   与 normalized writer determinism/encoding。
+- `tools/tests/test_engine_distribution_contracts.py` 覆盖 closed Engine Distribution schema、内容派生
+  `EngineGenerationId`、Editor/package/artifact/profile invariants、portable paths、discovery 与 canonical writer。
 - `tools/tests/test_package_lock_contracts.py` 覆盖 exact graph closure、source/integrity、cross-document selected-result validation、
   package tree digest 与 normalized lock writer determinism。
 - `tools/tests/test_package_resolver.py` 覆盖纯内存 candidate validation、最高兼容版本、稳定回溯、嵌套 Feature Set、

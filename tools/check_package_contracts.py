@@ -28,6 +28,7 @@ PACKAGE_MANIFEST_NAME = "asharia.package.json"
 PACKAGE_SOURCE_BUILD_NAME = "asharia.package.build.json"
 PACKAGE_PRODUCTS_NAME = "asharia.package.products.json"
 PACKAGE_ARTIFACT_MANIFEST_NAME = "asharia.package.artifacts.json"
+ENGINE_DISTRIBUTION_MANIFEST_NAME = "asharia.engine-distribution.json"
 PROJECT_MANIFEST_NAME = "asharia.packages.json"
 PACKAGE_LOCK_NAME = "asharia.packages.lock.json"
 HOST_PROFILE_NAME = "asharia.host-profile.json"
@@ -44,6 +45,7 @@ HOST_COMPOSITION_PLAN_SCHEMA_NAME = "host-composition-plan-v1.schema.json"
 PACKAGE_SOURCE_BUILD_SCHEMA_NAME = "package-source-build-v1.schema.json"
 PACKAGE_PRODUCTS_SCHEMA_NAME = "package-products-v1.schema.json"
 PACKAGE_ARTIFACT_MANIFEST_SCHEMA_NAME = "package-artifact-manifest-v1.schema.json"
+ENGINE_DISTRIBUTION_MANIFEST_SCHEMA_NAME = "engine-distribution-manifest-v1.schema.json"
 SOURCE_TOPOLOGY_SNAPSHOT_SCHEMA_NAME = "source-topology-snapshot-v1.schema.json"
 CMAKE_CODEMODEL_SNAPSHOT_SCHEMA_NAME = "cmake-codemodel-snapshot-v1.schema.json"
 SOURCE_BUILD_PLAN_SCHEMA_NAME = "source-build-plan-v1.schema.json"
@@ -189,6 +191,7 @@ class ContractValidators:
     package_source_build: Draft202012Validator
     package_products: Draft202012Validator
     package_artifact_manifest: Draft202012Validator
+    engine_distribution_manifest: Draft202012Validator
     source_topology_snapshot: Draft202012Validator
     cmake_codemodel_snapshot: Draft202012Validator
     source_build_plan: Draft202012Validator
@@ -313,6 +316,7 @@ def load_contract_validators(schema_root: Path = DEFAULT_SCHEMA_ROOT) -> Contrac
         package_source_build=create(PACKAGE_SOURCE_BUILD_SCHEMA_NAME),
         package_products=create(PACKAGE_PRODUCTS_SCHEMA_NAME),
         package_artifact_manifest=create(PACKAGE_ARTIFACT_MANIFEST_SCHEMA_NAME),
+        engine_distribution_manifest=create(ENGINE_DISTRIBUTION_MANIFEST_SCHEMA_NAME),
         source_topology_snapshot=create(SOURCE_TOPOLOGY_SNAPSHOT_SCHEMA_NAME),
         cmake_codemodel_snapshot=create(CMAKE_CODEMODEL_SNAPSHOT_SCHEMA_NAME),
         source_build_plan=create(SOURCE_BUILD_PLAN_SCHEMA_NAME),
@@ -1030,6 +1034,300 @@ def _is_normalized_relative_path(value: str) -> bool:
     return bool(value) and not value.startswith("/") and all(
         segment not in {"", ".", ".."} for segment in segments
     )
+
+
+_WINDOWS_RESERVED_PATH_STEMS = {
+    "con",
+    "prn",
+    "aux",
+    "nul",
+    *(f"com{index}" for index in range(1, 10)),
+    *(f"lpt{index}" for index in range(1, 10)),
+}
+_WINDOWS_INVALID_PATH_CHARACTERS = frozenset('<>:"\\|?*')
+
+
+def _is_portable_distribution_path(value: str) -> bool:
+    if not _is_normalized_relative_path(value):
+        return False
+    for segment in value.split("/"):
+        if segment.endswith((" ", ".")):
+            return False
+        if any(
+            ord(character) < 32 or character in _WINDOWS_INVALID_PATH_CHARACTERS
+            for character in segment
+        ):
+            return False
+        if segment.split(".", 1)[0].casefold() in _WINDOWS_RESERVED_PATH_STEMS:
+            return False
+    return True
+
+
+def _engine_distribution_semantic_diagnostics(
+    manifest: dict[str, Any], manifest_path: str
+) -> list[Diagnostic]:
+    diagnostics: list[Diagnostic] = []
+    registered_paths: list[tuple[str, str, str]] = []
+
+    def register_path(value: str, pointer: str, path_kind: str) -> None:
+        if not _is_portable_distribution_path(value):
+            diagnostics.append(
+                Diagnostic(
+                    code="distribution.path.invalid",
+                    manifest_path=manifest_path,
+                    pointer=pointer,
+                    message=f"'{value}' must be a portable Unicode NFC relative path",
+                )
+            )
+            return
+        folded = value.casefold()
+        for previous_value, previous_pointer, previous_kind in registered_paths:
+            if value == previous_value:
+                diagnostics.append(
+                    Diagnostic(
+                        code="distribution.path.duplicate",
+                        manifest_path=manifest_path,
+                        pointer=pointer,
+                        message=(
+                            f"path '{value}' is already declared at {previous_pointer}"
+                        ),
+                    )
+                )
+                return
+            if folded == previous_value.casefold():
+                diagnostics.append(
+                    Diagnostic(
+                        code="distribution.path.collision",
+                        manifest_path=manifest_path,
+                        pointer=pointer,
+                        message=(
+                            f"paths '{previous_value}' and '{value}' collide by Unicode "
+                            "case-folding"
+                        ),
+                    )
+                )
+                return
+            if value.startswith(f"{previous_value}/") or previous_value.startswith(
+                f"{value}/"
+            ):
+                diagnostics.append(
+                    Diagnostic(
+                        code="distribution.path.ancestor-collision",
+                        manifest_path=manifest_path,
+                        pointer=pointer,
+                        message=(
+                            f"{path_kind} path '{value}' overlaps {previous_kind} path "
+                            f"'{previous_value}' declared at {previous_pointer}"
+                        ),
+                    )
+                )
+                return
+        registered_paths.append((value, pointer, path_kind))
+
+    editor_files_by_path: dict[str, dict[str, Any]] = {}
+    for file_index, file in enumerate(manifest["editorImage"]["files"]):
+        path = file["path"]
+        register_path(path, f"/editorImage/files/{file_index}/path", "file")
+        editor_files_by_path.setdefault(path, file)
+
+    entry_point = manifest["editorImage"]["entryPoint"]
+    if not _is_portable_distribution_path(entry_point):
+        diagnostics.append(
+            Diagnostic(
+                code="distribution.path.invalid",
+                manifest_path=manifest_path,
+                pointer="/editorImage/entryPoint",
+                message=f"'{entry_point}' must be a portable Unicode NFC relative path",
+            )
+        )
+    entry_file = editor_files_by_path.get(entry_point)
+    if entry_file is None:
+        diagnostics.append(
+            Diagnostic(
+                code="distribution.editor.entry-point-missing",
+                manifest_path=manifest_path,
+                pointer="/editorImage/entryPoint",
+                message=f"entry point '{entry_point}' is not present in editorImage.files",
+            )
+        )
+    elif entry_file["role"] != "executable":
+        diagnostics.append(
+            Diagnostic(
+                code="distribution.editor.entry-point-role",
+                manifest_path=manifest_path,
+                pointer="/editorImage/entryPoint",
+                message=f"entry point '{entry_point}' must reference an executable file",
+            )
+        )
+
+    packages_by_id: dict[str, tuple[int, dict[str, Any]]] = {}
+    for package_index, package in enumerate(manifest["bundledPackages"]):
+        identity = package["id"]
+        previous = packages_by_id.get(identity)
+        if previous is not None:
+            previous_index, previous_package = previous
+            code = (
+                "distribution.package.duplicate-id"
+                if package["version"] == previous_package["version"]
+                else "distribution.package.multiple-versions"
+            )
+            diagnostics.append(
+                Diagnostic(
+                    code=code,
+                    manifest_path=manifest_path,
+                    pointer=f"/bundledPackages/{package_index}/id",
+                    message=(
+                        f"package '{identity}' was first declared at index {previous_index} "
+                        f"with version '{previous_package['version']}'"
+                    ),
+                )
+            )
+        else:
+            packages_by_id[identity] = (package_index, package)
+        register_path(
+            package["root"],
+            f"/bundledPackages/{package_index}/root",
+            "package root",
+        )
+
+    artifact_keys: dict[tuple[str, str, str, str], int] = {}
+    expected_platform = manifest["context"]["targetPlatform"]
+    expected_configuration = manifest["context"]["configuration"]
+    for artifact_index, artifact in enumerate(manifest["packageArtifacts"]):
+        package_reference = artifact["package"]
+        context = artifact["context"]
+        identity = package_reference["id"]
+        key = (
+            identity,
+            context["hostKind"],
+            context["targetPlatform"],
+            context["configuration"],
+        )
+        previous_index = artifact_keys.get(key)
+        if previous_index is not None:
+            diagnostics.append(
+                Diagnostic(
+                    code="distribution.artifact.duplicate-context",
+                    manifest_path=manifest_path,
+                    pointer=f"/packageArtifacts/{artifact_index}/package/id",
+                    message=(
+                        f"package artifact context for '{identity}' was first declared "
+                        f"at index {previous_index}"
+                    ),
+                )
+            )
+        else:
+            artifact_keys[key] = artifact_index
+
+        bundled = packages_by_id.get(identity)
+        if bundled is None:
+            diagnostics.append(
+                Diagnostic(
+                    code="distribution.artifact.package-missing",
+                    manifest_path=manifest_path,
+                    pointer=f"/packageArtifacts/{artifact_index}/package/id",
+                    message=f"package artifact references unknown bundled package '{identity}'",
+                )
+            )
+        else:
+            _, bundled_package = bundled
+            if bundled_package["packageKind"] != "installable-capability":
+                diagnostics.append(
+                    Diagnostic(
+                        code="distribution.artifact.package-kind",
+                        manifest_path=manifest_path,
+                        pointer=f"/packageArtifacts/{artifact_index}/package/id",
+                        message=f"feature set '{identity}' cannot own package artifacts",
+                    )
+                )
+            if package_reference["version"] != bundled_package["version"]:
+                diagnostics.append(
+                    Diagnostic(
+                        code="distribution.artifact.package-version",
+                        manifest_path=manifest_path,
+                        pointer=f"/packageArtifacts/{artifact_index}/package/version",
+                        message=(
+                            f"artifact version '{package_reference['version']}' does not match "
+                            f"bundled version '{bundled_package['version']}'"
+                        ),
+                    )
+                )
+        if context["targetPlatform"] != expected_platform:
+            diagnostics.append(
+                Diagnostic(
+                    code="distribution.artifact.target-platform",
+                    manifest_path=manifest_path,
+                    pointer=f"/packageArtifacts/{artifact_index}/context/targetPlatform",
+                    message=(
+                        f"artifact target platform '{context['targetPlatform']}' does not "
+                        f"match distribution platform '{expected_platform}'"
+                    ),
+                )
+            )
+        if context["configuration"] != expected_configuration:
+            diagnostics.append(
+                Diagnostic(
+                    code="distribution.artifact.configuration",
+                    manifest_path=manifest_path,
+                    pointer=f"/packageArtifacts/{artifact_index}/context/configuration",
+                    message=(
+                        f"artifact configuration '{context['configuration']}' does not "
+                        f"match distribution configuration '{expected_configuration}'"
+                    ),
+                )
+            )
+        register_path(
+            artifact["manifestPath"],
+            f"/packageArtifacts/{artifact_index}/manifestPath",
+            "file",
+        )
+
+    profile_keys: dict[tuple[str, str], int] = {}
+    for profile_index, profile in enumerate(manifest["hostProfiles"]):
+        key = (profile["hostKind"], profile["targetPlatform"])
+        previous_index = profile_keys.get(key)
+        if previous_index is not None:
+            diagnostics.append(
+                Diagnostic(
+                    code="distribution.host-profile.duplicate",
+                    manifest_path=manifest_path,
+                    pointer=f"/hostProfiles/{profile_index}/hostKind",
+                    message=(
+                        f"Host Profile '{key[0]}' for '{key[1]}' was first declared "
+                        f"at index {previous_index}"
+                    ),
+                )
+            )
+        else:
+            profile_keys[key] = profile_index
+        if profile["targetPlatform"] != expected_platform:
+            diagnostics.append(
+                Diagnostic(
+                    code="distribution.host-profile.target-platform",
+                    manifest_path=manifest_path,
+                    pointer=f"/hostProfiles/{profile_index}/targetPlatform",
+                    message=(
+                        f"Host Profile platform '{profile['targetPlatform']}' does not match "
+                        f"distribution platform '{expected_platform}'"
+                    ),
+                )
+            )
+        register_path(profile["path"], f"/hostProfiles/{profile_index}/path", "file")
+
+    expected_generation_id = compute_engine_generation_id(manifest)
+    if manifest["engineGenerationId"] != expected_generation_id:
+        diagnostics.append(
+            Diagnostic(
+                code="distribution.generation-id.mismatch",
+                manifest_path=manifest_path,
+                pointer="/engineGenerationId",
+                message=(
+                    f"engineGenerationId '{manifest['engineGenerationId']}' does not match "
+                    f"canonical inventory '{expected_generation_id}'"
+                ),
+            )
+        )
+    return sorted(diagnostics, key=_diagnostic_sort_key)
 
 
 def _check_lock_reference(
@@ -1983,6 +2281,8 @@ def _contract_kind(manifest: Any, manifest_path: str) -> str | None:
         return "package-products"
     if Path(manifest_path).name == PACKAGE_ARTIFACT_MANIFEST_NAME:
         return "package-artifact-manifest"
+    if Path(manifest_path).name == ENGINE_DISTRIBUTION_MANIFEST_NAME:
+        return "engine-distribution-manifest"
     if Path(manifest_path).name == HOST_PROFILE_NAME:
         return "host-profile"
     if Path(manifest_path).name == PACKAGE_LOCK_NAME:
@@ -2003,6 +2303,8 @@ def _contract_kind(manifest: Any, manifest_path: str) -> str | None:
         return "package-products"
     if manifest.get("schema") == "com.asharia.package-artifact-manifest":
         return "package-artifact-manifest"
+    if manifest.get("schema") == "com.asharia.engine-distribution":
+        return "engine-distribution-manifest"
     if manifest.get("schema") == "com.asharia.source-topology-snapshot":
         return "source-topology-snapshot"
     if manifest.get("schema") == "com.asharia.cmake-codemodel-snapshot":
@@ -2056,6 +2358,10 @@ def validate_manifest_data(
         validator = validators.package_artifact_manifest
         schema_code = "artifact.manifest.schema"
         semantic_validator = _package_artifact_manifest_semantic_diagnostics
+    elif kind == "engine-distribution-manifest":
+        validator = validators.engine_distribution_manifest
+        schema_code = "distribution.manifest.schema"
+        semantic_validator = _engine_distribution_semantic_diagnostics
     elif kind == "source-topology-snapshot":
         validator = validators.source_topology_snapshot
         schema_code = "build.topology.schema"
@@ -2267,6 +2573,7 @@ def discover_contract_manifests(root: Path) -> list[Path]:
         + list(root.rglob(PACKAGE_SOURCE_BUILD_NAME))
         + list(root.rglob(PACKAGE_PRODUCTS_NAME))
         + list(root.rglob(PACKAGE_ARTIFACT_MANIFEST_NAME))
+        + list(root.rglob(ENGINE_DISTRIBUTION_MANIFEST_NAME))
         + list(root.rglob(PROJECT_MANIFEST_NAME))
         + list(root.rglob(PACKAGE_LOCK_NAME))
         + list(root.rglob(HOST_PROFILE_NAME))
@@ -2641,6 +2948,153 @@ def write_normalized_project_manifest(path: Path, manifest: dict[str, Any]) -> N
 
 def _normalize_integrity(integrity: dict[str, Any]) -> dict[str, Any]:
     return {"algorithm": integrity["algorithm"], "digest": integrity["digest"]}
+
+
+def _normalize_engine_distribution_payload(manifest: dict[str, Any]) -> dict[str, Any]:
+    distribution = manifest["distribution"]
+    context = manifest["context"]
+    toolchain = context["toolchain"]
+    return {
+        "schema": "com.asharia.engine-distribution",
+        "schemaVersion": 1,
+        "distribution": {
+            "id": distribution["id"],
+            "engineVersion": distribution["engineVersion"],
+            "engineApiVersion": distribution["engineApiVersion"],
+        },
+        "context": {
+            "targetPlatform": context["targetPlatform"],
+            "configuration": context["configuration"],
+            "toolchain": {
+                "compilerId": toolchain["compilerId"],
+                "compilerVersion": toolchain["compilerVersion"],
+                "targetSystem": toolchain["targetSystem"],
+                "targetArchitecture": toolchain["targetArchitecture"],
+                "runtimeLibrary": toolchain["runtimeLibrary"],
+            },
+        },
+        "editorImage": {
+            "entryPoint": manifest["editorImage"]["entryPoint"],
+            "files": [
+                {
+                    "path": file["path"],
+                    "role": file["role"],
+                    "mediaType": file["mediaType"],
+                    "size": file["size"],
+                    "integrity": _normalize_integrity(file["integrity"]),
+                }
+                for file in sorted(
+                    manifest["editorImage"]["files"], key=lambda value: value["path"]
+                )
+            ],
+        },
+        "bundledPackages": [
+            {
+                "id": package["id"],
+                "version": package["version"],
+                "packageKind": package["packageKind"],
+                "availability": package["availability"],
+                "root": package["root"],
+                "manifestIntegrity": _normalize_integrity(package["manifestIntegrity"]),
+                "payloadIntegrity": _normalize_integrity(package["payloadIntegrity"]),
+            }
+            for package in sorted(manifest["bundledPackages"], key=lambda value: value["id"])
+        ],
+        "packageArtifacts": [
+            {
+                "artifactGenerationId": artifact["artifactGenerationId"],
+                "package": {
+                    "id": artifact["package"]["id"],
+                    "version": artifact["package"]["version"],
+                },
+                "context": {
+                    "hostKind": artifact["context"]["hostKind"],
+                    "targetPlatform": artifact["context"]["targetPlatform"],
+                    "configuration": artifact["context"]["configuration"],
+                },
+                "manifestPath": artifact["manifestPath"],
+                "manifestIntegrity": _normalize_integrity(artifact["manifestIntegrity"]),
+            }
+            for artifact in sorted(
+                manifest["packageArtifacts"],
+                key=lambda value: (
+                    value["package"]["id"],
+                    value["context"]["hostKind"],
+                    value["context"]["targetPlatform"],
+                    value["context"]["configuration"],
+                    value["manifestPath"],
+                ),
+            )
+        ],
+        "hostProfiles": [
+            {
+                "hostKind": profile["hostKind"],
+                "targetPlatform": profile["targetPlatform"],
+                "path": profile["path"],
+                "integrity": _normalize_integrity(profile["integrity"]),
+            }
+            for profile in sorted(
+                manifest["hostProfiles"],
+                key=lambda value: (
+                    value["hostKind"],
+                    value["targetPlatform"],
+                    value["path"],
+                ),
+            )
+        ],
+    }
+
+
+def render_engine_generation_payload(manifest: dict[str, Any]) -> str:
+    """Render the canonical self-id-free payload used by EngineGenerationId."""
+
+    return json.dumps(
+        _normalize_engine_distribution_payload(manifest), ensure_ascii=False, indent=2
+    ) + "\n"
+
+
+def compute_engine_generation_id(manifest: dict[str, Any]) -> str:
+    """Return the content identity of an Engine Distribution without a self-hash cycle."""
+
+    payload = render_engine_generation_payload(manifest).encode("utf-8")
+    return f"sha256-{hashlib.sha256(payload).hexdigest()}"
+
+
+def normalize_engine_distribution_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
+    """Return canonical inventory with a freshly derived EngineGenerationId."""
+
+    payload = _normalize_engine_distribution_payload(manifest)
+    return {
+        "schema": payload["schema"],
+        "schemaVersion": payload["schemaVersion"],
+        "engineGenerationId": compute_engine_generation_id(manifest),
+        "distribution": payload["distribution"],
+        "context": payload["context"],
+        "editorImage": payload["editorImage"],
+        "bundledPackages": payload["bundledPackages"],
+        "packageArtifacts": payload["packageArtifacts"],
+        "hostProfiles": payload["hostProfiles"],
+    }
+
+
+def render_normalized_engine_distribution_manifest(manifest: dict[str, Any]) -> str:
+    """Render normalized Engine Distribution JSON as UTF-8-compatible LF text."""
+
+    return json.dumps(
+        normalize_engine_distribution_manifest(manifest), ensure_ascii=False, indent=2
+    ) + "\n"
+
+
+def write_normalized_engine_distribution_manifest(
+    path: Path, manifest: dict[str, Any]
+) -> None:
+    """Write one normalized Engine Distribution using UTF-8 without BOM and LF."""
+
+    path.write_text(
+        render_normalized_engine_distribution_manifest(manifest),
+        encoding="utf-8",
+        newline="\n",
+    )
 
 
 def _normalize_exact_reference(reference: dict[str, Any]) -> dict[str, Any]:

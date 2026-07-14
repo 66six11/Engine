@@ -430,8 +430,11 @@ module/contribution projection。Host Composition Plan v1 的 schema、pure plan
 snapshot 与 pure build-root planner 也已实现。它仍不代表 F1 完成：上游 catalog/index、lock update/apply、生产
 lock/profile 尚未实现。[Package Product & Artifact Evidence v1](adr-package-product-artifact-evidence-v1.md) 的作者声明、候选
 快照和 pure verifier 已落地；[Package Artifact Collection & Publication v1](adr-package-artifact-collection-publication-v1.md)
-也已为 #278 实现显式 root、流式 staged verification 与不可变 artifact generation publication。Engine Distribution /
-Effective Session、factory contracts 与 generated Activation Plan 尚未实现；Host Runtime 也不会在这些可执行合同存在前解释逻辑 IDs。
+也已为 #278 实现显式 root、流式 staged verification 与不可变 artifact generation publication。
+[Engine Distribution Manifest v1](adr-engine-distribution-manifest-v1.md) 进一步建立只读 Editor/Engine 发行库存、内容派生
+`EngineGenerationId`、semantic validator 与 canonical writer；现有 lock v1 `bundled` nodes 仍只是迁移兼容输入。生产
+Distribution assembly、Project Lock migration、Effective Session、factory contracts 与 generated Activation Plan 尚未实现；
+Host Runtime 不会在这些可执行合同存在前解释逻辑 IDs。
 
 ## 拒绝的替代方案
 

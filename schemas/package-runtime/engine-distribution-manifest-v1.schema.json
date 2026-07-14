@@ -1,0 +1,365 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.asharia.dev/package-runtime/engine-distribution-manifest-v1.schema.json",
+  "title": "Asharia Engine Distribution Manifest v1",
+  "description": "Canonical read-only inventory for one exact Engine and Editor distribution generation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "schemaVersion",
+    "engineGenerationId",
+    "distribution",
+    "context",
+    "editorImage",
+    "bundledPackages",
+    "packageArtifacts",
+    "hostProfiles"
+  ],
+  "properties": {
+    "schema": {
+      "const": "com.asharia.engine-distribution"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "engineGenerationId": {
+      "$ref": "#/$defs/generationId"
+    },
+    "distribution": {
+      "$ref": "#/$defs/distribution"
+    },
+    "context": {
+      "$ref": "#/$defs/context"
+    },
+    "editorImage": {
+      "$ref": "#/$defs/editorImage"
+    },
+    "bundledPackages": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/bundledPackage"
+      }
+    },
+    "packageArtifacts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/packageArtifact"
+      }
+    },
+    "hostProfiles": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/hostProfile"
+      }
+    }
+  },
+  "$defs": {
+    "integrity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "algorithm",
+        "digest"
+      ],
+      "properties": {
+        "algorithm": {
+          "const": "sha256"
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "generationId": {
+      "type": "string",
+      "pattern": "^sha256-[0-9a-f]{64}$"
+    },
+    "relativePath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500,
+      "pattern": "^(?!/)(?![A-Za-z]:)(?!.*\\\\).+$"
+    },
+    "mediaType": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 200,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9!#$&^_.+\\-]*/[A-Za-z0-9][A-Za-z0-9!#$&^_.+\\-]*$"
+    },
+    "distribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "engineVersion",
+        "engineApiVersion"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/packageId"
+        },
+        "engineVersion": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/semanticVersion"
+        },
+        "engineApiVersion": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/semanticVersion"
+        }
+      }
+    },
+    "toolchain": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "compilerId",
+        "compilerVersion",
+        "targetSystem",
+        "targetArchitecture",
+        "runtimeLibrary"
+      ],
+      "properties": {
+        "compilerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "compilerVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "targetSystem": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "targetArchitecture": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "runtimeLibrary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        }
+      }
+    },
+    "context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "targetPlatform",
+        "configuration",
+        "toolchain"
+      ],
+      "properties": {
+        "targetPlatform": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/platformId"
+        },
+        "configuration": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "toolchain": {
+          "$ref": "#/$defs/toolchain"
+        }
+      }
+    },
+    "editorFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "role",
+        "mediaType",
+        "size",
+        "integrity"
+      ],
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/relativePath"
+        },
+        "role": {
+          "enum": [
+            "executable",
+            "runtime-library",
+            "resource",
+            "metadata",
+            "debug-symbol"
+          ]
+        },
+        "mediaType": {
+          "$ref": "#/$defs/mediaType"
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "integrity": {
+          "$ref": "#/$defs/integrity"
+        }
+      }
+    },
+    "editorImage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entryPoint",
+        "files"
+      ],
+      "properties": {
+        "entryPoint": {
+          "$ref": "#/$defs/relativePath"
+        },
+        "files": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/editorFile"
+          }
+        }
+      }
+    },
+    "packageKind": {
+      "enum": [
+        "installable-capability",
+        "feature-set"
+      ]
+    },
+    "bundledPackage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "packageKind",
+        "availability",
+        "root",
+        "manifestIntegrity",
+        "payloadIntegrity"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/packageId"
+        },
+        "version": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/semanticVersion"
+        },
+        "packageKind": {
+          "$ref": "#/$defs/packageKind"
+        },
+        "availability": {
+          "enum": [
+            "required",
+            "default",
+            "optional"
+          ]
+        },
+        "root": {
+          "$ref": "#/$defs/relativePath"
+        },
+        "manifestIntegrity": {
+          "$ref": "#/$defs/integrity"
+        },
+        "payloadIntegrity": {
+          "$ref": "#/$defs/integrity"
+        }
+      }
+    },
+    "exactPackage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/packageId"
+        },
+        "version": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/semanticVersion"
+        }
+      }
+    },
+    "artifactContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "hostKind",
+        "targetPlatform",
+        "configuration"
+      ],
+      "properties": {
+        "hostKind": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/hostKind"
+        },
+        "targetPlatform": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/platformId"
+        },
+        "configuration": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        }
+      }
+    },
+    "packageArtifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "artifactGenerationId",
+        "package",
+        "context",
+        "manifestPath",
+        "manifestIntegrity"
+      ],
+      "properties": {
+        "artifactGenerationId": {
+          "$ref": "#/$defs/generationId"
+        },
+        "package": {
+          "$ref": "#/$defs/exactPackage"
+        },
+        "context": {
+          "$ref": "#/$defs/artifactContext"
+        },
+        "manifestPath": {
+          "$ref": "#/$defs/relativePath"
+        },
+        "manifestIntegrity": {
+          "$ref": "#/$defs/integrity"
+        }
+      }
+    },
+    "hostProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "hostKind",
+        "targetPlatform",
+        "path",
+        "integrity"
+      ],
+      "properties": {
+        "hostKind": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/hostKind"
+        },
+        "targetPlatform": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/platformId"
+        },
+        "path": {
+          "$ref": "#/$defs/relativePath"
+        },
+        "integrity": {
+          "$ref": "#/$defs/integrity"
+        }
+      }
+    }
+  }
+}

@@ -141,6 +141,12 @@ v1 使用封闭 union：
 | `project-embedded` | project-relative `relativePath` | project root 绝对路径 |
 | `local` | namespaced logical `sourceId` | checkout/file URL/盘符路径 |
 
+`bundled` 是现有 v1 统一图的迁移兼容表示，不是最终发行库存 owner。
+[Engine Distribution Manifest v1](adr-engine-distribution-manifest-v1.md) 已将 Editor Image、bundled package inventory、
+package artifact references、Host Profiles 与 `EngineGenerationId` 分离为只读 build/installer contract。后继 Project Lock migration
+必须保留项目 graph 和 bundled identity reference，但以 Distribution 中的 path/integrity 为权威；本 v1 schema 在迁移 adapter
+落地前保持兼容，不继续增加新的发行字段。
+
 `local.sourceId` 由 workspace/CLI source configuration 映射到机器路径。另一台机器缺少映射时 locked restore 必须以
 `lock.source.unavailable` 失败，不能搜索任意同名目录；找到 payload 后还必须通过两个 integrity checks。
 
