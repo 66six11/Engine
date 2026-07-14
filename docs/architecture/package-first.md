@@ -201,8 +201,10 @@ semantic validator 与 canonical writer 也已实现。[Effective Session v1](ad
 Project/Lock v2、selected candidates 与 exact Distribution-owned Host Profile 派生为 Ready/Upgrade/Repair/SafeMode 结果，
 并把 Host Composition / Source Build / artifact handoff 硬切到 session verified graph。
 [Engine Distribution Assembly v1](adr-engine-distribution-assembly-v1.md) 已把 Editor Image、bundled candidates、artifact receipts 与
-exact Host Profiles 组装为 staged-byte-derived immutable generation。上游 catalog/index、lock update/apply、installed Repair Verifier、
-Activation Plan、生产 catalog/lockfile 与 Editor Package Manager 尚未实现。Project Manifest / Lock v2
+exact Host Profiles 组装为 staged-byte-derived immutable generation。
+[Installed Distribution Repair Verifier v1](adr-installed-distribution-repair-verifier-v1.md) 已从外部 expected generation ID
+只读重建磁盘 artifact evidence，并完整复验 installed generation；它不修复、不选择或激活 generation。
+上游 catalog/index、lock update/apply、repair executor、轻量启动 receipt、Activation Plan、生产 catalog/lockfile 与 Editor Package Manager 尚未实现。Project Manifest / Lock v2
 不保留 v1 reader 或 migration adapter。
 
 长期目标是让用户通过 Editor Package Manager 为项目添加、移除和升级**完整可安装能力**。Data、Content、World、Input、Rendering、Physics 等基础能力各自以完整 System Package 表达；Advanced Camera、Dialogue、Weather 等附加能力以完整 Feature Package 表达；跨可选包桥接使用 Integration Package。三者都不能拆成需要用户手工拼装的 contract/runtime/editor/backend fragments。
@@ -301,6 +303,9 @@ package-relative file/size/SHA-256 evidence 的纯验证边界；它不执行 bu
 package artifact reference 与 Host Profile inventory；Project Lock v2 已与其完成所有权分离。Distribution 不是第二个 lock。
 [ADR：Effective Session v1](adr-effective-session-v1.md) 已为 #281 实现 exact Profile binding、状态归类、canonical fingerprints 与
 Host Composition raw Project/Profile 入口删除；`PendingBuild` / `PendingRestart` 仍等待 artifact/process evidence。
+[ADR：Installed Distribution Repair Verifier v1](adr-installed-distribution-repair-verifier-v1.md) 已为 #283 实现 trusted expected ID、
+disk-only artifact generation reconstruction、`Healthy/RepairRequired` report 与 read-only closed-tree 验证；当前尚未接入
+Effective Session 或 Editor Bootstrap。
 
 ### Feature Package 不是 API 包装器
 

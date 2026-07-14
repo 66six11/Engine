@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
 import stat
 import tempfile
@@ -25,6 +26,7 @@ _COPY_CHUNK_SIZE = 1024 * 1024
 _STAGING_DIRECTORY_NAME = ".asharia-package-artifact-staging"
 _GENERATIONS_DIRECTORY_NAME = "generations"
 _PACKAGES_DIRECTORY_NAME = "packages"
+_GENERATION_ID_PATTERN = re.compile(r"^sha256-[0-9a-f]{64}$")
 
 
 @dataclass(frozen=True, order=True)
@@ -79,6 +81,28 @@ class PackageArtifactPublicationResult:
 
 
 @dataclass(frozen=True)
+class VerifiedPackageArtifactGeneration:
+    """Disk-reconstructed evidence for one immutable artifact generation."""
+
+    artifact_generation_id: str
+    artifact_generation_path: Path = field(repr=False)
+    manifest_set_integrity: artifacts.IntegrityRecord
+    manifests: tuple[artifacts.PackageArtifactManifest, ...]
+
+
+@dataclass(frozen=True)
+class PackageArtifactGenerationVerificationResult:
+    """Atomic result from read-only installed artifact verification."""
+
+    verified_generation: VerifiedPackageArtifactGeneration | None
+    diagnostics: tuple[contracts.Diagnostic, ...]
+
+    @property
+    def succeeded(self) -> bool:
+        return self.verified_generation is not None and not self.diagnostics
+
+
+@dataclass(frozen=True)
 class _FileFingerprint:
     device: int
     inode: int
@@ -127,6 +151,15 @@ def _failure(
 ) -> PackageArtifactPublicationResult:
     return PackageArtifactPublicationResult(
         receipt=None,
+        diagnostics=tuple(sorted(diagnostics, key=_diagnostic_sort_key)),
+    )
+
+
+def _generation_failure(
+    diagnostics: Iterable[contracts.Diagnostic],
+) -> PackageArtifactGenerationVerificationResult:
+    return PackageArtifactGenerationVerificationResult(
+        verified_generation=None,
         diagnostics=tuple(sorted(diagnostics, key=_diagnostic_sort_key)),
     )
 
@@ -748,6 +781,235 @@ def _cleanup_staging(path: Path) -> contracts.Diagnostic | None:
             f"could not remove owned staging '{_path_text(path)}': {error}",
         )
     return None
+
+
+def _artifact_manifest_from_data(
+    data: dict[str, Any],
+) -> artifacts.PackageArtifactManifest:
+    """Rebuild immutable typed evidence from one already-validated manifest."""
+
+    def integrity(value: dict[str, str]) -> artifacts.IntegrityRecord:
+        return artifacts.IntegrityRecord(value["algorithm"], value["digest"])
+
+    modules: list[artifacts.ModuleArtifactEvidence] = []
+    for module in sorted(
+        data["modules"], key=lambda value: _utf8_key(value["moduleId"])
+    ):
+        delivery = module["delivery"]
+        products = tuple(
+            artifacts.ProductArtifactEvidence(
+                product_id=product["id"],
+                purpose=product["purpose"],
+                files=tuple(
+                    artifacts.ArtifactFileEvidence(
+                        path=file["path"],
+                        role=file["role"],
+                        media_type=file["mediaType"],
+                        size=file["size"],
+                        integrity=integrity(file["integrity"]),
+                    )
+                    for file in sorted(
+                        product["files"],
+                        key=lambda value: (
+                            _utf8_key(value["path"]),
+                            value["role"],
+                        ),
+                    )
+                ),
+            )
+            for product in sorted(
+                delivery.get("products", []),
+                key=lambda value: _utf8_key(value["id"]),
+            )
+        )
+        modules.append(
+            artifacts.ModuleArtifactEvidence(
+                module_id=module["moduleId"],
+                delivery_kind=delivery["kind"],
+                products=products,
+            )
+        )
+
+    provenance = data["provenance"]
+    context = data["context"]
+    package = data["package"]
+    return artifacts.PackageArtifactManifest(
+        package_id=package["id"],
+        package_version=package["version"],
+        host_kind=context["hostKind"],
+        target_platform=context["targetPlatform"],
+        configuration=context["configuration"],
+        provenance=artifacts.PackageArtifactProvenance(
+            host_composition_integrity=integrity(
+                provenance["hostCompositionIntegrity"]
+            ),
+            source_build_plan_integrity=integrity(
+                provenance["sourceBuildPlanIntegrity"]
+            ),
+            product_declaration_integrity=integrity(
+                provenance["productDeclarationIntegrity"]
+            ),
+        ),
+        modules=tuple(modules),
+        integrity=integrity(data["integrity"]),
+    )
+
+
+def verify_published_package_artifact_generation(
+    generation_root: Any,
+    expected_generation_id: Any,
+    validators: contracts.ContractValidators,
+) -> PackageArtifactGenerationVerificationResult:
+    """Reconstruct and deeply verify one artifact generation from disk only."""
+
+    try:
+        if not isinstance(generation_root, Path):
+            _raise(
+                "artifact.generation.request-invalid",
+                "/package",
+                "artifact generation root must use an explicit pathlib.Path",
+            )
+        if not isinstance(expected_generation_id, str) or not _GENERATION_ID_PATTERN.fullmatch(
+            expected_generation_id
+        ):
+            _raise(
+                "artifact.generation.request-invalid",
+                "/package",
+                "expected artifact generation ID must be sha256- followed by 64 lowercase hex digits",
+            )
+
+        root = _inspect_existing_directory(generation_root, "artifact generation")
+        if root.name != expected_generation_id:
+            _raise(
+                "artifact.generation.path-mismatch",
+                "/package",
+                "artifact generation directory name does not match the expected generation ID",
+            )
+
+        files, _ = _scan_regular_tree(root, code_prefix="artifact.generation")
+        manifest_suffix = f"/{contracts.PACKAGE_ARTIFACT_MANIFEST_NAME}"
+        manifest_paths = sorted(
+            (
+                relative
+                for relative in files
+                if relative.startswith(f"{_PACKAGES_DIRECTORY_NAME}/")
+                and relative.endswith(manifest_suffix)
+                and relative.count("/") == 2
+            ),
+            key=_utf8_key,
+        )
+        if not manifest_paths:
+            _raise(
+                "artifact.generation.manifest-missing",
+                "/package",
+                "artifact generation contains no package artifact manifests",
+            )
+
+        manifests: list[artifacts.PackageArtifactManifest] = []
+        manifest_diagnostics: list[contracts.Diagnostic] = []
+        for relative in manifest_paths:
+            manifest_path = root.joinpath(*relative.split("/"))
+            try:
+                with manifest_path.open("rb") as source:
+                    exact_bytes = source.read()
+                data = json.loads(exact_bytes.decode("utf-8"))
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+                _raise(
+                    "artifact.generation.manifest-invalid",
+                    "/package",
+                    f"artifact manifest '{relative}' is not readable UTF-8 JSON: {error}",
+                )
+            diagnostics = artifacts.validate_package_artifact_manifest_data(
+                data, validators
+            )
+            if diagnostics:
+                manifest_diagnostics.extend(diagnostics)
+                continue
+            manifest = _artifact_manifest_from_data(data)
+            expected_bytes = artifacts.render_package_artifact_manifest(manifest).encode(
+                "utf-8"
+            )
+            if exact_bytes != expected_bytes:
+                _raise(
+                    "artifact.generation.manifest-noncanonical",
+                    "/package",
+                    f"artifact manifest '{relative}' is not canonical exact bytes",
+                )
+            package_directory = relative.split("/")[1]
+            if package_directory != manifest.package_id:
+                _raise(
+                    "artifact.generation.manifest-path-mismatch",
+                    "/package",
+                    f"artifact manifest '{relative}' is stored under the wrong package directory",
+                )
+            manifests.append(manifest)
+
+        if manifest_diagnostics:
+            return _generation_failure(manifest_diagnostics)
+
+        canonical_manifests = tuple(
+            sorted(manifests, key=lambda value: _utf8_key(value.package_id))
+        )
+        package_ids = [manifest.package_id for manifest in canonical_manifests]
+        if len(package_ids) != len(set(package_ids)):
+            _raise(
+                "artifact.generation.package-duplicate",
+                "/package",
+                "artifact generation contains duplicate package manifests",
+            )
+        set_integrity_data = contracts.compute_bytes_integrity(
+            artifacts.render_package_artifact_manifest_set(canonical_manifests).encode(
+                "utf-8"
+            )
+        )
+        set_integrity = artifacts.IntegrityRecord(
+            set_integrity_data["algorithm"], set_integrity_data["digest"]
+        )
+        actual_generation_id = f"{set_integrity.algorithm}-{set_integrity.digest}"
+        if actual_generation_id != expected_generation_id:
+            _raise(
+                "artifact.generation.id-mismatch",
+                "/package",
+                "artifact generation manifests do not derive the expected generation ID",
+            )
+
+        _validate_generation_layout(
+            root,
+            canonical_manifests,
+            staged_fingerprints=None,
+            rehash_artifacts=True,
+        )
+        return PackageArtifactGenerationVerificationResult(
+            verified_generation=VerifiedPackageArtifactGeneration(
+                artifact_generation_id=expected_generation_id,
+                artifact_generation_path=root,
+                manifest_set_integrity=set_integrity,
+                manifests=canonical_manifests,
+            ),
+            diagnostics=(),
+        )
+    except _PublicationFailure as error:
+        return _generation_failure((error.diagnostic,))
+    except (AttributeError, KeyError, TypeError, ValueError) as error:
+        return _generation_failure(
+            (
+                _diagnostic(
+                    "artifact.generation.manifest-invalid",
+                    "/package",
+                    f"artifact generation evidence is malformed: {error}",
+                ),
+            )
+        )
+    except OSError as error:
+        return _generation_failure(
+            (
+                _diagnostic(
+                    "artifact.generation.read-failed",
+                    "/package",
+                    f"could not verify artifact generation: {error}",
+                ),
+            )
+        )
 
 
 def verify_package_artifact_publication_receipt(

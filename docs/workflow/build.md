@@ -147,6 +147,10 @@ powershell -ExecutionPolicy Bypass -File tools\count-code-lines.ps1
 - `tools/tests/test_engine_distribution_assembly.py` 覆盖 #282 assembler 的显式隔离输入、staged-byte inventory、
   receipt 深度复验、大文件流式复制、source/staging drift、single-rename publication、确定性复用、失败清理与 corrupt existing
   generation no-overwrite。assembler 不执行 CMake/Conan，不实现 installed Repair/Launcher/Activation。
+- `tools/tests/test_engine_distribution_repair_verifier.py` 覆盖 #283 的外部 expected generation trust anchor、
+  canonical Distribution Manifest bootstrap、disk-only artifact generation reconstruction、Editor/package/artifact/profile/closed-tree
+  故障注入、稳定多 finding、bounded streaming，以及成功/失败路径只读保证。verifier 不执行 repair、active selection、
+  Bootstrap/Session integration 或 Activation。
 - `tools/tests/test_package_lock_contracts.py` 覆盖 exact graph closure、source/integrity、cross-document selected-result validation、
   package tree digest 与 normalized lock writer determinism。
 - `tools/tests/test_package_resolver.py` 覆盖纯内存 candidate validation、最高兼容版本、稳定回溯、嵌套 Feature Set、

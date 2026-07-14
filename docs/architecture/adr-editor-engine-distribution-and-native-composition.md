@@ -3,7 +3,9 @@
 ## 状态
 
 Accepted architecture baseline。Engine Distribution Manifest v1、Project Manifest / Package Lock v2 与
-[Effective Session v1](adr-effective-session-v1.md) 已实现；Activation/Factory、Editor Safe Mode runtime 与完整 installer 尚未实现。
+[Effective Session v1](adr-effective-session-v1.md) 已实现；#282 已实现 immutable Distribution assembly，#283 已实现
+[Installed Distribution Repair Verifier v1](adr-installed-distribution-repair-verifier-v1.md) 的只读深度诊断。
+Activation/Factory、Editor Safe Mode runtime、repair executor、轻量启动 receipt 与完整 installer 尚未实现。
 
 Project Lock v2 已移除 `bundled` path/hash 所有权，发行 node 只引用 `engine-distribution`，并精确绑定
 `EngineGenerationId`。Effective Session 现在组合 verified Distribution、Project Lock、selected candidates 与
@@ -230,11 +232,13 @@ Package Artifact collector 可以：
   三方验证与 Ready session evidence。
 - #278 的 collector/publication 只实现 package artifact generation 证据，不能顺带确定 Editor 引导架构。
 - #282 的 Distribution Assembler 只创建新的不可变 generation；它不进入 Editor Image，也不诊断或修复 installed generation。
+- #283 的 Installed Distribution Repair Verifier 只从外部 expected generation ID 复验已安装 bytes 并报告
+  `Healthy/RepairRequired`；它不执行修复、不选择 active generation，也未接入 Editor 启动状态机。
 
 ## 后续 Slice 顺序
 
 1. #278 artifact publication、#279 Engine Distribution Manifest、#280 Project Lock v2 硬切、#281 Effective Session 与
-   #282 Distribution Assembler 已完成。
-2. 实现独立的 installed Distribution Repair Verifier 与轻量启动检查，或先冻结静态薄 composition root 的生成边界。
+   #282 Distribution Assembler、#283 Installed Distribution Repair Verifier 已完成。
+2. 独立设计轻量启动 receipt / Bootstrap adapter，或先冻结静态薄 composition root 的生成边界。
 3. 再设计 factory reference、Activation Plan 与 Host Runtime lifecycle。
 4. 只有真实链接耗时和 ABI 需求出现后，再评估 exact-build `ProjectEditorModules` 动态模块。

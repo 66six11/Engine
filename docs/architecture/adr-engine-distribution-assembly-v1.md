@@ -47,7 +47,7 @@ root/link 检查、file identity、复制后 source 复扫、staged rehash 与 c
 | 上游 build/install adapter | 生成隔离 Editor Image root、package candidates、artifact publications 与 Host Profile exact bytes | `EngineGenerationId`、final generation namespace |
 | Distribution Assembler | typed request、owned staging、staged evidence、canonical Distribution Manifest、generation commit | 编译、依赖求解、修复、active generation selection |
 | Engine Distribution Manifest | 一个已提交 generation 的 canonical inventory | source roots、命令、时间戳、mutable `current/latest` |
-| 后继 Repair Verifier | 读取已安装 generation 并生成 Repair Report | 本 Slice不实现 |
+| Installed Distribution Repair Verifier（#283） | 从外部 expected ID 只读复验已安装 generation 并生成 Health Report | 修复动作、active generation selection |
 
 Assembler 位于 build/release tool boundary，不进入 L0 Kernel，不被 Project Package Manager 调用，也不成为 Editor Image 启动依赖。
 
@@ -225,7 +225,8 @@ Editor root、candidate roots 与 artifact publication receipts。
 - #278 package artifact publication 与 #279 Distribution inventory 形成可执行、但仍分层的证据链；
 - publication 成功后消费者不会观察到半成品 generation；
 - assembler 需要两次或多次读取 payload，换取 source/staging drift detection 与 existing-generation integrity；
-- CMake install adapter、Repair Verifier、active generation pointer 与 crash-durable installer transaction 仍是独立工作。
+- #283 已在独立边界实现 Installed Distribution Repair Verifier；CMake install adapter、repair executor、active generation
+  pointer 与 crash-durable installer transaction 仍是独立工作。
 
 ## 验证
 
@@ -240,8 +241,8 @@ Editor root、candidate roots 与 artifact publication receipts。
 
 ## 后续
 
-1. Installed Distribution Repair Verifier + structured Repair Report；
+1. Installed Distribution Repair Verifier + structured Health Report 已由 #283 完成；
 2. CMake install adapter，为 Editor Image/package inputs 生成显式隔离 roots；
-3. 外部 Launcher/Installer repair executor 与 active generation selection；
+3. 外部 Launcher/Installer repair executor、轻量启动 receipt 与 active generation selection；
 4. 静态薄 composition root；
 5. Factory/Activation、Scope/Lifecycle 与 Host Runtime。

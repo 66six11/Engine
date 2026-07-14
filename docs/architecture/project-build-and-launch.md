@@ -535,7 +535,8 @@ asharia-launch --project <path> --profile standalone-game
 ### Stage A：Profile 与计划模型
 
 - Engine Distribution Manifest v1、`EngineGenerationId`、Project Manifest / Lock v2 硬切、Effective Session v1 与
-  Distribution Assembler v1 已经完成；下一步实现 installed Repair Verifier 或静态薄 composition root；
+  Distribution Assembler v1、Installed Distribution Repair Verifier v1 已经完成；下一步冻结静态薄 composition root 或
+  Bootstrap/Session adapter；
 - Effective Editor Session v1 已建立 Ready/Upgrade/Repair/SafeMode 与 exact Profile binding；轻量启动检查和实际 UI/进程状态仍待实现；
 - 冻结 `asharia.build.json` v1 的 owner、Build/Launch Profile 与 local override 规则；
 - 建立 CPU-only parser/validator、BuildPlan/BuildReport、LaunchPlan/SessionReport；
@@ -586,8 +587,8 @@ asharia-launch --project <path> --profile standalone-game
 在创建实现 Epic/Slice 前，先完成以下 ADR/设计决策：
 
 1. Engine Distribution Manifest v1、`EngineGenerationId`、Project Manifest / Lock v2、Effective Session v1 与
-   Distribution Assembler v1 已完成；
-2. installed Distribution Repair Verifier 或 generated composition root 的 target/module registration 方式；
+   Distribution Assembler v1、Installed Distribution Repair Verifier v1 已完成；
+2. generated composition root 的 target/module registration 方式，以及 verifier 到 Bootstrap/Session 的 adapter；
 3. `asharia.build.json` v1 schema、inheritance 与 local override；
 4. `asharia.stage.json` v1 与 Build/Stage fingerprint；
 5. development stage 的目录布局和原子发布；

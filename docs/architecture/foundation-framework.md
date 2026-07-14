@@ -467,7 +467,9 @@ lock/profile 尚未实现。[Package Product & Artifact Evidence v1](adr-package
 `engine-distribution` reference 绑定 exact generation。[Effective Session v1](adr-effective-session-v1.md) 已实现
 Distribution/Project/Profile 对证、状态归类与 Host Composition handoff。
 [Engine Distribution Assembly v1](adr-engine-distribution-assembly-v1.md) 已实现显式隔离输入、staged-byte inventory、深度复验和
-不可变 generation publication；installed Repair Verifier、factory contracts 与 generated Activation Plan 尚未实现；
+不可变 generation publication；[Installed Distribution Repair Verifier v1](adr-installed-distribution-repair-verifier-v1.md) 已实现
+外部 expected ID、disk-only artifact evidence、read-only installed-tree 深度复验与 `Healthy/RepairRequired` report。
+轻量启动 receipt、repair executor、factory contracts 与 generated Activation Plan 尚未实现；
 Host Runtime 不会在这些可执行合同存在前解释逻辑 IDs。
 
 ## 拒绝的替代方案

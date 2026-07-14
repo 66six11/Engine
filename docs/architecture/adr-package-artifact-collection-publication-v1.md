@@ -209,6 +209,6 @@ composition 与 Host Runtime。
 ## 后续
 
 1. Engine Distribution Manifest v1、`EngineGenerationId`、Project Lock v2 硬切与 Effective Session handoff 已完成；
-2. Distribution Assembler v1 已完成；installed Repair Verifier 与静态薄 composition root generation 仍是独立 Slice；
+2. Distribution Assembler v1 与 Installed Distribution Repair Verifier v1 已完成；repair executor、轻量启动 receipt 与静态薄 composition root generation 仍是独立 Slice；
 3. Factory/Scope/Lifecycle contracts 与 Activation Plan；
 4. 真实 prebuilt/remote acquisition 出现后再定义 signature/trust、cross-process cache lock 与 crash-durable publication。

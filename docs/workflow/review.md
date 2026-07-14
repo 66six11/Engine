@@ -68,11 +68,13 @@ package topology、package/product/artifact contracts、asset boundary、Vulkan 
 handoff 时，除全量 Python tests 外，开发中至少先运行以下 focused chain；提交前仍执行上面的完整门禁：
 
 ```powershell
-python -m unittest tools.tests.test_effective_session tools.tests.test_host_package_composition tools.tests.test_package_source_build_plan tools.tests.test_package_artifact_evidence tools.tests.test_engine_distribution_assembly
+python -m unittest tools.tests.test_effective_session tools.tests.test_host_package_composition tools.tests.test_package_source_build_plan tools.tests.test_package_artifact_evidence tools.tests.test_engine_distribution_assembly tools.tests.test_engine_distribution_repair_verifier
 ```
 
 Effective Session v1 只能产生 `Ready`、`UpgradeRequired`、`RepairRequired` 或 `SafeMode`；没有 artifact freshness 或
 current-process generation evidence 的改动不得让 composer 猜测 `PendingBuild` / `PendingRestart`。
+Installed Distribution Repair Verifier v1 必须从调用方提供的 exact expected `EngineGenerationId` 开始；不能只信磁盘 manifest
+或目录名，不能在发现损坏后写回安装树，也不能把 `FatalDistributionError` 当作磁盘健康状态。
 
 开发中可先运行本地 pre-PR 提示脚本，让它按当前 diff 提示固定门禁、包级 CTest、smoke 范围和需要检查的文档：
 

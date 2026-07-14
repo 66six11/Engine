@@ -177,6 +177,8 @@ RepairRequired > UpgradeRequired > SafeMode
 
 ## 后续
 
-Distribution Assembler v1 已由 #282 完成，并保持在 build/release-tool 边界；Effective Session 仍只消费已验证的
-installed Distribution。下一步优先实现独立的 Repair Verifier 或静态薄 composition root。
+Distribution Assembler v1 已由 #282 完成，并保持在 build/release-tool 边界；
+[Installed Distribution Repair Verifier v1](adr-installed-distribution-repair-verifier-v1.md) 已由 #283 提供外部 expected
+generation trust anchor、只读深度复验、`DistributionHealthReport` 与 verified handoff，但本 Slice 尚未把它接入
+Effective Session 或 Editor 启动状态机。下一步优先冻结静态薄 composition root 或 Bootstrap/Session adapter。
 Factory/Activation、dynamic native module 与 `PendingBuild/PendingRestart` evidence 继续作为独立 Slice 设计。
