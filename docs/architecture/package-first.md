@@ -199,8 +199,10 @@ codemodel evidence 与 pure planner 边界也已实现；[Package Product & Arti
 [Engine Distribution Manifest v1](adr-engine-distribution-manifest-v1.md) 的只读发行库存、内容派生 `EngineGenerationId`、
 semantic validator 与 canonical writer 也已实现。[Effective Session v1](adr-effective-session-v1.md) 已将 Distribution、
 Project/Lock v2、selected candidates 与 exact Distribution-owned Host Profile 派生为 Ready/Upgrade/Repair/SafeMode 结果，
-并把 Host Composition / Source Build / artifact handoff 硬切到 session verified graph。上游 catalog/index、lock update/apply、
-生产 Distribution assembly、Activation Plan、生产 catalog/lockfile 与 Editor Package Manager 尚未实现。Project Manifest / Lock v2
+并把 Host Composition / Source Build / artifact handoff 硬切到 session verified graph。
+[Engine Distribution Assembly v1](adr-engine-distribution-assembly-v1.md) 已把 Editor Image、bundled candidates、artifact receipts 与
+exact Host Profiles 组装为 staged-byte-derived immutable generation。上游 catalog/index、lock update/apply、installed Repair Verifier、
+Activation Plan、生产 catalog/lockfile 与 Editor Package Manager 尚未实现。Project Manifest / Lock v2
 不保留 v1 reader 或 migration adapter。
 
 长期目标是让用户通过 Editor Package Manager 为项目添加、移除和升级**完整可安装能力**。Data、Content、World、Input、Rendering、Physics 等基础能力各自以完整 System Package 表达；Advanced Camera、Dialogue、Weather 等附加能力以完整 Feature Package 表达；跨可选包桥接使用 Integration Package。三者都不能拆成需要用户手工拼装的 contract/runtime/editor/backend fragments。

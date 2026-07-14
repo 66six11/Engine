@@ -750,6 +750,120 @@ def _cleanup_staging(path: Path) -> contracts.Diagnostic | None:
     return None
 
 
+def verify_package_artifact_publication_receipt(
+    receipt: Any,
+    validators: contracts.ContractValidators,
+) -> tuple[contracts.Diagnostic, ...]:
+    """Deeply verify one committed publication receipt without mutating it."""
+
+    try:
+        if not isinstance(receipt, PackageArtifactPublicationReceipt):
+            _raise(
+                "artifact.publication.receipt-invalid",
+                "/package",
+                "artifact publication receipt must use PackageArtifactPublicationReceipt",
+            )
+        if not isinstance(receipt.manifests, tuple) or not receipt.manifests:
+            _raise(
+                "artifact.publication.receipt-invalid",
+                "/package",
+                "artifact publication receipt manifests must be a non-empty tuple",
+            )
+        if any(
+            not isinstance(manifest, artifacts.PackageArtifactManifest)
+            for manifest in receipt.manifests
+        ):
+            _raise(
+                "artifact.publication.receipt-invalid",
+                "/package",
+                "artifact publication receipt contains an invalid manifest value",
+            )
+        canonical_manifests = tuple(
+            sorted(receipt.manifests, key=lambda value: _utf8_key(value.package_id))
+        )
+        if receipt.manifests != canonical_manifests:
+            _raise(
+                "artifact.publication.receipt-noncanonical",
+                "/package",
+                "artifact publication receipt manifests are not in canonical package order",
+            )
+        package_ids = [manifest.package_id for manifest in receipt.manifests]
+        if len(set(package_ids)) != len(package_ids):
+            _raise(
+                "artifact.publication.receipt-invalid",
+                "/package",
+                "artifact publication receipt contains duplicate package manifests",
+            )
+
+        manifest_diagnostics: list[contracts.Diagnostic] = []
+        for manifest in receipt.manifests:
+            manifest_diagnostics.extend(
+                artifacts.validate_package_artifact_manifest_data(manifest, validators)
+            )
+        if manifest_diagnostics:
+            return tuple(sorted(manifest_diagnostics, key=_diagnostic_sort_key))
+
+        expected_set_data = contracts.compute_bytes_integrity(
+            artifacts.render_package_artifact_manifest_set(
+                receipt.manifests
+            ).encode("utf-8")
+        )
+        expected_set_integrity = artifacts.IntegrityRecord(
+            expected_set_data["algorithm"], expected_set_data["digest"]
+        )
+        if receipt.manifest_set_integrity != expected_set_integrity:
+            _raise(
+                "artifact.publication.receipt-integrity-mismatch",
+                "/package",
+                "artifact publication receipt manifest-set integrity is stale",
+            )
+        expected_generation_id = (
+            f"{expected_set_integrity.algorithm}-{expected_set_integrity.digest}"
+        )
+        if receipt.artifact_generation_id != expected_generation_id:
+            _raise(
+                "artifact.publication.receipt-generation-id-mismatch",
+                "/package",
+                "artifact publication receipt generation ID is not content-derived",
+            )
+
+        generation_root = _inspect_existing_directory(
+            receipt.artifact_generation_path,
+            "artifact generation",
+        )
+        if generation_root.name != expected_generation_id:
+            _raise(
+                "artifact.publication.receipt-path-mismatch",
+                "/package",
+                "artifact publication receipt path does not end in its generation ID",
+            )
+        _validate_generation_layout(
+            generation_root,
+            receipt.manifests,
+            staged_fingerprints=None,
+            rehash_artifacts=True,
+        )
+        return ()
+    except _PublicationFailure as error:
+        return (error.diagnostic,)
+    except (AttributeError, KeyError, TypeError, ValueError) as error:
+        return (
+            _diagnostic(
+                "artifact.publication.receipt-invalid",
+                "/package",
+                f"artifact publication receipt is malformed: {error}",
+            ),
+        )
+    except OSError as error:
+        return (
+            _diagnostic(
+                "artifact.publication.receipt-read-failed",
+                "/package",
+                f"could not verify artifact publication receipt: {error}",
+            ),
+        )
+
+
 def collect_and_publish_package_artifacts(
     host_plan: Any,
     source_plan: Any,

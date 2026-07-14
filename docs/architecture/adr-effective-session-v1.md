@@ -177,5 +177,6 @@ RepairRequired > UpgradeRequired > SafeMode
 
 ## 后续
 
-Effective Session v1 完成后，优先评估 Distribution assembler/repair verification boundary 或静态薄 composition root。
+Distribution Assembler v1 已由 #282 完成，并保持在 build/release-tool 边界；Effective Session 仍只消费已验证的
+installed Distribution。下一步优先实现独立的 Repair Verifier 或静态薄 composition root。
 Factory/Activation、dynamic native module 与 `PendingBuild/PendingRestart` evidence 继续作为独立 Slice 设计。

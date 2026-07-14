@@ -11,8 +11,10 @@ Accepted and implemented for #279。
 - 内容派生的 `EngineGenerationId`；
 - synthetic fixture 与正反向 tests。
 
-Effective Session v1 与 Host Composition 输入迁移已由 #281 实现。当前尚未实现 Distribution assembler、
-installer/repair service、Factory/Activation 或 Host Runtime。
+Effective Session v1 与 Host Composition 输入迁移已由 #281 实现；
+[Engine Distribution Assembly v1](adr-engine-distribution-assembly-v1.md) 已由 #282 实现 staged-byte inventory、
+完整复验与不可变 generation publication。当前尚未实现 installed Distribution Repair Verifier、installer/launcher service、
+Factory/Activation 或 Host Runtime。
 [Project Manifest 与 Package Lock v2 硬切](adr-project-manifest-lock-v2-hard-cut.md) 已完成发行库存所有权迁移；v1
 reader/adapter/双写与 `bundled` lock source 已删除。
 
@@ -279,7 +281,7 @@ v1 继续采用独立静态 targets + 薄 composition root + 启动期注册。
 ## 后续顺序
 
 1. Effective Session v1 与 Host Composition verified graph handoff 已完成；
-2. 实现 Distribution assembler/installer verification boundary 与轻量启动状态检查；
+2. Distribution Assembler v1 已完成；下一步实现独立的 installed Distribution Repair Verifier 与轻量启动状态检查；
 3. 生成静态薄 composition root；
 4. 再定义 Factory reference、Activation Plan、Scope/Lifecycle 与 Host Runtime；
 5. 只有出现真实重链接瓶颈和 ABI 需求后，再评估 exact-build native dynamic module。
@@ -294,6 +296,7 @@ v1 继续采用独立静态 targets + 薄 composition root + 启动期注册。
 - [CMake `install()`](https://cmake.org/cmake/help/latest/command/install.html)
 - [Package Candidate 与 Lockfile v1](adr-package-candidate-lockfile-v1.md)
 - [Editor/Engine Distribution 与原生组合](adr-editor-engine-distribution-and-native-composition.md)
+- [Engine Distribution Assembly v1](adr-engine-distribution-assembly-v1.md)
 - [Effective Session v1](adr-effective-session-v1.md)
 - [Host Composition Plan v1](adr-host-composition-plan-v1.md)
 - [Source Build Plan v1](adr-source-build-plan-v1.md)

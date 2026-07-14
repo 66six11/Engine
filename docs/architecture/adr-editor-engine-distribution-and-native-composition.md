@@ -229,10 +229,12 @@ Package Artifact collector 可以：
 - Host Composition 已迁入 Effective Session 派生边界；后继 Activation/Factory 仍不得绕开 Distribution/Project/Profile
   三方验证与 Ready session evidence。
 - #278 的 collector/publication 只实现 package artifact generation 证据，不能顺带确定 Editor 引导架构。
+- #282 的 Distribution Assembler 只创建新的不可变 generation；它不进入 Editor Image，也不诊断或修复 installed generation。
 
 ## 后续 Slice 顺序
 
-1. #278 artifact publication、#279 Engine Distribution Manifest、#280 Project Lock v2 硬切与 #281 Effective Session 已完成。
-2. 实现 Distribution assembler/repair verification 与轻量启动检查，或先冻结静态薄 composition root 的生成边界。
+1. #278 artifact publication、#279 Engine Distribution Manifest、#280 Project Lock v2 硬切、#281 Effective Session 与
+   #282 Distribution Assembler 已完成。
+2. 实现独立的 installed Distribution Repair Verifier 与轻量启动检查，或先冻结静态薄 composition root 的生成边界。
 3. 再设计 factory reference、Activation Plan 与 Host Runtime lifecycle。
 4. 只有真实链接耗时和 ABI 需求出现后，再评估 exact-build `ProjectEditorModules` 动态模块。

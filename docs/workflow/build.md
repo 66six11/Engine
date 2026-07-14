@@ -144,6 +144,9 @@ powershell -ExecutionPolicy Bypass -File tools\count-code-lines.ps1
   与 normalized writer determinism/encoding。
 - `tools/tests/test_engine_distribution_contracts.py` 覆盖 closed Engine Distribution schema、内容派生
   `EngineGenerationId`、Editor/package/artifact/profile invariants、portable paths、discovery 与 canonical writer。
+- `tools/tests/test_engine_distribution_assembly.py` 覆盖 #282 assembler 的显式隔离输入、staged-byte inventory、
+  receipt 深度复验、大文件流式复制、source/staging drift、single-rename publication、确定性复用、失败清理与 corrupt existing
+  generation no-overwrite。assembler 不执行 CMake/Conan，不实现 installed Repair/Launcher/Activation。
 - `tools/tests/test_package_lock_contracts.py` 覆盖 exact graph closure、source/integrity、cross-document selected-result validation、
   package tree digest 与 normalized lock writer determinism。
 - `tools/tests/test_package_resolver.py` 覆盖纯内存 candidate validation、最高兼容版本、稳定回溯、嵌套 Feature Set、

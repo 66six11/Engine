@@ -82,6 +82,8 @@ Editor 的 Build、Build & Run、Cook、Package 和 Launch Profiles 只是这条
 generation。它不执行 Build/Stage、不替代最终 `Stage Layout`，也不是 Editor 每次启动的全量 hash gate。
 [Engine Distribution Manifest v1](adr-engine-distribution-manifest-v1.md) 已实现只读发行库存合同与内容派生
 `EngineGenerationId`；它不执行 installer/repair，也不取代项目 package lock。
+[Engine Distribution Assembly v1](adr-engine-distribution-assembly-v1.md) 已实现 build/release 侧的新 generation 组装与原子发布；
+它不等于 installed Repair、Launcher 或项目 product build。
 
 ### 4.1 流水线阶段
 
@@ -532,8 +534,8 @@ asharia-launch --project <path> --profile standalone-game
 
 ### Stage A：Profile 与计划模型
 
-- Engine Distribution Manifest v1、`EngineGenerationId`、Project Manifest / Lock v2 硬切与 Effective Session v1 已经完成；
-  下一步实现 Distribution assembler/installer verification boundary 或静态薄 composition root；
+- Engine Distribution Manifest v1、`EngineGenerationId`、Project Manifest / Lock v2 硬切、Effective Session v1 与
+  Distribution Assembler v1 已经完成；下一步实现 installed Repair Verifier 或静态薄 composition root；
 - Effective Editor Session v1 已建立 Ready/Upgrade/Repair/SafeMode 与 exact Profile binding；轻量启动检查和实际 UI/进程状态仍待实现；
 - 冻结 `asharia.build.json` v1 的 owner、Build/Launch Profile 与 local override 规则；
 - 建立 CPU-only parser/validator、BuildPlan/BuildReport、LaunchPlan/SessionReport；
@@ -583,8 +585,9 @@ asharia-launch --project <path> --profile standalone-game
 
 在创建实现 Epic/Slice 前，先完成以下 ADR/设计决策：
 
-1. Engine Distribution Manifest v1、`EngineGenerationId`、Project Manifest / Lock v2 与 Effective Session v1 已完成；
-2. Distribution assembler/repair verification 或 generated composition root 的 target/module registration 方式；
+1. Engine Distribution Manifest v1、`EngineGenerationId`、Project Manifest / Lock v2、Effective Session v1 与
+   Distribution Assembler v1 已完成；
+2. installed Distribution Repair Verifier 或 generated composition root 的 target/module registration 方式；
 3. `asharia.build.json` v1 schema、inheritance 与 local override；
 4. `asharia.stage.json` v1 与 Build/Stage fingerprint；
 5. development stage 的目录布局和原子发布；

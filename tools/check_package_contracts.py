@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import sys
 import unicodedata
@@ -3350,11 +3351,39 @@ def compute_package_tree_integrity(root: Path) -> dict[str, str]:
     digest = hashlib.sha256()
     digest.update(PACKAGE_TREE_HEADER)
     for relative_path_bytes, path in sorted(entries, key=lambda item: item[0]):
-        content = path.read_bytes()
         digest.update(len(relative_path_bytes).to_bytes(8, "big"))
         digest.update(relative_path_bytes)
-        digest.update(len(content).to_bytes(8, "big"))
-        digest.update(content)
+        with path.open("rb") as payload:
+            status_before = os.fstat(payload.fileno())
+            digest.update(status_before.st_size.to_bytes(8, "big"))
+            size = 0
+            while chunk := payload.read(1024 * 1024):
+                size += len(chunk)
+                digest.update(chunk)
+            status_after = os.fstat(payload.fileno())
+        before_identity = (
+            status_before.st_dev,
+            status_before.st_ino,
+            status_before.st_mode,
+            status_before.st_size,
+            status_before.st_mtime_ns,
+            status_before.st_ctime_ns,
+        )
+        after_identity = (
+            status_after.st_dev,
+            status_after.st_ino,
+            status_after.st_mode,
+            status_after.st_size,
+            status_after.st_mtime_ns,
+            status_after.st_ctime_ns,
+        )
+        relative_path = relative_path_bytes.decode("utf-8")
+        if before_identity != after_identity or size != status_before.st_size:
+            raise PackageTreeIntegrityError(
+                "drift",
+                relative_path,
+                f"package payload file changed while hashing: '{relative_path}'",
+            )
     return {"algorithm": "sha256", "digest": digest.hexdigest()}
 
 
