@@ -16,8 +16,11 @@ from tools.cmake_file_api import (
     compute_cmake_codemodel_snapshot_integrity,
     validate_cmake_codemodel_snapshot,
 )
+from tools.effective_session import (
+    VerifiedResolvedGraph,
+    validate_verified_resolved_graph,
+)
 from tools.package_candidates import PackageCandidate
-from tools.package_lock_verification import LockedGraphVerificationResult
 
 
 SOURCE_BUILD_PLAN_NAME = "asharia.source-build-plan.json"
@@ -428,23 +431,27 @@ def _verify_planner_inputs(
             )
         )
 
-    if not isinstance(verified_graph, LockedGraphVerificationResult):
+    if not isinstance(verified_graph, VerifiedResolvedGraph):
         diagnostics.append(
             _diagnostic(
                 "build.input.unverified",
                 "",
-                "planner requires a LockedGraphVerificationResult",
+                "planner requires an Effective Session VerifiedResolvedGraph",
             )
         )
         lock = None
         candidates: tuple[PackageCandidate, ...] = ()
-    elif not verified_graph.succeeded:
-        diagnostics.append(
+    elif graph_diagnostics := validate_verified_resolved_graph(
+        verified_graph,
+        validators,
+    ):
+        diagnostics.extend(
             _diagnostic(
-                "build.input.unverified",
-                "",
-                "locked package graph must be successfully verified",
+                diagnostic.code,
+                diagnostic.pointer,
+                diagnostic.message,
             )
+            for diagnostic in graph_diagnostics
         )
         lock = None
         candidates = ()
@@ -520,7 +527,7 @@ def _verify_planner_inputs(
             _diagnostic(
                 "build.input.unverified",
                 "/inputs/hostCompositionIntegrity",
-                "successful locked verification must provide a normalized graph",
+                "Effective Session must provide a normalized verified graph",
             )
         )
     expected_lock_integrity = contracts.compute_bytes_integrity(
@@ -534,7 +541,7 @@ def _verify_planner_inputs(
             _diagnostic(
                 "build.input.host-composition-stale",
                 "/inputs/hostCompositionIntegrity",
-                "Host Composition Plan does not match the verified locked graph",
+                "Host Composition Plan does not match the session verified graph",
             )
         )
 

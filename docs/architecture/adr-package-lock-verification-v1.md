@@ -6,10 +6,12 @@ Accepted and implemented for #274；只读、fail-closed、绝不隐式 resolve/
 `engineApiVersion` 输入、`bundled` source binding 与 Lock v1 evidence 已由
 [Project Manifest 与 Package Lock v2 硬切](adr-project-manifest-lock-v2-hard-cut.md) 取代。当前 verifier 同时验证
 Engine Distribution、Project Manifest v2 与 Project Lock v2。
+[Effective Session v1](adr-effective-session-v1.md) 现在调用该 verifier，并把成功值深拷贝为带 fingerprints 的
+`VerifiedResolvedGraph`；Host Composition/Source Build/artifact consumers 不再直接接受 `LockedGraphVerificationResult`。
 
 已有合同和实现已经能：
 
-- 从显式 bundled、project-embedded、local 来源加载不可变 `PackageCandidate` 快照；
+- 从显式 engine-distribution、project-embedded、local 来源加载不可变 `PackageCandidate` 快照；
 - 把调用方提供的 candidates 确定性求解为 canonical exact lock graph；
 - 验证 lock-local graph、Project/author-manifest cross-document 语义；
 - 重新读取 package root 并验证 author-manifest exact bytes 与 canonical payload tree integrity。

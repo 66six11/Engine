@@ -353,11 +353,13 @@ Dedicated Server Profile 跳过 window/render/audio；Tool Profile 可以跳过 
 Editor project-open bootstrap 分为固定 Image 启动和项目会话派生：
 
 1. Project Manager 或 CLI 用 argument vector 启动固定 Editor Image，并创建 open-session/crash metadata；
-2. Editor Image 初始化最小 platform、logging、UI Shell、package diagnostics、Package Manager、Build/Repair 与 Safe Mode；这些能力不等待项目 graph；
+2. Editor Image 初始化 L0 Kernel、固定 Package/Host Runtime、最小 platform、logging、UI Shell、package diagnostics、
+   Package Manager、Build/Repair 与 Safe Mode；这些能力不等待项目 graph，UI backend 失败时降级到 OS-native dialog/console/log；
 3. 读取只读 `asharia.engine-distribution.json`，绑定 exact `EngineGenerationId`；边界信号异常或显式 Verify/Repair 时完整复验发行 bytes，Image 本身损坏由外部 launcher/installer 修复；
 4. 定位并验证 `asharia.project.json`，再读取项目 package manifest/lock；项目不得覆盖 Bootstrap/核心 distribution nodes；
-5. 分别验证 Engine Distribution、Project Lock 与 Editor Host Profile，并派生 Effective Session Plan，得到 `Ready`、
-   `PendingBuild`、`PendingRestart`、`RepairRequired`、`UpgradeRequired` 或 `SafeMode`；不重新求解、保存第三个 lock 或静默覆盖 bundled inventory；
+5. 分别验证 Engine Distribution、Project Lock 与 Editor Host Profile，并派生 Effective Session Plan；当前 v1 实际得到
+   `Ready`、`RepairRequired`、`UpgradeRequired` 或 `SafeMode`，不重新求解、保存第三个 lock 或静默覆盖 bundled inventory；
+   `PendingBuild` / `PendingRestart` 只有在后继 artifact freshness / current-process generation evidence 存在后才能产生；
 6. 只有 `Ready` 才激活项目 Editor-compatible modules/contributions 并打开项目 catalog/cache/watchers；
 7. 恢复 workspace 和 documents；用户本地 workspace failure 不得破坏项目事实；
 8. 发布结构化 session state；完整项目会话发布 `ProjectReady`，其他状态仍保留基础 UI、diagnostics、Package Manager 与
@@ -530,8 +532,9 @@ asharia-launch --project <path> --profile standalone-game
 
 ### Stage A：Profile 与计划模型
 
-- Engine Distribution Manifest v1、`EngineGenerationId` 与 Project Manifest / Lock v2 硬切已经完成；下一步建立 Effective Session，再实现 Distribution assembler/installer verification boundary；
-- 建立 Effective Editor Session Plan 状态机和轻量启动验证，禁止把它持久化为第三个 lock；
+- Engine Distribution Manifest v1、`EngineGenerationId`、Project Manifest / Lock v2 硬切与 Effective Session v1 已经完成；
+  下一步实现 Distribution assembler/installer verification boundary 或静态薄 composition root；
+- Effective Editor Session v1 已建立 Ready/Upgrade/Repair/SafeMode 与 exact Profile binding；轻量启动检查和实际 UI/进程状态仍待实现；
 - 冻结 `asharia.build.json` v1 的 owner、Build/Launch Profile 与 local override 规则；
 - 建立 CPU-only parser/validator、BuildPlan/BuildReport、LaunchPlan/SessionReport；
 - 先以当前仓库 preset 和 sample/runtime host 作为 adapter，不改现有开发者 build 入口。
@@ -580,14 +583,13 @@ asharia-launch --project <path> --profile standalone-game
 
 在创建实现 Epic/Slice 前，先完成以下 ADR/设计决策：
 
-1. Engine Distribution Manifest v1、`EngineGenerationId` 与 Project Manifest / Lock v2 已完成；
-2. Effective Session Plan 状态和 Host Composition 输入迁移；
+1. Engine Distribution Manifest v1、`EngineGenerationId`、Project Manifest / Lock v2 与 Effective Session v1 已完成；
+2. Distribution assembler/repair verification 或 generated composition root 的 target/module registration 方式；
 3. `asharia.build.json` v1 schema、inheritance 与 local override；
-4. generated composition root 的 target/module registration 方式；
-5. `asharia.stage.json` v1 与 Build/Stage fingerprint；
-6. development stage 的目录布局和原子发布；
-7. local ready/log/stop protocol；
-8. Build UI、CLI、CI 共用 service 的进程内/进程外边界。
+4. `asharia.stage.json` v1 与 Build/Stage fingerprint；
+5. development stage 的目录布局和原子发布；
+6. local ready/log/stop protocol；
+7. Build UI、CLI、CI 共用 service 的进程内/进程外边界。
 
 首个 vertical slice 应严格限制为：
 

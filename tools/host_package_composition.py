@@ -7,8 +7,12 @@ from dataclasses import dataclass
 from typing import Any, Callable, Iterable, TypeAlias
 
 from tools import check_package_contracts as contracts
+from tools.effective_session import (
+    EffectiveSessionPlan,
+    VerifiedResolvedGraph,
+    validate_ready_effective_session,
+)
 from tools.package_candidates import PackageCandidate
-from tools.package_lock_verification import LockedGraphVerificationResult
 
 
 HOST_COMPOSITION_PLAN_NAME = "asharia.host-composition-plan.json"
@@ -370,8 +374,7 @@ def _dependency_first_order(
 
 
 def _verified_snapshot(
-    verified_graph: Any,
-    project: Any,
+    session: Any,
     validators: contracts.ContractValidators,
 ) -> tuple[
     dict[str, Any] | None,
@@ -379,180 +382,27 @@ def _verified_snapshot(
     tuple[PackageCandidate, ...],
     list[contracts.Diagnostic],
 ]:
-    if not isinstance(verified_graph, LockedGraphVerificationResult):
+    if not isinstance(session, EffectiveSessionPlan):
         return None, None, (), [
             _diagnostic(
                 "plan.input.unverified",
                 "",
-                "planner requires a LockedGraphVerificationResult",
+                "planner requires one Ready EffectiveSessionPlan",
             )
         ]
-    try:
-        upstream_diagnostics = tuple(verified_graph.diagnostics)
-    except TypeError:
+    session_diagnostics = validate_ready_effective_session(session, validators)
+    if session_diagnostics:
         return None, None, (), [
             _diagnostic(
-                "plan.input.unverified",
-                "",
-                "locked verification diagnostics must be an immutable diagnostic snapshot",
+                diagnostic.code,
+                diagnostic.pointer,
+                diagnostic.message,
             )
+            for diagnostic in session_diagnostics
         ]
-    if any(
-        not isinstance(diagnostic, contracts.Diagnostic)
-        for diagnostic in upstream_diagnostics
-    ):
-        return None, None, (), [
-            _diagnostic(
-                "plan.input.unverified",
-                "",
-                "locked verification diagnostics contain an unsupported value",
-            )
-        ]
-    if upstream_diagnostics:
-        return None, None, (), list(upstream_diagnostics)
-    if verified_graph.lock is None:
-        return None, None, (), [
-            _diagnostic(
-                "plan.input.unverified",
-                "",
-                "locked verification result did not contain a reusable graph",
-            )
-        ]
-
-    try:
-        candidates = tuple(verified_graph.selected_candidates)
-    except TypeError:
-        return None, None, (), [
-            _diagnostic(
-                "plan.input.incomplete",
-                "/resolvedGraph/packages",
-                "verified candidates must be an iterable snapshot",
-            )
-        ]
-    if any(not isinstance(candidate, PackageCandidate) for candidate in candidates):
-        return None, None, (), [
-            _diagnostic(
-                "plan.input.incomplete",
-                "/resolvedGraph/packages",
-                "every verified candidate must use the shared PackageCandidate contract",
-            )
-        ]
-    if any(
-        not isinstance(candidate.identity, str)
-        or not isinstance(candidate.version, str)
-        or not isinstance(candidate.package_kind, str)
-        or not isinstance(candidate.source, dict)
-        for candidate in candidates
-    ):
-        return None, None, (), [
-            _diagnostic(
-                "plan.input.incomplete",
-                "/resolvedGraph/packages",
-                "verified candidate metadata must be a complete package identity snapshot",
-            )
-        ]
-
-    diagnostics = contracts.validate_manifest_data(
-        verified_graph.lock,
-        contracts.PACKAGE_LOCK_NAME,
-        validators,
-    )
-    diagnostics.extend(
-        contracts.validate_manifest_data(
-            project,
-            contracts.PROJECT_MANIFEST_NAME,
-            validators,
-        )
-    )
-    if diagnostics:
-        return None, None, (), diagnostics
-
-    normalized_lock = contracts.normalize_lock_manifest(verified_graph.lock)
-    if verified_graph.lock != normalized_lock:
-        return None, None, (), [
-            _diagnostic(
-                "plan.input.unverified",
-                "/resolvedGraph/packages",
-                "successful locked verification must provide a normalized exact graph",
-            )
-        ]
-    normalized_project = contracts.normalize_project_manifest(project)
-
-    ordered_candidates = tuple(
-        sorted(
-            candidates,
-            key=lambda candidate: (
-                _utf8_key(candidate.identity),
-                _utf8_key(candidate.version),
-                _utf8_key(candidate.package_kind),
-            ),
-        )
-    )
-
-    candidates_by_id: dict[str, list[PackageCandidate]] = {}
-    for candidate in ordered_candidates:
-        candidates_by_id.setdefault(candidate.identity, []).append(candidate)
-
-    binding_diagnostics: list[contracts.Diagnostic] = []
-    node_ids = {node["id"] for node in normalized_lock["nodes"]}
-    extra_ids = set(candidates_by_id) - node_ids
-    for identity in sorted(extra_ids, key=_utf8_key):
-        binding_diagnostics.append(
-            _diagnostic(
-                "plan.input.incomplete",
-                "/resolvedGraph/packages",
-                f"verified candidates contain extra package '{identity}'",
-            )
-        )
-
-    for node_index, node in enumerate(normalized_lock["nodes"]):
-        identity = node["id"]
-        matching = candidates_by_id.get(identity, [])
-        if len(matching) != 1:
-            binding_diagnostics.append(
-                _diagnostic(
-                    "plan.input.incomplete",
-                    f"/resolvedGraph/packages/{node_index}",
-                    (
-                        f"locked package '{identity}' must have exactly one verified "
-                        "candidate"
-                    ),
-                )
-            )
-            continue
-        candidate = matching[0]
-        if (
-            candidate.version != node["version"]
-            or candidate.package_kind != node["packageKind"]
-            or candidate.source != node["source"]
-            or (
-                node["source"]["kind"] != "engine-distribution"
-                and (
-                    candidate.manifest_integrity != node["manifestIntegrity"]
-                    or candidate.payload_integrity != node["payloadIntegrity"]
-                )
-            )
-        ):
-            binding_diagnostics.append(
-                _diagnostic(
-                    "plan.input.unverified",
-                    f"/resolvedGraph/packages/{node_index}",
-                    f"verified candidate evidence no longer matches '{identity}'",
-                )
-            )
-
-    if binding_diagnostics:
-        return None, None, (), binding_diagnostics
-
-    diagnostics = contracts.validate_locked_result_data(
-        normalized_lock,
-        normalized_project,
-        [candidate.manifest for candidate in ordered_candidates],
-        validators,
-    )
-    if diagnostics:
-        return None, None, (), diagnostics
-    return normalized_lock, normalized_project, ordered_candidates, []
+    graph = session.verified_graph
+    assert isinstance(graph, VerifiedResolvedGraph)
+    return graph.lock, graph.project, graph.selected_candidates, []
 
 
 def _effective_options(
@@ -572,31 +422,21 @@ def _effective_options(
 
 
 def plan_host_package_composition(
-    verified_graph: Any,
-    project: Any,
-    host_profile: Any,
+    session: Any,
     validators: contracts.ContractValidators,
 ) -> HostCompositionPlanResult:
-    """Build one canonical logical Host composition without resolving or writing."""
+    """Build one canonical logical Host composition from a Ready session."""
 
     lock, normalized_project, candidates, diagnostics = _verified_snapshot(
-        verified_graph,
-        project,
+        session,
         validators,
     )
     if diagnostics:
         return _failure(diagnostics)
     assert lock is not None
     assert normalized_project is not None
-
-    profile_diagnostics = contracts.validate_manifest_data(
-        host_profile,
-        contracts.HOST_PROFILE_NAME,
-        validators,
-    )
-    if profile_diagnostics:
-        return _failure(profile_diagnostics)
-    normalized_profile = contracts.normalize_host_profile(host_profile)
+    assert isinstance(session, EffectiveSessionPlan)
+    normalized_profile = session.host_profile
 
     projection, projection_diagnostics = contracts.select_host_profile_data(
         lock,
@@ -817,9 +657,6 @@ def plan_host_package_composition(
         )
 
     lock_bytes = contracts.render_normalized_lock_manifest(lock).encode("utf-8")
-    profile_bytes = contracts.render_normalized_host_profile(normalized_profile).encode(
-        "utf-8"
-    )
     plan = HostCompositionPlan(
         engine_api_version=lock["inputs"]["engine"]["engineApiVersion"],
         project_manifest_integrity=_integrity_record(
@@ -829,7 +666,10 @@ def plan_host_package_composition(
             contracts.compute_bytes_integrity(lock_bytes)
         ),
         host_profile_integrity=_integrity_record(
-            contracts.compute_bytes_integrity(profile_bytes)
+            {
+                "algorithm": session.host_profile_integrity.algorithm,
+                "digest": session.host_profile_integrity.digest,
+            }
         ),
         host_kind=normalized_profile["hostKind"],
         target_platform=normalized_profile["targetPlatform"],

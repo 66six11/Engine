@@ -10,7 +10,7 @@ Host Profile v1 也已按独立 ADR 实现合同/校验基线；纯内存 Packag
 求解，显式来源 Candidate Discovery v1 已实现 strict loader，Locked Graph Verification & Reuse v1 已实现只读复用边界。
 Source Build Plan v1 的 control-plane schema/reader/planner、Package Product & Artifact Evidence v1 的作者声明/纯 verifier，
 以及 #278 的显式流式 artifact collector/publication 已实现；上游 catalog/index、lock update/apply、Engine Distribution /
-Effective Session contracts、activation plan 与生产 catalog entry 仍后置。
+Project Lock v2 与 Effective Session v1 contracts 也已实现；activation plan、生产 Distribution assembly 与生产 catalog entry 仍后置。
 
 ## 背景
 

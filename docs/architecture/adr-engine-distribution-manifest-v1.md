@@ -11,7 +11,8 @@ Accepted and implemented for #279。
 - 内容派生的 `EngineGenerationId`；
 - synthetic fixture 与正反向 tests。
 
-当前尚未实现 Distribution assembler、installer/repair service、Effective Session Plan、Factory/Activation 或 Host Runtime。
+Effective Session v1 与 Host Composition 输入迁移已由 #281 实现。当前尚未实现 Distribution assembler、
+installer/repair service、Factory/Activation 或 Host Runtime。
 [Project Manifest 与 Package Lock v2 硬切](adr-project-manifest-lock-v2-hard-cut.md) 已完成发行库存所有权迁移；v1
 reader/adapter/双写与 `bundled` lock source 已删除。
 
@@ -207,9 +208,9 @@ hash 全部 bytes。项目 source mode 的每次保存不产生新的完整 Dist
 具体 wire contract 和失败语义见
 [Project Manifest 与 Package Lock v2 硬切](adr-project-manifest-lock-v2-hard-cut.md)。
 
-### 后继 Effective Session
+### 后继 Effective Session（已实现）
 
-Effective Session 必须分别验证：
+Effective Session v1 已分别验证：
 
 ```text
 Engine Distribution Manifest
@@ -218,8 +219,10 @@ Engine Distribution Manifest
 -> derived Effective Session Plan
 ```
 
-它只组合，不重新求解 packages，不写回 Distribution/Project Lock，也不成为第三套提交到项目的依赖真相。结果状态至少需要覆盖
-`Ready`、`PendingBuild`、`PendingRestart`、`RepairRequired`、`UpgradeRequired` 与 `SafeMode`，但这些状态合同不属于本 Slice。
+它只组合，不重新求解 packages，不写回 Distribution/Project Lock，也不成为第三套提交到项目的依赖真相。v1 实际产生
+`Ready`、`RepairRequired`、`UpgradeRequired` 与 `SafeMode`；`PendingBuild` / `PendingRestart` 保留为词汇但在缺少
+artifact freshness / current-process generation evidence 时不得产生。完整合同见
+[Effective Session v1](adr-effective-session-v1.md)。
 
 ## 被拒绝的方案
 
@@ -275,7 +278,7 @@ v1 继续采用独立静态 targets + 薄 composition root + 启动期注册。
 
 ## 后续顺序
 
-1. 定义 Effective Session Plan，并让 Host Composition 消费其 verified resolved graph；
+1. Effective Session v1 与 Host Composition verified graph handoff 已完成；
 2. 实现 Distribution assembler/installer verification boundary 与轻量启动状态检查；
 3. 生成静态薄 composition root；
 4. 再定义 Factory reference、Activation Plan、Scope/Lifecycle 与 Host Runtime；
@@ -291,6 +294,7 @@ v1 继续采用独立静态 targets + 薄 composition root + 启动期注册。
 - [CMake `install()`](https://cmake.org/cmake/help/latest/command/install.html)
 - [Package Candidate 与 Lockfile v1](adr-package-candidate-lockfile-v1.md)
 - [Editor/Engine Distribution 与原生组合](adr-editor-engine-distribution-and-native-composition.md)
+- [Effective Session v1](adr-effective-session-v1.md)
 - [Host Composition Plan v1](adr-host-composition-plan-v1.md)
 - [Source Build Plan v1](adr-source-build-plan-v1.md)
 - [Package Product & Artifact Evidence v1](adr-package-product-artifact-evidence-v1.md)

@@ -64,6 +64,16 @@ package topology、package/product/artifact contracts、asset boundary、Vulkan 
 脚本只产生需要人工确认的保守提示；CI 以 `--fail-on warning` 阻止 warning/error，info 不阻塞。ClangCL hosted build 使用 `--parallel 2`，避免并发 clang-tidy 超出 runner 内存。Hosted CI 不运行 GPU/window smokes；下方相关 smoke matrix
 仍是 local pre-commit gate，并且需要使用两个 standard debug presets 运行。
 
+涉及 Project Manifest/Lock、Engine Distribution、Host Profile、Effective Session、Host Composition、Source Build 或 package artifact
+handoff 时，除全量 Python tests 外，开发中至少先运行以下 focused chain；提交前仍执行上面的完整门禁：
+
+```powershell
+python -m unittest tools.tests.test_effective_session tools.tests.test_host_package_composition tools.tests.test_package_source_build_plan tools.tests.test_package_artifact_evidence
+```
+
+Effective Session v1 只能产生 `Ready`、`UpgradeRequired`、`RepairRequired` 或 `SafeMode`；没有 artifact freshness 或
+current-process generation evidence 的改动不得让 composer 猜测 `PendingBuild` / `PendingRestart`。
+
 开发中可先运行本地 pre-PR 提示脚本，让它按当前 diff 提示固定门禁、包级 CTest、smoke 范围和需要检查的文档：
 
 ```powershell

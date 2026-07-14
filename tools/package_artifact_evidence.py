@@ -12,8 +12,11 @@ from typing import Any, Iterable
 from tools import check_package_contracts as contracts
 from tools import host_package_composition as composition
 from tools import source_build_plan as source_build
+from tools.effective_session import (
+    VerifiedResolvedGraph,
+    validate_verified_resolved_graph,
+)
 from tools.package_candidates import PackageCandidate
-from tools.package_lock_verification import LockedGraphVerificationResult
 
 
 PACKAGE_ARTIFACT_MANIFEST_SCHEMA = "com.asharia.package-artifact-manifest"
@@ -464,29 +467,32 @@ def _verify_control_plane_inputs(
             source_build.validate_source_build_plan_data(source_plan, validators)
         )
 
-    if not isinstance(verified_graph, LockedGraphVerificationResult):
+    if not isinstance(verified_graph, VerifiedResolvedGraph):
         diagnostics.append(
             _diagnostic(
                 "artifact.input.verified-graph-invalid",
                 "",
-                "artifact verifier requires a LockedGraphVerificationResult",
+                "artifact verifier requires an Effective Session VerifiedResolvedGraph",
             )
         )
-    elif not verified_graph.succeeded:
-        diagnostics.append(
+    elif graph_diagnostics := validate_verified_resolved_graph(
+        verified_graph,
+        validators,
+    ):
+        diagnostics.extend(
             _diagnostic(
-                "artifact.input.verified-graph-failed",
-                "",
-                "artifact verifier requires a successful locked graph verification",
+                diagnostic.code,
+                diagnostic.pointer,
+                diagnostic.message,
             )
+            for diagnostic in graph_diagnostics
         )
 
     if diagnostics:
         return None, None, {}, diagnostics
     assert isinstance(host_plan, composition.HostCompositionPlan)
     assert isinstance(source_plan, source_build.SourceBuildPlan)
-    assert isinstance(verified_graph, LockedGraphVerificationResult)
-    assert isinstance(verified_graph.lock, dict)
+    assert isinstance(verified_graph, VerifiedResolvedGraph)
 
     lock_diagnostics = contracts.validate_manifest_data(
         verified_graph.lock,
@@ -501,7 +507,7 @@ def _verify_control_plane_inputs(
             _diagnostic(
                 "artifact.input.unverified",
                 "/provenance/sourceBuildPlanIntegrity",
-                "successful locked verification must provide a normalized graph",
+                "Effective Session must provide a normalized verified graph",
             )
         )
 

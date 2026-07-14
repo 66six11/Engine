@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import copy
+import json
 from typing import Any, Iterable
 
 from tools import check_package_contracts as contracts
+from tools.effective_session import HostProfileSnapshot
 
 
 DEFAULT_DISTRIBUTION_ID = "com.asharia.distribution.test-engine"
 DEFAULT_ENGINE_API_VERSION = "0.1.0"
+DEFAULT_EDITOR_PROFILE_PATH = "profiles/editor/asharia.host-profile.json"
 
 
 def engine_requirement(
@@ -28,6 +32,7 @@ def make_engine_distribution(
     *,
     distribution_id: str = DEFAULT_DISTRIBUTION_ID,
     engine_api_version: str = DEFAULT_ENGINE_API_VERSION,
+    host_profile_snapshots: Iterable[HostProfileSnapshot] = (),
 ) -> dict[str, Any]:
     """Build one schema-valid Distribution whose inventory owns distributed candidates."""
 
@@ -69,6 +74,26 @@ def make_engine_distribution(
             }
         )
 
+    profile_snapshots = tuple(host_profile_snapshots)
+    host_profiles = [
+        {
+            "hostKind": snapshot.manifest["hostKind"],
+            "targetPlatform": snapshot.manifest["targetPlatform"],
+            "path": snapshot.path,
+            "integrity": contracts.compute_bytes_integrity(snapshot.exact_bytes),
+        }
+        for snapshot in profile_snapshots
+    ]
+    if not host_profiles:
+        host_profiles.append(
+            {
+                "hostKind": "editor",
+                "targetPlatform": "com.asharia.platform.windows",
+                "path": DEFAULT_EDITOR_PROFILE_PATH,
+                "integrity": {"algorithm": "sha256", "digest": "4" * 64},
+            }
+        )
+
     manifest = {
         "schema": "com.asharia.engine-distribution",
         "schemaVersion": 1,
@@ -103,14 +128,21 @@ def make_engine_distribution(
         },
         "bundledPackages": bundled_packages,
         "packageArtifacts": [],
-        "hostProfiles": [
-            {
-                "hostKind": "editor",
-                "targetPlatform": "com.asharia.platform.windows",
-                "path": "profiles/editor/asharia.host-profile.json",
-                "integrity": {"algorithm": "sha256", "digest": "4" * 64},
-            }
-        ],
+        "hostProfiles": host_profiles,
     }
     manifest["engineGenerationId"] = contracts.compute_engine_generation_id(manifest)
     return manifest
+
+
+def make_host_profile_snapshot(
+    manifest: dict[str, Any],
+    *,
+    path: str = DEFAULT_EDITOR_PROFILE_PATH,
+) -> HostProfileSnapshot:
+    """Capture one exact UTF-8 Host Profile snapshot for session tests."""
+
+    captured = copy.deepcopy(manifest)
+    exact_bytes = (
+        json.dumps(captured, ensure_ascii=False, indent=2) + "\n"
+    ).encode("utf-8")
+    return HostProfileSnapshot(path=path, manifest=captured, exact_bytes=exact_bytes)

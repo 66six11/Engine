@@ -13,6 +13,7 @@ from pathlib import Path
 from unittest import mock
 
 from tools import check_package_contracts as contracts
+from tools import effective_session
 from tools import host_package_composition as composition
 from tools import package_artifact_evidence as artifacts
 from tools import package_artifact_publication as publication
@@ -26,10 +27,6 @@ from tools.cmake_file_api import (
     CMakeToolchainEvidence,
 )
 from tools.package_candidates import PackageCandidate
-from tools.package_lock_verification import (
-    LockedGraphVerificationResult,
-    verify_locked_package_graph,
-)
 from tools.tests import package_test_support
 
 
@@ -52,6 +49,14 @@ class PackageArtifactEvidenceTests(unittest.TestCase):
                 encoding="utf-8"
             )
         )
+
+    def setUp(self) -> None:
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        self.candidate_root = Path(self.temporary_directory.name) / "candidates"
+        self.candidate_index = 0
+
+    def tearDown(self) -> None:
+        self.temporary_directory.cleanup()
 
     def manifest(self) -> dict[str, object]:
         manifest = copy.deepcopy(self.manifest_template)
@@ -114,43 +119,28 @@ class PackageArtifactEvidenceTests(unittest.TestCase):
         *,
         payload_location: Path | None = None,
     ) -> PackageCandidate:
-        manifest_bytes = json.dumps(
-            manifest,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-        ).encode("utf-8")
-        descriptor_bytes = (
-            json.dumps(descriptor, ensure_ascii=False, indent=2).encode("utf-8")
-            + b"\n"
+        root = payload_location or self.candidate_root / f"candidate-{self.candidate_index}"
+        self.candidate_index += 1
+        root.mkdir(parents=True)
+        for name, value in (
+            (contracts.PACKAGE_MANIFEST_NAME, manifest),
+            (contracts.PACKAGE_SOURCE_BUILD_NAME, descriptor),
+            (contracts.PACKAGE_PRODUCTS_NAME, declaration),
+        ):
+            (root / name).write_text(
+                json.dumps(value, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+                newline="\n",
+            )
+        discovered = discovery.load_package_candidates(
+            [discovery.LocalCandidateLocation(PACKAGE_ID, root)],
+            self.validators,
         )
-        declaration_bytes = (
-            json.dumps(declaration, ensure_ascii=False, indent=2).encode("utf-8")
-            + b"\n"
+        self.assertTrue(
+            discovered.succeeded,
+            [value.render() for value in discovered.diagnostics],
         )
-        return PackageCandidate(
-            identity=PACKAGE_ID,
-            version="0.1.0",
-            package_kind="installable-capability",
-            origin=f"local:{PACKAGE_ID}",
-            source={"kind": "local", "sourceId": PACKAGE_ID},
-            manifest_integrity=contracts.compute_bytes_integrity(manifest_bytes),
-            payload_integrity=contracts.compute_bytes_integrity(
-                f"payload:{PACKAGE_ID}".encode("utf-8")
-            ),
-            manifest=manifest,
-            build_descriptor=descriptor,
-            build_descriptor_integrity=contracts.compute_bytes_integrity(
-                descriptor_bytes
-            ),
-            build_descriptor_bytes=descriptor_bytes,
-            product_declaration=declaration,
-            product_declaration_integrity=contracts.compute_bytes_integrity(
-                declaration_bytes
-            ),
-            product_declaration_bytes=declaration_bytes,
-            payload_location=payload_location or Path("synthetic") / PACKAGE_ID,
-        )
+        return discovered.candidates[0]
 
     def project(self) -> dict[str, object]:
         return {
@@ -246,7 +236,7 @@ class PackageArtifactEvidenceTests(unittest.TestCase):
     ) -> tuple[
         composition.HostCompositionPlan,
         source_build_plan.SourceBuildPlan,
-        LockedGraphVerificationResult,
+        effective_session.VerifiedResolvedGraph,
     ]:
         candidate = self.candidate(
             self.manifest(),
@@ -254,29 +244,41 @@ class PackageArtifactEvidenceTests(unittest.TestCase):
             self.product_declaration(),
         )
         project = self.project()
+        profile_snapshot = package_test_support.make_host_profile_snapshot(
+            self.editor_profile
+        )
+        distribution = package_test_support.make_engine_distribution(
+            host_profile_snapshots=[profile_snapshot]
+        )
         resolution = package_resolver.resolve_package_graph(
             project,
-            package_test_support.make_engine_distribution(),
+            distribution,
             [candidate],
             self.validators,
         )
         self.assertTrue(resolution.succeeded)
-        verified = LockedGraphVerificationResult(
-            lock=resolution.lock,
-            selected_candidates=resolution.selected_candidates,
-            diagnostics=(),
-        )
-        host_result = composition.plan_host_package_composition(
-            verified,
+        session = effective_session.plan_effective_session(
+            distribution,
             project,
-            self.editor_profile,
+            resolution.lock,
+            [candidate],
+            profile_snapshot,
+            self.validators,
+        )
+        self.assertTrue(
+            session.succeeded,
+            [item.render() for item in session.diagnostics],
+        )
+        assert session.plan is not None
+        host_result = composition.plan_host_package_composition(
+            session.plan,
             self.validators,
         )
         self.assertTrue(host_result.succeeded)
         assert host_result.plan is not None
         build_result = source_build_plan.plan_source_build(
             host_result.plan,
-            verified,
+            session.plan.verified_graph,
             self.topology(),
             self.codemodel(),
             self.validators,
@@ -286,7 +288,7 @@ class PackageArtifactEvidenceTests(unittest.TestCase):
             [item.render() for item in build_result.diagnostics],
         )
         assert build_result.plan is not None
-        return host_result.plan, build_result.plan, verified
+        return host_result.plan, build_result.plan, session.plan.verified_graph
 
     def file(
         self,
@@ -383,7 +385,7 @@ class PackageArtifactEvidenceTests(unittest.TestCase):
         self,
         host_plan: composition.HostCompositionPlan,
         source_plan: source_build_plan.SourceBuildPlan,
-        verified: LockedGraphVerificationResult,
+        verified: effective_session.VerifiedResolvedGraph,
         collection: publication.PackageArtifactCollection,
         publication_root: Path,
     ) -> publication.PackageArtifactPublicationResult:
@@ -400,7 +402,7 @@ class PackageArtifactEvidenceTests(unittest.TestCase):
         self,
         host_plan: composition.HostCompositionPlan,
         source_plan: source_build_plan.SourceBuildPlan,
-        verified: LockedGraphVerificationResult,
+        verified: effective_session.VerifiedResolvedGraph,
         observations: tuple[artifacts.ProductArtifactObservation, ...],
     ) -> artifacts.PackageArtifactVerificationResult:
         return artifacts.verify_package_artifacts(
@@ -641,7 +643,7 @@ class PackageArtifactEvidenceTests(unittest.TestCase):
         )
         self.assertFalse(declaration_result.succeeded)
         self.assertIn(
-            "artifact.product-declaration.integrity-mismatch",
+            "session.snapshot.fingerprint-mismatch",
             {item.code for item in declaration_result.diagnostics},
         )
 
@@ -1117,35 +1119,41 @@ class PackageArtifactEvidenceTests(unittest.TestCase):
             )
             self.assertTrue(discovered.succeeded)
             project = self.project()
+            profile_snapshot = package_test_support.make_host_profile_snapshot(
+                self.editor_profile
+            )
+            distribution = package_test_support.make_engine_distribution(
+                host_profile_snapshots=[profile_snapshot]
+            )
             resolution = package_resolver.resolve_package_graph(
                 project,
-                package_test_support.make_engine_distribution(),
+                distribution,
                 discovered.candidates,
                 self.validators,
             )
             self.assertTrue(resolution.succeeded)
-            verified = verify_locked_package_graph(
+            session = effective_session.plan_effective_session(
+                distribution,
                 project,
-                package_test_support.make_engine_distribution(),
                 resolution.lock,
                 discovered.candidates,
+                profile_snapshot,
                 self.validators,
             )
             self.assertTrue(
-                verified.succeeded,
-                [item.render() for item in verified.diagnostics],
+                session.succeeded,
+                [item.render() for item in session.diagnostics],
             )
+            assert session.plan is not None
             host_result = composition.plan_host_package_composition(
-                verified,
-                project,
-                self.editor_profile,
+                session.plan,
                 self.validators,
             )
             self.assertTrue(host_result.succeeded)
             assert host_result.plan is not None
             build_result = source_build_plan.plan_source_build(
                 host_result.plan,
-                verified,
+                session.plan.verified_graph,
                 self.topology(),
                 self.codemodel(),
                 self.validators,
@@ -1156,7 +1164,7 @@ class PackageArtifactEvidenceTests(unittest.TestCase):
             result = self.verify(
                 host_result.plan,
                 build_result.plan,
-                verified,
+                session.plan.verified_graph,
                 self.observations(),
             )
 

@@ -2,7 +2,7 @@
 
 ## 状态
 
-Accepted and implemented for #276。本 ADR 冻结 source build descriptor、规范化 CMake codemodel evidence 与 canonical Source Build Plan 的职责边界；closed schemas、只读 reader、pure planner、候选快照/锁定复验和 synthetic tests 已落地。后继 [Package Product & Artifact Evidence v1](adr-package-product-artifact-evidence-v1.md) 已为 #277 冻结 logical product 与 exact file evidence，[Package Artifact Collection & Publication v1](adr-package-artifact-collection-publication-v1.md) 已为 #278 实现显式流式收集与不可变 publication；但仓库仍没有生产 installable descriptors、上游 catalog/index、Engine Distribution/Effective Session 或执行 build/activation 的 adapter，因此不能据此宣称完整 Package Manager 已可供生产使用。
+Accepted and implemented for #276。本 ADR 冻结 source build descriptor、规范化 CMake codemodel evidence 与 canonical Source Build Plan 的职责边界；closed schemas、只读 reader、pure planner、候选快照/锁定复验和 synthetic tests 已落地。后继 [Package Product & Artifact Evidence v1](adr-package-product-artifact-evidence-v1.md) 已为 #277 冻结 logical product 与 exact file evidence，[Package Artifact Collection & Publication v1](adr-package-artifact-collection-publication-v1.md) 已为 #278 实现显式流式收集与不可变 publication，[Effective Session v1](adr-effective-session-v1.md) 已在 #281 将 planner 的 graph input 硬切为 `VerifiedResolvedGraph`；但仓库仍没有生产 installable descriptors、上游 catalog/index、Distribution assembly 或执行 build/activation 的 adapter，因此不能据此宣称完整 Package Manager 已可供生产使用。
 
 本文接续 [Host Composition Plan v1](adr-host-composition-plan-v1.md) 与 [Installable Package Manifest v2](adr-installable-package-manifest-v2.md)。前者已经给出某个 Host 的 exact logical packages、modules、entries、contributions 与 build-affecting options；后者已经决定 portable author manifest 不携带 CMake target、artifact 或 runtime lifecycle 细节。当前缺少的是一层经过真实 buildsystem 对证、但仍然不执行构建的 source build handoff。
 
@@ -49,7 +49,8 @@ Source build control plane 由三个独立、版本化的值对象组成：
 3. **Source Build Plan v1**：纯 planner 对证 Host Composition、verified descriptor snapshots、source topology 与 codemodel 后输出的 canonical handoff。
 
 Package Product Declaration 与 Artifact Manifest 已由 #277 的独立 ADR 实现；#278 已实现 installed/acquisition root 的本地
-collector/publication。Engine Distribution/Effective Session、factory/scope/lifecycle contract 与 Activation Plan 保持为后续独立设计。
+collector/publication。本文当时将 Engine Distribution/Effective Session、factory/scope/lifecycle contract 与 Activation Plan
+保持为后续独立设计；其中 Distribution/Effective Session 已由 #279–#281 实现。
 
 ```mermaid
 flowchart LR
@@ -496,7 +497,7 @@ schema 是 closed contract，明确拒绝：
 4. 只消费显式 reply index 的 CMake File API codemodel v2 reader，以及 machine-neutral normalization/fingerprint；
 5. 只转换 verified in-memory evidence 的 pure planner、CMake build closure、build-affecting option projection 与 stable diagnostics；
 6. malformed/stale/TOCTOU/alias/type/ownership/no-build/determinism/atomicity/immutability negative tests；
-7. synthetic Discovery → Resolve → Locked Verification → Host Composition → Source Build handoff 与当前 MSVC codemodel read-only smoke；
+7. synthetic Discovery → Resolve → Effective Session → Host Composition → Source Build handoff 与当前 MSVC codemodel read-only smoke；
 8. repository contract/test workflow 对这些 contracts 与 planner tests 的持续门禁。
 
 开发阶段优先运行受影响 Python/contract tests，避免文档或纯 planner 小改反复触发无收益的 native rebuild；最终提交前不降低既有完整门禁。
@@ -507,7 +508,8 @@ schema 是 closed contract，明确拒绝：
 
 1. **Product Declaration + Artifact publication**：#277 已绑定 logical products 与 exact file evidence；#278 已从显式
    quiescent roots 流式发布不可变 package artifact generation；ABI 与 acquired/prebuilt trust 仍后置；
-2. **Engine Distribution + Effective Session**：分离只读发行库存与 Project Lock，冻结 `EngineGenerationId`、Safe Mode 和状态；
+2. **Engine Distribution + Effective Session**：#279–#281 已分离只读发行库存与 Project Lock，冻结 `EngineGenerationId`、
+   Ready/Upgrade/Repair/SafeMode 与 verified graph handoff；Bootstrap UI/进程仍后置；
 3. **Factory / Scope / Lifecycle contract**：定义可执行 Activation Plan 所需的 entry point、scope、phase、service dependency、lease 与 rollback；
 4. **Activation Plan**：对证 Distribution、Project Host Composition 与 verified artifacts/factories，生成 Host Runtime 可消费的计划；
 5. **Host Runtime**：执行 activation/deactivation 并拥有 instance、contribution handles、lease、rollback 与 shutdown。
@@ -521,6 +523,7 @@ Source Build Plan 只为 build adapter 提供 verified roots/closure，不替代
 - [Package Candidate / Lockfile v1](adr-package-candidate-lockfile-v1.md)
 - [Package Candidate Discovery v1](adr-package-candidate-discovery-v1.md)
 - [Locked Package Graph Verification & Reuse v1](adr-package-lock-verification-v1.md)
+- [Effective Session v1](adr-effective-session-v1.md)
 - [Package Product & Artifact Evidence v1](adr-package-product-artifact-evidence-v1.md)
 - [Package-first 架构](package-first.md)
 - [Foundation Framework](foundation-framework.md)

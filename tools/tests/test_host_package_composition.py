@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import copy
-import hashlib
 import json
 import tempfile
 import unittest
@@ -11,14 +10,11 @@ from pathlib import Path
 from unittest import mock
 
 from tools import check_package_contracts as contracts
+from tools import effective_session
 from tools import host_package_composition as composition
 from tools import package_candidate_discovery as discovery
 from tools import package_resolver
 from tools.package_candidates import PackageCandidate
-from tools.package_lock_verification import (
-    LockedGraphVerificationResult,
-    verify_locked_package_graph,
-)
 from tools.tests import package_test_support
 
 
@@ -49,6 +45,13 @@ class HostPackageCompositionTests(unittest.TestCase):
                 encoding="utf-8"
             )
         )
+
+    def setUp(self) -> None:
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        self.candidate_root = Path(self.temporary_directory.name)
+
+    def tearDown(self) -> None:
+        self.temporary_directory.cleanup()
 
     def project(
         self,
@@ -117,40 +120,39 @@ class HostPackageCompositionTests(unittest.TestCase):
         return manifest
 
     def candidate(self, manifest: dict[str, object]) -> PackageCandidate:
-        manifest_bytes = json.dumps(
-            manifest,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-        ).encode("utf-8")
         identity = str(manifest["id"])
-        payload_bytes = f"payload:{identity}".encode("utf-8")
-        return PackageCandidate(
-            identity=identity,
-            version=str(manifest["version"]),
-            package_kind=str(manifest["packageKind"]),
-            origin=f"local:{identity}",
-            source={"kind": "local", "sourceId": identity},
-            manifest_integrity={
-                "algorithm": "sha256",
-                "digest": hashlib.sha256(manifest_bytes).hexdigest(),
-            },
-            payload_integrity={
-                "algorithm": "sha256",
-                "digest": hashlib.sha256(payload_bytes).hexdigest(),
-            },
-            manifest=manifest,
-            payload_location=Path("synthetic") / identity,
+        payload_root = self.candidate_root / identity
+        payload_root.mkdir(parents=True)
+        (payload_root / contracts.PACKAGE_MANIFEST_NAME).write_text(
+            json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+            newline="\n",
         )
+        discovered = discovery.load_package_candidates(
+            [discovery.LocalCandidateLocation(identity, payload_root)],
+            self.validators,
+        )
+        self.assertTrue(
+            discovered.succeeded,
+            "\n".join(value.render() for value in discovered.diagnostics),
+        )
+        return discovered.candidates[0]
 
     def verified(
         self,
         project: dict[str, object],
         candidates: list[PackageCandidate],
-    ) -> LockedGraphVerificationResult:
+        profile: dict[str, object] | None = None,
+    ) -> effective_session.EffectiveSessionPlan:
+        profile_snapshot = package_test_support.make_host_profile_snapshot(
+            profile or self.editor_profile
+        )
+        distribution = package_test_support.make_engine_distribution(
+            host_profile_snapshots=[profile_snapshot]
+        )
         resolution = package_resolver.resolve_package_graph(
             project,
-            package_test_support.make_engine_distribution(),
+            distribution,
             candidates,
             self.validators,
         )
@@ -158,22 +160,27 @@ class HostPackageCompositionTests(unittest.TestCase):
             resolution.succeeded,
             "\n".join(diagnostic.render() for diagnostic in resolution.diagnostics),
         )
-        return LockedGraphVerificationResult(
-            lock=resolution.lock,
-            selected_candidates=resolution.selected_candidates,
-            diagnostics=(),
+        session = effective_session.plan_effective_session(
+            distribution,
+            project,
+            resolution.lock,
+            candidates,
+            profile_snapshot,
+            self.validators,
         )
+        self.assertTrue(
+            session.succeeded,
+            "\n".join(diagnostic.render() for diagnostic in session.diagnostics),
+        )
+        assert session.plan is not None
+        return session.plan
 
     def plan(
         self,
-        verified: LockedGraphVerificationResult,
-        project: dict[str, object],
-        profile: dict[str, object] | None = None,
+        session: effective_session.EffectiveSessionPlan,
     ) -> composition.HostCompositionPlanResult:
         return composition.plan_host_package_composition(
-            verified,
-            project,
-            profile or self.editor_profile,
+            session,
             self.validators,
         )
 
@@ -194,7 +201,7 @@ class HostPackageCompositionTests(unittest.TestCase):
         )
         verified = self.verified(project, [self.candidate(manifest)])
 
-        result = self.plan(verified, project)
+        result = self.plan(verified)
 
         self.assertTrue(
             result.succeeded,
@@ -268,7 +275,7 @@ class HostPackageCompositionTests(unittest.TestCase):
         ]
         verified = self.verified(project, candidates)
 
-        result = self.plan(verified, project)
+        result = self.plan(verified)
 
         self.assertTrue(result.succeeded)
         assert result.plan is not None
@@ -299,9 +306,9 @@ class HostPackageCompositionTests(unittest.TestCase):
                 encoding="utf-8"
             )
         )
-        verified = self.verified(project, [self.candidate(manifest)])
+        verified = self.verified(project, [self.candidate(manifest)], profile)
 
-        result = self.plan(verified, project, profile)
+        result = self.plan(verified)
 
         self.assertTrue(result.succeeded)
         assert result.plan is not None
@@ -315,11 +322,12 @@ class HostPackageCompositionTests(unittest.TestCase):
         project = self.project(packages=[requirement(identity)])
         verified = self.verified(project, [self.candidate(self.installable(identity))])
 
-        stale = self.plan(verified, self.project())
-        incomplete = self.plan(
-            LockedGraphVerificationResult(verified.lock, (), ()),
-            project,
-        )
+        stale_session = copy.deepcopy(verified)
+        stale_session.verified_graph.project["directPackages"].clear()
+        incomplete_session = copy.deepcopy(verified)
+        incomplete_session.verified_graph.lock["nodes"].clear()
+        stale = self.plan(stale_session)
+        incomplete = self.plan(incomplete_session)
 
         self.assertIsNone(stale.plan)
         self.assertIn(
@@ -327,30 +335,32 @@ class HostPackageCompositionTests(unittest.TestCase):
             {diagnostic.code for diagnostic in stale.diagnostics},
         )
         self.assertIsNone(incomplete.plan)
-        self.assertEqual(
-            {"plan.input.incomplete"},
-            {diagnostic.code for diagnostic in incomplete.diagnostics},
+        self.assertTrue(
+            {
+                diagnostic.code
+                for diagnostic in incomplete.diagnostics
+                if diagnostic.code.startswith(("lock.", "session."))
+            }
         )
 
     def test_unsupported_and_forged_verification_results_fail_closed(self) -> None:
         project = self.project()
         unsupported = composition.plan_host_package_composition(
             object(),
-            project,
-            self.editor_profile,
             self.validators,
         )
-        forged_diagnostics = self.plan(
-            LockedGraphVerificationResult(None, (), ("not-a-diagnostic",)),
-            project,
-        )
+        forged = copy.deepcopy(self.verified(project, []))
+        forged.host_profile["hostKind"] = "runtime"
+        forged_diagnostics = self.plan(forged)
 
         self.assertIsNone(unsupported.plan)
         self.assertEqual("plan.input.unverified", unsupported.diagnostics[0].code)
         self.assertIsNone(forged_diagnostics.plan)
-        self.assertEqual(
-            "plan.input.unverified",
-            forged_diagnostics.diagnostics[0].code,
+        self.assertTrue(
+            any(
+                diagnostic.code.startswith(("session.", "profile."))
+                for diagnostic in forged_diagnostics.diagnostics
+            )
         )
 
     def test_contribution_without_selected_owner_fails_atomically(self) -> None:
@@ -358,9 +368,8 @@ class HostPackageCompositionTests(unittest.TestCase):
         manifest = self.installable(identity)
         project = self.project(packages=[requirement(identity)])
         verified = self.verified(project, [self.candidate(manifest)])
-        assert verified.lock is not None
         projection, diagnostics = contracts.select_host_profile_data(
-            verified.lock,
+            verified.verified_graph.lock,
             [manifest],
             self.editor_profile,
             self.validators,
@@ -388,7 +397,7 @@ class HostPackageCompositionTests(unittest.TestCase):
             "select_host_profile_data",
             return_value=(forged_projection, []),
         ):
-            result = self.plan(verified, project)
+            result = self.plan(verified)
 
         self.assertIsNone(result.plan)
         self.assertEqual(
@@ -423,29 +432,20 @@ class HostPackageCompositionTests(unittest.TestCase):
         ]
         project = self.project(packages=[requirement(package_id)], options=options)
         candidates = [self.candidate(package), self.candidate(dependency)]
-        verified = self.verified(project, candidates)
         reordered_project = copy.deepcopy(project)
         reordered_project["packageOptions"].reverse()
         for group in reordered_project["packageOptions"]:
             group["values"].reverse()
-        reordered_profile = copy.deepcopy(self.editor_profile)
-        reordered_profile["requiredRoles"].reverse()
-        reordered_profile["allowedRoles"].reverse()
-        reordered_profile["allowedShippingClasses"].reverse()
-        reordered_profile["grantedCapabilities"] = [
-            "com.asharia.capability.zeta",
-            "com.asharia.capability.alpha",
-        ]
-        original_profile = copy.deepcopy(reordered_profile)
-        original_profile["grantedCapabilities"].reverse()
-        reordered_verified = LockedGraphVerificationResult(
-            verified.lock,
-            tuple(reversed(verified.selected_candidates)),
-            (),
+        profile = copy.deepcopy(self.editor_profile)
+        verified = self.verified(project, candidates, profile)
+        reordered_verified = self.verified(
+            reordered_project,
+            list(reversed(candidates)),
+            profile,
         )
 
-        first = self.plan(verified, project, original_profile)
-        second = self.plan(reordered_verified, reordered_project, reordered_profile)
+        first = self.plan(verified)
+        second = self.plan(reordered_verified)
 
         self.assertTrue(first.succeeded)
         self.assertTrue(second.succeeded)
@@ -482,7 +482,7 @@ class HostPackageCompositionTests(unittest.TestCase):
                 side_effect=AssertionError("planner must not write bytes"),
             ),
         ):
-            result = self.plan(verified, project, profile)
+            result = self.plan(verified)
 
         self.assertTrue(result.succeeded)
         self.assertEqual(project_before, project)
@@ -493,7 +493,7 @@ class HostPackageCompositionTests(unittest.TestCase):
         identity = "com.asharia.system.hosted"
         project = self.project(packages=[requirement(identity)])
         verified = self.verified(project, [self.candidate(self.installable(identity))])
-        result = self.plan(verified, project)
+        result = self.plan(verified)
         self.assertTrue(result.succeeded)
         assert result.plan is not None
         data = composition.host_composition_plan_to_data(result.plan)
@@ -526,23 +526,31 @@ class HostPackageCompositionTests(unittest.TestCase):
                 self.validators,
             )
             self.assertTrue(discovered.succeeded)
+            profile_snapshot = package_test_support.make_host_profile_snapshot(
+                self.editor_profile
+            )
+            distribution = package_test_support.make_engine_distribution(
+                host_profile_snapshots=[profile_snapshot]
+            )
             resolved = package_resolver.resolve_package_graph(
                 project,
-                package_test_support.make_engine_distribution(),
+                distribution,
                 discovered.candidates,
                 self.validators,
             )
             self.assertTrue(resolved.succeeded)
-            verified = verify_locked_package_graph(
+            session = effective_session.plan_effective_session(
+                distribution,
                 project,
-                package_test_support.make_engine_distribution(),
                 resolved.lock,
                 discovered.candidates,
+                profile_snapshot,
                 self.validators,
             )
-            self.assertTrue(verified.succeeded)
+            self.assertTrue(session.succeeded)
+            assert session.plan is not None
 
-            planned = self.plan(verified, project)
+            planned = self.plan(session.plan)
 
         self.assertTrue(
             planned.succeeded,

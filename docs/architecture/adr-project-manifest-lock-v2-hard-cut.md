@@ -101,11 +101,13 @@ Locked verification 重复上述绑定，并拒绝 stale generation、stale proj
 - 更换 Engine generation 会显式使 lock 失效，不会靠重复 path/hash 猜测；
 - 日常 local/embedded 开发仍以 source payload 为当前真相；
 - 现有 v1 fixtures 和调用方必须一次性迁移，旧文件不会自动升级；
-- Host Composition、Source Build Plan 和 Artifact Evidence 在本 Slice 继续消费 verified lock graph，但改读 v2 engine input 与条件化 node evidence。
+- Host Composition、Source Build Plan 和 Artifact Evidence 在本 Slice 当时继续消费 verified lock graph；后继 #281 已将它们
+  硬切为 Effective Session / `VerifiedResolvedGraph` handoff。
 
 ## 非目标
 
-本 ADR 不定义 Effective Session、Factory/Activation、动态加载、Engine Distribution installer 或跨版本 ABI。Effective Session 在下一 Slice 中由 verified Distribution、Project Lock v2 与 Host Profile 派生。
+本 ADR 不定义 Effective Session、Factory/Activation、动态加载、Engine Distribution installer 或跨版本 ABI。后继
+[Effective Session v1](adr-effective-session-v1.md) 已由 verified Distribution、Project Lock v2 与 Host Profile 派生。
 
 ## 取代关系
 

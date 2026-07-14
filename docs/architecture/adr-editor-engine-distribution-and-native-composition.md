@@ -2,12 +2,12 @@
 
 ## 状态
 
-Accepted architecture baseline。Engine Distribution Manifest v1 与 Project Manifest / Package Lock v2 已实现；
-Effective Session Plan、Activation/Factory、Editor Safe Mode runtime 与完整 installer 尚未实现。
+Accepted architecture baseline。Engine Distribution Manifest v1、Project Manifest / Package Lock v2 与
+[Effective Session v1](adr-effective-session-v1.md) 已实现；Activation/Factory、Editor Safe Mode runtime 与完整 installer 尚未实现。
 
 Project Lock v2 已移除 `bundled` path/hash 所有权，发行 node 只引用 `engine-distribution`，并精确绑定
-`EngineGenerationId`。Host Composition 目前消费 verified Project Lock v2；下一 Slice 将由 Effective Session 组合
-verified Distribution、Project Lock 与 Host Profile，再把 resolved graph 交给 Host Composition。
+`EngineGenerationId`。Effective Session 现在组合 verified Distribution、Project Lock、selected candidates 与
+Distribution-owned exact Host Profile snapshot；Host Composition 只接受 Ready session，不再接收独立 raw Project/Profile。
 
 ## 问题
 
@@ -53,7 +53,7 @@ Package Product Declaration、Source Build Plan 与 verified Package Artifact Ma
 
 | 层 | 拥有 | 不拥有 |
 | --- | --- | --- |
-| Editor Image | Editor executable、最小窗口/UI Shell、bootstrap logging/diagnostics、Package Manager 与 Build/Repair 控制入口、Safe Mode | 当前项目 graph、可选项目 contribution、可替换的 Engine 核心 generation |
+| Editor Image | L0 Kernel、固定 Package/Host Runtime、窄 Project Bootstrap Reader、Editor executable、最小窗口/UI Shell、bootstrap logging/diagnostics、Package Manager 与 Build/Repair 控制入口、Safe Mode | 当前项目 graph、可选项目 contribution、可替换的 Engine 核心 generation |
 | Engine Distribution | `EngineGenerationId`、Editor/核心引擎 artifact 库存、随版本分发的 system packages、Host Profiles 与兼容范围 | 项目 direct intent、本地可编辑 package、会话临时状态 |
 | Project Package Graph | 项目 manifest/lock、第三方/embedded/local packages、项目对 Engine generation/capability 的要求 | Editor Bootstrap 是否存在、发行库存的 artifact bytes、核心 package 的替代实现 |
 | Effective Session Plan | 三层输入合成后的 Host module 选择、状态与后继 build/activation handoff | 新的持久依赖真相、版本求解、发行或项目事实的副本 |
@@ -65,7 +65,7 @@ flowchart TB
     Project["Project Manifest + Project Lock<br/>project-owned exact graph + engine requirement"]
     Profile["Editor Host Profile<br/>module/contribution policy"]
     Session["Effective Editor Session Plan<br/>derived, disposable"]
-    State["Ready / PendingBuild / PendingRestart<br/>RepairRequired / UpgradeRequired / SafeMode"]
+    State["Session v1: Ready / Repair / Upgrade / SafeMode<br/>Bootstrap reserved: PendingBuild / PendingRestart"]
 
     Image -->|"boots before project activation"| Session
     Distribution -->|"binds fixed engine generation"| Session
@@ -82,10 +82,21 @@ flowchart TB
 
 Editor Image 至少固定包含：
 
-- Editor 进程、基础窗口系统和最小 UI Shell；
-- `engine/package-runtime` 所需的窄 manifest/lock reader 与 diagnostics；
+- Editor 进程、L0 Kernel、基础窗口系统和最小 UI Shell；
+- headless `engine/package-runtime`：读取/验证 Distribution 与项目 package graph、绑定 exact Host Profile、派生 session；
+- `engine/host-runtime` 的固定执行骨架：拥有 Process/Editor scope、factory context、activation lease、typed contribution registry、
+  dependencies-first activation、reverse shutdown 与 rollback；Safe Mode 只管理固定 Image components；
+- 窄 Project Bootstrap Reader：定位/读取 `asharia.project.json` 与 package 文件路径，但不打开 asset database、World 或项目插件；
 - Package Manager、Build/Repair/Restart 控制入口；
-- Safe Mode 和本地 recovery 状态。
+- Safe Mode 和本地 recovery 状态；
+- UI 图形 backend 失败时仍可用的 OS-native fatal dialog 或 console/log 降级路径。
+
+`host-runtime` 固定进入 Editor Image，但它是 L1 Host Foundation，不进入 L0 Kernel。Project Bootstrap Reader 的最终 owner
+仍需独立冻结：可以是固定链接的 `project-core` 子集，也可以是独立 `project-bootstrap`；它不得并入 `package-runtime`。
+
+项目打开状态机至少保留 `NoProject`、`Opening`、`Ready`、`PendingBuild`、`PendingRestart`、`RepairRequired`、
+`UpgradeRequired`、`SafeMode` 与 `FatalDistributionError`。Effective Session v1 只产生 Ready/Repair/Upgrade/SafeMode；
+PendingBuild/Restart 分别等待 artifact freshness 与 current-process generation evidence。
 
 这些组件可以静态链接并与引擎深度集成。“可独立启动”只表示它不依赖当前项目 graph 先成功 build/activate，
 不表示 Editor 不使用引擎。若 Editor Image 本身损坏，由外部 launcher/installer 修复；项目内 Package Manager 不负责
@@ -214,15 +225,14 @@ Package Artifact collector 可以：
 
 - Editor/Engine 可以继续静态链接和深度集成，同时项目错误不再决定基础 Editor 是否存在。
 - 项目图裁剪、可复现 build 与 immutable activation evidence 保留，但 Distribution 与 Project 不再复制事实。
-- 需要新增 Engine Distribution Manifest、`EngineGenerationId`、Engine compatibility 与 Effective Session 状态合同。
-- Host Composition 仍需迁入 Effective Session 派生边界；在此之前不得实现绕开 Distribution/Project 双重验证的
-  Activation/Factory。
+- Engine Distribution Manifest、`EngineGenerationId`、Engine compatibility 与 Effective Session v1 状态合同已经落地。
+- Host Composition 已迁入 Effective Session 派生边界；后继 Activation/Factory 仍不得绕开 Distribution/Project/Profile
+  三方验证与 Ready session evidence。
 - #278 的 collector/publication 只实现 package artifact generation 证据，不能顺带确定 Editor 引导架构。
 
 ## 后续 Slice 顺序
 
-1. #278 artifact publication、#279 Engine Distribution Manifest 和 #280 Project Lock v2 硬切已经完成。
-2. 定义 Effective Editor Session Plan 状态机及 Host Composition handoff。
-3. 实现 Distribution assembler/repair verification 与轻量启动检查。
-4. 生成静态 composition root，再设计 factory reference、Activation Plan 与 Host Runtime lifecycle。
-5. 只有真实链接耗时和 ABI 需求出现后，再评估 exact-build `ProjectEditorModules` 动态模块。
+1. #278 artifact publication、#279 Engine Distribution Manifest、#280 Project Lock v2 硬切与 #281 Effective Session 已完成。
+2. 实现 Distribution assembler/repair verification 与轻量启动检查，或先冻结静态薄 composition root 的生成边界。
+3. 再设计 factory reference、Activation Plan 与 Host Runtime lifecycle。
+4. 只有真实链接耗时和 ABI 需求出现后，再评估 exact-build `ProjectEditorModules` 动态模块。

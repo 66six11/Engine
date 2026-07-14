@@ -195,7 +195,7 @@ rollback 和 lifecycle；Memory、Storage、Settings、Tasks、Data、Observabil
 5. renderer、scene、editor 之间已有契约雏形，但仍可能由 host 进行临时拼接；
 6. editor executable 承担过多领域规则，难以做 headless 测试；
 7. 当前单线程基线尚未完全显式化 owner thread、snapshot 和销毁时序；
-8. `asharia.package.json` schema v1 已把当前目录分类为不可选择的 source boundaries；installable v2、Project Manifest v2、Feature Set v2、Package Lockfile v2、五种 Host Profile v1、explicit-source Candidate Discovery、deterministic in-memory resolver、fail-closed Locked Graph Verification & Reuse、Host Composition Plan v1、Source Build Plan v1、Package Product & Artifact Evidence v1、显式流式 Artifact Collection/Publication v1，以及 Engine Distribution Manifest v1 / content-derived `EngineGenerationId` contract 已落地；Project/Lock v1 reader、adapter、双写和 `bundled` lock evidence 已删除；当前仍无上游 catalog/index、lock update/apply、生产 manifest/lock/profile/distribution assembly、Effective Session、Activation Plan 和 Editor Package Manager 闭环；
+8. `asharia.package.json` schema v1 已把当前目录分类为不可选择的 source boundaries；installable v2、Project Manifest v2、Feature Set v2、Package Lockfile v2、五种 Host Profile v1、explicit-source Candidate Discovery、deterministic in-memory resolver、fail-closed Locked Graph Verification & Reuse、Host Composition Plan v1、Source Build Plan v1、Package Product & Artifact Evidence v1、显式流式 Artifact Collection/Publication v1、Engine Distribution Manifest v1 / content-derived `EngineGenerationId` 与 Effective Session v1 已落地；Project/Lock v1 reader、adapter、双写、`bundled` lock evidence 和 Host Composition raw Project/Profile 入口已删除；当前仍无上游 catalog/index、lock update/apply、生产 manifest/lock/profile/distribution assembly、Activation Plan 和 Editor Package Manager 闭环；
 9. scripting、input、tasks、physics、animation、audio 等已进入目标 first-party system catalog，但尚未形成可由同一 package activation 模型创建和停止的完整实现；
 10. `engine/platform` 仍是空 `INTERFACE` target，应用 lifecycle 与 immutable platform capability generation 没有 runtime owner；
 11. 尚无复用的 Host scope、system factory、activation lease、typed contribution registry 和 failure rollback；
@@ -283,8 +283,8 @@ rollback 和 lifecycle；Memory、Storage、Settings、Tasks、Data、Observabil
 
 ### 6.1 Package-managed 组合模型
 
-下图是目标组合架构。resolver/lock/composition 与 Engine Distribution contract 已有 v1 基线；Effective Session、
-production build/apply 和 activation registry 仍是 planned。
+下图是目标组合架构。resolver/lock/composition、Engine Distribution 与 Effective Session 已有 v1 基线；production
+build/apply 和 activation registry 仍是 planned。
 
 ```mermaid
 flowchart LR
@@ -330,10 +330,12 @@ flowchart LR
 - Effective Session 先将 Distribution、Project Lock 与 Host Profile 对证并报告状态；Host Composition Plan 再固定逻辑
   packages/modules/entries/contributions；build plan 决定编译哪些 targets；activation plan 绑定 artifacts、factories 与
   lifecycle。Module 默认通过独立静态 CMake target 和薄 composition root 进入 v1 Host，activation 不承诺 DLL 或 hot unload。
-- native code package 的 add/remove/update 可以进入 `PendingBuild` / `PendingRestart`，不能伪装成安全热加载。
+- native code package 的 add/remove/update 未来可以在 artifact/process evidence 存在时进入 `PendingBuild` / `PendingRestart`；
+  Effective Session v1 不猜测这两个状态，也不能伪装成安全热加载。
 - 系统实例仍由对应 system owner 创建和销毁；Package Service 只提供 descriptor、factory reference 和有序 activation plan。
-- Package Runtime、最小 Editor Shell、Package Manager、diagnostics 与修复入口属于 Editor Image/Distribution，不能由项目
-  lock 或正在运行的 UI 卸载；引擎/编辑器 generation 更新与项目 package 选择是不同工作流。
+- Package Runtime、Host Runtime 执行骨架、窄 Project Bootstrap Reader、最小 Editor Shell、Package Manager、diagnostics 与
+  修复入口属于 Editor Image/Distribution，不能由项目 lock 或正在运行的 UI 卸载；Host Runtime 是 L1 而非 Kernel，
+  Project reader 的具体 owner 仍需独立冻结；引擎/编辑器 generation 更新与项目 package 选择是不同工作流。
 
 ### 6.2 核心 package 依赖方向
 
@@ -950,7 +952,7 @@ sequenceDiagram
 - 定义 `asharia.packages.json` 与 committed `asharia.packages.lock.json`；
 - 实现 headless `discover -> solve/reuse -> compose -> verify` library/CLI，第一阶段只支持 bundled/project-embedded/local sources；
 - 先输出 canonical per-host logical composition，再由独立 adapters 输出 CMake build plan 和 per-host activation plan；不实现任意 native hot load；
-- 建立 `Minimal`、`Editor`、`Runtime`、`DedicatedServer`、`AssetWorker` Host Profiles，以及 versioned Standard3D/EditorAuthoring/DedicatedServer Feature Sets；五种 Host Profile 的 v1 schema/固定策略/纯数据投影基线、Host Composition Plan v1、Source Build Plan v1、Package Product & Artifact Evidence v1、Artifact Collection/Publication v1、Engine Distribution Manifest v1 / `EngineGenerationId` 与 Project Lock v2 硬切已落地，生产 profiles/distribution assembly、Effective Session 与后继 Activation Plan 仍待后续 Slice；
+- 建立 `Minimal`、`Editor`、`Runtime`、`DedicatedServer`、`AssetWorker` Host Profiles，以及 versioned Standard3D/EditorAuthoring/DedicatedServer Feature Sets；五种 Host Profile 的 v1 schema/固定策略/纯数据投影基线、Host Composition Plan v1、Source Build Plan v1、Package Product & Artifact Evidence v1、Artifact Collection/Publication v1、Engine Distribution Manifest v1 / `EngineGenerationId`、Project Lock v2 硬切与 Effective Session v1 已落地，生产 profiles/distribution assembly 与后继 Activation Plan 仍待后续 Slice；
 - 检查全部 `PUBLIC` / `PRIVATE` / `INTERFACE` 依赖；
 - 使 optional target 的 package config 依赖保持 optional；
 - 增加禁止 include 其他 package `src/`、禁止 Vulkan 类型越层、禁止 RHI base 依赖 RG 的检查；
