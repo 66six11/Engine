@@ -28,6 +28,7 @@ except ImportError as exc:  # pragma: no cover - exercised only in an unbootstra
 PACKAGE_MANIFEST_NAME = "asharia.package.json"
 PACKAGE_SOURCE_BUILD_NAME = "asharia.package.build.json"
 PACKAGE_PRODUCTS_NAME = "asharia.package.products.json"
+PACKAGE_FACTORIES_NAME = "asharia.package.factories.json"
 PACKAGE_ARTIFACT_MANIFEST_NAME = "asharia.package.artifacts.json"
 ENGINE_DISTRIBUTION_MANIFEST_NAME = "asharia.engine-distribution.json"
 PROJECT_MANIFEST_NAME = "asharia.packages.json"
@@ -45,6 +46,7 @@ HOST_PROFILE_SCHEMA_NAME = "host-profile-v1.schema.json"
 HOST_COMPOSITION_PLAN_SCHEMA_NAME = "host-composition-plan-v1.schema.json"
 PACKAGE_SOURCE_BUILD_SCHEMA_NAME = "package-source-build-v1.schema.json"
 PACKAGE_PRODUCTS_SCHEMA_NAME = "package-products-v1.schema.json"
+PACKAGE_FACTORIES_SCHEMA_NAME = "package-factories-v1.schema.json"
 PACKAGE_ARTIFACT_MANIFEST_SCHEMA_NAME = "package-artifact-manifest-v1.schema.json"
 ENGINE_DISTRIBUTION_MANIFEST_SCHEMA_NAME = "engine-distribution-manifest-v1.schema.json"
 SOURCE_TOPOLOGY_SNAPSHOT_SCHEMA_NAME = "source-topology-snapshot-v1.schema.json"
@@ -146,6 +148,17 @@ HOST_PROFILE_POLICIES = {
         "contributionMode": "allow-compatible",
     },
 }
+FACTORY_SCOPE_ANCESTORS = {
+    "process": (),
+    "project": ("process",),
+    "editor": ("project", "process"),
+    "tool-job": ("process",),
+    "game-session": ("project", "process"),
+    "world": ("game-session", "project", "process"),
+    "local-user": ("game-session", "project", "process"),
+    "editor-document": ("editor", "project", "process"),
+    "preview": ("editor", "project", "process"),
+}
 
 
 @dataclass(frozen=True)
@@ -191,6 +204,7 @@ class ContractValidators:
     host_composition_plan: Draft202012Validator
     package_source_build: Draft202012Validator
     package_products: Draft202012Validator
+    package_factories: Draft202012Validator
     package_artifact_manifest: Draft202012Validator
     engine_distribution_manifest: Draft202012Validator
     source_topology_snapshot: Draft202012Validator
@@ -316,6 +330,7 @@ def load_contract_validators(schema_root: Path = DEFAULT_SCHEMA_ROOT) -> Contrac
         host_composition_plan=create(HOST_COMPOSITION_PLAN_SCHEMA_NAME),
         package_source_build=create(PACKAGE_SOURCE_BUILD_SCHEMA_NAME),
         package_products=create(PACKAGE_PRODUCTS_SCHEMA_NAME),
+        package_factories=create(PACKAGE_FACTORIES_SCHEMA_NAME),
         package_artifact_manifest=create(PACKAGE_ARTIFACT_MANIFEST_SCHEMA_NAME),
         engine_distribution_manifest=create(ENGINE_DISTRIBUTION_MANIFEST_SCHEMA_NAME),
         source_topology_snapshot=create(SOURCE_TOPOLOGY_SNAPSHOT_SCHEMA_NAME),
@@ -2191,6 +2206,159 @@ def _package_products_semantic_diagnostics(
     return sorted(diagnostics, key=_diagnostic_sort_key)
 
 
+def _package_factories_semantic_diagnostics(
+    declaration: dict[str, Any], declaration_path: str
+) -> list[Diagnostic]:
+    diagnostics: list[Diagnostic] = []
+    package_id = declaration["package"]["id"]
+    module_indices: dict[str, int] = {}
+    factory_locations: dict[str, tuple[int, int, dict[str, Any]]] = {}
+
+    for module_index, module in enumerate(declaration["modules"]):
+        module_id = module["moduleId"]
+        previous_module = module_indices.get(module_id)
+        if previous_module is not None:
+            diagnostics.append(
+                Diagnostic(
+                    code="factory.declaration.duplicate-module",
+                    manifest_path=declaration_path,
+                    pointer=f"/modules/{module_index}/moduleId",
+                    message=(
+                        f"logical module '{module_id}' was first declared at index "
+                        f"{previous_module}"
+                    ),
+                )
+            )
+        else:
+            module_indices[module_id] = module_index
+
+        activation = module["activation"]
+        if activation["kind"] != "factory-set":
+            continue
+        for factory_index, factory in enumerate(activation["factories"]):
+            factory_id = factory["id"]
+            previous_factory = factory_locations.get(factory_id)
+            if previous_factory is not None:
+                diagnostics.append(
+                    Diagnostic(
+                        code="factory.declaration.duplicate-factory",
+                        manifest_path=declaration_path,
+                        pointer=(
+                            f"/modules/{module_index}/activation/factories/"
+                            f"{factory_index}/id"
+                        ),
+                        message=(
+                            f"logical factory '{factory_id}' was first declared at "
+                            f"module/factory indices {previous_factory[0]}/"
+                            f"{previous_factory[1]}"
+                        ),
+                    )
+                )
+            else:
+                factory_locations[factory_id] = (
+                    module_index,
+                    factory_index,
+                    factory,
+                )
+
+    local_edges: dict[str, list[tuple[str, int]]] = {
+        factory_id: [] for factory_id in factory_locations
+    }
+    for factory_id, (module_index, factory_index, factory) in factory_locations.items():
+        owner_scope = factory["scope"]
+        allowed_required_scopes = {
+            owner_scope,
+            *FACTORY_SCOPE_ANCESTORS[owner_scope],
+        }
+        for requirement_index, requirement in enumerate(factory["requires"]):
+            if requirement["packageId"] != package_id:
+                continue
+            required_id = requirement["factoryId"]
+            pointer = (
+                f"/modules/{module_index}/activation/factories/{factory_index}/"
+                f"requires/{requirement_index}"
+            )
+            if required_id == factory_id:
+                diagnostics.append(
+                    Diagnostic(
+                        code="factory.declaration.self-dependency",
+                        manifest_path=declaration_path,
+                        pointer=pointer,
+                        message=f"factory '{factory_id}' cannot require itself",
+                    )
+                )
+                continue
+            required_location = factory_locations.get(required_id)
+            if required_location is None:
+                diagnostics.append(
+                    Diagnostic(
+                        code="factory.declaration.unknown-local-factory",
+                        manifest_path=declaration_path,
+                        pointer=pointer,
+                        message=(
+                            f"factory '{factory_id}' requires unknown local factory "
+                            f"'{required_id}'"
+                        ),
+                    )
+                )
+                continue
+            required_scope = required_location[2]["scope"]
+            if required_scope not in allowed_required_scopes:
+                diagnostics.append(
+                    Diagnostic(
+                        code="factory.declaration.scope-direction",
+                        manifest_path=declaration_path,
+                        pointer=pointer,
+                        message=(
+                            f"'{owner_scope}' factory '{factory_id}' cannot require "
+                            f"'{required_scope}' factory '{required_id}'; dependencies "
+                            "must be owned by the same scope or an ancestor scope"
+                        ),
+                    )
+                )
+            local_edges[factory_id].append((required_id, requirement_index))
+
+    state: dict[str, int] = {}
+    stack: list[str] = []
+    reported_edges: set[tuple[str, str]] = set()
+
+    def visit(factory_id: str) -> None:
+        state[factory_id] = 1
+        stack.append(factory_id)
+        module_index, factory_index, _ = factory_locations[factory_id]
+        for required_id, requirement_index in sorted(
+            local_edges[factory_id],
+            key=lambda value: value[0].encode("utf-8"),
+        ):
+            if state.get(required_id, 0) == 0:
+                visit(required_id)
+            elif (
+                state.get(required_id) == 1
+                and (factory_id, required_id) not in reported_edges
+            ):
+                cycle_start = stack.index(required_id)
+                cycle = stack[cycle_start:] + [required_id]
+                diagnostics.append(
+                    Diagnostic(
+                        code="factory.declaration.cycle",
+                        manifest_path=declaration_path,
+                        pointer=(
+                            f"/modules/{module_index}/activation/factories/"
+                            f"{factory_index}/requires/{requirement_index}"
+                        ),
+                        message=f"local factory dependency cycle: {' -> '.join(cycle)}",
+                    )
+                )
+                reported_edges.add((factory_id, required_id))
+        stack.pop()
+        state[factory_id] = 2
+
+    for factory_id in sorted(factory_locations, key=lambda value: value.encode("utf-8")):
+        if state.get(factory_id, 0) == 0:
+            visit(factory_id)
+    return sorted(diagnostics, key=_diagnostic_sort_key)
+
+
 def _package_artifact_manifest_semantic_diagnostics(
     manifest: dict[str, Any], manifest_path: str
 ) -> list[Diagnostic]:
@@ -2316,6 +2484,8 @@ def _contract_kind(manifest: Any, manifest_path: str) -> str | None:
         return "package-source-build"
     if Path(manifest_path).name == PACKAGE_PRODUCTS_NAME:
         return "package-products"
+    if Path(manifest_path).name == PACKAGE_FACTORIES_NAME:
+        return "package-factories"
     if Path(manifest_path).name == PACKAGE_ARTIFACT_MANIFEST_NAME:
         return "package-artifact-manifest"
     if Path(manifest_path).name == ENGINE_DISTRIBUTION_MANIFEST_NAME:
@@ -2338,6 +2508,8 @@ def _contract_kind(manifest: Any, manifest_path: str) -> str | None:
         return "package-source-build"
     if manifest.get("schema") == "com.asharia.package-products":
         return "package-products"
+    if manifest.get("schema") == "com.asharia.package-factories":
+        return "package-factories"
     if manifest.get("schema") == "com.asharia.package-artifact-manifest":
         return "package-artifact-manifest"
     if manifest.get("schema") == "com.asharia.engine-distribution":
@@ -2391,6 +2563,10 @@ def validate_manifest_data(
         validator = validators.package_products
         schema_code = "product.declaration.schema"
         semantic_validator = _package_products_semantic_diagnostics
+    elif kind == "package-factories":
+        validator = validators.package_factories
+        schema_code = "factory.declaration.schema"
+        semantic_validator = _package_factories_semantic_diagnostics
     elif kind == "package-artifact-manifest":
         validator = validators.package_artifact_manifest
         schema_code = "artifact.manifest.schema"
@@ -2601,6 +2777,187 @@ def validate_package_product_declaration_binding(
     return sorted(diagnostics, key=_diagnostic_sort_key)
 
 
+def validate_package_factory_declaration_binding(
+    declaration: Any,
+    author_manifest: Any,
+    validators: ContractValidators,
+    declaration_path: str = PACKAGE_FACTORIES_NAME,
+    manifest_path: str = PACKAGE_MANIFEST_NAME,
+) -> list[Diagnostic]:
+    """Validate one factory declaration and its exact author-manifest binding."""
+
+    diagnostics = validate_manifest_data(declaration, declaration_path, validators)
+    diagnostics.extend(
+        validate_manifest_data(author_manifest, manifest_path, validators)
+    )
+    if diagnostics:
+        return sorted(diagnostics, key=_diagnostic_sort_key)
+
+    assert isinstance(declaration, dict)
+    assert isinstance(author_manifest, dict)
+    if author_manifest["packageKind"] != "installable-capability":
+        return [
+            Diagnostic(
+                code="factory.declaration.unsupported-package-kind",
+                manifest_path=declaration_path,
+                pointer="/package/id",
+                message="factory declarations require an installable-capability package",
+            )
+        ]
+
+    for field, manifest_field in (("id", "id"), ("version", "version")):
+        if declaration["package"][field] != author_manifest[manifest_field]:
+            diagnostics.append(
+                Diagnostic(
+                    code=f"factory.declaration.package-{field}-mismatch",
+                    manifest_path=declaration_path,
+                    pointer=f"/package/{field}",
+                    message=(
+                        f"factory declaration package {field} "
+                        f"'{declaration['package'][field]}' does not match author "
+                        f"manifest '{author_manifest[manifest_field]}'"
+                    ),
+                )
+            )
+
+    declaration_modules = {
+        module["moduleId"] for module in declaration["modules"]
+    }
+    manifest_modules = {module["id"] for module in author_manifest["modules"]}
+    for module_id in sorted(
+        manifest_modules - declaration_modules,
+        key=lambda value: value.encode("utf-8"),
+    ):
+        diagnostics.append(
+            Diagnostic(
+                code="factory.declaration.missing-module",
+                manifest_path=declaration_path,
+                pointer="/modules",
+                message=f"author logical module '{module_id}' has no factory declaration",
+            )
+        )
+    for module_id in sorted(
+        declaration_modules - manifest_modules,
+        key=lambda value: value.encode("utf-8"),
+    ):
+        diagnostics.append(
+            Diagnostic(
+                code="factory.declaration.unknown-module",
+                manifest_path=declaration_path,
+                pointer="/modules",
+                message=f"factory declaration binds unknown logical module '{module_id}'",
+            )
+        )
+
+    package_id = author_manifest["id"]
+    direct_dependencies = {
+        dependency["id"] for dependency in author_manifest["dependencies"]
+    }
+    manifest_contributions = {
+        contribution["id"]: contribution
+        for contribution in author_manifest["contributions"]
+    }
+    claimed_contributions: dict[str, tuple[int, int, int]] = {}
+    for module_index, module in enumerate(declaration["modules"]):
+        activation = module["activation"]
+        if activation["kind"] != "factory-set":
+            continue
+        for factory_index, factory in enumerate(activation["factories"]):
+            for requirement_index, requirement in enumerate(factory["requires"]):
+                required_package = requirement["packageId"]
+                if (
+                    required_package != package_id
+                    and required_package not in direct_dependencies
+                ):
+                    diagnostics.append(
+                        Diagnostic(
+                            code="factory.declaration.undeclared-package-dependency",
+                            manifest_path=declaration_path,
+                            pointer=(
+                                f"/modules/{module_index}/activation/factories/"
+                                f"{factory_index}/requires/{requirement_index}/packageId"
+                            ),
+                            message=(
+                                f"factory '{factory['id']}' requires package "
+                                f"'{required_package}', which is not a direct author-manifest "
+                                "dependency"
+                            ),
+                        )
+                    )
+
+            for contribution_index, contribution_id in enumerate(
+                factory["contributions"]
+            ):
+                pointer = (
+                    f"/modules/{module_index}/activation/factories/{factory_index}/"
+                    f"contributions/{contribution_index}"
+                )
+                contribution = manifest_contributions.get(contribution_id)
+                if contribution is None:
+                    diagnostics.append(
+                        Diagnostic(
+                            code="factory.declaration.unknown-contribution",
+                            manifest_path=declaration_path,
+                            pointer=pointer,
+                            message=(
+                                f"factory '{factory['id']}' claims unknown contribution "
+                                f"'{contribution_id}'"
+                            ),
+                        )
+                    )
+                    continue
+                if contribution["module"] != module["moduleId"]:
+                    diagnostics.append(
+                        Diagnostic(
+                            code="factory.declaration.contribution-owner-mismatch",
+                            manifest_path=declaration_path,
+                            pointer=pointer,
+                            message=(
+                                f"contribution '{contribution_id}' belongs to module "
+                                f"'{contribution['module']}', not '{module['moduleId']}'"
+                            ),
+                        )
+                    )
+                previous_claim = claimed_contributions.get(contribution_id)
+                if previous_claim is not None:
+                    diagnostics.append(
+                        Diagnostic(
+                            code="factory.declaration.duplicate-contribution-claim",
+                            manifest_path=declaration_path,
+                            pointer=pointer,
+                            message=(
+                                f"contribution '{contribution_id}' was first claimed at "
+                                f"module/factory/contribution indices "
+                                f"{previous_claim[0]}/{previous_claim[1]}/"
+                                f"{previous_claim[2]}"
+                            ),
+                        )
+                    )
+                else:
+                    claimed_contributions[contribution_id] = (
+                        module_index,
+                        factory_index,
+                        contribution_index,
+                    )
+
+    for contribution_id in sorted(
+        set(manifest_contributions) - set(claimed_contributions),
+        key=lambda value: value.encode("utf-8"),
+    ):
+        diagnostics.append(
+            Diagnostic(
+                code="factory.declaration.unclaimed-contribution",
+                manifest_path=declaration_path,
+                pointer="/modules",
+                message=(
+                    f"author contribution '{contribution_id}' is not claimed by any "
+                    "factory"
+                ),
+            )
+        )
+    return sorted(diagnostics, key=_diagnostic_sort_key)
+
+
 def discover_contract_manifests(root: Path) -> list[Path]:
     """Discover package-runtime contracts while routing v1 source boundaries elsewhere."""
 
@@ -2609,6 +2966,7 @@ def discover_contract_manifests(root: Path) -> list[Path]:
         list(root.rglob(PACKAGE_MANIFEST_NAME))
         + list(root.rglob(PACKAGE_SOURCE_BUILD_NAME))
         + list(root.rglob(PACKAGE_PRODUCTS_NAME))
+        + list(root.rglob(PACKAGE_FACTORIES_NAME))
         + list(root.rglob(PACKAGE_ARTIFACT_MANIFEST_NAME))
         + list(root.rglob(ENGINE_DISTRIBUTION_MANIFEST_NAME))
         + list(root.rglob(PROJECT_MANIFEST_NAME))
@@ -2758,6 +3116,27 @@ def validate_manifest_files(paths: Iterable[Path], validators: ContractValidator
                 manifest_path=author_manifest_path.as_posix(),
             )
         )
+    for declaration_path, declaration in sorted(
+        (
+            (path, manifest)
+            for path, manifest in valid_contracts.items()
+            if path.name == PACKAGE_FACTORIES_NAME
+        ),
+        key=lambda item: item[0].as_posix(),
+    ):
+        author_manifest_path = declaration_path.with_name(PACKAGE_MANIFEST_NAME)
+        author_manifest = valid_contracts.get(author_manifest_path)
+        if author_manifest is None:
+            continue
+        diagnostics.extend(
+            validate_package_factory_declaration_binding(
+                declaration,
+                author_manifest,
+                validators,
+                declaration_path=declaration_path.as_posix(),
+                manifest_path=author_manifest_path.as_posix(),
+            )
+        )
     diagnostics.extend(validate_feature_set_graph(valid_feature_sets))
     return sorted(diagnostics, key=_diagnostic_sort_key)
 
@@ -2771,6 +3150,77 @@ def _normalize_version_constraint(constraint: dict[str, Any]) -> dict[str, Any]:
         "maximumExclusive": constraint["maximumExclusive"],
         "allowPrerelease": constraint["allowPrerelease"],
     }
+
+
+def normalize_package_factory_declaration(
+    declaration: dict[str, Any],
+) -> dict[str, Any]:
+    """Return the deterministic semantic representation of factory declarations."""
+
+    modules: list[dict[str, Any]] = []
+    for module in sorted(
+        declaration["modules"], key=lambda value: value["moduleId"].encode("utf-8")
+    ):
+        activation = module["activation"]
+        normalized_activation: dict[str, Any] = {"kind": activation["kind"]}
+        if activation["kind"] == "factory-set":
+            factories: list[dict[str, Any]] = []
+            for factory in sorted(
+                activation["factories"],
+                key=lambda value: value["id"].encode("utf-8"),
+            ):
+                factories.append(
+                    {
+                        "id": factory["id"],
+                        "scope": factory["scope"],
+                        "requires": sorted(
+                            (
+                                {
+                                    "packageId": requirement["packageId"],
+                                    "factoryId": requirement["factoryId"],
+                                }
+                                for requirement in factory["requires"]
+                            ),
+                            key=lambda value: (
+                                value["packageId"].encode("utf-8"),
+                                value["factoryId"].encode("utf-8"),
+                            ),
+                        ),
+                        "contributions": sorted(
+                            factory["contributions"],
+                            key=lambda value: value.encode("utf-8"),
+                        ),
+                    }
+                )
+            normalized_activation["factories"] = factories
+        modules.append(
+            {
+                "moduleId": module["moduleId"],
+                "activation": normalized_activation,
+            }
+        )
+    return {
+        "schema": "com.asharia.package-factories",
+        "schemaVersion": 1,
+        "package": {
+            "id": declaration["package"]["id"],
+            "version": declaration["package"]["version"],
+        },
+        "lifecycleModel": "create-activate-quiesce-deactivate-destroy-v1",
+        "modules": modules,
+    }
+
+
+def render_normalized_package_factory_declaration(
+    declaration: dict[str, Any],
+) -> str:
+    """Render normalized factory declaration JSON with LF and a final newline."""
+
+    return json.dumps(
+        normalize_package_factory_declaration(declaration),
+        ensure_ascii=False,
+        indent=2,
+    ) + "\n"
 
 
 def normalize_package_product_declaration(

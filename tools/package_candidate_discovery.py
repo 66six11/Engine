@@ -451,6 +451,32 @@ def _product_declaration_diagnostics(
     ]
 
 
+def _factory_declaration_diagnostics(
+    declaration: Any,
+    manifest: Any,
+    source_key: str,
+    validators: contracts.ContractValidators,
+) -> list[CandidateDiscoveryDiagnostic]:
+    diagnostics = contracts.validate_package_factory_declaration_binding(
+        declaration,
+        manifest,
+        validators,
+    )
+    return [
+        CandidateDiscoveryDiagnostic(
+            code=diagnostic.code,
+            source_key=source_key,
+            location=(
+                f"{contracts.PACKAGE_FACTORIES_NAME}{diagnostic.pointer}"
+                if diagnostic.pointer
+                else contracts.PACKAGE_FACTORIES_NAME
+            ),
+            message=diagnostic.message,
+        )
+        for diagnostic in diagnostics
+    ]
+
+
 def _read_optional_contract_bytes(path: Path) -> tuple[str, bytes | None]:
     try:
         if not path.exists():
@@ -637,6 +663,46 @@ def _load_candidate(
         assert isinstance(parsed_product_declaration, dict)
         product_declaration = parsed_product_declaration
 
+    factory_declaration_path = location.payload_root / contracts.PACKAGE_FACTORIES_NAME
+    factory_declaration_state, factory_declaration_bytes = (
+        _read_optional_contract_bytes(factory_declaration_path)
+    )
+    if factory_declaration_state == "invalid":
+        return None, [
+            CandidateDiscoveryDiagnostic(
+                code="discovery.factory-declaration.unreadable",
+                source_key=location.source_key,
+                location=contracts.PACKAGE_FACTORIES_NAME,
+                message="factory declaration must be a readable regular file",
+            )
+        ]
+
+    factory_declaration: dict[str, Any] | None = None
+    if factory_declaration_bytes is not None:
+        try:
+            parsed_factory_declaration = json.loads(
+                factory_declaration_bytes.decode("utf-8")
+            )
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return None, [
+                CandidateDiscoveryDiagnostic(
+                    code="contract.manifest.json",
+                    source_key=location.source_key,
+                    location=contracts.PACKAGE_FACTORIES_NAME,
+                    message="factory declaration must be valid UTF-8 JSON",
+                )
+            ]
+        factory_diagnostics = _factory_declaration_diagnostics(
+            parsed_factory_declaration,
+            manifest,
+            location.source_key,
+            validators,
+        )
+        if factory_diagnostics:
+            return None, factory_diagnostics
+        assert isinstance(parsed_factory_declaration, dict)
+        factory_declaration = parsed_factory_declaration
+
     manifest_integrity = contracts.compute_bytes_integrity(manifest_bytes)
     try:
         payload_integrity = contracts.compute_package_tree_integrity(location.payload_root)
@@ -697,6 +763,22 @@ def _load_candidate(
             )
         ]
 
+    final_factory_state, final_factory_bytes = _read_optional_contract_bytes(
+        factory_declaration_path
+    )
+    if (
+        final_factory_state != factory_declaration_state
+        or final_factory_bytes != factory_declaration_bytes
+    ):
+        return None, [
+            CandidateDiscoveryDiagnostic(
+                code="discovery.source.changed",
+                source_key=location.source_key,
+                location=contracts.PACKAGE_FACTORIES_NAME,
+                message="package source changed while candidate evidence was collected",
+            )
+        ]
+
     return (
         PackageCandidate(
             identity=manifest["id"],
@@ -721,6 +803,13 @@ def _load_candidate(
                 else None
             ),
             product_declaration_bytes=product_declaration_bytes,
+            factory_declaration=copy.deepcopy(factory_declaration),
+            factory_declaration_integrity=(
+                contracts.compute_bytes_integrity(factory_declaration_bytes)
+                if factory_declaration_bytes is not None
+                else None
+            ),
+            factory_declaration_bytes=factory_declaration_bytes,
             payload_location=location.payload_root,
         ),
         [],

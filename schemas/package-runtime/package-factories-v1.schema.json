@@ -1,0 +1,170 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.asharia.dev/package-runtime/package-factories-v1.schema.json",
+  "title": "Asharia Package Factory Declaration v1",
+  "description": "Portable author declaration of logical factories, owning scopes, required factories, and contribution ownership for one exact installable package.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "schemaVersion",
+    "package",
+    "lifecycleModel",
+    "modules"
+  ],
+  "properties": {
+    "schema": {
+      "const": "com.asharia.package-factories"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "package": {
+      "$ref": "#/$defs/package"
+    },
+    "lifecycleModel": {
+      "const": "create-activate-quiesce-deactivate-destroy-v1"
+    },
+    "modules": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/module"
+      }
+    }
+  },
+  "$defs": {
+    "package": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/packageId"
+        },
+        "version": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/semanticVersion"
+        }
+      }
+    },
+    "scope": {
+      "enum": [
+        "process",
+        "project",
+        "editor",
+        "tool-job",
+        "game-session",
+        "world",
+        "local-user",
+        "editor-document",
+        "preview"
+      ]
+    },
+    "factoryReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "packageId",
+        "factoryId"
+      ],
+      "properties": {
+        "packageId": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/packageId"
+        },
+        "factoryId": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/localId"
+        }
+      }
+    },
+    "factory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "scope",
+        "requires",
+        "contributions"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/localId"
+        },
+        "scope": {
+          "$ref": "#/$defs/scope"
+        },
+        "requires": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/factoryReference"
+          }
+        },
+        "contributions": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "package-contract-common-v1.schema.json#/$defs/packageId"
+          }
+        }
+      }
+    },
+    "noFactories": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "const": "no-factories"
+        }
+      }
+    },
+    "factorySet": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "factories"
+      ],
+      "properties": {
+        "kind": {
+          "const": "factory-set"
+        },
+        "factories": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/factory"
+          }
+        }
+      }
+    },
+    "module": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "moduleId",
+        "activation"
+      ],
+      "properties": {
+        "moduleId": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/localId"
+        },
+        "activation": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/noFactories"
+            },
+            {
+              "$ref": "#/$defs/factorySet"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

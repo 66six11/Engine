@@ -239,6 +239,11 @@ def _candidate_binding_data(candidate: PackageCandidate) -> dict[str, Any]:
         "productDeclarationBytesIntegrity": _optional_bytes_integrity(
             candidate.product_declaration_bytes
         ),
+        "factoryDeclaration": candidate.factory_declaration,
+        "factoryDeclarationIntegrity": candidate.factory_declaration_integrity,
+        "factoryDeclarationBytesIntegrity": _optional_bytes_integrity(
+            candidate.factory_declaration_bytes
+        ),
         "payloadLocation": location_value,
     }
 

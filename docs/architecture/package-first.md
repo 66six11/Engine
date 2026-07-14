@@ -204,6 +204,9 @@ Project/Lock v2、selected candidates 与 exact Distribution-owned Host Profile 
 exact Host Profiles 组装为 staged-byte-derived immutable generation。
 [Installed Distribution Repair Verifier v1](adr-installed-distribution-repair-verifier-v1.md) 已从外部 expected generation ID
 只读重建磁盘 artifact evidence，并完整复验 installed generation；它不修复、不选择或激活 generation。
+[Package Factory / Scope / Lifecycle Declaration v1](adr-package-factory-scope-lifecycle-v1.md) 已实现 package-local logical factory、
+owner scope、required factory 与 contribution ownership 合同，并纳入 Candidate Discovery、Locked Verification 和 Effective Session
+fingerprint；它不创建 instance，也不生成 activation order。
 上游 catalog/index、lock update/apply、repair executor、轻量启动 receipt、Activation Plan、生产 catalog/lockfile 与 Editor Package Manager 尚未实现。Project Manifest / Lock v2
 不保留 v1 reader 或 migration adapter。
 
@@ -306,6 +309,9 @@ Host Composition raw Project/Profile 入口删除；`PendingBuild` / `PendingRes
 [ADR：Installed Distribution Repair Verifier v1](adr-installed-distribution-repair-verifier-v1.md) 已为 #283 实现 trusted expected ID、
 disk-only artifact generation reconstruction、`Healthy/RepairRequired` report 与 read-only closed-tree 验证；当前尚未接入
 Effective Session 或 Editor Bootstrap。
+[ADR：Package Factory / Scope / Lifecycle Declaration v1](adr-package-factory-scope-lifecycle-v1.md) 已为 #284 实现独立
+`asharia.package.factories.json` 作者合同、local scope/dependency/contribution 语义、exact candidate snapshot 与 locked revalidation；
+它不携带 CMake target、artifact path、DLL symbol 或作者自定义 phase。
 
 ### Feature Package 不是 API 包装器
 
@@ -420,7 +426,7 @@ DAG、target owner/role、`targetDependencies` 和直接 CMake target 声明；`
 contracts 与 Host Profile v1 由 `python tools/check_package_contracts.py` 按 `schemas/package-runtime/` 中的 Draft 2020-12
 schemas、显式 discriminator dispatcher 与跨字段语义规则独立验证。
 
-当前仓库的多个物理 `asharia.package.json` 仍可能共同构成一个未来完整系统，例如 renderer、RenderGraph、Vulkan RHI、materials 和 shader tools。迁移期间这些 manifests 用于审查 source/build 边界；它们不自动获得 Package Manager 用户条目。目标 Installable Capability Package manifest 位于 `packages/systems`、`packages/features`、`packages/integrations`、`packages/asset-packs` 或 `packages/templates` 下的发行根，只描述 dependencies、logical modules、platform/host applicability、entry modules、content roots 和 contributions，并成为 `asharia.packages.json` 可直接依赖的能力身份。source-boundary 与 CMake target 的目标映射进入独立 `asharia.package.build.json`，不进入可移植 v2 作者合同。
+当前仓库的多个物理 `asharia.package.json` 仍可能共同构成一个未来完整系统，例如 renderer、RenderGraph、Vulkan RHI、materials 和 shader tools。迁移期间这些 manifests 用于审查 source/build 边界；它们不自动获得 Package Manager 用户条目。目标 Installable Capability Package manifest 位于 `packages/systems`、`packages/features`、`packages/integrations`、`packages/asset-packs` 或 `packages/templates` 下的发行根，只描述 dependencies、logical modules、platform/host applicability、entry modules、content roots 和 contributions，并成为 `asharia.packages.json` 可直接依赖的能力身份。source-boundary 与 CMake target 的目标映射进入独立 `asharia.package.build.json`，不进入可移植 v2 作者合同；logical factory、owner scope、required factory 与 contribution lease 归属进入独立 `asharia.package.factories.json`，同样不把 C++ symbol 或 artifact path 写回 installable manifest。
 
 `engine/*` 是 bootstrap component，不是用户可选能力。其 source-boundary manifest 使用
 `sourceRole: "engine-component"`，并同样保持 `selectable: false` 和 `catalogVisible: false`；Package Manager catalog 不得显示这些条目。

@@ -233,7 +233,8 @@ sequenceDiagram
 
     Image->>Image: bootstrap shell/diagnostics/repair before project activation
     Image->>Package: verify Distribution + Project Lock + Host Profile
-    Package-->>Image: Effective Session state + ordered activation plan when Ready
+    Package-->>Image: Effective Session state + verified graph when Ready
+    Note over Package,Host: future Activation Plan combines composition, artifacts, and factory declarations
     Image->>Host: create Process/Project scopes
     Host->>System: create with explicit factory context
     System-->>Host: instance + activation lease
@@ -469,7 +470,9 @@ Distribution/Project/Profile 对证、状态归类与 Host Composition handoff�
 [Engine Distribution Assembly v1](adr-engine-distribution-assembly-v1.md) 已实现显式隔离输入、staged-byte inventory、深度复验和
 不可变 generation publication；[Installed Distribution Repair Verifier v1](adr-installed-distribution-repair-verifier-v1.md) 已实现
 外部 expected ID、disk-only artifact evidence、read-only installed-tree 深度复验与 `Healthy/RepairRequired` report。
-轻量启动 receipt、repair executor、factory contracts 与 generated Activation Plan 尚未实现；
+[Package Factory / Scope / Lifecycle Declaration v1](adr-package-factory-scope-lifecycle-v1.md) 已实现 logical factory、owner scope、
+required factory、contribution ownership、exact candidate snapshot 与 locked revalidation；它仍不创建 instance 或执行 lifecycle。
+轻量启动 receipt、repair executor 与 generated Activation Plan 尚未实现；
 Host Runtime 不会在这些可执行合同存在前解释逻辑 IDs。
 
 ## 拒绝的替代方案

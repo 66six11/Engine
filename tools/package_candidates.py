@@ -24,4 +24,7 @@ class PackageCandidate:
     product_declaration: dict[str, Any] | None = None
     product_declaration_integrity: dict[str, Any] | None = None
     product_declaration_bytes: bytes | None = field(default=None, repr=False)
+    factory_declaration: dict[str, Any] | None = None
+    factory_declaration_integrity: dict[str, Any] | None = None
+    factory_declaration_bytes: bytes | None = field(default=None, repr=False)
     payload_location: Any = field(default=None, compare=False, repr=False)

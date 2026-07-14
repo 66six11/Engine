@@ -59,7 +59,7 @@ cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --pre
 
 ClangCL test gate 将 production/test translation units 的所有 clang-tidy diagnostics 作为 error。
 `.github/workflows/native-code-quality.yml` 固定在包含 Visual Studio 2022 的 `windows-2022` hosted runner 上运行 encoding、diff whitespace、
-package topology、package/product/artifact contracts、asset boundary、Vulkan package boundary/safety heuristic review、两编译器 build 和 CTest。Package topology
+package topology、package/factory/product/artifact contracts、asset boundary、Vulkan package boundary/safety heuristic review、两编译器 build 和 CTest。Package topology
 从 source-boundary manifests 生成 inventory 并对证直接 CMake target；Vulkan review
 脚本只产生需要人工确认的保守提示；CI 以 `--fail-on warning` 阻止 warning/error，info 不阻塞。ClangCL hosted build 使用 `--parallel 2`，避免并发 clang-tidy 超出 runner 内存。Hosted CI 不运行 GPU/window smokes；下方相关 smoke matrix
 仍是 local pre-commit gate，并且需要使用两个 standard debug presets 运行。
@@ -68,11 +68,13 @@ package topology、package/product/artifact contracts、asset boundary、Vulkan 
 handoff 时，除全量 Python tests 外，开发中至少先运行以下 focused chain；提交前仍执行上面的完整门禁：
 
 ```powershell
-python -m unittest tools.tests.test_effective_session tools.tests.test_host_package_composition tools.tests.test_package_source_build_plan tools.tests.test_package_artifact_evidence tools.tests.test_engine_distribution_assembly tools.tests.test_engine_distribution_repair_verifier
+python -m unittest tools.tests.test_package_factory_contracts tools.tests.test_effective_session tools.tests.test_host_package_composition tools.tests.test_package_source_build_plan tools.tests.test_package_artifact_evidence tools.tests.test_engine_distribution_assembly tools.tests.test_engine_distribution_repair_verifier
 ```
 
 Effective Session v1 只能产生 `Ready`、`UpgradeRequired`、`RepairRequired` 或 `SafeMode`；没有 artifact freshness 或
 current-process generation evidence 的改动不得让 composer 猜测 `PendingBuild` / `PendingRestart`。
+Package Factory Declaration v1 只声明 logical factory、owner scope、required factory 与 contribution ownership；不得加入
+CMake target、artifact path、DLL symbol、作者自定义 phase/lifetime，或把 module/JSON 顺序解释为 activation order。
 Installed Distribution Repair Verifier v1 必须从调用方提供的 exact expected `EngineGenerationId` 开始；不能只信磁盘 manifest
 或目录名，不能在发现损坏后写回安装树，也不能把 `FatalDistributionError` 当作磁盘健康状态。
 
