@@ -3,9 +3,9 @@
 #include <algorithm>
 #include <new>
 #include <stdexcept>
-#include <tuple>
 #include <utility>
 
+#include "static_factory_callback_table_internal.hpp"
 #include "static_factory_registration_state.hpp"
 
 namespace asharia::host_runtime {
@@ -73,7 +73,7 @@ namespace asharia::host_runtime {
 
     void
     StaticFactoryRegistrationRecorder::invokeProvider(StaticFactoryProviderContextV1 context,
-                                                      StaticFactoryProviderV1 provider) noexcept {
+                                                      StaticFactoryProviderV2 provider) noexcept {
         if (!state_) {
             return;
         }
@@ -209,7 +209,7 @@ namespace asharia::host_runtime {
         }
     }
 
-    StaticFactoryRegistrationResult<StaticFactoryRegistrationSnapshotV1>
+    StaticFactoryRegistrationResult<StaticFactoryCallbackTableV1>
     StaticFactoryRegistrationRecorder::finish() && noexcept {
         if (!state_) {
             return std::unexpected(makeStaticFactoryRegistrationError(
@@ -230,47 +230,12 @@ namespace asharia::host_runtime {
         }
 
         state.phase = StaticFactoryRegistrationState::Phase::Finished;
-        try {
-            StaticFactoryRegistrationSnapshotV1 snapshot{
-                .generationId = std::string(state.generationId),
-                .hostActivationBlueprintSha256 = std::string(state.hostActivationBlueprintSha256),
-                .registrations = {},
-            };
-            snapshot.registrations.reserve(state.observedFactoryCount);
-            const std::span<const StaticFactoryRegistrationState::FactoryObservation>
-                observedFactories =
-                    std::span<const StaticFactoryRegistrationState::FactoryObservation>{
-                        state.factories}
-                        .first(state.observedFactoryCount);
-            for (const StaticFactoryRegistrationState::FactoryObservation& factory :
-                 observedFactories) {
-                snapshot.registrations.push_back({
-                    .packageId = std::string(factory.packageId),
-                    .packageVersion = std::string(factory.packageVersion),
-                    .moduleId = std::string(factory.moduleId),
-                    .factoryId = std::string(factory.factoryId),
-                    .providerEntryPoint = std::string(factory.providerEntryPoint),
-                });
-            }
-            std::ranges::sort(snapshot.registrations, [](const StaticFactoryRegistrationV1& left,
-                                                         const StaticFactoryRegistrationV1& right) {
-                return std::tie(left.packageId, left.packageVersion, left.moduleId, left.factoryId,
-                                left.providerEntryPoint) <
-                       std::tie(right.packageId, right.packageVersion, right.moduleId,
-                                right.factoryId, right.providerEntryPoint);
-            });
-            return snapshot;
-        } catch (const std::bad_alloc&) {
-            return std::unexpected(makeStaticFactoryRegistrationError(
-                StaticFactoryRegistrationErrorCode::AllocationFailed));
-        } catch (const std::length_error&) {
-            return std::unexpected(makeStaticFactoryRegistrationError(
-                StaticFactoryRegistrationErrorCode::AllocationFailed));
-        }
+        return StaticFactoryCallbackTableBuilder::build(state);
     }
 
-    void StaticFactoryRegistrar::registerFactory(std::string_view localFactoryId) noexcept {
-        state_->registerFactory(localFactoryId);
+    void StaticFactoryRegistrar::registerFactory(std::string_view localFactoryId,
+                                                 StaticFactoryCallbacksV1 callbacks) noexcept {
+        state_->registerFactory(localFactoryId, callbacks);
     }
 
     StaticFactoryRegistrationResult<StaticFactoryRegistrationRecorder>

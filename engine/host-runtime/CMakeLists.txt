@@ -20,7 +20,24 @@ target_include_directories(asharia-host-runtime-contract
 
 asharia_configure_target(asharia-host-runtime-contract)
 
+add_library(asharia-host-runtime-provider-bridge INTERFACE)
+add_library(asharia::host_runtime_provider_bridge ALIAS
+    asharia-host-runtime-provider-bridge)
+
+target_include_directories(asharia-host-runtime-provider-bridge
+    INTERFACE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include-provider"
+)
+
+target_link_libraries(asharia-host-runtime-provider-bridge
+    INTERFACE
+        asharia::host_runtime_contract
+)
+
+asharia_configure_target(asharia-host-runtime-provider-bridge)
+
 add_library(asharia-host-runtime-registration STATIC
+    src/static_factory_callback_table.cpp
     src/static_factory_registration.cpp
     src/static_factory_registration_snapshot_json.cpp
     src/static_factory_registration_state.cpp
@@ -44,11 +61,13 @@ if(ASHARIA_BUILD_TESTS)
   enable_testing()
 
   add_executable(asharia-host-runtime-registration-tests
+      tests/static_factory_callback_table_tests.cpp
       tests/static_factory_registration_tests.cpp
   )
 
   target_link_libraries(asharia-host-runtime-registration-tests
       PRIVATE
+          asharia::host_runtime_provider_bridge
           asharia::host_runtime_registration
   )
 
@@ -57,6 +76,16 @@ if(ASHARIA_BUILD_TESTS)
   add_test(
       NAME asharia-host-runtime-registration-tests
       COMMAND asharia-host-runtime-registration-tests
+  )
+
+  add_test(
+      NAME asharia-host-runtime-valid-token-drop-tests
+      COMMAND asharia-host-runtime-registration-tests --probe-valid-token-drop
+  )
+
+  set_tests_properties(asharia-host-runtime-valid-token-drop-tests
+      PROPERTIES
+          WILL_FAIL TRUE
   )
 
   add_executable(asharia-host-runtime-registration-snapshot-json-tests

@@ -7,6 +7,11 @@ verification 边界。它消费 #287 的 immutable static-composition generation
 但不创建 factory instance，也不自行发布 #288 的
 [Host Executable Binding Receipt](adr-host-executable-binding-receipt-v1.md)；后者已作为独立 downstream publisher 实现。
 
+[Static Factory Callback Table v1](adr-static-factory-callback-table-v1.md) 已为 #291 实现 Host Template renderer revision 2：
+registration-only `main()` 从 frozen table 读取 table-owned identity snapshot，但仍不调用 lifecycle callback。schema、generator、
+build request、receipt pipeline 与 deep verifier 只接受 Template revision 2 + Composition revision 3/provider v2；旧 revision/provider
+不保留兼容路径。
+
 ## 问题
 
 现有 generated static composition root 能把 exact provider targets、generated source 和
@@ -48,8 +53,9 @@ verified static-composition generation
 | recorder 执行与 canonical JSON stdout | restricted Host verification mode | factory instance、activation lifecycle |
 | exact composition path、template path、build root、toolchain 与环境 | caller | 隐式工作目录或全盘扫描 |
 
-`engine/package-runtime`、resolver 与 Project Lock 不执行 CMake，也不启动 Host。`engine/host-runtime` 只增加 snapshot 的纯
-canonical JSON renderer；文件系统与子进程仍属于 build tooling。
+`engine/package-runtime`、resolver 与 Project Lock 不执行 CMake，也不启动 Host。`engine/host-runtime` 拥有 callback/token
+contract、provider-only bridge、recorder、frozen table、snapshot 与纯 canonical JSON renderer；文件系统与子进程仍属于 build
+tooling。
 
 ## 1. Host Template generation
 
@@ -85,7 +91,7 @@ staging directory、exact-byte re-read 和 atomic directory rename；同 generat
 
 ## 2. Restricted verification main
 
-v1 `main()` 只接受：
+renderer revision 2 的 `main()` 只接受：
 
 ```text
 --asharia-verify-static-registration
@@ -97,7 +103,8 @@ v1 `main()` 只接受：
 generated capacity
   -> create recorder
   -> generated provider calls
-  -> finish owning snapshot
+  -> finish frozen callback table
+  -> table-owned identity snapshot
   -> canonical JSON renderer
   -> exact UTF-8/LF bytes to stdout
   -> exit 0
@@ -106,8 +113,8 @@ generated capacity
 成功时 stdout 只能包含一个 canonical snapshot；stderr 必须为空。失败时不输出 partial JSON，stderr 只写稳定错误码并返回非零。
 Windows CRT stdout 采用 binary mode，避免把 canonical LF 改写为 CRLF。
 
-verification mode 不枚举 provider、不读取 manifest、不创建 callback table，也不执行
-create/activate/quiesce/deactivate/destroy。
+verification mode 不枚举 provider、不读取 manifest，也不调用 create/activate/quiesce/deactivate/destroy。它创建 callback table
+只是为了对同一次 registration 的 identity projection 取证；table 不被解释为 activation 或 `Ready`。
 
 ## 3. Final configure/build adapter
 
@@ -230,4 +237,5 @@ fixed-field bytes、无重复 registration、expected generation 与 expected Bl
 
 #288 已消费本 Slice 的 final target evidence、exact Host path 与 canonical registration snapshot，并发布
 [Host Executable Binding Receipt v1](adr-host-executable-binding-receipt-v1.md)。receipt 运行 collector-owned staged executable，
-而不是 mutable build-tree executable；具体 Host Runtime lifecycle 与 Bootstrap/Session 状态映射继续保持独立 Slice。
+而不是 mutable build-tree executable；#291 的 callback table 只改变 template source bytes/revision，不改变 receipt schema。
+Activation Eligibility、具体 Host Runtime lifecycle 与 Bootstrap/Session 状态映射继续保持独立 Slice。

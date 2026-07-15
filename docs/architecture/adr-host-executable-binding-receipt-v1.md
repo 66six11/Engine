@@ -7,6 +7,10 @@ static-composition/Host Template、同一份 CMake File API reply 中的 final t
 collector-owned staged executable bytes，以及该 staged executable 实际输出的 registration snapshot 绑定为一个
 content-addressed generation。
 
+Receipt 的 schemaVersion 仍为 1，不代表保留旧 Host 生成兼容。#291 之后，collector、binding assembly 与 deep verifier 只接受
+Template renderer 2 + Composition renderer 3/provider v2；bindings/Binding Plan v1 与 pre-current renderer/provider tuple 没有
+reader、adapter 或只读验证路径，Receipt v1 与 RegistrationSnapshot v1 仍是 active evidence schemas。
+
 名称刻意不使用 `Activation Receipt`。该 receipt 证明“这些构建输入、target 语义、可执行文件 bytes 与注册 identity
 彼此一致”，不证明任何 factory instance 已创建，也不证明 Host 已完成 activation、进入 `Ready` 或正在当前进程中加载。
 
@@ -228,7 +232,10 @@ receipt 对本地 exact bytes 的语义。
 
 ## 后续
 
-1. Host Runtime lifecycle 消费 Blueprint 与 verified binding evidence，建立 scope、factory context、activation lease、rollback 与 shutdown；
-2. Bootstrap/Session adapter 把 missing/stale/verified receipt 与 runtime outcome 映射为 `PendingBuild`、`PendingRestart`、`Ready` 或
+1. [Static Factory Callback Table v1](adr-static-factory-callback-table-v1.md)：#291 已绑定 current-process typed callbacks；table
+   与 receipt 都不单独授权调用；
+2. Activation Eligibility 先交叉验证 receipt、session 与 current process，允许 long-lived Host 调用 providers；随后再对证 table
+   snapshot，才由 Host Runtime lifecycle 建立 scope、factory context、activation lease、rollback 与 shutdown；
+3. Bootstrap/Session adapter 把 missing/stale/verified receipt 与 runtime outcome 映射为 `PendingBuild`、`PendingRestart`、`Ready` 或
    `SafeMode`；
-3. signing、trusted builder identity 与 SLSA-compatible outer attestation 仅在 release/CI threat model 明确后单独设计。
+4. signing、trusted builder identity 与 SLSA-compatible outer attestation 仅在 release/CI threat model 明确后单独设计。

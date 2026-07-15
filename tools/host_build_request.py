@@ -12,6 +12,7 @@ from typing import Any
 from tools import check_package_contracts as contracts
 from tools import host_build_publication
 from tools import host_executable_template as host_template
+from tools import host_generation_compatibility
 from tools import static_composition_root as composition
 
 
@@ -248,12 +249,12 @@ def validate_final_host_build_request(
             )
         )
     else:
-        diagnostics.extend(
+        template_diagnostics = (
             host_template.validate_windows_development_host_template_generation(
-                template_generation,
-                validators,
+                template_generation, validators
             )
         )
+        diagnostics.extend(template_diagnostics)
     if not isinstance(
         composition_generation,
         composition.StaticCompositionRootGeneration,
@@ -266,10 +267,38 @@ def validate_final_host_build_request(
             )
         )
     else:
-        diagnostics.extend(
+        composition_diagnostics = (
             composition.validate_static_composition_root_generation(
-                composition_generation,
-                validators,
+                composition_generation, validators
+            )
+        )
+        diagnostics.extend(composition_diagnostics)
+    if (
+        isinstance(
+            template_generation,
+            host_template.WindowsDevelopmentHostTemplateGenerationV1,
+        )
+        and isinstance(
+            composition_generation,
+            composition.StaticCompositionRootGeneration,
+        )
+        and not template_diagnostics
+        and not composition_diagnostics
+        and not host_generation_compatibility.is_current_host_generation_pair(
+            template_generation.manifest.renderer_revision,
+            composition_generation.manifest.renderer_revision,
+            composition_generation.manifest.provider_api,
+        )
+    ):
+        diagnostics.append(
+            _diagnostic(
+                "host-build.renderer-incompatible",
+                "/inputs",
+                (
+                    "final Host builds require the current Host Template renderer, "
+                    "static-composition renderer, and provider API pair; legacy "
+                    "pairs are unsupported"
+                ),
             )
         )
     if diagnostics:

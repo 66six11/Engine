@@ -20,7 +20,7 @@ from tools import static_composition_root as composition
 HOST_TEMPLATE_NAME = "asharia.windows-development-host-template.json"
 HOST_TEMPLATE_SCHEMA = "com.asharia.windows-development-host-template"
 HOST_TEMPLATE_SCHEMA_VERSION = 1
-HOST_TEMPLATE_RENDERER_REVISION = 1
+HOST_TEMPLATE_RENDERER_REVISION = 2
 HOST_TEMPLATE_KIND = "windows-development-v1"
 HOST_TEMPLATE_CMAKE_PATH = renderer.HOST_TEMPLATE_CMAKE_PATH
 HOST_TEMPLATE_MAIN_PATH = renderer.HOST_TEMPLATE_MAIN_PATH
@@ -29,6 +29,8 @@ HOST_TEMPLATE_RUNTIME_OUTPUT_DIRECTORY = renderer.HOST_TEMPLATE_RUNTIME_OUTPUT_D
 
 _TARGET_NAME = re.compile(r"^[A-Za-z0-9_.+\-]+$")
 _FILE_DESCRIPTORS = renderer.HOST_TEMPLATE_FILE_DESCRIPTORS
+_REQUIRED_STATIC_COMPOSITION_RENDERER_REVISION = 3
+_REQUIRED_STATIC_COMPOSITION_PROVIDER_API = "asharia-static-factory-provider-v2"
 
 
 @dataclass(frozen=True, order=True)
@@ -270,11 +272,28 @@ def generate_windows_development_host_template(
             )
         )
     else:
-        diagnostics.extend(
+        composition_diagnostics = (
             composition.validate_static_composition_root_manifest_data(
-                static_composition_manifest, validators
+                static_composition_manifest,
+                validators,
             )
         )
+        diagnostics.extend(composition_diagnostics)
+        if not composition_diagnostics:
+            if (
+                static_composition_manifest.renderer_revision
+                != _REQUIRED_STATIC_COMPOSITION_RENDERER_REVISION
+                or static_composition_manifest.provider_api
+                != _REQUIRED_STATIC_COMPOSITION_PROVIDER_API
+            ):
+                diagnostics.append(
+                    _diagnostic(
+                        "host-template.composition-incompatible",
+                        "/staticComposition",
+                        "renderer revision 2 requires static composition "
+                        "revision 3 with provider API v2",
+                    )
+                )
     if (
         not isinstance(target_name, str)
         or not target_name

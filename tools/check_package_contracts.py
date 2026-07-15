@@ -50,7 +50,7 @@ PACKAGE_SOURCE_BUILD_SCHEMA_NAME = "package-source-build-v1.schema.json"
 PACKAGE_PRODUCTS_SCHEMA_NAME = "package-products-v1.schema.json"
 PACKAGE_FACTORIES_SCHEMA_NAME = "package-factories-v1.schema.json"
 PACKAGE_STATIC_FACTORY_BINDINGS_SCHEMA_NAME = (
-    "package-static-factory-bindings-v1.schema.json"
+    "package-static-factory-bindings-v2.schema.json"
 )
 PACKAGE_ARTIFACT_MANIFEST_SCHEMA_NAME = "package-artifact-manifest-v1.schema.json"
 ENGINE_DISTRIBUTION_MANIFEST_SCHEMA_NAME = "engine-distribution-manifest-v1.schema.json"
@@ -58,7 +58,7 @@ SOURCE_TOPOLOGY_SNAPSHOT_SCHEMA_NAME = "source-topology-snapshot-v1.schema.json"
 CMAKE_CODEMODEL_SNAPSHOT_SCHEMA_NAME = "cmake-codemodel-snapshot-v1.schema.json"
 SOURCE_BUILD_PLAN_SCHEMA_NAME = "source-build-plan-v1.schema.json"
 STATIC_FACTORY_PROVIDER_BINDING_PLAN_SCHEMA_NAME = (
-    "static-factory-provider-binding-plan-v1.schema.json"
+    "static-factory-provider-binding-plan-v2.schema.json"
 )
 STATIC_COMPOSITION_ROOT_SCHEMA_NAME = "static-composition-root-v1.schema.json"
 STATIC_FACTORY_REGISTRATION_SNAPSHOT_SCHEMA_NAME = (
@@ -3745,12 +3745,12 @@ def normalize_package_static_factory_bindings(
         )
     return {
         "schema": "com.asharia.package-static-factory-bindings",
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "package": {
             "id": bindings["package"]["id"],
             "version": bindings["package"]["version"],
         },
-        "providerApi": "asharia-static-factory-provider-v1",
+        "providerApi": "asharia-static-factory-provider-v2",
         "modules": modules,
     }
 

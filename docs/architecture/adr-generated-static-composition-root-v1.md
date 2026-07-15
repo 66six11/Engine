@@ -13,6 +13,11 @@ Accepted and implemented for #287。本 ADR 冻结从 verified static provider h
 [Windows Development Host Template v1](adr-windows-development-host-template-v1.md) 已为 #290 消费该 generation，创建第一个固定
 final Host target，并执行受控构建与 registration-only verification；这些职责仍不回流到本 generator。
 
+[Static Factory Callback Table v1](adr-static-factory-callback-table-v1.md) 已为 #291 实现 renderer revision 3：保持同一个薄 TU 与
+exact provider calls，只把 provider contract 硬切到 v2，使一次 registration 同时形成 frozen callback table 与既有 identity
+snapshot；registration 阶段仍不得调用 lifecycle callback。schema、generator 与 deep verifier 只接受 revision 3 + provider API
+v2；旧 revision/provider 不保留兼容路径。
+
 ## 问题
 
 当前控制面已经分别证明：
@@ -130,44 +135,45 @@ manifest 至少记录：
 manifest 证明 generated source bytes，不证明 compiler output、observed registration snapshot 或 final executable artifact。后者已由
 [Host Executable Binding Receipt v1](adr-host-executable-binding-receipt-v1.md) 独立绑定。
 
-#289 将 renderer revision 提升为 `2`，因为 generated header/source 与 CMake link target 的 bytes 已改变。schema 继续接受 revision
-`1`，只用于复验已经发布的 immutable generation；新生成只能使用当前 renderer revision，不能原地改写 revision 1 tree。
+#289 曾将 renderer revision 提升为 `2`。#291 已将 active provider API 硬切到 v2，并把 renderer 提升为 `3`；当前 schema、
+generator、build 与 deep verifier 只接受 revision 3/provider v2，不保留 revision 1/2 compatibility。
 
 发布采用 staging directory + write exact bytes + re-read/hash + atomic directory commit。若同 generation 的完整 bytes 已存在，
 返回 reuse；若目录存在但内容不一致，fail closed，不原地修补。
 
 ### 4. Host Runtime provider contract 与 identity recorder
 
-为了让 provider headers 与 generated root 使用同一 C++ 类型，#287 最初只增加 provider function-pointer contract。#289 保持
-该签名，并把 registrar 的 public surface 冻结为一个 local-ID operation：
+为了让 provider headers 与 generated root 使用同一 C++ 类型，#287/#289 最初建立 identity-only provider v1。#291 已把 active
+surface 硬切为 descriptor registration：
 
 ```cpp
 namespace asharia::host_runtime {
 
 class StaticFactoryRegistrar final {
 public:
-  void registerFactory(std::string_view localFactoryId) noexcept;
+  void registerFactory(
+      std::string_view localFactoryId,
+      StaticFactoryCallbacksV1 callbacks) noexcept;
   // construction/copy/move are not provider-owned
 };
 
-using StaticFactoryProviderV1 =
+using StaticFactoryProviderV2 =
     void (*)(StaticFactoryRegistrar& registrar) noexcept;
 
 } // namespace asharia::host_runtime
 ```
 
-该窄 header 仍由 `asharia::host_runtime_contract` CMake interface target 公开。provider 只能登记 module-local factory ID；完整
-package/version/module/entry point 与 expected factory IDs 由 generated root 注入。concrete
-`StaticFactoryRegistrationRecorder`、owning snapshot 和 failure state 由 `asharia::host_runtime_registration` 静态 target 实现，
-详见 [Static Factory Registration v1](adr-static-factory-registration-v1.md)。两者都不定义 callback、factory instance、scope tree
-或 lifecycle method。
+该窄 header 由 `asharia::host_runtime_contract` 公开；provider implementation 通过 PRIVATE
+`asharia::host_runtime_provider_bridge` 构造/消费 opaque token。provider 只能登记 module-local factory ID 与完整 descriptor；完整
+package/version/module/entry point 与 expected factory IDs 仍由 generated root 注入。concrete recorder、frozen table、owning snapshot
+和 failure state 由 `asharia::host_runtime_registration` 实现。registration 不调用 callback，也不创建 instance、scope 或 lifecycle。
 
 provider implementation 依赖该 contract 是允许的向内依赖；`engine/core`、`engine/platform` 与 `package-runtime` 不反向依赖
 Host Runtime。
 
 ### 5. Generated C++ 形状
 
-renderer revision 2 的 generated header 声明两个稳定的 target-private entry points：
+renderer revision 3 的 generated header 声明两个稳定的 target-private entry points：
 
 ```cpp
 namespace asharia::generated {
@@ -203,7 +209,7 @@ generated source：
 
 static_assert(std::is_same_v<
               decltype(&asharia::example::provideStaticFactories),
-              asharia::host_runtime::StaticFactoryProviderV1>);
+              asharia::host_runtime::StaticFactoryProviderV2>);
 
 asharia::host_runtime::StaticFactoryRegistrationCapacityV1
 asharia::generated::staticFactoryRegistrationCapacity() noexcept {
@@ -337,7 +343,9 @@ v1 明确限制增量成本：
 - stale/tampered/cross-plan mismatch（包括 Effective Session）negative tests；
 - output path traversal、link/reparse root、partial publication、existing-directory conflict 与 reuse tests；
 - synthetic valid Host target 使用生成 fragment 成功 configure/compile/link；
-- renderer revision 2 synthetic Host 运行 generated recorder 并得到 exact owning registration snapshot；
+- renderer revision 3 synthetic Host 运行 generated recorder，得到 frozen callback table 与 exact owning registration snapshot；
+- dual Host fixture 使用五个 abort-probe callbacks，C++ registration tests 使用 phase counters，共同证明 registration/receipt 路径
+  对 lifecycle callbacks 的调用次数为零；
 - wrong provider signature 在 `static_assert` 处编译失败；
 - missing/wrong provider target 与 duplicate attachment 在 final configure fail closed；
 - ClangCL 与 MSVC 都执行 generated-root compile evidence；
@@ -345,10 +353,13 @@ v1 明确限制增量成本：
 
 ## 后续边界
 
-1. [Static Factory Registration v1](adr-static-factory-registration-v1.md)：#289 已实现 identity-only registrar、capacity、sticky failure 与 canonical owning snapshot；
+1. [Static Factory Registration v1](adr-static-factory-registration-v1.md) 记录 #289 的 historical single-argument/identity-only
+   registrar contract；#291 保留 active recorder/registrar，但将其硬切为 descriptor registration 并产出 callback table；
 2. [Windows Development Host Template v1](adr-windows-development-host-template-v1.md)：#290 已实现固定 final target、`main()`、
    console/runtime layout、受控 final configure/build、File API target binding 与 registration-only verification；
 3. [Host Executable Binding Receipt v1](adr-host-executable-binding-receipt-v1.md)：#288 已对证 generation manifest、
    same-index CMake target/compiler、registration snapshot 与 exact staged final Host artifact；
-4. concrete Host Runtime lifecycle：实现 factory callbacks、scope tree、activation、rollback 与 shutdown；
-5. Bootstrap/Session adapter：把 generation/build/receipt 状态映射为 Ready、PendingBuild、PendingRestart 或 SafeMode。
+4. [Static Factory Callback Table v1](adr-static-factory-callback-table-v1.md)：#291 用 renderer revision 3 绑定完整 typed callbacks，
+   但不执行 lifecycle；
+5. Activation Eligibility 与 concrete Host Runtime lifecycle：授权 callback access，并实现 scope tree、activation、rollback 与 shutdown；
+6. Bootstrap/Session adapter：把 generation/build/receipt 状态映射为 Ready、PendingBuild、PendingRestart 或 SafeMode。

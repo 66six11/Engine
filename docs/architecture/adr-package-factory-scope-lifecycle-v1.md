@@ -242,8 +242,11 @@ locked graph。
    reference 绑定到 C++ registration；
 3. [Host Executable Binding Receipt v1](adr-host-executable-binding-receipt-v1.md)：#288 已对证 Blueprint、registration snapshot
    与 exact staged Host artifact；receipt 不证明 lifecycle activation；
-4. Host Runtime：实现 scope tree、factory context、lease、typed registries、rollback 与 shutdown；
-5. Editor Bootstrap：只消费上述 headless result 显示 Ready/PendingBuild/PendingRestart/SafeMode，不反向拥有 package semantics。
+4. [Static Factory Callback Table v1](adr-static-factory-callback-table-v1.md)：#291 先把 exact logical factory 绑定到完整
+   current-process callbacks，不执行 lifecycle；
+5. Activation Eligibility 与 Host Runtime：对证 artifact/current process 后，实现 scope tree、factory context、lease、typed registries、
+   rollback 与 shutdown；
+6. Editor Bootstrap：只消费上述 headless result 显示 Ready/PendingBuild/PendingRestart/SafeMode，不反向拥有 package semantics。
 
 ## 相关资料
 

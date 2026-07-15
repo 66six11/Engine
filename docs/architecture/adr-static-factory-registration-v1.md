@@ -6,6 +6,10 @@ Accepted and implemented for #289。本 ADR 冻结 `engine/host-runtime` 的 ide
 边界。它把 generated static composition root 的 expected provider/factory evidence 记录为 owning、canonical snapshot，
 但不保存 factory callback，不创建 instance，也不执行 Host lifecycle。
 
+[Static Factory Callback Table v1](adr-static-factory-callback-table-v1.md) 已为 #291 完成后继硬切：同一次 provider invocation
+提交 local factory ID 与完整 typed descriptor，并由 frozen table 投影本 ADR 的 identity snapshot。本 ADR 记录 #289 的历史
+identity-only 决策；active executable path 不再提供单参数 registrar、`StaticFactoryProviderV1` 或兼容 adapter。
+
 ## 问题
 
 [Generated Static Composition Root v1](adr-generated-static-composition-root-v1.md) 已经能够直接引用并调用每个
@@ -251,5 +255,7 @@ configured compiler、registration snapshot 与 exact staged Host artifact bytes
    final configure/build、File API target binding 与 registration-only verification；
 2. [Host Executable Binding Receipt v1](adr-host-executable-binding-receipt-v1.md)：#288 已把 exact composition manifest、
    owning registration snapshot 与 collector-owned final Host artifact bytes/hash 对证；
-3. concrete Host Runtime lifecycle：在独立合同中冻结 callback、factory context、scope instances、activation、rollback 与 shutdown；
-4. Bootstrap/Session adapter：把 build/receipt/process generation 状态映射为 Ready、PendingBuild、PendingRestart 或 SafeMode。
+3. [Static Factory Callback Table v1](adr-static-factory-callback-table-v1.md)：#291 先绑定完整 typed callbacks，但不调用它们；
+4. Activation Eligibility 与 concrete Host Runtime lifecycle：长生命周期 Host 先对证 receipt/current process 才允许调用
+   providers，table snapshot 再次对证后才允许 context、scope instance、activation、rollback 与 shutdown；
+5. Bootstrap/Session adapter：把 build/receipt/process generation 状态映射为 Ready、PendingBuild、PendingRestart 或 SafeMode。

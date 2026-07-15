@@ -263,6 +263,26 @@ class FinalHostBuildRequestTests(unittest.TestCase):
                 [value.code for value in diagnostics],
             )
 
+    def test_legacy_renderer_fails_before_cmake(self) -> None:
+        with build_request_fixture() as (request, validators):
+            legacy_template = replace(
+                request.host_template_generation,
+                manifest=replace(
+                    request.host_template_generation.manifest,
+                    renderer_revision=1,
+                ),
+            )
+
+            validated, diagnostics = validate(
+                replace(request, host_template_generation=legacy_template),
+                validators,
+            )
+
+            self.assertIsNone(validated)
+            self.assertIn(
+                "host-template.schema",
+                {value.code for value in diagnostics},
+            )
 
 if __name__ == "__main__":
     unittest.main()

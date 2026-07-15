@@ -2,13 +2,16 @@
 
 #include <string_view>
 
+#include "asharia/host_runtime/static_factory_callbacks.hpp"
+
 namespace asharia::host_runtime {
 
     class StaticFactoryRegistrationState;
 
     class StaticFactoryRegistrar final {
     public:
-        void registerFactory(std::string_view localFactoryId) noexcept;
+        void registerFactory(std::string_view localFactoryId,
+                             StaticFactoryCallbacksV1 callbacks) noexcept;
 
     private:
         explicit StaticFactoryRegistrar(StaticFactoryRegistrationState& state) noexcept
@@ -26,6 +29,6 @@ namespace asharia::host_runtime {
         friend class StaticFactoryRegistrationState;
     };
 
-    using StaticFactoryProviderV1 = void (*)(StaticFactoryRegistrar& registrar) noexcept;
+    using StaticFactoryProviderV2 = void (*)(StaticFactoryRegistrar& registrar) noexcept;
 
 } // namespace asharia::host_runtime

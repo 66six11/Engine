@@ -8,6 +8,7 @@ from tools import check_package_contracts as contracts
 from tools import host_cmake_toolchain
 from tools import host_executable_binding as binding
 from tools import host_executable_template as host_template
+from tools import host_generation_compatibility
 from tools import static_composition_root as composition
 
 
@@ -31,6 +32,21 @@ def composition_template_diagnostics(
     composition_manifest = composition_generation.manifest
     template_manifest = template_generation.manifest
     diagnostics: list[contracts.Diagnostic] = []
+    if not host_generation_compatibility.is_current_host_generation_pair(
+        template_manifest.renderer_revision,
+        composition_manifest.renderer_revision,
+        composition_manifest.provider_api,
+    ):
+        diagnostics.append(
+            _diagnostic(
+                "host-binding.input.renderer-incompatible",
+                "/inputs",
+                (
+                    "Host Template renderer, static-composition renderer, and "
+                    "provider API do not form a supported generation pair"
+                ),
+            )
+        )
     if not (
         template_manifest.static_composition_generation_id
         == composition_manifest.generation_id

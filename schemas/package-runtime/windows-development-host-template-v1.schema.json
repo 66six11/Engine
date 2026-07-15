@@ -25,7 +25,7 @@
       "const": 1
     },
     "rendererRevision": {
-      "const": 1
+      "const": 2
     },
     "templateKind": {
       "const": "windows-development-v1"

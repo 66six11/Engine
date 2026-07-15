@@ -6,8 +6,8 @@
 #include <span>
 #include <string>
 #include <string_view>
-#include <vector>
 
+#include "asharia/host_runtime/static_factory_callback_table.hpp"
 #include "asharia/host_runtime/static_factory_provider.hpp"
 
 namespace asharia::host_runtime {
@@ -57,6 +57,11 @@ namespace asharia::host_runtime {
         FactoryDuplicate,
         FactoryMissing,
         FactoryCountMismatch,
+        FactoryCreateCallbackMissing,
+        FactoryActivateCallbackMissing,
+        FactoryQuiesceCallbackMissing,
+        FactoryDeactivateCallbackMissing,
+        FactoryDestroyCallbackMissing,
         TextCapacityExceeded,
         DiagnosticFactoryIdCapacityExceeded,
         RecorderMovedFrom,
@@ -72,26 +77,6 @@ namespace asharia::host_runtime {
         std::string entryPoint;
         std::string factoryId;
         std::size_t observedFactoryIdBytes{};
-    };
-
-    struct StaticFactoryRegistrationV1 final {
-        std::string packageId;
-        std::string packageVersion;
-        std::string moduleId;
-        std::string factoryId;
-        std::string providerEntryPoint;
-
-        [[nodiscard]] friend bool operator==(const StaticFactoryRegistrationV1&,
-                                             const StaticFactoryRegistrationV1&) = default;
-    };
-
-    struct StaticFactoryRegistrationSnapshotV1 final {
-        std::string generationId;
-        std::string hostActivationBlueprintSha256;
-        std::vector<StaticFactoryRegistrationV1> registrations;
-
-        [[nodiscard]] friend bool operator==(const StaticFactoryRegistrationSnapshotV1&,
-                                             const StaticFactoryRegistrationSnapshotV1&) = default;
     };
 
     template <typename T>
@@ -111,10 +96,10 @@ namespace asharia::host_runtime {
 
         void beginComposition(StaticCompositionRegistrationContextV1 context) noexcept;
         void invokeProvider(StaticFactoryProviderContextV1 context,
-                            StaticFactoryProviderV1 provider) noexcept;
+                            StaticFactoryProviderV2 provider) noexcept;
         void endComposition() noexcept;
 
-        [[nodiscard]] StaticFactoryRegistrationResult<StaticFactoryRegistrationSnapshotV1>
+        [[nodiscard]] StaticFactoryRegistrationResult<StaticFactoryCallbackTableV1>
         finish() && noexcept;
 
     private:

@@ -35,6 +35,7 @@ namespace asharia::host_runtime {
             std::string_view moduleId;
             std::string_view factoryId;
             std::string_view providerEntryPoint;
+            StaticFactoryCallbacksV1 callbacks;
         };
 
         struct PendingFailure final {
@@ -52,7 +53,8 @@ namespace asharia::host_runtime {
                   const ProviderObservation* provider = nullptr,
                   std::string_view factoryId = {}) noexcept;
         [[nodiscard]] StaticFactoryRegistrationError owningFailure() const noexcept;
-        void registerFactory(std::string_view localFactoryId) noexcept;
+        void registerFactory(std::string_view localFactoryId,
+                             StaticFactoryCallbacksV1 callbacks) noexcept;
 
         StaticFactoryRegistrationCapacityV1 capacity;
         std::vector<char> textStorage;

@@ -48,10 +48,54 @@ void provideRuntimeFactories(
             newline="\n",
         )
         (source_root / "provider.cpp").write_text(
-            """#include "asharia/synthetic/runtime_provider.hpp"
+            """#include <cstdlib>
+
+#include "asharia/synthetic/runtime_provider.hpp"
+
+namespace {
+
+// Registration-only verification must never invoke lifecycle callbacks.
+asharia::host_runtime::FactoryCreateResultV1 createRuntimeService(
+    asharia::host_runtime::FactoryCreateContextV1&) noexcept {
+  std::abort();
+}
+
+asharia::host_runtime::FactoryCallbackResultV1 activateRuntimeService(
+    asharia::host_runtime::FactoryActivateContextV1&,
+    asharia::host_runtime::FactoryInstanceViewV1) noexcept {
+  std::abort();
+}
+
+asharia::host_runtime::FactoryCallbackResultV1 quiesceRuntimeService(
+    asharia::host_runtime::FactoryQuiesceContextV1&,
+    asharia::host_runtime::FactoryInstanceViewV1) noexcept {
+  std::abort();
+}
+
+asharia::host_runtime::FactoryCallbackResultV1 deactivateRuntimeService(
+    asharia::host_runtime::FactoryDeactivateContextV1&,
+    asharia::host_runtime::FactoryInstanceViewV1) noexcept {
+  std::abort();
+}
+
+void destroyRuntimeService(
+    asharia::host_runtime::FactoryInstanceTokenV1) noexcept {
+  std::abort();
+}
+
+constexpr asharia::host_runtime::StaticFactoryCallbacksV1 kRuntimeServiceCallbacks{
+    .create = &createRuntimeService,
+    .activate = &activateRuntimeService,
+    .quiesce = &quiesceRuntimeService,
+    .deactivate = &deactivateRuntimeService,
+    .destroy = &destroyRuntimeService,
+};
+
+} // namespace
+
 void asharia::synthetic::provideRuntimeFactories(
     asharia::host_runtime::StaticFactoryRegistrar& registrar) noexcept {
-  registrar.registerFactory("runtime-service");
+  registrar.registerFactory("runtime-service", kRuntimeServiceCallbacks);
 }
 """,
             encoding="utf-8-sig",
@@ -74,7 +118,8 @@ add_subdirectory("{repository_root}/engine/host-runtime" asharia-host-runtime)
 add_library(asharia_synthetic_runtime STATIC provider.cpp)
 target_include_directories(asharia_synthetic_runtime PUBLIC include)
 target_link_libraries(asharia_synthetic_runtime
-    PUBLIC asharia::host_runtime_contract)
+    PUBLIC asharia::host_runtime_contract
+    PRIVATE asharia::host_runtime_provider_bridge)
 asharia_configure_target(asharia_synthetic_runtime)
 asharia_include_generated_host_template()
 """,

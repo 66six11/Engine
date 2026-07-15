@@ -26,10 +26,7 @@
       "const": 1
     },
     "rendererRevision": {
-      "enum": [
-        1,
-        2
-      ]
+      "const": 3
     },
     "generationId": {
       "$ref": "#/$defs/generationId"
@@ -44,7 +41,7 @@
       "$ref": "#/$defs/configuration"
     },
     "providerApi": {
-      "const": "asharia-static-factory-provider-v1"
+      "const": "asharia-static-factory-provider-v2"
     },
     "providers": {
       "type": "array",

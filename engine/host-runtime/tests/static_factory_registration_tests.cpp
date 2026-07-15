@@ -4,6 +4,8 @@
 
 #include "asharia/host_runtime/static_factory_registration.hpp"
 
+#include "static_factory_callback_table_tests.hpp"
+
 namespace {
 
     using asharia::host_runtime::StaticCompositionRegistrationContextV1;
@@ -33,25 +35,26 @@ namespace {
     }
 
     void provideOutOfOrderFactories(StaticFactoryRegistrar& registrar) noexcept {
-        registrar.registerFactory("service-b");
-        registrar.registerFactory("service-a");
+        registrar.registerFactory("service-b", asharia::host_runtime::tests::abortingCallbacks());
+        registrar.registerFactory("service-a", asharia::host_runtime::tests::abortingCallbacks());
     }
 
     void provideInOrderFactories(StaticFactoryRegistrar& registrar) noexcept {
-        registrar.registerFactory("service-a");
-        registrar.registerFactory("service-b");
+        registrar.registerFactory("service-a", asharia::host_runtime::tests::abortingCallbacks());
+        registrar.registerFactory("service-b", asharia::host_runtime::tests::abortingCallbacks());
     }
 
     void provideToolFactory(StaticFactoryRegistrar& registrar) noexcept {
-        registrar.registerFactory("service-c");
+        registrar.registerFactory("service-c", asharia::host_runtime::tests::abortingCallbacks());
     }
 
     void provideUnknownFactory(StaticFactoryRegistrar& registrar) noexcept {
-        registrar.registerFactory("unknown-service");
+        registrar.registerFactory("unknown-service",
+                                  asharia::host_runtime::tests::abortingCallbacks());
     }
 
     void provideSingleFactory(StaticFactoryRegistrar& registrar) noexcept {
-        registrar.registerFactory("service-a");
+        registrar.registerFactory("service-a", asharia::host_runtime::tests::abortingCallbacks());
     }
 
     void provideNoFactories(StaticFactoryRegistrar& unusedRegistrar) noexcept {
@@ -59,12 +62,12 @@ namespace {
     }
 
     void provideDuplicateFactory(StaticFactoryRegistrar& registrar) noexcept {
-        registrar.registerFactory("service-a");
-        registrar.registerFactory("service-a");
+        registrar.registerFactory("service-a", asharia::host_runtime::tests::abortingCallbacks());
+        registrar.registerFactory("service-a", asharia::host_runtime::tests::abortingCallbacks());
     }
 
     void provideAndCaptureRegistrar(StaticFactoryRegistrar& registrar) noexcept {
-        registrar.registerFactory("service-a");
+        registrar.registerFactory("service-a", asharia::host_runtime::tests::abortingCallbacks());
         capturedRegistrar = &registrar;
     }
 
@@ -112,11 +115,11 @@ namespace {
         recorder.invokeProvider(secondProvider, &provideToolFactory);
         recorder.endComposition();
 
-        auto snapshotResult = std::move(recorder).finish();
-        if (!snapshotResult) {
+        auto tableResult = std::move(recorder).finish();
+        if (!tableResult) {
             return false;
         }
-        const auto& snapshot = *snapshotResult;
+        const auto& snapshot = tableResult->registrationSnapshot();
         return snapshot.generationId == kGenerationId &&
                snapshot.hostActivationBlueprintSha256 == kBlueprintSha256 &&
                snapshot.registrations.size() == 3 &&
@@ -127,7 +130,7 @@ namespace {
     }
 
     [[nodiscard]] asharia::host_runtime::StaticFactoryRegistrationResult<
-        asharia::host_runtime::StaticFactoryRegistrationSnapshotV1>
+        asharia::host_runtime::StaticFactoryCallbackTableV1>
     collectEquivalentSnapshot(bool reverseProviderOrder) noexcept {
         constexpr auto capacity = registrationCapacity(2, 3, kTextCapacity);
         auto recorderResult =
@@ -163,7 +166,8 @@ namespace {
     [[nodiscard]] bool equivalentOrdersProduceCanonicalSnapshot() noexcept {
         const auto forward = collectEquivalentSnapshot(false);
         const auto reversed = collectEquivalentSnapshot(true);
-        return forward && reversed && *forward == *reversed;
+        return forward && reversed &&
+               forward->registrationSnapshot() == reversed->registrationSnapshot();
     }
 
     [[nodiscard]] bool unknownFactoryFailsAtomically() noexcept {
@@ -235,7 +239,8 @@ namespace {
             return false;
         }
         auto movedRecorder = std::move(recorder);
-        capturedRegistrar->registerFactory("service-a");
+        capturedRegistrar->registerFactory("service-a",
+                                           asharia::host_runtime::tests::abortingCallbacks());
         movedRecorder.endComposition();
         const auto result = std::move(movedRecorder).finish();
         return !result &&
@@ -253,7 +258,7 @@ namespace {
         recorder.beginComposition(compositionContext(capacity));
         recorder.endComposition();
         const auto result = std::move(recorder).finish();
-        return result && result->registrations.empty();
+        return result && result->registrationSnapshot().registrations.empty();
     }
 
     [[nodiscard]] bool providerCountMismatchFails() noexcept {
@@ -306,6 +311,28 @@ namespace {
         const auto result = std::move(recorder).finish();
         return !result &&
                result.error().code == StaticFactoryRegistrationErrorCode::CompositionNotStarted;
+    }
+
+    [[nodiscard]] bool mixedCompositionEvidenceFailsAtomically() noexcept {
+        constexpr auto capacity = registrationCapacity(0, 0, 256);
+        auto recorderResult =
+            asharia::host_runtime::createStaticFactoryRegistrationRecorder(capacity);
+        if (!recorderResult) {
+            return false;
+        }
+        auto recorder = std::move(*recorderResult);
+        recorder.beginComposition(compositionContext(capacity));
+        recorder.beginComposition({
+            .generationId =
+                "sha256-cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            .hostActivationBlueprintSha256 =
+                "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+            .capacity = capacity,
+        });
+        recorder.endComposition();
+        const auto result = std::move(recorder).finish();
+        return !result &&
+               result.error().code == StaticFactoryRegistrationErrorCode::CompositionAlreadyStarted;
     }
 
     [[nodiscard]] bool textCapacityExhaustionFails() noexcept {
@@ -365,9 +392,17 @@ namespace {
 
 } // namespace
 
-int main() noexcept {
+int main(int argumentCount, char** arguments) noexcept {
+    if (argumentCount == 2 &&
+        // argc validation makes this standard argv indexing safe.
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+        std::string_view{arguments[1]} == "--probe-valid-token-drop") {
+        asharia::host_runtime::tests::runValidTokenDropProbe();
+    }
+
     using Test = bool (*)() noexcept;
-    constexpr std::array<Test, 13> tests{
+    constexpr std::array<Test, 15> tests{
+        &asharia::host_runtime::tests::runStaticFactoryCallbackTableTests,
         &validRegistrationOwnsCanonicalSnapshot,
         &equivalentOrdersProduceCanonicalSnapshot,
         &unknownFactoryFailsAtomically,
@@ -378,6 +413,7 @@ int main() noexcept {
         &providerCountMismatchFails,
         &stickyFirstFailureWins,
         &endBeforeBeginFails,
+        &mixedCompositionEvidenceFailsAtomically,
         &textCapacityExhaustionFails,
         &duplicateProviderTakesPriorityOverCapacity,
         &oversizedDiagnosticFactoryIdFailsExplicitly,

@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://schemas.asharia.dev/package-runtime/package-static-factory-bindings-v1.schema.json",
-  "title": "Asharia Package Static Factory Bindings v1",
-  "description": "Exact source-build bindings from logical package factories to directly callable static C++ provider entry points.",
+  "$id": "https://schemas.asharia.dev/package-runtime/package-static-factory-bindings-v2.schema.json",
+  "title": "Asharia Package Static Factory Bindings v2",
+  "description": "Exact source-build bindings from logical package factories to directly callable static C++ provider v2 entry points.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -17,13 +17,13 @@
       "const": "com.asharia.package-static-factory-bindings"
     },
     "schemaVersion": {
-      "const": 1
+      "const": 2
     },
     "package": {
       "$ref": "#/$defs/package"
     },
     "providerApi": {
-      "const": "asharia-static-factory-provider-v1"
+      "const": "asharia-static-factory-provider-v2"
     },
     "modules": {
       "type": "array",

@@ -133,6 +133,10 @@ def validate_manifest_data(
 def _expected_files(
     manifest: host_template.WindowsDevelopmentHostTemplateManifestV1,
 ) -> tuple[host_template.GeneratedHostTemplateFile, ...]:
+    if manifest.renderer_revision != host_template.HOST_TEMPLATE_RENDERER_REVISION:
+        raise ValueError(
+            f"unsupported Host Template renderer revision: {manifest.renderer_revision}"
+        )
     return (
         host_template.GeneratedHostTemplateFile(
             renderer.HOST_TEMPLATE_CMAKE_PATH,
@@ -157,7 +161,7 @@ def validate_generation(
     generation: host_template.WindowsDevelopmentHostTemplateGenerationV1,
     validators: contracts.ContractValidators,
 ) -> list[contracts.Diagnostic]:
-    """Require one complete generation produced by the fixed v1 renderer."""
+    """Require one complete generation produced by the current renderer."""
 
     diagnostics = validate_manifest_data(generation.manifest, validators)
     files = {value.path: value for value in generation.files}
@@ -169,7 +173,19 @@ def validate_generation(
                 "generation contains duplicate output paths",
             )
         )
-    expected = {value.path: value for value in _expected_files(generation.manifest)}
+    try:
+        expected = {
+            value.path: value for value in _expected_files(generation.manifest)
+        }
+    except ValueError:
+        diagnostics.append(
+            _diagnostic(
+                "host-template.renderer-unsupported",
+                "/rendererRevision",
+                "Host Template renderer revision is not supported",
+            )
+        )
+        return sorted(diagnostics, key=_diagnostic_sort_key)
     manifest_paths = {value.path for value in generation.manifest.files}
     if set(files) != manifest_paths or set(files) != set(expected):
         diagnostics.append(

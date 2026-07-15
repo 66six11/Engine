@@ -16,7 +16,7 @@ _UTF8_BOM = b"\xef\xbb\xbf"
 
 
 def render_registration_verification_main() -> bytes:
-    """Render the restricted registration-only Host entry point."""
+    """Render the revision-2 entry point backed by the frozen callback table."""
 
     text = r'''#include <cstdio>
 #include <string_view>
@@ -28,6 +28,7 @@ def render_registration_verification_main() -> bytes:
 #endif
 
 #include "asharia/generated/static_composition_root.hpp"
+#include "asharia/host_runtime/static_factory_callback_table.hpp"
 #include "asharia/host_runtime/static_factory_registration_snapshot_json.hpp"
 
 namespace {
@@ -55,12 +56,13 @@ int main(int argc, char** argv) noexcept {
     }
 
     asharia::generated::recordStaticFactoryProviders(*recorder);
-    auto snapshot = std::move(*recorder).finish();
-    if (!snapshot) {
+    auto table = std::move(*recorder).finish();
+    if (!table) {
         return fail("host-verification.registration-failed", 71);
     }
 
-    auto rendered = asharia::host_runtime::renderStaticFactoryRegistrationSnapshotJson(*snapshot);
+    const auto& snapshot = table->registrationSnapshot();
+    auto rendered = asharia::host_runtime::renderStaticFactoryRegistrationSnapshotJson(snapshot);
     if (!rendered) {
         return fail("host-verification.snapshot-render-failed", 72);
     }
@@ -80,8 +82,6 @@ int main(int argc, char** argv) noexcept {
 }
 '''
     return _UTF8_BOM + text.encode("utf-8")
-
-
 def render_windows_development_cmake(
     target_name: str,
     template_generation_id: str,

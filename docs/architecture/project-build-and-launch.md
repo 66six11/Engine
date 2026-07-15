@@ -239,10 +239,12 @@ CMake Workflow Preset 可以作为 native 子流程实现，但不能替代 Asha
 - provider binding 把每个 selected logical factory 对证到同 module 的静态 target、public header 与类型安全 function；
   function token 只用于生成直接 C++ 引用，不用于运行时字符串 symbol lookup；
 - Binding Plan 是从上述 verified inputs 派生、可丢弃重建的生成 handoff，不是第三份 lock 或 artifact receipt；
-- renderer revision 2 生成 exact registration capacity、composition/provider context、expected local factory IDs、显式 provider
-  calls 与 build metadata；provider 只能 `registerFactory(localFactoryId)`，不能自报 package/module/entry point；
-- `engine/host-runtime` 的 identity-only recorder 在 provider 调用前预留 owning storage，调用期间不扩容，并把完整成功结果
-  冻结为 canonical `StaticFactoryRegistrationSnapshotV1`；它不保存 callback，也不执行 factory lifecycle；
+- renderer revision 3 生成 exact registration capacity、composition/provider context、expected local factory IDs、显式 provider
+  calls 与 build metadata；provider 只能 `registerFactory(localFactoryId, completeDescriptor)`，不能自报
+  package/module/entry point；
+- `engine/host-runtime` recorder 在 provider 调用前预留 owning storage，调用期间不扩容，并把完整成功结果冻结为
+  `StaticFactoryCallbackTableV1`；table 自有 canonical `StaticFactoryRegistrationSnapshotV1` projection，但 registration 不调用 callback
+  或执行 factory lifecycle；
 - [Windows Development Host Template v1](adr-windows-development-host-template-v1.md) 已为 #290 提供固定 final executable、
   console `main()`、受控 configure/build、latest File API exact target/path binding 与受限 verification mode；它只构建 exact
   Host target、不使用 clean-first；[Host Executable Binding Receipt v1](adr-host-executable-binding-receipt-v1.md) 已由 #288
@@ -260,12 +262,22 @@ CMake Workflow Preset 可以作为 native 子流程实现，但不能替代 Asha
 [Generated Static Composition Root v1](adr-generated-static-composition-root-v1.md) 进一步冻结为两阶段 CMake handoff：先用
 preflight configure/File API codemodel 对证 package targets，再生成 content-addressed 薄 TU 与 CMake attach fragment，最后由
 Host Template 创建 target 并执行 final configure/build。generator 不创建 executable，也不在 CMake 内重新 resolve package graph。
-[Static Factory Registration v1](adr-static-factory-registration-v1.md) 冻结 generated root 到 owning identity snapshot 的窄
-runtime observation 边界；snapshot 的记录顺序不是 Blueprint activation order，也不是 artifact receipt。
+[Static Factory Registration v1](adr-static-factory-registration-v1.md) 曾为 #289 冻结 generated root 到 owning identity snapshot
+的窄 runtime observation 边界；historical single-argument/identity-only registrar contract 已被 v2 descriptor registration 取代，
+active recorder/registrar 仍负责形成 #291 callback table，并继续投影相同证据语义的 snapshot。snapshot 的记录顺序不是
+Blueprint activation order，也不是 artifact receipt。
 #290 的具体 downstream 边界见 [Windows Development Host Template v1](adr-windows-development-host-template-v1.md)：caller 先完成
 Conan，adapter 只使用 typed argv/受控环境，绑定并构建 exact Host 后运行 registration-only mode；activation、UI、receipt hash
 不属于该 adapter。#288 在独立 publisher 中补齐 artifact hash 与 immutable receipt；receipt 仍不证明 activation、`Ready` 或
 当前进程加载状态。
+
+[Static Factory Callback Table v1](adr-static-factory-callback-table-v1.md) 已为 #291 实现：provider API 硬切到 v2，
+同一次 registration 把每个 local factory ID 绑定到完整 direct callback descriptor，并从 frozen current-process table 投影既有
+identity snapshot。table 不公开未授权的 raw callback lookup；Activation Eligibility 在后继 Slice 中对证 receipt、session 与
+current process 后才允许 long-lived Host 调用 providers，table snapshot 再次对证后才允许 lifecycle executor 访问。#288 的
+registration-only subprocess 是取证用 disposable exception，不是 normal Editor startup。author provider bindings 与 derived
+Binding Plan 提升为 v2；static-composition renderer 提升为 3，Windows Development Host Template renderer 提升为 2，且只接受
+该 current generation pair；旧 bindings/renderer/provider generation 不保留兼容路径。
 
 ## 7. Cook 与内容闭包
 
@@ -562,13 +574,16 @@ asharia-launch --project <path> --profile standalone-game
 
 - Engine Distribution Manifest v1、`EngineGenerationId`、Project Manifest / Lock v2 硬切、Effective Session v1、
   Distribution Assembler v1、Installed Distribution Repair Verifier v1、Package Factory Declaration v1 与
-  Host Activation Blueprint v1、Static Factory Provider Bindings v1、Generated Static Composition Root v1 与
-  Static Factory Registration v1 已经完成；#287 已提供 content-addressed thin TU 与受控 CMake attachment，#289 已提供
-  identity-only owning registration snapshot，#290 已提供固定 Windows Development Host template、受控 exact-target build、
-  File API target binding 与 registration-only verification；#288 已提供
+  Host Activation Blueprint v1 已经完成；#286 的 Static Factory Provider Bindings v1 与 #289 的 identity-only
+  Static Factory Registration v1 是历史合同，active bindings/Binding Plan、provider API 已由 #291 硬切为 v2，不保留 bindings /
+  Binding Plan v1 或 pre-current renderer/provider tuple 的 reader/adapter；#287 的 generated root 当前只生成 renderer 3/provider v2 的 content-addressed thin TU 与受控
+  CMake attachment，#290 的 Windows Development Host template 当前只生成 renderer 2，并提供受控 exact-target build、File API
+  target binding 与 restricted verification；#288 已提供
   [Host Executable Binding Receipt v1](adr-host-executable-binding-receipt-v1.md) 的 staged-byte collection、same-index compiler
-  evidence、canonical receipt、atomic publication 与 read-only deep verification；后续仍需 Host Runtime lifecycle 与
-  Bootstrap/Session adapter；
+  evidence、canonical receipt、atomic publication 与 read-only deep verification；#291 已实现
+  [Static Factory Callback Table v1](adr-static-factory-callback-table-v1.md)，当前 Host build/assembly/deep verification 只接受
+  Template renderer 2 + Composition renderer 3/provider v2；后续由 #292 实现 Activation Eligibility、#293 实现 admitted
+  ProcessScope lifecycle，Bootstrap/Session adapter 继续后置；
 - Effective Editor Session v1 已建立 Ready/Upgrade/Repair/SafeMode 与 exact Profile binding；轻量启动检查和实际 UI/进程状态仍待实现；
 - 冻结 `asharia.build.json` v1 的 owner、Build/Launch Profile 与 local override 规则；
 - 建立 CPU-only parser/validator、BuildPlan/BuildReport、LaunchPlan/SessionReport；
@@ -620,12 +635,16 @@ asharia-launch --project <path> --profile standalone-game
 
 1. Engine Distribution Manifest v1、`EngineGenerationId`、Project Manifest / Lock v2、Effective Session v1、
    Distribution Assembler v1、Installed Distribution Repair Verifier v1、Package Factory Declaration v1 与
-   Host Activation Blueprint v1、Static Factory Provider Bindings v1 已完成；
-2. generated composition root 的 target/module registration 与两阶段 CMake handoff 已由 #287 实现，identity-only recording
-   registrar/snapshot 已由 #289 实现，固定 Windows Development Host target、受控构建、File API binding 与 restricted
-   verification 已由 #290 实现；#288 的
+   Host Activation Blueprint v1 已完成；#286 的 provider bindings v1 仅保留为历史决策记录，active bindings/Binding Plan 与
+   provider API 已由 #291 硬切为 v2；
+2. generated composition root 的 target/module registration 与两阶段 CMake handoff 已由 #287 实现，#289 的 single-argument /
+   identity-only registrar contract 是历史表面；#291 当前只接受 Composition renderer 3/provider v2，把 exact identity 与完整
+   callback descriptor 冻结到 private callback table，并由 table 拥有 canonical identity-only snapshot。固定 Windows Development
+   Host target、受控构建、File API binding 与 restricted verification
+   已由 #290 实现，当前只接受 Template renderer 2；#288 的
    [Host Executable Binding Receipt v1](adr-host-executable-binding-receipt-v1.md) 已把 exact staged executable、same-index
-   target/compiler 与 owning snapshot 交叉绑定；仍需 verifier 到 Host Runtime 与 Bootstrap/Session 的 adapter；
+   target/compiler 与 owning snapshot 交叉绑定；Host build、assembly 与 deep verifier 只接受当前 T2/C3/provider-v2 组合；仍需
+   #292 Activation Eligibility、#293 ProcessScope lifecycle executor 与 Bootstrap/Session adapter；
 3. `asharia.build.json` v1 schema、inheritance 与 local override；
 4. `asharia.stage.json` v1 与 Build/Stage fingerprint；
 5. development stage 的目录布局和原子发布；

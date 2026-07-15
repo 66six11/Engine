@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import os
 import shutil
@@ -197,6 +198,10 @@ class StaticCompositionRootTests(unittest.TestCase):
             composition_root.STATIC_COMPOSITION_RENDERER_REVISION,
             first.manifest.renderer_revision,
         )
+        self.assertEqual(
+            "asharia-static-factory-provider-v2",
+            first.manifest.provider_api,
+        )
         revised_manifest = replace(
             first.manifest,
             renderer_revision=first.manifest.renderer_revision + 1,
@@ -226,6 +231,7 @@ class StaticCompositionRootTests(unittest.TestCase):
             "utf-8-sig"
         )
         self.assertIn("static_assert(std::is_same_v<", source)
+        self.assertIn("StaticFactoryProviderV2", source)
         self.assertIn("recorder.beginComposition({", source)
         self.assertIn("recorder.invokeProvider(", source)
         self.assertIn("recorder.endComposition();", source)
@@ -256,6 +262,81 @@ class StaticCompositionRootTests(unittest.TestCase):
         self.assertNotIn("add_custom_command", cmake)
         self.assertNotIn("add_subdirectory", cmake)
         self.assertNotIn("find_package", cmake)
+
+    def test_legacy_renderer_and_provider_api_are_rejected(self) -> None:
+        generation = self.generate()
+        current = composition_root.static_composition_root_manifest_to_data(
+            generation.manifest
+        )
+        legacy_api = copy.deepcopy(current)
+        legacy_api["providerApi"] = (
+            "asharia-static-factory-provider-v1"
+        )
+        legacy_renderer = copy.deepcopy(current)
+        legacy_renderer["rendererRevision"] = 2
+
+        for value in (
+            legacy_api,
+            legacy_renderer,
+        ):
+            with self.subTest(value=value):
+                diagnostics = (
+                    composition_root.validate_static_composition_root_manifest_data(
+                        value,
+                        self.validators,
+                    )
+                )
+                self.assertEqual(
+                    {"static-composition.schema"},
+                    {item.code for item in diagnostics},
+                )
+
+    def test_deep_verification_rejects_self_consistent_renderer_forgery(self) -> None:
+        generation = self.generate()
+        changed_files = tuple(
+            replace(value, content=value.content + b"// forged\n")
+            if value.path == composition_root.STATIC_COMPOSITION_SOURCE_PATH
+            else value
+            for value in generation.files
+        )
+        changed_evidence = tuple(
+            replace(
+                evidence,
+                size=len(changed_files[index].content),
+                integrity=composition_root.IntegrityRecord(
+                    **contracts.compute_bytes_integrity(
+                        changed_files[index].content
+                    )
+                ),
+            )
+            for index, evidence in enumerate(generation.manifest.files)
+        )
+        changed_manifest = replace(
+            generation.manifest,
+            files=changed_evidence,
+            integrity=composition_root.IntegrityRecord("sha256", "0" * 64),
+        )
+        changed_manifest = replace(
+            changed_manifest,
+            integrity=composition_root.IntegrityRecord(
+                **composition_root.compute_static_composition_root_manifest_integrity(
+                    changed_manifest
+                )
+            ),
+        )
+
+        diagnostics = composition_root.validate_static_composition_root_generation(
+            composition_root.StaticCompositionRootGeneration(
+                changed_manifest,
+                changed_files,
+            ),
+            self.validators,
+        )
+
+        self.assertIn(
+            "static-composition.renderer-output-mismatch",
+            {item.code for item in diagnostics},
+        )
 
     def test_generation_rejects_stale_cross_plan_fingerprint(self) -> None:
         build_plan = _build_plan()
@@ -593,10 +674,57 @@ void provideRuntimeFactories(
                 newline="\n",
             )
             (source_root / "provider.cpp").write_text(
-                """#include \"asharia/synthetic/runtime_provider.hpp\"
+                """#include \"asharia/host_runtime/static_factory_instance_token_provider_access.hpp\"
+#include \"asharia/synthetic/runtime_provider.hpp\"
+
+namespace {
+
+int gSyntheticInstance{};
+
+asharia::host_runtime::FactoryCreateResultV1 createSynthetic(
+    asharia::host_runtime::FactoryCreateContextV1&) noexcept {
+  return asharia::host_runtime::FactoryCreateResultV1::succeeded(
+      asharia::host_runtime::FactoryInstanceTokenProviderAccessV1::fromPointer(
+          &gSyntheticInstance));
+}
+
+asharia::host_runtime::FactoryCallbackResultV1 activateSynthetic(
+    asharia::host_runtime::FactoryActivateContextV1&,
+    asharia::host_runtime::FactoryInstanceViewV1) noexcept {
+  return asharia::host_runtime::FactoryCallbackResultV1::succeeded();
+}
+
+asharia::host_runtime::FactoryCallbackResultV1 quiesceSynthetic(
+    asharia::host_runtime::FactoryQuiesceContextV1&,
+    asharia::host_runtime::FactoryInstanceViewV1) noexcept {
+  return asharia::host_runtime::FactoryCallbackResultV1::succeeded();
+}
+
+asharia::host_runtime::FactoryCallbackResultV1 deactivateSynthetic(
+    asharia::host_runtime::FactoryDeactivateContextV1&,
+    asharia::host_runtime::FactoryInstanceViewV1) noexcept {
+  return asharia::host_runtime::FactoryCallbackResultV1::succeeded();
+}
+
+void destroySynthetic(
+    asharia::host_runtime::FactoryInstanceTokenV1 instance) noexcept {
+  (void)asharia::host_runtime::FactoryInstanceTokenProviderAccessV1::consume(
+      static_cast<asharia::host_runtime::FactoryInstanceTokenV1&&>(instance));
+}
+
+} // namespace
+
 void asharia::synthetic::provideRuntimeFactories(
     asharia::host_runtime::StaticFactoryRegistrar& registrar) noexcept {
-  registrar.registerFactory("runtime-service");
+  registrar.registerFactory(
+      "runtime-service",
+      {
+          .create = &createSynthetic,
+          .activate = &activateSynthetic,
+          .quiesce = &quiesceSynthetic,
+          .deactivate = &deactivateSynthetic,
+          .destroy = &destroySynthetic,
+      });
 }
 """,
                 encoding="utf-8-sig",
@@ -615,13 +743,14 @@ int main() {{
     return 1;
   }}
   asharia::generated::recordStaticFactoryProviders(*recorder);
-  auto snapshot = std::move(*recorder).finish();
-  if (!snapshot || snapshot->registrations.size() != 1U) {{
+  auto table = std::move(*recorder).finish();
+  if (!table || table->registrationSnapshot().registrations.size() != 1U) {{
     return 2;
   }}
-  const auto& registration = snapshot->registrations.front();
-  if (snapshot->generationId != "{generation.manifest.generation_id}" ||
-      snapshot->hostActivationBlueprintSha256 !=
+  const auto& snapshot = table->registrationSnapshot();
+  const auto& registration = snapshot.registrations.front();
+  if (snapshot.generationId != "{generation.manifest.generation_id}" ||
+      snapshot.hostActivationBlueprintSha256 !=
           "{generation.manifest.inputs.host_activation_blueprint_integrity.digest}" ||
       registration.packageId != "com.asharia.synthetic" ||
       registration.packageVersion != "1.0.0" ||
@@ -648,7 +777,7 @@ set(ASHARIA_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 add_subdirectory("{repository_root}/engine/host-runtime" asharia-host-runtime)
 add_library(asharia_synthetic_runtime STATIC provider.cpp)
 target_include_directories(asharia_synthetic_runtime PUBLIC include)
-target_link_libraries(asharia_synthetic_runtime PUBLIC asharia::host_runtime_contract)
+target_link_libraries(asharia_synthetic_runtime PRIVATE asharia::host_runtime_provider_bridge)
 add_executable(host main.cpp)
 include("{generation_path}/asharia-static-composition.cmake")
 asharia_attach_static_composition(host)
@@ -742,7 +871,7 @@ asharia_attach_static_composition(host)
             self.assertNotEqual(0, mismatched.returncode, mismatch_output)
             self.assertTrue(
                 "static_assert" in mismatch_output
-                or "StaticFactoryProviderV1" in mismatch_output
+                or "StaticFactoryProviderV2" in mismatch_output
                 or "static_composition_root.cpp" in mismatch_output,
                 mismatch_output,
             )
@@ -802,7 +931,7 @@ asharia_attach_static_composition(host)
             for line in (
                 "add_library(asharia_synthetic_runtime STATIC provider.cpp)\n",
                 "target_include_directories(asharia_synthetic_runtime PUBLIC include)\n",
-                "target_link_libraries(asharia_synthetic_runtime PUBLIC asharia::host_runtime_contract)\n",
+                "target_link_libraries(asharia_synthetic_runtime PRIVATE asharia::host_runtime_provider_bridge)\n",
             ):
                 missing_provider_cmake = missing_provider_cmake.replace(line, "")
             (source_root / "CMakeLists.txt").write_text(

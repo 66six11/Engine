@@ -37,6 +37,7 @@ class HostExecutableTemplateTests(unittest.TestCase):
         self.assertEqual(first.generation, second.generation)
         assert first.generation is not None
         manifest = first.generation.manifest
+        self.assertEqual(2, manifest.renderer_revision)
         self.assertEqual(
             self.composition.manifest.generation_id,
             manifest.static_composition_generation_id,
@@ -69,6 +70,9 @@ class HostExecutableTemplateTests(unittest.TestCase):
         self.assertIn("asharia-host/bin/$<CONFIG>", cmake)
         self.assertIn("--asharia-verify-static-registration", main_text)
         self.assertIn("recordStaticFactoryProviders", main_text)
+        self.assertIn("auto table = std::move(*recorder).finish();", main_text)
+        self.assertIn("table->registrationSnapshot()", main_text)
+        self.assertIn("static_factory_callback_table.hpp", main_text)
         self.assertNotIn("activate", main_text.casefold())
         self.assertNotIn("factory instance", main_text.casefold())
 
@@ -80,6 +84,39 @@ class HostExecutableTemplateTests(unittest.TestCase):
         self.assertEqual(
             ["host-template.target-invalid"],
             [item.code for item in result.diagnostics],
+        )
+
+    def test_current_template_rejects_legacy_composition_contract(self) -> None:
+        legacy = replace(
+            self.composition.manifest,
+            generation_id="sha256-" + "0" * 64,
+            renderer_revision=2,
+            provider_api="asharia-static-factory-provider-v1",
+            integrity=composition.IntegrityRecord("sha256", "0" * 64),
+        )
+        legacy = replace(
+            legacy,
+            generation_id=composition._generation_id(legacy),
+        )
+        integrity = composition.compute_static_composition_root_manifest_integrity(
+            legacy
+        )
+        legacy = replace(
+            legacy,
+            integrity=composition.IntegrityRecord(**integrity),
+        )
+
+        result = host_template.generate_windows_development_host_template(
+            legacy,
+            "asharia-generated-host",
+            self.validators,
+        )
+
+        self.assertFalse(result.succeeded)
+        self.assertIsNone(result.generation)
+        self.assertEqual(
+            {"static-composition.schema"},
+            {item.code for item in result.diagnostics},
         )
 
     def test_target_name_changes_template_generation(self) -> None:

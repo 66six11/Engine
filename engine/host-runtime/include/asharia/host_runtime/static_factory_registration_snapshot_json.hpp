@@ -3,7 +3,7 @@
 #include <expected>
 #include <string>
 
-#include "asharia/host_runtime/static_factory_registration.hpp"
+#include "asharia/host_runtime/static_factory_registration_snapshot.hpp"
 
 namespace asharia::host_runtime {
 

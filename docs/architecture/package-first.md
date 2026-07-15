@@ -210,19 +210,20 @@ owner scope、required factory 与 contribution ownership 合同，并纳入 Can
 fingerprint；它不创建 instance。[Host Activation Blueprint v1](adr-host-activation-blueprint-v1.md) 已将 Ready Session、
 Host Composition 与 exact factory snapshots 派生为固定 scope topology、factory dependency order 和 selected contribution bindings；
 它是构建期逻辑蓝图，不伪造尚不存在的 artifact、symbol 或进程加载证据。
-[Static Factory Provider Bindings v1](adr-static-factory-provider-bindings-v1.md) 已为 #286 实现独立
+[Static Factory Provider Bindings v1](adr-static-factory-provider-bindings-v1.md) 为 #286 建立了最初边界；#291 已将 active author
+bindings 与 derived Binding Plan 硬切为 schema/model v2/provider API v2。独立
 `asharia.package.static-factory-bindings.json` source sidecar、Factory/Build cross binding、Candidate Discovery exact snapshot、
 Locked Verification 与 Effective Session fingerprint；派生 Binding Plan 会进一步证明 provider target 已被本次 Source Build Plan
 选择。它只声明可直接编译引用的静态 provider 入口，不执行注册或 lifecycle，也不成为第三份 lock。
-[Generated Static Composition Root v1](adr-generated-static-composition-root-v1.md) 已为 #287 实现 preflight CMake
-codemodel → content-addressed thin TU/controlled target attachment 的边界，并加入最小 provider type
-contract。[Static Factory Registration v1](adr-static-factory-registration-v1.md) 已为 #289 实现 identity-only recorder：generated
-root 注入 exact composition/provider context，provider 只登记 local factory ID，成功后输出 canonical owning snapshot。
+[Generated Static Composition Root v1](adr-generated-static-composition-root-v1.md) 已实现 preflight CMake codemodel →
+content-addressed thin TU/controlled target attachment；current renderer 3 只接受 provider v2。
+[Static Factory Callback Table v1](adr-static-factory-callback-table-v1.md) 已为 #291 把 `local factory ID + complete descriptor`
+冻结为 current-process table，并投影 #289 的 canonical owning snapshot；registration 不调用 lifecycle callback。
 [Windows Development Host Template v1](adr-windows-development-host-template-v1.md) 已为 #290 实现固定 final Host target、受控
 configure/build、CMake File API target binding 与 registration-only verification。
 [Host Executable Binding Receipt v1](adr-host-executable-binding-receipt-v1.md) 已为 #288 把 immutable composition/Template、
-same-index target/configured compiler、collector-owned staged executable bytes 与 exact owning snapshot 绑定并原子发布；它仍不拥有
-factory callback、activation lifecycle 或 UI，也不证明 `Ready`/current process state。上游 catalog/index、lock update/apply、
+same-index target/configured compiler、collector-owned staged executable bytes 与 exact owning snapshot 绑定并原子发布；receipt 不
+序列化 callback address，也不拥有 activation lifecycle 或 UI，不证明 `Ready`/current process state。上游 catalog/index、lock update/apply、
 repair executor、轻量启动 receipt、生产 catalog/lockfile 与 Editor Package Manager 尚未实现。Project Manifest / Lock v2 不保留
 v1 reader 或 migration adapter。
 
@@ -347,16 +348,16 @@ Effective Session 或 Editor Bootstrap。
 [ADR：Host Activation Blueprint v1](adr-host-activation-blueprint-v1.md) 已为 #285 实现固定 Host scope policy、exact logical factory
 references、全图 dependency-first order、selected contribution intersection 与 canonical self-integrity；它位于 build 之前，
 不是 artifact-bound 的最终 Activation Plan。
-[ADR：Static Factory Provider Bindings v1](adr-static-factory-provider-bindings-v1.md) 已为 #286 实现 logical factory、
+[ADR：Static Factory Provider Bindings v1](adr-static-factory-provider-bindings-v1.md) 为 #286 建立 logical factory、
 same-module static build target、public header 与 type-safe provider function 的 exact cross-contract evidence；portable Factory
 Declaration 继续不携带 CMake、C++ 或 artifact 字段。派生 Binding Plan 只封装 verified input fingerprints 与 provider calls，
-不重新选择 package/module/target。
-[ADR：Static Factory Registration v1](adr-static-factory-registration-v1.md) 已为 #289 实现 provider-call capacity、exact context
-注入、sticky first error 与 canonical owning snapshot。provider API 只接受 local factory ID；snapshot 不保存 callback，也不替代
-Blueprint 的 factory dependency order。
+不重新选择 package/module/target。#291 已将 active bindings/plan 与 provider API 硬切 v2，不保留 v1 reader。
+[ADR：Static Factory Registration v1](adr-static-factory-registration-v1.md) 为 #289 建立 provider-call capacity、exact context 注入、
+sticky first error 与 canonical owning snapshot；[Static Factory Callback Table v1](adr-static-factory-callback-table-v1.md) 已将 active
+registrar 改为接收完整 descriptor，并让 table 自有 snapshot。snapshot 不保存 callback，也不替代 Blueprint dependency order。
 [ADR：Windows Development Host Template v1](adr-windows-development-host-template-v1.md) 已为 #290 实现固定
 `windows-development-v1` template、final target/`main()`、受控 configure/build、latest File API binding 与 exact Host
-registration-only verification。它只产出 downstream target/path/snapshot handoff，不读取 artifact bytes。
+registration-only verification；#291 current renderer 2 从 table 读取 snapshot，五个 lifecycle callbacks 调用次数仍为零。
 [ADR：Host Executable Binding Receipt v1](adr-host-executable-binding-receipt-v1.md) 已为 #288 从 exact File API path 流式收集
 executable，运行 collector-owned staged bytes，交叉验证 registration identity，并发布可深度复验的 closed generation。
 

@@ -57,17 +57,19 @@ Ready Effective Session
                 ↓
 Host Activation Blueprint（本 ADR）
                 ↓
-verified Static Factory Provider Binding Plan
+verified Static Factory Provider Binding Plan v2
                 ↓
-generated static composition root
+generated static composition root renderer 3 / provider v2
                 ↓
 compile / link
                 ↓
-identity-only static registration recording
+frozen Static Factory Callback Table v1
                 ↓
-owning registration snapshot + artifact verification
+table-owned registration snapshot + artifact verification
                 ↓
 Host Executable Binding Receipt
+                ↓
+Activation Eligibility
                 ↓
 Host Runtime lifecycle
 ```
@@ -77,11 +79,13 @@ fingerprints。它是 build-time derived state，可以规范化呈现用于 dia
 
 [Host Executable Binding Receipt v1](adr-host-executable-binding-receipt-v1.md) 已把 Blueprint fingerprint 对证到：
 
-- [Static Factory Registration v1](adr-static-factory-registration-v1.md) 输出的 exact owning registration snapshot；
+- [Static Factory Callback Table v1](adr-static-factory-callback-table-v1.md) 输出的 exact table-owned registration snapshot；
 - exact staged Host executable artifact；
 - Engine generation、platform、configuration 和 toolchain；
 
 当前进程实际加载的 native generation 仍属于后继 Session/Bootstrap state，不由 Blueprint 或 registration snapshot 推断。
+上述 active pipeline 只接受 Template renderer 2 + Composition renderer 3/provider v2；#286/#289 的 v1 binding/identity-only
+registration 仅保留为历史 ADR，不存在旧 reader 或 adapter。
 
 因此本 Blueprint 不读取 Package Artifact Manifest，也不输出 `PendingBuild` / `PendingRestart`。
 
@@ -288,12 +292,19 @@ partial plan，也不修改 session、Host Composition、candidate 或 declarati
 
 ## 后继边界
 
-1. [Static Factory Provider Bindings v1](adr-static-factory-provider-bindings-v1.md) 已为 #286 冻结 logical factory 到 selected static target/public header/type-safe function 的 exact source evidence，并派生 verified Binding Plan handoff；
-2. [Generated Static Composition Root v1](adr-generated-static-composition-root-v1.md)：#287 已消费 Source Build Plan、Blueprint 与 verified provider Binding Plan，生成薄 C++ registration source 和受控 target attachment；
-3. [Static Factory Registration v1](adr-static-factory-registration-v1.md)：#289 已由 generated root 注入 generation、Blueprint、provider context 与 expected local factory IDs，并输出 identity-only canonical owning snapshot；
+1. [Static Factory Provider Bindings v1](adr-static-factory-provider-bindings-v1.md) 记录 #286 的历史合同；#291 已将 active
+   bindings/Binding Plan 与 provider API 硬切为 v2，不保留 bindings/Binding Plan v1 的 schema、reader 或 adapter；
+2. [Generated Static Composition Root v1](adr-generated-static-composition-root-v1.md)：#287 已消费 Source Build Plan、Blueprint 与
+   verified Binding Plan；#291 后 active renderer 3/provider v2 生成薄 C++ registration source 和受控 target attachment；
+3. [Static Factory Registration v1](adr-static-factory-registration-v1.md) 记录 #289 的 historical identity-only surface；
+   #291 已将 active registrar 硬切为 descriptor registration，由
+   [Static Factory Callback Table v1](adr-static-factory-callback-table-v1.md) 冻结完整 typed callbacks，并由 table 拥有 canonical
+   identity-only snapshot，但不调用 lifecycle；
 4. [Windows Development Host Template v1](adr-windows-development-host-template-v1.md)：#290 已实现固定 final executable、`main()`、
    受控构建、File API target binding 与 registration-only verification；
 5. [Host Executable Binding Receipt v1](adr-host-executable-binding-receipt-v1.md)：#288 已在构建后把 Blueprint fingerprint、
    registration snapshot 与 exact staged Host artifact 对证；该 receipt 不证明 lifecycle activation；
-6. Host Runtime lifecycle：实现 concrete scope tree、factory context、lifecycle callbacks、activation lease、typed registries、rollback 与 shutdown；
-7. Bootstrap adapter：把上述 headless states 映射到 Ready/PendingBuild/PendingRestart/SafeMode UI。
+6. Activation Eligibility：只对当前 Template renderer 2 + Composition renderer 3/provider v2 generation 交叉验证 receipt、session 与
+   current process，授权 callback access；
+7. Host Runtime lifecycle：实现 concrete scope tree、factory context、lifecycle callbacks、activation lease、typed registries、rollback 与 shutdown；
+8. Bootstrap adapter：把上述 headless states 映射到 Ready/PendingBuild/PendingRestart/SafeMode UI。

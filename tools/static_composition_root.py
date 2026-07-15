@@ -25,8 +25,8 @@ from tools import static_factory_provider_bindings as provider_bindings
 STATIC_COMPOSITION_ROOT_NAME = "asharia.static-composition-root.json"
 STATIC_COMPOSITION_ROOT_SCHEMA = "com.asharia.static-composition-root"
 STATIC_COMPOSITION_ROOT_SCHEMA_VERSION = 1
-STATIC_COMPOSITION_RENDERER_REVISION = 2
-STATIC_COMPOSITION_PROVIDER_API = "asharia-static-factory-provider-v1"
+STATIC_COMPOSITION_RENDERER_REVISION = 3
+STATIC_COMPOSITION_PROVIDER_API = "asharia-static-factory-provider-v2"
 STATIC_COMPOSITION_HEADER_PATH = (
     "include/asharia/generated/static_composition_root.hpp"
 )
@@ -88,6 +88,7 @@ class StaticCompositionRootManifest:
 
     generation_id: str
     renderer_revision: int
+    provider_api: str
     inputs: StaticCompositionInputs
     engine_generation_id: str
     host_kind: str
@@ -298,7 +299,7 @@ def _generation_descriptor_data(
                 "targetArchitecture": manifest.target_architecture,
             },
         },
-        "providerApi": STATIC_COMPOSITION_PROVIDER_API,
+        "providerApi": manifest.provider_api,
         "providers": [_provider_data(value) for value in manifest.providers],
         "layout": [
             {"path": path, "role": role, "mediaType": media_type}
@@ -387,6 +388,7 @@ def _manifest_from_data(data: dict[str, Any]) -> StaticCompositionRootManifest:
     return StaticCompositionRootManifest(
         generation_id=data["generationId"],
         renderer_revision=data["rendererRevision"],
+        provider_api=data["providerApi"],
         inputs=StaticCompositionInputs(
             _integrity_record(data["inputs"]["sourceBuildPlanIntegrity"]),
             _integrity_record(
@@ -486,7 +488,7 @@ def validate_static_composition_root_manifest_data(
     return sorted(diagnostics, key=_diagnostic_sort_key)
 
 
-def _render_header() -> bytes:
+def _render_recording_header() -> bytes:
     text = """#pragma once
 
 #include \"asharia/host_runtime/static_factory_registration.hpp\"
@@ -544,7 +546,7 @@ def _registration_capacity(
     )
 
 
-def _render_source(
+def _render_recording_source(
     generation_id: str,
     host_activation_blueprint_sha256: str,
     providers: tuple[provider_bindings.StaticFactoryProvider, ...],
@@ -570,7 +572,7 @@ def _render_source(
             (
                 "static_assert(std::is_same_v<",
                 f"              decltype(&{provider.entry_point.function}),",
-                "              asharia::host_runtime::StaticFactoryProviderV1>);",
+                "              asharia::host_runtime::StaticFactoryProviderV2>);",
                 "",
             )
         )
@@ -635,7 +637,7 @@ def _render_source(
     return _UTF8_BOM + "\n".join(lines).encode("utf-8")
 
 
-def _render_cmake(
+def _render_cmake_attachment(
     generation_id: str,
     providers: tuple[provider_bindings.StaticFactoryProvider, ...],
 ) -> bytes:
@@ -697,6 +699,50 @@ def _render_cmake(
         )
     )
     return "\n".join(lines).encode("utf-8")
+
+
+def _render_files_for_manifest(
+    manifest: StaticCompositionRootManifest,
+) -> tuple[GeneratedStaticCompositionFile, ...]:
+    if (
+        manifest.renderer_revision != STATIC_COMPOSITION_RENDERER_REVISION
+        or manifest.provider_api != STATIC_COMPOSITION_PROVIDER_API
+    ):
+        raise ValueError(
+            "static-composition renderer/provider API combination is unsupported"
+        )
+
+    cmake = _render_cmake_attachment(
+        manifest.generation_id,
+        manifest.providers,
+    )
+    header = _render_recording_header()
+    source = _render_recording_source(
+        manifest.generation_id,
+        manifest.inputs.host_activation_blueprint_integrity.digest,
+        manifest.providers,
+    )
+
+    return (
+        GeneratedStaticCompositionFile(
+            STATIC_COMPOSITION_CMAKE_PATH,
+            "cmake-attachment",
+            "text/x-cmake",
+            cmake,
+        ),
+        GeneratedStaticCompositionFile(
+            STATIC_COMPOSITION_HEADER_PATH,
+            "declaration-header",
+            "text/x-c++hdr",
+            header,
+        ),
+        GeneratedStaticCompositionFile(
+            STATIC_COMPOSITION_SOURCE_PATH,
+            "registration-source",
+            "text/x-c++src",
+            source,
+        ),
+    )
 
 
 def _same_integrity(left: Any, right: Any) -> bool:
@@ -889,6 +935,7 @@ def generate_static_composition_root(
     manifest = StaticCompositionRootManifest(
         generation_id="sha256-" + "0" * 64,
         renderer_revision=STATIC_COMPOSITION_RENDERER_REVISION,
+        provider_api=STATIC_COMPOSITION_PROVIDER_API,
         inputs=inputs,
         engine_generation_id=blueprint.engine_generation_id,
         host_kind=blueprint.host_kind,
@@ -905,30 +952,7 @@ def generate_static_composition_root(
         integrity=IntegrityRecord("sha256", "0" * 64),
     )
     manifest = replace(manifest, generation_id=_generation_id(manifest))
-    rendered_files = (
-        GeneratedStaticCompositionFile(
-            STATIC_COMPOSITION_CMAKE_PATH,
-            "cmake-attachment",
-            "text/x-cmake",
-            _render_cmake(manifest.generation_id, providers),
-        ),
-        GeneratedStaticCompositionFile(
-            STATIC_COMPOSITION_HEADER_PATH,
-            "declaration-header",
-            "text/x-c++hdr",
-            _render_header(),
-        ),
-        GeneratedStaticCompositionFile(
-            STATIC_COMPOSITION_SOURCE_PATH,
-            "registration-source",
-            "text/x-c++src",
-            _render_source(
-                manifest.generation_id,
-                blueprint.integrity.digest,
-                providers,
-            ),
-        ),
-    )
+    rendered_files = _render_files_for_manifest(manifest)
     file_evidence = tuple(
         StaticCompositionFileEvidence(
             value.path,
@@ -962,9 +986,10 @@ def validate_static_composition_root_generation(
 ) -> list[contracts.Diagnostic]:
     """Revalidate manifest and every in-memory generated byte sequence."""
 
-    diagnostics = validate_static_composition_root_manifest_data(
+    manifest_diagnostics = validate_static_composition_root_manifest_data(
         generation.manifest, validators
     )
+    diagnostics = list(manifest_diagnostics)
     files_by_path = {value.path: value for value in generation.files}
     if len(files_by_path) != len(generation.files):
         diagnostics.append(
@@ -1003,6 +1028,29 @@ def validate_static_composition_root_generation(
                     f"generated bytes for '{evidence.path}' differ from the manifest",
                 )
             )
+    if not manifest_diagnostics:
+        expected_rendered = {
+            value.path: value
+            for value in _render_files_for_manifest(generation.manifest)
+        }
+        for index, evidence in enumerate(generation.manifest.files):
+            generated = files_by_path.get(evidence.path)
+            expected = expected_rendered.get(evidence.path)
+            if (
+                generated is not None
+                and expected is not None
+                and generated != expected
+            ):
+                diagnostics.append(
+                    _diagnostic(
+                        "static-composition.renderer-output-mismatch",
+                        f"/files/{index}",
+                        (
+                            f"generated bytes for '{evidence.path}' do not match "
+                            f"renderer revision {generation.manifest.renderer_revision}"
+                        ),
+                    )
+                )
     return sorted(diagnostics, key=_diagnostic_sort_key)
 
 

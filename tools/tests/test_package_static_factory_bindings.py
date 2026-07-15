@@ -1,4 +1,4 @@
-"""Static native Factory Provider Binding v1 contract and evidence tests."""
+"""Static native Factory Provider Binding v2 contract and evidence tests."""
 
 from __future__ import annotations
 
@@ -169,12 +169,12 @@ class PackageStaticFactoryBindingsTests(unittest.TestCase):
         }
         return {
             "schema": "com.asharia.package-static-factory-bindings",
-            "schemaVersion": 1,
+            "schemaVersion": 2,
             "package": {
                 "id": self.manifest["id"],
                 "version": self.manifest["version"],
             },
-            "providerApi": "asharia-static-factory-provider-v1",
+            "providerApi": "asharia-static-factory-provider-v2",
             "modules": [
                 {
                     "moduleId": module["id"],
@@ -426,8 +426,11 @@ class PackageStaticFactoryBindingsTests(unittest.TestCase):
         runtime_lookup["modules"][2]["binding"]["providers"][0][
             "entryPoint"
         ]["library"] = "runtime.dll"
+        legacy = self.bindings()
+        legacy["schemaVersion"] = 1
+        legacy["providerApi"] = "asharia-static-factory-provider-v1"
 
-        for value in (shared, symbol, runtime_lookup):
+        for value in (shared, symbol, runtime_lookup, legacy):
             with self.subTest(value=value):
                 diagnostics = contracts.validate_manifest_data(
                     value,
@@ -647,6 +650,29 @@ class PackageStaticFactoryBindingsTests(unittest.TestCase):
                 [item.render() for item in result.diagnostics],
             )
             assert result.plan is not None
+            plan_data = (
+                provider_bindings.static_factory_provider_binding_plan_to_data(
+                    result.plan
+                )
+            )
+            self.assertEqual(2, plan_data["schemaVersion"])
+            self.assertEqual(
+                "asharia-static-factory-provider-v2",
+                plan_data["providerApi"],
+            )
+            legacy_plan = copy.deepcopy(plan_data)
+            legacy_plan["schemaVersion"] = 1
+            legacy_plan["providerApi"] = "asharia-static-factory-provider-v1"
+            legacy_diagnostics = (
+                provider_bindings.validate_static_factory_provider_binding_plan_data(
+                    legacy_plan,
+                    self.validators,
+                )
+            )
+            self.assertEqual(
+                {"factory.binding-plan.schema"},
+                {item.code for item in legacy_diagnostics},
+            )
             self.assertEqual(
                 [],
                 provider_bindings.validate_static_factory_provider_binding_plan_data(

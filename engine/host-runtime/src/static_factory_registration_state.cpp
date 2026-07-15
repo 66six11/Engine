@@ -88,7 +88,9 @@ namespace asharia::host_runtime {
         }
     }
 
-    void StaticFactoryRegistrationState::registerFactory(std::string_view localFactoryId) noexcept {
+    void
+    StaticFactoryRegistrationState::registerFactory(std::string_view localFactoryId,
+                                                    StaticFactoryCallbacksV1 callbacks) noexcept {
         if (failure.has_value()) {
             return;
         }
@@ -121,6 +123,31 @@ namespace asharia::host_runtime {
                  localFactoryId);
             return;
         }
+        if (callbacks.create == nullptr) {
+            fail(StaticFactoryRegistrationErrorCode::FactoryCreateCallbackMissing, &provider,
+                 localFactoryId);
+            return;
+        }
+        if (callbacks.activate == nullptr) {
+            fail(StaticFactoryRegistrationErrorCode::FactoryActivateCallbackMissing, &provider,
+                 localFactoryId);
+            return;
+        }
+        if (callbacks.quiesce == nullptr) {
+            fail(StaticFactoryRegistrationErrorCode::FactoryQuiesceCallbackMissing, &provider,
+                 localFactoryId);
+            return;
+        }
+        if (callbacks.deactivate == nullptr) {
+            fail(StaticFactoryRegistrationErrorCode::FactoryDeactivateCallbackMissing, &provider,
+                 localFactoryId);
+            return;
+        }
+        if (callbacks.destroy == nullptr) {
+            fail(StaticFactoryRegistrationErrorCode::FactoryDestroyCallbackMissing, &provider,
+                 localFactoryId);
+            return;
+        }
 
         const std::string_view ownedFactoryId = copyText(*expected);
         if (failure.has_value()) {
@@ -132,6 +159,7 @@ namespace asharia::host_runtime {
             .moduleId = provider.moduleId,
             .factoryId = ownedFactoryId,
             .providerEntryPoint = provider.entryPoint,
+            .callbacks = callbacks,
         };
         ++observedFactoryCount;
     }
