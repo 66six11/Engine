@@ -1,0 +1,201 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.asharia.dev/package-runtime/windows-development-host-template-v1.schema.json",
+  "title": "Asharia Windows Development Host Template v1",
+  "description": "Content-addressed generated final Host target and registration-only main for one Windows development composition.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "schemaVersion",
+    "rendererRevision",
+    "templateKind",
+    "generationId",
+    "staticComposition",
+    "host",
+    "build",
+    "files",
+    "integrity"
+  ],
+  "properties": {
+    "schema": {
+      "const": "com.asharia.windows-development-host-template"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "rendererRevision": {
+      "const": 1
+    },
+    "templateKind": {
+      "const": "windows-development-v1"
+    },
+    "generationId": {
+      "$ref": "#/$defs/generationId"
+    },
+    "staticComposition": {
+      "$ref": "#/$defs/staticComposition"
+    },
+    "host": {
+      "$ref": "#/$defs/host"
+    },
+    "build": {
+      "$ref": "#/$defs/build"
+    },
+    "files": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/file"
+      }
+    },
+    "integrity": {
+      "$ref": "#/$defs/integrity"
+    }
+  },
+  "$defs": {
+    "integrity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "algorithm",
+        "digest"
+      ],
+      "properties": {
+        "algorithm": {
+          "const": "sha256"
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "generationId": {
+      "type": "string",
+      "pattern": "^sha256-[0-9a-f]{64}$"
+    },
+    "staticComposition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "generationId",
+        "manifestIntegrity"
+      ],
+      "properties": {
+        "generationId": {
+          "$ref": "#/$defs/generationId"
+        },
+        "manifestIntegrity": {
+          "$ref": "#/$defs/integrity"
+        }
+      }
+    },
+    "host": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "engineGenerationId",
+        "hostKind",
+        "targetPlatform"
+      ],
+      "properties": {
+        "engineGenerationId": {
+          "$ref": "#/$defs/generationId"
+        },
+        "hostKind": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/hostKind"
+        },
+        "targetPlatform": {
+          "type": "string",
+          "pattern": "^com\\.asharia\\.platform\\.windows(?:[.A-Za-z0-9_-]*)$"
+        }
+      }
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "type"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "pattern": "^[A-Za-z0-9_.+\\-]+$"
+        },
+        "type": {
+          "const": "EXECUTABLE"
+        }
+      }
+    },
+    "build": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "configuration",
+        "target",
+        "subsystem",
+        "runtimeOutputDirectory"
+      ],
+      "properties": {
+        "configuration": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "target": {
+          "$ref": "#/$defs/target"
+        },
+        "subsystem": {
+          "const": "console"
+        },
+        "runtimeOutputDirectory": {
+          "const": "asharia-host/bin/$<CONFIG>"
+        }
+      }
+    },
+    "file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "role",
+        "mediaType",
+        "size",
+        "integrity"
+      ],
+      "properties": {
+        "path": {
+          "enum": [
+            "asharia-host-template.cmake",
+            "src/main.cpp"
+          ]
+        },
+        "role": {
+          "enum": [
+            "cmake-host-template",
+            "registration-verification-main"
+          ]
+        },
+        "mediaType": {
+          "enum": [
+            "text/x-cmake",
+            "text/x-c++src"
+          ]
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "integrity": {
+          "$ref": "#/$defs/integrity"
+        }
+      }
+    }
+  }
+}

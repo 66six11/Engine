@@ -18,6 +18,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 include(AshariaCompilerOptions)
+include(AshariaGeneratedHost)
 
 if(ASHARIA_BUILD_TESTS)
     enable_testing()
@@ -48,6 +49,8 @@ add_subdirectory(packages/material-instance)
 add_subdirectory(packages/asset-pipeline)
 add_subdirectory(packages/shader-material-adapter)
 add_subdirectory(packages/renderer-basic)
+
+asharia_include_generated_host_template()
 
 add_subdirectory(tools/asset-processor)
 

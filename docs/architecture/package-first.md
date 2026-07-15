@@ -215,11 +215,13 @@ Host Composition 与 exact factory snapshots 派生为固定 scope topology、fa
 Locked Verification 与 Effective Session fingerprint；派生 Binding Plan 会进一步证明 provider target 已被本次 Source Build Plan
 选择。它只声明可直接编译引用的静态 provider 入口，不执行注册或 lifecycle，也不成为第三份 lock。
 [Generated Static Composition Root v1](adr-generated-static-composition-root-v1.md) 已为 #287 实现 preflight CMake
-codemodel → content-addressed thin TU/controlled target attachment → final configure/build 的边界，并加入最小 provider type
+codemodel → content-addressed thin TU/controlled target attachment 的边界，并加入最小 provider type
 contract。[Static Factory Registration v1](adr-static-factory-registration-v1.md) 已为 #289 实现 identity-only recorder：generated
-root 注入 exact composition/provider context，provider 只登记 local factory ID，成功后输出 canonical owning snapshot。两者仍不提前
-拥有 final Host target、factory callback 或 lifecycle。
-上游 catalog/index、lock update/apply、repair executor、#290 Host Template/Build Adapter、轻量启动 receipt、构建后
+root 注入 exact composition/provider context，provider 只登记 local factory ID，成功后输出 canonical owning snapshot。
+[Windows Development Host Template v1](adr-windows-development-host-template-v1.md) 已为 #290 实现固定 final Host target、受控
+configure/build、CMake File API target binding 与 registration-only verification。三者仍不拥有 factory callback、activation lifecycle、
+UI 或 artifact receipt。
+上游 catalog/index、lock update/apply、repair executor、轻量启动 receipt、构建后
 #288 activation binding receipt、生产 catalog/lockfile 与 Editor Package Manager 尚未实现。Project Manifest / Lock v2
 不保留 v1 reader 或 migration adapter。
 
@@ -240,6 +242,8 @@ flowchart LR
     Profile["Host Profile"]
     Composition["Effective Session / Host Composition<br/>derived, disposable"]
     Build["Conan / CMake / Cook Plan"]
+    HostBuild["Windows Development Host<br/>template + exact-target build"]
+    Evidence["File API target evidence<br/>+ registration snapshot"]
     Hosts["Editor / Runtime / Server / Tools"]
 
     Editor -->|"edit dependencies"| Manifest
@@ -250,6 +254,7 @@ flowchart LR
     Lock --> Composition
     Profile --> Composition
     Composition --> Build
+    Build --> HostBuild --> Evidence
     Composition --> Hosts
 ```
 
@@ -286,6 +291,9 @@ flowchart LR
   public header 与受限 qualified function；它不是运行时字符串 symbol lookup，也不成为第三份 lock。
 - generated root 以 verified binding 为权威注入 package/version/module/entry point 与 expected factory IDs；provider 只能提交
   local factory ID。identity-only registration snapshot 是构建后 receipt 的派生输入，不是新的 package graph 或 activation order。
+- Windows Development Host adapter 消费 immutable template/composition generation，受控 configure 后通过 latest CMake File API
+  绑定 exact `EXECUTABLE`/configuration/primary artifact，再只构建该 target 并运行 restricted registration verification。它不执行
+  Conan resolution、factory lifecycle、UI、artifact hash 或 receipt publication。
 - data-only package 可以即时激活；native code package 可以明确要求 regenerate、build 和 restart。
 - 当前 Editor Profile 自身要求的 Package Runtime、Editor Domain 和 Package Manager UI 来自 Editor Image/Distribution，
   可以在 UI 中显示为 distribution-provided/required，但不成为当前项目 lock 可卸载的节点。
@@ -343,6 +351,9 @@ Declaration 继续不携带 CMake、C++ 或 artifact 字段。派生 Binding Pla
 [ADR：Static Factory Registration v1](adr-static-factory-registration-v1.md) 已为 #289 实现 provider-call capacity、exact context
 注入、sticky first error 与 canonical owning snapshot。provider API 只接受 local factory ID；snapshot 不保存 callback，也不替代
 Blueprint 的 factory dependency order。
+[ADR：Windows Development Host Template v1](adr-windows-development-host-template-v1.md) 已为 #290 实现固定
+`windows-development-v1` template、final target/`main()`、受控 configure/build、latest File API binding 与 exact Host
+registration-only verification。它只产出 #288 所需的 target/path/snapshot handoff，不读取 artifact bytes。
 
 ### Feature Package 不是 API 包装器
 

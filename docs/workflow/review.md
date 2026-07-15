@@ -69,6 +69,7 @@ handoff 时，除全量 Python tests 外，开发中至少先运行以下 focuse
 
 ```powershell
 python -m unittest tools.tests.test_package_factory_contracts tools.tests.test_package_static_factory_bindings tools.tests.test_effective_session tools.tests.test_host_package_composition tools.tests.test_package_source_build_plan tools.tests.test_package_artifact_evidence tools.tests.test_engine_distribution_assembly tools.tests.test_engine_distribution_repair_verifier tools.tests.test_host_activation_blueprint tools.tests.test_static_composition_root
+python -m unittest tools.tests.test_host_build_request tools.tests.test_host_cmake_target tools.tests.test_host_build_adapter tools.tests.test_host_executable_template tools.tests.test_host_registration_snapshot tools.tests.test_host_registration_verification
 ```
 
 Effective Session v1 只能产生 `Ready`、`UpgradeRequired`、`RepairRequired` 或 `SafeMode`；没有 artifact freshness 或
@@ -99,17 +100,32 @@ Static Factory Registration v1 只允许 provider 调用 `registerFactory(localF
 package/version/module/entry point 与 expected factory IDs 必须由 generated root 注入；不得让 provider 自报完整 identity，
 不得把 callback、instance、scope 或 lifecycle 塞进 snapshot。recorder 必须在 provider 调用前按 generated capacity 预留 storage，
 callback window 中零动态分配；首次错误 sticky，失败不返回 partial snapshot，成功结果必须完整 owning 且 canonical。
-修改 `engine/host-runtime` registration target 或 generated recording glue 时，两个 test presets 都必须运行
-`asharia-host-runtime-registration-tests`，并继续运行上述 synthetic fixture：
+修改 `engine/host-runtime` registration target、snapshot JSON renderer 或 generated recording glue 时，两个 test presets 都必须运行
+registration 与 snapshot JSON tests，并继续运行上述 synthetic fixture：
 
 ```powershell
-cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --preset clangcl-debug-tests && cmake --build --preset clangcl-debug-tests --target asharia-host-runtime-registration-tests && ctest --preset clangcl-debug-tests -R ^asharia-host-runtime-registration-tests$ --output-on-failure"
-cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake --preset msvc-debug-tests && cmake --build --preset msvc-debug-tests --target asharia-host-runtime-registration-tests && ctest --preset msvc-debug-tests -R ^asharia-host-runtime-registration-tests$ --output-on-failure"
+cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --preset clangcl-debug-tests && cmake --build --preset clangcl-debug-tests --target asharia-host-runtime-registration-tests asharia-host-runtime-registration-snapshot-json-tests && ctest --preset clangcl-debug-tests -R asharia-host-runtime-registration --output-on-failure"
+cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake --preset msvc-debug-tests && cmake --build --preset msvc-debug-tests --target asharia-host-runtime-registration-tests asharia-host-runtime-registration-snapshot-json-tests && ctest --preset msvc-debug-tests -R asharia-host-runtime-registration --output-on-failure"
 ```
 
 该 gate 至少覆盖 valid canonical owning snapshot、empty composition、unknown/missing/duplicate factory、provider 外调用、
 provider-count mismatch、sticky first error 与 text-capacity exhaustion。provider callback 的 no-allocation 边界由 create 阶段
 定长 storage、recording 路径索引写入，以及 ClangCL `noexcept`/exception-escape gate 共同约束。
+
+Windows Development Host Template v1 只允许消费已发布的 exact template/composition generation。adapter 必须在 spawn 前根据完整
+generation 只读复验两棵 closed publication tree，拒绝 payload 漂移、额外 entry 与 link/reparse；随后使用 typed argv、
+caller-supplied environment 与 `shell=False`，Conan 必须先行；File API binding 必须锁定 latest client reply 中唯一
+configuration/`EXECUTABLE`/primary artifact，并在 build 后复验普通文件。restricted Host 只输出 canonical registration JSON，
+不得执行 activation/lifecycle、UI、artifact hash 或 receipt publication。修改该边界时，除 focused Python tests 外，运行双编译器
+exact Host integration：
+
+```powershell
+cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && set ""CXX=clang-cl"" && set ""ASHARIA_HOST_TEST_ENABLE_CLANG_TIDY=1"" && set ""ASHARIA_EXPECT_CMAKE_CXX_COMPILER_ID=Clang"" && set ""ASHARIA_RUN_HOST_TEMPLATE_INTEGRATION_TESTS=1"" && set ""ASHARIA_HOST_TEST_TOOLCHAIN_FILE=build\conan\clangcl-debug\Debug\generators\conan_toolchain.cmake"" && python -m unittest tools.tests.test_generated_host_executable.GeneratedHostExecutableIntegrationTests.test_exact_host_build_and_restricted_verification -v"
+cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && set ""CXX=cl"" && set ""ASHARIA_EXPECT_CMAKE_CXX_COMPILER_ID=MSVC"" && set ""ASHARIA_RUN_HOST_TEMPLATE_INTEGRATION_TESTS=1"" && set ""ASHARIA_HOST_TEST_TOOLCHAIN_FILE=build\conan\msvc-debug\Debug\generators\conan_toolchain.cmake"" && python -m unittest tools.tests.test_generated_host_executable.GeneratedHostExecutableIntegrationTests.test_exact_host_build_and_restricted_verification -v"
+```
+
+该 fixture 必须证明 exact target/path binding、single-target build without clean-first、build 后 binding refresh、restricted process
+stdout/stderr/exit contract 与 expected generation/Blueprint snapshot 对证；不要求 clean-first 或默认 all-target build。
 Installed Distribution Repair Verifier v1 必须从调用方提供的 exact expected `EngineGenerationId` 开始；不能只信磁盘 manifest
 或目录名，不能在发现损坏后写回安装树，也不能把 `FatalDistributionError` 当作磁盘健康状态。
 

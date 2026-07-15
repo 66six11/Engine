@@ -22,6 +22,7 @@ asharia_configure_target(asharia-host-runtime-contract)
 
 add_library(asharia-host-runtime-registration STATIC
     src/static_factory_registration.cpp
+    src/static_factory_registration_snapshot_json.cpp
     src/static_factory_registration_state.cpp
 )
 add_library(asharia::host_runtime_registration ALIAS
@@ -56,5 +57,21 @@ if(ASHARIA_BUILD_TESTS)
   add_test(
       NAME asharia-host-runtime-registration-tests
       COMMAND asharia-host-runtime-registration-tests
+  )
+
+  add_executable(asharia-host-runtime-registration-snapshot-json-tests
+      tests/static_factory_registration_snapshot_json_tests.cpp
+  )
+
+  target_link_libraries(asharia-host-runtime-registration-snapshot-json-tests
+      PRIVATE
+          asharia::host_runtime_registration
+  )
+
+  asharia_configure_target(asharia-host-runtime-registration-snapshot-json-tests)
+
+  add_test(
+      NAME asharia-host-runtime-registration-snapshot-json-tests
+      COMMAND asharia-host-runtime-registration-snapshot-json-tests
   )
 endif()
