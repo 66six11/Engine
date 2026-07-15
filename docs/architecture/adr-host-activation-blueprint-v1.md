@@ -57,6 +57,8 @@ Ready Effective Session
                 ↓
 Host Activation Blueprint（本 ADR）
                 ↓
+verified Static Factory Provider Binding Plan
+                ↓
 generated static composition root
                 ↓
 compile / link / artifact verification
@@ -281,7 +283,8 @@ partial plan，也不修改 session、Host Composition、candidate 或 declarati
 
 ## 后继边界
 
-1. generated static composition root：消费 Host Composition + Blueprint，生成薄 C++ registration source 和 target glue；
-2. Activation Binding Receipt / Bound Plan：构建后把 blueprint fingerprint、registration table 与 exact host artifacts 对证；
-3. Host Runtime：实现 concrete scope tree、factory context、lifecycle callbacks、activation lease、typed registries、rollback 与 shutdown；
-4. Bootstrap adapter：把上述 headless states 映射到 Ready/PendingBuild/PendingRestart/SafeMode UI。
+1. [Static Factory Provider Bindings v1](adr-static-factory-provider-bindings-v1.md) 已为 #286 冻结 logical factory 到 selected static target/public header/type-safe function 的 exact source evidence，并派生 verified Binding Plan handoff；
+2. generated static composition root：消费 Source Build Plan、Blueprint 与 verified provider Binding Plan，生成薄 C++ registration source 和 target glue；
+3. Activation Binding Receipt / Bound Plan：构建后把 blueprint fingerprint、registration table 与 exact host artifacts 对证；
+4. Host Runtime：实现 concrete scope tree、factory context、lifecycle callbacks、activation lease、typed registries、rollback 与 shutdown；
+5. Bootstrap adapter：把上述 headless states 映射到 Ready/PendingBuild/PendingRestart/SafeMode UI。

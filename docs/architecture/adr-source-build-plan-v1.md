@@ -504,14 +504,17 @@ schema 是 closed contract，明确拒绝：
 
 ## 后续边界
 
-#276 之后的边界按顺序设计；其中第 1 项已由 #277/#278 完成：
+#276 之后的边界按顺序设计；其中前 3 项已经完成合同层闭环：
 
 1. **Product Declaration + Artifact publication**：#277 已绑定 logical products 与 exact file evidence；#278 已从显式
    quiescent roots 流式发布不可变 package artifact generation；ABI 与 acquired/prebuilt trust 仍后置；
 2. **Engine Distribution + Effective Session**：#279–#281 已分离只读发行库存与 Project Lock，冻结 `EngineGenerationId`、
    Ready/Upgrade/Repair/SafeMode 与 verified graph handoff；Bootstrap UI/进程仍后置；
-3. **Factory / Scope / Lifecycle contract**：定义可执行 Activation Plan 所需的 entry point、scope、phase、service dependency、lease 与 rollback；
-4. **Activation Plan**：对证 Distribution、Project Host Composition 与 verified artifacts/factories，生成 Host Runtime 可消费的计划；
+3. **Factory / Scope / Lifecycle + static provider binding**：Factory Declaration 与 Host Activation Blueprint 保持 logical/artifact-neutral；
+   #286 通过独立 source sidecar 与派生 Binding Plan，把 selected factory 对证到本 Source Build Plan 已选择的静态 target 和
+   type-safe C++ entry point；
+4. **Generated composition root + post-build receipt**：消费 verified Binding Plan 生成薄注册源，构建后再把实际 registration table
+   与 exact host artifact generation 对证；
 5. **Host Runtime**：执行 activation/deactivation 并拥有 instance、contribution handles、lease、rollback 与 shutdown。
 
 Source Build Plan 只为 build adapter 提供 verified roots/closure，不替代以上任何权威。
@@ -525,6 +528,7 @@ Source Build Plan 只为 build adapter 提供 verified roots/closure，不替代
 - [Locked Package Graph Verification & Reuse v1](adr-package-lock-verification-v1.md)
 - [Effective Session v1](adr-effective-session-v1.md)
 - [Package Product & Artifact Evidence v1](adr-package-product-artifact-evidence-v1.md)
+- [Static Factory Provider Bindings v1](adr-static-factory-provider-bindings-v1.md)
 - [Package-first 架构](package-first.md)
 - [Foundation Framework](foundation-framework.md)
 - GitHub #264、#270、#274、#275 与 #276

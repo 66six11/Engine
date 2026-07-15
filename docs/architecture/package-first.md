@@ -210,6 +210,10 @@ owner scope、required factory 与 contribution ownership 合同，并纳入 Can
 fingerprint；它不创建 instance。[Host Activation Blueprint v1](adr-host-activation-blueprint-v1.md) 已将 Ready Session、
 Host Composition 与 exact factory snapshots 派生为固定 scope topology、factory dependency order 和 selected contribution bindings；
 它是构建期逻辑蓝图，不伪造尚不存在的 artifact、symbol 或进程加载证据。
+[Static Factory Provider Bindings v1](adr-static-factory-provider-bindings-v1.md) 已为 #286 实现独立
+`asharia.package.static-factory-bindings.json` source sidecar、Factory/Build cross binding、Candidate Discovery exact snapshot、
+Locked Verification 与 Effective Session fingerprint；派生 Binding Plan 会进一步证明 provider target 已被本次 Source Build Plan
+选择。它只声明可直接编译引用的静态 provider 入口，不执行注册或 lifecycle，也不成为第三份 lock。
 上游 catalog/index、lock update/apply、repair executor、轻量启动 receipt、generated static composition root、构建后
 activation binding receipt、生产 catalog/lockfile 与 Editor Package Manager 尚未实现。Project Manifest / Lock v2
 不保留 v1 reader 或 migration adapter。
@@ -272,6 +276,8 @@ flowchart LR
 - resolver v0 只使用具名完整 package dependencies，例如 Feature Set 直接依赖 `com.asharia.system.rendering-vulkan`、`com.asharia.system.scripting-dotnet` 或 `com.asharia.feature.advanced-camera`；不得直接依赖裸 `rhi-vulkan`、RenderGraph bridge、`.NET provider` 或 `camera-editor` 片段。等第二个真实完整实现出现并完成 ADR 后，再启用 `provides` / `requires capability` 求解。
 - Package Manager 只生成 Host composition、build plan 与逻辑 activation blueprint；构建/验证 adapter 再绑定可执行证据。
   它不拥有 World、Renderer、Script VM 或其他系统实例。
+- Static Factory Provider Binding 是 source candidate 的构建证据：它把 logical factory 映射到同 module 的静态 target、
+  public header 与受限 qualified function；它不是运行时字符串 symbol lookup，也不成为第三份 lock。
 - data-only package 可以即时激活；native code package 可以明确要求 regenerate、build 和 restart。
 - 当前 Editor Profile 自身要求的 Package Runtime、Editor Domain 和 Package Manager UI 来自 Editor Image/Distribution，
   可以在 UI 中显示为 distribution-provided/required，但不成为当前项目 lock 可卸载的节点。
@@ -321,6 +327,10 @@ Effective Session 或 Editor Bootstrap。
 [ADR：Host Activation Blueprint v1](adr-host-activation-blueprint-v1.md) 已为 #285 实现固定 Host scope policy、exact logical factory
 references、全图 dependency-first order、selected contribution intersection 与 canonical self-integrity；它位于 build 之前，
 不是 artifact-bound 的最终 Activation Plan。
+[ADR：Static Factory Provider Bindings v1](adr-static-factory-provider-bindings-v1.md) 已为 #286 实现 logical factory、
+same-module static build target、public header 与 type-safe provider function 的 exact cross-contract evidence；portable Factory
+Declaration 继续不携带 CMake、C++ 或 artifact 字段。派生 Binding Plan 只封装 verified input fingerprints 与 provider calls，
+不重新选择 package/module/target。
 
 ### Feature Package 不是 API 包装器
 

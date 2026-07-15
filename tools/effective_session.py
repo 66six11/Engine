@@ -244,6 +244,13 @@ def _candidate_binding_data(candidate: PackageCandidate) -> dict[str, Any]:
         "factoryDeclarationBytesIntegrity": _optional_bytes_integrity(
             candidate.factory_declaration_bytes
         ),
+        "staticFactoryBindings": candidate.static_factory_bindings,
+        "staticFactoryBindingsIntegrity": (
+            candidate.static_factory_bindings_integrity
+        ),
+        "staticFactoryBindingsBytesIntegrity": _optional_bytes_integrity(
+            candidate.static_factory_bindings_bytes
+        ),
         "payloadLocation": location_value,
     }
 

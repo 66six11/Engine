@@ -477,6 +477,36 @@ def _factory_declaration_diagnostics(
     ]
 
 
+def _static_factory_bindings_diagnostics(
+    bindings: Any,
+    manifest: Any,
+    build_descriptor: Any,
+    factory_declaration: Any,
+    source_key: str,
+    validators: contracts.ContractValidators,
+) -> list[CandidateDiscoveryDiagnostic]:
+    diagnostics = contracts.validate_package_static_factory_bindings(
+        bindings,
+        manifest,
+        build_descriptor,
+        factory_declaration,
+        validators,
+    )
+    return [
+        CandidateDiscoveryDiagnostic(
+            code=diagnostic.code,
+            source_key=source_key,
+            location=(
+                f"{diagnostic.manifest_path}{diagnostic.pointer}"
+                if diagnostic.pointer
+                else diagnostic.manifest_path
+            ),
+            message=diagnostic.message,
+        )
+        for diagnostic in diagnostics
+    ]
+
+
 def _read_optional_contract_bytes(path: Path) -> tuple[str, bytes | None]:
     try:
         if not path.exists():
@@ -703,6 +733,50 @@ def _load_candidate(
         assert isinstance(parsed_factory_declaration, dict)
         factory_declaration = parsed_factory_declaration
 
+    static_bindings_path = (
+        location.payload_root / contracts.PACKAGE_STATIC_FACTORY_BINDINGS_NAME
+    )
+    static_bindings_state, static_bindings_bytes = _read_optional_contract_bytes(
+        static_bindings_path
+    )
+    if static_bindings_state == "invalid":
+        return None, [
+            CandidateDiscoveryDiagnostic(
+                code="discovery.factory-binding.unreadable",
+                source_key=location.source_key,
+                location=contracts.PACKAGE_STATIC_FACTORY_BINDINGS_NAME,
+                message="static factory bindings must be a readable regular file",
+            )
+        ]
+
+    static_factory_bindings: dict[str, Any] | None = None
+    if static_bindings_bytes is not None:
+        try:
+            parsed_static_bindings = json.loads(
+                static_bindings_bytes.decode("utf-8")
+            )
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return None, [
+                CandidateDiscoveryDiagnostic(
+                    code="contract.manifest.json",
+                    source_key=location.source_key,
+                    location=contracts.PACKAGE_STATIC_FACTORY_BINDINGS_NAME,
+                    message="static factory bindings must be valid UTF-8 JSON",
+                )
+            ]
+        binding_diagnostics = _static_factory_bindings_diagnostics(
+            parsed_static_bindings,
+            manifest,
+            descriptor,
+            factory_declaration,
+            location.source_key,
+            validators,
+        )
+        if binding_diagnostics:
+            return None, binding_diagnostics
+        assert isinstance(parsed_static_bindings, dict)
+        static_factory_bindings = parsed_static_bindings
+
     manifest_integrity = contracts.compute_bytes_integrity(manifest_bytes)
     try:
         payload_integrity = contracts.compute_package_tree_integrity(location.payload_root)
@@ -779,6 +853,22 @@ def _load_candidate(
             )
         ]
 
+    final_static_bindings_state, final_static_bindings_bytes = (
+        _read_optional_contract_bytes(static_bindings_path)
+    )
+    if (
+        final_static_bindings_state != static_bindings_state
+        or final_static_bindings_bytes != static_bindings_bytes
+    ):
+        return None, [
+            CandidateDiscoveryDiagnostic(
+                code="discovery.source.changed",
+                source_key=location.source_key,
+                location=contracts.PACKAGE_STATIC_FACTORY_BINDINGS_NAME,
+                message="package source changed while candidate evidence was collected",
+            )
+        ]
+
     return (
         PackageCandidate(
             identity=manifest["id"],
@@ -810,6 +900,13 @@ def _load_candidate(
                 else None
             ),
             factory_declaration_bytes=factory_declaration_bytes,
+            static_factory_bindings=copy.deepcopy(static_factory_bindings),
+            static_factory_bindings_integrity=(
+                contracts.compute_bytes_integrity(static_bindings_bytes)
+                if static_bindings_bytes is not None
+                else None
+            ),
+            static_factory_bindings_bytes=static_bindings_bytes,
             payload_location=location.payload_root,
         ),
         [],

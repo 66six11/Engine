@@ -27,4 +27,7 @@ class PackageCandidate:
     factory_declaration: dict[str, Any] | None = None
     factory_declaration_integrity: dict[str, Any] | None = None
     factory_declaration_bytes: bytes | None = field(default=None, repr=False)
+    static_factory_bindings: dict[str, Any] | None = None
+    static_factory_bindings_integrity: dict[str, Any] | None = None
+    static_factory_bindings_bytes: bytes | None = field(default=None, repr=False)
     payload_location: Any = field(default=None, compare=False, repr=False)

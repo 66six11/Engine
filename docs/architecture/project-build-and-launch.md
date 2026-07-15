@@ -230,9 +230,13 @@ CMake Workflow Preset 可以作为 native 子流程实现，但不能替代 Asha
 
 第一版优先采用**生成的薄组合根 + 静态/启动期注册 modules**：
 
-- generator 只接受已经对证的 Host Composition Plan 与 Host Activation Blueprint，不重新解释 Host Profile 或 lock graph；
+- generator 只接受已经对证的 Source Build Plan、Host Activation Blueprint 与 verified Static Factory Provider Binding Plan，
+  不重新解释 Host Profile 或 lock graph；
 - Blueprint 固定 logical factory、scope、依赖顺序与 contribution bindings，但不假装 artifact 或 native symbol 已存在；
-- 生成只包含注册表、entry point glue 和 build metadata 的 source/CMake；构建完成后再由 artifact/factory binding
+- provider binding 把每个 selected logical factory 对证到同 module 的静态 target、public header 与类型安全 function；
+  function token 只用于生成直接 C++ 引用，不用于运行时字符串 symbol lookup；
+- Binding Plan 是从上述 verified inputs 派生、可丢弃重建的生成 handoff，不是第三份 lock 或 artifact receipt；
+- 生成只包含显式 registrar 调用、entry point glue 和 build metadata 的 source/CMake；构建完成后再由 artifact/factory binding
   receipt 把 logical factory reference 绑定到实际静态注册入口；
 - 每个 C++ module 默认保持独立静态库或工具 target；用户安装完整 package，而不是内部 target；
 - 用户项目不手工复制 engine main loop，也不维护一份容易漂移的 module list；
@@ -538,7 +542,7 @@ asharia-launch --project <path> --profile standalone-game
 
 - Engine Distribution Manifest v1、`EngineGenerationId`、Project Manifest / Lock v2 硬切、Effective Session v1、
   Distribution Assembler v1、Installed Distribution Repair Verifier v1、Package Factory Declaration v1 与
-  Host Activation Blueprint v1 已经完成；下一步冻结 generated static composition root、构建后 activation binding receipt
+  Host Activation Blueprint v1、Static Factory Provider Bindings v1 已经完成；下一步冻结 generated static composition root、构建后 activation binding receipt
   或 Bootstrap/Session adapter；
 - Effective Editor Session v1 已建立 Ready/Upgrade/Repair/SafeMode 与 exact Profile binding；轻量启动检查和实际 UI/进程状态仍待实现；
 - 冻结 `asharia.build.json` v1 的 owner、Build/Launch Profile 与 local override 规则；
@@ -591,7 +595,7 @@ asharia-launch --project <path> --profile standalone-game
 
 1. Engine Distribution Manifest v1、`EngineGenerationId`、Project Manifest / Lock v2、Effective Session v1、
    Distribution Assembler v1、Installed Distribution Repair Verifier v1、Package Factory Declaration v1 与
-   Host Activation Blueprint v1 已完成；
+   Host Activation Blueprint v1、Static Factory Provider Bindings v1 已完成；
 2. generated composition root 的 target/module registration 方式、构建后 activation binding receipt，以及 verifier 到
    Bootstrap/Session 的 adapter；
 3. `asharia.build.json` v1 schema、inheritance 与 local override；

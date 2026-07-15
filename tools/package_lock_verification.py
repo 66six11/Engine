@@ -343,6 +343,122 @@ def _validate_factory_declaration_snapshot(
     return diagnostics
 
 
+def _validate_static_factory_bindings_snapshot(
+    candidate: PackageCandidate,
+    validators: contracts.ContractValidators,
+) -> list[contracts.Diagnostic]:
+    bindings_path = (
+        f"candidate/{candidate.identity}/"
+        f"{contracts.PACKAGE_STATIC_FACTORY_BINDINGS_NAME}"
+    )
+    values = (
+        candidate.static_factory_bindings,
+        candidate.static_factory_bindings_integrity,
+        candidate.static_factory_bindings_bytes,
+    )
+    present_count = sum(value is not None for value in values)
+    diagnostics: list[contracts.Diagnostic] = []
+    if present_count not in {0, 3}:
+        return [
+            contracts.Diagnostic(
+                code="lock.candidate.factory-binding-incomplete",
+                manifest_path=bindings_path,
+                pointer="",
+                message=(
+                    "candidate static factory binding snapshot must be wholly "
+                    "present or absent"
+                ),
+            )
+        ]
+
+    root = candidate.payload_location
+    if not isinstance(root, Path):
+        return diagnostics
+    on_disk_path = root / contracts.PACKAGE_STATIC_FACTORY_BINDINGS_NAME
+    try:
+        on_disk_bytes = on_disk_path.read_bytes() if on_disk_path.is_file() else None
+    except OSError:
+        on_disk_bytes = None
+
+    if present_count == 0:
+        if on_disk_path.exists():
+            diagnostics.append(
+                contracts.Diagnostic(
+                    code="lock.candidate.factory-binding-mismatch",
+                    manifest_path=bindings_path,
+                    pointer="",
+                    message=(
+                        "payload contains static factory bindings absent from "
+                        "candidate snapshot"
+                    ),
+                )
+            )
+        return diagnostics
+
+    assert isinstance(candidate.static_factory_bindings, dict)
+    assert isinstance(candidate.static_factory_bindings_integrity, dict)
+    assert isinstance(candidate.static_factory_bindings_bytes, bytes)
+    if contracts.compute_bytes_integrity(
+        candidate.static_factory_bindings_bytes
+    ) != candidate.static_factory_bindings_integrity:
+        diagnostics.append(
+            contracts.Diagnostic(
+                code="lock.candidate.factory-binding-integrity-mismatch",
+                manifest_path=bindings_path,
+                pointer="",
+                message=(
+                    "candidate static factory binding bytes do not match their "
+                    "integrity"
+                ),
+            )
+        )
+    try:
+        parsed = json.loads(candidate.static_factory_bindings_bytes.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        parsed = None
+    if parsed != candidate.static_factory_bindings:
+        diagnostics.append(
+            contracts.Diagnostic(
+                code="lock.candidate.factory-binding-snapshot-mismatch",
+                manifest_path=bindings_path,
+                pointer="",
+                message=(
+                    "candidate static factory binding data does not match captured "
+                    "bytes"
+                ),
+            )
+        )
+    diagnostics.extend(
+        contracts.validate_package_static_factory_bindings(
+            candidate.static_factory_bindings,
+            candidate.manifest,
+            candidate.build_descriptor,
+            candidate.factory_declaration,
+            validators,
+            bindings_path=bindings_path,
+            manifest_path=(
+                f"candidate/{candidate.identity}/{contracts.PACKAGE_MANIFEST_NAME}"
+            ),
+            build_descriptor_path=(
+                f"candidate/{candidate.identity}/{contracts.PACKAGE_SOURCE_BUILD_NAME}"
+            ),
+            factory_declaration_path=(
+                f"candidate/{candidate.identity}/{contracts.PACKAGE_FACTORIES_NAME}"
+            ),
+        )
+    )
+    if on_disk_bytes != candidate.static_factory_bindings_bytes:
+        diagnostics.append(
+            contracts.Diagnostic(
+                code="lock.candidate.factory-binding-mismatch",
+                manifest_path=bindings_path,
+                pointer="",
+                message="payload static factory binding bytes changed after discovery",
+            )
+        )
+    return diagnostics
+
+
 def _bind_locked_candidates(
     lock: dict[str, Any],
     distribution: dict[str, Any],
@@ -562,6 +678,9 @@ def _bind_locked_candidates(
             )
             diagnostics.extend(
                 _validate_factory_declaration_snapshot(candidate, validators)
+            )
+            diagnostics.extend(
+                _validate_static_factory_bindings_snapshot(candidate, validators)
             )
 
         if len(diagnostics) == diagnostic_count:

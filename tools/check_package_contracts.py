@@ -29,6 +29,7 @@ PACKAGE_MANIFEST_NAME = "asharia.package.json"
 PACKAGE_SOURCE_BUILD_NAME = "asharia.package.build.json"
 PACKAGE_PRODUCTS_NAME = "asharia.package.products.json"
 PACKAGE_FACTORIES_NAME = "asharia.package.factories.json"
+PACKAGE_STATIC_FACTORY_BINDINGS_NAME = "asharia.package.static-factory-bindings.json"
 PACKAGE_ARTIFACT_MANIFEST_NAME = "asharia.package.artifacts.json"
 ENGINE_DISTRIBUTION_MANIFEST_NAME = "asharia.engine-distribution.json"
 PROJECT_MANIFEST_NAME = "asharia.packages.json"
@@ -48,11 +49,17 @@ HOST_ACTIVATION_BLUEPRINT_SCHEMA_NAME = "host-activation-blueprint-v1.schema.jso
 PACKAGE_SOURCE_BUILD_SCHEMA_NAME = "package-source-build-v1.schema.json"
 PACKAGE_PRODUCTS_SCHEMA_NAME = "package-products-v1.schema.json"
 PACKAGE_FACTORIES_SCHEMA_NAME = "package-factories-v1.schema.json"
+PACKAGE_STATIC_FACTORY_BINDINGS_SCHEMA_NAME = (
+    "package-static-factory-bindings-v1.schema.json"
+)
 PACKAGE_ARTIFACT_MANIFEST_SCHEMA_NAME = "package-artifact-manifest-v1.schema.json"
 ENGINE_DISTRIBUTION_MANIFEST_SCHEMA_NAME = "engine-distribution-manifest-v1.schema.json"
 SOURCE_TOPOLOGY_SNAPSHOT_SCHEMA_NAME = "source-topology-snapshot-v1.schema.json"
 CMAKE_CODEMODEL_SNAPSHOT_SCHEMA_NAME = "cmake-codemodel-snapshot-v1.schema.json"
 SOURCE_BUILD_PLAN_SCHEMA_NAME = "source-build-plan-v1.schema.json"
+STATIC_FACTORY_PROVIDER_BINDING_PLAN_SCHEMA_NAME = (
+    "static-factory-provider-binding-plan-v1.schema.json"
+)
 PACKAGE_TREE_HEADER = b"asharia-package-tree-v1\0"
 PACKAGE_TREE_ROOT_EXCLUDES = {".git", ".hg", ".svn", "build", "generated"}
 ANY_PLATFORM_ID = "com.asharia.platform.any"
@@ -207,11 +214,13 @@ class ContractValidators:
     package_source_build: Draft202012Validator
     package_products: Draft202012Validator
     package_factories: Draft202012Validator
+    package_static_factory_bindings: Draft202012Validator
     package_artifact_manifest: Draft202012Validator
     engine_distribution_manifest: Draft202012Validator
     source_topology_snapshot: Draft202012Validator
     cmake_codemodel_snapshot: Draft202012Validator
     source_build_plan: Draft202012Validator
+    static_factory_provider_binding_plan: Draft202012Validator
 
 
 @dataclass(frozen=True, order=True)
@@ -334,11 +343,17 @@ def load_contract_validators(schema_root: Path = DEFAULT_SCHEMA_ROOT) -> Contrac
         package_source_build=create(PACKAGE_SOURCE_BUILD_SCHEMA_NAME),
         package_products=create(PACKAGE_PRODUCTS_SCHEMA_NAME),
         package_factories=create(PACKAGE_FACTORIES_SCHEMA_NAME),
+        package_static_factory_bindings=create(
+            PACKAGE_STATIC_FACTORY_BINDINGS_SCHEMA_NAME
+        ),
         package_artifact_manifest=create(PACKAGE_ARTIFACT_MANIFEST_SCHEMA_NAME),
         engine_distribution_manifest=create(ENGINE_DISTRIBUTION_MANIFEST_SCHEMA_NAME),
         source_topology_snapshot=create(SOURCE_TOPOLOGY_SNAPSHOT_SCHEMA_NAME),
         cmake_codemodel_snapshot=create(CMAKE_CODEMODEL_SNAPSHOT_SCHEMA_NAME),
         source_build_plan=create(SOURCE_BUILD_PLAN_SCHEMA_NAME),
+        static_factory_provider_binding_plan=create(
+            STATIC_FACTORY_PROVIDER_BINDING_PLAN_SCHEMA_NAME
+        ),
     )
 
 
@@ -2362,6 +2377,101 @@ def _package_factories_semantic_diagnostics(
     return sorted(diagnostics, key=_diagnostic_sort_key)
 
 
+def _package_static_factory_bindings_semantic_diagnostics(
+    bindings: dict[str, Any], bindings_path: str
+) -> list[Diagnostic]:
+    diagnostics: list[Diagnostic] = []
+    module_indices: dict[str, int] = {}
+    entry_point_locations: dict[tuple[str, str], tuple[int, int]] = {}
+
+    for module_index, module in enumerate(bindings["modules"]):
+        module_id = module["moduleId"]
+        previous_module = module_indices.get(module_id)
+        if previous_module is not None:
+            diagnostics.append(
+                Diagnostic(
+                    code="factory.binding.duplicate-module",
+                    manifest_path=bindings_path,
+                    pointer=f"/modules/{module_index}/moduleId",
+                    message=(
+                        f"logical module '{module_id}' was first declared at index "
+                        f"{previous_module}"
+                    ),
+                )
+            )
+        else:
+            module_indices[module_id] = module_index
+
+        binding = module["binding"]
+        if binding["kind"] != "provider-set":
+            continue
+        factory_locations: dict[str, tuple[int, int]] = {}
+        for provider_index, provider in enumerate(binding["providers"]):
+            entry_point = provider["entryPoint"]
+            entry_key = (entry_point["header"], entry_point["function"])
+            previous_entry = entry_point_locations.get(entry_key)
+            if previous_entry is not None:
+                diagnostics.append(
+                    Diagnostic(
+                        code="factory.binding.duplicate-entry-point",
+                        manifest_path=bindings_path,
+                        pointer=(
+                            f"/modules/{module_index}/binding/providers/"
+                            f"{provider_index}/entryPoint"
+                        ),
+                        message=(
+                            "static provider entry point was first declared at "
+                            f"module/provider indices {previous_entry[0]}/"
+                            f"{previous_entry[1]}"
+                        ),
+                    )
+                )
+            else:
+                entry_point_locations[entry_key] = (module_index, provider_index)
+
+            header = entry_point["header"]
+            if not _is_normalized_relative_path(header):
+                diagnostics.append(
+                    Diagnostic(
+                        code="factory.binding.header-not-normalized",
+                        manifest_path=bindings_path,
+                        pointer=(
+                            f"/modules/{module_index}/binding/providers/"
+                            f"{provider_index}/entryPoint/header"
+                        ),
+                        message=(
+                            "provider header must be a normalized portable include "
+                            "spelling without '.' or '..' segments"
+                        ),
+                    )
+                )
+
+            for factory_index, factory_id in enumerate(provider["factoryIds"]):
+                previous_factory = factory_locations.get(factory_id)
+                if previous_factory is not None:
+                    diagnostics.append(
+                        Diagnostic(
+                            code="factory.binding.duplicate-factory",
+                            manifest_path=bindings_path,
+                            pointer=(
+                                f"/modules/{module_index}/binding/providers/"
+                                f"{provider_index}/factoryIds/{factory_index}"
+                            ),
+                            message=(
+                                f"logical factory '{factory_id}' was first bound at "
+                                f"provider/factory indices {previous_factory[0]}/"
+                                f"{previous_factory[1]}"
+                            ),
+                        )
+                    )
+                else:
+                    factory_locations[factory_id] = (
+                        provider_index,
+                        factory_index,
+                    )
+    return sorted(diagnostics, key=_diagnostic_sort_key)
+
+
 def _package_artifact_manifest_semantic_diagnostics(
     manifest: dict[str, Any], manifest_path: str
 ) -> list[Diagnostic]:
@@ -2489,6 +2599,8 @@ def _contract_kind(manifest: Any, manifest_path: str) -> str | None:
         return "package-products"
     if Path(manifest_path).name == PACKAGE_FACTORIES_NAME:
         return "package-factories"
+    if Path(manifest_path).name == PACKAGE_STATIC_FACTORY_BINDINGS_NAME:
+        return "package-static-factory-bindings"
     if Path(manifest_path).name == PACKAGE_ARTIFACT_MANIFEST_NAME:
         return "package-artifact-manifest"
     if Path(manifest_path).name == ENGINE_DISTRIBUTION_MANIFEST_NAME:
@@ -2513,6 +2625,8 @@ def _contract_kind(manifest: Any, manifest_path: str) -> str | None:
         return "package-products"
     if manifest.get("schema") == "com.asharia.package-factories":
         return "package-factories"
+    if manifest.get("schema") == "com.asharia.package-static-factory-bindings":
+        return "package-static-factory-bindings"
     if manifest.get("schema") == "com.asharia.package-artifact-manifest":
         return "package-artifact-manifest"
     if manifest.get("schema") == "com.asharia.engine-distribution":
@@ -2525,6 +2639,8 @@ def _contract_kind(manifest: Any, manifest_path: str) -> str | None:
         return "source-build-plan"
     if manifest.get("schema") == "com.asharia.host-activation-blueprint":
         return "host-activation-blueprint"
+    if manifest.get("schema") == "com.asharia.static-factory-provider-binding-plan":
+        return "static-factory-provider-binding-plan"
     if manifest.get("schemaVersion") == 1 and manifest.get("packageKind") == "source-boundary":
         return "source-boundary"
     package_kind = manifest.get("packageKind")
@@ -2572,6 +2688,10 @@ def validate_manifest_data(
         validator = validators.package_factories
         schema_code = "factory.declaration.schema"
         semantic_validator = _package_factories_semantic_diagnostics
+    elif kind == "package-static-factory-bindings":
+        validator = validators.package_static_factory_bindings
+        schema_code = "factory.binding.schema"
+        semantic_validator = _package_static_factory_bindings_semantic_diagnostics
     elif kind == "package-artifact-manifest":
         validator = validators.package_artifact_manifest
         schema_code = "artifact.manifest.schema"
@@ -2595,6 +2715,10 @@ def validate_manifest_data(
     elif kind == "host-activation-blueprint":
         validator = validators.host_activation_blueprint
         schema_code = "activation.blueprint.schema"
+        semantic_validator = lambda value, path: []
+    elif kind == "static-factory-provider-binding-plan":
+        validator = validators.static_factory_provider_binding_plan
+        schema_code = "factory.binding-plan.schema"
         semantic_validator = lambda value, path: []
     elif kind == "host-profile":
         validator = validators.host_profile
@@ -2967,6 +3091,268 @@ def validate_package_factory_declaration_binding(
     return sorted(diagnostics, key=_diagnostic_sort_key)
 
 
+def validate_package_static_factory_bindings(
+    bindings: Any,
+    author_manifest: Any,
+    build_descriptor: Any,
+    factory_declaration: Any,
+    validators: ContractValidators,
+    bindings_path: str = PACKAGE_STATIC_FACTORY_BINDINGS_NAME,
+    manifest_path: str = PACKAGE_MANIFEST_NAME,
+    build_descriptor_path: str = PACKAGE_SOURCE_BUILD_NAME,
+    factory_declaration_path: str = PACKAGE_FACTORIES_NAME,
+) -> list[Diagnostic]:
+    """Validate exact static-provider bindings across the three author contracts."""
+
+    diagnostics = validate_manifest_data(bindings, bindings_path, validators)
+    diagnostics.extend(
+        validate_manifest_data(author_manifest, manifest_path, validators)
+    )
+    if diagnostics:
+        return sorted(diagnostics, key=_diagnostic_sort_key)
+
+    assert isinstance(bindings, dict)
+    assert isinstance(author_manifest, dict)
+    if author_manifest["packageKind"] != "installable-capability":
+        return [
+            Diagnostic(
+                code="factory.binding.unsupported-package-kind",
+                manifest_path=bindings_path,
+                pointer="/package/id",
+                message=(
+                    "static factory bindings require an installable-capability "
+                    "package"
+                ),
+            )
+        ]
+
+    if build_descriptor is None:
+        diagnostics.append(
+            Diagnostic(
+                code="factory.binding.build-descriptor-required",
+                manifest_path=bindings_path,
+                pointer="/modules",
+                message=(
+                    "static factory bindings require an exact package source build "
+                    "descriptor"
+                ),
+            )
+        )
+    else:
+        diagnostics.extend(
+            validate_package_source_build_binding(
+                build_descriptor,
+                author_manifest,
+                validators,
+                descriptor_path=build_descriptor_path,
+                manifest_path=manifest_path,
+            )
+        )
+    if factory_declaration is None:
+        diagnostics.append(
+            Diagnostic(
+                code="factory.binding.factory-declaration-required",
+                manifest_path=bindings_path,
+                pointer="/modules",
+                message=(
+                    "static factory bindings require an exact logical factory "
+                    "declaration"
+                ),
+            )
+        )
+    else:
+        diagnostics.extend(
+            validate_package_factory_declaration_binding(
+                factory_declaration,
+                author_manifest,
+                validators,
+                declaration_path=factory_declaration_path,
+                manifest_path=manifest_path,
+            )
+        )
+    if diagnostics:
+        return sorted(diagnostics, key=_diagnostic_sort_key)
+
+    assert isinstance(build_descriptor, dict)
+    assert isinstance(factory_declaration, dict)
+    for field, manifest_field in (("id", "id"), ("version", "version")):
+        if bindings["package"][field] != author_manifest[manifest_field]:
+            diagnostics.append(
+                Diagnostic(
+                    code=f"factory.binding.package-{field}-mismatch",
+                    manifest_path=bindings_path,
+                    pointer=f"/package/{field}",
+                    message=(
+                        f"static factory binding package {field} "
+                        f"'{bindings['package'][field]}' does not match author "
+                        f"manifest '{author_manifest[manifest_field]}'"
+                    ),
+                )
+            )
+
+    binding_modules = {
+        module["moduleId"]: (index, module)
+        for index, module in enumerate(bindings["modules"])
+    }
+    manifest_modules = {module["id"] for module in author_manifest["modules"]}
+    build_modules = {
+        module["moduleId"]: module for module in build_descriptor["modules"]
+    }
+    factory_modules = {
+        module["moduleId"]: module for module in factory_declaration["modules"]
+    }
+    for module_id in sorted(
+        manifest_modules - set(binding_modules),
+        key=lambda value: value.encode("utf-8"),
+    ):
+        diagnostics.append(
+            Diagnostic(
+                code="factory.binding.missing-module",
+                manifest_path=bindings_path,
+                pointer="/modules",
+                message=f"author logical module '{module_id}' has no static binding",
+            )
+        )
+    for module_id in sorted(
+        set(binding_modules) - manifest_modules,
+        key=lambda value: value.encode("utf-8"),
+    ):
+        diagnostics.append(
+            Diagnostic(
+                code="factory.binding.unknown-module",
+                manifest_path=bindings_path,
+                pointer="/modules",
+                message=f"static binding references unknown module '{module_id}'",
+            )
+        )
+
+    for module_id in sorted(
+        manifest_modules & set(binding_modules),
+        key=lambda value: value.encode("utf-8"),
+    ):
+        module_index, binding_module = binding_modules[module_id]
+        provider_binding = binding_module["binding"]
+        factory_activation = factory_modules[module_id]["activation"]
+        build_binding = build_modules[module_id]["build"]
+        binding_pointer = f"/modules/{module_index}/binding"
+
+        if factory_activation["kind"] == "no-factories":
+            if provider_binding["kind"] != "no-providers":
+                diagnostics.append(
+                    Diagnostic(
+                        code="factory.binding.unexpected-provider-set",
+                        manifest_path=bindings_path,
+                        pointer=binding_pointer,
+                        message=(
+                            f"module '{module_id}' declares no logical factories and "
+                            "must use 'no-providers'"
+                        ),
+                    )
+                )
+            continue
+
+        if provider_binding["kind"] != "provider-set":
+            diagnostics.append(
+                Diagnostic(
+                    code="factory.binding.provider-set-required",
+                    manifest_path=bindings_path,
+                    pointer=binding_pointer,
+                    message=(
+                        f"module '{module_id}' declares logical factories and must "
+                        "provide a static provider set"
+                    ),
+                )
+            )
+            continue
+        if build_binding["kind"] != "target-roots":
+            diagnostics.append(
+                Diagnostic(
+                    code="factory.binding.build-target-required",
+                    manifest_path=bindings_path,
+                    pointer=binding_pointer,
+                    message=(
+                        f"module '{module_id}' has static providers but no CMake "
+                        "target roots"
+                    ),
+                )
+            )
+            continue
+
+        build_targets = {
+            target["name"]: target for target in build_binding["targets"]
+        }
+        declared_factories = {
+            factory["id"] for factory in factory_activation["factories"]
+        }
+        bound_factories: set[str] = set()
+        for provider_index, provider in enumerate(provider_binding["providers"]):
+            target = provider["target"]
+            build_target = build_targets.get(target["name"])
+            target_pointer = (
+                f"{binding_pointer}/providers/{provider_index}/target"
+            )
+            if build_target is None:
+                diagnostics.append(
+                    Diagnostic(
+                        code="factory.binding.unowned-target",
+                        manifest_path=bindings_path,
+                        pointer=target_pointer,
+                        message=(
+                            f"provider target '{target['name']}' is not a build root "
+                            f"owned by module '{module_id}'"
+                        ),
+                    )
+                )
+            elif build_target != target:
+                diagnostics.append(
+                    Diagnostic(
+                        code="factory.binding.target-type-mismatch",
+                        manifest_path=bindings_path,
+                        pointer=target_pointer,
+                        message=(
+                            f"provider target '{target['name']}' does not match its "
+                            "source build target type"
+                        ),
+                    )
+                )
+
+            for factory_index, factory_id in enumerate(provider["factoryIds"]):
+                pointer = (
+                    f"{binding_pointer}/providers/{provider_index}/"
+                    f"factoryIds/{factory_index}"
+                )
+                if factory_id not in declared_factories:
+                    diagnostics.append(
+                        Diagnostic(
+                            code="factory.binding.unknown-factory",
+                            manifest_path=bindings_path,
+                            pointer=pointer,
+                            message=(
+                                f"provider binds unknown factory '{factory_id}' in "
+                                f"module '{module_id}'"
+                            ),
+                        )
+                    )
+                bound_factories.add(factory_id)
+
+        for factory_id in sorted(
+            declared_factories - bound_factories,
+            key=lambda value: value.encode("utf-8"),
+        ):
+            diagnostics.append(
+                Diagnostic(
+                    code="factory.binding.missing-factory",
+                    manifest_path=bindings_path,
+                    pointer=binding_pointer,
+                    message=(
+                        f"logical factory '{factory_id}' in module '{module_id}' has "
+                        "no static provider"
+                    ),
+                )
+            )
+    return sorted(diagnostics, key=_diagnostic_sort_key)
+
+
 def discover_contract_manifests(root: Path) -> list[Path]:
     """Discover package-runtime contracts while routing v1 source boundaries elsewhere."""
 
@@ -2976,6 +3362,7 @@ def discover_contract_manifests(root: Path) -> list[Path]:
         + list(root.rglob(PACKAGE_SOURCE_BUILD_NAME))
         + list(root.rglob(PACKAGE_PRODUCTS_NAME))
         + list(root.rglob(PACKAGE_FACTORIES_NAME))
+        + list(root.rglob(PACKAGE_STATIC_FACTORY_BINDINGS_NAME))
         + list(root.rglob(PACKAGE_ARTIFACT_MANIFEST_NAME))
         + list(root.rglob(ENGINE_DISTRIBUTION_MANIFEST_NAME))
         + list(root.rglob(PROJECT_MANIFEST_NAME))
@@ -3146,6 +3533,40 @@ def validate_manifest_files(paths: Iterable[Path], validators: ContractValidator
                 manifest_path=author_manifest_path.as_posix(),
             )
         )
+    for bindings_path, bindings in sorted(
+        (
+            (path, manifest)
+            for path, manifest in valid_contracts.items()
+            if path.name == PACKAGE_STATIC_FACTORY_BINDINGS_NAME
+        ),
+        key=lambda item: item[0].as_posix(),
+    ):
+        author_manifest_path = bindings_path.with_name(PACKAGE_MANIFEST_NAME)
+        build_descriptor_path = bindings_path.with_name(PACKAGE_SOURCE_BUILD_NAME)
+        factory_declaration_path = bindings_path.with_name(PACKAGE_FACTORIES_NAME)
+        author_manifest = valid_contracts.get(author_manifest_path)
+        if author_manifest is None:
+            continue
+        if build_descriptor_path.exists() and build_descriptor_path not in valid_contracts:
+            continue
+        if (
+            factory_declaration_path.exists()
+            and factory_declaration_path not in valid_contracts
+        ):
+            continue
+        diagnostics.extend(
+            validate_package_static_factory_bindings(
+                bindings,
+                author_manifest,
+                valid_contracts.get(build_descriptor_path),
+                valid_contracts.get(factory_declaration_path),
+                validators,
+                bindings_path=bindings_path.as_posix(),
+                manifest_path=author_manifest_path.as_posix(),
+                build_descriptor_path=build_descriptor_path.as_posix(),
+                factory_declaration_path=factory_declaration_path.as_posix(),
+            )
+        )
     diagnostics.extend(validate_feature_set_graph(valid_feature_sets))
     return sorted(diagnostics, key=_diagnostic_sort_key)
 
@@ -3227,6 +3648,72 @@ def render_normalized_package_factory_declaration(
 
     return json.dumps(
         normalize_package_factory_declaration(declaration),
+        ensure_ascii=False,
+        indent=2,
+    ) + "\n"
+
+
+def normalize_package_static_factory_bindings(
+    bindings: dict[str, Any],
+) -> dict[str, Any]:
+    """Return deterministic static provider bindings for exact source evidence."""
+
+    modules: list[dict[str, Any]] = []
+    for module in sorted(
+        bindings["modules"], key=lambda value: value["moduleId"].encode("utf-8")
+    ):
+        binding = module["binding"]
+        normalized_binding: dict[str, Any] = {"kind": binding["kind"]}
+        if binding["kind"] == "provider-set":
+            normalized_binding["providers"] = [
+                {
+                    "target": {
+                        "name": provider["target"]["name"],
+                        "type": provider["target"]["type"],
+                    },
+                    "entryPoint": {
+                        "header": provider["entryPoint"]["header"],
+                        "function": provider["entryPoint"]["function"],
+                    },
+                    "factoryIds": sorted(
+                        provider["factoryIds"],
+                        key=lambda value: value.encode("utf-8"),
+                    ),
+                }
+                for provider in sorted(
+                    binding["providers"],
+                    key=lambda value: (
+                        value["target"]["name"].encode("utf-8"),
+                        value["entryPoint"]["header"].encode("utf-8"),
+                        value["entryPoint"]["function"].encode("utf-8"),
+                    ),
+                )
+            ]
+        modules.append(
+            {
+                "moduleId": module["moduleId"],
+                "binding": normalized_binding,
+            }
+        )
+    return {
+        "schema": "com.asharia.package-static-factory-bindings",
+        "schemaVersion": 1,
+        "package": {
+            "id": bindings["package"]["id"],
+            "version": bindings["package"]["version"],
+        },
+        "providerApi": "asharia-static-factory-provider-v1",
+        "modules": modules,
+    }
+
+
+def render_normalized_package_static_factory_bindings(
+    bindings: dict[str, Any],
+) -> str:
+    """Render normalized static factory bindings with LF and a final newline."""
+
+    return json.dumps(
+        normalize_package_static_factory_bindings(bindings),
         ensure_ascii=False,
         indent=2,
     ) + "\n"
