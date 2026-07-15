@@ -236,8 +236,12 @@ CMake Workflow Preset 可以作为 native 子流程实现，但不能替代 Asha
 - provider binding 把每个 selected logical factory 对证到同 module 的静态 target、public header 与类型安全 function；
   function token 只用于生成直接 C++ 引用，不用于运行时字符串 symbol lookup；
 - Binding Plan 是从上述 verified inputs 派生、可丢弃重建的生成 handoff，不是第三份 lock 或 artifact receipt；
-- 生成只包含显式 registrar 调用、entry point glue 和 build metadata 的 source/CMake；构建完成后再由 artifact/factory binding
-  receipt 把 logical factory reference 绑定到实际静态注册入口；
+- renderer revision 2 生成 exact registration capacity、composition/provider context、expected local factory IDs、显式 provider
+  calls 与 build metadata；provider 只能 `registerFactory(localFactoryId)`，不能自报 package/module/entry point；
+- `engine/host-runtime` 的 identity-only recorder 在 provider 调用前预留 owning storage，调用期间不扩容，并把完整成功结果
+  冻结为 canonical `StaticFactoryRegistrationSnapshotV1`；它不保存 callback，也不执行 factory lifecycle；
+- #290 Host Template/Build Adapter 提供 final executable 与受限 verification mode；构建完成后 #288 receipt 再把 composition
+  generation、registration snapshot 与 exact Host artifact bytes 绑定；
 - 每个 C++ module 默认保持独立静态库或工具 target；用户安装完整 package，而不是内部 target；
 - 用户项目不手工复制 engine main loop，也不维护一份容易漂移的 module list；
 - 平台 adapter 可以重命名 executable、嵌入 icon/version metadata 或包裹为平台 application bundle；
@@ -250,6 +254,8 @@ CMake Workflow Preset 可以作为 native 子流程实现，但不能替代 Asha
 [Generated Static Composition Root v1](adr-generated-static-composition-root-v1.md) 进一步冻结为两阶段 CMake handoff：先用
 preflight configure/File API codemodel 对证 package targets，再生成 content-addressed 薄 TU 与 CMake attach fragment，最后由
 Host Template 创建 target 并执行 final configure/build。generator 不创建 executable，也不在 CMake 内重新 resolve package graph。
+[Static Factory Registration v1](adr-static-factory-registration-v1.md) 冻结 generated root 到 owning identity snapshot 的窄
+runtime observation 边界；snapshot 的记录顺序不是 Blueprint activation order，也不是 artifact receipt。
 
 ## 7. Cook 与内容闭包
 
@@ -546,9 +552,10 @@ asharia-launch --project <path> --profile standalone-game
 
 - Engine Distribution Manifest v1、`EngineGenerationId`、Project Manifest / Lock v2 硬切、Effective Session v1、
   Distribution Assembler v1、Installed Distribution Repair Verifier v1、Package Factory Declaration v1 与
-  Host Activation Blueprint v1、Static Factory Provider Bindings v1 与 Generated Static Composition Root v1 已经完成；#287
-  已提供 content-addressed thin TU、受控 CMake attachment 和双编译器 compile-time signature evidence，后续仍需构建后
-  activation binding receipt 或 Bootstrap/Session adapter；
+  Host Activation Blueprint v1、Static Factory Provider Bindings v1、Generated Static Composition Root v1 与
+  Static Factory Registration v1 已经完成；#287 已提供 content-addressed thin TU 与受控 CMake attachment，#289 已提供
+  identity-only owning registration snapshot；后续仍需 #290 Host Template、#288 activation binding receipt 与
+  Bootstrap/Session adapter；
 - Effective Editor Session v1 已建立 Ready/Upgrade/Repair/SafeMode 与 exact Profile binding；轻量启动检查和实际 UI/进程状态仍待实现；
 - 冻结 `asharia.build.json` v1 的 owner、Build/Launch Profile 与 local override 规则；
 - 建立 CPU-only parser/validator、BuildPlan/BuildReport、LaunchPlan/SessionReport；
@@ -601,8 +608,9 @@ asharia-launch --project <path> --profile standalone-game
 1. Engine Distribution Manifest v1、`EngineGenerationId`、Project Manifest / Lock v2、Effective Session v1、
    Distribution Assembler v1、Installed Distribution Repair Verifier v1、Package Factory Declaration v1 与
    Host Activation Blueprint v1、Static Factory Provider Bindings v1 已完成；
-2. generated composition root 的 target/module registration 与两阶段 CMake handoff 已由 #287 实现；仍需构建后
-   activation binding receipt，以及 verifier 到 Bootstrap/Session 的 adapter；
+2. generated composition root 的 target/module registration 与两阶段 CMake handoff 已由 #287 实现，identity-only recording
+   registrar/snapshot 已由 #289 实现；仍需 #290 Host Template、#288 构建后 activation binding receipt，以及 verifier 到
+   Bootstrap/Session 的 adapter；
 3. `asharia.build.json` v1 schema、inheritance 与 local override；
 4. `asharia.stage.json` v1 与 Build/Stage fingerprint；
 5. development stage 的目录布局和原子发布；

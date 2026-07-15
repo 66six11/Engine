@@ -61,11 +61,15 @@ verified Static Factory Provider Binding Plan
                 ↓
 generated static composition root
                 ↓
-compile / link / artifact verification
+compile / link
+                ↓
+identity-only static registration recording
+                ↓
+owning registration snapshot + artifact verification
                 ↓
 future Activation Binding Receipt / Bound Plan
                 ↓
-Host Runtime
+Host Runtime lifecycle
 ```
 
 `Host Activation Blueprint` 只证明逻辑 factory closure、scope templates、requirements、selected contributions 和输入
@@ -73,10 +77,11 @@ fingerprints。它是 build-time derived state，可以规范化呈现用于 dia
 
 未来 binding receipt 才能把 blueprint fingerprint 对证：
 
-- generated registration table；
+- [Static Factory Registration v1](adr-static-factory-registration-v1.md) 输出的 exact owning registration snapshot；
 - exact host executable/library artifact；
 - Engine generation、platform、configuration 和 toolchain；
-- 当前进程实际加载的 native generation。
+
+当前进程实际加载的 native generation 仍属于后继 Session/Bootstrap state，不由 Blueprint 或 registration snapshot 推断。
 
 因此本 Blueprint 不读取 Package Artifact Manifest，也不输出 `PendingBuild` / `PendingRestart`。
 
@@ -285,6 +290,8 @@ partial plan，也不修改 session、Host Composition、candidate 或 declarati
 
 1. [Static Factory Provider Bindings v1](adr-static-factory-provider-bindings-v1.md) 已为 #286 冻结 logical factory 到 selected static target/public header/type-safe function 的 exact source evidence，并派生 verified Binding Plan handoff；
 2. [Generated Static Composition Root v1](adr-generated-static-composition-root-v1.md)：#287 已消费 Source Build Plan、Blueprint 与 verified provider Binding Plan，生成薄 C++ registration source 和受控 target attachment；
-3. Activation Binding Receipt / Bound Plan：构建后把 blueprint fingerprint、registration table 与 exact host artifacts 对证；
-4. Host Runtime：实现 concrete scope tree、factory context、lifecycle callbacks、activation lease、typed registries、rollback 与 shutdown；
-5. Bootstrap adapter：把上述 headless states 映射到 Ready/PendingBuild/PendingRestart/SafeMode UI。
+3. [Static Factory Registration v1](adr-static-factory-registration-v1.md)：#289 已由 generated root 注入 generation、Blueprint、provider context 与 expected local factory IDs，并输出 identity-only canonical owning snapshot；
+4. #290 Host Template/Build Adapter：拥有 final executable、`main()` 与受限 verification mode；
+5. #288 Activation Binding Receipt / Bound Plan：构建后把 blueprint fingerprint、registration snapshot 与 exact host artifacts 对证；
+6. Host Runtime lifecycle：实现 concrete scope tree、factory context、lifecycle callbacks、activation lease、typed registries、rollback 与 shutdown；
+7. Bootstrap adapter：把上述 headless states 映射到 Ready/PendingBuild/PendingRestart/SafeMode UI。

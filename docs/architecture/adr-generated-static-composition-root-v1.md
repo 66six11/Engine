@@ -7,6 +7,9 @@ Accepted and implemented for #287。本 ADR 冻结从 verified static provider h
 最小 Host Runtime provider type contract 与双编译器 synthetic CMake evidence 已落地。
 
 它只建立构建期注册入口，不实现 Host Runtime lifecycle，也不验证最终 executable bytes。
+[Static Factory Registration v1](adr-static-factory-registration-v1.md) 后续为 #289 扩展 renderer revision 2，使同一薄 TU
+注入 exact composition/provider context，并通过 identity-only recorder 产生 owning registration snapshot；该扩展不改变本 ADR
+对 final target、activation order 或 artifact receipt 的所有权。
 
 ## 问题
 
@@ -118,20 +121,28 @@ manifest 至少记录：
 - header/source/CMake fragment 的 package-neutral relative path、size、role 与 SHA-256；
 - manifest 自身 canonical integrity。
 
-manifest 证明 generated source bytes，不证明 compiler output、registration table 或 final executable artifact。后者属于
+manifest 证明 generated source bytes，不证明 compiler output、observed registration snapshot 或 final executable artifact。后者属于
 post-build Activation Binding Receipt。
+
+#289 将 renderer revision 提升为 `2`，因为 generated header/source 与 CMake link target 的 bytes 已改变。schema 继续接受 revision
+`1`，只用于复验已经发布的 immutable generation；新生成只能使用当前 renderer revision，不能原地改写 revision 1 tree。
 
 发布采用 staging directory + write exact bytes + re-read/hash + atomic directory commit。若同 generation 的完整 bytes 已存在，
 返回 reuse；若目录存在但内容不一致，fail closed，不原地修补。
 
-### 4. 最小 Host Runtime provider type contract
+### 4. Host Runtime provider contract 与 identity recorder
 
-为了让 provider headers 与 generated root 使用同一 C++ 类型，#287 只增加：
+为了让 provider headers 与 generated root 使用同一 C++ 类型，#287 最初只增加 provider function-pointer contract。#289 保持
+该签名，并把 registrar 的 public surface 冻结为一个 local-ID operation：
 
 ```cpp
 namespace asharia::host_runtime {
 
-class StaticFactoryRegistrar;
+class StaticFactoryRegistrar final {
+public:
+  void registerFactory(std::string_view localFactoryId) noexcept;
+  // construction/copy/move are not provider-owned
+};
 
 using StaticFactoryProviderV1 =
     void (*)(StaticFactoryRegistrar& registrar) noexcept;
@@ -139,21 +150,27 @@ using StaticFactoryProviderV1 =
 } // namespace asharia::host_runtime
 ```
 
-该 header 由一个轻量 `asharia::host_runtime_contract` CMake interface target 公开。它不定义 registrar fields、allocation、
-callback、factory result、scope tree 或 lifecycle method，因此不提前实现 Host Runtime。
+该窄 header 仍由 `asharia::host_runtime_contract` CMake interface target 公开。provider 只能登记 module-local factory ID；完整
+package/version/module/entry point 与 expected factory IDs 由 generated root 注入。concrete
+`StaticFactoryRegistrationRecorder`、owning snapshot 和 failure state 由 `asharia::host_runtime_registration` 静态 target 实现，
+详见 [Static Factory Registration v1](adr-static-factory-registration-v1.md)。两者都不定义 callback、factory instance、scope tree
+或 lifecycle method。
 
 provider implementation 依赖该 contract 是允许的向内依赖；`engine/core`、`engine/platform` 与 `package-runtime` 不反向依赖
 Host Runtime。
 
 ### 5. Generated C++ 形状
 
-generated header 只声明一个稳定的 target-private entry point：
+renderer revision 2 的 generated header 声明两个稳定的 target-private entry points：
 
 ```cpp
 namespace asharia::generated {
 
-void registerStaticFactoryProviders(
-    host_runtime::StaticFactoryRegistrar& registrar) noexcept;
+[[nodiscard]] host_runtime::StaticFactoryRegistrationCapacityV1
+staticFactoryRegistrationCapacity() noexcept;
+
+void recordStaticFactoryProviders(
+    host_runtime::StaticFactoryRegistrationRecorder& recorder) noexcept;
 
 } // namespace asharia::generated
 ```
@@ -162,11 +179,16 @@ generated source：
 
 1. 去重并按 UTF-8 bytes 排序 public provider headers；
 2. 对每个 provider 生成 function-pointer type check；
-3. 在一个显式函数内按 canonical provider order 直接调用每个 provider 一次。
+3. 生成 provider/factory/text 的 exact capacity；
+4. 注入 generation ID、Blueprint SHA-256、package/version/module/entry point 与 expected factory IDs；
+5. 在一个显式函数内通过 recorder 按 canonical provider order 直接调用每个 provider 一次。
 
 概念形状：
 
 ```cpp
+#include <array>
+#include <span>
+#include <string_view>
 #include <type_traits>
 
 #include "asharia/example/static_factory_provider.hpp"
@@ -177,16 +199,33 @@ static_assert(std::is_same_v<
               decltype(&asharia::example::provideStaticFactories),
               asharia::host_runtime::StaticFactoryProviderV1>);
 
-void asharia::generated::registerStaticFactoryProviders(
-    host_runtime::StaticFactoryRegistrar& registrar) noexcept {
-  asharia::example::provideStaticFactories(registrar);
+asharia::host_runtime::StaticFactoryRegistrationCapacityV1
+asharia::generated::staticFactoryRegistrationCapacity() noexcept {
+  return kRendererComputedCapacity;
+}
+
+void asharia::generated::recordStaticFactoryProviders(
+    host_runtime::StaticFactoryRegistrationRecorder& recorder) noexcept {
+  recorder.beginComposition({
+      .generationId = "sha256-<composition-generation>",
+      .hostActivationBlueprintSha256 = "<host-activation-blueprint-sha256>",
+      .capacity = staticFactoryRegistrationCapacity(),
+  });
+  constexpr std::array<std::string_view, 1> expected{"runtime"};
+  recorder.invokeProvider(
+      {.packageId = "com.asharia.example", .packageVersion = "1.0.0",
+       .moduleId = "runtime", .entryPoint = "asharia::example::provideStaticFactories",
+       .expectedFactoryIds = expected},
+      &asharia::example::provideStaticFactories);
+  recorder.endComposition();
 }
 ```
 
-实际输出必须经过仓库 clang-format 风格验证。qualified function 只来自 #286 的受限 token，不作为任意 C++ expression 拼接。
+renderer template 遵循仓库 clang-format 风格，生成 fixture 仍必须经过双编译器编译。qualified function 只来自 #286 的
+受限 token，不作为任意 C++ expression 拼接。
 
-provider call order 只保证 deterministic registration。factory create/activate order 仍来自 Blueprint；Host Runtime 不得用
-provider call order 替代 factory DAG。
+provider call order 只保证 deterministic observation。provider 内 `registerFactory()` 顺序也不会成为 snapshot 或 activation
+语义。factory create/activate order 仍来自 Blueprint；Host Runtime 不得用 recording order 替代 factory DAG。
 
 ### 6. CMake attachment contract
 
@@ -203,7 +242,7 @@ asharia_attach_static_composition(<existing-host-target>)
 - 复验每个 provider target 存在且为 `STATIC_LIBRARY`；
 - 使用 absolute generated source path 执行 `target_sources(host PRIVATE ...)`；
 - PRIVATE 添加 generated include root；
-- `target_link_libraries(host PRIVATE asharia::host_runtime_contract <exact-provider-targets...>)`；
+- `target_link_libraries(host PRIVATE asharia::host_runtime_registration <exact-provider-targets...>)`；registration target 再公开依赖窄 `asharia::host_runtime_contract`；
 - 把 generation ID/fingerprint 写入 target property，供 final configure diagnostics 使用；
 - 不调用 `add_subdirectory()`、`find_package()`、resolver、shell 或 package-specific script。
 
@@ -275,7 +314,7 @@ v1 明确限制增量成本：
 
 ## 不做事项
 
-- 不实现 concrete registrar、factory callbacks、instances、scopes、leases、rollback 或 shutdown；
+- 不实现 factory callbacks、instances、scopes、leases、rollback 或 shutdown；#289 的 concrete registrar 只记录 identity；
 - 不生成 `main()`、Build Profile、Host Template 或 final executable target；
 - 不验证 final object/library/executable bytes；
 - 不生成 post-build Activation Binding Receipt；
@@ -291,6 +330,7 @@ v1 明确限制增量成本：
 - stale/tampered/cross-plan mismatch（包括 Effective Session）negative tests；
 - output path traversal、link/reparse root、partial publication、existing-directory conflict 与 reuse tests；
 - synthetic valid Host target 使用生成 fragment 成功 configure/compile/link；
+- renderer revision 2 synthetic Host 运行 generated recorder 并得到 exact owning registration snapshot；
 - wrong provider signature 在 `static_assert` 处编译失败；
 - missing/wrong provider target 与 duplicate attachment 在 final configure fail closed；
 - ClangCL 与 MSVC 都执行 generated-root compile evidence；
@@ -298,7 +338,8 @@ v1 明确限制增量成本：
 
 ## 后续边界
 
-1. post-build Activation Binding Receipt：对证 generation manifest、实际 registrar table 与 exact final Host artifact；
-2. concrete Host Runtime：实现 registrar、factory callbacks、scope tree、lifecycle、rollback 与 shutdown；
-3. Build Profile/Host Template：拥有 final target、`main()`、platform metadata 与 final configure/build adapter；
-4. Bootstrap/Session adapter：把 generation/build/receipt 状态映射为 Ready、PendingBuild、PendingRestart 或 SafeMode。
+1. [Static Factory Registration v1](adr-static-factory-registration-v1.md)：#289 已实现 identity-only registrar、capacity、sticky failure 与 canonical owning snapshot；
+2. #290 Build Profile/Host Template：拥有 final target、`main()`、platform metadata、verification mode 与 final configure/build adapter；
+3. #288 post-build Activation Binding Receipt：对证 generation manifest、registration snapshot 与 exact final Host artifact；
+4. concrete Host Runtime lifecycle：实现 factory callbacks、scope tree、activation、rollback 与 shutdown；
+5. Bootstrap/Session adapter：把 generation/build/receipt 状态映射为 Ready、PendingBuild、PendingRestart 或 SafeMode。

@@ -1,0 +1,296 @@
+﻿#include "asharia/host_runtime/static_factory_registration.hpp"
+
+#include <algorithm>
+#include <new>
+#include <stdexcept>
+#include <tuple>
+#include <utility>
+
+#include "static_factory_registration_state.hpp"
+
+namespace asharia::host_runtime {
+    namespace {
+
+        [[nodiscard]] bool isLowerHexSha256(std::string_view value) noexcept {
+            if (value.size() != 64) {
+                return false;
+            }
+            return std::ranges::all_of(value, [](const char character) {
+                return (character >= '0' && character <= '9') ||
+                       (character >= 'a' && character <= 'f');
+            });
+        }
+
+        [[nodiscard]] bool isGenerationId(std::string_view value) noexcept {
+            constexpr std::string_view kPrefix{"sha256-"};
+            return value.starts_with(kPrefix) && isLowerHexSha256(value.substr(kPrefix.size()));
+        }
+
+    } // namespace
+
+    StaticFactoryRegistrationRecorder::StaticFactoryRegistrationRecorder(
+        std::unique_ptr<StaticFactoryRegistrationState> state) noexcept
+        : state_(std::move(state)) {}
+
+    StaticFactoryRegistrationRecorder::~StaticFactoryRegistrationRecorder() = default;
+
+    StaticFactoryRegistrationRecorder::StaticFactoryRegistrationRecorder(
+        StaticFactoryRegistrationRecorder&& other) noexcept = default;
+
+    void StaticFactoryRegistrationRecorder::beginComposition(
+        StaticCompositionRegistrationContextV1 context) noexcept {
+        if (!state_) {
+            return;
+        }
+        StaticFactoryRegistrationState& state = *state_;
+        if (state.failure.has_value()) {
+            return;
+        }
+        if (state.phase == StaticFactoryRegistrationState::Phase::Recording) {
+            state.fail(StaticFactoryRegistrationErrorCode::CompositionAlreadyStarted);
+            return;
+        }
+        if (state.phase == StaticFactoryRegistrationState::Phase::Ended ||
+            state.phase == StaticFactoryRegistrationState::Phase::Finished) {
+            state.fail(StaticFactoryRegistrationErrorCode::CompositionAlreadyEnded);
+            return;
+        }
+        if (context.capacity != state.capacity || !isGenerationId(context.generationId) ||
+            !isLowerHexSha256(context.hostActivationBlueprintSha256)) {
+            state.fail(StaticFactoryRegistrationErrorCode::InvalidCompositionContext);
+            return;
+        }
+
+        state.generationId = state.copyText(context.generationId);
+        if (state.failure.has_value()) {
+            return;
+        }
+        state.hostActivationBlueprintSha256 = state.copyText(context.hostActivationBlueprintSha256);
+        if (!state.failure.has_value()) {
+            state.phase = StaticFactoryRegistrationState::Phase::Recording;
+        }
+    }
+
+    void
+    StaticFactoryRegistrationRecorder::invokeProvider(StaticFactoryProviderContextV1 context,
+                                                      StaticFactoryProviderV1 provider) noexcept {
+        if (!state_) {
+            return;
+        }
+        StaticFactoryRegistrationState& state = *state_;
+        if (state.failure.has_value()) {
+            return;
+        }
+        if (state.phase != StaticFactoryRegistrationState::Phase::Recording) {
+            state.fail(StaticFactoryRegistrationErrorCode::ProviderOutsideComposition);
+            return;
+        }
+        if (state.providerActive) {
+            state.fail(StaticFactoryRegistrationErrorCode::ProviderNested);
+            return;
+        }
+        if (provider == nullptr) {
+            state.fail(StaticFactoryRegistrationErrorCode::ProviderMissing);
+            return;
+        }
+        if (context.packageId.empty() || context.packageVersion.empty() ||
+            context.moduleId.empty() || context.entryPoint.empty() ||
+            context.expectedFactoryIds.empty()) {
+            state.fail(StaticFactoryRegistrationErrorCode::ProviderContextInvalid);
+            return;
+        }
+        for (std::size_t index = 0; index < context.expectedFactoryIds.size(); ++index) {
+            if (context.expectedFactoryIds[index].empty() ||
+                (index != 0 &&
+                 context.expectedFactoryIds[index - 1] >= context.expectedFactoryIds[index])) {
+                state.fail(StaticFactoryRegistrationErrorCode::ExpectedFactoriesNotCanonical);
+                return;
+            }
+        }
+        const std::span<const StaticFactoryRegistrationState::ProviderObservation>
+            observedProviders =
+                std::span<const StaticFactoryRegistrationState::ProviderObservation>{
+                    state.providers}
+                    .first(state.observedProviderCount);
+        const auto duplicate = std::ranges::find_if(
+            observedProviders,
+            [&context](const StaticFactoryRegistrationState::ProviderObservation& existing) {
+                return existing.packageId == context.packageId &&
+                       existing.packageVersion == context.packageVersion &&
+                       existing.moduleId == context.moduleId &&
+                       existing.entryPoint == context.entryPoint;
+            });
+        if (duplicate != observedProviders.end()) {
+            state.fail(StaticFactoryRegistrationErrorCode::ProviderDuplicate,
+                       std::addressof(*duplicate));
+            return;
+        }
+        if (state.observedProviderCount >= state.capacity.providerCount ||
+            context.expectedFactoryIds.size() >
+                state.capacity.factoryCount - state.expectedFactoryCount) {
+            state.fail(StaticFactoryRegistrationErrorCode::ProviderCountMismatch);
+            return;
+        }
+
+        StaticFactoryRegistrationState::ProviderObservation observed{
+            .packageId = state.copyText(context.packageId),
+            .packageVersion = state.copyText(context.packageVersion),
+            .moduleId = state.copyText(context.moduleId),
+            .entryPoint = state.copyText(context.entryPoint),
+        };
+        if (state.failure.has_value()) {
+            return;
+        }
+
+        state.providers[state.observedProviderCount] = observed;
+        state.activeProviderIndex = state.observedProviderCount;
+        ++state.observedProviderCount;
+        state.expectedFactoryCount += context.expectedFactoryIds.size();
+        state.activeExpectedFactoryIds = context.expectedFactoryIds;
+        state.activeFactoryBegin = state.observedFactoryCount;
+        state.providerActive = true;
+
+        provider(state.registrar);
+
+        state.providerActive = false;
+        if (state.failure.has_value()) {
+            return;
+        }
+
+        const StaticFactoryRegistrationState::ProviderObservation& activeProvider =
+            state.providers[state.activeProviderIndex];
+        const std::span<const StaticFactoryRegistrationState::FactoryObservation>
+            providerFactories =
+                std::span<const StaticFactoryRegistrationState::FactoryObservation>{state.factories}
+                    .subspan(state.activeFactoryBegin,
+                             state.observedFactoryCount - state.activeFactoryBegin);
+        for (const std::string_view expected : context.expectedFactoryIds) {
+            const auto registered = std::ranges::find_if(
+                providerFactories,
+                [expected](const StaticFactoryRegistrationState::FactoryObservation& factory) {
+                    return factory.factoryId == expected;
+                });
+            if (registered == providerFactories.end()) {
+                state.fail(StaticFactoryRegistrationErrorCode::FactoryMissing, &activeProvider,
+                           expected);
+                return;
+            }
+        }
+    }
+
+    void StaticFactoryRegistrationRecorder::endComposition() noexcept {
+        if (!state_) {
+            return;
+        }
+        StaticFactoryRegistrationState& state = *state_;
+        if (state.failure.has_value()) {
+            return;
+        }
+        if (state.phase == StaticFactoryRegistrationState::Phase::NotStarted) {
+            state.fail(StaticFactoryRegistrationErrorCode::CompositionNotStarted);
+            return;
+        }
+        if (state.phase == StaticFactoryRegistrationState::Phase::Ended ||
+            state.phase == StaticFactoryRegistrationState::Phase::Finished) {
+            state.fail(StaticFactoryRegistrationErrorCode::CompositionAlreadyEnded);
+            return;
+        }
+        if (state.providerActive) {
+            state.fail(StaticFactoryRegistrationErrorCode::ProviderNested);
+            return;
+        }
+
+        state.phase = StaticFactoryRegistrationState::Phase::Ended;
+        if (state.observedProviderCount != state.capacity.providerCount) {
+            state.fail(StaticFactoryRegistrationErrorCode::ProviderCountMismatch);
+        } else if (state.expectedFactoryCount != state.capacity.factoryCount ||
+                   state.observedFactoryCount != state.capacity.factoryCount) {
+            state.fail(StaticFactoryRegistrationErrorCode::FactoryCountMismatch);
+        }
+    }
+
+    StaticFactoryRegistrationResult<StaticFactoryRegistrationSnapshotV1>
+    StaticFactoryRegistrationRecorder::finish() && noexcept {
+        if (!state_) {
+            return std::unexpected(makeStaticFactoryRegistrationError(
+                StaticFactoryRegistrationErrorCode::RecorderMovedFrom));
+        }
+        StaticFactoryRegistrationState& state = *state_;
+        if (!state.failure.has_value()) {
+            if (state.phase == StaticFactoryRegistrationState::Phase::NotStarted) {
+                state.fail(StaticFactoryRegistrationErrorCode::CompositionNotStarted);
+            } else if (state.phase == StaticFactoryRegistrationState::Phase::Recording) {
+                state.fail(StaticFactoryRegistrationErrorCode::CompositionNotEnded);
+            } else if (state.phase == StaticFactoryRegistrationState::Phase::Finished) {
+                state.fail(StaticFactoryRegistrationErrorCode::RecorderAlreadyFinished);
+            }
+        }
+        if (state.failure.has_value()) {
+            return std::unexpected(state.owningFailure());
+        }
+
+        state.phase = StaticFactoryRegistrationState::Phase::Finished;
+        try {
+            StaticFactoryRegistrationSnapshotV1 snapshot{
+                .generationId = std::string(state.generationId),
+                .hostActivationBlueprintSha256 = std::string(state.hostActivationBlueprintSha256),
+                .registrations = {},
+            };
+            snapshot.registrations.reserve(state.observedFactoryCount);
+            const std::span<const StaticFactoryRegistrationState::FactoryObservation>
+                observedFactories =
+                    std::span<const StaticFactoryRegistrationState::FactoryObservation>{
+                        state.factories}
+                        .first(state.observedFactoryCount);
+            for (const StaticFactoryRegistrationState::FactoryObservation& factory :
+                 observedFactories) {
+                snapshot.registrations.push_back({
+                    .packageId = std::string(factory.packageId),
+                    .packageVersion = std::string(factory.packageVersion),
+                    .moduleId = std::string(factory.moduleId),
+                    .factoryId = std::string(factory.factoryId),
+                    .providerEntryPoint = std::string(factory.providerEntryPoint),
+                });
+            }
+            std::ranges::sort(snapshot.registrations, [](const StaticFactoryRegistrationV1& left,
+                                                         const StaticFactoryRegistrationV1& right) {
+                return std::tie(left.packageId, left.packageVersion, left.moduleId, left.factoryId,
+                                left.providerEntryPoint) <
+                       std::tie(right.packageId, right.packageVersion, right.moduleId,
+                                right.factoryId, right.providerEntryPoint);
+            });
+            return snapshot;
+        } catch (const std::bad_alloc&) {
+            return std::unexpected(makeStaticFactoryRegistrationError(
+                StaticFactoryRegistrationErrorCode::AllocationFailed));
+        } catch (const std::length_error&) {
+            return std::unexpected(makeStaticFactoryRegistrationError(
+                StaticFactoryRegistrationErrorCode::AllocationFailed));
+        }
+    }
+
+    void StaticFactoryRegistrar::registerFactory(std::string_view localFactoryId) noexcept {
+        state_->registerFactory(localFactoryId);
+    }
+
+    StaticFactoryRegistrationResult<StaticFactoryRegistrationRecorder>
+    createStaticFactoryRegistrationRecorder(StaticFactoryRegistrationCapacityV1 capacity) noexcept {
+        if ((capacity.providerCount == 0) != (capacity.factoryCount == 0) ||
+            capacity.providerCount > capacity.factoryCount || capacity.textBytes == 0 ||
+            capacity.diagnosticFactoryIdBytes == 0) {
+            return std::unexpected(makeStaticFactoryRegistrationError(
+                StaticFactoryRegistrationErrorCode::InvalidCapacity));
+        }
+        try {
+            return StaticFactoryRegistrationRecorder(
+                std::make_unique<StaticFactoryRegistrationState>(capacity));
+        } catch (const std::bad_alloc&) {
+            return std::unexpected(makeStaticFactoryRegistrationError(
+                StaticFactoryRegistrationErrorCode::AllocationFailed));
+        } catch (const std::length_error&) {
+            return std::unexpected(makeStaticFactoryRegistrationError(
+                StaticFactoryRegistrationErrorCode::AllocationFailed));
+        }
+    }
+
+} // namespace asharia::host_runtime

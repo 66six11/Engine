@@ -24,13 +24,14 @@ from tools import static_factory_provider_bindings as provider_bindings
 STATIC_COMPOSITION_ROOT_NAME = "asharia.static-composition-root.json"
 STATIC_COMPOSITION_ROOT_SCHEMA = "com.asharia.static-composition-root"
 STATIC_COMPOSITION_ROOT_SCHEMA_VERSION = 1
-STATIC_COMPOSITION_RENDERER_REVISION = 1
+STATIC_COMPOSITION_RENDERER_REVISION = 2
 STATIC_COMPOSITION_PROVIDER_API = "asharia-static-factory-provider-v1"
 STATIC_COMPOSITION_HEADER_PATH = (
     "include/asharia/generated/static_composition_root.hpp"
 )
 STATIC_COMPOSITION_SOURCE_PATH = "src/static_composition_root.cpp"
 STATIC_COMPOSITION_CMAKE_PATH = "asharia-static-composition.cmake"
+_MIN_DIAGNOSTIC_FACTORY_ID_BYTES = 256
 _UTF8_BOM = b"\xef\xbb\xbf"
 
 _FILE_DESCRIPTORS = (
@@ -487,19 +488,64 @@ def validate_static_composition_root_manifest_data(
 def _render_header() -> bytes:
     text = """#pragma once
 
-#include \"asharia/host_runtime/static_factory_provider.hpp\"
+#include \"asharia/host_runtime/static_factory_registration.hpp\"
 
 namespace asharia::generated {
 
-void registerStaticFactoryProviders(
-    asharia::host_runtime::StaticFactoryRegistrar& registrar) noexcept;
+[[nodiscard]] asharia::host_runtime::StaticFactoryRegistrationCapacityV1
+staticFactoryRegistrationCapacity() noexcept;
+
+void recordStaticFactoryProviders(
+    asharia::host_runtime::StaticFactoryRegistrationRecorder& recorder) noexcept;
 
 } // namespace asharia::generated
 """
     return _UTF8_BOM + text.encode("utf-8")
 
 
+def _registration_capacity(
+    generation_id: str,
+    host_activation_blueprint_sha256: str,
+    providers: tuple[provider_bindings.StaticFactoryProvider, ...],
+) -> tuple[int, int, int, int]:
+    factory_count = sum(len(provider.factory_ids) for provider in providers)
+    text_values = (
+        generation_id,
+        host_activation_blueprint_sha256,
+        *(
+            value
+            for provider in providers
+            for value in (
+                provider.package_id,
+                provider.package_version,
+                provider.module_id,
+                provider.entry_point.function,
+                *provider.factory_ids,
+            )
+        ),
+    )
+    diagnostic_factory_id_bytes = max(
+        _MIN_DIAGNOSTIC_FACTORY_ID_BYTES,
+        max(
+            (
+                len(factory_id.encode("utf-8"))
+                for provider in providers
+                for factory_id in provider.factory_ids
+            ),
+            default=0,
+        ),
+    )
+    return (
+        len(providers),
+        factory_count,
+        sum(len(value.encode("utf-8")) for value in text_values),
+        diagnostic_factory_id_bytes,
+    )
+
+
 def _render_source(
+    generation_id: str,
+    host_activation_blueprint_sha256: str,
     providers: tuple[provider_bindings.StaticFactoryProvider, ...],
 ) -> bytes:
     headers = sorted(
@@ -509,7 +555,13 @@ def _render_source(
         },
         key=_utf8_key,
     )
-    lines = ["#include <type_traits>", ""]
+    lines = [
+        "#include <array>",
+        "#include <span>",
+        "#include <string_view>",
+        "#include <type_traits>",
+        "",
+    ]
     lines.extend(f'#include "{value}"' for value in headers)
     lines.append("")
     for provider in providers:
@@ -521,19 +573,64 @@ def _render_source(
                 "",
             )
         )
-    lines.extend(
-        (
-            "void asharia::generated::registerStaticFactoryProviders(",
-            "    asharia::host_runtime::StaticFactoryRegistrar& registrar) noexcept {",
+    if providers:
+        lines.extend(("namespace {", ""))
+        for index, provider in enumerate(providers):
+            lines.append(
+                "constexpr std::array<std::string_view, "
+                f"{len(provider.factory_ids)}> kExpectedFactoryIds{index}{{{{"
+            )
+            lines.extend(f'    "{value}",' for value in provider.factory_ids)
+            lines.extend(("}};", ""))
+        lines.extend(("} // namespace", ""))
+
+    provider_count, factory_count, text_bytes, diagnostic_factory_id_bytes = (
+        _registration_capacity(
+            generation_id,
+            host_activation_blueprint_sha256,
+            providers,
         )
     )
-    if providers:
-        lines.extend(
-            f"  {value.entry_point.function}(registrar);" for value in providers
+    lines.extend(
+        (
+            "asharia::host_runtime::StaticFactoryRegistrationCapacityV1",
+            "asharia::generated::staticFactoryRegistrationCapacity() noexcept {",
+            "  return {",
+            f"      .providerCount = {provider_count}U,",
+            f"      .factoryCount = {factory_count}U,",
+            f"      .textBytes = {text_bytes}U,",
+            "      .diagnosticFactoryIdBytes = "
+            f"{diagnostic_factory_id_bytes}U,",
+            "  };",
+            "}",
+            "",
+            "void asharia::generated::recordStaticFactoryProviders(",
+            "    asharia::host_runtime::StaticFactoryRegistrationRecorder& recorder) noexcept {",
+            "  recorder.beginComposition({",
+            f'      .generationId = "{generation_id}",',
+            "      .hostActivationBlueprintSha256 =",
+            f'          "{host_activation_blueprint_sha256}",',
+            "      .capacity = staticFactoryRegistrationCapacity(),",
+            "  });",
         )
-    else:
-        lines.append("  (void)registrar;")
-    lines.extend(("}", ""))
+    )
+    for index, provider in enumerate(providers):
+        lines.extend(
+            (
+                "  recorder.invokeProvider(",
+                "      {",
+                f'          .packageId = "{provider.package_id}",',
+                f'          .packageVersion = "{provider.package_version}",',
+                f'          .moduleId = "{provider.module_id}",',
+                f'          .entryPoint = "{provider.entry_point.function}",',
+                "          .expectedFactoryIds = std::span<const std::string_view>{",
+                f"              kExpectedFactoryIds{index}",
+                "          },",
+                "      },",
+                f"      &{provider.entry_point.function});",
+            )
+        )
+    lines.extend(("  recorder.endComposition();", "}", ""))
     return _UTF8_BOM + "\n".join(lines).encode("utf-8")
 
 
@@ -562,8 +659,8 @@ def _render_cmake(
         "  if(_asharia_already_attached)",
         '    message(FATAL_ERROR "Static composition is already attached to \'${target_name}\'")',
         "  endif()",
-        "  if(NOT TARGET asharia::host_runtime_contract)",
-        '    message(FATAL_ERROR "Required target asharia::host_runtime_contract does not exist")',
+        "  if(NOT TARGET asharia::host_runtime_registration)",
+        '    message(FATAL_ERROR "Required target asharia::host_runtime_registration does not exist")',
         "  endif()",
     ]
     for target in targets:
@@ -586,7 +683,7 @@ def _render_cmake(
             '  target_include_directories("${target_name}" PRIVATE',
             '      "${_asharia_composition_root}/include")',
             '  target_link_libraries("${target_name}" PRIVATE',
-            "      asharia::host_runtime_contract",
+            "      asharia::host_runtime_registration",
         )
     )
     lines.extend(f"      {value}" for value in targets)
@@ -824,7 +921,11 @@ def generate_static_composition_root(
             STATIC_COMPOSITION_SOURCE_PATH,
             "registration-source",
             "text/x-c++src",
-            _render_source(providers),
+            _render_source(
+                manifest.generation_id,
+                blueprint.integrity.digest,
+                providers,
+            ),
         ),
     )
     file_evidence = tuple(
