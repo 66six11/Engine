@@ -214,7 +214,10 @@ Host Composition 与 exact factory snapshots 派生为固定 scope topology、fa
 `asharia.package.static-factory-bindings.json` source sidecar、Factory/Build cross binding、Candidate Discovery exact snapshot、
 Locked Verification 与 Effective Session fingerprint；派生 Binding Plan 会进一步证明 provider target 已被本次 Source Build Plan
 选择。它只声明可直接编译引用的静态 provider 入口，不执行注册或 lifecycle，也不成为第三份 lock。
-上游 catalog/index、lock update/apply、repair executor、轻量启动 receipt、generated static composition root、构建后
+[Generated Static Composition Root v1](adr-generated-static-composition-root-v1.md) 已为 #287 实现 preflight CMake
+codemodel → content-addressed thin TU/controlled target attachment → final configure/build 的边界，并加入最小 provider type
+contract；它不提前拥有 final Host target、concrete registrar 或 lifecycle。
+上游 catalog/index、lock update/apply、repair executor、轻量启动 receipt、构建后
 activation binding receipt、生产 catalog/lockfile 与 Editor Package Manager 尚未实现。Project Manifest / Lock v2
 不保留 v1 reader 或 migration adapter。
 

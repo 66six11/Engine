@@ -1,0 +1,322 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.asharia.dev/package-runtime/static-composition-root-v1.schema.json",
+  "title": "Asharia Static Composition Root v1",
+  "description": "Content-addressed evidence for generated static provider registration source and its CMake attachment handoff.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "schemaVersion",
+    "rendererRevision",
+    "generationId",
+    "inputs",
+    "host",
+    "configuration",
+    "providerApi",
+    "providers",
+    "files",
+    "integrity"
+  ],
+  "properties": {
+    "schema": {
+      "const": "com.asharia.static-composition-root"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "rendererRevision": {
+      "enum": [
+        1
+      ]
+    },
+    "generationId": {
+      "$ref": "#/$defs/generationId"
+    },
+    "inputs": {
+      "$ref": "#/$defs/inputs"
+    },
+    "host": {
+      "$ref": "#/$defs/host"
+    },
+    "configuration": {
+      "$ref": "#/$defs/configuration"
+    },
+    "providerApi": {
+      "const": "asharia-static-factory-provider-v1"
+    },
+    "providers": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/provider"
+      }
+    },
+    "files": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/file"
+      }
+    },
+    "integrity": {
+      "$ref": "#/$defs/integrity"
+    }
+  },
+  "$defs": {
+    "integrity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "algorithm",
+        "digest"
+      ],
+      "properties": {
+        "algorithm": {
+          "const": "sha256"
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "generationId": {
+      "type": "string",
+      "pattern": "^sha256-[0-9a-f]{64}$"
+    },
+    "inputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceBuildPlanIntegrity",
+        "hostActivationBlueprintIntegrity",
+        "staticFactoryProviderBindingPlanIntegrity"
+      ],
+      "properties": {
+        "sourceBuildPlanIntegrity": {
+          "$ref": "#/$defs/integrity"
+        },
+        "hostActivationBlueprintIntegrity": {
+          "$ref": "#/$defs/integrity"
+        },
+        "staticFactoryProviderBindingPlanIntegrity": {
+          "$ref": "#/$defs/integrity"
+        }
+      }
+    },
+    "host": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "engineGenerationId",
+        "hostKind",
+        "targetPlatform"
+      ],
+      "properties": {
+        "engineGenerationId": {
+          "$ref": "#/$defs/generationId"
+        },
+        "hostKind": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/hostKind"
+        },
+        "targetPlatform": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/platformId"
+        }
+      }
+    },
+    "generator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "multiConfig"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "multiConfig": {
+          "type": "boolean"
+        }
+      }
+    },
+    "toolchain": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "compilerId",
+        "compilerVersion",
+        "targetSystem",
+        "targetArchitecture"
+      ],
+      "properties": {
+        "compilerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "compilerVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "targetSystem": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "targetArchitecture": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        }
+      }
+    },
+    "configuration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "generator",
+        "toolchain"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "generator": {
+          "$ref": "#/$defs/generator"
+        },
+        "toolchain": {
+          "$ref": "#/$defs/toolchain"
+        }
+      }
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "type"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "pattern": "^[A-Za-z0-9_.+\\-]+$"
+        },
+        "type": {
+          "const": "STATIC_LIBRARY"
+        }
+      }
+    },
+    "entryPoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "header",
+        "function"
+      ],
+      "properties": {
+        "header": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 240,
+          "pattern": "^asharia/[A-Za-z0-9_+.\\-]+(?:/[A-Za-z0-9_+.\\-]+)*\\.(?:h|hh|hpp|hxx)$"
+        },
+        "function": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 240,
+          "pattern": "^asharia::[A-Za-z_][A-Za-z0-9_]*(?:::[A-Za-z_][A-Za-z0-9_]*)+$"
+        }
+      }
+    },
+    "provider": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "packageId",
+        "packageVersion",
+        "moduleId",
+        "target",
+        "entryPoint",
+        "factoryIds"
+      ],
+      "properties": {
+        "packageId": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/packageId"
+        },
+        "packageVersion": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/semanticVersion"
+        },
+        "moduleId": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/localId"
+        },
+        "target": {
+          "$ref": "#/$defs/target"
+        },
+        "entryPoint": {
+          "$ref": "#/$defs/entryPoint"
+        },
+        "factoryIds": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "package-contract-common-v1.schema.json#/$defs/localId"
+          }
+        }
+      }
+    },
+    "file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "role",
+        "mediaType",
+        "size",
+        "integrity"
+      ],
+      "properties": {
+        "path": {
+          "enum": [
+            "asharia-static-composition.cmake",
+            "include/asharia/generated/static_composition_root.hpp",
+            "src/static_composition_root.cpp"
+          ]
+        },
+        "role": {
+          "enum": [
+            "cmake-attachment",
+            "declaration-header",
+            "registration-source"
+          ]
+        },
+        "mediaType": {
+          "enum": [
+            "text/x-cmake",
+            "text/x-c++hdr",
+            "text/x-c++src"
+          ]
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "integrity": {
+          "$ref": "#/$defs/integrity"
+        }
+      }
+    }
+  }
+}

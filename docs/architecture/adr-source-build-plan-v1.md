@@ -513,8 +513,9 @@ schema 是 closed contract，明确拒绝：
 3. **Factory / Scope / Lifecycle + static provider binding**：Factory Declaration 与 Host Activation Blueprint 保持 logical/artifact-neutral；
    #286 通过独立 source sidecar 与派生 Binding Plan，把 selected factory 对证到本 Source Build Plan 已选择的静态 target 和
    type-safe C++ entry point；
-4. **Generated composition root + post-build receipt**：消费 verified Binding Plan 生成薄注册源，构建后再把实际 registration table
-   与 exact host artifact generation 对证；
+4. **Generated composition root + post-build receipt**：#287 已实现 preflight configure/codemodel → generate → final configure
+   的两阶段 handoff；消费 verified Binding Plan 生成薄注册源，构建后再把实际 registration table 与 exact host artifact
+   generation 对证；
 5. **Host Runtime**：执行 activation/deactivation 并拥有 instance、contribution handles、lease、rollback 与 shutdown。
 
 Source Build Plan 只为 build adapter 提供 verified roots/closure，不替代以上任何权威。

@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "packageKind": "source-boundary",
+  "sourceRole": "engine-component",
+  "ownerDomain": "foundation",
+  "plannedOwnershipRoot": "engine/host-runtime",
+  "selectable": false,
+  "catalogVisible": false,
+  "name": "com.asharia.host-runtime",
+  "version": "0.1.0",
+  "displayName": "Asharia Host Runtime Contract",
+  "description": "Fixed Host Image type contract for generated static factory providers.",
+  "dependencies": [],
+  "targets": ["asharia-host-runtime-contract"],
+  "targetRoles": {
+    "asharia-host-runtime-contract": "contract"
+  },
+  "targetDependencies": {
+    "asharia-host-runtime-contract": []
+  }
+}

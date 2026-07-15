@@ -25,6 +25,7 @@ endif()
 
 add_subdirectory(engine/core)
 add_subdirectory(engine/platform)
+add_subdirectory(engine/host-runtime)
 
 add_subdirectory(packages/window-glfw)
 add_subdirectory(packages/profiling)
