@@ -60,6 +60,7 @@ SOURCE_BUILD_PLAN_SCHEMA_NAME = "source-build-plan-v1.schema.json"
 STATIC_FACTORY_PROVIDER_BINDING_PLAN_SCHEMA_NAME = (
     "static-factory-provider-binding-plan-v1.schema.json"
 )
+STATIC_COMPOSITION_ROOT_SCHEMA_NAME = "static-composition-root-v1.schema.json"
 PACKAGE_TREE_HEADER = b"asharia-package-tree-v1\0"
 PACKAGE_TREE_ROOT_EXCLUDES = {".git", ".hg", ".svn", "build", "generated"}
 ANY_PLATFORM_ID = "com.asharia.platform.any"
@@ -221,6 +222,7 @@ class ContractValidators:
     cmake_codemodel_snapshot: Draft202012Validator
     source_build_plan: Draft202012Validator
     static_factory_provider_binding_plan: Draft202012Validator
+    static_composition_root: Draft202012Validator
 
 
 @dataclass(frozen=True, order=True)
@@ -354,6 +356,7 @@ def load_contract_validators(schema_root: Path = DEFAULT_SCHEMA_ROOT) -> Contrac
         static_factory_provider_binding_plan=create(
             STATIC_FACTORY_PROVIDER_BINDING_PLAN_SCHEMA_NAME
         ),
+        static_composition_root=create(STATIC_COMPOSITION_ROOT_SCHEMA_NAME),
     )
 
 
@@ -2641,6 +2644,8 @@ def _contract_kind(manifest: Any, manifest_path: str) -> str | None:
         return "host-activation-blueprint"
     if manifest.get("schema") == "com.asharia.static-factory-provider-binding-plan":
         return "static-factory-provider-binding-plan"
+    if manifest.get("schema") == "com.asharia.static-composition-root":
+        return "static-composition-root"
     if manifest.get("schemaVersion") == 1 and manifest.get("packageKind") == "source-boundary":
         return "source-boundary"
     package_kind = manifest.get("packageKind")
@@ -2719,6 +2724,10 @@ def validate_manifest_data(
     elif kind == "static-factory-provider-binding-plan":
         validator = validators.static_factory_provider_binding_plan
         schema_code = "factory.binding-plan.schema"
+        semantic_validator = lambda value, path: []
+    elif kind == "static-composition-root":
+        validator = validators.static_composition_root
+        schema_code = "static-composition.schema"
         semantic_validator = lambda value, path: []
     elif kind == "host-profile":
         validator = validators.host_profile

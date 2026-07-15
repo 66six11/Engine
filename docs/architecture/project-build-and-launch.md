@@ -247,6 +247,10 @@ CMake Workflow Preset 可以作为 native 子流程实现，但不能替代 Asha
 
 这允许每个项目得到精确链接闭包，同时保持 `apps/*` 只是组合根、系统逻辑仍位于 packages。
 
+[Generated Static Composition Root v1](adr-generated-static-composition-root-v1.md) 进一步冻结为两阶段 CMake handoff：先用
+preflight configure/File API codemodel 对证 package targets，再生成 content-addressed 薄 TU 与 CMake attach fragment，最后由
+Host Template 创建 target 并执行 final configure/build。generator 不创建 executable，也不在 CMake 内重新 resolve package graph。
+
 ## 7. Cook 与内容闭包
 
 Cook 只接受稳定资产身份、import/cook settings、依赖图、tool version 和 target profile。它不得通过遍历 source 目录猜测 shipping 内容。
@@ -542,8 +546,9 @@ asharia-launch --project <path> --profile standalone-game
 
 - Engine Distribution Manifest v1、`EngineGenerationId`、Project Manifest / Lock v2 硬切、Effective Session v1、
   Distribution Assembler v1、Installed Distribution Repair Verifier v1、Package Factory Declaration v1 与
-  Host Activation Blueprint v1、Static Factory Provider Bindings v1 已经完成；下一步冻结 generated static composition root、构建后 activation binding receipt
-  或 Bootstrap/Session adapter；
+  Host Activation Blueprint v1、Static Factory Provider Bindings v1 与 Generated Static Composition Root v1 已经完成；#287
+  已提供 content-addressed thin TU、受控 CMake attachment 和双编译器 compile-time signature evidence，后续仍需构建后
+  activation binding receipt 或 Bootstrap/Session adapter；
 - Effective Editor Session v1 已建立 Ready/Upgrade/Repair/SafeMode 与 exact Profile binding；轻量启动检查和实际 UI/进程状态仍待实现；
 - 冻结 `asharia.build.json` v1 的 owner、Build/Launch Profile 与 local override 规则；
 - 建立 CPU-only parser/validator、BuildPlan/BuildReport、LaunchPlan/SessionReport；
@@ -596,8 +601,8 @@ asharia-launch --project <path> --profile standalone-game
 1. Engine Distribution Manifest v1、`EngineGenerationId`、Project Manifest / Lock v2、Effective Session v1、
    Distribution Assembler v1、Installed Distribution Repair Verifier v1、Package Factory Declaration v1 与
    Host Activation Blueprint v1、Static Factory Provider Bindings v1 已完成；
-2. generated composition root 的 target/module registration 方式、构建后 activation binding receipt，以及 verifier 到
-   Bootstrap/Session 的 adapter；
+2. generated composition root 的 target/module registration 与两阶段 CMake handoff 已由 #287 实现；仍需构建后
+   activation binding receipt，以及 verifier 到 Bootstrap/Session 的 adapter；
 3. `asharia.build.json` v1 schema、inheritance 与 local override；
 4. `asharia.stage.json` v1 与 Build/Stage fingerprint；
 5. development stage 的目录布局和原子发布；
