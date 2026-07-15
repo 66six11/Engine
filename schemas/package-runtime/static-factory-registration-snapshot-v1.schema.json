@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.asharia.dev/package-runtime/static-factory-registration-snapshot-v1.schema.json",
+  "title": "Asharia Static Factory Registration Snapshot v1",
+  "description": "Canonical owning identity evidence recorded by one generated static Host executable.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "schemaVersion",
+    "generationId",
+    "hostActivationBlueprintSha256",
+    "registrations"
+  ],
+  "properties": {
+    "schema": {
+      "const": "com.asharia.static-factory-registration-snapshot"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "generationId": {
+      "type": "string",
+      "pattern": "^sha256-[0-9a-f]{64}$"
+    },
+    "hostActivationBlueprintSha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "registrations": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/registration"
+      }
+    }
+  },
+  "$defs": {
+    "qualifiedFunction": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 240,
+      "pattern": "^asharia::[A-Za-z_][A-Za-z0-9_]*(?:::[A-Za-z_][A-Za-z0-9_]*)+$"
+    },
+    "registration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "packageId",
+        "packageVersion",
+        "moduleId",
+        "factoryId",
+        "providerEntryPoint"
+      ],
+      "properties": {
+        "packageId": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/packageId"
+        },
+        "packageVersion": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/semanticVersion"
+        },
+        "moduleId": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/localId"
+        },
+        "factoryId": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/localId"
+        },
+        "providerEntryPoint": {
+          "$ref": "#/$defs/qualifiedFunction"
+        }
+      }
+    }
+  }
+}

@@ -10,6 +10,8 @@ Accepted and implemented for #287。本 ADR 冻结从 verified static provider h
 [Static Factory Registration v1](adr-static-factory-registration-v1.md) 后续为 #289 扩展 renderer revision 2，使同一薄 TU
 注入 exact composition/provider context，并通过 identity-only recorder 产生 owning registration snapshot；该扩展不改变本 ADR
 对 final target、activation order 或 artifact receipt 的所有权。
+[Windows Development Host Template v1](adr-windows-development-host-template-v1.md) 已为 #290 消费该 generation，创建第一个固定
+final Host target，并执行受控构建与 registration-only verification；这些职责仍不回流到本 generator。
 
 ## 问题
 
@@ -86,9 +88,13 @@ Activation Blueprint + Provider Binding Plan
     ↓
 Generate content-addressed static composition tree
     ↓
+Generate immutable Windows Development Host template
+    ↓
 Final CMake configure（Host template + generated attach fragment）
     ↓
-Compile / link
+File API exact-target binding → single-target build
+    ↓
+Restricted registration verification
 ```
 
 这是同一个 build generation 的两个明确 configure 阶段，不是两套 package graph。第二阶段必须复用相同 Conan toolchain、
@@ -246,8 +252,9 @@ asharia_attach_static_composition(<existing-host-target>)
 - 把 generation ID/fingerprint 写入 target property，供 final configure diagnostics 使用；
 - 不调用 `add_subdirectory()`、`find_package()`、resolver、shell 或 package-specific script。
 
-最终 Host target name、`main()`、application template、subsystem flags、icon/bundle metadata 和 stage destination 由后续
-Build Profile/Host Template adapter 提供。generated root 不拥有它们。
+最终 Host target name、`main()`、application template、subsystem flags 和 runtime output layout 由
+[Windows Development Host Template v1](adr-windows-development-host-template-v1.md) 提供；未来通用 Build Profile/platform adapter
+再拥有 icon/bundle metadata 与 stage destination。generated root 不拥有这些职责。
 
 ### 7. 确定性、失败与原子性
 
@@ -292,8 +299,8 @@ v1 明确限制增量成本：
 
 ### Generator 创建最终 executable target
 
-拒绝。当前没有 Build Profile/Host Template 对 target name、`main()`、platform bundle 与 stage owner 的权威；提前创建会把下一阶段
-策略写死在 package-runtime generator 中。
+拒绝。final target、`main()`、platform metadata 与 stage policy 属于 Host Template/Build Profile owner；#290 已以独立 adapter
+实现第一个固定 Windows Development 模板。把它们塞进本 generator 会重新混合 provider source generation 与产品构建策略。
 
 ### 每个 package 生成一个 composition TU
 
@@ -339,7 +346,8 @@ v1 明确限制增量成本：
 ## 后续边界
 
 1. [Static Factory Registration v1](adr-static-factory-registration-v1.md)：#289 已实现 identity-only registrar、capacity、sticky failure 与 canonical owning snapshot；
-2. #290 Build Profile/Host Template：拥有 final target、`main()`、platform metadata、verification mode 与 final configure/build adapter；
+2. [Windows Development Host Template v1](adr-windows-development-host-template-v1.md)：#290 已实现固定 final target、`main()`、
+   console/runtime layout、受控 final configure/build、File API target binding 与 registration-only verification；
 3. #288 post-build Activation Binding Receipt：对证 generation manifest、registration snapshot 与 exact final Host artifact；
 4. concrete Host Runtime lifecycle：实现 factory callbacks、scope tree、activation、rollback 与 shutdown；
 5. Bootstrap/Session adapter：把 generation/build/receipt 状态映射为 Ready、PendingBuild、PendingRestart 或 SafeMode。

@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from tools import check_package_contracts as contracts
+from tools import generated_publication_tree
 from tools import host_activation_blueprint as activation
 from tools import source_build_plan
 from tools import static_factory_provider_bindings as provider_bindings
@@ -1005,9 +1006,11 @@ def validate_static_composition_root_generation(
     return sorted(diagnostics, key=_diagnostic_sort_key)
 
 
-def _expected_publication_files(
+def expected_static_composition_publication_files(
     generation: StaticCompositionRootGeneration,
 ) -> dict[str, bytes]:
+    """Return the exact closed publication file set for one generation."""
+
     return {
         STATIC_COMPOSITION_ROOT_NAME: render_static_composition_root_manifest(
             generation.manifest
@@ -1056,51 +1059,6 @@ def _prepare_publication_root(path: Path) -> Path:
     return absolute.resolve(strict=True)
 
 
-def _verify_published_tree(
-    root: Path,
-    expected: dict[str, bytes],
-) -> None:
-    root_status = root.lstat()
-    if _is_link_or_reparse(root_status) or not stat.S_ISDIR(root_status.st_mode):
-        raise OSError(f"generation path is not a regular directory: '{root}'")
-    expected_directories: set[str] = set()
-    for relative in expected:
-        parent = Path(relative).parent
-        while parent != Path("."):
-            expected_directories.add(parent.as_posix())
-            parent = parent.parent
-    actual_paths: set[str] = set()
-    actual_directories: set[str] = set()
-    def visit(directory: Path) -> None:
-        with os.scandir(directory) as iterator:
-            entries = sorted(iterator, key=lambda value: os.fsencode(value.name))
-        for entry in entries:
-            path = Path(entry.path)
-            relative = path.relative_to(root).as_posix()
-            status = entry.stat(follow_symlinks=False)
-            if _is_link_or_reparse(status):
-                raise OSError(
-                    f"generation contains a link/reparse point: '{relative}'"
-                )
-            if stat.S_ISREG(status.st_mode):
-                actual_paths.add(relative)
-                if path.read_bytes() != expected.get(relative):
-                    raise OSError(f"generation file bytes differ: '{relative}'")
-            elif stat.S_ISDIR(status.st_mode):
-                actual_directories.add(relative)
-                visit(path)
-            else:
-                raise OSError(
-                    f"generation contains a non-regular entry: '{relative}'"
-                )
-
-    visit(root)
-    if actual_paths != set(expected):
-        raise OSError("generation file set differs from expected outputs")
-    if actual_directories != expected_directories:
-        raise OSError("generation directory set differs from expected layout")
-
-
 def publish_static_composition_root(
     generation: StaticCompositionRootGeneration,
     destination_root: Path,
@@ -1114,13 +1072,15 @@ def publish_static_composition_root(
     if diagnostics:
         return _publication_failure(diagnostics)
 
-    expected = _expected_publication_files(generation)
+    expected = expected_static_composition_publication_files(generation)
     staging_path: Path | None = None
     try:
         destination_root = _prepare_publication_root(destination_root)
         final_path = destination_root / generation.manifest.generation_id
         if os.path.lexists(final_path):
-            _verify_published_tree(final_path, expected)
+            generated_publication_tree.verify_exact_publication_tree(
+                final_path, expected
+            )
             return StaticCompositionPublicationResult(
                 StaticCompositionPublicationReceipt(
                     generation.manifest.generation_id,
@@ -1138,7 +1098,9 @@ def publish_static_composition_root(
             destination = staging_path / Path(relative)
             destination.parent.mkdir(parents=True, exist_ok=True)
             destination.write_bytes(content)
-        _verify_published_tree(staging_path, expected)
+        generated_publication_tree.verify_exact_publication_tree(
+            staging_path, expected
+        )
         try:
             os.rename(staging_path, final_path)
             staging_path = None
@@ -1146,7 +1108,9 @@ def publish_static_composition_root(
         except OSError:
             if not os.path.lexists(final_path):
                 raise
-            _verify_published_tree(final_path, expected)
+            generated_publication_tree.verify_exact_publication_tree(
+                final_path, expected
+            )
             reused = True
         return StaticCompositionPublicationResult(
             StaticCompositionPublicationReceipt(

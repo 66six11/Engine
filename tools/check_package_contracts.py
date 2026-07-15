@@ -61,6 +61,12 @@ STATIC_FACTORY_PROVIDER_BINDING_PLAN_SCHEMA_NAME = (
     "static-factory-provider-binding-plan-v1.schema.json"
 )
 STATIC_COMPOSITION_ROOT_SCHEMA_NAME = "static-composition-root-v1.schema.json"
+STATIC_FACTORY_REGISTRATION_SNAPSHOT_SCHEMA_NAME = (
+    "static-factory-registration-snapshot-v1.schema.json"
+)
+WINDOWS_DEVELOPMENT_HOST_TEMPLATE_SCHEMA_NAME = (
+    "windows-development-host-template-v1.schema.json"
+)
 PACKAGE_TREE_HEADER = b"asharia-package-tree-v1\0"
 PACKAGE_TREE_ROOT_EXCLUDES = {".git", ".hg", ".svn", "build", "generated"}
 ANY_PLATFORM_ID = "com.asharia.platform.any"
@@ -223,6 +229,8 @@ class ContractValidators:
     source_build_plan: Draft202012Validator
     static_factory_provider_binding_plan: Draft202012Validator
     static_composition_root: Draft202012Validator
+    static_factory_registration_snapshot: Draft202012Validator
+    windows_development_host_template: Draft202012Validator
 
 
 @dataclass(frozen=True, order=True)
@@ -357,6 +365,12 @@ def load_contract_validators(schema_root: Path = DEFAULT_SCHEMA_ROOT) -> Contrac
             STATIC_FACTORY_PROVIDER_BINDING_PLAN_SCHEMA_NAME
         ),
         static_composition_root=create(STATIC_COMPOSITION_ROOT_SCHEMA_NAME),
+        static_factory_registration_snapshot=create(
+            STATIC_FACTORY_REGISTRATION_SNAPSHOT_SCHEMA_NAME
+        ),
+        windows_development_host_template=create(
+            WINDOWS_DEVELOPMENT_HOST_TEMPLATE_SCHEMA_NAME
+        ),
     )
 
 
@@ -2646,6 +2660,10 @@ def _contract_kind(manifest: Any, manifest_path: str) -> str | None:
         return "static-factory-provider-binding-plan"
     if manifest.get("schema") == "com.asharia.static-composition-root":
         return "static-composition-root"
+    if manifest.get("schema") == "com.asharia.static-factory-registration-snapshot":
+        return "static-factory-registration-snapshot"
+    if manifest.get("schema") == "com.asharia.windows-development-host-template":
+        return "windows-development-host-template"
     if manifest.get("schemaVersion") == 1 and manifest.get("packageKind") == "source-boundary":
         return "source-boundary"
     package_kind = manifest.get("packageKind")
@@ -2728,6 +2746,14 @@ def validate_manifest_data(
     elif kind == "static-composition-root":
         validator = validators.static_composition_root
         schema_code = "static-composition.schema"
+        semantic_validator = lambda value, path: []
+    elif kind == "static-factory-registration-snapshot":
+        validator = validators.static_factory_registration_snapshot
+        schema_code = "factory.registration-snapshot.schema"
+        semantic_validator = lambda value, path: []
+    elif kind == "windows-development-host-template":
+        validator = validators.windows_development_host_template
+        schema_code = "host-template.schema"
         semantic_validator = lambda value, path: []
     elif kind == "host-profile":
         validator = validators.host_profile

@@ -15,16 +15,23 @@
     "asharia-host-runtime-contract",
     "asharia-host-runtime-registration"
   ],
-  "testTargets": ["asharia-host-runtime-registration-tests"],
+  "testTargets": [
+    "asharia-host-runtime-registration-tests",
+    "asharia-host-runtime-registration-snapshot-json-tests"
+  ],
   "targetRoles": {
     "asharia-host-runtime-contract": "contract",
     "asharia-host-runtime-registration": "bootstrap",
-    "asharia-host-runtime-registration-tests": "test"
+    "asharia-host-runtime-registration-tests": "test",
+    "asharia-host-runtime-registration-snapshot-json-tests": "test"
   },
   "targetDependencies": {
     "asharia-host-runtime-contract": [],
     "asharia-host-runtime-registration": ["asharia-host-runtime-contract"],
     "asharia-host-runtime-registration-tests": [
+      "asharia-host-runtime-registration"
+    ],
+    "asharia-host-runtime-registration-snapshot-json-tests": [
       "asharia-host-runtime-registration"
     ]
   }

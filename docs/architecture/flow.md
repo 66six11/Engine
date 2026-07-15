@@ -127,9 +127,9 @@ flowchart TD
 - `engine/host-runtime` 的 `asharia::host_runtime_contract` 当前导出 provider 可见的窄 `StaticFactoryRegistrar`：provider
   只能 `registerFactory(localFactoryId)`，以及固定 `StaticFactoryProviderV1` 函数指针类型。
   `asharia::host_runtime_registration` 另行实现 move-only recorder、预留 capacity、sticky first error 与 canonical owning
-  registration snapshot；它不保存 callback，也不包含 factory lifecycle 或项目激活逻辑。现有 sample/editor app 尚未直接链接
-  该 target；renderer revision 2 的 generated CMake handoff 只在未来 Host target 上链接 registration target 与 exact static
-  provider targets。
+  registration snapshot，以及不做 IO 的 canonical JSON renderer；它不保存 callback，也不包含 factory lifecycle 或项目激活逻辑。
+  现有 sample/editor app 尚未直接链接该 target；renderer revision 2 的 generated CMake handoff 只在生成的 Windows Development
+  Host target 上链接 registration target 与 exact static provider targets。
 - `asharia::rhi_vulkan` 是基础 Vulkan 后端，不公开依赖 RenderGraph。
 - `asharia::rhi_vulkan_rendergraph` 是 RenderGraph/Vulkan 适配层，负责把抽象 graph state 翻译为 Vulkan 类型。
 - `renderer-basic` 只描述后端无关的 basic renderer graph 片段。
@@ -177,6 +177,28 @@ flowchart TD
 - Scene Tree 和 Inspector 现在是默认 workbench 中的 read-only shell panel。它们消费 app-local
   `EditorSelectionSet` 的稳定 `sceneId + EntityId` snapshot，但仍不消费 runtime scene hierarchy 或 inspector
   data model；当前 UI 只表达 selection contract 状态，避免伪造场景数据。
+
+## 当前 Windows Development Host 生成与验证流
+
+这是 #290 已落地的 opt-in 构建工具路径，不替换现有 sample/editor 开发入口：
+
+```mermaid
+flowchart LR
+    Plans["Verified source/build/activation plans"] --> Composition["Immutable static-composition generation"]
+    Composition --> Template["Immutable windows-development-v1 Host template"]
+    Conan["Caller-provided Conan toolchain + compiler environment"] --> Configure["Controlled final CMake configure"]
+    Template --> Configure
+    Configure --> Bind["Latest CMake File API exact target binding"]
+    Bind --> Build["Build exact Host target"]
+    Build --> Rebind["Refresh target + regular-file check"]
+    Rebind --> Verify["Exact Host restricted registration mode"]
+    Verify --> Snapshot["Canonical RegistrationSnapshot JSON"]
+```
+
+Host template 固定拥有唯一 `main()`、console subsystem 和 build-root 内 runtime output layout；build adapter 使用参数数组、
+受控环境与 `shell=False`，且 Conan 仍由 caller 先行完成。该路径只观察 registration identity，不执行 factory
+activation/lifecycle、不启动 Editor UI，也不读取 artifact bytes 或发布 #288 receipt。模板和 composition 各只有一个薄 TU，
+构建只指定 exact Host target，且不使用 clean-first。
 
 ## 当前架构总览
 
