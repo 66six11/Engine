@@ -18,6 +18,7 @@ def digest(character: str) -> str:
 
 def build_plan(
     compiler_version: str = "19.1.5",
+    compiler_id: str = "Clang",
 ) -> source_build_plan.SourceBuildPlan:
     target = source_build_plan.BuildTargetReference(
         "asharia_synthetic_runtime", "STATIC_LIBRARY"
@@ -45,7 +46,7 @@ def build_plan(
         configuration="Debug",
         generator=CMakeGeneratorEvidence("Ninja", False),
         toolchain=CMakeToolchainEvidence(
-            "Clang", compiler_version, "Windows", "x86_64"
+            compiler_id, compiler_version, "Windows", "x86_64"
         ),
         packages=(),
         build_roots=(target,),
@@ -161,8 +162,9 @@ def binding_plan(
 def composition_generation(
     validators: contracts.ContractValidators,
     compiler_version: str = "19.1.5",
+    compiler_id: str = "Clang",
 ) -> static_composition_root.StaticCompositionRootGeneration:
-    plan = build_plan(compiler_version)
+    plan = build_plan(compiler_version, compiler_id)
     host_blueprint = blueprint()
     result = static_composition_root.generate_static_composition_root(
         plan,

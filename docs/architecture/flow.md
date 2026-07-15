@@ -178,9 +178,10 @@ flowchart TD
   `EditorSelectionSet` 的稳定 `sceneId + EntityId` snapshot，但仍不消费 runtime scene hierarchy 或 inspector
   data model；当前 UI 只表达 selection contract 状态，避免伪造场景数据。
 
-## 当前 Windows Development Host 生成与验证流
+## 当前 Windows Development Host 生成、绑定与验证流
 
-这是 #290 已落地的 opt-in 构建工具路径，不替换现有 sample/editor 开发入口：
+这是 #290 构建/registration handoff 与 #288 Host executable binding 已落地的 opt-in 工具路径，不替换现有
+sample/editor 开发入口：
 
 ```mermaid
 flowchart LR
@@ -191,14 +192,24 @@ flowchart LR
     Configure --> Bind["Latest CMake File API exact target binding"]
     Bind --> Build["Build exact Host target"]
     Build --> Rebind["Refresh target + regular-file check"]
-    Rebind --> Verify["Exact Host restricted registration mode"]
-    Verify --> Snapshot["Canonical RegistrationSnapshot JSON"]
+    Rebind --> Verify["#290 build-tree Host restricted mode"]
+    Verify --> Handoff["Canonical registration handoff"]
+    Rebind --> SameIndex["#288 same-index target + configured CXX"]
+    SameIndex --> Stage["Stream exact executable into owned staging"]
+    Handoff --> Stage
+    Stage --> StagedVerify["Run staged Host restricted mode"]
+    StagedVerify --> Cross["Cross-check exact registrations + re-hash bytes"]
+    Cross --> Receipt["Canonical Host Executable Binding Receipt"]
+    Receipt --> Deep["Deep-verify closed generation"]
+    Deep --> Publish["Single directory rename"]
 ```
 
 Host template 固定拥有唯一 `main()`、console subsystem 和 build-root 内 runtime output layout；build adapter 使用参数数组、
-受控环境与 `shell=False`，且 Conan 仍由 caller 先行完成。该路径只观察 registration identity，不执行 factory
-activation/lifecycle、不启动 Editor UI，也不读取 artifact bytes 或发布 #288 receipt。模板和 composition 各只有一个薄 TU，
-构建只指定 exact Host target，且不使用 clean-first。
+受控环境与 `shell=False`，且 Conan 仍由 caller 先行完成。#288 publisher 不信任 mutable build-tree executable 是最终对象：
+它流式复制到 collector-owned staging，运行并复验 staged bytes，再以 receipt、snapshot 和 `host/<nameOnDisk>` 形成
+content-addressed closed generation。该路径只观察 registration identity 与 artifact bytes，不执行 factory activation/lifecycle、
+不启动 Editor UI，也不证明 `Ready` 或 current process generation。模板和 composition 各只有一个薄 TU，构建只指定 exact Host
+target，且不使用 clean-first。详见 [Host Executable Binding Receipt v1](adr-host-executable-binding-receipt-v1.md)。
 
 ## 当前架构总览
 

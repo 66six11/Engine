@@ -185,8 +185,9 @@ snapshot 是未来 receipt 的输入，不是新的 lockfile，不写回 Project
 - scope、dependency、activation、rollback 或 shutdown 成功。
 
 [Windows Development Host Template v1](adr-windows-development-host-template-v1.md) 已为 #290 提供 final executable target、File API
-path binding 与受限 verification entry；这些仍不证明 artifact bytes。#288 的 post-build receipt 才把 composition manifest、
-registration snapshot 与 exact Host artifact bytes 交叉绑定。
+path binding 与受限 verification entry；这些仍不证明 artifact bytes。
+[Host Executable Binding Receipt v1](adr-host-executable-binding-receipt-v1.md) 已由 #288 把 composition manifest、same-index
+configured compiler、registration snapshot 与 exact staged Host artifact bytes 交叉绑定。
 
 ## 编译效率边界
 
@@ -248,7 +249,7 @@ registration snapshot 与 exact Host artifact bytes 交叉绑定。
 
 1. [Windows Development Host Template v1](adr-windows-development-host-template-v1.md)：#290 已拥有固定 final target、`main()`、
    final configure/build、File API target binding 与 registration-only verification；
-2. #288 post-build Activation Binding Receipt：把 exact composition manifest、owning registration snapshot 与 final Host artifact
-   bytes/hash 对证；
+2. [Host Executable Binding Receipt v1](adr-host-executable-binding-receipt-v1.md)：#288 已把 exact composition manifest、
+   owning registration snapshot 与 collector-owned final Host artifact bytes/hash 对证；
 3. concrete Host Runtime lifecycle：在独立合同中冻结 callback、factory context、scope instances、activation、rollback 与 shutdown；
 4. Bootstrap/Session adapter：把 build/receipt/process generation 状态映射为 Ready、PendingBuild、PendingRestart 或 SafeMode。

@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import stat
-import unicodedata
 from dataclasses import dataclass, field
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import Any, Iterable
 
 from tools import check_package_contracts as contracts
+from tools import host_cmake_artifact
 from tools import host_cmake_query as query
 from tools import host_cmake_reply as reply
 
@@ -16,6 +15,8 @@ from tools import host_cmake_reply as reply
 HOST_BUILD_FILE_API_CLIENT = query.HOST_BUILD_FILE_API_CLIENT
 HOST_BUILD_FILE_API_MAJOR = query.HOST_BUILD_FILE_API_MAJOR
 HOST_BUILD_FILE_API_MINOR = query.HOST_BUILD_FILE_API_MINOR
+HOST_BUILD_TOOLCHAINS_FILE_API_MAJOR = query.HOST_BUILD_TOOLCHAINS_FILE_API_MAJOR
+HOST_BUILD_TOOLCHAINS_FILE_API_MINOR = query.HOST_BUILD_TOOLCHAINS_FILE_API_MINOR
 HOST_BUILD_FILE_API_READ_ATTEMPTS = query.HOST_BUILD_FILE_API_READ_ATTEMPTS
 HOST_BUILD_MINIMUM_CMAKE_VERSION = query.HOST_BUILD_MINIMUM_CMAKE_VERSION
 
@@ -29,6 +30,8 @@ class HostCMakeFileApiQueryEvidence:
     client_name: str
     codemodel_major: int
     codemodel_minor: int
+    toolchains_major: int = HOST_BUILD_TOOLCHAINS_FILE_API_MAJOR
+    toolchains_minor: int = HOST_BUILD_TOOLCHAINS_FILE_API_MINOR
 
 
 @dataclass(frozen=True)
@@ -92,7 +95,7 @@ def _target_failure(
 def write_host_cmake_file_api_query(
     build_root: Any,
 ) -> HostCMakeFileApiQueryResult:
-    """Atomically write the Host client's stateful codemodel 2.6 query."""
+    """Write the Host client's codemodel 2.6 and toolchains 1.0 query."""
 
     try:
         written = query.write_query(build_root)
@@ -105,139 +108,10 @@ def write_host_cmake_file_api_query(
             client_name=HOST_BUILD_FILE_API_CLIENT,
             codemodel_major=HOST_BUILD_FILE_API_MAJOR,
             codemodel_minor=HOST_BUILD_FILE_API_MINOR,
+            toolchains_major=HOST_BUILD_TOOLCHAINS_FILE_API_MAJOR,
+            toolchains_minor=HOST_BUILD_TOOLCHAINS_FILE_API_MINOR,
         ),
         diagnostics=(),
-    )
-
-
-def _name_on_disk(value: Any) -> str:
-    if not isinstance(value, str) or unicodedata.normalize("NFC", value) != value:
-        raise reply.ReplyFailure(
-            [
-                query.diagnostic(
-                    "host-build.cmake-name-on-disk-invalid",
-                    "/codemodel/target/nameOnDisk",
-                    "executable target must expose one normalized nameOnDisk",
-                )
-            ]
-        )
-    path = PurePosixPath(value)
-    if (
-        not value
-        or path.is_absolute()
-        or len(path.parts) != 1
-        or path.name != value
-        or value in {".", ".."}
-        or "\\" in value
-        or ":" in value
-    ):
-        raise reply.ReplyFailure(
-            [
-                query.diagnostic(
-                    "host-build.cmake-name-on-disk-invalid",
-                    "/codemodel/target/nameOnDisk",
-                    "executable target must expose one normalized nameOnDisk",
-                )
-            ]
-        )
-    return value
-
-
-def _primary_artifact(target: dict[str, Any], name_on_disk: str) -> str:
-    artifacts = target.get("artifacts")
-    if not isinstance(artifacts, list):
-        artifacts = []
-    matches = [
-        value
-        for artifact in artifacts
-        if isinstance(artifact, dict)
-        for value in [artifact.get("path")]
-        if isinstance(value, str) and PurePosixPath(value).name == name_on_disk
-    ]
-    if len(matches) != 1:
-        raise reply.ReplyFailure(
-            [
-                query.diagnostic(
-                    "host-build.cmake-primary-artifact-mismatch",
-                    "/codemodel/target/artifacts",
-                    f"target must expose exactly one artifact named '{name_on_disk}'",
-                )
-            ]
-        )
-    return matches[0]
-
-
-def _artifact_path(
-    build_root: Path,
-    value: str,
-    *,
-    require_artifact: bool,
-) -> tuple[str, Path]:
-    if (
-        not value
-        or unicodedata.normalize("NFC", value) != value
-        or "\\" in value
-    ):
-        raise _artifact_path_failure()
-    raw_path = Path(value)
-    if raw_path.is_absolute():
-        candidate = raw_path
-    else:
-        pure = PurePosixPath(value)
-        if any(part in {"", ".", ".."} for part in pure.parts) or ":" in value:
-            raise _artifact_path_failure()
-        candidate = build_root.joinpath(*pure.parts)
-    try:
-        resolved = candidate.resolve(strict=False)
-        relative = resolved.relative_to(build_root).as_posix()
-    except (OSError, ValueError):
-        raise _artifact_path_failure() from None
-    if not require_artifact:
-        return relative, resolved
-
-    try:
-        status = candidate.lstat()
-    except OSError:
-        raise reply.ReplyFailure(
-            [
-                query.diagnostic(
-                    "host-build.cmake-artifact-missing",
-                    "/artifact",
-                    "built primary artifact is missing or unreadable",
-                )
-            ]
-        ) from None
-    if query.is_link_or_reparse(status) or not stat.S_ISREG(status.st_mode):
-        raise reply.ReplyFailure(
-            [
-                query.diagnostic(
-                    "host-build.cmake-artifact-not-regular",
-                    "/artifact",
-                    "built primary artifact must be a regular non-link file",
-                )
-            ]
-        )
-    try:
-        resolved = candidate.resolve(strict=True)
-        relative = resolved.relative_to(build_root).as_posix()
-    except (OSError, ValueError):
-        raise _artifact_path_failure(
-            "built primary artifact must remain inside the explicit build root"
-        ) from None
-    return relative, resolved
-
-
-def _artifact_path_failure(
-    message: str = "primary artifact must resolve inside the explicit build root",
-) -> reply.ReplyFailure:
-    return reply.ReplyFailure(
-        [
-            query.diagnostic(
-                "host-build.cmake-artifact-path-invalid",
-                "/codemodel/target/artifacts/path",
-                message,
-            )
-        ]
     )
 
 
@@ -255,11 +129,9 @@ def _bind_target(
                 )
             ]
         )
-    name_on_disk = _name_on_disk(observed.target.get("nameOnDisk"))
-    artifact = _primary_artifact(observed.target, name_on_disk)
-    relative, path = _artifact_path(
+    artifact = host_cmake_artifact.bind_primary_host_artifact(
+        observed.target,
         observed.build_root,
-        artifact,
         require_artifact=require_artifact,
     )
     return HostCMakeTargetEvidence(
@@ -268,23 +140,21 @@ def _bind_target(
         configuration=observed.configuration,
         target_name=observed.target_name,
         target_type="EXECUTABLE",
-        name_on_disk=name_on_disk,
-        artifact_relative_path=relative,
-        artifact_path=path,
+        name_on_disk=artifact.name_on_disk,
+        artifact_relative_path=artifact.relative_path,
+        artifact_path=artifact.path,
         codemodel_major=observed.codemodel_major,
         codemodel_minor=observed.codemodel_minor,
     )
 
 
-def read_host_cmake_target(
+def _validated_target_request(
     build_root: Any,
     configuration: Any,
     target_name: Any,
     *,
     require_artifact: bool,
-) -> HostCMakeTargetResult:
-    """Read the latest exact Host target from a caller-quiesced build root."""
-
+) -> tuple[Path, str, str, bool]:
     diagnostics: list[contracts.Diagnostic] = []
     normalized_root = query.explicit_build_root(build_root, create=False)
     if normalized_root is None:
@@ -320,17 +190,40 @@ def read_host_cmake_target(
             )
         )
     if diagnostics:
-        return _target_failure(diagnostics)
+        raise reply.ReplyFailure(diagnostics)
     assert normalized_root is not None
     assert isinstance(configuration, str)
     assert isinstance(target_name, str)
+    return normalized_root, configuration, target_name, require_artifact
+
+
+def read_host_cmake_target(
+    build_root: Any,
+    configuration: Any,
+    target_name: Any,
+    *,
+    require_artifact: bool,
+) -> HostCMakeTargetResult:
+    """Read the latest exact Host target from a caller-quiesced build root."""
+
     try:
-        observed = reply.read_stable_reply(
+        (
             normalized_root,
+            normalized_configuration,
+            normalized_target_name,
+            normalized_requirement,
+        ) = _validated_target_request(
+            build_root,
             configuration,
             target_name,
+            require_artifact=require_artifact,
         )
-        evidence = _bind_target(observed, require_artifact)
+        observed = reply.read_stable_reply(
+            normalized_root,
+            normalized_configuration,
+            normalized_target_name,
+        )
+        evidence = _bind_target(observed, normalized_requirement)
     except reply.ReplyFailure as failure:
         return _target_failure(failure.diagnostics)
     return HostCMakeTargetResult(evidence, ())
@@ -341,6 +234,8 @@ __all__ = [
     "HOST_BUILD_FILE_API_MAJOR",
     "HOST_BUILD_FILE_API_MINOR",
     "HOST_BUILD_FILE_API_READ_ATTEMPTS",
+    "HOST_BUILD_TOOLCHAINS_FILE_API_MAJOR",
+    "HOST_BUILD_TOOLCHAINS_FILE_API_MINOR",
     "HOST_BUILD_MINIMUM_CMAKE_VERSION",
     "HostCMakeFileApiQueryEvidence",
     "HostCMakeFileApiQueryResult",

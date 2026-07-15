@@ -6,11 +6,12 @@ import json
 import stat
 import unicodedata
 from dataclasses import dataclass
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import Any, Iterable
 
 from tools import check_package_contracts as contracts
 from tools import host_cmake_query as query
+from tools import host_cmake_response as response_contract
 
 
 @dataclass(frozen=True)
@@ -20,8 +21,13 @@ class HostCMakeReplyEvidence:
     configuration: str
     target_name: str
     target: dict[str, Any]
+    toolchains: dict[str, Any]
+    generator_name: str
+    generator_multi_config: bool
     codemodel_major: int
     codemodel_minor: int
+    toolchains_major: int
+    toolchains_minor: int
 
 
 class ReplyFailure(Exception):
@@ -38,35 +44,14 @@ def _fail(code: str, pointer: str, message: str) -> ReplyFailure:
     return ReplyFailure([query.diagnostic(code, pointer, message)])
 
 
-def _safe_reference(value: Any, pointer: str) -> str:
-    if not isinstance(value, str) or unicodedata.normalize("NFC", value) != value:
-        raise _fail(
-            "host-build.cmake-reply-reference-invalid",
-            pointer,
-            "reply jsonFile must be one normalized relative filename",
-        )
-    path = PurePosixPath(value)
-    if (
-        not value
-        or path.is_absolute()
-        or len(path.parts) != 1
-        or path.name != value
-        or value in {".", ".."}
-        or "\\" in value
-        or ":" in value
-    ):
-        raise _fail(
-            "host-build.cmake-reply-reference-invalid",
-            pointer,
-            "reply jsonFile must stay inside the explicit reply directory",
-        )
-    return value
-
-
 def _read_json(path: Path, pointer: str, code: str) -> tuple[bytes, Any]:
     try:
         status = path.lstat()
-        if query.is_link_or_reparse(status) or not stat.S_ISREG(status.st_mode):
+        if (
+            query.is_link_or_reparse(status)
+            or not stat.S_ISREG(status.st_mode)
+            or query.resolve_existing_regular_file_without_links(path) is None
+        ):
             raise _fail(code, pointer, "referenced CMake File API JSON is not regular")
         content = path.read_bytes()
     except FileNotFoundError as error:
@@ -80,6 +65,8 @@ def _read_json(path: Path, pointer: str, code: str) -> tuple[bytes, Any]:
 
 
 def _latest_index(reply_root: Path) -> Path | None:
+    if query.resolve_existing_directory_without_links(reply_root) is None:
+        return None
     try:
         candidates = tuple(reply_root.glob("index-*.json"))
     except OSError:
@@ -110,38 +97,6 @@ def _validate_cmake_version(index: Any) -> None:
             "/cmake/version",
             "reply index must identify CMake 3.28 or newer",
         )
-
-
-def _codemodel_response(index: Any) -> tuple[str, int, int]:
-    reply = index.get("reply") if isinstance(index, dict) else None
-    client = reply.get(query.HOST_BUILD_FILE_API_CLIENT) if isinstance(reply, dict) else None
-    stateful = client.get("query.json") if isinstance(client, dict) else None
-    responses = stateful.get("responses") if isinstance(stateful, dict) else None
-    if not isinstance(responses, list) or len(responses) != 1:
-        raise _fail(
-            "host-build.cmake-query-response-missing",
-            "/reply",
-            "latest reply must contain one Host codemodel response",
-        )
-    response = responses[0]
-    version = response.get("version") if isinstance(response, dict) else None
-    major = version.get("major") if isinstance(version, dict) else None
-    minor = version.get("minor") if isinstance(version, dict) else None
-    if (
-        not isinstance(response, dict)
-        or response.get("kind") != "codemodel"
-        or major != query.HOST_BUILD_FILE_API_MAJOR
-        or not isinstance(minor, int)
-        or isinstance(minor, bool)
-        or minor < query.HOST_BUILD_FILE_API_MINOR
-    ):
-        raise _fail(
-            "host-build.cmake-codemodel-version-unsupported",
-            "/reply",
-            "Host target reader requires a successful codemodel 2.6 or newer reply",
-        )
-    reference = _safe_reference(response.get("jsonFile"), "/reply/jsonFile")
-    return reference, major, minor
 
 
 def _codemodel_root(codemodel: Any, expected_root: Path) -> Path:
@@ -176,14 +131,13 @@ def _codemodel_root(codemodel: Any, expected_root: Path) -> Path:
             "/codemodel/paths/build",
             "codemodel build path must be absolute and match the explicit build root",
         )
-    try:
-        build_root = Path(value).resolve(strict=True)
-    except OSError:
+    build_root = query.resolve_existing_directory_without_links(Path(value))
+    if build_root is None:
         raise _fail(
             "host-build.cmake-build-root-mismatch",
             "/codemodel/paths/build",
             "codemodel build path must resolve to the explicit build root",
-        ) from None
+        )
     if build_root != expected_root:
         raise _fail(
             "host-build.cmake-build-root-mismatch",
@@ -232,7 +186,7 @@ def _target_object(
     reply_root: Path,
     summary: dict[str, Any],
     name: str,
-) -> tuple[Path, dict[str, Any]]:
+) -> tuple[Path, bytes, dict[str, Any]]:
     target_id = summary.get("id")
     if not isinstance(target_id, str) or not target_id:
         raise _fail(
@@ -240,12 +194,12 @@ def _target_object(
             "/codemodel/configurations/targets/id",
             f"target '{name}' summary has no stable opaque id",
         )
-    reference = _safe_reference(
+    reference = response_contract.safe_reference(
         summary.get("jsonFile"),
         "/codemodel/configurations/targets/jsonFile",
     )
     path = reply_root / reference
-    _, target = _read_json(
+    content, target = _read_json(
         path,
         "/codemodel/target",
         "host-build.cmake-target-unreadable",
@@ -260,16 +214,18 @@ def _target_object(
             "/codemodel/target",
             f"target object identity does not match '{name}' summary",
         )
-    return path, target
+    return path, content, target
 
 
 def _verify_stable(
     reply_root: Path,
     index_path: Path,
     index_bytes: bytes,
-    references: tuple[Path, ...],
+    references: tuple[tuple[Path, bytes], ...],
 ) -> None:
     try:
+        if query.resolve_existing_regular_file_without_links(index_path) is None:
+            raise OSError
         final_index_bytes = index_path.read_bytes()
     except FileNotFoundError as error:
         raise _TransientReply from error
@@ -281,7 +237,7 @@ def _verify_stable(
         ) from None
     if final_index_bytes != index_bytes or _latest_index(reply_root) != index_path:
         raise _TransientReply
-    for path in references:
+    for path, expected_content in references:
         try:
             status = path.lstat()
         except FileNotFoundError as error:
@@ -292,12 +248,27 @@ def _verify_stable(
                 "/reply",
                 "referenced CMake File API JSON became unreadable",
             ) from None
-        if query.is_link_or_reparse(status) or not stat.S_ISREG(status.st_mode):
+        if (
+            query.is_link_or_reparse(status)
+            or not stat.S_ISREG(status.st_mode)
+            or query.resolve_existing_regular_file_without_links(path) is None
+        ):
             raise _fail(
                 "host-build.cmake-reply-unreadable",
                 "/reply",
                 "referenced CMake File API JSON is not regular",
             )
+        try:
+            if path.read_bytes() != expected_content:
+                raise _TransientReply
+        except FileNotFoundError as error:
+            raise _TransientReply from error
+        except OSError:
+            raise _fail(
+                "host-build.cmake-reply-unreadable",
+                "/reply",
+                "referenced CMake File API JSON became unreadable",
+            ) from None
 
 
 def _read_once(build_root: Path, configuration: str, target_name: str) -> HostCMakeReplyEvidence:
@@ -315,25 +286,53 @@ def _read_once(build_root: Path, configuration: str, target_name: str) -> HostCM
         "host-build.cmake-index-unreadable",
     )
     _validate_cmake_version(index)
-    codemodel_name, major, minor = _codemodel_response(index)
-    codemodel_path = reply_root / codemodel_name
-    _, codemodel = _read_json(
+    references = response_contract.read_host_response_references(index)
+    codemodel_path = reply_root / references.codemodel.json_file
+    codemodel_bytes, codemodel = _read_json(
         codemodel_path,
         "/codemodel",
         "host-build.cmake-codemodel-unreadable",
     )
     validated_root = _codemodel_root(codemodel, build_root)
     summary = _target_summary(_configuration(codemodel, configuration), target_name)
-    target_path, target = _target_object(reply_root, summary, target_name)
-    _verify_stable(reply_root, index_path, index_bytes, (codemodel_path, target_path))
+    target_path, target_bytes, target = _target_object(
+        reply_root,
+        summary,
+        target_name,
+    )
+    toolchains_path = reply_root / references.toolchains.json_file
+    toolchains_bytes, toolchains = _read_json(
+        toolchains_path,
+        "/toolchains",
+        "host-build.cmake-toolchains-unreadable",
+    )
+    validated_toolchains = response_contract.validate_toolchains_object(
+        toolchains,
+        references.toolchains,
+    )
+    _verify_stable(
+        reply_root,
+        index_path,
+        index_bytes,
+        (
+            (codemodel_path, codemodel_bytes),
+            (target_path, target_bytes),
+            (toolchains_path, toolchains_bytes),
+        ),
+    )
     return HostCMakeReplyEvidence(
         validated_root,
         index_path,
         configuration,
         target_name,
         target,
-        major,
-        minor,
+        validated_toolchains,
+        references.generator_name,
+        references.generator_multi_config,
+        references.codemodel.major,
+        references.codemodel.minor,
+        references.toolchains.major,
+        references.toolchains.minor,
     )
 
 
@@ -348,6 +347,8 @@ def read_stable_reply(
         except _TransientReply:
             # CMake may delete old reply files while publishing a newer index.
             continue
+        except response_contract.ResponseFailure as failure:
+            raise ReplyFailure([failure.diagnostic]) from None
     raise _fail(
         "host-build.cmake-reply-unstable",
         "/reply",

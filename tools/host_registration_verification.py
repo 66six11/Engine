@@ -2,37 +2,29 @@
 
 from __future__ import annotations
 
-import math
-import os
-import stat
-import subprocess
-from dataclasses import dataclass, field
-from pathlib import Path
+from dataclasses import dataclass
 from typing import Any, Iterable
 
 from tools import check_package_contracts as contracts
-from tools import host_cmake_target
+from tools import host_artifact_collection
+from tools import host_registration_process
+from tools import host_registration_request
 from tools import host_registration_snapshot
 
 
 HOST_REGISTRATION_VERIFICATION_ARGUMENT = (
-    "--asharia-verify-static-registration"
+    host_registration_request.HOST_REGISTRATION_VERIFICATION_ARGUMENT
 )
-DEFAULT_MAX_REGISTRATION_SNAPSHOT_BYTES = 4 * 1024 * 1024
-_MAX_TIMEOUT_SECONDS = 300.0
+DEFAULT_MAX_REGISTRATION_SNAPSHOT_BYTES = (
+    host_registration_request.DEFAULT_MAX_REGISTRATION_SNAPSHOT_BYTES
+)
+HostRegistrationVerificationRequestV1 = (
+    host_registration_request.HostRegistrationVerificationRequestV1
+)
+StagedHostRegistrationVerificationRequestV1 = (
+    host_registration_request.StagedHostRegistrationVerificationRequestV1
+)
 _MANIFEST_PATH = "host-registration-verification"
-
-
-@dataclass(frozen=True)
-class HostRegistrationVerificationRequestV1:
-    """Exact artifact, expected generation, and controlled process inputs."""
-
-    target: host_cmake_target.HostCMakeTargetEvidence
-    expected_generation_id: str
-    expected_host_activation_blueprint_sha256: str
-    environment: tuple[tuple[str, str], ...] = field(repr=False)
-    timeout_seconds: float = 60.0
-    max_snapshot_bytes: int = DEFAULT_MAX_REGISTRATION_SNAPSHOT_BYTES
 
 
 @dataclass(frozen=True)
@@ -89,175 +81,41 @@ def _failure(
     )
 
 
-def _is_link_or_reparse(status: os.stat_result) -> bool:
-    if stat.S_ISLNK(status.st_mode):
-        return True
-    reparse_attribute = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
-    return bool(getattr(status, "st_file_attributes", 0) & reparse_attribute)
-
-
-def _environment(value: Any) -> tuple[dict[str, str] | None, list[contracts.Diagnostic]]:
-    if not isinstance(value, tuple):
-        return None, [
-            _diagnostic(
-                "host-verification.environment-invalid",
-                "/environment",
-                "environment must be one explicit tuple of key/value pairs",
-            )
-        ]
-    result: dict[str, str] = {}
-    folded_keys: set[str] = set()
-    diagnostics: list[contracts.Diagnostic] = []
-    for index, item in enumerate(value):
-        if (
-            not isinstance(item, tuple)
-            or len(item) != 2
-            or not isinstance(item[0], str)
-            or not isinstance(item[1], str)
-            or not item[0]
-            or "=" in item[0]
-            or "\0" in item[0]
-            or "\0" in item[1]
-        ):
-            diagnostics.append(
-                _diagnostic(
-                    "host-verification.environment-invalid",
-                    f"/environment/{index}",
-                    "environment entries must be non-empty string key/value pairs",
-                )
-            )
-            continue
-        folded = item[0].casefold()
-        if folded in folded_keys:
-            diagnostics.append(
-                _diagnostic(
-                    "host-verification.environment-duplicate",
-                    f"/environment/{index}",
-                    f"environment key '{item[0]}' is duplicated case-insensitively",
-                )
-            )
-            continue
-        folded_keys.add(folded)
-        result[item[0]] = item[1]
-    return (result if not diagnostics else None), diagnostics
-
-
-def _validate_request(
-    request: Any,
-) -> tuple[
-    tuple[Path, Path, dict[str, str]] | None,
-    list[contracts.Diagnostic],
-]:
-    if not isinstance(request, HostRegistrationVerificationRequestV1):
-        return None, [
-            _diagnostic(
-                "host-verification.request-invalid",
-                "",
-                "verification request must use HostRegistrationVerificationRequestV1",
-            )
-        ]
-    diagnostics: list[contracts.Diagnostic] = []
-    target = request.target
-    if not isinstance(target, host_cmake_target.HostCMakeTargetEvidence):
-        diagnostics.append(
-            _diagnostic(
-                "host-verification.target-invalid",
-                "/target",
-                "verification requires final Host CMake target evidence",
-            )
-        )
-        artifact_path = None
-        build_root = None
-    else:
-        artifact_path = target.artifact_path
-        build_root = target.build_root
-        if target.target_type != "EXECUTABLE":
-            diagnostics.append(
-                _diagnostic(
-                    "host-verification.target-invalid",
-                    "/target/type",
-                    "verification target must be an EXECUTABLE",
-                )
-            )
-        try:
-            build_root = build_root.resolve(strict=True)
-            artifact_path = artifact_path.resolve(strict=True)
-            artifact_path.relative_to(build_root)
-            status = artifact_path.lstat()
-            if _is_link_or_reparse(status) or not stat.S_ISREG(status.st_mode):
-                raise OSError
-        except (OSError, ValueError):
-            diagnostics.append(
-                _diagnostic(
-                    "host-verification.artifact-invalid",
-                    "/target/artifact",
-                    "exact Host artifact must be one regular file inside build root",
-                )
-            )
-
-    environment, environment_diagnostics = _environment(request.environment)
-    diagnostics.extend(environment_diagnostics)
-    if (
-        not isinstance(request.timeout_seconds, (int, float))
-        or isinstance(request.timeout_seconds, bool)
-        or not math.isfinite(request.timeout_seconds)
-        or request.timeout_seconds <= 0
-        or request.timeout_seconds > _MAX_TIMEOUT_SECONDS
-    ):
-        diagnostics.append(
-            _diagnostic(
-                "host-verification.timeout-invalid",
-                "/timeoutSeconds",
-                f"timeout must be positive and at most {_MAX_TIMEOUT_SECONDS:g} seconds",
-            )
-        )
-    if (
-        not isinstance(request.max_snapshot_bytes, int)
-        or isinstance(request.max_snapshot_bytes, bool)
-        or request.max_snapshot_bytes <= 0
-        or request.max_snapshot_bytes > DEFAULT_MAX_REGISTRATION_SNAPSHOT_BYTES
-    ):
-        diagnostics.append(
-            _diagnostic(
-                "host-verification.snapshot-limit-invalid",
-                "/maxSnapshotBytes",
-                "snapshot byte limit must be positive and no larger than the v1 maximum",
-            )
-        )
-    if diagnostics:
-        return None, diagnostics
-    assert isinstance(artifact_path, Path)
-    assert isinstance(build_root, Path)
-    assert environment is not None
-    return (artifact_path, build_root, environment), []
-
-
-def run_host_registration_verification(
+def _run_registration_verification(
     request: Any,
     validators: contracts.ContractValidators,
 ) -> HostRegistrationVerificationOutcomeV1:
-    """Execute only the exact Host registration recorder and parse stdout."""
-
-    normalized, diagnostics = _validate_request(request)
+    normalized, diagnostics = (
+        host_registration_request.validate_host_registration_verification_request(
+            request
+        )
+    )
     if diagnostics:
         return _failure(diagnostics)
     assert normalized is not None
-    assert isinstance(request, HostRegistrationVerificationRequestV1)
-    artifact_path, build_root, environment = normalized
-    arguments = (str(artifact_path), HOST_REGISTRATION_VERIFICATION_ARGUMENT)
-    try:
-        completed = subprocess.run(
-            arguments,
-            cwd=build_root,
-            env=environment,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            timeout=request.timeout_seconds,
-            check=False,
-            shell=False,
+
+    if isinstance(request, StagedHostRegistrationVerificationRequestV1):
+        artifact_diagnostics = (
+            host_artifact_collection.verify_collected_host_artifact(
+                request.artifact,
+                verify_source=False,
+            )
         )
-    except subprocess.TimeoutExpired:
+        if artifact_diagnostics:
+            return _failure(artifact_diagnostics)
+
+    arguments = (
+        str(normalized.artifact_path),
+        HOST_REGISTRATION_VERIFICATION_ARGUMENT,
+    )
+    try:
+        completed = host_registration_process.run_bounded_host_process(
+            arguments,
+            normalized.environment,
+            request.timeout_seconds,
+            request.max_snapshot_bytes,
+        )
+    except host_registration_process.HostProcessTimeout:
         return _failure(
             [
                 _diagnostic(
@@ -267,7 +125,7 @@ def run_host_registration_verification(
                 )
             ]
         )
-    except OSError:
+    except (host_registration_process.HostProcessSpawnFailure, OSError):
         return _failure(
             [
                 _diagnostic(
@@ -280,17 +138,41 @@ def run_host_registration_verification(
 
     process = HostRegistrationVerificationProcessEvidence(
         arguments=arguments,
-        exit_code=completed.returncode,
-        stdout_size=len(completed.stdout),
-        stderr_size=len(completed.stderr),
+        exit_code=completed.return_code,
+        stdout_size=completed.stdout_size,
+        stderr_size=completed.stderr_size,
     )
-    if completed.returncode != 0:
+    if isinstance(request, StagedHostRegistrationVerificationRequestV1):
+        artifact_diagnostics = (
+            host_artifact_collection.verify_collected_host_artifact(
+                request.artifact,
+                verify_source=False,
+            )
+        )
+        if artifact_diagnostics:
+            return _failure(artifact_diagnostics, process)
+    if completed.limit_exceeded is not None:
+        return _failure(
+            [
+                _diagnostic(
+                    (
+                        "host-verification.snapshot-too-large"
+                        if completed.limit_exceeded == "stdout"
+                        else "host-verification.stderr-too-large"
+                    ),
+                    f"/process/{completed.limit_exceeded}",
+                    "restricted Host output exceeds its explicit byte limit",
+                )
+            ],
+            process,
+        )
+    if completed.return_code != 0:
         return _failure(
             [
                 _diagnostic(
                     "host-verification.process-failed",
                     "/process",
-                    f"restricted Host returned exit code {completed.returncode}",
+                    f"restricted Host returned exit code {completed.return_code}",
                 )
             ],
             process,
@@ -306,18 +188,6 @@ def run_host_registration_verification(
             ],
             process,
         )
-    if len(completed.stdout) > request.max_snapshot_bytes:
-        return _failure(
-            [
-                _diagnostic(
-                    "host-verification.snapshot-too-large",
-                    "/process/stdout",
-                    "registration snapshot exceeds the explicit v1 byte limit",
-                )
-            ],
-            process,
-        )
-
     parsed = host_registration_snapshot.parse_host_registration_snapshot_bytes(
         completed.stdout,
         validators,
@@ -334,3 +204,56 @@ def run_host_registration_verification(
         process=process,
         diagnostics=(),
     )
+
+
+def run_host_registration_verification(
+    request: Any,
+    validators: contracts.ContractValidators,
+) -> HostRegistrationVerificationOutcomeV1:
+    """Execute the exact final Host target's registration recorder."""
+
+    if not isinstance(request, HostRegistrationVerificationRequestV1):
+        return _failure(
+            [
+                _diagnostic(
+                    "host-verification.request-invalid",
+                    "",
+                    "verification request must use HostRegistrationVerificationRequestV1",
+                )
+            ]
+        )
+    return _run_registration_verification(request, validators)
+
+
+def run_staged_host_registration_verification(
+    request: Any,
+    validators: contracts.ContractValidators,
+) -> HostRegistrationVerificationOutcomeV1:
+    """Execute a collector-owned staged Host without fabricated CMake evidence."""
+
+    if not isinstance(request, StagedHostRegistrationVerificationRequestV1):
+        return _failure(
+            [
+                _diagnostic(
+                    "host-verification.request-invalid",
+                    "",
+                    (
+                        "staged verification request must use "
+                        "StagedHostRegistrationVerificationRequestV1"
+                    ),
+                )
+            ]
+        )
+    return _run_registration_verification(request, validators)
+
+
+__all__ = [
+    "DEFAULT_MAX_REGISTRATION_SNAPSHOT_BYTES",
+    "HOST_REGISTRATION_VERIFICATION_ARGUMENT",
+    "HostRegistrationVerificationOutcomeV1",
+    "HostRegistrationVerificationProcessEvidence",
+    "HostRegistrationVerificationRequestV1",
+    "StagedHostRegistrationVerificationRequestV1",
+    "run_host_registration_verification",
+    "run_staged_host_registration_verification",
+]

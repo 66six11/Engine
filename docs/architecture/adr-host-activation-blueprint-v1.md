@@ -67,7 +67,7 @@ identity-only static registration recording
                 ↓
 owning registration snapshot + artifact verification
                 ↓
-future Activation Binding Receipt / Bound Plan
+Host Executable Binding Receipt
                 ↓
 Host Runtime lifecycle
 ```
@@ -75,10 +75,10 @@ Host Runtime lifecycle
 `Host Activation Blueprint` 只证明逻辑 factory closure、scope templates、requirements、selected contributions 和输入
 fingerprints。它是 build-time derived state，可以规范化呈现用于 diagnostics/cache/test，但不是新的 lockfile。
 
-未来 binding receipt 才能把 blueprint fingerprint 对证：
+[Host Executable Binding Receipt v1](adr-host-executable-binding-receipt-v1.md) 已把 Blueprint fingerprint 对证到：
 
 - [Static Factory Registration v1](adr-static-factory-registration-v1.md) 输出的 exact owning registration snapshot；
-- exact host executable/library artifact；
+- exact staged Host executable artifact；
 - Engine generation、platform、configuration 和 toolchain；
 
 当前进程实际加载的 native generation 仍属于后继 Session/Bootstrap state，不由 Blueprint 或 registration snapshot 推断。
@@ -293,6 +293,7 @@ partial plan，也不修改 session、Host Composition、candidate 或 declarati
 3. [Static Factory Registration v1](adr-static-factory-registration-v1.md)：#289 已由 generated root 注入 generation、Blueprint、provider context 与 expected local factory IDs，并输出 identity-only canonical owning snapshot；
 4. [Windows Development Host Template v1](adr-windows-development-host-template-v1.md)：#290 已实现固定 final executable、`main()`、
    受控构建、File API target binding 与 registration-only verification；
-5. #288 Activation Binding Receipt / Bound Plan：构建后把 blueprint fingerprint、registration snapshot 与 exact host artifacts 对证；
+5. [Host Executable Binding Receipt v1](adr-host-executable-binding-receipt-v1.md)：#288 已在构建后把 Blueprint fingerprint、
+   registration snapshot 与 exact staged Host artifact 对证；该 receipt 不证明 lifecycle activation；
 6. Host Runtime lifecycle：实现 concrete scope tree、factory context、lifecycle callbacks、activation lease、typed registries、rollback 与 shutdown；
 7. Bootstrap adapter：把上述 headless states 映射到 Ready/PendingBuild/PendingRestart/SafeMode UI。

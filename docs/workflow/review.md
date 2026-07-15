@@ -116,16 +116,20 @@ Windows Development Host Template v1 只允许消费已发布的 exact template/
 generation 只读复验两棵 closed publication tree，拒绝 payload 漂移、额外 entry 与 link/reparse；随后使用 typed argv、
 caller-supplied environment 与 `shell=False`，Conan 必须先行；File API binding 必须锁定 latest client reply 中唯一
 configuration/`EXECUTABLE`/primary artifact，并在 build 后复验普通文件。restricted Host 只输出 canonical registration JSON，
-不得执行 activation/lifecycle、UI、artifact hash 或 receipt publication。修改该边界时，除 focused Python tests 外，运行双编译器
-exact Host integration：
+不得执行 activation/lifecycle、UI、artifact hash 或 receipt publication。#288 的 downstream publisher 必须另外读取同一 stable
+File API index 的 configured CXX compiler，把 exact executable 流式复制到 collector-owned staging，运行 staged bytes，交叉验证
+registration handoff，并发布/deep-verify Host Executable Binding Receipt。修改任一边界时，除 focused Python tests 外，运行
+双编译器 exact Host integration：
 
 ```powershell
-cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && set ""CXX=clang-cl"" && set ""ASHARIA_HOST_TEST_ENABLE_CLANG_TIDY=1"" && set ""ASHARIA_EXPECT_CMAKE_CXX_COMPILER_ID=Clang"" && set ""ASHARIA_RUN_HOST_TEMPLATE_INTEGRATION_TESTS=1"" && set ""ASHARIA_HOST_TEST_TOOLCHAIN_FILE=build\conan\clangcl-debug\Debug\generators\conan_toolchain.cmake"" && python -m unittest tools.tests.test_generated_host_executable.GeneratedHostExecutableIntegrationTests.test_exact_host_build_and_restricted_verification -v"
-cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && set ""CXX=cl"" && set ""ASHARIA_EXPECT_CMAKE_CXX_COMPILER_ID=MSVC"" && set ""ASHARIA_RUN_HOST_TEMPLATE_INTEGRATION_TESTS=1"" && set ""ASHARIA_HOST_TEST_TOOLCHAIN_FILE=build\conan\msvc-debug\Debug\generators\conan_toolchain.cmake"" && python -m unittest tools.tests.test_generated_host_executable.GeneratedHostExecutableIntegrationTests.test_exact_host_build_and_restricted_verification -v"
+cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && set ""CXX=clang-cl"" && set ""ASHARIA_HOST_TEST_ENABLE_CLANG_TIDY=1"" && set ""ASHARIA_EXPECT_CMAKE_CXX_COMPILER_ID=Clang"" && set ""ASHARIA_EXPECT_CMAKE_CXX_COMPILER_VERSION=19.1.5"" && set ""ASHARIA_RUN_HOST_TEMPLATE_INTEGRATION_TESTS=1"" && set ""ASHARIA_HOST_TEST_TOOLCHAIN_FILE=build\conan\clangcl-debug\Debug\generators\conan_toolchain.cmake"" && python -m unittest tools.tests.test_generated_host_executable.GeneratedHostExecutableIntegrationTests.test_exact_host_build_and_restricted_verification -v"
+cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && set ""CXX=cl"" && set ""ASHARIA_EXPECT_CMAKE_CXX_COMPILER_ID=MSVC"" && set ""ASHARIA_EXPECT_CMAKE_CXX_COMPILER_VERSION=19.44.35215.0"" && set ""ASHARIA_RUN_HOST_TEMPLATE_INTEGRATION_TESTS=1"" && set ""ASHARIA_HOST_TEST_TOOLCHAIN_FILE=build\conan\msvc-debug\Debug\generators\conan_toolchain.cmake"" && python -m unittest tools.tests.test_generated_host_executable.GeneratedHostExecutableIntegrationTests.test_exact_host_build_and_restricted_verification -v"
 ```
 
 该 fixture 必须证明 exact target/path binding、single-target build without clean-first、build 后 binding refresh、restricted process
-stdout/stderr/exit contract 与 expected generation/Blueprint snapshot 对证；不要求 clean-first 或默认 all-target build。
+stdout/stderr/exit contract、expected generation/Blueprint snapshot 对证、same-index configured compiler、collector-owned staged Host
+执行、receipt atomic publication 与 read-only closed-tree deep verification；MSVC/ClangCL receipts 可以因 compiler identity/executable
+bytes 不同而不同。该 gate 不要求 clean-first 或默认 all-target build，也不证明 lifecycle activation。
 Installed Distribution Repair Verifier v1 必须从调用方提供的 exact expected `EngineGenerationId` 开始；不能只信磁盘 manifest
 或目录名，不能在发现损坏后写回安装树，也不能把 `FatalDistributionError` 当作磁盘健康状态。
 

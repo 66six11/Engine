@@ -67,6 +67,9 @@ STATIC_FACTORY_REGISTRATION_SNAPSHOT_SCHEMA_NAME = (
 WINDOWS_DEVELOPMENT_HOST_TEMPLATE_SCHEMA_NAME = (
     "windows-development-host-template-v1.schema.json"
 )
+HOST_EXECUTABLE_BINDING_RECEIPT_SCHEMA_NAME = (
+    "host-executable-binding-receipt-v1.schema.json"
+)
 PACKAGE_TREE_HEADER = b"asharia-package-tree-v1\0"
 PACKAGE_TREE_ROOT_EXCLUDES = {".git", ".hg", ".svn", "build", "generated"}
 ANY_PLATFORM_ID = "com.asharia.platform.any"
@@ -231,6 +234,7 @@ class ContractValidators:
     static_composition_root: Draft202012Validator
     static_factory_registration_snapshot: Draft202012Validator
     windows_development_host_template: Draft202012Validator
+    host_executable_binding_receipt: Draft202012Validator
 
 
 @dataclass(frozen=True, order=True)
@@ -370,6 +374,9 @@ def load_contract_validators(schema_root: Path = DEFAULT_SCHEMA_ROOT) -> Contrac
         ),
         windows_development_host_template=create(
             WINDOWS_DEVELOPMENT_HOST_TEMPLATE_SCHEMA_NAME
+        ),
+        host_executable_binding_receipt=create(
+            HOST_EXECUTABLE_BINDING_RECEIPT_SCHEMA_NAME
         ),
     )
 
@@ -2664,6 +2671,8 @@ def _contract_kind(manifest: Any, manifest_path: str) -> str | None:
         return "static-factory-registration-snapshot"
     if manifest.get("schema") == "com.asharia.windows-development-host-template":
         return "windows-development-host-template"
+    if manifest.get("schema") == "com.asharia.host-executable-binding-receipt":
+        return "host-executable-binding-receipt"
     if manifest.get("schemaVersion") == 1 and manifest.get("packageKind") == "source-boundary":
         return "source-boundary"
     package_kind = manifest.get("packageKind")
@@ -2754,6 +2763,10 @@ def validate_manifest_data(
     elif kind == "windows-development-host-template":
         validator = validators.windows_development_host_template
         schema_code = "host-template.schema"
+        semantic_validator = lambda value, path: []
+    elif kind == "host-executable-binding-receipt":
+        validator = validators.host_executable_binding_receipt
+        schema_code = "host-binding.schema"
         semantic_validator = lambda value, path: []
     elif kind == "host-profile":
         validator = validators.host_profile

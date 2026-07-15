@@ -77,8 +77,9 @@ flowchart TB
 ```
 
 `Effective Session Plan` 可以为 diagnostics、缓存或可复现测试进行 canonical serialization，但只能由输入 fingerprint
-重新派生；它不是需要人工维护或提交的第三个 lockfile。现有 `Host Composition Plan`、`Source Build Plan` 和未来
-构建前 `Host Activation Blueprint` 与构建后 activation binding receipt 是该派生过程中的职责明确子计划，不合并成一个万能文档。
+重新派生；它不是需要人工维护或提交的第三个 lockfile。现有 `Host Composition Plan`、`Source Build Plan`、构建前
+`Host Activation Blueprint` 与构建后
+[Host Executable Binding Receipt](adr-host-executable-binding-receipt-v1.md) 是该派生过程中的职责明确子计划，不合并成一个万能文档。
 
 ### 2. Editor Image 必须先于项目激活可用
 
@@ -175,7 +176,8 @@ Installable Package
 - Host Profile 选择 modules，Source Build Plan 映射真实 CMake roots；
 - C++ modules 默认编译为独立静态库，保持增量编译和链接闭包边界；
 - 项目专属 Editor/Runtime/Server/Tool target 链接生成的薄 composition root；
-- Host Activation Blueprint 在构建前绑定 factory/contribution/lifecycle；artifact manifest 与后继 binding receipt 在构建后证明 exact generation；
+- Host Activation Blueprint 在构建前绑定 factory/contribution/lifecycle；artifact manifest 与 Host Executable Binding Receipt
+  在构建后证明 exact generation bytes 与 registration identity，不证明 lifecycle 已执行；
 - native graph 变化采用 `PendingBuild -> PendingRestart`，v1 不承诺 hot unload。
 
 未来若 Editor 重链接成为实际瓶颈，可以增加与精确 `EngineGenerationId`、工具链、runtime library、platform 和
@@ -239,6 +241,7 @@ Package Artifact collector 可以：
 
 1. #278 artifact publication、#279 Engine Distribution Manifest、#280 Project Lock v2 硬切、#281 Effective Session 与
    #282 Distribution Assembler、#283 Installed Distribution Repair Verifier 已完成。
-2. 独立设计轻量启动 receipt / Bootstrap adapter，或先冻结静态薄 composition root 的生成边界。
-3. Factory declaration 与 Host Activation Blueprint v1 已完成；下一步生成 static composition root，再建立 post-build binding receipt 与 Host Runtime。
+2. 静态薄 composition root 已由 #287 完成；registration identity 与 final Host 已由 #289/#290 完成；
+   [Host Executable Binding Receipt v1](adr-host-executable-binding-receipt-v1.md) 已由 #288 完成。
+3. 下一步保持独立边界：实现 Host Runtime lifecycle，并把 verified receipt/runtime outcome 接入轻量 Bootstrap/Session adapter。
 4. 只有真实链接耗时和 ABI 需求出现后，再评估 exact-build `ProjectEditorModules` 动态模块。

@@ -238,8 +238,10 @@ locked graph。
 
 1. [Host Activation Blueprint v1](adr-host-activation-blueprint-v1.md) 已完成构建前全图 reference/scope/cycle 校验、
    scope templates 与 canonical factory order；
-2. generated static composition root：把 Blueprint 中 logical factory reference 绑定到 C++ registration；
-3. post-build Activation Binding Receipt：对证 Blueprint、registration table 与 exact host artifacts；
+2. [Generated Static Composition Root v1](adr-generated-static-composition-root-v1.md)：#287 已把 Blueprint 中 logical factory
+   reference 绑定到 C++ registration；
+3. [Host Executable Binding Receipt v1](adr-host-executable-binding-receipt-v1.md)：#288 已对证 Blueprint、registration snapshot
+   与 exact staged Host artifact；receipt 不证明 lifecycle activation；
 4. Host Runtime：实现 scope tree、factory context、lease、typed registries、rollback 与 shutdown；
 5. Editor Bootstrap：只消费上述 headless result 显示 Ready/PendingBuild/PendingRestart/SafeMode，不反向拥有 package semantics。
 

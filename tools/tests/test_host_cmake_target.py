@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -38,6 +40,7 @@ class HostCMakeTargetTests(unittest.TestCase):
         target_id = f"{target_name}::{suffix}"
         target_filename = f"target-{suffix}.json"
         codemodel_filename = f"codemodel-{suffix}.json"
+        toolchains_filename = f"toolchains-{suffix}.json"
         artifact_values = artifacts or [f"out/{name_on_disk}"]
         target_path = reply_root / target_filename
         target_path.write_text(
@@ -82,11 +85,37 @@ class HostCMakeTargetTests(unittest.TestCase):
             + "\n",
             encoding="utf-8",
         )
+        (reply_root / toolchains_filename).write_text(
+            json.dumps(
+                {
+                    "kind": "toolchains",
+                    "version": {"major": 1, "minor": 0},
+                    "toolchains": [
+                        {
+                            "language": "CXX",
+                            "compiler": {
+                                "path": "C:/toolchain/cl.exe",
+                                "id": "MSVC",
+                                "version": "19.40.33811.0",
+                                "target": "x86_64-pc-windows-msvc",
+                            },
+                        }
+                    ],
+                },
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
         index_path = reply_root / f"index-{suffix}.json"
         index_path.write_text(
             json.dumps(
                 {
                     "cmake": {
+                        "generator": {
+                            "name": "Ninja",
+                            "multiConfig": False,
+                        },
                         "version": {
                             "major": cmake_version[0],
                             "minor": cmake_version[1],
@@ -100,6 +129,10 @@ class HostCMakeTargetTests(unittest.TestCase):
                                     {
                                         "kind": "codemodel",
                                         "version": {"major": 2, "minor": 6},
+                                    },
+                                    {
+                                        "kind": "toolchains",
+                                        "version": {"major": 1, "minor": 0},
                                     }
                                 ],
                                 "responses": [
@@ -107,6 +140,11 @@ class HostCMakeTargetTests(unittest.TestCase):
                                         "kind": "codemodel",
                                         "version": {"major": 2, "minor": 6},
                                         "jsonFile": codemodel_filename,
+                                    },
+                                    {
+                                        "kind": "toolchains",
+                                        "version": {"major": 1, "minor": 0},
+                                        "jsonFile": toolchains_filename,
                                     }
                                 ],
                             }
@@ -138,7 +176,19 @@ class HostCMakeTargetTests(unittest.TestCase):
             require_artifact=require_artifact,
         )
 
-    def test_writes_exact_stateful_codemodel_query(self) -> None:
+    def create_junction(self, link: Path, target: Path) -> None:
+        completed = subprocess.run(
+            ["cmd", "/c", "mklink", "/J", str(link), str(target)],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+            shell=False,
+        )
+        if completed.returncode != 0:
+            self.skipTest("Windows junction creation is unavailable")
+
+    def test_writes_exact_stateful_host_query(self) -> None:
         result = host_cmake_target.write_host_cmake_file_api_query(self.build_root)
 
         self.assertTrue(result.succeeded)
@@ -147,12 +197,20 @@ class HostCMakeTargetTests(unittest.TestCase):
             self.build_root.resolve(),
             result.evidence.build_root,
         )
+        self.assertEqual(2, result.evidence.codemodel_major)
+        self.assertEqual(6, result.evidence.codemodel_minor)
+        self.assertEqual(1, result.evidence.toolchains_major)
+        self.assertEqual(0, result.evidence.toolchains_minor)
         self.assertEqual(
             {
                 "requests": [
                     {
                         "kind": "codemodel",
                         "version": {"major": 2, "minor": 6},
+                    },
+                    {
+                        "kind": "toolchains",
+                        "version": {"major": 1, "minor": 0},
                     }
                 ]
             },
@@ -287,6 +345,33 @@ class HostCMakeTargetTests(unittest.TestCase):
             ["host-build.cmake-artifact-not-regular"],
             self.codes(result),
         )
+
+    @unittest.skipUnless(os.name == "nt", "junction regression is Windows-only")
+    def test_artifact_path_rejects_intermediate_junction(self) -> None:
+        self.write_reply("001", artifacts=["out/asharia-host.exe"])
+        real_output = self.build_root / "real-output"
+        real_output.mkdir()
+        (real_output / "asharia-host.exe").write_bytes(b"host")
+        self.create_junction(self.build_root / "out", real_output)
+
+        result = self.read(require_artifact=True)
+
+        self.assertEqual(
+            ["host-build.cmake-artifact-not-regular"],
+            self.codes(result),
+        )
+
+    @unittest.skipUnless(os.name == "nt", "junction regression is Windows-only")
+    def test_reply_root_rejects_intermediate_junction(self) -> None:
+        self.write_reply("001")
+        reply_root = self.build_root / ".cmake/api/v1/reply"
+        real_reply_root = reply_root.with_name("real-reply")
+        reply_root.rename(real_reply_root)
+        self.create_junction(reply_root, real_reply_root)
+
+        result = self.read()
+
+        self.assertEqual(["host-build.cmake-index-missing"], self.codes(result))
 
     def test_index_drift_and_disappearing_reference_are_retried(self) -> None:
         index_path, codemodel_path, _ = self.write_reply("001")

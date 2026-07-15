@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 import shutil
 import subprocess
@@ -10,6 +11,8 @@ import unittest
 from pathlib import Path
 
 from tools import check_package_contracts as contracts
+from tools import host_binding_generation_verifier
+from tools import host_binding_publication
 from tools import host_build_adapter
 from tools import host_executable_template as host_template
 from tools import host_registration_verification
@@ -91,7 +94,27 @@ asharia_include_generated_host_template()
         if not toolchain_file.is_file():
             self.skipTest(f"Conan toolchain does not exist: {toolchain_file}")
 
-        composition = support.composition_generation(self.validators)
+        expected_compiler_id = os.environ.get(
+            "ASHARIA_EXPECT_CMAKE_CXX_COMPILER_ID"
+        )
+        expected_compiler_version = os.environ.get(
+            "ASHARIA_EXPECT_CMAKE_CXX_COMPILER_VERSION"
+        )
+        self.assertIsNotNone(
+            expected_compiler_id,
+            "binding integration requires the expected CMake compiler ID",
+        )
+        self.assertIsNotNone(
+            expected_compiler_version,
+            "binding integration requires the expected CMake compiler version",
+        )
+        assert expected_compiler_id is not None
+        assert expected_compiler_version is not None
+        composition = support.composition_generation(
+            self.validators,
+            compiler_version=expected_compiler_version,
+            compiler_id=expected_compiler_id,
+        )
         generated_template = (
             host_template.generate_windows_development_host_template(
                 composition.manifest,
@@ -167,24 +190,24 @@ asharia_include_generated_host_template()
             )
             self.assertTrue(built.target.artifact_path.is_file())
 
-            expected_compiler_id = os.environ.get(
-                "ASHARIA_EXPECT_CMAKE_CXX_COMPILER_ID"
+            compiler_facts = list(
+                (built.target.build_root / "CMakeFiles").glob(
+                    "*/CMakeCXXCompiler.cmake"
+                )
             )
-            if expected_compiler_id is not None:
-                compiler_facts = list(
-                    (built.target.build_root / "CMakeFiles").glob(
-                        "*/CMakeCXXCompiler.cmake"
-                    )
-                )
-                self.assertEqual(1, len(compiler_facts), compiler_facts)
-                compiler_data = compiler_facts[0].read_text(
-                    encoding="utf-8",
-                    errors="replace",
-                )
-                self.assertIn(
-                    f'set(CMAKE_CXX_COMPILER_ID "{expected_compiler_id}")',
-                    compiler_data,
-                )
+            self.assertEqual(1, len(compiler_facts), compiler_facts)
+            compiler_data = compiler_facts[0].read_text(
+                encoding="utf-8",
+                errors="replace",
+            )
+            self.assertIn(
+                f'set(CMAKE_CXX_COMPILER_ID "{expected_compiler_id}")',
+                compiler_data,
+            )
+            self.assertIn(
+                f'set(CMAKE_CXX_COMPILER_VERSION "{expected_compiler_version}")',
+                compiler_data,
+            )
 
             verified = (
                 host_registration_verification.run_host_registration_verification(
@@ -208,6 +231,54 @@ asharia_include_generated_host_template()
             self.assertEqual(
                 "runtime-service",
                 verified.snapshot.registrations[0].factory_id,
+            )
+
+            binding_publication = (
+                host_binding_publication.collect_and_publish_host_executable_binding(
+                    host_binding_publication.HostExecutableBindingPublicationRequestV1(
+                        composition_generation=composition,
+                        composition_root=(
+                            composition_publication.receipt.generation_path
+                        ),
+                        template_generation=generated_template.generation,
+                        template_root=template_publication.receipt.generation_path,
+                        target=built.target,
+                        registration_snapshot=verified.snapshot,
+                        environment=environment,
+                    ),
+                    root / "host-bindings",
+                    self.validators,
+                )
+            )
+            self.assertTrue(
+                binding_publication.succeeded,
+                [item.render() for item in binding_publication.diagnostics],
+            )
+            assert binding_publication.receipt is not None
+            receipt = binding_publication.receipt
+            artifact_hash = hashlib.sha256()
+            with built.target.artifact_path.open("rb") as stream:
+                while chunk := stream.read(1024 * 1024):
+                    artifact_hash.update(chunk)
+            self.assertEqual(
+                built.target.artifact_path.stat().st_size,
+                receipt.receipt.artifact.size,
+            )
+            self.assertEqual(
+                artifact_hash.hexdigest(),
+                receipt.receipt.artifact.integrity.digest,
+            )
+            deep_verification = (
+                host_binding_generation_verifier.verify_published_host_binding_generation(
+                    receipt.generation_path,
+                    composition,
+                    generated_template.generation,
+                    self.validators,
+                )
+            )
+            self.assertTrue(
+                deep_verification.succeeded,
+                [item.render() for item in deep_verification.diagnostics],
             )
 
             invalid_mode = subprocess.run(

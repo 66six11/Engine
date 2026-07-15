@@ -127,8 +127,8 @@ manifest 至少记录：
 - header/source/CMake fragment 的 package-neutral relative path、size、role 与 SHA-256；
 - manifest 自身 canonical integrity。
 
-manifest 证明 generated source bytes，不证明 compiler output、observed registration snapshot 或 final executable artifact。后者属于
-post-build Activation Binding Receipt。
+manifest 证明 generated source bytes，不证明 compiler output、observed registration snapshot 或 final executable artifact。后者已由
+[Host Executable Binding Receipt v1](adr-host-executable-binding-receipt-v1.md) 独立绑定。
 
 #289 将 renderer revision 提升为 `2`，因为 generated header/source 与 CMake link target 的 bytes 已改变。schema 继续接受 revision
 `1`，只用于复验已经发布的 immutable generation；新生成只能使用当前 renderer revision，不能原地改写 revision 1 tree。
@@ -324,7 +324,7 @@ v1 明确限制增量成本：
 - 不实现 factory callbacks、instances、scopes、leases、rollback 或 shutdown；#289 的 concrete registrar 只记录 identity；
 - 不生成 `main()`、Build Profile、Host Template 或 final executable target；
 - 不验证 final object/library/executable bytes；
-- 不生成 post-build Activation Binding Receipt；
+- 不生成 post-build Host Executable Binding Receipt；
 - 不实现 dynamic plugin、hot reload/unload 或 stable cross-generation ABI；
 - 不运行 Conan/CMake/compiler/linker；
 - 不修改 Project Lock、Host Profile、Factory Declaration、Source Build Plan、Blueprint 或 Provider Binding 合同的所有权；
@@ -348,6 +348,7 @@ v1 明确限制增量成本：
 1. [Static Factory Registration v1](adr-static-factory-registration-v1.md)：#289 已实现 identity-only registrar、capacity、sticky failure 与 canonical owning snapshot；
 2. [Windows Development Host Template v1](adr-windows-development-host-template-v1.md)：#290 已实现固定 final target、`main()`、
    console/runtime layout、受控 final configure/build、File API target binding 与 registration-only verification；
-3. #288 post-build Activation Binding Receipt：对证 generation manifest、registration snapshot 与 exact final Host artifact；
+3. [Host Executable Binding Receipt v1](adr-host-executable-binding-receipt-v1.md)：#288 已对证 generation manifest、
+   same-index CMake target/compiler、registration snapshot 与 exact staged final Host artifact；
 4. concrete Host Runtime lifecycle：实现 factory callbacks、scope tree、activation、rollback 与 shutdown；
 5. Bootstrap/Session adapter：把 generation/build/receipt 状态映射为 Ready、PendingBuild、PendingRestart 或 SafeMode。

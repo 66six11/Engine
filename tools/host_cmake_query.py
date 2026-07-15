@@ -16,6 +16,8 @@ from tools import check_package_contracts as contracts
 HOST_BUILD_FILE_API_CLIENT = "client-asharia-host-build-v1"
 HOST_BUILD_FILE_API_MAJOR = 2
 HOST_BUILD_FILE_API_MINOR = 6
+HOST_BUILD_TOOLCHAINS_FILE_API_MAJOR = 1
+HOST_BUILD_TOOLCHAINS_FILE_API_MINOR = 0
 HOST_BUILD_FILE_API_READ_ATTEMPTS = 3
 HOST_BUILD_MINIMUM_CMAKE_VERSION = (3, 28)
 
@@ -61,17 +63,76 @@ def is_link_or_reparse(status: os.stat_result) -> bool:
     return bool(getattr(status, "st_file_attributes", 0) & reparse_attribute)
 
 
+def path_components_without_links(
+    value: Path,
+    *,
+    allow_missing: bool,
+    final_kind: str,
+) -> bool:
+    """Inspect lexical path components before any resolve can erase aliases."""
+
+    absolute = value.absolute()
+    current = Path(absolute.anchor)
+    for index, component in enumerate(absolute.parts[1:]):
+        current /= component
+        try:
+            status = current.lstat()
+        except FileNotFoundError:
+            return allow_missing
+        except OSError:
+            return False
+        if is_link_or_reparse(status):
+            return False
+        final = index == len(absolute.parts[1:]) - 1
+        if not final and not stat.S_ISDIR(status.st_mode):
+            return False
+        if final and final_kind == "directory" and not stat.S_ISDIR(status.st_mode):
+            return False
+        if final and final_kind == "regular" and not stat.S_ISREG(status.st_mode):
+            return False
+    return True
+
+
+def resolve_existing_directory_without_links(value: Path) -> Path | None:
+    if not path_components_without_links(
+        value,
+        allow_missing=False,
+        final_kind="directory",
+    ):
+        return None
+    try:
+        return value.absolute().resolve(strict=True)
+    except OSError:
+        return None
+
+
+def resolve_existing_regular_file_without_links(value: Path) -> Path | None:
+    if not path_components_without_links(
+        value,
+        allow_missing=False,
+        final_kind="regular",
+    ):
+        return None
+    try:
+        return value.absolute().resolve(strict=True)
+    except OSError:
+        return None
+
+
 def explicit_build_root(value: Any, *, create: bool) -> Path | None:
     if not isinstance(value, Path):
         return None
     absolute = value.absolute()
     try:
         if create:
+            if not path_components_without_links(
+                absolute,
+                allow_missing=True,
+                final_kind="directory",
+            ):
+                return None
             absolute.mkdir(parents=True, exist_ok=True)
-        status = absolute.lstat()
-        if is_link_or_reparse(status) or not stat.S_ISDIR(status.st_mode):
-            return None
-        return absolute.resolve(strict=True)
+        return resolve_existing_directory_without_links(absolute)
     except OSError:
         return None
 
@@ -87,7 +148,14 @@ def _query_bytes() -> bytes:
                             "major": HOST_BUILD_FILE_API_MAJOR,
                             "minor": HOST_BUILD_FILE_API_MINOR,
                         },
-                    }
+                    },
+                    {
+                        "kind": "toolchains",
+                        "version": {
+                            "major": HOST_BUILD_TOOLCHAINS_FILE_API_MAJOR,
+                            "minor": HOST_BUILD_TOOLCHAINS_FILE_API_MINOR,
+                        },
+                    },
                 ]
             },
             ensure_ascii=False,

@@ -4,7 +4,8 @@
 
 Accepted and implemented for #290. 本 ADR 冻结第一个 final native Host target、受控构建和 registration-only
 verification 边界。它消费 #287 的 immutable static-composition generation 与 #289 的 identity-only recorder，
-但不创建 factory instance，也不发布 #288 的 Activation Binding Receipt。
+但不创建 factory instance，也不自行发布 #288 的
+[Host Executable Binding Receipt](adr-host-executable-binding-receipt-v1.md)；后者已作为独立 downstream publisher 实现。
 
 ## 问题
 
@@ -157,7 +158,9 @@ binding 依次要求：
 6. primary artifact 解析后仍位于 caller-owned build root；
 7. build 成功后重新读取 latest reply，并要求 primary artifact 是普通文件。
 
-File API 只证明 CMake 的 target/configuration/path 事实，不证明 artifact bytes。SHA-256、size 和 receipt publication 留给 #288。
+File API 只证明 CMake 的 target/configuration/path 事实，不证明 artifact bytes。#288 已在独立
+[Host Executable Binding Receipt v1](adr-host-executable-binding-receipt-v1.md) 中补齐 configured compiler、SHA-256、size、
+collector-owned staged execution 与 immutable publication。
 
 ## 5. RegistrationSnapshot handoff
 
@@ -203,7 +206,7 @@ fixed-field bytes、无重复 registration、expected generation 与 expected Bl
 - 通用 Build Profile inheritance、Cook、Stage、Package、Deploy 或 Launch Session；
 - Editor/Bootstrap UI、ImGui 或 Avalonia；
 - factory callbacks、instance、scope、activation DAG、rollback 或 shutdown；
-- artifact hash/publication、Activation Binding Receipt、signing、installer 或 repair；
+- artifact hash/publication、Host Executable Binding Receipt、signing、installer 或 repair；
 - dynamic plugin、hot unload 或 stable cross-generation ABI；
 - 任意 package code 的运行时发现或 filesystem 扫描。
 
@@ -225,5 +228,6 @@ fixed-field bytes、无重复 registration、expected generation 与 expected Bl
 
 ## 后续
 
-#288 消费本 Slice 的 final target evidence、exact Host path 与 canonical registration snapshot，再读取 artifact bytes、计算 hash 并
-发布 Activation Binding Receipt。具体 Host Runtime lifecycle 与 Bootstrap/Session 状态映射继续保持独立 Slice。
+#288 已消费本 Slice 的 final target evidence、exact Host path 与 canonical registration snapshot，并发布
+[Host Executable Binding Receipt v1](adr-host-executable-binding-receipt-v1.md)。receipt 运行 collector-owned staged executable，
+而不是 mutable build-tree executable；具体 Host Runtime lifecycle 与 Bootstrap/Session 状态映射继续保持独立 Slice。
