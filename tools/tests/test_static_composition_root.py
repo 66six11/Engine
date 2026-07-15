@@ -226,8 +226,19 @@ class StaticCompositionRootTests(unittest.TestCase):
             "utf-8-sig"
         )
         self.assertIn("static_assert(std::is_same_v<", source)
-        self.assertIn("provideRuntimeFactories(registrar);", source)
-        self.assertEqual(1, source.count("provideRuntimeFactories(registrar);"))
+        self.assertIn("recorder.beginComposition({", source)
+        self.assertIn("recorder.invokeProvider(", source)
+        self.assertIn("recorder.endComposition();", source)
+        self.assertEqual(1, source.count("recorder.invokeProvider("))
+        self.assertIn(first.manifest.generation_id, source)
+        self.assertIn(
+            first.manifest.inputs.host_activation_blueprint_integrity.digest,
+            source,
+        )
+        self.assertIn(".providerCount = 1U", source)
+        self.assertIn(".factoryCount = 1U", source)
+        self.assertIn(".textBytes = 233U", source)
+        self.assertIn(".diagnosticFactoryIdBytes = 256U", source)
         for forbidden in (
             "GetProcAddress",
             "dlsym",
@@ -240,6 +251,7 @@ class StaticCompositionRootTests(unittest.TestCase):
         cmake = files[composition_root.STATIC_COMPOSITION_CMAKE_PATH].decode("utf-8")
         self.assertIn("target_sources", cmake)
         self.assertIn("target_link_libraries", cmake)
+        self.assertIn("asharia::host_runtime_registration", cmake)
         self.assertNotIn("add_executable", cmake)
         self.assertNotIn("add_custom_command", cmake)
         self.assertNotIn("add_subdirectory", cmake)
@@ -367,6 +379,80 @@ class StaticCompositionRootTests(unittest.TestCase):
             original_files[composition_root.STATIC_COMPOSITION_SOURCE_PATH],
             changed_files[composition_root.STATIC_COMPOSITION_SOURCE_PATH],
         )
+
+    def test_empty_composition_records_only_composition_identity(self) -> None:
+        build_plan = replace(
+            _build_plan(),
+            build_roots=(),
+            target_closure=(),
+            integrity=source_build_plan.IntegrityRecord("sha256", _digest("0")),
+        )
+        build_integrity = source_build_plan.compute_source_build_plan_integrity(
+            build_plan
+        )
+        build_plan = replace(
+            build_plan,
+            integrity=source_build_plan.IntegrityRecord(
+                build_integrity["algorithm"], build_integrity["digest"]
+            ),
+        )
+
+        blueprint = replace(
+            _blueprint(),
+            scope_templates=(
+                activation.ScopeActivationTemplate("process", None, ()),
+            ),
+            integrity=activation.IntegrityRecord("sha256", _digest("0")),
+        )
+        blueprint_integrity = activation.compute_host_activation_blueprint_integrity(
+            blueprint
+        )
+        blueprint = replace(
+            blueprint,
+            integrity=activation.IntegrityRecord(
+                blueprint_integrity["algorithm"], blueprint_integrity["digest"]
+            ),
+        )
+
+        binding = _binding_plan(build_plan, blueprint)
+        binding = replace(
+            binding,
+            providers=(),
+            integrity=provider_bindings.IntegrityRecord("sha256", _digest("0")),
+        )
+        binding_integrity = (
+            provider_bindings.compute_static_factory_provider_binding_plan_integrity(
+                binding
+            )
+        )
+        binding = replace(
+            binding,
+            integrity=provider_bindings.IntegrityRecord(
+                binding_integrity["algorithm"], binding_integrity["digest"]
+            ),
+        )
+
+        result = composition_root.generate_static_composition_root(
+            build_plan, blueprint, binding, self.validators
+        )
+
+        self.assertTrue(
+            result.succeeded,
+            [item.render() for item in result.diagnostics],
+        )
+        assert result.generation is not None
+        source = next(
+            value.content.decode("utf-8-sig")
+            for value in result.generation.files
+            if value.path == composition_root.STATIC_COMPOSITION_SOURCE_PATH
+        )
+        self.assertIn(".providerCount = 0U", source)
+        self.assertIn(".factoryCount = 0U", source)
+        self.assertIn(".textBytes = 135U", source)
+        self.assertIn(".diagnosticFactoryIdBytes = 256U", source)
+        self.assertIn("recorder.beginComposition({", source)
+        self.assertNotIn("recorder.invokeProvider(", source)
+        self.assertIn("recorder.endComposition();", source)
 
     def test_manifest_rejects_tampering(self) -> None:
         generation = self.generate()
@@ -510,28 +596,56 @@ void provideRuntimeFactories(
                 """#include \"asharia/synthetic/runtime_provider.hpp\"
 void asharia::synthetic::provideRuntimeFactories(
     asharia::host_runtime::StaticFactoryRegistrar& registrar) noexcept {
-  (void)registrar;
+  registrar.registerFactory("runtime-service");
 }
 """,
                 encoding="utf-8-sig",
                 newline="\n",
             )
             (source_root / "main.cpp").write_text(
-                "int main() { return 0; }\n",
+                f"""#include <utility>
+
+#include \"asharia/generated/static_composition_root.hpp\"
+
+int main() {{
+  using namespace asharia::host_runtime;
+  auto recorder = createStaticFactoryRegistrationRecorder(
+      asharia::generated::staticFactoryRegistrationCapacity());
+  if (!recorder) {{
+    return 1;
+  }}
+  asharia::generated::recordStaticFactoryProviders(*recorder);
+  auto snapshot = std::move(*recorder).finish();
+  if (!snapshot || snapshot->registrations.size() != 1U) {{
+    return 2;
+  }}
+  const auto& registration = snapshot->registrations.front();
+  if (snapshot->generationId != "{generation.manifest.generation_id}" ||
+      snapshot->hostActivationBlueprintSha256 !=
+          "{generation.manifest.inputs.host_activation_blueprint_integrity.digest}" ||
+      registration.packageId != "com.asharia.synthetic" ||
+      registration.packageVersion != "1.0.0" ||
+      registration.moduleId != "implementation" ||
+      registration.factoryId != "runtime-service" ||
+      registration.providerEntryPoint !=
+          "asharia::synthetic::provideRuntimeFactories") {{
+    return 3;
+  }}
+  return 0;
+}}
+""",
                 encoding="utf-8-sig",
                 newline="\n",
             )
             generation_path = published.receipt.generation_path.as_posix()
-            contract_include = (
-                REPOSITORY_ROOT / "engine/host-runtime/include"
-            ).as_posix()
+            repository_root = REPOSITORY_ROOT.as_posix()
             cmake = f"""cmake_minimum_required(VERSION 3.28)
 project(AshariaStaticCompositionFixture LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
-add_library(asharia-host-runtime-contract INTERFACE)
-add_library(asharia::host_runtime_contract ALIAS asharia-host-runtime-contract)
-target_include_directories(asharia-host-runtime-contract INTERFACE "{contract_include}")
+set(ASHARIA_REPOSITORY_ROOT "{repository_root}")
+set(ASHARIA_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+add_subdirectory("{repository_root}/engine/host-runtime" asharia-host-runtime)
 add_library(asharia_synthetic_runtime STATIC provider.cpp)
 target_include_directories(asharia_synthetic_runtime PUBLIC include)
 target_link_libraries(asharia_synthetic_runtime PUBLIC asharia::host_runtime_contract)
@@ -569,6 +683,16 @@ asharia_attach_static_composition(host)
                 check=False,
             )
             self.assertEqual(0, build.returncode, build.stdout + build.stderr)
+            executable = build_root / ("host.exe" if os.name == "nt" else "host")
+            run = subprocess.run(
+                [str(executable)],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                check=False,
+            )
+            self.assertEqual(0, run.returncode, run.stdout + run.stderr)
 
             provider_header = (
                 source_root / "include/asharia/synthetic/runtime_provider.hpp"

@@ -16,7 +16,7 @@ flowchart TD
     EditorApp["apps/editor<br/>Dear ImGui host + editor smoke harness"]
     Core["engine/core"]
     Platform["engine/platform"]
-    HostRuntime["engine/host-runtime<br/>static provider type contract"]
+    HostRuntime["engine/host-runtime<br/>provider contract + identity recorder"]
     Window["packages/window-glfw"]
     Profiling["packages/profiling"]
     Schema["packages/schema"]
@@ -124,10 +124,12 @@ flowchart TD
   是 package-level 粗粒度边界，不能替代 target-level 依赖审查。
 - `engine/platform` 当前是预留 boundary target，只传递 `core` 依赖，不导出公共 header；真实
   GLFW/window/surface glue 仍在 `window-glfw`。
-- `engine/host-runtime` 当前只导出固定 Image 使用的 `StaticFactoryRegistrar` 前置声明和
-  `StaticFactoryProviderV1` 函数指针类型；它不包含 registrar storage、factory lifecycle 或项目激活逻辑，
-  也尚未由现有 sample/editor app 直接链接。#287 的 generated CMake handoff 只在最终 Host target 上按需链接该
-  interface contract 与 exact static provider targets。
+- `engine/host-runtime` 的 `asharia::host_runtime_contract` 当前导出 provider 可见的窄 `StaticFactoryRegistrar`：provider
+  只能 `registerFactory(localFactoryId)`，以及固定 `StaticFactoryProviderV1` 函数指针类型。
+  `asharia::host_runtime_registration` 另行实现 move-only recorder、预留 capacity、sticky first error 与 canonical owning
+  registration snapshot；它不保存 callback，也不包含 factory lifecycle 或项目激活逻辑。现有 sample/editor app 尚未直接链接
+  该 target；renderer revision 2 的 generated CMake handoff 只在未来 Host target 上链接 registration target 与 exact static
+  provider targets。
 - `asharia::rhi_vulkan` 是基础 Vulkan 后端，不公开依赖 RenderGraph。
 - `asharia::rhi_vulkan_rendergraph` 是 RenderGraph/Vulkan 适配层，负责把抽象 graph state 翻译为 Vulkan 类型。
 - `renderer-basic` 只描述后端无关的 basic renderer graph 片段。

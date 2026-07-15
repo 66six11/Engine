@@ -91,8 +91,25 @@ cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && set ""CXX=c
 cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && set ""CXX=cl"" && set ""ASHARIA_EXPECT_CMAKE_CXX_COMPILER=cl.exe"" && set ""ASHARIA_RUN_CMAKE_INTEGRATION_TESTS=1"" && python -m unittest tools.tests.test_static_composition_root.StaticCompositionRootTests.test_generated_fragment_configures_compiles_and_links -v"
 ```
 
-该 fixture 必须证明 valid root 可 configure/compile/link、错误 provider signature 在 compile-time `static_assert` 失败，
-以及 missing/wrong provider target 和 duplicate attachment 在 final configure fail closed。
+该 fixture 必须证明 valid root 可 configure/compile/link/execute 并得到 exact owning registration snapshot、错误 provider
+signature 在 compile-time `static_assert` 失败，以及 missing/wrong provider target 和 duplicate attachment 在 final configure
+fail closed。
+
+Static Factory Registration v1 只允许 provider 调用 `registerFactory(localFactoryId)`。generation、Blueprint digest、
+package/version/module/entry point 与 expected factory IDs 必须由 generated root 注入；不得让 provider 自报完整 identity，
+不得把 callback、instance、scope 或 lifecycle 塞进 snapshot。recorder 必须在 provider 调用前按 generated capacity 预留 storage，
+callback window 中零动态分配；首次错误 sticky，失败不返回 partial snapshot，成功结果必须完整 owning 且 canonical。
+修改 `engine/host-runtime` registration target 或 generated recording glue 时，两个 test presets 都必须运行
+`asharia-host-runtime-registration-tests`，并继续运行上述 synthetic fixture：
+
+```powershell
+cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --preset clangcl-debug-tests && cmake --build --preset clangcl-debug-tests --target asharia-host-runtime-registration-tests && ctest --preset clangcl-debug-tests -R ^asharia-host-runtime-registration-tests$ --output-on-failure"
+cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake --preset msvc-debug-tests && cmake --build --preset msvc-debug-tests --target asharia-host-runtime-registration-tests && ctest --preset msvc-debug-tests -R ^asharia-host-runtime-registration-tests$ --output-on-failure"
+```
+
+该 gate 至少覆盖 valid canonical owning snapshot、empty composition、unknown/missing/duplicate factory、provider 外调用、
+provider-count mismatch、sticky first error 与 text-capacity exhaustion。provider callback 的 no-allocation 边界由 create 阶段
+定长 storage、recording 路径索引写入，以及 ClangCL `noexcept`/exception-escape gate 共同约束。
 Installed Distribution Repair Verifier v1 必须从调用方提供的 exact expected `EngineGenerationId` 开始；不能只信磁盘 manifest
 或目录名，不能在发现损坏后写回安装树，也不能把 `FatalDistributionError` 当作磁盘健康状态。
 
