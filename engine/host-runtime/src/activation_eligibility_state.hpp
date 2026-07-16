@@ -9,6 +9,7 @@
 #include "asharia/host_runtime/activation_eligibility.hpp"
 #include "asharia/host_runtime/admitted_static_factory_recording.hpp"
 
+#include "host_activation_blueprint_projection_state.hpp"
 #include "static_factory_callback_table_private_access.hpp"
 
 namespace asharia::host_runtime {
@@ -56,6 +57,7 @@ namespace asharia::host_runtime {
         ExactHostIdentityStateV1 host;
         std::string effectiveSessionIntegrity;
         std::string blueprintIntegrity;
+        ProcessScopeBlueprintProjectionStateV1 processScope;
     };
 
     struct DeepVerifiedHostBindingHandoffStateV1 final {
@@ -115,6 +117,7 @@ namespace asharia::host_runtime {
         GeneratedHostInputIdentityStateV1 hostTemplate;
         HostGenerationTupleStateV1 generationTuple;
         std::string blueprintIntegrity;
+        ProcessScopeBlueprintProjectionStateV1 processScope;
         HostArtifactIdentityStateV1 artifact;
         StaticFactoryRegistrationSnapshotV1 expectedSnapshot;
         std::shared_ptr<const CurrentProcessEpochAnchorV1> processEpoch;

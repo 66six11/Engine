@@ -375,6 +375,7 @@ namespace asharia::host_runtime {
                     .hostTemplate = std::move(bindingState->hostTemplate),
                     .generationTuple = std::move(bindingState->generationTuple),
                     .blueprintIntegrity = std::move(bindingState->blueprintIntegrity),
+                    .processScope = std::move(blueprintState->processScope),
                     .artifact = std::move(bindingState->artifact),
                     .expectedSnapshot = std::move(bindingState->expectedSnapshot),
                     .processEpoch = std::move(launchState->processEpoch),

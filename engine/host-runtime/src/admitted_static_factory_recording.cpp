@@ -63,26 +63,6 @@ namespace asharia::host_runtime {
         return state_->pending->table.registrationSnapshot();
     }
 
-    std::optional<std::span<const StaticFactoryCallbacksV1>>
-    AdmittedStaticFactoryCallbackTableV1::callbackDescriptorsForHostRuntime() const noexcept {
-        if (!state_ || !state_->pending || !admission_.valid_) {
-            return std::nullopt;
-        }
-        const PendingActivationFactoryTableStateV1& pending = *state_->pending;
-        if (!pending.lineage ||
-            !isCurrentControlThread(pending.lineage->controlThreadEpoch) ||
-            !isClaimedCurrentProcessEpoch(pending.lineage->processEpoch) ||
-            pending.origin != PendingFactoryTableOriginV1::AdmittedRegistration ||
-            pending.expectedTableAddress != std::addressof(pending.table) ||
-            pending.expectedTableInstance == nullptr ||
-            pending.expectedTableInstance !=
-                StaticFactoryCallbackTablePrivateAccessV1::instanceAnchor(pending.table) ||
-            pending.table.registrationSnapshot() != pending.lineage->expectedSnapshot) {
-            return std::nullopt;
-        }
-        return StaticFactoryCallbackTablePrivateAccessV1::callbacks(pending.table);
-    }
-
     ActivationEligibilityResultV1<PendingActivationFactoryTableV1>
     recordAdmittedStaticFactoryProviders(PreRegistrationAdmissionV1 admission) noexcept {
         auto lineage = ActivationEligibilityStateAccessV1::take(std::move(admission));

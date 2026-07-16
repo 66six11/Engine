@@ -243,6 +243,28 @@ namespace asharia::host_runtime::tests {
             .host = hostIdentity(),
             .effectiveSessionIntegrity = digest('1'),
             .blueprintIntegrity = digest('b'),
+            .processScope =
+                {
+                    .scope = HostScopeKindStateV1::Process,
+                    .parentScope = std::nullopt,
+                    .engineGenerationId = generationId('a'),
+                    .blueprintIntegrity = digest('b'),
+                    .lifecycleModel =
+                        "create-activate-quiesce-deactivate-destroy-v1",
+                    .factories =
+                        {
+                            {
+                                .reference =
+                                    {
+                                        .packageId = std::string(kPackageId),
+                                        .packageVersion = std::string(kPackageVersion),
+                                        .moduleId = std::string(kModuleId),
+                                        .factoryId = std::string(kExpectedFactoryId),
+                                    },
+                                .requirements = {},
+                            },
+                        },
+                },
         };
         DeepVerifiedHostBindingHandoffStateV1 binding{
             .host = hostIdentity(),
@@ -361,6 +383,7 @@ namespace asharia::host_runtime::tests {
             break;
         case EligibilityHandoffMutationV1::ZeroFactoryFunction:
             binding.expectedSnapshot.registrations.clear();
+            blueprint.processScope.factories.clear();
             launch.registrationCapacity = &zeroFactoryCapacity;
             launch.recordProviders = &recordZeroFactories;
             break;

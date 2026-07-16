@@ -16,7 +16,7 @@ flowchart TD
     EditorApp["apps/editor<br/>Dear ImGui host + editor smoke harness"]
     Core["engine/core"]
     Platform["engine/platform"]
-    HostRuntime["engine/host-runtime<br/>provider v2 + callback table"]
+    HostRuntime["engine/host-runtime<br/>provider v2 + callback table<br/>eligibility + ProcessScope C++"]
     Window["packages/window-glfw"]
     Profiling["packages/profiling"]
     Schema["packages/schema"]
@@ -129,7 +129,11 @@ flowchart TD
   `asharia::host_runtime_provider_bridge` 构造/消费 opaque token，普通 Host-facing include surface 不暴露该能力。
   `asharia::host_runtime_registration` 实现 move-only recorder、预留 capacity、sticky first error、frozen callback table、table-owned
   canonical registration snapshot 与无 IO JSON renderer；registration 不调用 lifecycle callback，也不包含 scope/activation 逻辑。
-  现有 sample/editor app 尚未直接链接该 target；renderer revision 3 的 generated CMake handoff 只在生成的 Windows Development
+  `asharia::host_runtime_activation_eligibility` 再把 sealed current-process lineage 与 exact table instance 绑定；
+  `asharia::host_runtime_process_scope` 只消费 admitted owner，zero-callback preflight 后按 sealed Blueprint process order 执行
+  create/activate、失败 rollback 与 explicit reverse stop。四个 targets 只按 contract → registration → eligibility → process-scope
+  方向依赖；ProcessScope 不解析 package JSON、receipt 或 artifact bytes，也不提供其他 scopes、registry/lease 或 Bootstrap 状态映射。
+  现有 sample/editor app 尚未直接链接 process-scope target；renderer revision 3 的 generated CMake handoff 只在生成的 Windows Development
   Host target 上链接 registration target 与 exact static provider targets。
 - `asharia::rhi_vulkan` 是基础 Vulkan 后端，不公开依赖 RenderGraph。
 - `asharia::rhi_vulkan_rendergraph` 是 RenderGraph/Vulkan 适配层，负责把抽象 graph state 翻译为 Vulkan 类型。
@@ -217,11 +221,12 @@ Receipt v1 与 RegistrationSnapshot v1 仍是 active evidence schemas。详见
 [Host Executable Binding Receipt v1](adr-host-executable-binding-receipt-v1.md) 与
 [Static Factory Callback Table v1](adr-static-factory-callback-table-v1.md)。
 
-## Activation Eligibility 流（#292 C++ boundary implemented）
+## Activation Eligibility 与 ProcessScope 流（#292/#293 headless C++ boundaries）
 
-下面是 [Activation Eligibility v1](adr-activation-eligibility-v1.md) 已实现的 headless C++ boundary；它尚未接入现有
-Editor/sample/generated Host 的 normal long-lived path。current renderer 2 executable 仍只是上面的 disposable registration-only
-verifier：
+下面是 [Activation Eligibility v1](adr-activation-eligibility-v1.md) 与
+[ProcessScope Lifecycle v1](adr-process-scope-lifecycle-v1.md) 的当前 headless C++ boundaries。#293 implementation 与 focused tests 已
+完成并通过门禁；两者均尚未接入现有 Editor/sample/generated Host 的 normal long-lived path。
+current renderer 2 executable 仍只是上面的 disposable registration-only verifier：
 
 ```mermaid
 flowchart LR
@@ -233,12 +238,21 @@ flowchart LR
     Admission -->|"consume once"| Recording["Admitted generated provider recording"]
     Recording --> Pending["Pending table\nsame process/registration lineage"]
     Pending --> Cross["Stage 2 snapshot + table-affinity check"]
-    Cross --> Active["Admitted table + ActivationAdmissionV1"]
-    Active -.-> Lifecycle["#293 ProcessScope lifecycle\nplanned"]
+    Cross --> Admitted["Admitted table + ActivationAdmissionV1"]
+    Admitted --> Prepare["prepareProcessScopeExecutor\nzero-callback preflight"]
+    Prepare --> Prepared["Prepared\nsealed process order + descriptor indices"]
+    Prepared --> Start["start\ncreate -> activate"]
+    Start -->|success| ScopeActive["Active"]
+    Start -->|failure| Rollback["reverse rollback\nStartFailed"]
+    ScopeActive --> Stop["explicit stop\nreverse quiesce / deactivate / destroy"]
+    Stop --> Stopped["Stopped"]
 ```
 
 Stage 1 failure 必须发生在任何 project provider invocation 前；Stage 2 failure 不暴露 descriptor。snapshot byte-identical 的另一张
-table 也会因 private table lineage 不同而被拒绝。production launch issuer 缺失时没有 admission minting path，保持 fail closed。
+table 也会因 private table lineage 不同而被拒绝。ProcessScope preparation exact-map sealed process projection，不把 callback table
+canonical order 当作 lifecycle order；表中不属于 process projection 的 descriptors 保持 inert。startup 与 normal stop 都由 Host 唯一
+拥有 tokens，并完成独立 reverse cleanup passes。production launch issuer 缺失时，只有 PRIVATE test issuer 能驱动这条路径；当前
+normal Host 仍没有 admission minting path，保持 fail closed，也不会发布 `ProjectReady`。
 
 ## 当前架构总览
 

@@ -162,7 +162,7 @@ create -> activate -> quiesce -> deactivate -> destroy
 
 语义冻结为：
 
-1. future planner 先验证所有 selected factory reference、scope 与 dependency DAG；
+1. Host Activation Blueprint planner 先验证所有 selected factory reference、scope 与 dependency DAG；
 2. Host 按 dependencies-first 顺序调用 `create`，factory context 只提供已声明 dependencies 与窄 capability；
 3. `activate` 成功后产生 Host-owned activation lease，lease 追踪 contributions、jobs、subscriptions 与 diagnostics；
 4. create/activate 失败时，Host 对已成功 factory 执行 reverse dependency order rollback；失败 factory 不被视为 activated；
@@ -171,6 +171,11 @@ create -> activate -> quiesce -> deactivate -> destroy
    “失败后继续”策略。
 
 本文只冻结 future Host 必须遵守的行为；本 Slice 没有实现这些 callback、executor、lease 或 rollback。
+
+这是 #284 Slice 自身的边界，不表示所有后继仍未实现。[ProcessScope Lifecycle v1](adr-process-scope-lifecycle-v1.md) 已为 root
+`process` template 增加五阶段 callback contract、四种 Host-constructed phase context、headless executor、token ownership、startup
+rollback 与 explicit reverse stop，并已通过 #293 门禁。它没有实现 activation lease、typed contribution registry、其他 scope
+owners 或 production Host/Bootstrap 接线。
 
 ### 5. 确定性顺序不是作者数组顺序
 
@@ -244,9 +249,12 @@ locked graph。
    与 exact staged Host artifact；receipt 不证明 lifecycle activation；
 4. [Static Factory Callback Table v1](adr-static-factory-callback-table-v1.md)：#291 先把 exact logical factory 绑定到完整
    current-process callbacks，不执行 lifecycle；
-5. Activation Eligibility 与 Host Runtime：对证 artifact/current process 后，实现 scope tree、factory context、lease、typed registries、
-   rollback 与 shutdown；
-6. Editor Bootstrap：只消费上述 headless result 显示 Ready/PendingBuild/PendingRestart/SafeMode，不反向拥有 package semantics。
+5. [Activation Eligibility v1](adr-activation-eligibility-v1.md)：#292 已实现 current-process admission 与 exact-table affinity，并完成
+   Done evidence；production issuer 与 normal Host 接线仍未实现；
+6. [ProcessScope Lifecycle v1](adr-process-scope-lifecycle-v1.md)：#293 已增加 root process factory context、exact mapping、token ownership、
+   create/activate、failure rollback 与 quiesce/deactivate/destroy 的 headless C++ implementation，并完成门禁；
+7. Host Runtime 后续：实现其余 scope tree owners、activation lease、typed registries、contribution rollback 与 application shutdown；
+8. Editor Bootstrap：只消费上述 headless result 显示 Ready/PendingBuild/PendingRestart/SafeMode，不反向拥有 package semantics。
 
 ## 相关资料
 

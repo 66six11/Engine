@@ -6,6 +6,9 @@ Accepted and implemented for #285。本文冻结构建前 Host factory/scope tem
 evidence contract。`host-activation-blueprint-v1.schema.json`、pure planner 与 synthetic handoff tests 已实现。
 
 Blueprint 不创建任何 system instance，也不是已经绑定 executable bytes 的最终 Activation Plan。
+[ProcessScope Lifecycle v1](adr-process-scope-lifecycle-v1.md) 已作为后继边界把 verified Blueprint 的 root `process` template 密封投影到
+admitted lineage，并在 headless C++ executor 中按该顺序执行，且已通过 #293 门禁。其他 scope owners、production issuer 与
+normal Host/Bootstrap adapter 尚未实现。
 
 ## 问题
 
@@ -310,6 +313,9 @@ partial plan，也不修改 session、Host Composition、candidate 或 declarati
    registration snapshot 与 exact staged Host artifact 对证；该 receipt 不证明 lifecycle activation；
 6. [Activation Eligibility v1](adr-activation-eligibility-v1.md)：C++ boundary 已实现为只对当前 Template renderer 2 + Composition renderer 3/
    provider v2 generation 交叉验证 sealed Session/Blueprint/binding/launch handoff，先授权一次 provider recording，再以同一 table
-   lineage 与 snapshot 授权 descriptor access；最终门禁结果以 #292 Done evidence 为准，production launch issuer 仍待后续 adapter；
-7. Host Runtime lifecycle：实现 concrete scope tree、factory context、lifecycle callbacks、activation lease、typed registries、rollback 与 shutdown；
-8. Bootstrap adapter：把上述 headless states 映射到 Ready/PendingBuild/PendingRestart/SafeMode UI。
+   lineage 与 snapshot 授权 descriptor access；#292 已完成 Done evidence，production launch issuer 仍待后续 adapter；
+7. [ProcessScope Lifecycle v1](adr-process-scope-lifecycle-v1.md)：#293 已增加 root process projection、factory contexts、exact descriptor
+   mapping、token ownership、startup rollback 与 explicit reverse stop 的 headless C++ implementation，并完成门禁；
+8. Host Runtime 后续：实现 Project/Editor/ToolJob 等 concrete scope owners、activation lease、typed registries、contribution rollback 与
+   application shutdown integration；
+9. Bootstrap adapter：把上述 headless states 映射到 Ready/PendingBuild/PendingRestart/SafeMode UI。

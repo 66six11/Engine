@@ -2,8 +2,11 @@
 
 ## 状态
 
-Accepted for #292；C++ contracts、validator、linear wrappers 与 focused tests 已在本 Slice 落地，生产启动接入尚未完成。
-下文的验证要求仍需由本 Slice 的实际门禁记录证明，不能仅凭测试源码存在就宣称通过。
+Accepted for #292；C++ contracts、validator、linear wrappers、focused tests 与最终门禁已由 #292 Done evidence 记录，生产启动接入尚未完成。
+
+后继 [ProcessScope Lifecycle v1](adr-process-scope-lifecycle-v1.md) 已在 `engine/host-runtime` 增加只消费 admitted owner 的
+headless C++ executor、factory contexts、token ownership、startup rollback 与 explicit stop 实现，并已通过 #293 门禁。
+production issuer、normal Host 与 Bootstrap/Session adapter 依然未实现。
 
 本 ADR 冻结两阶段、current-process-only 的授权边界：长生命周期 Host 必须先取得
 `PreRegistrationAdmissionV1`，才能通过 admitted path 调用 generated providers；同一次 recording 形成的
@@ -36,7 +39,7 @@ fail closed，不能伪造 admission 或报告项目已激活。
 | Effective Session `Ready` | 项目 graph/profile 可继续生成与构建 | provider、callback 或 lifecycle 可执行 |
 | `PreRegistrationAdmissionV1` | 同一进程可进行一次 provider recording attempt | table 已正确、instance 已创建或项目已 Ready |
 | `ActivationAdmissionV1` | 同一 lineage、同一 table instance 可交给后续 executor | 任一 lifecycle callback 已成功 |
-| future `ProjectReady` | #293 lifecycle 成功后由 Bootstrap adapter 发布的运行状态 | 本 ADR 的输出 |
+| future `ProjectReady` | ProcessScope start 成功后由未来 Bootstrap adapter 发布的运行状态 | 本 ADR 的输出；当前也没有该 production path |
 
 还存在两个容易产生错误承诺的缺口：
 
@@ -59,7 +62,7 @@ flowchart LR
     Pending["PendingActivationFactoryTableV1\nsame private lineage + exact table instance"]
     Stage2["Stage 2: snapshot + table-affinity check"]
     Active["AdmittedStaticFactoryCallbackTableV1\ncontains ActivationAdmissionV1"]
-    Lifecycle["#293 ProcessScope lifecycle\nplanned"]
+    Lifecycle["ProcessScopeExecutorV1\nheadless C++ boundary"]
 
     Session --> Stage1
     Blueprint --> Stage1
@@ -86,7 +89,7 @@ Eligibility 是 pure, fail-closed Host Runtime policy。它消费已经验证并
 | binding evidence | #288 deep verifier 的 constructor-restricted projection | composition/template generation、current tuple、artifact identity、expected snapshot |
 | current-process evidence | fixed Bootstrap/launcher/platform adapter | 把 exact verified artifact launch、live process instance 与 exact generated recording driver pair 绑定 |
 | two admissions | `engine/host-runtime` eligibility | 控制一次 recording 与同一 table 的 descriptor access |
-| lifecycle outcome | future #293 executor | 消费 admitted table；不反向构造 admission |
+| lifecycle outcome | #293 `ProcessScopeExecutorV1` | 消费 admitted table；不反向构造 admission 或发布 Bootstrap state |
 
 依赖方向固定为：
 
@@ -97,7 +100,7 @@ fixed Bootstrap + launcher/platform process adapter
                   ↓ eligibility facts + sealed current-process evidence
 engine/host-runtime eligibility
                   ↓ admissions
-generated composition function / future #293 lifecycle
+generated composition recording / ProcessScope executor
 ```
 
 `engine/host-runtime` 不依赖 Python tools、Package Runtime、Editor、filesystem 或 platform API。provider packages 继续只看窄 callback /
@@ -264,11 +267,12 @@ registration-only path 产生的 raw table 视为 `EvidenceOnly` origin。它没
 成功返回 move-only `AdmittedStaticFactoryCallbackTableV1`。Admitted state 直接拥有完整 Pending state，而不是把 table 移出、复制或重建；
 因此 exact table 的物理 address、origin 与 lineage 在 Stage 2 后继续保持同一所有权链。它同时拥有 constructor-restricted
 `ActivationAdmissionV1`，不把 token 单独暴露为可与其他 table 重组的值。descriptor access 只通过 PRIVATE Host Runtime access bridge
-提供给 future #293 executor；普通 consumer 与原始 `StaticFactoryCallbackTableV1` 仍只能读取 identity snapshot。
+提供给 `ProcessScopeExecutorV1`；普通 consumer 与原始 `StaticFactoryCallbackTableV1` 仍只能读取 identity snapshot。
 
 PRIVATE bridge 返回 `optional<span<const callbacks>>`：`nullopt` 表示 admission/thread/process/origin/address/anchor/snapshot 任一复验失败，
 engaged empty span 表示合法的 zero-factory table。span 只供 admitted owner 存活期间的同步即时调用，不得缓存、跨线程传递或跨 epoch
-保留；#293 应优先把 lifecycle 执行封装在持有 admitted owner 的 operation 内，而不是把该 borrowed view 升级为长期公共 API。
+保留；#293 的 executor 已按此约束把 lifecycle 执行封装在持有 admitted owner 的同步 operation 内，只缓存 preparation 冻结的
+descriptor indices，不把 borrowed view 升级为长期公共 API。
 
 ## 6. Lifetime 与失效
 
@@ -278,7 +282,7 @@ Verified inputs
   -> Recording
   -> PendingActivationFactoryTableV1
   -> AdmittedStaticFactoryCallbackTableV1
-  -> future lifecycle consumption
+  -> ProcessScopeExecutorV1 preparation/start/stop
 ```
 
 以下事件使对应 object 永久无效：
@@ -342,7 +346,7 @@ Verified inputs
 
 ## 9. Threat model
 
-Admissions 防止 fixed Host 与后续 lifecycle executor 因错误调用顺序、stale evidence 或 table substitution 而继续执行。它们不是 hostile
+Admissions 防止 fixed Host 与 ProcessScope executor 因错误调用顺序、stale evidence 或 table substitution 而继续执行。它们不是 hostile
 native package sandbox：同进程 C++ code 能调用自己的 functions、读写本进程 memory，稳定 C++ ABI 与代码签名也不在 v1 范围。
 
 Receipt 仍只是本地 exact-byte binding evidence，不是 signed SLSA provenance。若未来引入 trusted builder、signing 或 hostile plugin
@@ -419,10 +423,6 @@ Win32 自动提供 end-to-end artifact admission 的宣称。
 
 ## 后续
 
-1. #292 verification：完成 focused/full C++、Python/contracts/topology/encoding/doc-sync/diff 与 Conan-before-CMake 双编译器门禁，并记录
-   Done evidence；PRIVATE test issuer 不得被当作 production issuer。
-2. #293 ProcessScope Lifecycle v1：只消费 `AdmittedStaticFactoryCallbackTableV1`，按 Blueprint order create/activate，失败 reverse
-   rollback，shutdown 时 quiesce/deactivate/destroy。
-3. Bootstrap/launcher adapter：实现 production `VerifiedCurrentProcessLaunchHandoffV1` issuer、轻量 launch handoff 与 runtime state
+1. Bootstrap/launcher adapter：实现 production `VerifiedCurrentProcessLaunchHandoffV1` issuer、轻量 launch handoff 与 runtime state
    mapping。
-4. 首个 long-lived generated Host：若修改 generated bytes/signatures，提升 renderer revision 并硬切 current tuple，不保留 T2 adapter。
+2. 首个 long-lived generated Host：若修改 generated bytes/signatures，提升 renderer revision 并硬切 current tuple，不保留 T2 adapter。

@@ -59,6 +59,7 @@ asharia_configure_target(asharia-host-runtime-registration)
 
 add_library(asharia-host-runtime-activation-eligibility STATIC
     src/activation_eligibility.cpp
+    src/admitted_static_factory_callback_table_access.cpp
     src/admitted_static_factory_recording.cpp
 )
 add_library(asharia::host_runtime_activation_eligibility ALIAS
@@ -75,6 +76,28 @@ target_link_libraries(asharia-host-runtime-activation-eligibility
 )
 
 asharia_configure_target(asharia-host-runtime-activation-eligibility)
+
+add_library(asharia-host-runtime-process-scope STATIC
+    src/process_scope.cpp
+    src/process_scope_cleanup.cpp
+    src/process_scope_preflight.cpp
+    src/process_scope_start.cpp
+    src/process_scope_stop.cpp
+)
+add_library(asharia::host_runtime_process_scope ALIAS
+    asharia-host-runtime-process-scope)
+
+target_include_directories(asharia-host-runtime-process-scope
+    PUBLIC
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+)
+
+target_link_libraries(asharia-host-runtime-process-scope
+    PUBLIC
+        asharia::host_runtime_activation_eligibility
+)
+
+asharia_configure_target(asharia-host-runtime-process-scope)
 
 if(ASHARIA_BUILD_TESTS)
   enable_testing()
@@ -150,5 +173,67 @@ if(ASHARIA_BUILD_TESTS)
   set_tests_properties(asharia-host-runtime-activation-eligibility-tests
       PROPERTIES
           TIMEOUT 30
+  )
+
+  add_library(asharia-host-runtime-process-scope-test-provider STATIC
+      tests/process_scope_synthetic_provider.cpp
+  )
+
+  target_include_directories(asharia-host-runtime-process-scope-test-provider
+      PUBLIC
+          "${CMAKE_CURRENT_SOURCE_DIR}/tests"
+  )
+
+  target_link_libraries(asharia-host-runtime-process-scope-test-provider
+      PRIVATE
+          asharia::host_runtime_provider_bridge
+          asharia::host_runtime_registration
+  )
+
+  asharia_configure_target(asharia-host-runtime-process-scope-test-provider)
+
+  add_executable(asharia-host-runtime-process-scope-tests
+      tests/process_scope_cleanup_tests.cpp
+      tests/process_scope_contract_tests.cpp
+      tests/process_scope_preflight_tests.cpp
+      tests/process_scope_startup_tests.cpp
+      tests/process_scope_test_support.cpp
+      tests/process_scope_tests.cpp
+  )
+
+  target_include_directories(asharia-host-runtime-process-scope-tests
+      PRIVATE
+          "${CMAKE_CURRENT_SOURCE_DIR}/src"
+  )
+
+  target_link_libraries(asharia-host-runtime-process-scope-tests
+      PRIVATE
+          asharia::host_runtime_process_scope
+          asharia-host-runtime-process-scope-test-provider
+  )
+
+  asharia_configure_target(asharia-host-runtime-process-scope-tests)
+
+  add_test(
+      NAME asharia-host-runtime-process-scope-tests
+      COMMAND asharia-host-runtime-process-scope-tests
+  )
+
+  add_test(
+      NAME asharia-host-runtime-active-process-scope-drop-tests
+      COMMAND asharia-host-runtime-process-scope-tests --probe-active-scope-drop
+  )
+
+  set_tests_properties(
+      asharia-host-runtime-process-scope-tests
+      asharia-host-runtime-active-process-scope-drop-tests
+      PROPERTIES
+          TIMEOUT 30
+  )
+
+  set_tests_properties(asharia-host-runtime-active-process-scope-drop-tests
+      PROPERTIES
+          PASS_REGULAR_EXPRESSION
+              "asharia-process-scope-active-drop-terminated"
   )
 endif()

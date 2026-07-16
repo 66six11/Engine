@@ -229,8 +229,14 @@ v1 reader 或 migration adapter。
 
 [Activation Eligibility v1](adr-activation-eligibility-v1.md) 已冻结两阶段 normal Host contract：sealed Session/Blueprint/binding/launch
 handoff 先产生一次性 `PreRegistrationAdmissionV1`，同一次 recording 的 exact table instance/snapshot 再产生
-`ActivationAdmissionV1`。C++ validator、按值线性 wrappers、sealed recording driver pair 与 focused tests 已实现；最终门禁结果以 #292
-Done evidence 为准，production launch issuer 与 normal Host 接线尚未完成。Effective Session `Ready` 与 raw receipt/table 都不是 admission。
+`ActivationAdmissionV1`。C++ validator、按值线性 wrappers、sealed recording driver pair、focused tests 与最终门禁已由 #292 Done
+evidence 记录；production launch issuer 与 normal Host 接线尚未完成。Effective Session `Ready` 与 raw receipt/table 都不是 admission。
+
+[ProcessScope Lifecycle v1](adr-process-scope-lifecycle-v1.md) 已在 #293 增加独立
+`asharia::host_runtime_process_scope` headless target：它按值消费 admitted table，exact-map sealed Blueprint process projection，只按
+Blueprint order create/activate，并在 startup failure 或 explicit stop 时完成 reverse cleanup passes。当前 implementation 与 focused
+tests 已完成并通过 #293 门禁；production issuer、normal Host/Bootstrap adapter、其他 scope owners、typed registry
+与 activation lease 仍未实现。
 
 长期目标是让用户通过 Editor Package Manager 为项目添加、移除和升级**完整可安装能力**。Data、Content、World、Input、Rendering、Physics 等基础能力各自以完整 System Package 表达；Advanced Camera、Dialogue、Weather 等附加能力以完整 Feature Package 表达；跨可选包桥接使用 Integration Package。三者都不能拆成需要用户手工拼装的 contract/runtime/editor/backend fragments。
 
@@ -254,6 +260,7 @@ flowchart LR
     Binding["Host Executable Binding Receipt<br/>exact staged bytes + snapshot"]
     Launch["Verified current-process launch handoff<br/>planned adapter"]
     Eligibility["Activation Eligibility<br/>two linear admissions"]
+    ProcessScope["ProcessScope lifecycle<br/>headless C++ boundary"]
     Hosts["Editor / Runtime / Server / Tools"]
 
     Editor -->|"edit dependencies"| Manifest
@@ -269,7 +276,8 @@ flowchart LR
     Composition --> Eligibility
     Binding --> Eligibility
     Launch --> Eligibility
-    Eligibility -.->|"future admitted lifecycle input"| Hosts
+    Eligibility -->|"admitted process projection"| ProcessScope
+    ProcessScope -.->|"normal Host adapter not wired"| Hosts
 ```
 
 规则：
@@ -290,7 +298,8 @@ flowchart LR
   Editor Image；它们可以静态链接并深度使用引擎，但不能依赖当前项目 graph 成功激活。
 - `engine/host-runtime` 消费由 Host Activation Blueprint 和构建后验证证据绑定出的 activation input，负责
   scope/instance/contribution 的创建、撤销和失败回滚；它不重新解析版本，也不取得系统领域状态所有权。当前 #289 已落地
-  registration identity recorder/snapshot，#288 已落地 artifact binding receipt，但 lifecycle 行为仍未实现。
+  registration identity recorder/snapshot，#288 已落地 artifact binding receipt，#292 已落地 admission，#293 已增加 root
+  ProcessScope 的 headless lifecycle implementation。其他 scopes、contribution registry/lease 与 production Host/Bootstrap 接线仍未实现。
 - `asharia.project.json` 继续由 `project-core` 保存项目身份、资产源和缓存；package-runtime 不解析它。
 - `asharia.packages.json` / lock 使用 package-runtime 自己拥有的窄 schema，不能依赖由它负责解析的可选 Data Model package。
 - “引擎自带”由 Engine Distribution Manifest 的 `bundledPackages` 固定；Project Lock v2 只用
@@ -314,7 +323,8 @@ flowchart LR
 - Asharia Package Manager 管理完整 System/Feature/Integration/Content/Template Packages；它不替代 Conan。`conan.lock` 继续锁定第三方 C/C++ dependencies，Build Plan 连接两张锁定图。
 - 第一阶段只支持 bundled/project-embedded/local sources。远程 registry、签名、商业分发和任意 native hot unload 必须后置。
 - 第一阶段的 native modules 默认保持独立 CMake 静态库/工具 target，由生成的薄 Host composition root 链接并显式调用
-  provider；identity registration 先生成 snapshot，后继 lifecycle 再按 Blueprint 激活。package、module、target 和 DLL
+  provider；identity registration 先生成 snapshot，admission 成功后由 ProcessScope executor 按 Blueprint process projection 激活。
+  当前 production Host adapter 尚未接线。package、module、target 和 DLL
   不是同义词。native graph 变化进入 `PendingBuild -> PendingRestart`。
 
 推荐的默认组合不是硬编码 Host 依赖，而是版本化 Feature Set meta-packages：

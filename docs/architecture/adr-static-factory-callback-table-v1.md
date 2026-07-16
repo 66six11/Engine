@@ -369,15 +369,15 @@ Ready session + deep-verified receipt + current image match
   -> invoke generated providers and build frozen table
   -> cross-check table snapshot == receipt registration + expected Blueprint
   -> ActivationAdmission
-  -> future lifecycle executor may access descriptors
+  -> admitted ProcessScope executor may access descriptors
 ```
 
 missing/stale receipt、session/Blueprint mismatch 或 current-image mismatch 必须在第一阶段 fail，使 provider invocation count 为零。
 table identity mismatch 在第二阶段 fail，不产生 descriptor access permission，也不进入 lifecycle。
 
 public table API 不提供任意 consumer 可直接调用的 raw callback lookup。#291 只公开 table identity、generation/Blueprint attribution
-与 RegistrationSnapshot projection。private callback access 留给 future lifecycle executor；executor 必须取得 constructor-restricted
-Host Runtime `ActivationAdmission`，才能通过正常 API 读取 descriptor。
+与 RegistrationSnapshot projection。private callback access 已由 admitted ProcessScope executor 使用，未来其他 scope executor 也必须取得
+constructor-restricted Host Runtime `ActivationAdmission`，才能通过正常 API 读取 descriptor；production Host 接线仍未实现。
 实现上 table 只在 public type 中持有不透明 immutable storage；snapshot 通过 public projection 读取，callback storage layout 与 access bridge
 均留在 registration/Host Runtime 的 PRIVATE 源码边界，避免低层 registration 公共头反向依赖高层 eligibility 类型。
 
@@ -517,8 +517,9 @@ non-capturing lambda 只有在显式转换为完全匹配的 `noexcept` function
    Session/Blueprint/deep-verified binding/launch handoff 产出 `PreRegistrationAdmissionV1`，再以同一次 admitted recording 的 exact
    table instance 与 snapshot 产出 `ActivationAdmissionV1`。最终门禁结果以 #292 Done evidence 为准，production launch issuer 与
    normal Host 接线仍待实现；
-2. ProcessScope Lifecycle v1（#293，blocked by #292）：定义第一个 concrete contexts/executor，按 Blueprint order create/activate，失败时 reverse rollback，
-   正常 shutdown 时 quiesce/deactivate/destroy；
+2. [ProcessScope Lifecycle v1](adr-process-scope-lifecycle-v1.md)（#293）：已实现第一个 concrete contexts/executor，按 Blueprint order
+   create/activate，失败时 reverse rollback，正常 explicit stop 时 quiesce/deactivate/destroy，并已完成门禁；production issuer 与
+   normal Host/Bootstrap adapter 仍待后续；
 3. 其余 scope、typed contributions 与 activation leases：在 ProcessScope 证据稳定后逐层增加；
 4. Bootstrap/Session adapter：把 build/receipt/process/runtime outcome 映射为 PendingBuild、PendingRestart、Ready 或 SafeMode；
 5. exact-build native DLL 仅在静态模型稳定且链接数据证明有必要时单独设计；v1 不承诺通用插件 ABI 或 hot unload。

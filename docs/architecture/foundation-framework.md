@@ -3,8 +3,11 @@
 状态：目标架构。本文定义后续实现顺序和硬边界，不表示计划中的 targets/API 已经存在。
 
 当前仓库事实是：`engine/core` 已提供 error/result、log 和严格 file IO baseline；`engine/platform` 仍是只传递
-`asharia::core` 的 `INTERFACE` target；root CMake 仍静态加入当前 source packages；`engine/package-runtime`、
-通用 Host scope、Memory & Budget、Settings、Runtime Storage、Tasks 等目标模块尚未实现。本文不能被用来宣称这些能力已经完成。
+`asharia::core` 的 `INTERFACE` target；root CMake 仍静态加入当前 source packages；`engine/package-runtime` 已建立 package control
+plane 的 headless v1 contracts；`engine/host-runtime` 已建立 registration、eligibility 与
+[ProcessScope Lifecycle v1](adr-process-scope-lifecycle-v1.md) 的 headless C++ boundary。其他 concrete Host scopes、activation lease、
+typed registry、production Host/Bootstrap adapter、Memory & Budget、Settings、Runtime Storage、Tasks 等目标模块尚未实现。本文不能被
+用来宣称这些能力已经完成。
 
 ## 目的
 
@@ -35,7 +38,7 @@ flowchart TB
     Binding["Deep-verified Host binding\nexact artifact + snapshot"]
     Launch["Verified launch handoff\nplanned adapter"]
     Eligibility["Activation Eligibility\nC++ boundary implemented; launcher adapter planned"]
-    Host["engine/host-runtime\ncallback table implemented; scopes/lifecycle planned"]
+    Host["engine/host-runtime\nregistration + eligibility + ProcessScope C++\nother scopes/lease/registry planned"]
     Package["engine/package-runtime\nmanifest / solve / lock / session planning"]
     Kernel["Bootstrap Kernel\ncore + minimal platform primitives"]
     Foundation["Default Foundation System Packages\nMemory / Observability / Storage / Settings / Tasks / Data"]
@@ -91,7 +94,9 @@ Core 只保存通用错误载体和上下文链，不枚举全部未来系统。
 
 ### L1：Host Foundation
 
-`engine/host-runtime` 作为固定 Host 执行骨架规划，并应静态进入 Editor Image closure；它属于 L1，不进入 L0 Kernel，只拥有：
+`engine/host-runtime` 已建立
+`host_runtime_contract -> host_runtime_registration -> host_runtime_activation_eligibility -> host_runtime_process_scope` 的向下 target
+链，并应作为固定 Host 执行骨架静态进入 Editor Image closure；它属于 L1，不进入 L0 Kernel。完整 L1 最终只拥有：
 
 - Host role 与 scope tree；
 - ordered activation/deactivation；
@@ -102,6 +107,13 @@ Core 只保存通用错误载体和上下文链，不枚举全部未来系统。
 - activation failure rollback、quiesce、shutdown drain 和结构化诊断。
 
 它不得返回任意全局 service pointer，也不得成为 World、Renderer、Storage 或 Settings 的实现所在地。
+
+当前 #293 implementation 只覆盖 root `ProcessScope`：它按值消费 admitted callback table，zero-callback preflight exact-map sealed
+Blueprint process projection，然后 dependencies-first `create -> activate`，失败或显式停止时执行完整 reverse
+quiesce/deactivate/destroy passes。它通过窄 factory contexts 暴露声明过且已经 Active 的 dependencies，并由 Host 唯一拥有 token。
+该 implementation 仍由 PRIVATE test issuer 驱动；production current-process issuer、normal Host、Bootstrap state mapping、其他 scopes、
+activation lease 与 typed contribution registry 均未实现。完整合同见
+[ProcessScope Lifecycle v1](adr-process-scope-lifecycle-v1.md)，其 implementation 与 #293 门禁已完成。
 
 ### Editor Image 的固定 Bootstrap Closure
 
@@ -153,7 +165,8 @@ Editor 工具属于一个完整 Foundation System Package。Observability 只消
 
 ## Host Scope 模型
 
-计划中的作用域是 lifetime owner，不是命名空间或依赖注入容器标签。
+作用域是 lifetime owner，不是命名空间或依赖注入容器标签。当前只有 root `ProcessScope` 的 headless lifecycle executor 已有 C++
+implementation；下图其余 scope tree 仍是目标合同，不能据此宣称 Project/Editor/World 等 owner 已存在。
 
 ```mermaid
 flowchart TB
@@ -241,7 +254,7 @@ sequenceDiagram
     Image->>Image: bootstrap shell/diagnostics/repair before project activation
     Image->>Package: verify Distribution + Project Lock + Host Profile
     Package-->>Image: Effective Session state + verified graph when Ready
-    Note over Package,Host: Blueprint binds logical factories before build; future receipt binds exact host artifacts after build
+    Note over Package,Host: Blueprint binds logical factories before build; receipt binds exact host artifacts after build
     Image->>Host: create Process/Project scopes
     Host->>System: create with explicit factory context
     System-->>Host: instance + activation lease
@@ -483,9 +496,11 @@ Host Activation Blueprint v1、generated static composition root 与
 [Host Executable Binding Receipt v1](adr-host-executable-binding-receipt-v1.md) 已实现；
 [Static Factory Callback Table v1](adr-static-factory-callback-table-v1.md) 已为 #291 实现 current-process typed callback binding。
 [Activation Eligibility v1](adr-activation-eligibility-v1.md) 已实现 sealed handoffs、按值线性消费、admitted recording wrapper 与
-exact-table affinity，并添加 focused tests；最终门禁结果以 #292 Done evidence 为准。production launch issuer、normal Host 接线、scope
-lifecycle executor、轻量启动 receipt 与 repair executor 仍未实现；production Host 不会在 launch handoff 与 lifecycle contract 落地前
-把逻辑 IDs 解释为已激活 instances。
+exact-table affinity，并完成 #292 Done evidence。[ProcessScope Lifecycle v1](adr-process-scope-lifecycle-v1.md) 已增加 sealed process
+projection、exact descriptor mapping、factory contexts、token ownership、startup rollback 与 explicit reverse stop 的 headless C++
+implementation，并已通过 #293 门禁。production launch issuer、normal Host/Bootstrap 接线、其他 scope owners、
+activation lease、typed contribution registry、轻量启动 receipt 与 repair executor 仍未实现；生产路径不会仅因这些 headless contracts
+存在就把逻辑 IDs 解释为已激活 instances。
 
 ## 拒绝的替代方案
 

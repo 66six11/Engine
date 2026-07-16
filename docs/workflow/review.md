@@ -117,6 +117,23 @@ mixed composition evidence、provider 外调用、provider-count mismatch、stic
 transfer 与 valid-token fail-fast。provider callback 的 no-allocation 边界由 create 阶段定长 storage、recording 路径索引写入，
 以及 ClangCL `noexcept`/exception-escape gate 共同约束。
 
+[Activation Eligibility v1](../architecture/adr-activation-eligibility-v1.md) 与
+[ProcessScope Lifecycle v1](../architecture/adr-process-scope-lifecycle-v1.md) 继续把 registration-only 取证与 lifecycle execution 分开。
+ProcessScope 只能消费 admitted table 及其 sealed Blueprint process projection，preflight 必须在首个 callback 前完成；启动顺序只能来自
+Blueprint，停止与失败回滚必须完成 reverse quiesce、reverse deactivate、reverse destroy 三个 pass。修改 eligibility、admitted
+descriptor access、Factory contexts 或 ProcessScope executor 时，两个编译器都必须构建 ProcessScope focused tests，并运行全部
+`asharia-host-runtime` CTest（其中包括 Active owner 隐式析构的 fail-fast probe）：
+
+```powershell
+cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --preset clangcl-debug-tests && cmake --build --preset clangcl-debug-tests && ctest --preset clangcl-debug-tests -R asharia-host-runtime --output-on-failure"
+cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake --preset msvc-debug-tests && cmake --build --preset msvc-debug-tests && ctest --preset msvc-debug-tests -R asharia-host-runtime --output-on-failure"
+```
+
+focused tests 至少覆盖 empty/success、Blueprint/table order permutation、dependency views、全部 create/activate failure positions、cleanup
+failure continuation、token exactly-once destroy、wrong-thread/stale epoch、operation reentrancy、state misuse、结构性 preflight negatives 与
+plan 外 descriptor 永不调用。registration-only generated Host 的五个 callbacks 仍必须是 abort probes；该路径不得因 ProcessScope
+实现而开始执行 lifecycle。
+
 Windows Development Host Template v1 只允许消费已发布的 exact template/composition generation。adapter 必须在 spawn 前根据完整
 generation 只读复验两棵 closed publication tree，拒绝 payload 漂移、额外 entry 与 link/reparse；随后使用 typed argv、
 caller-supplied environment 与 `shell=False`，Conan 必须先行；File API binding 必须锁定 latest client reply 中唯一

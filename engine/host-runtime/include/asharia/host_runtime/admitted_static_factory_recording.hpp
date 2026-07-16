@@ -54,6 +54,7 @@ namespace asharia::host_runtime {
         bool valid_{};
 
         friend class ActivationEligibilityStateAccessV1;
+        friend class AdmittedStaticFactoryCallbackTableAccessV1;
         friend class AdmittedStaticFactoryCallbackTableV1;
     };
 
@@ -80,9 +81,6 @@ namespace asharia::host_runtime {
 
         std::unique_ptr<AdmittedStaticFactoryCallbackTableStateV1> state_;
         ActivationAdmissionV1 admission_;
-
-        [[nodiscard]] std::optional<std::span<const StaticFactoryCallbacksV1>>
-        callbackDescriptorsForHostRuntime() const noexcept;
 
         friend class ActivationEligibilityStateAccessV1;
         friend class AdmittedStaticFactoryCallbackTableAccessV1;
