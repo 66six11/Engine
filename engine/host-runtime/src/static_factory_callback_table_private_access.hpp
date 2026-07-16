@@ -22,6 +22,14 @@ namespace asharia::host_runtime {
             }
             return table.storage_->callbacks;
         }
+
+        [[nodiscard]] static std::span<const StaticContributionTypeEvidenceV1>
+        contributionTypeEvidence(const StaticFactoryCallbackTableV1& table) noexcept {
+            if (!table.storage_) {
+                return {};
+            }
+            return table.storage_->contributionTypeEvidence;
+        }
     };
 
 } // namespace asharia::host_runtime

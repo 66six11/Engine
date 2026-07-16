@@ -20,9 +20,10 @@ namespace asharia::host_runtime {
             currentProcessEpoch; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
 
         constexpr std::uint32_t kCurrentTemplateRendererRevision = 2;
-        constexpr std::uint32_t kCurrentCompositionRendererRevision = 3;
+        constexpr std::uint32_t kCurrentCompositionRendererRevision = 4;
+        constexpr std::uint32_t kCurrentRegistrationSnapshotSchemaVersion = 2;
         constexpr std::string_view kCurrentProviderApi{
-            "asharia-static-factory-provider-v2"};
+            "asharia-static-factory-provider-v3"};
 
         [[nodiscard]] ActivationEligibilityErrorV1
         makeError(ActivationEligibilityErrorCodeV1 code,
@@ -68,17 +69,100 @@ namespace asharia::host_runtime {
             return tuple.templateRendererRevision == kCurrentTemplateRendererRevision &&
                    tuple.compositionRendererRevision ==
                        kCurrentCompositionRendererRevision &&
-                   tuple.providerApi == kCurrentProviderApi;
+                   tuple.providerApi == kCurrentProviderApi &&
+                   tuple.registrationSnapshotSchemaVersion ==
+                       kCurrentRegistrationSnapshotSchemaVersion;
         }
 
-        [[nodiscard]] auto registrationKey(const StaticFactoryRegistrationV1& value) noexcept {
+        [[nodiscard]] auto registrationKey(const StaticFactoryRegistrationV2& value) noexcept {
             return std::tie(value.packageId, value.packageVersion, value.moduleId,
                             value.factoryId, value.providerEntryPoint);
         }
 
+        [[nodiscard]] auto contributionKey(
+            const StaticContributionRegistrationV2& value) noexcept {
+            return std::tie(value.contributionId, value.contributionKind, value.cardinality);
+        }
+
+        [[nodiscard]] bool isValidCardinality(
+            StaticContributionCardinalityV1 cardinality) noexcept {
+            return cardinality == StaticContributionCardinalityV1::Single ||
+                   cardinality == StaticContributionCardinalityV1::Multiple;
+        }
+
+        [[nodiscard]] bool hasPriorCardinalityConflict(
+            const StaticFactoryRegistrationSnapshotV2& snapshot,
+            std::size_t registrationIndex, std::size_t contributionIndex) noexcept {
+            const StaticContributionRegistrationV2& contribution =
+                snapshot.registrations[registrationIndex].contributions[contributionIndex];
+            for (std::size_t previousRegistrationIndex = 0;
+                 previousRegistrationIndex <= registrationIndex; ++previousRegistrationIndex) {
+                const StaticFactoryRegistrationV2& previousRegistration =
+                    snapshot.registrations[previousRegistrationIndex];
+                const std::size_t previousContributionCount =
+                    previousRegistrationIndex == registrationIndex
+                        ? contributionIndex
+                        : previousRegistration.contributions.size();
+                for (std::size_t previousContributionIndex = 0;
+                     previousContributionIndex < previousContributionCount;
+                     ++previousContributionIndex) {
+                    const StaticContributionRegistrationV2& previous =
+                        previousRegistration.contributions[previousContributionIndex];
+                    if (previous.contributionKind == contribution.contributionKind &&
+                        previous.cardinality != contribution.cardinality) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        [[nodiscard]] bool isValidContributions(
+            const StaticFactoryRegistrationSnapshotV2& snapshot,
+            std::size_t registrationIndex) noexcept {
+            const StaticFactoryRegistrationV2& registration =
+                snapshot.registrations[registrationIndex];
+            for (std::size_t index = 0; index < registration.contributions.size(); ++index) {
+                const StaticContributionRegistrationV2& contribution =
+                    registration.contributions[index];
+                if (contribution.contributionId.empty() ||
+                    contribution.contributionKind.empty() ||
+                    !isValidCardinality(contribution.cardinality)) {
+                    return false;
+                }
+                if (index != 0 &&
+                    contributionKey(registration.contributions[index - 1]) >=
+                        contributionKey(contribution)) {
+                    return false;
+                }
+                if (hasPriorCardinalityConflict(snapshot, registrationIndex, index)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        [[nodiscard]] bool isValidRegistration(
+            const StaticFactoryRegistrationSnapshotV2& snapshot,
+            std::size_t registrationIndex) noexcept {
+            const StaticFactoryRegistrationV2& registration =
+                snapshot.registrations[registrationIndex];
+            if (registration.packageId.empty() || registration.packageVersion.empty() ||
+                registration.moduleId.empty() || registration.factoryId.empty() ||
+                registration.providerEntryPoint.empty()) {
+                return false;
+            }
+            if (registrationIndex != 0 &&
+                registrationKey(snapshot.registrations[registrationIndex - 1]) >=
+                    registrationKey(registration)) {
+                return false;
+            }
+            return isValidContributions(snapshot, registrationIndex);
+        }
+
         [[nodiscard]] bool isValidExpectedSnapshot(
             const DeepVerifiedHostBindingHandoffStateV1& binding) noexcept {
-            const StaticFactoryRegistrationSnapshotV1& snapshot = binding.expectedSnapshot;
+            const StaticFactoryRegistrationSnapshotV2& snapshot = binding.expectedSnapshot;
             if (snapshot.generationId != binding.staticComposition.generationId ||
                 snapshot.hostActivationBlueprintSha256 != binding.blueprintIntegrity ||
                 !isGenerationId(snapshot.generationId) ||
@@ -87,16 +171,7 @@ namespace asharia::host_runtime {
             }
 
             for (std::size_t index = 0; index < snapshot.registrations.size(); ++index) {
-                const StaticFactoryRegistrationV1& registration =
-                    snapshot.registrations[index];
-                if (registration.packageId.empty() || registration.packageVersion.empty() ||
-                    registration.moduleId.empty() || registration.factoryId.empty() ||
-                    registration.providerEntryPoint.empty()) {
-                    return false;
-                }
-                if (index != 0 &&
-                    registrationKey(snapshot.registrations[index - 1]) >=
-                        registrationKey(registration)) {
+                if (!isValidRegistration(snapshot, index)) {
                     return false;
                 }
             }

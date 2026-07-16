@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://schemas.asharia.dev/package-runtime/static-factory-provider-binding-plan-v2.schema.json",
-  "title": "Asharia Static Factory Provider Binding Plan v2",
-  "description": "Canonical verified handoff from selected logical factories to selected static C++ provider v2 targets and entry points.",
+  "$id": "https://schemas.asharia.dev/package-runtime/static-factory-provider-binding-plan-v3.schema.json",
+  "title": "Asharia Static Factory Provider Binding Plan v3",
+  "description": "Canonical verified handoff from selected logical factories and contributions to selected static C++ provider v3 targets and entry points.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -19,7 +19,7 @@
       "const": "com.asharia.static-factory-provider-binding-plan"
     },
     "schemaVersion": {
-      "const": 2
+      "const": 3
     },
     "inputs": {
       "$ref": "#/$defs/inputs"
@@ -28,7 +28,7 @@
       "$ref": "#/$defs/host"
     },
     "providerApi": {
-      "const": "asharia-static-factory-provider-v2"
+      "const": "asharia-static-factory-provider-v3"
     },
     "providers": {
       "type": "array",
@@ -145,6 +145,42 @@
         }
       }
     },
+    "contribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/packageId"
+        },
+        "kind": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/packageId"
+        }
+      }
+    },
+    "factory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "factoryId",
+        "contributions"
+      ],
+      "properties": {
+        "factoryId": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/localId"
+        },
+        "contributions": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/contribution"
+          }
+        }
+      }
+    },
     "provider": {
       "type": "object",
       "additionalProperties": false,
@@ -154,7 +190,7 @@
         "moduleId",
         "target",
         "entryPoint",
-        "factoryIds"
+        "factories"
       ],
       "properties": {
         "packageId": {
@@ -172,12 +208,12 @@
         "entryPoint": {
           "$ref": "#/$defs/entryPoint"
         },
-        "factoryIds": {
+        "factories": {
           "type": "array",
           "minItems": 1,
           "uniqueItems": true,
           "items": {
-            "$ref": "package-contract-common-v1.schema.json#/$defs/localId"
+            "$ref": "#/$defs/factory"
           }
         }
       }

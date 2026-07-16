@@ -26,7 +26,7 @@
       "const": 1
     },
     "rendererRevision": {
-      "const": 3
+      "const": 4
     },
     "generationId": {
       "$ref": "#/$defs/generationId"
@@ -41,7 +41,7 @@
       "$ref": "#/$defs/configuration"
     },
     "providerApi": {
-      "const": "asharia-static-factory-provider-v2"
+      "const": "asharia-static-factory-provider-v3"
     },
     "providers": {
       "type": "array",
@@ -247,7 +247,7 @@
         "moduleId",
         "target",
         "entryPoint",
-        "factoryIds"
+        "factories"
       ],
       "properties": {
         "packageId": {
@@ -265,13 +265,49 @@
         "entryPoint": {
           "$ref": "#/$defs/entryPoint"
         },
-        "factoryIds": {
+        "factories": {
           "type": "array",
           "minItems": 1,
           "uniqueItems": true,
           "items": {
-            "$ref": "package-contract-common-v1.schema.json#/$defs/localId"
+            "$ref": "#/$defs/factory"
           }
+        }
+      }
+    },
+    "factory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "factoryId",
+        "contributions"
+      ],
+      "properties": {
+        "factoryId": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/localId"
+        },
+        "contributions": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/contribution"
+          }
+        }
+      }
+    },
+    "contribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/packageId"
+        },
+        "kind": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/packageId"
         }
       }
     },

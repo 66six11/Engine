@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import tempfile
 import unittest
 from dataclasses import replace
@@ -9,6 +10,7 @@ from pathlib import Path
 
 from tools import check_package_contracts as contracts
 from tools import host_executable_template as host_template
+from tools import host_template_renderer
 from tools import host_template_publication
 from tools import static_composition_root as composition
 from tools.tests import host_template_test_support as support
@@ -52,6 +54,26 @@ class HostExecutableTemplateTests(unittest.TestCase):
                 host_template.HOST_TEMPLATE_NAME,
                 self.validators,
             ),
+        )
+
+    def test_renderer_revision_two_keeps_exact_output_bytes(self) -> None:
+        main = host_template_renderer.render_registration_verification_main()
+        cmake = host_template_renderer.render_windows_development_cmake(
+            "asharia-generated-host",
+            "sha256-" + "b" * 64,
+            "sha256-" + "a" * 64,
+        )
+
+        self.assertEqual(2, host_template.HOST_TEMPLATE_RENDERER_REVISION)
+        self.assertEqual(2005, len(main))
+        self.assertEqual(
+            "2d469f14469137a599e7c4888919ff5a4fee06ec1b4d21c6f748a329a2dd3012",
+            hashlib.sha256(main).hexdigest(),
+        )
+        self.assertEqual(1554, len(cmake))
+        self.assertEqual(
+            "7ad02abdab4d4fc268af2a3b15fb2a6eec9b77de60b1551f02f5f00cf7b886a5",
+            hashlib.sha256(cmake).hexdigest(),
         )
 
     def test_generated_files_keep_target_main_and_attachment_narrow(self) -> None:

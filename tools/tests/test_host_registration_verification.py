@@ -34,6 +34,13 @@ class HostRegistrationVerificationTests(unittest.TestCase):
                     "implementation",
                     "runtime-service",
                     "asharia::synthetic::provideRuntimeFactories",
+                    (
+                        host_registration_snapshot.StaticContributionRegistration(
+                            "com.asharia.contribution.synthetic-runtime",
+                            "com.asharia.contribution.synthetic-service",
+                            "single",
+                        ),
+                    ),
                 ),
             ),
         )

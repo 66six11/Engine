@@ -15,7 +15,7 @@ namespace asharia::host_runtime {
     class AdmittedStaticFactoryCallbackTableAccessV1;
 
     using StaticFactoryRegistrationCapacityFunctionV1 =
-        StaticFactoryRegistrationCapacityV1 (*)() noexcept;
+        StaticFactoryRegistrationCapacityV2 (*)() noexcept;
     using StaticFactoryRecordingFunctionV1 =
         void (*)(StaticFactoryRegistrationRecorder& recorder) noexcept;
 
@@ -71,7 +71,7 @@ namespace asharia::host_runtime {
         AdmittedStaticFactoryCallbackTableV1&
         operator=(const AdmittedStaticFactoryCallbackTableV1&) = delete;
 
-        [[nodiscard]] const StaticFactoryRegistrationSnapshotV1&
+        [[nodiscard]] const StaticFactoryRegistrationSnapshotV2&
         registrationSnapshot() const noexcept;
 
     private:

@@ -6,8 +6,8 @@ factory activation order and does not prove lifecycle execution.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Any, Iterable
+from dataclasses import dataclass, replace
+from typing import Any, Iterable, Protocol, TypeVar
 
 from tools import check_package_contracts as contracts
 from tools import host_registration_snapshot as registration_snapshot
@@ -45,12 +45,47 @@ class HostRegistrationCrossVerificationResult:
 RegistrationIdentity = tuple[str, str, str, str]
 
 
+@dataclass(frozen=True)
+class _ExpectedContribution:
+    contribution_id: str
+    kind: str
+
+
+@dataclass(frozen=True)
+class _ExpectedRegistration:
+    package_id: str
+    package_version: str
+    module_id: str
+    factory_id: str
+    provider_entry_point: str
+    contributions: tuple[_ExpectedContribution, ...]
+
+
+class _RegistrationLike(Protocol):
+    package_id: str
+    package_version: str
+    module_id: str
+    factory_id: str
+    provider_entry_point: str
+
+
+_RegistrationValue = TypeVar("_RegistrationValue", bound=_RegistrationLike)
+
+
+class _ContributionLike(Protocol):
+    contribution_id: str
+    kind: str
+
+
+_ContributionValue = TypeVar("_ContributionValue", bound=_ContributionLike)
+
+
 def _utf8_key(value: str) -> bytes:
     return value.encode("utf-8")
 
 
 def _identity_key(
-    value: registration_snapshot.StaticFactoryRegistration,
+    value: _RegistrationLike,
 ) -> RegistrationIdentity:
     return (
         value.package_id,
@@ -72,11 +107,43 @@ def _identity_sort_key(
 
 
 def _registration_sort_key(
-    value: registration_snapshot.StaticFactoryRegistration,
+    value: _RegistrationLike,
 ) -> tuple[bytes, bytes, bytes, bytes, bytes]:
     return (
         *_identity_sort_key(_identity_key(value)),
         _utf8_key(value.provider_entry_point),
+    )
+
+
+def _contribution_sort_key(
+    value: _ContributionLike,
+) -> tuple[bytes, bytes]:
+    return (
+        _utf8_key(value.contribution_id),
+        _utf8_key(value.kind),
+    )
+
+
+def _observed_contribution_sort_key(
+    value: registration_snapshot.StaticContributionRegistration,
+) -> tuple[bytes, bytes, bytes]:
+    return (
+        *_contribution_sort_key(value),
+        _utf8_key(value.cardinality),
+    )
+
+
+def _canonical_observed_registration(
+    value: registration_snapshot.StaticFactoryRegistration,
+) -> registration_snapshot.StaticFactoryRegistration:
+    return replace(
+        value,
+        contributions=tuple(
+            sorted(
+                value.contributions,
+                key=_observed_contribution_sort_key,
+            )
+        ),
     )
 
 
@@ -123,36 +190,54 @@ def _identity_text(identity: RegistrationIdentity) -> str:
 
 def _expected_registrations(
     manifest: composition_root.StaticCompositionRootManifest,
-) -> tuple[registration_snapshot.StaticFactoryRegistration, ...]:
+) -> tuple[_ExpectedRegistration, ...]:
     values = (
-        registration_snapshot.StaticFactoryRegistration(
+        _ExpectedRegistration(
             package_id=provider.package_id,
             package_version=provider.package_version,
             module_id=provider.module_id,
-            factory_id=factory_id,
+            factory_id=factory.factory_id,
             provider_entry_point=provider.entry_point.function,
+            contributions=tuple(
+                sorted(
+                    (
+                        _ExpectedContribution(
+                            contribution_id=contribution.contribution_id,
+                            kind=contribution.contribution_kind,
+                        )
+                        for contribution in factory.contributions
+                    ),
+                    key=_contribution_sort_key,
+                )
+            ),
         )
         for provider in manifest.providers
-        for factory_id in provider.factory_ids
+        for factory in provider.factories
     )
     return tuple(sorted(values, key=_registration_sort_key))
 
 
 def _group_by_identity(
-    values: tuple[registration_snapshot.StaticFactoryRegistration, ...],
-) -> dict[
-    RegistrationIdentity,
-    tuple[registration_snapshot.StaticFactoryRegistration, ...],
-]:
-    grouped: dict[
-        RegistrationIdentity,
-        list[registration_snapshot.StaticFactoryRegistration],
-    ] = {}
+    values: tuple[_RegistrationValue, ...],
+) -> dict[RegistrationIdentity, tuple[_RegistrationValue, ...]]:
+    grouped: dict[RegistrationIdentity, list[_RegistrationValue]] = {}
     for value in values:
         grouped.setdefault(_identity_key(value), []).append(value)
     return {
         identity: tuple(sorted(group, key=_registration_sort_key))
         for identity, group in grouped.items()
+    }
+
+
+def _group_contributions_by_id(
+    values: tuple[_ContributionValue, ...],
+) -> dict[str, tuple[_ContributionValue, ...]]:
+    grouped: dict[str, list[_ContributionValue]] = {}
+    for value in values:
+        grouped.setdefault(value.contribution_id, []).append(value)
+    return {
+        contribution_id: tuple(sorted(group, key=_contribution_sort_key))
+        for contribution_id, group in grouped.items()
     }
 
 
@@ -191,7 +276,7 @@ def verify_host_registration_cross_binding(
     snapshot: Any,
     validators: contracts.ContractValidators,
 ) -> HostRegistrationCrossVerificationResult:
-    """Prove exact equality of expected and observed owning registrations."""
+    """Prove exact equality of expected factories and selected contributions."""
 
     manifest, diagnostics = _validate_composition(composition, validators)
     if not isinstance(snapshot, registration_snapshot.HostRegistrationSnapshot):
@@ -209,6 +294,11 @@ def verify_host_registration_cross_binding(
             registration_snapshot.host_registration_snapshot_to_data(snapshot),
             registration_snapshot.HOST_REGISTRATION_SNAPSHOT_NAME,
             validators,
+        )
+    )
+    diagnostics.extend(
+        registration_snapshot.validate_contribution_cardinality_consistency(
+            snapshot
         )
     )
     if manifest is None:
@@ -237,7 +327,15 @@ def verify_host_registration_cross_binding(
         )
 
     expected = _expected_registrations(manifest)
-    observed = tuple(sorted(snapshot.registrations, key=_registration_sort_key))
+    observed = tuple(
+        sorted(
+            (
+                _canonical_observed_registration(value)
+                for value in snapshot.registrations
+            ),
+            key=_registration_sort_key,
+        )
+    )
     expected_by_identity = _group_by_identity(expected)
     observed_by_identity = _group_by_identity(observed)
     all_identities = sorted(
@@ -296,6 +394,103 @@ def verify_host_registration_cross_binding(
                     f"expected='{expected_provider}' observed='{observed_provider}'",
                 )
             )
+
+        expected_contributions = expected_values[0].contributions
+        observed_contributions = observed_values[0].contributions
+        expected_by_contribution_id = _group_contributions_by_id(
+            expected_contributions
+        )
+        observed_by_contribution_id = _group_contributions_by_id(
+            observed_contributions
+        )
+        all_contribution_ids = sorted(
+            (
+                expected_by_contribution_id.keys()
+                | observed_by_contribution_id.keys()
+            ),
+            key=_utf8_key,
+        )
+        for contribution_id in all_contribution_ids:
+            expected_contribution_values = (
+                expected_by_contribution_id.get(contribution_id, ())
+            )
+            observed_contribution_values = (
+                observed_by_contribution_id.get(contribution_id, ())
+            )
+            contribution_text = (
+                f"{identity_text} contribution='{contribution_id}'"
+            )
+            if len(expected_contribution_values) > 1:
+                diagnostics.append(
+                    _diagnostic(
+                        (
+                            "host-binding.registration."
+                            "expected-contribution-duplicate"
+                        ),
+                        "/composition/providers",
+                        (
+                            "expected contribution identity is duplicated: "
+                            f"{contribution_text}"
+                        ),
+                    )
+                )
+            if len(observed_contribution_values) > 1:
+                diagnostics.append(
+                    _diagnostic(
+                        (
+                            "host-binding.registration."
+                            "observed-contribution-duplicate"
+                        ),
+                        "/snapshot/registrations",
+                        (
+                            "observed contribution identity is duplicated: "
+                            f"{contribution_text}"
+                        ),
+                    )
+                )
+            if (
+                len(expected_contribution_values) > 1
+                or len(observed_contribution_values) > 1
+            ):
+                continue
+            if not observed_contribution_values:
+                diagnostics.append(
+                    _diagnostic(
+                        "host-binding.registration.contribution-missing",
+                        "/snapshot/registrations",
+                        (
+                            "expected contribution was not observed: "
+                            f"{contribution_text}"
+                        ),
+                    )
+                )
+                continue
+            if not expected_contribution_values:
+                diagnostics.append(
+                    _diagnostic(
+                        "host-binding.registration.contribution-extra",
+                        "/snapshot/registrations",
+                        (
+                            "unexpected contribution was observed: "
+                            f"{contribution_text}"
+                        ),
+                    )
+                )
+                continue
+            expected_kind = expected_contribution_values[0].kind
+            observed_kind = observed_contribution_values[0].kind
+            if observed_kind != expected_kind:
+                diagnostics.append(
+                    _diagnostic(
+                        "host-binding.registration.contribution-kind-mismatch",
+                        "/snapshot/registrations",
+                        (
+                            "contribution kind mismatch for "
+                            f"{contribution_text}: expected='{expected_kind}' "
+                            f"observed='{observed_kind}'"
+                        ),
+                    )
+                )
 
     if diagnostics:
         return _failure(diagnostics)

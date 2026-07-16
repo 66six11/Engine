@@ -106,10 +106,18 @@ class HostBindingPublicationTests(unittest.TestCase):
                     provider.package_id,
                     provider.package_version,
                     provider.module_id,
-                    factory_id,
+                    factory.factory_id,
                     provider.entry_point.function,
+                    tuple(
+                        host_registration_snapshot.StaticContributionRegistration(
+                            contribution.contribution_id,
+                            contribution.contribution_kind,
+                            "single",
+                        )
+                        for contribution in factory.contributions
+                    ),
                 )
-                for factory_id in provider.factory_ids
+                for factory in provider.factories
             ),
         )
         self.request = (

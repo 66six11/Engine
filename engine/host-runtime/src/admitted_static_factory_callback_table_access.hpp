@@ -21,7 +21,7 @@ namespace asharia::host_runtime {
 
     struct AdmittedStaticFactoryExecutionViewV1 final {
         std::span<const StaticFactoryCallbacksV1> callbacks;
-        const StaticFactoryRegistrationSnapshotV1* snapshot{};
+        const StaticFactoryRegistrationSnapshotV2* snapshot{};
         const ProcessScopeBlueprintProjectionStateV1* processScope{};
         std::string_view engineGenerationId;
         std::string_view blueprintIntegrity;

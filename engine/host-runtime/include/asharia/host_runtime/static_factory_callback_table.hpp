@@ -18,7 +18,7 @@ namespace asharia::host_runtime {
         StaticFactoryCallbackTableV1(const StaticFactoryCallbackTableV1&) = delete;
         StaticFactoryCallbackTableV1& operator=(const StaticFactoryCallbackTableV1&) = delete;
 
-        [[nodiscard]] const StaticFactoryRegistrationSnapshotV1&
+        [[nodiscard]] const StaticFactoryRegistrationSnapshotV2&
         registrationSnapshot() const noexcept;
 
     private:

@@ -86,7 +86,7 @@ namespace asharia::host_runtime::tests {
     [[nodiscard]] std::string_view syntheticFactoryId(SyntheticFactoryV1 factory) noexcept;
     [[nodiscard]] std::uint8_t syntheticExpectedDependencyMask(SyntheticFactoryV1 factory) noexcept;
 
-    [[nodiscard]] StaticFactoryRegistrationCapacityV1 syntheticRegistrationCapacity() noexcept;
+    [[nodiscard]] StaticFactoryRegistrationCapacityV2 syntheticRegistrationCapacity() noexcept;
     void recordSyntheticFactoryProviders(StaticFactoryRegistrationRecorder& recorder) noexcept;
 
     void resetSyntheticProviderFixture() noexcept;

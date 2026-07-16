@@ -55,8 +55,30 @@ namespace asharia::host_runtime {
             output.push_back('"');
         }
 
+        [[nodiscard]] constexpr std::string_view
+        cardinalityName(StaticContributionCardinalityV1 cardinality) noexcept {
+            switch (cardinality) {
+            case StaticContributionCardinalityV1::Single:
+                return "single";
+            case StaticContributionCardinalityV1::Multiple:
+                return "multiple";
+            }
+            return {};
+        }
+
+        void appendContribution(std::string& output,
+                                const StaticContributionRegistrationV2& contribution) {
+            output += "        {\n          \"id\": ";
+            appendJsonString(output, contribution.contributionId);
+            output += ",\n          \"kind\": ";
+            appendJsonString(output, contribution.contributionKind);
+            output += ",\n          \"cardinality\": ";
+            appendJsonString(output, cardinalityName(contribution.cardinality));
+            output += "\n        }";
+        }
+
         void appendRegistration(std::string& output,
-                                const StaticFactoryRegistrationV1& registration) {
+                                const StaticFactoryRegistrationV2& registration) {
             output += "    {\n      \"packageId\": ";
             appendJsonString(output, registration.packageId);
             output += ",\n      \"packageVersion\": ";
@@ -67,18 +89,37 @@ namespace asharia::host_runtime {
             appendJsonString(output, registration.factoryId);
             output += ",\n      \"providerEntryPoint\": ";
             appendJsonString(output, registration.providerEntryPoint);
-            output += "\n    }";
+            output += ",\n      \"contributions\": [";
+            if (registration.contributions.empty()) {
+                output += "]\n    }";
+                return;
+            }
+            output.push_back('\n');
+            for (std::size_t index = 0; index < registration.contributions.size(); ++index) {
+                appendContribution(output, registration.contributions[index]);
+                output += index + 1U == registration.contributions.size() ? "\n" : ",\n";
+            }
+            output += "      ]\n    }";
         }
 
     } // namespace
 
     std::expected<std::string, StaticFactoryRegistrationSnapshotJsonRenderError>
     renderStaticFactoryRegistrationSnapshotJson(
-        const StaticFactoryRegistrationSnapshotV1& snapshot) noexcept {
+        const StaticFactoryRegistrationSnapshotV2& snapshot) noexcept {
+        for (const StaticFactoryRegistrationV2& registration : snapshot.registrations) {
+            for (const StaticContributionRegistrationV2& contribution :
+                 registration.contributions) {
+                if (cardinalityName(contribution.cardinality).empty()) {
+                    return std::unexpected(
+                        StaticFactoryRegistrationSnapshotJsonRenderError::InvalidCardinality);
+                }
+            }
+        }
         try {
             std::string output{"{\n  \"schema\": "};
             appendJsonString(output, kSchema);
-            output += ",\n  \"schemaVersion\": 1,\n  \"generationId\": ";
+            output += ",\n  \"schemaVersion\": 2,\n  \"generationId\": ";
             appendJsonString(output, snapshot.generationId);
             output += ",\n  \"hostActivationBlueprintSha256\": ";
             appendJsonString(output, snapshot.hostActivationBlueprintSha256);

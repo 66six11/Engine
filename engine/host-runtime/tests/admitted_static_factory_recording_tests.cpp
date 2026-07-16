@@ -14,7 +14,7 @@ namespace asharia::host_runtime::tests {
                                               PreRegistrationAdmissionV1>);
             static_assert(!std::is_invocable_v<RecordingFunction,
                                                PreRegistrationAdmissionV1,
-                                               StaticFactoryRegistrationCapacityV1,
+                                               StaticFactoryRegistrationCapacityV2,
                                                StaticFactoryRecordingFunctionV1>);
             static_assert(!std::is_invocable_v<RecordingFunction,
                                                StaticFactoryCallbackTableV1>);

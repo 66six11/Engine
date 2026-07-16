@@ -9,10 +9,11 @@ namespace asharia::host_runtime {
 
     enum class StaticFactoryRegistrationSnapshotJsonRenderError {
         AllocationFailed,
+        InvalidCardinality,
     };
 
     [[nodiscard]] std::expected<std::string, StaticFactoryRegistrationSnapshotJsonRenderError>
     renderStaticFactoryRegistrationSnapshotJson(
-        const StaticFactoryRegistrationSnapshotV1& snapshot) noexcept;
+        const StaticFactoryRegistrationSnapshotV2& snapshot) noexcept;
 
 } // namespace asharia::host_runtime

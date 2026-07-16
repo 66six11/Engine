@@ -10,6 +10,10 @@ Accepted and implemented for #289。本 ADR 冻结 `engine/host-runtime` 的 ide
 提交 local factory ID 与完整 typed descriptor，并由 frozen table 投影本 ADR 的 identity snapshot。本 ADR 记录 #289 的历史
 identity-only 决策；active executable path 不再提供单参数 registrar、`StaticFactoryProviderV1` 或兼容 adapter。
 
+[Static Typed Contribution Contract Bindings v1](adr-static-typed-contribution-contract-bindings-v1.md) 已为 #294 再次硬切 active recorder：
+Capacity/Context 为 v2，provider 为 v3，table 投影 RegistrationSnapshot v2；本 ADR 下文的 identity-only Snapshot v1 仅保留为 #289
+历史记录。
+
 ## 问题
 
 [Generated Static Composition Root v1](adr-generated-static-composition-root-v1.md) 已经能够直接引用并调用每个
@@ -195,7 +199,8 @@ configured compiler、registration snapshot 与 exact staged Host artifact bytes
 
 ## 编译效率边界
 
-- provider public header 只暴露 `string_view` registrar API，不包含 recorder implementation 或 lifecycle types；
+- #289 historical provider public header 只暴露 `string_view` registrar API，不包含 recorder implementation 或 lifecycle types；
+  #294 current v3 surface 另暴露 contribution binding span 与 public contract helper，但 recorder implementation 仍保持 PRIVATE；
 - recorder implementation 使用 private state，不把容器算法扩散到每个 provider TU；
 - 一个 Host composition 仍只生成一个薄 TU；renderer revision 变化只使该 TU 和 final Host link closure 失效；
 - #290 的 fixed Host 只增加一个薄 `main.cpp`，并只构建 exact target，不要求 clean-first；

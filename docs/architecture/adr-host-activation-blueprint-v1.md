@@ -10,6 +10,10 @@ Blueprint 不创建任何 system instance，也不是已经绑定 executable byt
 admitted lineage，并在 headless C++ executor 中按该顺序执行，且已通过 #293 门禁。其他 scope owners、production issuer 与
 normal Host/Bootstrap adapter 尚未实现。
 
+[Static Typed Contribution Contract Bindings v1](adr-static-typed-contribution-contract-bindings-v1.md) 已为 #294 把本 Blueprint 已有的
+selected contribution ID/kind/owner 投影到 Binding Plan v3、Composition renderer 4/provider v3 与 RegistrationSnapshot v2；Blueprint
+schema/model 仍为 v1，因为其 logical selection shape 没有改变。
+
 ## 问题
 
 [Package Factory / Scope / Lifecycle Declaration v1](adr-package-factory-scope-lifecycle-v1.md) 已经让 package 作者声明：
@@ -60,15 +64,15 @@ Ready Effective Session
                 ↓
 Host Activation Blueprint（本 ADR）
                 ↓
-verified Static Factory Provider Binding Plan v2
+verified Static Factory Provider Binding Plan v3
                 ↓
-generated static composition root renderer 3 / provider v2
+generated static composition root renderer 4 / provider v3
                 ↓
 compile / link
                 ↓
 frozen Static Factory Callback Table v1
                 ↓
-table-owned registration snapshot + artifact verification
+table-owned RegistrationSnapshot v2 + artifact verification
                 ↓
 Host Executable Binding Receipt
                 ↓
@@ -91,7 +95,7 @@ fingerprints。它是 build-time derived state，可以规范化呈现用于 dia
 - Engine generation、platform、configuration 和 toolchain；
 
 当前进程实际加载的 native generation 仍属于后继 Session/Bootstrap state，不由 Blueprint 或 registration snapshot 推断。
-上述 active pipeline 只接受 Template renderer 2 + Composition renderer 3/provider v2；#286/#289 的 v1 binding/identity-only
+上述 active pipeline 只接受 Template renderer 2 + Composition renderer 4/provider v3/Snapshot v2；#286/#289 的 v1 binding/identity-only
 registration 仅保留为历史 ADR，不存在旧 reader 或 adapter。
 
 因此本 Blueprint 不读取 Package Artifact Manifest，也不输出 `PendingBuild` / `PendingRestart`。
@@ -299,20 +303,20 @@ partial plan，也不修改 session、Host Composition、candidate 或 declarati
 
 ## 后继边界
 
-1. [Static Factory Provider Bindings v1](adr-static-factory-provider-bindings-v1.md) 记录 #286 的历史合同；#291 已将 active
-   bindings/Binding Plan 与 provider API 硬切为 v2，不保留 bindings/Binding Plan v1 的 schema、reader 或 adapter；
+1. [Static Factory Provider Bindings v1](adr-static-factory-provider-bindings-v1.md) 记录 #286 的历史合同；#294 已将 active
+   bindings/Binding Plan 与 provider API 硬切为 v3，不保留 pre-current schema、reader 或 adapter；
 2. [Generated Static Composition Root v1](adr-generated-static-composition-root-v1.md)：#287 已消费 Source Build Plan、Blueprint 与
-   verified Binding Plan；#291 后 active renderer 3/provider v2 生成薄 C++ registration source 和受控 target attachment；
+   verified Binding Plan；#294 后 active renderer 4/provider v3 生成薄 C++ registration source、selected contribution expectations 和受控 target attachment；
 3. [Static Factory Registration v1](adr-static-factory-registration-v1.md) 记录 #289 的 historical identity-only surface；
-   #291 已将 active registrar 硬切为 descriptor registration，由
-   [Static Factory Callback Table v1](adr-static-factory-callback-table-v1.md) 冻结完整 typed callbacks，并由 table 拥有 canonical
-   identity-only snapshot，但不调用 lifecycle；
+   #291 将 registrar 硬切为 descriptor registration，由
+   [Static Factory Callback Table v1](adr-static-factory-callback-table-v1.md) 冻结完整 typed callbacks；#294 又让 active v3 registrar
+   绑定 selected contribution contracts，并由 table 拥有 private type evidence 与 canonical Snapshot v2，但仍不调用 lifecycle；
 4. [Windows Development Host Template v1](adr-windows-development-host-template-v1.md)：#290 已实现固定 final executable、`main()`、
    受控构建、File API target binding 与 registration-only verification；
 5. [Host Executable Binding Receipt v1](adr-host-executable-binding-receipt-v1.md)：#288 已在构建后把 Blueprint fingerprint、
    registration snapshot 与 exact staged Host artifact 对证；该 receipt 不证明 lifecycle activation；
-6. [Activation Eligibility v1](adr-activation-eligibility-v1.md)：C++ boundary 已实现为只对当前 Template renderer 2 + Composition renderer 3/
-   provider v2 generation 交叉验证 sealed Session/Blueprint/binding/launch handoff，先授权一次 provider recording，再以同一 table
+6. [Activation Eligibility v1](adr-activation-eligibility-v1.md)：C++ boundary 已实现为只对当前 Template renderer 2 + Composition renderer 4/
+   provider v3/Snapshot v2 generation 交叉验证 sealed Session/Blueprint/binding/launch handoff，先授权一次 provider recording，再以同一 table
    lineage 与 snapshot 授权 descriptor access；#292 已完成 Done evidence，production launch issuer 仍待后续 adapter；
 7. [ProcessScope Lifecycle v1](adr-process-scope-lifecycle-v1.md)：#293 已增加 root process projection、factory contexts、exact descriptor
    mapping、token ownership、startup rollback 与 explicit reverse stop 的 headless C++ implementation，并完成门禁；

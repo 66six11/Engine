@@ -19,8 +19,9 @@ namespace asharia::host_runtime {
     namespace {
 
         struct MaterializedFactory final {
-            StaticFactoryRegistrationV1 registration;
+            StaticFactoryRegistrationV2 registration;
             StaticFactoryCallbacksV1 callbacks;
+            std::vector<std::pair<StaticContributionRegistrationV2, const void*>> contributions;
         };
 
         [[nodiscard]] bool canonicalFactoryLess(const MaterializedFactory& left,
@@ -31,6 +32,15 @@ namespace asharia::host_runtime {
                    std::tie(right.registration.packageId, right.registration.packageVersion,
                             right.registration.moduleId, right.registration.factoryId,
                             right.registration.providerEntryPoint);
+        }
+
+        [[nodiscard]] bool canonicalContributionLess(
+            const std::pair<StaticContributionRegistrationV2, const void*>& left,
+            const std::pair<StaticContributionRegistrationV2, const void*>& right) noexcept {
+            return std::tie(left.first.contributionId, left.first.contributionKind,
+                            left.first.cardinality) < std::tie(right.first.contributionId,
+                                                               right.first.contributionKind,
+                                                               right.first.cardinality);
         }
 
     } // namespace
@@ -45,7 +55,7 @@ namespace asharia::host_runtime {
         std::shared_ptr<const StaticFactoryCallbackTableStorageV1> storage) noexcept
         : storage_(std::move(storage)) {}
 
-    const StaticFactoryRegistrationSnapshotV1&
+    const StaticFactoryRegistrationSnapshotV2&
     StaticFactoryCallbackTableV1::registrationSnapshot() const noexcept {
         if (!storage_) {
             std::terminate();
@@ -64,8 +74,30 @@ namespace asharia::host_runtime {
                     std::span<const StaticFactoryRegistrationState::FactoryObservation>{
                         state.factories}
                         .first(state.observedFactoryCount);
-            for (const StaticFactoryRegistrationState::FactoryObservation& factory :
-                 observedFactories) {
+            for (std::size_t factoryIndex = 0; factoryIndex < observedFactories.size();
+                 ++factoryIndex) {
+                const StaticFactoryRegistrationState::FactoryObservation& factory =
+                    observedFactories[factoryIndex];
+                std::vector<std::pair<StaticContributionRegistrationV2, const void*>> contributions;
+                const std::span<const StaticFactoryRegistrationState::ContributionObservation>
+                    observedContributions =
+                        std::span<const StaticFactoryRegistrationState::ContributionObservation>{
+                            state.contributions}
+                            .first(state.observedContributionCount);
+                for (const StaticFactoryRegistrationState::ContributionObservation& contribution :
+                     observedContributions) {
+                    if (contribution.factoryIndex != factoryIndex) {
+                        continue;
+                    }
+                    contributions.emplace_back(
+                        StaticContributionRegistrationV2{
+                            .contributionId = std::string(contribution.contributionId),
+                            .contributionKind = std::string(contribution.contributionKind),
+                            .cardinality = contribution.cardinality,
+                        },
+                        contribution.typeKey);
+                }
+                std::ranges::sort(contributions, canonicalContributionLess);
                 factories.push_back({
                     .registration =
                         {
@@ -74,13 +106,15 @@ namespace asharia::host_runtime {
                             .moduleId = std::string(factory.moduleId),
                             .factoryId = std::string(factory.factoryId),
                             .providerEntryPoint = std::string(factory.providerEntryPoint),
+                            .contributions = {},
                         },
                     .callbacks = factory.callbacks,
+                    .contributions = std::move(contributions),
                 });
             }
             std::ranges::sort(factories, canonicalFactoryLess);
 
-            StaticFactoryRegistrationSnapshotV1 snapshot{
+            StaticFactoryRegistrationSnapshotV2 snapshot{
                 .generationId = std::string(state.generationId),
                 .hostActivationBlueprintSha256 = std::string(state.hostActivationBlueprintSha256),
                 .registrations = {},
@@ -88,13 +122,28 @@ namespace asharia::host_runtime {
             snapshot.registrations.reserve(factories.size());
             std::vector<StaticFactoryCallbacksV1> callbacks;
             callbacks.reserve(factories.size());
-            for (MaterializedFactory& factory : factories) {
+            std::vector<StaticContributionTypeEvidenceV1> contributionTypeEvidence;
+            contributionTypeEvidence.reserve(state.observedContributionCount);
+            for (std::size_t registrationIndex = 0; registrationIndex < factories.size();
+                 ++registrationIndex) {
+                MaterializedFactory& factory = factories[registrationIndex];
+                factory.registration.contributions.reserve(factory.contributions.size());
+                for (std::size_t contributionIndex = 0;
+                     contributionIndex < factory.contributions.size(); ++contributionIndex) {
+                    auto& [registration, typeKey] = factory.contributions[contributionIndex];
+                    factory.registration.contributions.push_back(std::move(registration));
+                    contributionTypeEvidence.push_back({
+                        .registrationIndex = registrationIndex,
+                        .contributionIndex = contributionIndex,
+                        .typeKey = typeKey,
+                    });
+                }
                 snapshot.registrations.push_back(std::move(factory.registration));
                 callbacks.push_back(factory.callbacks);
             }
 
             auto storage = std::make_shared<const StaticFactoryCallbackTableStorageV1>(
-                std::move(snapshot), std::move(callbacks));
+                std::move(snapshot), std::move(callbacks), std::move(contributionTypeEvidence));
             return StaticFactoryCallbackTableV1{std::move(storage)};
         } catch (const std::bad_alloc&) {
             return std::unexpected(makeStaticFactoryRegistrationError(

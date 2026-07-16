@@ -48,11 +48,26 @@ void provideRuntimeFactories(
             newline="\n",
         )
         (source_root / "provider.cpp").write_text(
-            """#include <cstdlib>
+            """#include <array>
+#include <cstdlib>
+#include <string_view>
 
 #include "asharia/synthetic/runtime_provider.hpp"
 
 namespace {
+
+struct SyntheticRuntimeServiceContract final {
+  static constexpr std::string_view kind{
+      "com.asharia.contribution.synthetic-service"};
+  static constexpr asharia::host_runtime::StaticContributionCardinalityV1 cardinality{
+      asharia::host_runtime::StaticContributionCardinalityV1::Single};
+};
+
+constexpr std::array kRuntimeServiceContributions{
+    asharia::host_runtime::bindStaticContributionV1<
+        SyntheticRuntimeServiceContract>(
+        "com.asharia.contribution.synthetic-runtime"),
+};
 
 // Registration-only verification must never invoke lifecycle callbacks.
 asharia::host_runtime::FactoryCreateResultV1 createRuntimeService(
@@ -95,7 +110,9 @@ constexpr asharia::host_runtime::StaticFactoryCallbacksV1 kRuntimeServiceCallbac
 
 void asharia::synthetic::provideRuntimeFactories(
     asharia::host_runtime::StaticFactoryRegistrar& registrar) noexcept {
-  registrar.registerFactory("runtime-service", kRuntimeServiceCallbacks);
+  registrar.registerFactory(
+      "runtime-service", kRuntimeServiceCallbacks,
+      kRuntimeServiceContributions);
 }
 """,
             encoding="utf-8-sig",

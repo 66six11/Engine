@@ -9,7 +9,7 @@ from tools import host_generation_compatibility as compatibility
 
 class HostGenerationCompatibilityTests(unittest.TestCase):
     def test_only_current_generation_tuple_is_accepted(self) -> None:
-        current = (2, 3, "asharia-static-factory-provider-v2")
+        current = (2, 4, "asharia-static-factory-provider-v3")
 
         self.assertEqual(current, compatibility.CURRENT_HOST_GENERATION_PAIR)
         self.assertEqual(current, compatibility.generation_pair(*current))
@@ -17,12 +17,12 @@ class HostGenerationCompatibilityTests(unittest.TestCase):
 
     def test_legacy_and_future_generation_variants_fail_closed(self) -> None:
         incompatible = (
-            (1, 3, "asharia-static-factory-provider-v2"),
-            (3, 3, "asharia-static-factory-provider-v2"),
-            (2, 2, "asharia-static-factory-provider-v2"),
-            (2, 4, "asharia-static-factory-provider-v2"),
-            (2, 3, "asharia-static-factory-provider-v1"),
+            (1, 4, "asharia-static-factory-provider-v3"),
+            (3, 4, "asharia-static-factory-provider-v3"),
             (2, 3, "asharia-static-factory-provider-v3"),
+            (2, 5, "asharia-static-factory-provider-v3"),
+            (2, 4, "asharia-static-factory-provider-v2"),
+            (2, 4, "asharia-static-factory-provider-v4"),
         )
 
         for generation in incompatible:

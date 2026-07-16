@@ -4,6 +4,10 @@
 
 Accepted and implemented for #286。本 ADR 冻结逻辑 Factory 与构建期静态 C++ provider 入口之间的最小绑定合同、证据链和失败边界。
 
+[Static Typed Contribution Contract Bindings v1](adr-static-typed-contribution-contract-bindings-v1.md) 已为 #294 对 active pipeline
+执行后继硬切：author bindings 与 derived Binding Plan 为 v3，provider API 为 v3，Plan 在每个 exact factory 下携带 Blueprint-selected
+contribution ID/kind。本 ADR 下文的 v1/v2 形状仅保留为历史演进记录；active reader、schema 或 adapter 不接受它们。
+
 它位于 [Source Build Plan v1](adr-source-build-plan-v1.md) 与
 [Host Activation Blueprint v1](adr-host-activation-blueprint-v1.md) 之后、generated static composition root 之前。它不生成 C++，也不实现 Host Runtime。
 
@@ -79,10 +83,11 @@ void provideFactories(
 只能调用 `registerFactory(localFactoryId)`；package/version/module/entry point 与 expected factory IDs 由 generated root 注入
 recording context。registrar 仍不接收 callback，不创建、激活或销毁 system instance。
 
-[Static Factory Callback Table v1](adr-static-factory-callback-table-v1.md) 已为 #291 实现 breaking provider API v2：顶层函数形状
+[Static Factory Callback Table v1](adr-static-factory-callback-table-v1.md) 曾为 #291 实现 breaking provider API v2：顶层函数形状
 仍是 `void(StaticFactoryRegistrar&) noexcept`，但 registrar 改为接收 `localFactoryId + complete typed descriptor`。因此不能把
-相同的顶层 function-pointer spelling 当成相同 API；author bindings 与 derived Binding Plan 已提升为 schema/model v2，active
-pipeline 不保留 v1 reader、schema、adapter 或 executable path。本 ADR 仅记录 #286 的历史 v1 决策。
+相同的顶层 function-pointer spelling 当成相同 API；#291 generation 的 author bindings 与 derived Binding Plan 提升为
+schema/model v2，且不保留 v1 reader、schema、adapter 或 executable path。本 ADR 仅记录 #286/#291 的历史决策；当前 v3
+合同由本文开头链接的 #294 后继 ADR 定义。
 
 ### 3. 合同形状
 

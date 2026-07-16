@@ -19,8 +19,8 @@ STATIC_FACTORY_PROVIDER_BINDING_PLAN_NAME = (
 STATIC_FACTORY_PROVIDER_BINDING_PLAN_SCHEMA = (
     "com.asharia.static-factory-provider-binding-plan"
 )
-STATIC_FACTORY_PROVIDER_BINDING_PLAN_SCHEMA_VERSION = 2
-STATIC_FACTORY_PROVIDER_API = "asharia-static-factory-provider-v2"
+STATIC_FACTORY_PROVIDER_BINDING_PLAN_SCHEMA_VERSION = 3
+STATIC_FACTORY_PROVIDER_API = "asharia-static-factory-provider-v3"
 
 
 @dataclass(frozen=True, order=True)
@@ -47,16 +47,32 @@ class ProviderEntryPoint:
     function: str
 
 
+@dataclass(frozen=True, order=True)
+class StaticFactoryContributionBinding:
+    """One Blueprint-selected contribution owned by one selected factory."""
+
+    contribution_id: str
+    contribution_kind: str
+
+
+@dataclass(frozen=True, order=True)
+class StaticFactoryBinding:
+    """One selected factory and its exact Host-selected contributions."""
+
+    factory_id: str
+    contributions: tuple[StaticFactoryContributionBinding, ...]
+
+
 @dataclass(frozen=True)
 class StaticFactoryProvider:
-    """One provider call and the exact selected factories it must register."""
+    """One provider call and the exact selected factory bindings it must register."""
 
     package_id: str
     package_version: str
     module_id: str
     target: ProviderTarget
     entry_point: ProviderEntryPoint
-    factory_ids: tuple[str, ...]
+    factories: tuple[StaticFactoryBinding, ...]
 
 
 @dataclass(frozen=True)
@@ -166,6 +182,39 @@ def _provider_sort_key(
     )
 
 
+def _factory_sort_key(factory: StaticFactoryBinding) -> bytes:
+    return _utf8_key(factory.factory_id)
+
+
+def _contribution_sort_key(
+    contribution: StaticFactoryContributionBinding,
+) -> tuple[bytes, bytes]:
+    return (
+        _utf8_key(contribution.contribution_id),
+        _utf8_key(contribution.contribution_kind),
+    )
+
+
+def _factory_binding(
+    factory: activation.FactoryActivation,
+) -> StaticFactoryBinding:
+    return StaticFactoryBinding(
+        factory_id=factory.reference.factory_id,
+        contributions=tuple(
+            sorted(
+                (
+                    StaticFactoryContributionBinding(
+                        contribution_id=contribution.contribution_id,
+                        contribution_kind=contribution.contribution_kind,
+                    )
+                    for contribution in factory.contributions
+                ),
+                key=_contribution_sort_key,
+            )
+        ),
+    )
+
+
 def _plan_payload_data(plan: StaticFactoryProviderBindingPlan) -> dict[str, Any]:
     return {
         "schema": STATIC_FACTORY_PROVIDER_BINDING_PLAN_SCHEMA,
@@ -203,7 +252,19 @@ def _plan_payload_data(plan: StaticFactoryProviderBindingPlan) -> dict[str, Any]
                     "header": provider.entry_point.header,
                     "function": provider.entry_point.function,
                 },
-                "factoryIds": list(provider.factory_ids),
+                "factories": [
+                    {
+                        "factoryId": factory.factory_id,
+                        "contributions": [
+                            {
+                                "id": contribution.contribution_id,
+                                "kind": contribution.contribution_kind,
+                            }
+                            for contribution in factory.contributions
+                        ],
+                    }
+                    for factory in provider.factories
+                ],
             }
             for provider in plan.providers
         ],
@@ -254,6 +315,7 @@ def validate_static_factory_provider_binding_plan_data(
 
     provider_keys: set[tuple[str, str, str, str, str, str]] = set()
     factory_keys: set[tuple[str, str, str, str]] = set()
+    contribution_keys: set[tuple[str, str, str]] = set()
     previous_provider_key: tuple[bytes, ...] | None = None
     for provider_index, provider in enumerate(data["providers"]):
         provider_key = (
@@ -287,16 +349,20 @@ def validate_static_factory_provider_binding_plan_data(
             )
         previous_provider_key = canonical_provider_key
 
-        ordered_factory_ids = sorted(provider["factoryIds"], key=_utf8_key)
-        if provider["factoryIds"] != ordered_factory_ids:
+        ordered_factories = sorted(
+            provider["factories"],
+            key=lambda value: _utf8_key(value["factoryId"]),
+        )
+        if provider["factories"] != ordered_factories:
             diagnostics.append(
                 _diagnostic(
                     "factory.binding-plan.not-normalized",
-                    f"/providers/{provider_index}/factoryIds",
-                    "provider factory IDs are not in canonical order",
+                    f"/providers/{provider_index}/factories",
+                    "provider factories are not in canonical order",
                 )
             )
-        for factory_index, factory_id in enumerate(provider["factoryIds"]):
+        for factory_index, factory in enumerate(provider["factories"]):
+            factory_id = factory["factoryId"]
             factory_key = (
                 provider["packageId"],
                 provider["packageVersion"],
@@ -307,11 +373,50 @@ def validate_static_factory_provider_binding_plan_data(
                 diagnostics.append(
                     _diagnostic(
                         "factory.binding-plan.duplicate-factory",
-                        f"/providers/{provider_index}/factoryIds/{factory_index}",
+                        f"/providers/{provider_index}/factories/{factory_index}/factoryId",
                         "selected factory is bound by more than one provider",
                     )
                 )
             factory_keys.add(factory_key)
+
+            ordered_contributions = sorted(
+                factory["contributions"],
+                key=lambda value: (
+                    _utf8_key(value["id"]),
+                    _utf8_key(value["kind"]),
+                ),
+            )
+            if factory["contributions"] != ordered_contributions:
+                diagnostics.append(
+                    _diagnostic(
+                        "factory.binding-plan.not-normalized",
+                        (
+                            f"/providers/{provider_index}/factories/"
+                            f"{factory_index}/contributions"
+                        ),
+                        "factory contributions are not in canonical order",
+                    )
+                )
+            for contribution_index, contribution in enumerate(
+                factory["contributions"]
+            ):
+                contribution_key = (
+                    provider["packageId"],
+                    provider["packageVersion"],
+                    contribution["id"],
+                )
+                if contribution_key in contribution_keys:
+                    diagnostics.append(
+                        _diagnostic(
+                            "factory.binding-plan.duplicate-contribution",
+                            (
+                                f"/providers/{provider_index}/factories/"
+                                f"{factory_index}/contributions/{contribution_index}/id"
+                            ),
+                            "selected contribution is bound by more than one factory",
+                        )
+                    )
+                contribution_keys.add(contribution_key)
 
     expected_integrity = contracts.compute_bytes_integrity(
         json.dumps(
@@ -529,20 +634,21 @@ def plan_static_factory_provider_bindings(
     if diagnostics:
         return _failure(diagnostics)
 
-    selected_references = tuple(
-        factory.reference
+    selected_factories = tuple(
+        factory
         for scope in blueprint.scope_templates
         for factory in scope.factories
     )
-    selected_keys = {
+    selected_by_key = {
         (
-            reference.package_id,
-            reference.package_version,
-            reference.module_id,
-            reference.factory_id,
-        )
-        for reference in selected_references
+            factory.reference.package_id,
+            factory.reference.package_version,
+            factory.reference.module_id,
+            factory.reference.factory_id,
+        ): factory
+        for factory in selected_factories
     }
+    selected_keys = set(selected_by_key)
     candidates_by_id: dict[str, list[PackageCandidate]] = {}
     for candidate in session.verified_graph.selected_candidates:
         candidates_by_id.setdefault(candidate.identity, []).append(candidate)
@@ -692,8 +798,23 @@ def plan_static_factory_provider_bindings(
                             provider["entryPoint"]["header"],
                             provider["entryPoint"]["function"],
                         ),
-                        factory_ids=tuple(
-                            sorted(provider["factoryIds"], key=_utf8_key)
+                        factories=tuple(
+                            sorted(
+                                (
+                                    _factory_binding(
+                                        selected_by_key[
+                                            (
+                                                package_id,
+                                                package_version,
+                                                module_id,
+                                                factory_id,
+                                            )
+                                        ]
+                                    )
+                                    for factory_id in provider["factoryIds"]
+                                ),
+                                key=_factory_sort_key,
+                            )
                         ),
                     )
                 )

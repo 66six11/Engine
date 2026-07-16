@@ -13,10 +13,14 @@ Accepted and implemented for #287。本 ADR 冻结从 verified static provider h
 [Windows Development Host Template v1](adr-windows-development-host-template-v1.md) 已为 #290 消费该 generation，创建第一个固定
 final Host target，并执行受控构建与 registration-only verification；这些职责仍不回流到本 generator。
 
-[Static Factory Callback Table v1](adr-static-factory-callback-table-v1.md) 已为 #291 实现 renderer revision 3：保持同一个薄 TU 与
+[Static Factory Callback Table v1](adr-static-factory-callback-table-v1.md) 曾为 #291 实现 renderer revision 3：保持同一个薄 TU 与
 exact provider calls，只把 provider contract 硬切到 v2，使一次 registration 同时形成 frozen callback table 与既有 identity
-snapshot；registration 阶段仍不得调用 lifecycle callback。schema、generator 与 deep verifier 只接受 revision 3 + provider API
-v2；旧 revision/provider 不保留兼容路径。
+snapshot；registration 阶段仍不得调用 lifecycle callback。#291 generation 的 schema、generator 与 deep verifier 只接受
+revision 3 + provider API v2；旧 revision/provider 不保留兼容路径。
+
+[Static Typed Contribution Contract Bindings v1](adr-static-typed-contribution-contract-bindings-v1.md) 又为 #294 将 active renderer
+硬切到 revision 4/provider v3：同一个薄 TU 额外生成 exact selected factory/contribution ID/kind expectations 与 Capacity/Context v2，
+但不 include contribution contract type、不增加 per-contribution TU。revision 3/provider v2 现在同样只属于历史记录。
 
 ## 问题
 
@@ -135,15 +139,16 @@ manifest 至少记录：
 manifest 证明 generated source bytes，不证明 compiler output、observed registration snapshot 或 final executable artifact。后者已由
 [Host Executable Binding Receipt v1](adr-host-executable-binding-receipt-v1.md) 独立绑定。
 
-#289 曾将 renderer revision 提升为 `2`。#291 已将 active provider API 硬切到 v2，并把 renderer 提升为 `3`；当前 schema、
-generator、build 与 deep verifier 只接受 revision 3/provider v2，不保留 revision 1/2 compatibility。
+#289 曾将 renderer revision 提升为 `2`。#291 随后把当时的 provider API 硬切到 v2，并把 renderer 提升为 `3`；该 generation
+的 schema、generator、build 与 deep verifier 只接受 revision 3/provider v2，不保留 revision 1/2 compatibility。
+#294 active generation 由本文开头记录的后继决策定义。
 
 发布采用 staging directory + write exact bytes + re-read/hash + atomic directory commit。若同 generation 的完整 bytes 已存在，
 返回 reuse；若目录存在但内容不一致，fail closed，不原地修补。
 
 ### 4. Host Runtime provider contract 与 identity recorder
 
-为了让 provider headers 与 generated root 使用同一 C++ 类型，#287/#289 最初建立 identity-only provider v1。#291 已把 active
+为了让 provider headers 与 generated root 使用同一 C++ 类型，#287/#289 最初建立 identity-only provider v1。#291 又把当时的
 surface 硬切为 descriptor registration：
 
 ```cpp
@@ -354,7 +359,7 @@ v1 明确限制增量成本：
 ## 后续边界
 
 1. [Static Factory Registration v1](adr-static-factory-registration-v1.md) 记录 #289 的 historical single-argument/identity-only
-   registrar contract；#291 保留 active recorder/registrar，但将其硬切为 descriptor registration 并产出 callback table；
+   registrar contract；#291 当时保留 recorder/registrar，但将其硬切为 descriptor registration 并产出 callback table；
 2. [Windows Development Host Template v1](adr-windows-development-host-template-v1.md)：#290 已实现固定 final target、`main()`、
    console/runtime layout、受控 final configure/build、File API target binding 与 registration-only verification；
 3. [Host Executable Binding Receipt v1](adr-host-executable-binding-receipt-v1.md)：#288 已对证 generation manifest、

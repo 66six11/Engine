@@ -13,7 +13,7 @@
 namespace asharia::host_runtime::tests {
     namespace {
 
-        constexpr std::string_view kProviderApi{"asharia-static-factory-provider-v2"};
+        constexpr std::string_view kProviderApi{"asharia-static-factory-provider-v3"};
         constexpr std::string_view kPackageId{"com.asharia.test.eligibility"};
         constexpr std::string_view kPackageVersion{"1.0.0"};
         constexpr std::string_view kModuleId{"runtime"};
@@ -49,30 +49,36 @@ namespace asharia::host_runtime::tests {
             };
         }
 
-        [[nodiscard]] StaticFactoryRegistrationCapacityV1 expectedCapacity() noexcept {
+        [[nodiscard]] StaticFactoryRegistrationCapacityV2 expectedCapacity() noexcept {
             return {
                 .providerCount = 1,
                 .factoryCount = 1,
+                .contributionCount = 0,
                 .textBytes = 512,
                 .diagnosticFactoryIdBytes = 256,
+                .diagnosticContributionIdBytes = 256,
             };
         }
 
-        [[nodiscard]] StaticFactoryRegistrationCapacityV1 invalidCapacity() noexcept {
+        [[nodiscard]] StaticFactoryRegistrationCapacityV2 invalidCapacity() noexcept {
             return {
                 .providerCount = 0,
                 .factoryCount = 1,
+                .contributionCount = 0,
                 .textBytes = 512,
                 .diagnosticFactoryIdBytes = 256,
+                .diagnosticContributionIdBytes = 256,
             };
         }
 
-        [[nodiscard]] StaticFactoryRegistrationCapacityV1 zeroFactoryCapacity() noexcept {
+        [[nodiscard]] StaticFactoryRegistrationCapacityV2 zeroFactoryCapacity() noexcept {
             return {
                 .providerCount = 0,
                 .factoryCount = 0,
+                .contributionCount = 0,
                 .textBytes = 256,
                 .diagnosticFactoryIdBytes = 128,
+                .diagnosticContributionIdBytes = 128,
             };
         }
 
@@ -141,17 +147,17 @@ namespace asharia::host_runtime::tests {
 
         void provideExpectedFactory(StaticFactoryRegistrar& registrar) noexcept {
             providerInvocations.fetch_add(1, std::memory_order_relaxed);
-            registrar.registerFactory(kExpectedFactoryId, expectedCallbacks());
+            registrar.registerFactory(kExpectedFactoryId, expectedCallbacks(), {});
         }
 
         void provideAlternateFactoryCallbacks(StaticFactoryRegistrar& registrar) noexcept {
             providerInvocations.fetch_add(1, std::memory_order_relaxed);
-            registrar.registerFactory(kExpectedFactoryId, alternateCallbacks());
+            registrar.registerFactory(kExpectedFactoryId, alternateCallbacks(), {});
         }
 
         void provideUnexpectedFactory(StaticFactoryRegistrar& registrar) noexcept {
             providerInvocations.fetch_add(1, std::memory_order_relaxed);
-            registrar.registerFactory(kUnexpectedFactoryId, expectedCallbacks());
+            registrar.registerFactory(kUnexpectedFactoryId, expectedCallbacks(), {});
         }
 
         void provideNothing(StaticFactoryRegistrar& unusedRegistrar) noexcept {
@@ -161,21 +167,24 @@ namespace asharia::host_runtime::tests {
 
         void recordOneFactory(StaticFactoryRegistrationRecorder& recorder,
                               std::string_view factoryId,
-                              StaticFactoryProviderV2 provider) noexcept {
-            const StaticFactoryRegistrationCapacityV1 capacity = expectedCapacity();
+                              StaticFactoryProviderV3 provider) noexcept {
+            const StaticFactoryRegistrationCapacityV2 capacity = expectedCapacity();
             recorder.beginComposition({
                 .generationId = kCompositionGenerationId,
                 .hostActivationBlueprintSha256 = kBlueprintSha256,
                 .capacity = capacity,
             });
-            const std::array<std::string_view, 1> expectedFactories{factoryId};
+            const std::array expectedFactories{StaticFactoryExpectationV1{
+                .factoryId = factoryId,
+                .contributions = {},
+            }};
             recorder.invokeProvider(
                 {
                     .packageId = kPackageId,
                     .packageVersion = kPackageVersion,
                     .moduleId = kModuleId,
                     .entryPoint = kEntryPoint,
-                    .expectedFactoryIds = expectedFactories,
+                    .expectedFactories = expectedFactories,
                 },
                 provider);
             recorder.endComposition();
@@ -211,7 +220,7 @@ namespace asharia::host_runtime::tests {
             recorder.endComposition();
         }
 
-        [[nodiscard]] StaticFactoryRegistrationSnapshotV1 expectedSnapshot() {
+        [[nodiscard]] StaticFactoryRegistrationSnapshotV2 expectedSnapshot() {
             return {
                 .generationId = generationId('c'),
                 .hostActivationBlueprintSha256 = digest('b'),
@@ -223,6 +232,7 @@ namespace asharia::host_runtime::tests {
                             .moduleId = std::string(kModuleId),
                             .factoryId = std::string(kExpectedFactoryId),
                             .providerEntryPoint = std::string(kEntryPoint),
+                            .contributions = {},
                         },
                     },
             };
@@ -282,8 +292,9 @@ namespace asharia::host_runtime::tests {
             .generationTuple =
                 {
                     .templateRendererRevision = 2,
-                    .compositionRendererRevision = 3,
+                    .compositionRendererRevision = 4,
                     .providerApi = std::string(kProviderApi),
+                    .registrationSnapshotSchemaVersion = 2,
                 },
             .blueprintIntegrity = digest('b'),
             .artifact =
@@ -343,6 +354,10 @@ namespace asharia::host_runtime::tests {
         case EligibilityHandoffMutationV1::UnsupportedProviderApi:
             binding.generationTuple.providerApi = "asharia-static-factory-provider-v1";
             launch.generationTuple.providerApi = binding.generationTuple.providerApi;
+            break;
+        case EligibilityHandoffMutationV1::UnsupportedSnapshotSchemaVersion:
+            binding.generationTuple.registrationSnapshotSchemaVersion = 1;
+            launch.generationTuple.registrationSnapshotSchemaVersion = 1;
             break;
         case EligibilityHandoffMutationV1::BindingGenerationMismatch:
             launch.bindingGenerationId = generationId('6');

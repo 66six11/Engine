@@ -288,13 +288,13 @@ namespace asharia::host_runtime::tests {
             // Registration is canonical (a, b, m, z), deliberately unlike the
             // sealed ProcessScope plan (z, a, m).
             registrar.registerFactory(kSyntheticMiddleFactoryId,
-                                      callbacks<SyntheticFactoryV1::Middle>());
+                                      callbacks<SyntheticFactoryV1::Middle>(), {});
             registrar.registerFactory(kSyntheticProjectOnlyFactoryId,
-                                      callbacks<SyntheticFactoryV1::ProjectOnly>());
+                                      callbacks<SyntheticFactoryV1::ProjectOnly>(), {});
             registrar.registerFactory(kSyntheticLeafFactoryId,
-                                      callbacks<SyntheticFactoryV1::Leaf>());
+                                      callbacks<SyntheticFactoryV1::Leaf>(), {});
             registrar.registerFactory(kSyntheticRootFactoryId,
-                                      callbacks<SyntheticFactoryV1::Root>());
+                                      callbacks<SyntheticFactoryV1::Root>(), {});
         }
 
         [[nodiscard]] bool stateValid(SyntheticFactoryV1 factory,
@@ -346,12 +346,14 @@ namespace asharia::host_runtime::tests {
         return 0;
     }
 
-    StaticFactoryRegistrationCapacityV1 syntheticRegistrationCapacity() noexcept {
+    StaticFactoryRegistrationCapacityV2 syntheticRegistrationCapacity() noexcept {
         return {
             .providerCount = 1,
             .factoryCount = kSyntheticFactoryCount,
+            .contributionCount = 0,
             .textBytes = 1024,
             .diagnosticFactoryIdBytes = 256,
+            .diagnosticContributionIdBytes = 256,
         };
     }
 
@@ -361,11 +363,23 @@ namespace asharia::host_runtime::tests {
             .hostActivationBlueprintSha256 = kSyntheticBlueprintSha256,
             .capacity = syntheticRegistrationCapacity(),
         });
-        constexpr std::array<std::string_view, kSyntheticFactoryCount> expectedFactories{
-            kSyntheticMiddleFactoryId,
-            kSyntheticProjectOnlyFactoryId,
-            kSyntheticLeafFactoryId,
-            kSyntheticRootFactoryId,
+        constexpr std::array<StaticFactoryExpectationV1, kSyntheticFactoryCount> expectedFactories{
+            StaticFactoryExpectationV1{
+                .factoryId = kSyntheticMiddleFactoryId,
+                .contributions = {},
+            },
+            StaticFactoryExpectationV1{
+                .factoryId = kSyntheticProjectOnlyFactoryId,
+                .contributions = {},
+            },
+            StaticFactoryExpectationV1{
+                .factoryId = kSyntheticLeafFactoryId,
+                .contributions = {},
+            },
+            StaticFactoryExpectationV1{
+                .factoryId = kSyntheticRootFactoryId,
+                .contributions = {},
+            },
         };
         recorder.invokeProvider(
             {
@@ -373,7 +387,7 @@ namespace asharia::host_runtime::tests {
                 .packageVersion = kSyntheticPackageVersion,
                 .moduleId = kSyntheticModuleId,
                 .entryPoint = kSyntheticProviderEntryPoint,
-                .expectedFactoryIds = expectedFactories,
+                .expectedFactories = expectedFactories,
             },
             &provideSyntheticProcessScopeFactories);
         recorder.endComposition();

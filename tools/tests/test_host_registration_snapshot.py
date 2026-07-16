@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import unittest
+from dataclasses import replace
 from unittest import mock
 
 from tools import check_package_contracts as contracts
@@ -27,6 +28,18 @@ class HostRegistrationSnapshotTests(unittest.TestCase):
                 module_id="editor",
                 factory_id="editor-panel",
                 provider_entry_point="asharia::alpha::registerFactories",
+                contributions=(
+                    registration.StaticContributionRegistration(
+                        contribution_id="com.asharia.contribution.alpha",
+                        kind="com.asharia.kind.panel",
+                        cardinality="single",
+                    ),
+                    registration.StaticContributionRegistration(
+                        contribution_id="com.asharia.contribution.beta",
+                        kind="com.asharia.kind.menu",
+                        cardinality="multiple",
+                    ),
+                ),
             ),
             registration.StaticFactoryRegistration(
                 package_id="com.asharia.system.zeta",
@@ -34,6 +47,13 @@ class HostRegistrationSnapshotTests(unittest.TestCase):
                 module_id="runtime",
                 factory_id="runtime-service",
                 provider_entry_point="asharia::zeta::registerFactories",
+                contributions=(
+                    registration.StaticContributionRegistration(
+                        contribution_id="com.asharia.contribution.runtime",
+                        kind="com.asharia.kind.service",
+                        cardinality="single",
+                    ),
+                ),
             ),
         )
 
@@ -93,14 +113,23 @@ class HostRegistrationSnapshotTests(unittest.TestCase):
             list(data),
         )
         self.assertEqual(
+            2,
+            data["schemaVersion"],
+        )
+        self.assertEqual(
             [
                 "packageId",
                 "packageVersion",
                 "moduleId",
                 "factoryId",
                 "providerEntryPoint",
+                "contributions",
             ],
             list(data["registrations"][0]),
+        )
+        self.assertEqual(
+            ["id", "kind", "cardinality"],
+            list(data["registrations"][0]["contributions"][0]),
         )
 
     def test_renderer_uses_full_utf8_byte_registration_order(self) -> None:
@@ -111,6 +140,27 @@ class HostRegistrationSnapshotTests(unittest.TestCase):
         self.assertEqual(
             ["com.asharia.system.alpha", "com.asharia.system.zeta"],
             [value["packageId"] for value in data["registrations"]],
+        )
+
+    def test_renderer_uses_nested_utf8_byte_contribution_order(self) -> None:
+        first = self.registrations()[0]
+        reversed_contributions = replace(
+            first,
+            contributions=tuple(reversed(first.contributions)),
+        )
+        snapshot = self.snapshot((reversed_contributions,))
+
+        data = registration.host_registration_snapshot_to_data(snapshot)
+
+        self.assertEqual(
+            [
+                "com.asharia.contribution.alpha",
+                "com.asharia.contribution.beta",
+            ],
+            [
+                value["id"]
+                for value in data["registrations"][0]["contributions"]
+            ],
         )
 
     def test_parser_rejects_noncanonical_registration_order_atomically(self) -> None:
@@ -125,6 +175,43 @@ class HostRegistrationSnapshotTests(unittest.TestCase):
         self.assertIsNone(result.snapshot)
         self.assertEqual(
             ["host.registration.order-invalid"],
+            [value.code for value in result.diagnostics],
+        )
+
+    def test_parser_rejects_noncanonical_contribution_order_atomically(self) -> None:
+        data = registration.host_registration_snapshot_to_data(self.snapshot())
+        data["registrations"][0]["contributions"].reverse()
+        content = (json.dumps(data, ensure_ascii=False, indent=2) + "\n").encode(
+            "utf-8"
+        )
+
+        result = self.parse(content)
+
+        self.assertIsNone(result.snapshot)
+        self.assertEqual(
+            ["host.registration.contribution-order-invalid"],
+            [value.code for value in result.diagnostics],
+        )
+
+    def test_parser_rejects_conflicting_cardinality_for_one_kind(self) -> None:
+        first, second = self.registrations()
+        conflicting = replace(
+            second,
+            contributions=(
+                registration.StaticContributionRegistration(
+                    contribution_id="com.asharia.contribution.runtime",
+                    kind="com.asharia.kind.panel",
+                    cardinality="multiple",
+                ),
+            ),
+        )
+        content = self.canonical_bytes(self.snapshot((first, conflicting)))
+
+        result = self.parse(content)
+
+        self.assertIsNone(result.snapshot)
+        self.assertEqual(
+            ["host.registration.contribution-cardinality-conflict"],
             [value.code for value in result.diagnostics],
         )
 
@@ -162,6 +249,9 @@ class HostRegistrationSnapshotTests(unittest.TestCase):
             "registration": lambda data: data["registrations"][0].update(
                 {"callback": "forbidden"}
             ),
+            "contribution": lambda data: data["registrations"][0][
+                "contributions"
+            ][0].update({"typeKey": "forbidden"}),
         }
         for name, mutate in mutations.items():
             with self.subTest(name=name):
@@ -182,6 +272,36 @@ class HostRegistrationSnapshotTests(unittest.TestCase):
     def test_duplicate_registration_is_rejected_without_partial_snapshot(self) -> None:
         data = registration.host_registration_snapshot_to_data(self.snapshot())
         data["registrations"].append(dict(data["registrations"][0]))
+        content = (json.dumps(data, ensure_ascii=False, indent=2) + "\n").encode(
+            "utf-8"
+        )
+
+        result = self.parse(content)
+
+        self.assertIsNone(result.snapshot)
+        self.assertEqual(
+            ["factory.registration-snapshot.schema"],
+            [value.code for value in result.diagnostics],
+        )
+
+    def test_invalid_contribution_cardinality_is_rejected_by_schema(self) -> None:
+        data = registration.host_registration_snapshot_to_data(self.snapshot())
+        data["registrations"][0]["contributions"][0]["cardinality"] = "many"
+        content = (json.dumps(data, ensure_ascii=False, indent=2) + "\n").encode(
+            "utf-8"
+        )
+
+        result = self.parse(content)
+
+        self.assertIsNone(result.snapshot)
+        self.assertEqual(
+            ["factory.registration-snapshot.schema"],
+            [value.code for value in result.diagnostics],
+        )
+
+    def test_v1_snapshot_is_rejected_by_the_v2_schema(self) -> None:
+        data = registration.host_registration_snapshot_to_data(self.snapshot())
+        data["schemaVersion"] = 1
         content = (json.dumps(data, ensure_ascii=False, indent=2) + "\n").encode(
             "utf-8"
         )

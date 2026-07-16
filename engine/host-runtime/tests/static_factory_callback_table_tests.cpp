@@ -19,11 +19,13 @@ namespace asharia::host_runtime::tests {
             "sha256-cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
         constexpr std::string_view kBlueprintSha256 =
             "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
-        constexpr StaticFactoryRegistrationCapacityV1 kSingleFactoryCapacity{
+        constexpr StaticFactoryRegistrationCapacityV2 kSingleFactoryCapacity{
             .providerCount = 1,
             .factoryCount = 1,
+            .contributionCount = 0,
             .textBytes = 512,
             .diagnosticFactoryIdBytes = 256,
+            .diagnosticContributionIdBytes = 256,
         };
 
         [[noreturn]] FactoryCreateResultV1
@@ -67,7 +69,7 @@ namespace asharia::host_runtime::tests {
             std::abort();
         }
 
-        [[nodiscard]] StaticCompositionRegistrationContextV1 compositionContext() noexcept {
+        [[nodiscard]] StaticCompositionRegistrationContextV2 compositionContext() noexcept {
             return {
                 .generationId = kGenerationId,
                 .hostActivationBlueprintSha256 = kBlueprintSha256,
@@ -75,59 +77,62 @@ namespace asharia::host_runtime::tests {
             };
         }
 
-        [[nodiscard]] StaticFactoryProviderContextV1 providerContext() noexcept {
-            static constexpr std::array<std::string_view, 1> kFactories{"service"};
+        [[nodiscard]] StaticFactoryProviderContextV2 providerContext() noexcept {
+            static constexpr std::array kFactories{StaticFactoryExpectationV1{
+                .factoryId = "service",
+                .contributions = {},
+            }};
             return {
                 .packageId = "com.asharia.test.callbacks",
                 .packageVersion = "1.0.0",
                 .moduleId = "runtime",
                 .entryPoint = "asharia::host_runtime::tests::provideCallbacks",
-                .expectedFactoryIds = kFactories,
+                .expectedFactories = kFactories,
             };
         }
 
         void provideCompleteCallbacks(StaticFactoryRegistrar& registrar) noexcept {
-            registrar.registerFactory("service", abortingCallbacks());
+            registrar.registerFactory("service", abortingCallbacks(), {});
         }
 
         void provideAlternateCallbacks(StaticFactoryRegistrar& registrar) noexcept {
             StaticFactoryCallbacksV1 callbacks = abortingCallbacks();
             callbacks.create = &alternateAbortCreate;
-            registrar.registerFactory("service", callbacks);
+            registrar.registerFactory("service", callbacks, {});
         }
 
         void provideWithoutCreate(StaticFactoryRegistrar& registrar) noexcept {
             StaticFactoryCallbacksV1 callbacks = abortingCallbacks();
             callbacks.create = nullptr;
-            registrar.registerFactory("service", callbacks);
+            registrar.registerFactory("service", callbacks, {});
         }
 
         void provideWithoutActivate(StaticFactoryRegistrar& registrar) noexcept {
             StaticFactoryCallbacksV1 callbacks = abortingCallbacks();
             callbacks.activate = nullptr;
-            registrar.registerFactory("service", callbacks);
+            registrar.registerFactory("service", callbacks, {});
         }
 
         void provideWithoutQuiesce(StaticFactoryRegistrar& registrar) noexcept {
             StaticFactoryCallbacksV1 callbacks = abortingCallbacks();
             callbacks.quiesce = nullptr;
-            registrar.registerFactory("service", callbacks);
+            registrar.registerFactory("service", callbacks, {});
         }
 
         void provideWithoutDeactivate(StaticFactoryRegistrar& registrar) noexcept {
             StaticFactoryCallbacksV1 callbacks = abortingCallbacks();
             callbacks.deactivate = nullptr;
-            registrar.registerFactory("service", callbacks);
+            registrar.registerFactory("service", callbacks, {});
         }
 
         void provideWithoutDestroy(StaticFactoryRegistrar& registrar) noexcept {
             StaticFactoryCallbacksV1 callbacks = abortingCallbacks();
             callbacks.destroy = nullptr;
-            registrar.registerFactory("service", callbacks);
+            registrar.registerFactory("service", callbacks, {});
         }
 
         [[nodiscard]] StaticFactoryRegistrationResult<StaticFactoryCallbackTableV1>
-        collectTable(StaticFactoryProviderV2 provider) noexcept {
+        collectTable(StaticFactoryProviderV3 provider) noexcept {
             auto recorderResult = createStaticFactoryRegistrationRecorder(kSingleFactoryCapacity);
             if (!recorderResult) {
                 return std::unexpected(std::move(recorderResult.error()));
@@ -196,15 +201,15 @@ namespace asharia::host_runtime::tests {
                 return false;
             }
             const StaticFactoryCallbackTableV1& table = *tableResult;
-            const StaticFactoryRegistrationSnapshotV1& first = table.registrationSnapshot();
-            const StaticFactoryRegistrationSnapshotV1& second = table.registrationSnapshot();
+            const StaticFactoryRegistrationSnapshotV2& first = table.registrationSnapshot();
+            const StaticFactoryRegistrationSnapshotV2& second = table.registrationSnapshot();
             return &first == &second && first.generationId == kGenerationId &&
                    first.hostActivationBlueprintSha256 == kBlueprintSha256 &&
                    first.registrations.size() == 1 && first.registrations[0].factoryId == "service";
         }
 
         [[nodiscard]] bool missingCallbacksFailByLifecycleSlot() noexcept {
-            using Case = std::pair<StaticFactoryProviderV2, StaticFactoryRegistrationErrorCode>;
+            using Case = std::pair<StaticFactoryProviderV3, StaticFactoryRegistrationErrorCode>;
             constexpr std::array<Case, 5> cases{
                 Case{&provideWithoutCreate,
                      StaticFactoryRegistrationErrorCode::FactoryCreateCallbackMissing},
@@ -257,8 +262,10 @@ namespace asharia::host_runtime::tests {
                 const auto entryPoint =
                     std::to_array("asharia::host_runtime::tests::provideCallbacks");
                 const auto factoryId = std::to_array("service");
-                const std::array<std::string_view, 1> factories{
-                    std::string_view{factoryId.data(), factoryId.size() - 1}};
+                const std::array factories{StaticFactoryExpectationV1{
+                    .factoryId = std::string_view{factoryId.data(), factoryId.size() - 1},
+                    .contributions = {},
+                }};
                 recorder.invokeProvider(
                     {
                         .packageId = std::string_view{packageId.data(), packageId.size() - 1},
@@ -266,7 +273,7 @@ namespace asharia::host_runtime::tests {
                             std::string_view{packageVersion.data(), packageVersion.size() - 1},
                         .moduleId = std::string_view{moduleId.data(), moduleId.size() - 1},
                         .entryPoint = std::string_view{entryPoint.data(), entryPoint.size() - 1},
-                        .expectedFactoryIds = factories,
+                        .expectedFactories = factories,
                     },
                     &provideCompleteCallbacks);
             }

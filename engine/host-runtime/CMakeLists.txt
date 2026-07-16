@@ -113,6 +113,11 @@ if(ASHARIA_BUILD_TESTS)
           asharia::host_runtime_registration
   )
 
+  target_include_directories(asharia-host-runtime-registration-tests
+      PRIVATE
+          "${CMAKE_CURRENT_SOURCE_DIR}/src"
+  )
+
   asharia_configure_target(asharia-host-runtime-registration-tests)
 
   add_test(

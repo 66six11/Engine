@@ -9,7 +9,7 @@
 namespace asharia::host_runtime::tests {
     namespace {
 
-        constexpr std::string_view kProviderApi{"asharia-static-factory-provider-v2"};
+        constexpr std::string_view kProviderApi{"asharia-static-factory-provider-v3"};
 
         [[nodiscard]] std::string digest(char character) {
             // NOLINTNEXTLINE(modernize-return-braced-init-list)
@@ -65,7 +65,7 @@ namespace asharia::host_runtime::tests {
             };
         }
 
-        [[nodiscard]] StaticFactoryRegistrationSnapshotV1 expectedSnapshot() {
+        [[nodiscard]] StaticFactoryRegistrationSnapshotV2 expectedSnapshot() {
             return {
                 .generationId = std::string(kSyntheticCompositionGenerationId),
                 .hostActivationBlueprintSha256 = std::string(kSyntheticBlueprintSha256),
@@ -77,6 +77,7 @@ namespace asharia::host_runtime::tests {
                             .moduleId = std::string(kSyntheticModuleId),
                             .factoryId = std::string(kSyntheticMiddleFactoryId),
                             .providerEntryPoint = std::string(kSyntheticProviderEntryPoint),
+                            .contributions = {},
                         },
                         {
                             .packageId = std::string(kSyntheticPackageId),
@@ -84,6 +85,7 @@ namespace asharia::host_runtime::tests {
                             .moduleId = std::string(kSyntheticModuleId),
                             .factoryId = std::string(kSyntheticProjectOnlyFactoryId),
                             .providerEntryPoint = std::string(kSyntheticProviderEntryPoint),
+                            .contributions = {},
                         },
                         {
                             .packageId = std::string(kSyntheticPackageId),
@@ -91,6 +93,7 @@ namespace asharia::host_runtime::tests {
                             .moduleId = std::string(kSyntheticModuleId),
                             .factoryId = std::string(kSyntheticLeafFactoryId),
                             .providerEntryPoint = std::string(kSyntheticProviderEntryPoint),
+                            .contributions = {},
                         },
                         {
                             .packageId = std::string(kSyntheticPackageId),
@@ -98,6 +101,7 @@ namespace asharia::host_runtime::tests {
                             .moduleId = std::string(kSyntheticModuleId),
                             .factoryId = std::string(kSyntheticRootFactoryId),
                             .providerEntryPoint = std::string(kSyntheticProviderEntryPoint),
+                            .contributions = {},
                         },
                     },
             };
@@ -188,8 +192,9 @@ namespace asharia::host_runtime::tests {
             .generationTuple =
                 {
                     .templateRendererRevision = 2,
-                    .compositionRendererRevision = 3,
+                    .compositionRendererRevision = 4,
                     .providerApi = std::string(kProviderApi),
+                    .registrationSnapshotSchemaVersion = 2,
                 },
             .blueprintIntegrity = digest('b'),
             .artifact =

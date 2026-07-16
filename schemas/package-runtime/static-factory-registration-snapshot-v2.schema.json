@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://schemas.asharia.dev/package-runtime/static-factory-registration-snapshot-v1.schema.json",
-  "title": "Asharia Static Factory Registration Snapshot v1",
-  "description": "Canonical owning identity evidence recorded by one generated static Host executable.",
+  "$id": "https://schemas.asharia.dev/package-runtime/static-factory-registration-snapshot-v2.schema.json",
+  "title": "Asharia Static Factory Registration Snapshot v2",
+  "description": "Canonical owning factory and typed contribution identity evidence recorded by one generated static Host executable.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -17,7 +17,7 @@
       "const": "com.asharia.static-factory-registration-snapshot"
     },
     "schemaVersion": {
-      "const": 1
+      "const": 2
     },
     "generationId": {
       "type": "string",
@@ -42,6 +42,29 @@
       "maxLength": 240,
       "pattern": "^asharia::[A-Za-z_][A-Za-z0-9_]*(?:::[A-Za-z_][A-Za-z0-9_]*)+$"
     },
+    "contribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "cardinality"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/packageId"
+        },
+        "kind": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/packageId"
+        },
+        "cardinality": {
+          "enum": [
+            "single",
+            "multiple"
+          ]
+        }
+      }
+    },
     "registration": {
       "type": "object",
       "additionalProperties": false,
@@ -50,7 +73,8 @@
         "packageVersion",
         "moduleId",
         "factoryId",
-        "providerEntryPoint"
+        "providerEntryPoint",
+        "contributions"
       ],
       "properties": {
         "packageId": {
@@ -67,6 +91,13 @@
         },
         "providerEntryPoint": {
           "$ref": "#/$defs/qualifiedFunction"
+        },
+        "contributions": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/contribution"
+          }
         }
       }
     }

@@ -16,7 +16,7 @@ flowchart TD
     EditorApp["apps/editor<br/>Dear ImGui host + editor smoke harness"]
     Core["engine/core"]
     Platform["engine/platform"]
-    HostRuntime["engine/host-runtime<br/>provider v2 + callback table<br/>eligibility + ProcessScope C++"]
+    HostRuntime["engine/host-runtime<br/>provider v3 + typed contract evidence<br/>callback table + eligibility + ProcessScope C++"]
     Window["packages/window-glfw"]
     Profiling["packages/profiling"]
     Schema["packages/schema"]
@@ -124,16 +124,17 @@ flowchart TD
   是 package-level 粗粒度边界，不能替代 target-level 依赖审查。
 - `engine/platform` 当前是预留 boundary target，只传递 `core` 依赖，不导出公共 header；真实
   GLFW/window/surface glue 仍在 `window-glfw`。
-- `engine/host-runtime` 的 `asharia::host_runtime_contract` 导出 callback/token V1 与 provider V2 registrar：provider 只能
-  `registerFactory(localFactoryId, completeDescriptor)`。provider implementation 通过 PRIVATE
+- `engine/host-runtime` 的 `asharia::host_runtime_contract` 导出 callback/token V1、public contribution contract helper 与 provider V3
+  registrar：provider 只能 `registerFactory(localFactoryId, completeDescriptor, availableTypedBindings)`。provider implementation 通过 PRIVATE
   `asharia::host_runtime_provider_bridge` 构造/消费 opaque token，普通 Host-facing include surface 不暴露该能力。
   `asharia::host_runtime_registration` 实现 move-only recorder、预留 capacity、sticky first error、frozen callback table、table-owned
-  canonical registration snapshot 与无 IO JSON renderer；registration 不调用 lifecycle callback，也不包含 scope/activation 逻辑。
+  canonical RegistrationSnapshot v2、private process-local type evidence 与无 IO JSON renderer；registration 不调用 lifecycle callback，
+  不发布 contribution payload，也不包含 scope/activation 逻辑。
   `asharia::host_runtime_activation_eligibility` 再把 sealed current-process lineage 与 exact table instance 绑定；
   `asharia::host_runtime_process_scope` 只消费 admitted owner，zero-callback preflight 后按 sealed Blueprint process order 执行
   create/activate、失败 rollback 与 explicit reverse stop。四个 targets 只按 contract → registration → eligibility → process-scope
   方向依赖；ProcessScope 不解析 package JSON、receipt 或 artifact bytes，也不提供其他 scopes、registry/lease 或 Bootstrap 状态映射。
-  现有 sample/editor app 尚未直接链接 process-scope target；renderer revision 3 的 generated CMake handoff 只在生成的 Windows Development
+  现有 sample/editor app 尚未直接链接 process-scope target；renderer revision 4 的 generated CMake handoff 只在生成的 Windows Development
   Host target 上链接 registration target 与 exact static provider targets。
 - `asharia::rhi_vulkan` 是基础 Vulkan 后端，不公开依赖 RenderGraph。
 - `asharia::rhi_vulkan_rendergraph` 是 RenderGraph/Vulkan 适配层，负责把抽象 graph state 翻译为 Vulkan 类型。
@@ -185,20 +186,21 @@ flowchart TD
 
 ## 当前 Windows Development Host 生成、绑定与验证流
 
-这是 #290 构建、#291 callback-table registration handoff 与 #288 Host executable binding 已落地的 opt-in 工具路径，
+这是 #290 构建、#291 callback-table registration handoff、#294 typed contribution evidence 与 #288 Host executable binding
+已落地的 opt-in 工具路径，
 不替换现有 sample/editor 开发入口：
 
 ```mermaid
 flowchart LR
-    Plans["Verified Source Build Plan + Blueprint + Binding Plan"] --> Composition["Static composition<br/>renderer 3 / provider v2"]
+    Plans["Verified Source Build Plan + Blueprint + Binding Plan"] --> Composition["Static composition<br/>renderer 4 / provider v3"]
     Composition --> Template["Windows development Host template<br/>renderer 2"]
     Conan["Caller-provided Conan toolchain + compiler environment"] --> Configure["Controlled final CMake configure"]
     Template --> Configure
     Configure --> Bind["Latest CMake File API exact target binding"]
     Bind --> Build["Build exact Host target"]
     Build --> Rebind["Refresh target + regular-file check"]
-    Rebind --> Verify["#290/#291 restricted Host<br/>build frozen callback table"]
-    Verify --> Handoff["#291 table-owned<br/>RegistrationSnapshot"]
+    Rebind --> Verify["Restricted Host<br/>build frozen callback table"]
+    Verify --> Handoff["#294 table-owned<br/>RegistrationSnapshot v2"]
     Rebind --> SameIndex["#288 same-index target + configured CXX"]
     SameIndex --> Stage["Stream exact executable into owned staging"]
     Handoff --> Stage
@@ -212,14 +214,15 @@ flowchart LR
 Host template 固定拥有唯一 `main()`、console subsystem 和 build-root 内 runtime output layout；build adapter 使用参数数组、
 受控环境与 `shell=False`，且 Conan 仍由 caller 先行完成。#288 publisher 不信任 mutable build-tree executable 是最终对象：
 它流式复制到 collector-owned staging，运行并复验 staged bytes，再以 receipt、snapshot 和 `host/<nameOnDisk>` 形成
-content-addressed closed generation。该路径只观察 registration identity 与 artifact bytes，不执行 factory activation/lifecycle、
+content-addressed closed generation。该路径只观察 stable registration/typed-contract evidence 与 artifact bytes，不执行 factory
+activation/lifecycle、
 不启动 Editor UI，也不证明 `Ready` 或 current process generation。模板和 composition 各只有一个薄 TU，构建只指定 exact Host
 target，且不使用 clean-first。restricted Host 会冻结 callback table，但 synthetic provider 使用 abort probes，验证 registration、
 receipt 路径对五个 lifecycle callbacks 的调用次数为零。Host build、binding assembly 与 deep verifier 只接受 Template renderer 2 +
-Composition renderer 3/provider v2；bindings/Binding Plan v1 与 pre-current renderer/provider tuple 没有 reader 或 adapter，
-Receipt v1 与 RegistrationSnapshot v1 仍是 active evidence schemas。详见
+Composition renderer 4/provider v3；pre-v3 bindings/Binding Plan 与 pre-current renderer/provider tuple 没有 reader 或 adapter，
+Receipt v1 保持 artifact binding envelope，RegistrationSnapshot v2 是唯一 active registration evidence schema。详见
 [Host Executable Binding Receipt v1](adr-host-executable-binding-receipt-v1.md) 与
-[Static Factory Callback Table v1](adr-static-factory-callback-table-v1.md)。
+[Static Typed Contribution Contract Bindings v1](adr-static-typed-contribution-contract-bindings-v1.md)。
 
 ## Activation Eligibility 与 ProcessScope 流（#292/#293 headless C++ boundaries）
 

@@ -31,11 +31,19 @@ class HostRegistrationCrossVerifierTests(unittest.TestCase):
                 package_id=provider.package_id,
                 package_version=provider.package_version,
                 module_id=provider.module_id,
-                factory_id=factory_id,
+                factory_id=factory.factory_id,
                 provider_entry_point=provider.entry_point.function,
+                contributions=tuple(
+                    snapshot_model.StaticContributionRegistration(
+                        contribution_id=contribution.contribution_id,
+                        kind=contribution.contribution_kind,
+                        cardinality="single",
+                    )
+                    for contribution in factory.contributions
+                ),
             )
             for provider in selected.providers
-            for factory_id in provider.factory_ids
+            for factory in provider.factories
         )
 
     def snapshot(
@@ -175,6 +183,13 @@ class HostRegistrationCrossVerifierTests(unittest.TestCase):
 
     def test_duplicate_expected_identity_is_rejected_without_pairing(self) -> None:
         duplicate = self.second_provider(same_owner=True)
+        duplicate = replace(
+            duplicate,
+            factories=tuple(
+                replace(factory, contributions=())
+                for factory in duplicate.factories
+            ),
+        )
         manifest = self.manifest_with_providers(
             (self.generation.manifest.providers[0], duplicate)
         )
@@ -239,6 +254,131 @@ class HostRegistrationCrossVerifierTests(unittest.TestCase):
                 result = self.verify(self.generation, self.snapshot(values))
 
                 self.assert_atomic_failure(result, code)
+
+    def test_selected_contribution_id_and_kind_are_reverified_exactly(self) -> None:
+        expected = self.expected_registrations()[0]
+        selected_contribution = expected.contributions[0]
+        extra_contribution = snapshot_model.StaticContributionRegistration(
+            contribution_id="com.asharia.contribution.unexpected",
+            kind="com.asharia.contribution.synthetic-service",
+            cardinality="single",
+        )
+        cases = {
+            "missing": (
+                replace(expected, contributions=()),
+                "host-binding.registration.contribution-missing",
+            ),
+            "extra": (
+                replace(
+                    expected,
+                    contributions=(
+                        selected_contribution,
+                        extra_contribution,
+                    ),
+                ),
+                "host-binding.registration.contribution-extra",
+            ),
+            "kind": (
+                replace(
+                    expected,
+                    contributions=(
+                        replace(
+                            selected_contribution,
+                            kind="com.asharia.contribution.other-kind",
+                        ),
+                    ),
+                ),
+                "host-binding.registration.contribution-kind-mismatch",
+            ),
+        }
+        for name, (registration, code) in cases.items():
+            with self.subTest(name=name):
+                result = self.verify(
+                    self.generation,
+                    self.snapshot((registration,)),
+                )
+
+                self.assert_atomic_failure(result, code)
+
+    def test_duplicate_observed_contribution_id_is_rejected(self) -> None:
+        expected = self.expected_registrations()[0]
+        contribution = expected.contributions[0]
+        duplicate = replace(contribution, cardinality="multiple")
+        observed = replace(
+            expected,
+            contributions=(contribution, duplicate),
+        )
+
+        result = self.verify(
+            self.generation,
+            self.snapshot((observed,)),
+        )
+
+        self.assert_atomic_failure(
+            result,
+            "host-binding.registration.observed-contribution-duplicate",
+        )
+
+    def test_observed_cardinality_is_preserved_in_verified_evidence(self) -> None:
+        expected = self.expected_registrations()[0]
+        observed = replace(
+            expected,
+            contributions=(
+                replace(expected.contributions[0], cardinality="multiple"),
+            ),
+        )
+
+        result = self.verify(
+            self.generation,
+            self.snapshot((observed,)),
+        )
+
+        self.assertTrue(
+            result.succeeded,
+            [value.render() for value in result.diagnostics],
+        )
+        assert result.verified is not None
+        self.assertEqual((observed,), result.verified.registrations)
+
+    def test_one_kind_cannot_claim_conflicting_cardinalities(self) -> None:
+        provider = self.generation.manifest.providers[0]
+        factory = provider.factories[0]
+        selected = factory.contributions[0]
+        second = replace(
+            selected,
+            contribution_id="com.asharia.contribution.synthetic-runtime-second",
+        )
+        manifest = self.manifest_with_providers(
+            (
+                replace(
+                    provider,
+                    factories=(
+                        replace(
+                            factory,
+                            contributions=(selected, second),
+                        ),
+                    ),
+                ),
+            )
+        )
+        expected = self.expected_registrations(manifest)[0]
+        observed = replace(
+            expected,
+            contributions=(
+                expected.contributions[0],
+                replace(expected.contributions[1], cardinality="multiple"),
+            ),
+        )
+
+        result = self.verify(
+            manifest,
+            self.snapshot((observed,), manifest=manifest),
+        )
+
+        self.assert_atomic_failure(
+            result,
+            "host.registration.contribution-cardinality-conflict",
+        )
 
     def test_factory_id_is_not_treated_as_a_global_identity(self) -> None:
         expected = self.expected_registrations()[0]

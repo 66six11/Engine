@@ -1,7 +1,9 @@
 ﻿#pragma once
 
+#include <span>
 #include <string_view>
 
+#include "asharia/host_runtime/static_contribution_contract.hpp"
 #include "asharia/host_runtime/static_factory_callbacks.hpp"
 
 namespace asharia::host_runtime {
@@ -10,8 +12,9 @@ namespace asharia::host_runtime {
 
     class StaticFactoryRegistrar final {
     public:
-        void registerFactory(std::string_view localFactoryId,
-                             StaticFactoryCallbacksV1 callbacks) noexcept;
+        void registerFactory(
+            std::string_view localFactoryId, StaticFactoryCallbacksV1 callbacks,
+            std::span<const StaticContributionBindingV1> availableContributions) noexcept;
 
     private:
         explicit StaticFactoryRegistrar(StaticFactoryRegistrationState& state) noexcept
@@ -29,6 +32,6 @@ namespace asharia::host_runtime {
         friend class StaticFactoryRegistrationState;
     };
 
-    using StaticFactoryProviderV2 = void (*)(StaticFactoryRegistrar& registrar) noexcept;
+    using StaticFactoryProviderV3 = void (*)(StaticFactoryRegistrar& registrar) noexcept;
 
 } // namespace asharia::host_runtime

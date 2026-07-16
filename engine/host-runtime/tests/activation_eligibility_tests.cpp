@@ -135,6 +135,12 @@ namespace asharia::host_runtime::tests {
                     .field = ActivationEligibilityFieldV1::GenerationTuple,
                 },
                 Case{
+                    .mutation =
+                        EligibilityHandoffMutationV1::UnsupportedSnapshotSchemaVersion,
+                    .code = ActivationEligibilityErrorCodeV1::UnsupportedGenerationTuple,
+                    .field = ActivationEligibilityFieldV1::GenerationTuple,
+                },
+                Case{
                     .mutation = EligibilityHandoffMutationV1::BindingGenerationMismatch,
                     .code = ActivationEligibilityErrorCodeV1::BindingGenerationMismatch,
                     .field = ActivationEligibilityFieldV1::BindingGeneration,

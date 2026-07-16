@@ -83,7 +83,12 @@ def _blueprint() -> activation.HostActivationBlueprint:
             "runtime-service",
         ),
         requirements=(),
-        contributions=(),
+        contributions=(
+            activation.FactoryContribution(
+                "com.asharia.contribution.synthetic-runtime",
+                "com.asharia.contribution.synthetic-service",
+            ),
+        ),
     )
     blueprint = activation.HostActivationBlueprint(
         inputs=activation.HostActivationBlueprintInputs(
@@ -130,7 +135,21 @@ def _binding_plan(
             "asharia/synthetic/runtime_provider.hpp",
             "asharia::synthetic::provideRuntimeFactories",
         ),
-        factory_ids=("runtime-service",),
+        factories=(
+            provider_bindings.StaticFactoryBinding(
+                factory_id="runtime-service",
+                contributions=(
+                    provider_bindings.StaticFactoryContributionBinding(
+                        contribution_id=(
+                            "com.asharia.contribution.synthetic-runtime"
+                        ),
+                        contribution_kind=(
+                            "com.asharia.contribution.synthetic-service"
+                        ),
+                    ),
+                ),
+            ),
+        ),
     )
     plan = provider_bindings.StaticFactoryProviderBindingPlan(
         inputs=provider_bindings.StaticFactoryProviderBindingInputs(
@@ -199,7 +218,7 @@ class StaticCompositionRootTests(unittest.TestCase):
             first.manifest.renderer_revision,
         )
         self.assertEqual(
-            "asharia-static-factory-provider-v2",
+            "asharia-static-factory-provider-v3",
             first.manifest.provider_api,
         )
         revised_manifest = replace(
@@ -231,7 +250,8 @@ class StaticCompositionRootTests(unittest.TestCase):
             "utf-8-sig"
         )
         self.assertIn("static_assert(std::is_same_v<", source)
-        self.assertIn("StaticFactoryProviderV2", source)
+        self.assertIn("StaticFactoryProviderV3", source)
+        self.assertIn("StaticFactoryRegistrationCapacityV2", source)
         self.assertIn("recorder.beginComposition({", source)
         self.assertIn("recorder.invokeProvider(", source)
         self.assertIn("recorder.endComposition();", source)
@@ -243,8 +263,21 @@ class StaticCompositionRootTests(unittest.TestCase):
         )
         self.assertIn(".providerCount = 1U", source)
         self.assertIn(".factoryCount = 1U", source)
-        self.assertIn(".textBytes = 233U", source)
+        self.assertIn(".contributionCount = 1U", source)
+        self.assertIn(".textBytes = 317U", source)
         self.assertIn(".diagnosticFactoryIdBytes = 256U", source)
+        self.assertIn(".diagnosticContributionIdBytes = 256U", source)
+        self.assertIn("kExpectedContributions0_0", source)
+        self.assertIn("kExpectedFactories0", source)
+        self.assertIn(".expectedFactories =", source)
+        self.assertIn(
+            '        .contributionId = "com.asharia.contribution.synthetic-runtime",',
+            source,
+        )
+        self.assertIn(
+            '        .contributionKind = "com.asharia.contribution.synthetic-service",',
+            source,
+        )
         for forbidden in (
             "GetProcAddress",
             "dlsym",
@@ -269,11 +302,9 @@ class StaticCompositionRootTests(unittest.TestCase):
             generation.manifest
         )
         legacy_api = copy.deepcopy(current)
-        legacy_api["providerApi"] = (
-            "asharia-static-factory-provider-v1"
-        )
+        legacy_api["providerApi"] = "asharia-static-factory-provider-v2"
         legacy_renderer = copy.deepcopy(current)
-        legacy_renderer["rendererRevision"] = 2
+        legacy_renderer["rendererRevision"] = 3
 
         for value in (
             legacy_api,
@@ -290,6 +321,70 @@ class StaticCompositionRootTests(unittest.TestCase):
                     {"static-composition.schema"},
                     {item.code for item in diagnostics},
                 )
+
+    def test_manifest_rejects_noncanonical_or_duplicate_nested_bindings(self) -> None:
+        generation = self.generate()
+        current = composition_root.static_composition_root_manifest_to_data(
+            generation.manifest
+        )
+        factory_order = copy.deepcopy(current)
+        factory_order["providers"][0]["factories"].append(
+            {"factoryId": "alternate-service", "contributions": []}
+        )
+        contribution_order = copy.deepcopy(current)
+        contribution_order["providers"][0]["factories"][0][
+            "contributions"
+        ].append(
+            {
+                "id": "com.asharia.contribution.alpha",
+                "kind": "com.asharia.contribution.alpha-service",
+            }
+        )
+        duplicate_contribution = copy.deepcopy(current)
+        duplicate_contribution["providers"][0]["factories"][0][
+            "contributions"
+        ].append(
+            {
+                "id": "com.asharia.contribution.synthetic-runtime",
+                "kind": "com.asharia.contribution.other-service",
+            }
+        )
+        duplicate_owner = copy.deepcopy(current)
+        duplicate_owner["providers"][0]["factories"].insert(
+            0,
+            {
+                "factoryId": "alternate-service",
+                "contributions": copy.deepcopy(
+                    duplicate_owner["providers"][0]["factories"][0][
+                        "contributions"
+                    ]
+                ),
+            },
+        )
+
+        for value, code in (
+            (factory_order, "static-composition.factories-not-normalized"),
+            (
+                contribution_order,
+                "static-composition.contributions-not-normalized",
+            ),
+            (
+                duplicate_contribution,
+                "static-composition.contributions-not-normalized",
+            ),
+            (
+                duplicate_owner,
+                "static-composition.contribution-owner-duplicate",
+            ),
+        ):
+            with self.subTest(code=code):
+                diagnostics = (
+                    composition_root.validate_static_composition_root_manifest_data(
+                        value,
+                        self.validators,
+                    )
+                )
+                self.assertIn(code, {item.code for item in diagnostics})
 
     def test_deep_verification_rejects_self_consistent_renderer_forgery(self) -> None:
         generation = self.generate()
@@ -411,6 +506,167 @@ class StaticCompositionRootTests(unittest.TestCase):
             {item.code for item in result.diagnostics},
         )
 
+    def test_generation_rejects_binding_contribution_mismatch(self) -> None:
+        build_plan = _build_plan()
+        blueprint = _blueprint()
+        binding = _binding_plan(build_plan, blueprint)
+
+        for field, value in (
+            (
+                "contribution_id",
+                "com.asharia.contribution.synthetic-alternate",
+            ),
+            (
+                "contribution_kind",
+                "com.asharia.contribution.synthetic-alternate-service",
+            ),
+        ):
+            with self.subTest(field=field):
+                provider = binding.providers[0]
+                factory = provider.factories[0]
+                changed_contribution = replace(
+                    factory.contributions[0],
+                    **{field: value},
+                )
+                changed_factory = replace(
+                    factory,
+                    contributions=(changed_contribution,),
+                )
+                changed_provider = replace(
+                    provider,
+                    factories=(changed_factory,),
+                )
+                changed_binding = replace(
+                    binding,
+                    providers=(changed_provider,),
+                    integrity=provider_bindings.IntegrityRecord(
+                        "sha256", _digest("0")
+                    ),
+                )
+                integrity = (
+                    provider_bindings.compute_static_factory_provider_binding_plan_integrity(
+                        changed_binding
+                    )
+                )
+                changed_binding = replace(
+                    changed_binding,
+                    integrity=provider_bindings.IntegrityRecord(
+                        integrity["algorithm"], integrity["digest"]
+                    ),
+                )
+
+                result = composition_root.generate_static_composition_root(
+                    build_plan,
+                    blueprint,
+                    changed_binding,
+                    self.validators,
+                )
+
+                self.assertFalse(result.succeeded)
+                self.assertEqual(
+                    ["static-composition.contribution-set-mismatch"],
+                    [item.code for item in result.diagnostics],
+                )
+
+    def test_contribution_change_invalidates_generation_and_source(self) -> None:
+        original = self.generate()
+        build_plan = _build_plan()
+        blueprint = _blueprint()
+        scope = blueprint.scope_templates[0]
+        factory = scope.factories[0]
+        changed_contribution = replace(
+            factory.contributions[0],
+            contribution_id="com.asharia.contribution.synthetic-alternate",
+            contribution_kind=(
+                "com.asharia.contribution.synthetic-alternate-service"
+            ),
+        )
+        changed_blueprint = replace(
+            blueprint,
+            scope_templates=(
+                replace(
+                    scope,
+                    factories=(
+                        replace(factory, contributions=(changed_contribution,)),
+                    ),
+                ),
+            ),
+            integrity=activation.IntegrityRecord("sha256", _digest("0")),
+        )
+        blueprint_integrity = activation.compute_host_activation_blueprint_integrity(
+            changed_blueprint
+        )
+        changed_blueprint = replace(
+            changed_blueprint,
+            integrity=activation.IntegrityRecord(
+                blueprint_integrity["algorithm"], blueprint_integrity["digest"]
+            ),
+        )
+
+        binding = _binding_plan(build_plan, changed_blueprint)
+        provider = binding.providers[0]
+        binding_factory = provider.factories[0]
+        changed_binding_contribution = replace(
+            binding_factory.contributions[0],
+            contribution_id=changed_contribution.contribution_id,
+            contribution_kind=changed_contribution.contribution_kind,
+        )
+        changed_binding = replace(
+            binding,
+            providers=(
+                replace(
+                    provider,
+                    factories=(
+                        replace(
+                            binding_factory,
+                            contributions=(changed_binding_contribution,),
+                        ),
+                    ),
+                ),
+            ),
+            integrity=provider_bindings.IntegrityRecord("sha256", _digest("0")),
+        )
+        binding_integrity = (
+            provider_bindings.compute_static_factory_provider_binding_plan_integrity(
+                changed_binding
+            )
+        )
+        changed_binding = replace(
+            changed_binding,
+            integrity=provider_bindings.IntegrityRecord(
+                binding_integrity["algorithm"], binding_integrity["digest"]
+            ),
+        )
+
+        changed_result = composition_root.generate_static_composition_root(
+            build_plan,
+            changed_blueprint,
+            changed_binding,
+            self.validators,
+        )
+
+        self.assertTrue(
+            changed_result.succeeded,
+            [item.render() for item in changed_result.diagnostics],
+        )
+        assert changed_result.generation is not None
+        changed = changed_result.generation
+        original_files = {value.path: value.content for value in original.files}
+        changed_files = {value.path: value.content for value in changed.files}
+        self.assertNotEqual(
+            original.manifest.generation_id,
+            changed.manifest.generation_id,
+        )
+        self.assertNotEqual(
+            original_files[composition_root.STATIC_COMPOSITION_SOURCE_PATH],
+            changed_files[composition_root.STATIC_COMPOSITION_SOURCE_PATH],
+        )
+        changed_source = changed_files[
+            composition_root.STATIC_COMPOSITION_SOURCE_PATH
+        ].decode("utf-8-sig")
+        self.assertIn(changed_contribution.contribution_id, changed_source)
+        self.assertIn(changed_contribution.contribution_kind, changed_source)
+
     def test_provider_change_invalidates_only_generated_handoff_bytes(self) -> None:
         original = self.generate()
         build_plan = _build_plan()
@@ -529,8 +785,10 @@ class StaticCompositionRootTests(unittest.TestCase):
         )
         self.assertIn(".providerCount = 0U", source)
         self.assertIn(".factoryCount = 0U", source)
+        self.assertIn(".contributionCount = 0U", source)
         self.assertIn(".textBytes = 135U", source)
         self.assertIn(".diagnosticFactoryIdBytes = 256U", source)
+        self.assertIn(".diagnosticContributionIdBytes = 256U", source)
         self.assertIn("recorder.beginComposition({", source)
         self.assertNotIn("recorder.invokeProvider(", source)
         self.assertIn("recorder.endComposition();", source)
@@ -664,17 +922,31 @@ class StaticCompositionRootTests(unittest.TestCase):
             (source_root / "include/asharia/synthetic").mkdir(parents=True)
             (source_root / "include/asharia/synthetic/runtime_provider.hpp").write_text(
                 """#pragma once
+#include <string_view>
+
 #include \"asharia/host_runtime/static_factory_provider.hpp\"
+
 namespace asharia::synthetic {
+
+struct SyntheticRuntimeContributionContract final {
+  static constexpr std::string_view kind{
+      \"com.asharia.contribution.synthetic-service\"};
+  static constexpr auto cardinality =
+      asharia::host_runtime::StaticContributionCardinalityV1::Single;
+};
+
 void provideRuntimeFactories(
     asharia::host_runtime::StaticFactoryRegistrar& registrar) noexcept;
-}
+
+} // namespace asharia::synthetic
 """,
                 encoding="utf-8-sig",
                 newline="\n",
             )
             (source_root / "provider.cpp").write_text(
-                """#include \"asharia/host_runtime/static_factory_instance_token_provider_access.hpp\"
+                """#include <array>
+
+#include \"asharia/host_runtime/static_factory_instance_token_provider_access.hpp\"
 #include \"asharia/synthetic/runtime_provider.hpp\"
 
 namespace {
@@ -716,6 +988,10 @@ void destroySynthetic(
 
 void asharia::synthetic::provideRuntimeFactories(
     asharia::host_runtime::StaticFactoryRegistrar& registrar) noexcept {
+  constexpr std::array kContributions{
+      asharia::host_runtime::bindStaticContributionV1<
+          SyntheticRuntimeContributionContract>(
+          \"com.asharia.contribution.synthetic-runtime\")};
   registrar.registerFactory(
       "runtime-service",
       {
@@ -724,7 +1000,8 @@ void asharia::synthetic::provideRuntimeFactories(
           .quiesce = &quiesceSynthetic,
           .deactivate = &deactivateSynthetic,
           .destroy = &destroySynthetic,
-      });
+      },
+      kContributions);
 }
 """,
                 encoding="utf-8-sig",
@@ -757,8 +1034,17 @@ int main() {{
       registration.moduleId != "implementation" ||
       registration.factoryId != "runtime-service" ||
       registration.providerEntryPoint !=
-          "asharia::synthetic::provideRuntimeFactories") {{
+          "asharia::synthetic::provideRuntimeFactories" ||
+      registration.contributions.size() != 1U) {{
     return 3;
+  }}
+  const auto& contribution = registration.contributions.front();
+  if (contribution.contributionId !=
+          "com.asharia.contribution.synthetic-runtime" ||
+      contribution.contributionKind !=
+          "com.asharia.contribution.synthetic-service" ||
+      contribution.cardinality != StaticContributionCardinalityV1::Single) {{
+    return 4;
   }}
   return 0;
 }}
@@ -871,7 +1157,7 @@ asharia_attach_static_composition(host)
             self.assertNotEqual(0, mismatched.returncode, mismatch_output)
             self.assertTrue(
                 "static_assert" in mismatch_output
-                or "StaticFactoryProviderV2" in mismatch_output
+                or "StaticFactoryProviderV3" in mismatch_output
                 or "static_composition_root.cpp" in mismatch_output,
                 mismatch_output,
             )

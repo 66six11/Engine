@@ -43,6 +43,7 @@ namespace asharia::host_runtime {
         std::uint32_t templateRendererRevision{};
         std::uint32_t compositionRendererRevision{};
         std::string providerApi;
+        std::uint32_t registrationSnapshotSchemaVersion{};
 
         [[nodiscard]] friend bool operator==(const HostGenerationTupleStateV1&,
                                              const HostGenerationTupleStateV1&) = default;
@@ -68,7 +69,7 @@ namespace asharia::host_runtime {
         HostGenerationTupleStateV1 generationTuple;
         std::string blueprintIntegrity;
         HostArtifactIdentityStateV1 artifact;
-        StaticFactoryRegistrationSnapshotV1 expectedSnapshot;
+        StaticFactoryRegistrationSnapshotV2 expectedSnapshot;
     };
 
     struct CurrentProcessEpochAnchorV1 final {
@@ -119,7 +120,7 @@ namespace asharia::host_runtime {
         std::string blueprintIntegrity;
         ProcessScopeBlueprintProjectionStateV1 processScope;
         HostArtifactIdentityStateV1 artifact;
-        StaticFactoryRegistrationSnapshotV1 expectedSnapshot;
+        StaticFactoryRegistrationSnapshotV2 expectedSnapshot;
         std::shared_ptr<const CurrentProcessEpochAnchorV1> processEpoch;
         std::shared_ptr<const ControlThreadEpochAnchorV1> controlThreadEpoch;
         StaticFactoryRegistrationCapacityFunctionV1 registrationCapacity{};

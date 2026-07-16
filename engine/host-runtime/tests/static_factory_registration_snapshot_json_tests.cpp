@@ -7,11 +7,13 @@
 
 namespace {
 
-    using asharia::host_runtime::StaticFactoryRegistrationSnapshotV1;
-    using asharia::host_runtime::StaticFactoryRegistrationV1;
+    using asharia::host_runtime::StaticContributionCardinalityV1;
+    using asharia::host_runtime::StaticContributionRegistrationV2;
+    using asharia::host_runtime::StaticFactoryRegistrationSnapshotV2;
+    using asharia::host_runtime::StaticFactoryRegistrationV2;
 
     [[nodiscard]] bool emptySnapshotUsesCanonicalShape() {
-        const StaticFactoryRegistrationSnapshotV1 snapshot{
+        const StaticFactoryRegistrationSnapshotV2 snapshot{
             .generationId = "sha256-empty",
             .hostActivationBlueprintSha256 = "blueprint-empty",
             .registrations = {},
@@ -21,7 +23,7 @@ namespace {
         constexpr std::string_view expected =
             "{\n"
             "  \"schema\": \"com.asharia.static-factory-registration-snapshot\",\n"
-            "  \"schemaVersion\": 1,\n"
+            "  \"schemaVersion\": 2,\n"
             "  \"generationId\": \"sha256-empty\",\n"
             "  \"hostActivationBlueprintSha256\": \"blueprint-empty\",\n"
             "  \"registrations\": []\n"
@@ -33,17 +35,18 @@ namespace {
         std::string factoryId{"factory\"\\\b\f\n\r\t"};
         factoryId.push_back('\x01');
         factoryId += "/结束";
-        const StaticFactoryRegistrationSnapshotV1 snapshot{
+        const StaticFactoryRegistrationSnapshotV2 snapshot{
             .generationId = "sha256-代际",
             .hostActivationBlueprintSha256 = "blueprint",
             .registrations =
                 {
-                    StaticFactoryRegistrationV1{
+                    StaticFactoryRegistrationV2{
                         .packageId = "com.asharia.包",
                         .packageVersion = "1.0.0",
                         .moduleId = "runtime",
                         .factoryId = std::move(factoryId),
                         .providerEntryPoint = "asharia::test::provide",
+                        .contributions = {},
                     },
                 },
         };
@@ -52,7 +55,7 @@ namespace {
         constexpr std::string_view expected =
             "{\n"
             "  \"schema\": \"com.asharia.static-factory-registration-snapshot\",\n"
-            "  \"schemaVersion\": 1,\n"
+            "  \"schemaVersion\": 2,\n"
             "  \"generationId\": \"sha256-代际\",\n"
             "  \"hostActivationBlueprintSha256\": \"blueprint\",\n"
             "  \"registrations\": [\n"
@@ -61,7 +64,8 @@ namespace {
             "      \"packageVersion\": \"1.0.0\",\n"
             "      \"moduleId\": \"runtime\",\n"
             "      \"factoryId\": \"factory\\\"\\\\\\b\\f\\n\\r\\t\\u0001/结束\",\n"
-            "      \"providerEntryPoint\": \"asharia::test::provide\"\n"
+            "      \"providerEntryPoint\": \"asharia::test::provide\",\n"
+            "      \"contributions\": []\n"
             "    }\n"
             "  ]\n"
             "}\n";
@@ -69,24 +73,40 @@ namespace {
     }
 
     [[nodiscard]] bool registrationsKeepSnapshotOrder() {
-        const StaticFactoryRegistrationSnapshotV1 snapshot{
+        const StaticFactoryRegistrationSnapshotV2 snapshot{
             .generationId = "sha256-order",
             .hostActivationBlueprintSha256 = "blueprint",
             .registrations =
                 {
-                    StaticFactoryRegistrationV1{
+                    StaticFactoryRegistrationV2{
                         .packageId = "a",
                         .packageVersion = "1",
                         .moduleId = "runtime",
                         .factoryId = "first",
                         .providerEntryPoint = "provideA",
+                        .contributions =
+                            {
+                                StaticContributionRegistrationV2{
+                                    .contributionId = "a.default",
+                                    .contributionKind = "a.service",
+                                    .cardinality = StaticContributionCardinalityV1::Single,
+                                },
+                            },
                     },
-                    StaticFactoryRegistrationV1{
+                    StaticFactoryRegistrationV2{
                         .packageId = "b",
                         .packageVersion = "1",
                         .moduleId = "tools",
                         .factoryId = "second",
                         .providerEntryPoint = "provideB",
+                        .contributions =
+                            {
+                                StaticContributionRegistrationV2{
+                                    .contributionId = "b.default",
+                                    .contributionKind = "b.service",
+                                    .cardinality = StaticContributionCardinalityV1::Multiple,
+                                },
+                            },
                     },
                 },
         };
@@ -97,7 +117,10 @@ namespace {
         }
         const std::size_t first = rendered->find(R"("factoryId": "first")");
         const std::size_t second = rendered->find(R"("factoryId": "second")");
-        return first != std::string::npos && second != std::string::npos && first < second;
+        return first != std::string::npos && second != std::string::npos && first < second &&
+               rendered->find(R"("cardinality": "single")") != std::string::npos &&
+               rendered->find(R"("cardinality": "multiple")") != std::string::npos &&
+               rendered->find("typeKey") == std::string::npos;
     }
 
 } // namespace

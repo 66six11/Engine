@@ -1,4 +1,4 @@
-"""Static native Factory Provider Binding v2 contract and evidence tests."""
+"""Static native Factory Provider Binding v3 contract and evidence tests."""
 
 from __future__ import annotations
 
@@ -169,12 +169,12 @@ class PackageStaticFactoryBindingsTests(unittest.TestCase):
         }
         return {
             "schema": "com.asharia.package-static-factory-bindings",
-            "schemaVersion": 2,
+            "schemaVersion": 3,
             "package": {
                 "id": self.manifest["id"],
                 "version": self.manifest["version"],
             },
-            "providerApi": "asharia-static-factory-provider-v2",
+            "providerApi": "asharia-static-factory-provider-v3",
             "modules": [
                 {
                     "moduleId": module["id"],
@@ -427,8 +427,8 @@ class PackageStaticFactoryBindingsTests(unittest.TestCase):
             "entryPoint"
         ]["library"] = "runtime.dll"
         legacy = self.bindings()
-        legacy["schemaVersion"] = 1
-        legacy["providerApi"] = "asharia-static-factory-provider-v1"
+        legacy["schemaVersion"] = 2
+        legacy["providerApi"] = "asharia-static-factory-provider-v2"
 
         for value in (shared, symbol, runtime_lookup, legacy):
             with self.subTest(value=value):
@@ -655,14 +655,56 @@ class PackageStaticFactoryBindingsTests(unittest.TestCase):
                     result.plan
                 )
             )
-            self.assertEqual(2, plan_data["schemaVersion"])
+            self.assertEqual(3, plan_data["schemaVersion"])
             self.assertEqual(
-                "asharia-static-factory-provider-v2",
+                "asharia-static-factory-provider-v3",
                 plan_data["providerApi"],
             )
+            for provider in plan_data["providers"]:
+                self.assertNotIn("factoryIds", provider)
+                self.assertTrue(provider["factories"])
+                for factory in provider["factories"]:
+                    self.assertEqual(
+                        {"factoryId", "contributions"},
+                        set(factory),
+                    )
+            expected_factories = {
+                (
+                    factory.reference.package_id,
+                    factory.reference.package_version,
+                    factory.reference.module_id,
+                    factory.reference.factory_id,
+                ): tuple(
+                    (
+                        contribution.contribution_id,
+                        contribution.contribution_kind,
+                    )
+                    for contribution in factory.contributions
+                )
+                for scope in blueprint.scope_templates
+                for factory in scope.factories
+            }
+            actual_factories = {
+                (
+                    provider.package_id,
+                    provider.package_version,
+                    provider.module_id,
+                    factory.factory_id,
+                ): tuple(
+                    (
+                        contribution.contribution_id,
+                        contribution.contribution_kind,
+                    )
+                    for contribution in factory.contributions
+                )
+                for provider in result.plan.providers
+                for factory in provider.factories
+            }
+            self.assertEqual(expected_factories, actual_factories)
+            self.assertTrue(any(actual_factories.values()))
             legacy_plan = copy.deepcopy(plan_data)
-            legacy_plan["schemaVersion"] = 1
-            legacy_plan["providerApi"] = "asharia-static-factory-provider-v1"
+            legacy_plan["schemaVersion"] = 2
+            legacy_plan["providerApi"] = "asharia-static-factory-provider-v2"
             legacy_diagnostics = (
                 provider_bindings.validate_static_factory_provider_binding_plan_data(
                     legacy_plan,
@@ -686,7 +728,7 @@ class PackageStaticFactoryBindingsTests(unittest.TestCase):
             )
             self.assertEqual(
                 selected_factory_count,
-                sum(len(provider.factory_ids) for provider in result.plan.providers),
+                sum(len(provider.factories) for provider in result.plan.providers),
             )
 
             changed_packages = []
@@ -810,6 +852,75 @@ class PackageStaticFactoryBindingsTests(unittest.TestCase):
             self.assertIn(
                 "factory.binding.missing",
                 {item.code for item in missing_result.diagnostics},
+            )
+
+    def test_binding_plan_rejects_noncanonical_and_duplicate_contributions(
+        self,
+    ) -> None:
+        def refresh_integrity(data: dict[str, object]) -> None:
+            payload = {key: value for key, value in data.items() if key != "integrity"}
+            data["integrity"] = contracts.compute_bytes_integrity(
+                json.dumps(
+                    payload,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            )
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory) / "package"
+            self.write_package(root)
+            result = provider_bindings.plan_static_factory_provider_bindings(
+                *self.selected_handoffs(root),
+                self.validators,
+            )
+            self.assertTrue(result.succeeded)
+            assert result.plan is not None
+            plan_data = provider_bindings.static_factory_provider_binding_plan_to_data(
+                result.plan
+            )
+
+            noncanonical = copy.deepcopy(plan_data)
+            first_factory = noncanonical["providers"][0]["factories"][0]
+            first_factory["contributions"].append(
+                {
+                    "id": "com.asharia.contribution.aaa",
+                    "kind": "com.asharia.contribution.synthetic-service",
+                }
+            )
+            refresh_integrity(noncanonical)
+            self.assertIn(
+                "factory.binding-plan.not-normalized",
+                {
+                    item.code
+                    for item in provider_bindings.validate_static_factory_provider_binding_plan_data(
+                        noncanonical,
+                        self.validators,
+                    )
+                },
+            )
+
+            duplicate = copy.deepcopy(plan_data)
+            factories = [
+                factory
+                for provider in duplicate["providers"]
+                for factory in provider["factories"]
+            ]
+            self.assertGreaterEqual(len(factories), 2)
+            factories[1]["contributions"] = copy.deepcopy(
+                factories[0]["contributions"]
+            )
+            refresh_integrity(duplicate)
+            self.assertIn(
+                "factory.binding-plan.duplicate-contribution",
+                {
+                    item.code
+                    for item in provider_bindings.validate_static_factory_provider_binding_plan_data(
+                        duplicate,
+                        self.validators,
+                    )
+                },
             )
 
 

@@ -55,7 +55,7 @@ namespace asharia::host_runtime {
         AdmittedStaticFactoryCallbackTableV1&& other) noexcept
         : state_(std::move(other.state_)), admission_(std::move(other.admission_)) {}
 
-    const StaticFactoryRegistrationSnapshotV1&
+    const StaticFactoryRegistrationSnapshotV2&
     AdmittedStaticFactoryCallbackTableV1::registrationSnapshot() const noexcept {
         if (!state_ || !state_->pending || !admission_.valid_) {
             std::terminate();
@@ -91,7 +91,7 @@ namespace asharia::host_runtime {
                 ActivationEligibilityFieldV1::RecordingFunction));
         }
 
-        const StaticFactoryRegistrationCapacityV1 capacity =
+        const StaticFactoryRegistrationCapacityV2 capacity =
             lineage->registrationCapacity();
         auto recorderResult = createStaticFactoryRegistrationRecorder(capacity);
         if (!recorderResult) {

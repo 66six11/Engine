@@ -21,6 +21,7 @@ namespace asharia::host_runtime::tests {
         UnsupportedTemplateRenderer,
         UnsupportedCompositionRenderer,
         UnsupportedProviderApi,
+        UnsupportedSnapshotSchemaVersion,
         BindingGenerationMismatch,
         ArtifactMismatch,
         ExpectedSnapshotInvalid,

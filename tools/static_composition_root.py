@@ -25,14 +25,15 @@ from tools import static_factory_provider_bindings as provider_bindings
 STATIC_COMPOSITION_ROOT_NAME = "asharia.static-composition-root.json"
 STATIC_COMPOSITION_ROOT_SCHEMA = "com.asharia.static-composition-root"
 STATIC_COMPOSITION_ROOT_SCHEMA_VERSION = 1
-STATIC_COMPOSITION_RENDERER_REVISION = 3
-STATIC_COMPOSITION_PROVIDER_API = "asharia-static-factory-provider-v2"
+STATIC_COMPOSITION_RENDERER_REVISION = 4
+STATIC_COMPOSITION_PROVIDER_API = "asharia-static-factory-provider-v3"
 STATIC_COMPOSITION_HEADER_PATH = (
     "include/asharia/generated/static_composition_root.hpp"
 )
 STATIC_COMPOSITION_SOURCE_PATH = "src/static_composition_root.cpp"
 STATIC_COMPOSITION_CMAKE_PATH = "asharia-static-composition.cmake"
 _MIN_DIAGNOSTIC_FACTORY_ID_BYTES = 256
+_MIN_DIAGNOSTIC_CONTRIBUTION_ID_BYTES = 256
 _UTF8_BOM = b"\xef\xbb\xbf"
 
 _FILE_DESCRIPTORS = (
@@ -249,7 +250,19 @@ def _provider_data(
             "header": provider.entry_point.header,
             "function": provider.entry_point.function,
         },
-        "factoryIds": list(provider.factory_ids),
+        "factories": [
+            {
+                "factoryId": factory.factory_id,
+                "contributions": [
+                    {
+                        "id": contribution.contribution_id,
+                        "kind": contribution.contribution_kind,
+                    }
+                    for contribution in factory.contributions
+                ],
+            }
+            for factory in provider.factories
+        ],
     }
 
 
@@ -371,7 +384,19 @@ def _manifest_from_data(data: dict[str, Any]) -> StaticCompositionRootManifest:
                 value["entryPoint"]["header"],
                 value["entryPoint"]["function"],
             ),
-            factory_ids=tuple(value["factoryIds"]),
+            factories=tuple(
+                provider_bindings.StaticFactoryBinding(
+                    factory_id=factory["factoryId"],
+                    contributions=tuple(
+                        provider_bindings.StaticFactoryContributionBinding(
+                            contribution_id=contribution["id"],
+                            contribution_kind=contribution["kind"],
+                        )
+                        for contribution in factory["contributions"]
+                    ),
+                )
+                for factory in value["factories"]
+            ),
         )
         for value in data["providers"]
     )
@@ -444,17 +469,70 @@ def validate_static_composition_root_manifest_data(
                 "providers are not in canonical UTF-8 order",
             )
         )
-    for index, provider in enumerate(parsed.providers):
-        if provider.factory_ids != tuple(
-            sorted(provider.factory_ids, key=_utf8_key)
-        ):
+    contribution_owners: dict[
+        tuple[str, str], tuple[str, str, str, str]
+    ] = {}
+    for provider_index, provider in enumerate(parsed.providers):
+        factory_ids = tuple(factory.factory_id for factory in provider.factories)
+        if factory_ids != tuple(sorted(factory_ids, key=_utf8_key)) or len(
+            factory_ids
+        ) != len(set(factory_ids)):
             diagnostics.append(
                 _diagnostic(
                     "static-composition.factories-not-normalized",
-                    f"/providers/{index}/factoryIds",
-                    "provider factory IDs are not in canonical UTF-8 order",
+                    f"/providers/{provider_index}/factories",
+                    "provider factories are not in unique canonical UTF-8 order",
                 )
             )
+        for factory_index, factory in enumerate(provider.factories):
+            contribution_ids = tuple(
+                contribution.contribution_id
+                for contribution in factory.contributions
+            )
+            if contribution_ids != tuple(
+                sorted(contribution_ids, key=_utf8_key)
+            ) or len(contribution_ids) != len(set(contribution_ids)):
+                diagnostics.append(
+                    _diagnostic(
+                        "static-composition.contributions-not-normalized",
+                        (
+                            f"/providers/{provider_index}/factories/"
+                            f"{factory_index}/contributions"
+                        ),
+                        (
+                            "factory contributions are not in unique canonical "
+                            "UTF-8 ID order"
+                        ),
+                    )
+                )
+            for contribution_index, contribution in enumerate(
+                factory.contributions
+            ):
+                owner_key = (provider.package_id, contribution.contribution_id)
+                owner = (
+                    provider.package_id,
+                    provider.package_version,
+                    provider.module_id,
+                    factory.factory_id,
+                )
+                previous_owner = contribution_owners.get(owner_key)
+                if previous_owner is not None and previous_owner != owner:
+                    diagnostics.append(
+                        _diagnostic(
+                            "static-composition.contribution-owner-duplicate",
+                            (
+                                f"/providers/{provider_index}/factories/"
+                                f"{factory_index}/contributions/"
+                                f"{contribution_index}/id"
+                            ),
+                            (
+                                "one package contribution ID is owned by more "
+                                "than one factory"
+                            ),
+                        )
+                    )
+                else:
+                    contribution_owners[owner_key] = owner
 
     expected_file_shapes = tuple(_FILE_DESCRIPTORS)
     actual_file_shapes = tuple(
@@ -495,7 +573,7 @@ def _render_recording_header() -> bytes:
 
 namespace asharia::generated {
 
-[[nodiscard]] asharia::host_runtime::StaticFactoryRegistrationCapacityV1
+[[nodiscard]] asharia::host_runtime::StaticFactoryRegistrationCapacityV2
 staticFactoryRegistrationCapacity() noexcept;
 
 void recordStaticFactoryProviders(
@@ -510,30 +588,51 @@ def _registration_capacity(
     generation_id: str,
     host_activation_blueprint_sha256: str,
     providers: tuple[provider_bindings.StaticFactoryProvider, ...],
-) -> tuple[int, int, int, int]:
-    factory_count = sum(len(provider.factory_ids) for provider in providers)
-    text_values = (
-        generation_id,
-        host_activation_blueprint_sha256,
-        *(
-            value
-            for provider in providers
-            for value in (
+) -> tuple[int, int, int, int, int, int]:
+    factory_count = sum(len(provider.factories) for provider in providers)
+    contribution_count = sum(
+        len(factory.contributions)
+        for provider in providers
+        for factory in provider.factories
+    )
+    text_values = [generation_id, host_activation_blueprint_sha256]
+    for provider in providers:
+        text_values.extend(
+            (
                 provider.package_id,
                 provider.package_version,
                 provider.module_id,
                 provider.entry_point.function,
-                *provider.factory_ids,
             )
-        ),
-    )
+        )
+        for factory in provider.factories:
+            text_values.append(factory.factory_id)
+            for contribution in factory.contributions:
+                text_values.extend(
+                    (
+                        contribution.contribution_id,
+                        contribution.contribution_kind,
+                    )
+                )
     diagnostic_factory_id_bytes = max(
         _MIN_DIAGNOSTIC_FACTORY_ID_BYTES,
         max(
             (
-                len(factory_id.encode("utf-8"))
+                len(factory.factory_id.encode("utf-8"))
                 for provider in providers
-                for factory_id in provider.factory_ids
+                for factory in provider.factories
+            ),
+            default=0,
+        ),
+    )
+    diagnostic_contribution_id_bytes = max(
+        _MIN_DIAGNOSTIC_CONTRIBUTION_ID_BYTES,
+        max(
+            (
+                len(contribution.contribution_id.encode("utf-8"))
+                for provider in providers
+                for factory in provider.factories
+                for contribution in factory.contributions
             ),
             default=0,
         ),
@@ -541,8 +640,10 @@ def _registration_capacity(
     return (
         len(providers),
         factory_count,
+        contribution_count,
         sum(len(value.encode("utf-8")) for value in text_values),
         diagnostic_factory_id_bytes,
+        diagnostic_contribution_id_bytes,
     )
 
 
@@ -572,38 +673,76 @@ def _render_recording_source(
             (
                 "static_assert(std::is_same_v<",
                 f"              decltype(&{provider.entry_point.function}),",
-                "              asharia::host_runtime::StaticFactoryProviderV2>);",
+                "              asharia::host_runtime::StaticFactoryProviderV3>);",
                 "",
             )
         )
     if providers:
         lines.extend(("namespace {", ""))
-        for index, provider in enumerate(providers):
+        for provider_index, provider in enumerate(providers):
+            for factory_index, factory in enumerate(provider.factories):
+                lines.append(
+                    "constexpr std::array<"
+                    "asharia::host_runtime::StaticContributionExpectationV1, "
+                    f"{len(factory.contributions)}> "
+                    f"kExpectedContributions{provider_index}_{factory_index}{{{{"
+                )
+                for contribution in factory.contributions:
+                    lines.extend(
+                        (
+                            "    {",
+                            f'        .contributionId = "{contribution.contribution_id}",',
+                            f'        .contributionKind = "{contribution.contribution_kind}",',
+                            "    },",
+                        )
+                    )
+                lines.extend(("}};", ""))
+
             lines.append(
-                "constexpr std::array<std::string_view, "
-                f"{len(provider.factory_ids)}> kExpectedFactoryIds{index}{{{{"
+                "constexpr std::array<"
+                "asharia::host_runtime::StaticFactoryExpectationV1, "
+                f"{len(provider.factories)}> kExpectedFactories{provider_index}{{{{"
             )
-            lines.extend(f'    "{value}",' for value in provider.factory_ids)
+            for factory_index, factory in enumerate(provider.factories):
+                lines.extend(
+                    (
+                        "    {",
+                        f'        .factoryId = "{factory.factory_id}",',
+                        "        .contributions = std::span<const "
+                        "asharia::host_runtime::StaticContributionExpectationV1>{",
+                        f"            kExpectedContributions{provider_index}_{factory_index}",
+                        "        },",
+                        "    },",
+                    )
+                )
             lines.extend(("}};", ""))
         lines.extend(("} // namespace", ""))
 
-    provider_count, factory_count, text_bytes, diagnostic_factory_id_bytes = (
-        _registration_capacity(
-            generation_id,
-            host_activation_blueprint_sha256,
-            providers,
-        )
+    (
+        provider_count,
+        factory_count,
+        contribution_count,
+        text_bytes,
+        diagnostic_factory_id_bytes,
+        diagnostic_contribution_id_bytes,
+    ) = _registration_capacity(
+        generation_id,
+        host_activation_blueprint_sha256,
+        providers,
     )
     lines.extend(
         (
-            "asharia::host_runtime::StaticFactoryRegistrationCapacityV1",
+            "asharia::host_runtime::StaticFactoryRegistrationCapacityV2",
             "asharia::generated::staticFactoryRegistrationCapacity() noexcept {",
             "  return {",
             f"      .providerCount = {provider_count}U,",
             f"      .factoryCount = {factory_count}U,",
+            f"      .contributionCount = {contribution_count}U,",
             f"      .textBytes = {text_bytes}U,",
             "      .diagnosticFactoryIdBytes = "
             f"{diagnostic_factory_id_bytes}U,",
+            "      .diagnosticContributionIdBytes = "
+            f"{diagnostic_contribution_id_bytes}U,",
             "  };",
             "}",
             "",
@@ -626,8 +765,9 @@ def _render_recording_source(
                 f'          .packageVersion = "{provider.package_version}",',
                 f'          .moduleId = "{provider.module_id}",',
                 f'          .entryPoint = "{provider.entry_point.function}",',
-                "          .expectedFactoryIds = std::span<const std::string_view>{",
-                f"              kExpectedFactoryIds{index}",
+                "          .expectedFactories = std::span<const "
+                "asharia::host_runtime::StaticFactoryExpectationV1>{",
+                f"              kExpectedFactories{index}",
                 "          },",
                 "      },",
                 f"      &{provider.entry_point.function});",
@@ -873,32 +1013,55 @@ def generate_static_composition_root(
             )
         )
 
-    expected_factories = {
+    expected_factory_bindings = {
         (
             factory.reference.package_id,
             factory.reference.package_version,
             factory.reference.module_id,
             factory.reference.factory_id,
+        ): tuple(
+            (
+                contribution.contribution_id,
+                contribution.contribution_kind,
+            )
+            for contribution in factory.contributions
         )
         for scope in blueprint.scope_templates
         for factory in scope.factories
     }
-    bound_factories = {
+    bound_factory_bindings = {
         (
             provider.package_id,
             provider.package_version,
             provider.module_id,
-            factory_id,
+            factory.factory_id,
+        ): tuple(
+            (
+                contribution.contribution_id,
+                contribution.contribution_kind,
+            )
+            for contribution in factory.contributions
         )
         for provider in binding_plan.providers
-        for factory_id in provider.factory_ids
+        for factory in provider.factories
     }
-    if bound_factories != expected_factories:
+    if bound_factory_bindings.keys() != expected_factory_bindings.keys():
         diagnostics.append(
             _diagnostic(
                 "static-composition.factory-set-mismatch",
                 "/providers",
                 "provider mappings do not cover the exact Blueprint factory set",
+            )
+        )
+    elif bound_factory_bindings != expected_factory_bindings:
+        diagnostics.append(
+            _diagnostic(
+                "static-composition.contribution-set-mismatch",
+                "/providers",
+                (
+                    "provider mappings do not carry the exact Blueprint "
+                    "contribution set"
+                ),
             )
         )
     selected_root_targets = {

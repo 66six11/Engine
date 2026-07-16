@@ -76,7 +76,12 @@ def blueprint() -> activation.HostActivationBlueprint:
             "runtime-service",
         ),
         requirements=(),
-        contributions=(),
+        contributions=(
+            activation.FactoryContribution(
+                "com.asharia.contribution.synthetic-runtime",
+                "com.asharia.contribution.synthetic-service",
+            ),
+        ),
     )
     value = activation.HostActivationBlueprint(
         inputs=activation.HostActivationBlueprintInputs(
@@ -123,7 +128,21 @@ def binding_plan(
             "asharia/synthetic/runtime_provider.hpp",
             "asharia::synthetic::provideRuntimeFactories",
         ),
-        factory_ids=("runtime-service",),
+        factories=(
+            provider_bindings.StaticFactoryBinding(
+                factory_id="runtime-service",
+                contributions=(
+                    provider_bindings.StaticFactoryContributionBinding(
+                        contribution_id=(
+                            "com.asharia.contribution.synthetic-runtime"
+                        ),
+                        contribution_kind=(
+                            "com.asharia.contribution.synthetic-service"
+                        ),
+                    ),
+                ),
+            ),
+        ),
     )
     value = provider_bindings.StaticFactoryProviderBindingPlan(
         inputs=provider_bindings.StaticFactoryProviderBindingInputs(

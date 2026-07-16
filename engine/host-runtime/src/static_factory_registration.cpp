@@ -26,6 +26,48 @@ namespace asharia::host_runtime {
             return value.starts_with(kPrefix) && isLowerHexSha256(value.substr(kPrefix.size()));
         }
 
+        [[nodiscard]] bool validateExpectedFactories(
+            StaticFactoryRegistrationState& state,
+            const StaticFactoryProviderContextV2& context,
+            std::size_t& contributionCount) noexcept {
+            contributionCount = 0;
+            for (std::size_t index = 0; index < context.expectedFactories.size(); ++index) {
+                const StaticFactoryExpectationV1& factory = context.expectedFactories[index];
+                if (factory.factoryId.empty() ||
+                    (index != 0 &&
+                     context.expectedFactories[index - 1].factoryId >= factory.factoryId)) {
+                    state.fail(StaticFactoryRegistrationErrorCode::ExpectedFactoriesNotCanonical,
+                               nullptr, factory.factoryId);
+                    return false;
+                }
+                for (std::size_t contributionIndex = 0;
+                     contributionIndex < factory.contributions.size(); ++contributionIndex) {
+                    const StaticContributionExpectationV1& contribution =
+                        factory.contributions[contributionIndex];
+                    if (contribution.contributionId.empty() ||
+                        contribution.contributionKind.empty() ||
+                        (contributionIndex != 0 &&
+                         factory.contributions[contributionIndex - 1].contributionId >=
+                             contribution.contributionId)) {
+                        state.fail(
+                            StaticFactoryRegistrationErrorCode::
+                                ExpectedContributionsNotCanonical,
+                            nullptr, factory.factoryId, contribution.contributionId);
+                        return false;
+                    }
+                }
+                if (factory.contributions.size() >
+                    state.capacity.contributionCount - state.expectedContributionCount -
+                        contributionCount) {
+                    state.fail(StaticFactoryRegistrationErrorCode::ContributionCountMismatch,
+                               nullptr, factory.factoryId);
+                    return false;
+                }
+                contributionCount += factory.contributions.size();
+            }
+            return true;
+        }
+
     } // namespace
 
     StaticFactoryRegistrationRecorder::StaticFactoryRegistrationRecorder(
@@ -38,7 +80,7 @@ namespace asharia::host_runtime {
         StaticFactoryRegistrationRecorder&& other) noexcept = default;
 
     void StaticFactoryRegistrationRecorder::beginComposition(
-        StaticCompositionRegistrationContextV1 context) noexcept {
+        StaticCompositionRegistrationContextV2 context) noexcept {
         if (!state_) {
             return;
         }
@@ -72,8 +114,8 @@ namespace asharia::host_runtime {
     }
 
     void
-    StaticFactoryRegistrationRecorder::invokeProvider(StaticFactoryProviderContextV1 context,
-                                                      StaticFactoryProviderV2 provider) noexcept {
+    StaticFactoryRegistrationRecorder::invokeProvider(StaticFactoryProviderContextV2 context,
+                                                      StaticFactoryProviderV3 provider) noexcept {
         if (!state_) {
             return;
         }
@@ -95,17 +137,13 @@ namespace asharia::host_runtime {
         }
         if (context.packageId.empty() || context.packageVersion.empty() ||
             context.moduleId.empty() || context.entryPoint.empty() ||
-            context.expectedFactoryIds.empty()) {
+            context.expectedFactories.empty()) {
             state.fail(StaticFactoryRegistrationErrorCode::ProviderContextInvalid);
             return;
         }
-        for (std::size_t index = 0; index < context.expectedFactoryIds.size(); ++index) {
-            if (context.expectedFactoryIds[index].empty() ||
-                (index != 0 &&
-                 context.expectedFactoryIds[index - 1] >= context.expectedFactoryIds[index])) {
-                state.fail(StaticFactoryRegistrationErrorCode::ExpectedFactoriesNotCanonical);
-                return;
-            }
+        std::size_t contextContributionCount{};
+        if (!validateExpectedFactories(state, context, contextContributionCount)) {
+            return;
         }
         const std::span<const StaticFactoryRegistrationState::ProviderObservation>
             observedProviders =
@@ -126,7 +164,7 @@ namespace asharia::host_runtime {
             return;
         }
         if (state.observedProviderCount >= state.capacity.providerCount ||
-            context.expectedFactoryIds.size() >
+            context.expectedFactories.size() >
                 state.capacity.factoryCount - state.expectedFactoryCount) {
             state.fail(StaticFactoryRegistrationErrorCode::ProviderCountMismatch);
             return;
@@ -145,8 +183,9 @@ namespace asharia::host_runtime {
         state.providers[state.observedProviderCount] = observed;
         state.activeProviderIndex = state.observedProviderCount;
         ++state.observedProviderCount;
-        state.expectedFactoryCount += context.expectedFactoryIds.size();
-        state.activeExpectedFactoryIds = context.expectedFactoryIds;
+        state.expectedFactoryCount += context.expectedFactories.size();
+        state.expectedContributionCount += contextContributionCount;
+        state.activeExpectedFactories = context.expectedFactories;
         state.activeFactoryBegin = state.observedFactoryCount;
         state.providerActive = true;
 
@@ -164,15 +203,15 @@ namespace asharia::host_runtime {
                 std::span<const StaticFactoryRegistrationState::FactoryObservation>{state.factories}
                     .subspan(state.activeFactoryBegin,
                              state.observedFactoryCount - state.activeFactoryBegin);
-        for (const std::string_view expected : context.expectedFactoryIds) {
+        for (const StaticFactoryExpectationV1& expected : context.expectedFactories) {
             const auto registered = std::ranges::find_if(
                 providerFactories,
-                [expected](const StaticFactoryRegistrationState::FactoryObservation& factory) {
-                    return factory.factoryId == expected;
+                [&expected](const StaticFactoryRegistrationState::FactoryObservation& factory) {
+                    return factory.factoryId == expected.factoryId;
                 });
             if (registered == providerFactories.end()) {
                 state.fail(StaticFactoryRegistrationErrorCode::FactoryMissing, &activeProvider,
-                           expected);
+                           expected.factoryId);
                 return;
             }
         }
@@ -206,6 +245,11 @@ namespace asharia::host_runtime {
         } else if (state.expectedFactoryCount != state.capacity.factoryCount ||
                    state.observedFactoryCount != state.capacity.factoryCount) {
             state.fail(StaticFactoryRegistrationErrorCode::FactoryCountMismatch);
+        } else if (state.expectedContributionCount != state.capacity.contributionCount ||
+                   state.observedContributionCount != state.capacity.contributionCount) {
+            state.fail(StaticFactoryRegistrationErrorCode::ContributionCountMismatch);
+        } else {
+            state.validateContributionContracts();
         }
     }
 
@@ -233,16 +277,18 @@ namespace asharia::host_runtime {
         return StaticFactoryCallbackTableBuilder::build(state);
     }
 
-    void StaticFactoryRegistrar::registerFactory(std::string_view localFactoryId,
-                                                 StaticFactoryCallbacksV1 callbacks) noexcept {
-        state_->registerFactory(localFactoryId, callbacks);
+    void StaticFactoryRegistrar::registerFactory(
+        std::string_view localFactoryId, StaticFactoryCallbacksV1 callbacks,
+        std::span<const StaticContributionBindingV1> availableContributions) noexcept {
+        state_->registerFactory(localFactoryId, callbacks, availableContributions);
     }
 
     StaticFactoryRegistrationResult<StaticFactoryRegistrationRecorder>
-    createStaticFactoryRegistrationRecorder(StaticFactoryRegistrationCapacityV1 capacity) noexcept {
+    createStaticFactoryRegistrationRecorder(StaticFactoryRegistrationCapacityV2 capacity) noexcept {
         if ((capacity.providerCount == 0) != (capacity.factoryCount == 0) ||
             capacity.providerCount > capacity.factoryCount || capacity.textBytes == 0 ||
-            capacity.diagnosticFactoryIdBytes == 0) {
+            capacity.diagnosticFactoryIdBytes == 0 || capacity.diagnosticContributionIdBytes == 0 ||
+            (capacity.factoryCount == 0 && capacity.contributionCount != 0)) {
             return std::unexpected(makeStaticFactoryRegistrationError(
                 StaticFactoryRegistrationErrorCode::InvalidCapacity));
         }

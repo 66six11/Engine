@@ -25,7 +25,7 @@ namespace asharia::host_runtime {
                    !reference.moduleId.empty() && !reference.factoryId.empty();
         }
 
-        [[nodiscard]] bool sameFactory(const StaticFactoryRegistrationV1& registration,
+        [[nodiscard]] bool sameFactory(const StaticFactoryRegistrationV2& registration,
                                        const ExactFactoryReferenceStateV1& reference) noexcept {
             return registration.packageId == reference.packageId &&
                    registration.packageVersion == reference.packageVersion &&
@@ -33,8 +33,8 @@ namespace asharia::host_runtime {
                    registration.factoryId == reference.factoryId;
         }
 
-        [[nodiscard]] bool sameFactory(const StaticFactoryRegistrationV1& left,
-                                       const StaticFactoryRegistrationV1& right) noexcept {
+        [[nodiscard]] bool sameFactory(const StaticFactoryRegistrationV2& left,
+                                       const StaticFactoryRegistrationV2& right) noexcept {
             return left.packageId == right.packageId &&
                    left.packageVersion == right.packageVersion && left.moduleId == right.moduleId &&
                    left.factoryId == right.factoryId;
@@ -51,7 +51,7 @@ namespace asharia::host_runtime {
         }
 
         [[nodiscard]] ExactFactoryReferenceV1
-        ownReference(const StaticFactoryRegistrationV1& registration) {
+        ownReference(const StaticFactoryRegistrationV2& registration) {
             return {
                 .packageId = registration.packageId,
                 .packageVersion = registration.packageVersion,
@@ -79,7 +79,7 @@ namespace asharia::host_runtime {
         }
 
         [[nodiscard]] ProcessScopePreparationErrorV1
-        factoryError(ProcessScopeErrorCodeV1 code, const StaticFactoryRegistrationV1& factory) {
+        factoryError(ProcessScopeErrorCodeV1 code, const StaticFactoryRegistrationV2& factory) {
             return {
                 .code = code,
                 .factory = ownReference(factory),
@@ -115,7 +115,7 @@ namespace asharia::host_runtime {
         }
 
         [[nodiscard]] std::optional<std::size_t>
-        findDescriptor(const StaticFactoryRegistrationSnapshotV1& snapshot,
+        findDescriptor(const StaticFactoryRegistrationSnapshotV2& snapshot,
                        const ExactFactoryReferenceStateV1& reference) noexcept {
             for (std::size_t index = 0; index < snapshot.registrations.size(); ++index) {
                 if (sameFactory(snapshot.registrations[index], reference)) {
@@ -127,7 +127,7 @@ namespace asharia::host_runtime {
 
         [[nodiscard]] std::optional<ProcessScopePreparationErrorV1>
         validateProjectionHeader(const AdmittedStaticFactoryExecutionViewV1& executionView,
-                                 const StaticFactoryRegistrationSnapshotV1& snapshot,
+                                 const StaticFactoryRegistrationSnapshotV2& snapshot,
                                  const ProcessScopeBlueprintProjectionStateV1& projection) {
             if (projection.scope != HostScopeKindStateV1::Process) {
                 return simpleError(ProcessScopeErrorCodeV1::ProcessScopeExpected);
@@ -152,9 +152,9 @@ namespace asharia::host_runtime {
         }
 
         [[nodiscard]] std::optional<ProcessScopePreparationErrorV1>
-        validateDescriptorIdentities(const StaticFactoryRegistrationSnapshotV1& snapshot) {
+        validateDescriptorIdentities(const StaticFactoryRegistrationSnapshotV2& snapshot) {
             for (std::size_t index = 0; index < snapshot.registrations.size(); ++index) {
-                const StaticFactoryRegistrationV1& registration = snapshot.registrations[index];
+                const StaticFactoryRegistrationV2& registration = snapshot.registrations[index];
                 for (std::size_t previous = 0; previous < index; ++previous) {
                     if (sameFactory(snapshot.registrations[previous], registration)) {
                         return factoryError(ProcessScopeErrorCodeV1::DescriptorDuplicate,
@@ -166,10 +166,10 @@ namespace asharia::host_runtime {
         }
 
         [[nodiscard]] std::size_t
-        descriptorMatchCount(const StaticFactoryRegistrationSnapshotV1& snapshot,
+        descriptorMatchCount(const StaticFactoryRegistrationSnapshotV2& snapshot,
                              const ExactFactoryReferenceStateV1& reference) noexcept {
             std::size_t matches = 0;
-            for (const StaticFactoryRegistrationV1& registration : snapshot.registrations) {
+            for (const StaticFactoryRegistrationV2& registration : snapshot.registrations) {
                 if (sameFactory(registration, reference)) {
                     ++matches;
                 }
@@ -208,7 +208,7 @@ namespace asharia::host_runtime {
 
         [[nodiscard]] std::optional<ProcessScopePreparationErrorV1>
         validateProcessFactories(const ProcessScopeBlueprintProjectionStateV1& projection,
-                                 const StaticFactoryRegistrationSnapshotV1& snapshot) {
+                                 const StaticFactoryRegistrationSnapshotV2& snapshot) {
             for (std::size_t index = 0; index < projection.factories.size(); ++index) {
                 const ProcessFactoryProjectionStateV1& factory = projection.factories[index];
                 if (!isComplete(factory.reference)) {
@@ -243,7 +243,7 @@ namespace asharia::host_runtime {
 
         [[nodiscard]] ResolvedFactoryResultV1
         materializeFactories(const AdmittedStaticFactoryExecutionViewV1& executionView,
-                             const StaticFactoryRegistrationSnapshotV1& snapshot,
+                             const StaticFactoryRegistrationSnapshotV2& snapshot,
                              const ProcessScopeBlueprintProjectionStateV1& projection) {
             std::vector<ResolvedProcessFactoryStateV1> factories;
             factories.reserve(projection.factories.size());
@@ -298,7 +298,7 @@ namespace asharia::host_runtime {
                 return std::unexpected(
                     simpleError(ProcessScopeErrorCodeV1::ProcessProjectionInvalid));
             }
-            const StaticFactoryRegistrationSnapshotV1& snapshot = *executionView->snapshot;
+            const StaticFactoryRegistrationSnapshotV2& snapshot = *executionView->snapshot;
             const ProcessScopeBlueprintProjectionStateV1& projection = *executionView->processScope;
 
             if (auto failure = validateProjectionHeader(*executionView, snapshot, projection)) {

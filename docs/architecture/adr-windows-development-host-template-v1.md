@@ -8,9 +8,12 @@ verification 边界。它消费 #287 的 immutable static-composition generation
 [Host Executable Binding Receipt](adr-host-executable-binding-receipt-v1.md)；后者已作为独立 downstream publisher 实现。
 
 [Static Factory Callback Table v1](adr-static-factory-callback-table-v1.md) 已为 #291 实现 Host Template renderer revision 2：
-registration-only `main()` 从 frozen table 读取 table-owned identity snapshot，但仍不调用 lifecycle callback。schema、generator、
-build request、receipt pipeline 与 deep verifier 只接受 Template revision 2 + Composition revision 3/provider v2；旧 revision/provider
-不保留兼容路径。
+registration-only `main()` 从 frozen table 读取 table-owned snapshot，但仍不调用 lifecycle callback。#291 当时的 active downstream
+是 Composition revision 3/provider v2。
+
+[Static Typed Contribution Contract Bindings v1](adr-static-typed-contribution-contract-bindings-v1.md) 已为 #294 保持 Template renderer 2
+的 generated `main.cpp`/CMake bytes 不变，并将 active downstream 硬切为 Composition revision 4/provider v3/RegistrationSnapshot v2。
+本 ADR 下文的 C3/provider-v2/Snapshot-v1 形状只保留为历史记录；pre-current reader、adapter 或 deep verification path 均不存在。
 
 ## 问题
 
