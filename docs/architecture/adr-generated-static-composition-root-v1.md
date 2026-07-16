@@ -22,6 +22,10 @@ revision 3 + provider API v2；旧 revision/provider 不保留兼容路径。
 硬切到 revision 4/provider v3：同一个薄 TU 额外生成 exact selected factory/contribution ID/kind expectations 与 Capacity/Context v2，
 但不 include contribution contract type、不增加 per-contribution TU。revision 3/provider v2 现在同样只属于历史记录。
 
+[Static Contribution Payload Accessors v1](adr-static-contribution-payload-accessors-v1.md) 已由 #295 实现 revision 5/provider v4 的
+后继硬切目标。generated source 只把 provider compile-time check 更新为 `StaticFactoryProviderV4`，仍不 include contract type、生成
+accessor 或增加 TU；typed accessor 由 provider 的 `StaticContributionBindingV2` 自身携带。
+
 ## 问题
 
 当前控制面已经分别证明：
@@ -141,7 +145,7 @@ manifest 证明 generated source bytes，不证明 compiler output、observed re
 
 #289 曾将 renderer revision 提升为 `2`。#291 随后把当时的 provider API 硬切到 v2，并把 renderer 提升为 `3`；该 generation
 的 schema、generator、build 与 deep verifier 只接受 revision 3/provider v2，不保留 revision 1/2 compatibility。
-#294 active generation 由本文开头记录的后继决策定义。
+#294 的 revision 4/provider v3 generation 同样已成为历史；当前 #295 revision 5/provider v4 generation 由本文开头记录的后继决策定义。
 
 发布采用 staging directory + write exact bytes + re-read/hash + atomic directory commit。若同 generation 的完整 bytes 已存在，
 返回 reuse；若目录存在但内容不一致，fail closed，不原地修补。

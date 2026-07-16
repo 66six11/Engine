@@ -20,10 +20,10 @@ namespace asharia::host_runtime {
             currentProcessEpoch; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
 
         constexpr std::uint32_t kCurrentTemplateRendererRevision = 2;
-        constexpr std::uint32_t kCurrentCompositionRendererRevision = 4;
+        constexpr std::uint32_t kCurrentCompositionRendererRevision = 5;
         constexpr std::uint32_t kCurrentRegistrationSnapshotSchemaVersion = 2;
         constexpr std::string_view kCurrentProviderApi{
-            "asharia-static-factory-provider-v3"};
+            "asharia-static-factory-provider-v4"};
 
         [[nodiscard]] ActivationEligibilityErrorV1
         makeError(ActivationEligibilityErrorCodeV1 code,

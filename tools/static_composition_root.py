@@ -25,8 +25,8 @@ from tools import static_factory_provider_bindings as provider_bindings
 STATIC_COMPOSITION_ROOT_NAME = "asharia.static-composition-root.json"
 STATIC_COMPOSITION_ROOT_SCHEMA = "com.asharia.static-composition-root"
 STATIC_COMPOSITION_ROOT_SCHEMA_VERSION = 1
-STATIC_COMPOSITION_RENDERER_REVISION = 4
-STATIC_COMPOSITION_PROVIDER_API = "asharia-static-factory-provider-v3"
+STATIC_COMPOSITION_RENDERER_REVISION = 5
+STATIC_COMPOSITION_PROVIDER_API = "asharia-static-factory-provider-v4"
 STATIC_COMPOSITION_HEADER_PATH = (
     "include/asharia/generated/static_composition_root.hpp"
 )
@@ -673,7 +673,7 @@ def _render_recording_source(
             (
                 "static_assert(std::is_same_v<",
                 f"              decltype(&{provider.entry_point.function}),",
-                "              asharia::host_runtime::StaticFactoryProviderV3>);",
+                "              asharia::host_runtime::StaticFactoryProviderV4>);",
                 "",
             )
         )

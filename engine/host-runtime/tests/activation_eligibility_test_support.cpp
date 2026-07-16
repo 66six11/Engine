@@ -13,7 +13,7 @@
 namespace asharia::host_runtime::tests {
     namespace {
 
-        constexpr std::string_view kProviderApi{"asharia-static-factory-provider-v3"};
+        constexpr std::string_view kProviderApi{"asharia-static-factory-provider-v4"};
         constexpr std::string_view kPackageId{"com.asharia.test.eligibility"};
         constexpr std::string_view kPackageVersion{"1.0.0"};
         constexpr std::string_view kModuleId{"runtime"};
@@ -21,14 +21,38 @@ namespace asharia::host_runtime::tests {
             "asharia::host_runtime::tests::provideExpectedFactory"};
         constexpr std::string_view kExpectedFactoryId{"service-a"};
         constexpr std::string_view kUnexpectedFactoryId{"service-b"};
+        constexpr std::string_view kExpectedContributionId{"service-a.default"};
         constexpr std::string_view kCompositionGenerationId{
             "sha256-cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"};
         constexpr std::string_view kBlueprintSha256{
             "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"};
 
-        std::atomic_size_t recordingInvocations{}; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
-        std::atomic_size_t providerInvocations{}; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
-        std::atomic_size_t lifecycleInvocations{}; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+        std::atomic_size_t
+            recordingInvocations{}; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+        std::atomic_size_t
+            providerInvocations{}; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+        std::atomic_size_t
+            lifecycleInvocations{}; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+        std::atomic_size_t
+            contributionAccessorInvocations{}; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+
+        struct EligibilityServiceContract final {
+            static constexpr std::string_view kind{"com.asharia.test.eligibility-service"};
+            static constexpr StaticContributionCardinalityV1 cardinality{
+                StaticContributionCardinalityV1::Single};
+        };
+
+        [[noreturn]] EligibilityServiceContract*
+        abortContributionAccessor(FactoryInstanceViewV1 unusedInstance) noexcept {
+            (void)unusedInstance;
+            contributionAccessorInvocations.fetch_add(1, std::memory_order_relaxed);
+            std::abort();
+        }
+
+        constexpr auto kExpectedContributionBinding =
+            bindStaticContributionV2<EligibilityServiceContract, &abortContributionAccessor>(
+                kExpectedContributionId);
+        constexpr std::array kExpectedContributionBindings{kExpectedContributionBinding};
 
         [[nodiscard]] std::string digest(char character) {
             // Braced return selects the initializer-list constructor and changes
@@ -53,7 +77,7 @@ namespace asharia::host_runtime::tests {
             return {
                 .providerCount = 1,
                 .factoryCount = 1,
-                .contributionCount = 0,
+                .contributionCount = 1,
                 .textBytes = 512,
                 .diagnosticFactoryIdBytes = 256,
                 .diagnosticContributionIdBytes = 256,
@@ -147,17 +171,20 @@ namespace asharia::host_runtime::tests {
 
         void provideExpectedFactory(StaticFactoryRegistrar& registrar) noexcept {
             providerInvocations.fetch_add(1, std::memory_order_relaxed);
-            registrar.registerFactory(kExpectedFactoryId, expectedCallbacks(), {});
+            registrar.registerFactory(kExpectedFactoryId, expectedCallbacks(),
+                                      kExpectedContributionBindings);
         }
 
         void provideAlternateFactoryCallbacks(StaticFactoryRegistrar& registrar) noexcept {
             providerInvocations.fetch_add(1, std::memory_order_relaxed);
-            registrar.registerFactory(kExpectedFactoryId, alternateCallbacks(), {});
+            registrar.registerFactory(kExpectedFactoryId, alternateCallbacks(),
+                                      kExpectedContributionBindings);
         }
 
         void provideUnexpectedFactory(StaticFactoryRegistrar& registrar) noexcept {
             providerInvocations.fetch_add(1, std::memory_order_relaxed);
-            registrar.registerFactory(kUnexpectedFactoryId, expectedCallbacks(), {});
+            registrar.registerFactory(kUnexpectedFactoryId, expectedCallbacks(),
+                                      kExpectedContributionBindings);
         }
 
         void provideNothing(StaticFactoryRegistrar& unusedRegistrar) noexcept {
@@ -167,16 +194,20 @@ namespace asharia::host_runtime::tests {
 
         void recordOneFactory(StaticFactoryRegistrationRecorder& recorder,
                               std::string_view factoryId,
-                              StaticFactoryProviderV3 provider) noexcept {
+                              StaticFactoryProviderV4 provider) noexcept {
             const StaticFactoryRegistrationCapacityV2 capacity = expectedCapacity();
             recorder.beginComposition({
                 .generationId = kCompositionGenerationId,
                 .hostActivationBlueprintSha256 = kBlueprintSha256,
                 .capacity = capacity,
             });
+            constexpr std::array expectedContributions{StaticContributionExpectationV1{
+                .contributionId = kExpectedContributionId,
+                .contributionKind = EligibilityServiceContract::kind,
+            }};
             const std::array expectedFactories{StaticFactoryExpectationV1{
                 .factoryId = factoryId,
-                .contributions = {},
+                .contributions = expectedContributions,
             }};
             recorder.invokeProvider(
                 {
@@ -232,7 +263,15 @@ namespace asharia::host_runtime::tests {
                             .moduleId = std::string(kModuleId),
                             .factoryId = std::string(kExpectedFactoryId),
                             .providerEntryPoint = std::string(kEntryPoint),
-                            .contributions = {},
+                            .contributions =
+                                {
+                                    {
+                                        .contributionId = std::string(kExpectedContributionId),
+                                        .contributionKind =
+                                            std::string(EligibilityServiceContract::kind),
+                                        .cardinality = StaticContributionCardinalityV1::Single,
+                                    },
+                                },
                         },
                     },
             };
@@ -243,8 +282,7 @@ namespace asharia::host_runtime::tests {
     // The analyzer cannot follow the sealed pimpl ownership through the aggregate
     // return, but every allocation is retained by one of the returned handoffs.
     // NOLINTBEGIN(clang-analyzer-cplusplus.NewDeleteLeaks)
-    EligibilityHandoffsV1
-    makeEligibilityHandoffs(EligibilityHandoffMutationV1 mutation) {
+    EligibilityHandoffsV1 makeEligibilityHandoffs(EligibilityHandoffMutationV1 mutation) {
         ReadySessionHandoffStateV1 ready{
             .host = hostIdentity(),
             .sessionFingerprint = digest('1'),
@@ -259,8 +297,7 @@ namespace asharia::host_runtime::tests {
                     .parentScope = std::nullopt,
                     .engineGenerationId = generationId('a'),
                     .blueprintIntegrity = digest('b'),
-                    .lifecycleModel =
-                        "create-activate-quiesce-deactivate-destroy-v1",
+                    .lifecycleModel = "create-activate-quiesce-deactivate-destroy-v1",
                     .factories =
                         {
                             {
@@ -292,7 +329,7 @@ namespace asharia::host_runtime::tests {
             .generationTuple =
                 {
                     .templateRendererRevision = 2,
-                    .compositionRendererRevision = 4,
+                    .compositionRendererRevision = 5,
                     .providerApi = std::string(kProviderApi),
                     .registrationSnapshotSchemaVersion = 2,
                 },
@@ -405,10 +442,8 @@ namespace asharia::host_runtime::tests {
         }
 
         return {
-            .readySession = ActivationEligibilityStateAccessV1::makeReadySession(
-                std::move(ready)),
-            .blueprint =
-                ActivationEligibilityStateAccessV1::makeBlueprint(std::move(blueprint)),
+            .readySession = ActivationEligibilityStateAccessV1::makeReadySession(std::move(ready)),
+            .blueprint = ActivationEligibilityStateAccessV1::makeBlueprint(std::move(blueprint)),
             .binding = ActivationEligibilityStateAccessV1::makeBinding(std::move(binding)),
             .launchHandoff =
                 ActivationEligibilityStateAccessV1::makeLaunchHandoff(std::move(launch)),
@@ -419,16 +454,15 @@ namespace asharia::host_runtime::tests {
     ActivationEligibilityResultV1<PreRegistrationAdmissionV1>
     makePreRegistrationAdmission(EligibilityHandoffMutationV1 mutation) {
         EligibilityHandoffsV1 handoffs = makeEligibilityHandoffs(mutation);
-        return admitPreRegistration(std::move(handoffs.readySession),
-                                    std::move(handoffs.blueprint),
-                                    std::move(handoffs.binding),
-                                    std::move(handoffs.launchHandoff));
+        return admitPreRegistration(std::move(handoffs.readySession), std::move(handoffs.blueprint),
+                                    std::move(handoffs.binding), std::move(handoffs.launchHandoff));
     }
 
     void resetEligibilityProbeCounts() noexcept {
         recordingInvocations.store(0, std::memory_order_relaxed);
         providerInvocations.store(0, std::memory_order_relaxed);
         lifecycleInvocations.store(0, std::memory_order_relaxed);
+        contributionAccessorInvocations.store(0, std::memory_order_relaxed);
     }
 
     std::size_t recordingFunctionInvocationCount() noexcept {
@@ -441,6 +475,10 @@ namespace asharia::host_runtime::tests {
 
     std::size_t lifecycleInvocationCount() noexcept {
         return lifecycleInvocations.load(std::memory_order_relaxed);
+    }
+
+    std::size_t contributionAccessorInvocationCount() noexcept {
+        return contributionAccessorInvocations.load(std::memory_order_relaxed);
     }
 
     StaticFactoryRegistrationResult<StaticFactoryCallbackTableV1>

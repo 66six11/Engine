@@ -4,6 +4,10 @@
 
 Implemented for #294。
 
+后继 [Static Contribution Payload Accessors v1](adr-static-contribution-payload-accessors-v1.md) 已由 #295 实现
+`StaticContributionBindingV2`、provider v4 与 Composition renderer 5 的硬切目标。它只在同一 selected binding 中增加 future
+payload accessor evidence；#294 下文的 binding v1/provider v3/renderer 4 继续记录本 Slice 已实现的历史合同。
+
 本 ADR 冻结 logical contribution `kind` 与当前进程 C++ contract type 之间的最小静态绑定。它位于
 [Host Activation Blueprint v1](adr-host-activation-blueprint-v1.md)、
 [Static Factory Provider Bindings v1](adr-static-factory-provider-bindings-v1.md) 与
@@ -217,7 +221,7 @@ hash evidence 必须只接受 Snapshot v2。
 
 ### 7. 唯一受支持的 generation tuple
 
-| 轴 | current value |
+| 轴 | #294 implemented value |
 | --- | --- |
 | package static factory bindings | schema/model v3 |
 | derived provider Binding Plan | schema/model v3 |
@@ -308,6 +312,8 @@ lifecycle。
 
 ## 后续边界
 
-下一 Slice 在 admitted `ProcessScope` 内共同实现 typed publication transaction 与 contribution-only `ActivationLease`：activate 成功后原子发布，
-rollback/stop 时按 reverse lifecycle 撤销，旧 generation handle fail closed。之后再依据同一模式扩展 Editor/Project/World scopes；生产
-Bootstrap/Session adapter 仍是独立工作。
+直接后继 [Static Contribution Payload Accessors v1](adr-static-contribution-payload-accessors-v1.md) 先把 selected binding 硬切为
+compile-time typed、registration/verification 零调用的 `Contract* (FactoryInstanceViewV1) noexcept` accessor。再下一 Slice 才在
+admitted `ProcessScope` 内实现 typed publication staging、atomic commit 与 contribution-only `ActivationLease`：`activate` 成功后调用
+selected accessors，rollback/stop 时按 reverse lifecycle 撤销，旧 generation handle fail closed。之后再依据同一模式扩展
+Editor/Project/World scopes；生产 Bootstrap/Session adapter 仍是独立工作。

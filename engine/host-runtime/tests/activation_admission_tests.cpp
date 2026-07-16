@@ -55,14 +55,13 @@ namespace asharia::host_runtime::tests {
             return admitted && admitted->registrationSnapshot().registrations.size() == 1 &&
                    descriptorCount && *descriptorCount == 1 &&
                    admittedTableUsesExpectedCallbacks(*admitted) &&
-                   recordingFunctionInvocationCount() == 1 &&
-                   providerInvocationCount() == 1 && lifecycleInvocationCount() == 0;
+                   recordingFunctionInvocationCount() == 1 && providerInvocationCount() == 1 &&
+                   lifecycleInvocationCount() == 0 && contributionAccessorInvocationCount() == 0;
         }
 
         [[nodiscard]] bool zeroFactoryAdmissionReturnsEngagedEmptyView() {
             resetEligibilityProbeCounts();
-            auto pending =
-                makePendingTable(EligibilityHandoffMutationV1::ZeroFactoryFunction);
+            auto pending = makePendingTable(EligibilityHandoffMutationV1::ZeroFactoryFunction);
             if (!pending) {
                 return false;
             }
@@ -89,8 +88,8 @@ namespace asharia::host_runtime::tests {
                    admitted.error().code ==
                        ActivationEligibilityErrorCodeV1::TableSnapshotMismatch &&
                    admitted.error().field == ActivationEligibilityFieldV1::TableSnapshot &&
-                   recordingFunctionInvocationCount() == 1 &&
-                   providerInvocationCount() == 1 && lifecycleInvocationCount() == 0;
+                   recordingFunctionInvocationCount() == 1 && providerInvocationCount() == 1 &&
+                   lifecycleInvocationCount() == 0 && contributionAccessorInvocationCount() == 0;
         }
 
         [[nodiscard]] bool corruptedExpectedSnapshotFailsClosed() {
@@ -208,21 +207,19 @@ namespace asharia::host_runtime::tests {
 
             ActivationEligibilityErrorV1 observed{};
             bool rejected = false;
-            std::jthread worker(
-                [pending = std::move(*pending), &observed, &rejected]() mutable {
-                    const auto admitted =
-                        admitStaticFactoryActivation(std::move(pending));
-                    rejected = !admitted;
-                    if (!admitted) {
-                        observed = admitted.error();
-                    }
-                });
+            std::jthread worker([pending = std::move(*pending), &observed, &rejected]() mutable {
+                const auto admitted = admitStaticFactoryActivation(std::move(pending));
+                rejected = !admitted;
+                if (!admitted) {
+                    observed = admitted.error();
+                }
+            });
             worker.join();
             return rejected && observed.stage == ActivationEligibilityStageV1::Activation &&
                    observed.code == ActivationEligibilityErrorCodeV1::WrongControlThread &&
                    observed.field == ActivationEligibilityFieldV1::ControlThread &&
-                   recordingFunctionInvocationCount() == 1 &&
-                   providerInvocationCount() == 1 && lifecycleInvocationCount() == 0;
+                   recordingFunctionInvocationCount() == 1 && providerInvocationCount() == 1 &&
+                   lifecycleInvocationCount() == 0 && contributionAccessorInvocationCount() == 0;
         }
 
         // Private white-box access is used only to verify that moving the admitted

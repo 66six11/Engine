@@ -14,6 +14,10 @@ identity-only 决策；active executable path 不再提供单参数 registrar、
 Capacity/Context 为 v2，provider 为 v3，table 投影 RegistrationSnapshot v2；本 ADR 下文的 identity-only Snapshot v1 仅保留为 #289
 历史记录。
 
+[Static Contribution Payload Accessors v1](adr-static-contribution-payload-accessors-v1.md) 已由 #295 实现 provider v4 与
+`StaticContributionBindingV2` 的后继硬切；Capacity/Context 与 RegistrationSnapshot 仍保持 v2，registration 只复制 private
+payload accessor evidence，绝不调用 accessor。
+
 ## 问题
 
 [Generated Static Composition Root v1](adr-generated-static-composition-root-v1.md) 已经能够直接引用并调用每个
@@ -200,7 +204,7 @@ configured compiler、registration snapshot 与 exact staged Host artifact bytes
 ## 编译效率边界
 
 - #289 historical provider public header 只暴露 `string_view` registrar API，不包含 recorder implementation 或 lifecycle types；
-  #294 current v3 surface 另暴露 contribution binding span 与 public contract helper，但 recorder implementation 仍保持 PRIVATE；
+  #295 current v4 surface 暴露 `StaticContributionBindingV2` span 与 exact typed accessor helper，但 recorder implementation 仍保持 PRIVATE，registration 也不得调用 accessor；
 - recorder implementation 使用 private state，不把容器算法扩散到每个 provider TU；
 - 一个 Host composition 仍只生成一个薄 TU；renderer revision 变化只使该 TU 和 final Host link closure 失效；
 - #290 的 fixed Host 只增加一个薄 `main.cpp`，并只构建 exact target，不要求 clean-first；

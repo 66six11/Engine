@@ -120,7 +120,7 @@ namespace asharia::host_runtime {
 
         void beginComposition(StaticCompositionRegistrationContextV2 context) noexcept;
         void invokeProvider(StaticFactoryProviderContextV2 context,
-                            StaticFactoryProviderV3 provider) noexcept;
+                            StaticFactoryProviderV4 provider) noexcept;
         void endComposition() noexcept;
 
         [[nodiscard]] StaticFactoryRegistrationResult<StaticFactoryCallbackTableV1>

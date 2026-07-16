@@ -125,8 +125,8 @@ class HostExecutableTemplateTests(unittest.TestCase):
         legacy = replace(
             self.composition.manifest,
             generation_id="sha256-" + "0" * 64,
-            renderer_revision=2,
-            provider_api="asharia-static-factory-provider-v1",
+            renderer_revision=4,
+            provider_api="asharia-static-factory-provider-v3",
             integrity=composition.IntegrityRecord("sha256", "0" * 64),
         )
         legacy = replace(

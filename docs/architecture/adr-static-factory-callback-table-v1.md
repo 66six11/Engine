@@ -6,12 +6,13 @@ Accepted and implemented for #291。本文冻结 exact-build 静态 factory call
 [Static Factory Registration v1](adr-static-factory-registration-v1.md) 与后续 Activation Eligibility / ProcessScope
 Lifecycle 之间的窄桥梁。
 
-版本轴彼此独立：callback contract/table 保持 v1；#294 后 active provider API、author bindings 与 derived Binding Plan 为 v3；Static
-Composition Root 保持 schema v1、renderer 4；Windows Development Host Template 保持 schema v1、renderer 2；RegistrationSnapshot
-为 v2，Host Executable Binding Receipt 仍为 v1。当前处于早期硬切阶段，不提供旧 provider/schema/renderer/snapshot 的 reader、adapter
-或 deep verification compatibility。typed contribution 的后继决策见
-[Static Typed Contribution Contract Bindings v1](adr-static-typed-contribution-contract-bindings-v1.md)；本 ADR 下文的 v2/C3/Snapshot v1
-形状是 #291 的历史合同。
+版本轴彼此独立：callback contract/table 保持 v1；#295 已把 provider API、author bindings 与 derived Binding Plan 硬切为
+v4，并把 Static Composition Root 提升为 schema v1/renderer 5；Windows Development Host Template 保持 schema v1/renderer 2，
+RegistrationSnapshot 保持 v2，Host Executable Binding Receipt 仍为 v1。当前处于早期硬切阶段，不提供旧
+provider/schema/renderer/snapshot 的 reader、adapter 或 deep verification compatibility。typed contribution 的后继决策见
+[Static Typed Contribution Contract Bindings v1](adr-static-typed-contribution-contract-bindings-v1.md) 与
+[Static Contribution Payload Accessors v1](adr-static-contribution-payload-accessors-v1.md)；本 ADR 下文的 v2/C3/Snapshot v1 形状是
+#291 的历史合同。
 
 本 Slice 只建立当前进程内的 frozen callback table。它不调用任何 lifecycle callback，不创建 instance，不建立 scope、lease
 或 contribution registry，也不把 table completion 解释为 activation、`Ready` 或 current-process generation 证明。
@@ -522,6 +523,8 @@ non-capturing lambda 只有在显式转换为完全匹配的 `noexcept` function
 2. [ProcessScope Lifecycle v1](adr-process-scope-lifecycle-v1.md)（#293）：已实现第一个 concrete contexts/executor，按 Blueprint order
    create/activate，失败时 reverse rollback，正常 explicit stop 时 quiesce/deactivate/destroy，并已完成门禁；production issuer 与
    normal Host/Bootstrap adapter 仍待后续；
-3. 其余 scope、typed contributions 与 activation leases：在 ProcessScope 证据稳定后逐层增加；
+3. [Static Contribution Payload Accessors v1](adr-static-contribution-payload-accessors-v1.md)（#295）：先为 selected binding 增加
+   compile-time typed、registration/verification 零调用的 payload accessor；随后再由独立 ProcessScope Slice 实现 registry、atomic
+   publication 与 contribution-only lease；
 4. Bootstrap/Session adapter：把 build/receipt/process/runtime outcome 映射为 PendingBuild、PendingRestart、Ready 或 SafeMode；
 5. exact-build native DLL 仅在静态模型稳定且链接数据证明有必要时单独设计；v1 不承诺通用插件 ABI 或 hot unload。

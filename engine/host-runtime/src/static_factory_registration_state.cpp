@@ -139,11 +139,11 @@ namespace asharia::host_runtime {
 
     bool StaticFactoryRegistrationState::validateAvailableContributionBindings(
         const ProviderObservation& provider, std::string_view localFactoryId,
-        std::span<const StaticContributionBindingV1> availableContributions) noexcept {
+        std::span<const StaticContributionBindingV2> availableContributions) noexcept {
         for (std::size_t index = 0; index < availableContributions.size(); ++index) {
-            const StaticContributionBindingV1& binding = availableContributions[index];
+            const StaticContributionBindingV2& binding = availableContributions[index];
             if (binding.contributionId_.empty() || binding.contributionKind_.empty() ||
-                binding.typeKey_ == nullptr ||
+                binding.typeKey_ == nullptr || binding.payloadAccessor_ == nullptr ||
                 (binding.cardinality_ != StaticContributionCardinalityV1::Single &&
                  binding.cardinality_ != StaticContributionCardinalityV1::Multiple)) {
                 fail(StaticFactoryRegistrationErrorCode::ContributionBindingInvalid, &provider,
@@ -151,7 +151,7 @@ namespace asharia::host_runtime {
                 return false;
             }
             if (std::ranges::any_of(availableContributions.first(index),
-                                    [&binding](const StaticContributionBindingV1& previous) {
+                                    [&binding](const StaticContributionBindingV2& previous) {
                                         return previous.contributionId_ == binding.contributionId_;
                                     })) {
                 fail(StaticFactoryRegistrationErrorCode::ContributionBindingDuplicate, &provider,
@@ -198,12 +198,12 @@ namespace asharia::host_runtime {
     bool StaticFactoryRegistrationState::recordSelectedContributions(
         std::size_t factoryIndex, const ProviderObservation& provider,
         std::string_view localFactoryId, const StaticFactoryExpectationV1& expected,
-        std::span<const StaticContributionBindingV1> availableContributions) noexcept {
+        std::span<const StaticContributionBindingV2> availableContributions) noexcept {
         for (const StaticContributionExpectationV1& expectedContribution :
              expected.contributions) {
             const auto binding = std::ranges::find_if(
                 availableContributions,
-                [&expectedContribution](const StaticContributionBindingV1& value) {
+                [&expectedContribution](const StaticContributionBindingV2& value) {
                     return value.contributionId_ == expectedContribution.contributionId;
                 });
             if (binding == availableContributions.end()) {
@@ -222,7 +222,7 @@ namespace asharia::host_runtime {
              expected.contributions) {
             const auto binding = std::ranges::find_if(
                 availableContributions,
-                [&expectedContribution](const StaticContributionBindingV1& value) {
+                [&expectedContribution](const StaticContributionBindingV2& value) {
                     return value.contributionId_ == expectedContribution.contributionId;
                 });
             const std::string_view ownedContributionId =
@@ -238,6 +238,7 @@ namespace asharia::host_runtime {
                 .contributionKind = ownedContributionKind,
                 .cardinality = binding->cardinality_,
                 .typeKey = binding->typeKey_,
+                .payloadAccessor = binding->payloadAccessor_,
             };
             ++observedContributionCount;
         }
@@ -246,7 +247,7 @@ namespace asharia::host_runtime {
 
     void StaticFactoryRegistrationState::registerFactory(
         std::string_view localFactoryId, StaticFactoryCallbacksV1 callbacks,
-        std::span<const StaticContributionBindingV1> availableContributions) noexcept {
+        std::span<const StaticContributionBindingV2> availableContributions) noexcept {
         if (failure.has_value()) {
             return;
         }

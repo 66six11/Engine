@@ -120,7 +120,9 @@ namespace {
         return first != std::string::npos && second != std::string::npos && first < second &&
                rendered->find(R"("cardinality": "single")") != std::string::npos &&
                rendered->find(R"("cardinality": "multiple")") != std::string::npos &&
-               rendered->find("typeKey") == std::string::npos;
+               rendered->find("typeKey") == std::string::npos &&
+               rendered->find("payloadAccessor") == std::string::npos &&
+               rendered->find("accessor") == std::string::npos;
     }
 
 } // namespace

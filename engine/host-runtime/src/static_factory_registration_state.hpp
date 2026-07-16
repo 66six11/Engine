@@ -44,6 +44,7 @@ namespace asharia::host_runtime {
             std::string_view contributionKind;
             StaticContributionCardinalityV1 cardinality{};
             const void* typeKey{};
+            detail::ErasedStaticContributionPayloadAccessorV1 payloadAccessor{};
         };
 
         struct PendingFailure final {
@@ -65,7 +66,7 @@ namespace asharia::host_runtime {
         [[nodiscard]] StaticFactoryRegistrationError owningFailure() const noexcept;
         void registerFactory(
             std::string_view localFactoryId, StaticFactoryCallbacksV1 callbacks,
-            std::span<const StaticContributionBindingV1> availableContributions) noexcept;
+            std::span<const StaticContributionBindingV2> availableContributions) noexcept;
         void validateContributionContracts() noexcept;
 
         [[nodiscard]] bool validateFactoryCallbacks(
@@ -73,14 +74,14 @@ namespace asharia::host_runtime {
             StaticFactoryCallbacksV1 callbacks) noexcept;
         [[nodiscard]] bool validateAvailableContributionBindings(
             const ProviderObservation& provider, std::string_view localFactoryId,
-            std::span<const StaticContributionBindingV1> availableContributions) noexcept;
+            std::span<const StaticContributionBindingV2> availableContributions) noexcept;
         [[nodiscard]] bool validateSelectedContributionCapacity(
             const ProviderObservation& provider, std::string_view localFactoryId,
             const StaticFactoryExpectationV1& expected) noexcept;
         [[nodiscard]] bool recordSelectedContributions(
             std::size_t factoryIndex, const ProviderObservation& provider,
             std::string_view localFactoryId, const StaticFactoryExpectationV1& expected,
-            std::span<const StaticContributionBindingV1> availableContributions) noexcept;
+            std::span<const StaticContributionBindingV2> availableContributions) noexcept;
 
         StaticFactoryRegistrationCapacityV2 capacity;
         std::vector<char> textStorage;

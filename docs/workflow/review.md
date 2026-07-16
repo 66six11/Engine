@@ -78,11 +78,11 @@ Package Factory Declaration v1 只声明 logical factory、owner scope、require
 CMake target、artifact path、DLL symbol、作者自定义 phase/lifetime，或把 module/JSON 顺序解释为 activation order。
 Host Activation Blueprint v1 只能从 Ready Session、匹配的 Host Composition 和 exact factory snapshots 派生固定的
 scope/factory/contribution 顺序；不得加入 artifact path、DLL symbol、build command 或进程加载状态。
-active Static Factory Provider Bindings/Binding Plan 已硬切 schema/model v3，只能把 exact logical factory 映射到同 module Source
+active Static Factory Provider Bindings/Binding Plan 已由 #295 硬切 schema/model v4，只能把 exact logical factory 映射到同 module Source
 Build Descriptor 已拥有的
 `STATIC_LIBRARY` target、`asharia/` public header 与受限 `asharia::...` provider function；不得使用全局注册发现、静态
 constructor、运行时字符串 symbol lookup、package `src/` include，或把这些字段写回 portable Factory Declaration。provider API
-必须为 v3；pre-v3 declaration/plan/adapter 不再接受。派生 Binding Plan 必须复验 Blueprint 与 Source Build Plan 的共同来源及
+必须为 v4；pre-v4 declaration/plan/adapter 不再接受。派生 Binding Plan 必须复验 Blueprint 与 Source Build Plan 的共同来源及
 selected target，且不得成为第三份 lock。
 Generated Static Composition Root v1 只能消费已经验证的 Source Build Plan、Host Activation Blueprint 与 Provider Binding
 Plan；它生成一个薄 registration TU、私有声明 header、CMake attachment fragment 与 content-addressed manifest，不创建 Host
@@ -94,20 +94,23 @@ cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && set ""CXX=c
 cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && set ""CXX=cl"" && set ""ASHARIA_EXPECT_CMAKE_CXX_COMPILER=cl.exe"" && set ""ASHARIA_RUN_CMAKE_INTEGRATION_TESTS=1"" && python -m unittest tools.tests.test_static_composition_root.StaticCompositionRootTests.test_generated_fragment_configures_compiles_and_links -v"
 ```
 
-该 fixture 必须证明 renderer 4/provider v3 valid root 可 configure/compile/link/execute，并得到 frozen callback table 的 exact owning
+该 fixture 必须证明 renderer 5/provider v4 valid root 可 configure/compile/link/execute，并得到 frozen callback table 的 exact owning
 RegistrationSnapshot v2；错误 provider
 signature 在 compile-time `static_assert` 失败，以及 missing/wrong provider target 和 duplicate attachment 在 final configure
 fail closed。
 
-Static Factory Callback Table v1 只允许 provider 调用
-`registerFactory(localFactoryId, completeDescriptor, availableTypedBindings)`。五个 typed `noexcept` callbacks 必须非空；generation、
+Static Factory Callback Table v1 只允许 provider v4 调用
+`registerFactory(localFactoryId, completeDescriptor, availableTypedBindings)`。五个 typed `noexcept` callbacks 必须非空；selected
+`StaticContributionBindingV2` 必须由 `bindStaticContributionV2<Contract, &accessor>()` 创建，其中 accessor exact signature 为
+`Contract* (FactoryInstanceViewV1) noexcept`。generation、
 Blueprint digest、package/version/module/entry point 与 exact selected factory/contribution ID/kind 必须由 generated root 注入，不得让
 provider 自报完整 identity。public contract type 唯一声明 kind 与 `single|multiple`；type key 必须来自 writable inline storage，不能
-依赖会被 MSVC `/OPT:ICF` 合并的只读 data/function address。recorder 必须按 Capacity v2 预留 factory 与 selected contribution storage，
+依赖会被 MSVC `/OPT:ICF` 合并的只读 data/function/accessor address。accessor address 只用于 future invocation，不参与 type identity、
+hash、snapshot 或 diagnostics。recorder 必须按 Capacity v2 预留 factory 与 selected contribution storage，
 callback window 中 recorder-owned storage 零动态分配；首次错误 sticky，失败不返回 partial table/snapshot。成功 table 私有持有
-process-local type evidence，并只向 Snapshot v2 投影 ID/kind/cardinality；pointer/type key/token 不进入 JSON、generation ID、receipt
-或 diagnostics。
-registration-only path 不调用任何 lifecycle callback；`single` 在本门禁不执行 table-wide 数量限制。
+process-local type/accessor evidence，并只向 Snapshot v2 投影 ID/kind/cardinality；pointer/type key/accessor/token 不进入 JSON、
+generation ID、receipt 或 diagnostics。
+registration-only path 不调用任何 lifecycle callback 或 payload accessor；`single` 在本门禁不执行 table-wide 数量限制。
 修改 `engine/host-runtime` registration target、snapshot JSON renderer 或 generated recording glue 时，两个 test presets 都必须运行
 registration 与 snapshot JSON tests，并继续运行上述 synthetic fixture：
 
@@ -118,7 +121,8 @@ cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake --preset
 
 该 gate 至少覆盖完整/缺失 descriptor、canonical table-owned Snapshot v2、zero-contribution factory、empty composition、
 unknown/missing/duplicate factory、contribution expectation canonicality、missing/duplicate/kind mismatch、same-kind type/cardinality
-conflict、unselected binding inert、provider/binding observation-order determinism、mixed composition evidence、provider 外调用、
+conflict、typed accessor signature/null negatives、abstract-interface/multiple-inheritance pointer adjustment、unselected binding/accessor
+inert、canonical type/accessor index alignment、provider/binding observation-order determinism、mixed composition evidence、provider 外调用、
 provider/factory/contribution count mismatch、pre-copy expectation failure 的空 provider attribution、sticky first error、
 text/diagnostic capacity exhaustion、token ownership transfer 与 valid-token fail-fast。provider invocation window 中 recorder-owned
 no-allocation 边界由 create 阶段定长 storage、recording 路径索引写入，以及 ClangCL `noexcept`/exception-escape gate 共同约束。
@@ -137,8 +141,8 @@ cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake --preset
 
 focused tests 至少覆盖 empty/success、Blueprint/table order permutation、dependency views、全部 create/activate failure positions、cleanup
 failure continuation、token exactly-once destroy、wrong-thread/stale epoch、operation reentrancy、state misuse、结构性 preflight negatives 与
-plan 外 descriptor 永不调用。registration-only generated Host 的五个 callbacks 仍必须是 abort probes；该路径不得因 ProcessScope
-实现而开始执行 lifecycle。
+plan 外 descriptor 永不调用。registration-only generated Host 的五个 callbacks 与 payload accessors 仍必须是 abort/counter probes；
+该路径不得因 ProcessScope 实现而开始执行 lifecycle 或 accessor。
 
 Windows Development Host Template v1 只允许消费已发布的 exact template/composition generation。adapter 必须在 spawn 前根据完整
 generation 只读复验两棵 closed publication tree，拒绝 payload 漂移、额外 entry 与 link/reparse；随后使用 typed argv、
@@ -154,12 +158,13 @@ cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && set ""CXX=c
 cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && set ""CXX=cl"" && set ""ASHARIA_EXPECT_CMAKE_CXX_COMPILER_ID=MSVC"" && set ""ASHARIA_EXPECT_CMAKE_CXX_COMPILER_VERSION=19.44.35215.0"" && set ""ASHARIA_RUN_HOST_TEMPLATE_INTEGRATION_TESTS=1"" && set ""ASHARIA_HOST_TEST_TOOLCHAIN_FILE=build\conan\msvc-debug\Debug\generators\conan_toolchain.cmake"" && python -m unittest tools.tests.test_generated_host_executable.GeneratedHostExecutableIntegrationTests.test_exact_host_build_and_restricted_verification -v"
 ```
 
-focused compatibility tests 必须证明 Template renderer 2 + Composition renderer 4/provider v3 + RegistrationSnapshot v2 是唯一接受
+focused compatibility tests 必须证明 Template renderer 2 + Composition renderer 5/provider v4 + RegistrationSnapshot v2 是唯一接受
 组合，并拒绝旧 renderer/provider/snapshot。focused chain 必须分别覆盖 exact target/path binding、single-target build without clean-first、build 后 binding
 refresh、receipt atomic publication 与 closed-tree deep-verification negatives；双编译器 fixture 必须以当前组合端到端覆盖 restricted
 process stdout/stderr/exit contract、expected generation/Blueprint snapshot 对证、same-index configured compiler、collector-owned staged
 Host 执行、receipt publication 与 deep verification。MSVC/ClangCL receipts 可以因 compiler identity/executable bytes 不同而不同。
-synthetic provider 的五个 callbacks 必须为 abort probes，以证明 registration/receipt path 零 lifecycle invocation。
+synthetic provider 的五个 callbacks 与全部 selected payload accessors 必须为 abort/counter probes，以证明 registration/receipt path
+零 lifecycle/accessor invocation。
 该 gate 不要求 clean-first 或默认 all-target build，也不证明 lifecycle activation。
 Installed Distribution Repair Verifier v1 必须从调用方提供的 exact expected `EngineGenerationId` 开始；不能只信磁盘 manifest
 或目录名，不能在发现损坏后写回安装树，也不能把 `FatalDistributionError` 当作磁盘健康状态。

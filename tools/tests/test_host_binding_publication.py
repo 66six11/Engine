@@ -420,8 +420,8 @@ class HostBindingPublicationTests(unittest.TestCase):
             self.composition,
             manifest=replace(
                 self.composition.manifest,
-                renderer_revision=2,
-                provider_api="asharia-static-factory-provider-v1",
+                renderer_revision=4,
+                provider_api="asharia-static-factory-provider-v3",
             ),
         )
 

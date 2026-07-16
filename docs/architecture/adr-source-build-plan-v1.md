@@ -511,15 +511,16 @@ schema 是 closed contract，明确拒绝：
 2. **Engine Distribution + Effective Session**：#279–#281 已分离只读发行库存与 Project Lock，冻结 `EngineGenerationId`、
    Ready/Upgrade/Repair/SafeMode 与 verified graph handoff；Bootstrap UI/进程仍后置；
 3. **Factory / Scope / Lifecycle + static provider binding**：Factory Declaration 与 Host Activation Blueprint 保持
-   logical/artifact-neutral；#286 的 v1 provider-binding 合同是历史基线，#294 已将 active bindings/Binding Plan 与 provider API
-   硬切为 v3，把 selected factory/contribution exact set 对证到本 Source Build Plan 已选择的静态 target 和 type-safe C++ entry point；
+   logical/artifact-neutral；#286 的 v1 provider-binding 合同与 #294 的 v3 typed-contract generation 是历史基线，#295 已将 active
+   bindings/Binding Plan 与 provider API 硬切为 v4，把 selected factory/contribution exact set 对证到本 Source Build Plan 已选择的静态
+   target、type-safe C++ entry point 与 provider-owned payload accessor；
 4. **Generated composition root + post-build receipt**：#287 已实现 preflight configure/codemodel → generate → final configure
-   的两阶段 handoff；#294 后当前只生成 Composition renderer 4/provider v3，并只与 Template renderer 2 组合。#288 的
+   的两阶段 handoff；#295 当前只生成 Composition renderer 5/provider v4，并只与 Template renderer 2 组合。#288 的
    [Host Executable Binding Receipt v1](adr-host-executable-binding-receipt-v1.md) 已把 observed registration snapshot、same-index
    configured target/compiler 与 exact staged Host artifact generation 对证；
 5. **Current-process callback table**：#291 已把 exact factory identity 与五个 typed `noexcept` callbacks 冻结到 private callback
-   table；#294 又让 table 拥有 selected contribution 的 private type evidence 与 canonical RegistrationSnapshot v2。
-   registration/receipt 路径不调用 lifecycle；
+   table；#294 又让 table 拥有 selected contribution 的 private type evidence 与 canonical RegistrationSnapshot v2；#295 再增加
+   private payload-accessor evidence。registration/receipt 路径不调用 lifecycle 或 accessor；
 6. **Host Runtime**：Activation Eligibility 与 ProcessScope lifecycle baseline 已建立；contribution payload/handles、lease、其他 scope
    owners 与 production adapter 仍属于后续边界。
 
@@ -534,7 +535,8 @@ Source Build Plan 只为 build adapter 提供 verified roots/closure，不替代
 - [Locked Package Graph Verification & Reuse v1](adr-package-lock-verification-v1.md)
 - [Effective Session v1](adr-effective-session-v1.md)
 - [Package Product & Artifact Evidence v1](adr-package-product-artifact-evidence-v1.md)
-- [Static Factory Provider Bindings v1](adr-static-factory-provider-bindings-v1.md)（historical；active bindings/Binding Plan 为 v3）
+- [Static Factory Provider Bindings v1](adr-static-factory-provider-bindings-v1.md)（historical；active bindings/Binding Plan 为 v4）
+- [Static Contribution Payload Accessors v1](adr-static-contribution-payload-accessors-v1.md)
 - [Package-first 架构](package-first.md)
 - [Foundation Framework](foundation-framework.md)
 - GitHub #264、#270、#274、#275 与 #276

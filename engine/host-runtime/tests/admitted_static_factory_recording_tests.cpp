@@ -36,10 +36,10 @@ namespace asharia::host_runtime::tests {
             if (!admission) {
                 return false;
             }
-            const auto pending =
-                recordAdmittedStaticFactoryProviders(std::move(*admission));
+            const auto pending = recordAdmittedStaticFactoryProviders(std::move(*admission));
             return pending && recordingFunctionInvocationCount() == 1 &&
-                   providerInvocationCount() == 1 && lifecycleInvocationCount() == 0;
+                   providerInvocationCount() == 1 && lifecycleInvocationCount() == 0 &&
+                   contributionAccessorInvocationCount() == 0;
         }
 
         // Reusing the source is intentional here: the public contract defines a
@@ -59,22 +59,19 @@ namespace asharia::host_runtime::tests {
                 return false;
             }
 
-            const auto reused =
-                recordAdmittedStaticFactoryProviders(std::move(admission));
+            const auto reused = recordAdmittedStaticFactoryProviders(std::move(admission));
             return !reused &&
-                   reused.error().stage ==
-                       ActivationEligibilityStageV1::ProviderRecording &&
-                   reused.error().code ==
-                       ActivationEligibilityErrorCodeV1::AdmissionMovedFrom &&
-                   recordingFunctionInvocationCount() == 1 &&
-                   providerInvocationCount() == 1 && lifecycleInvocationCount() == 0;
+                   reused.error().stage == ActivationEligibilityStageV1::ProviderRecording &&
+                   reused.error().code == ActivationEligibilityErrorCodeV1::AdmissionMovedFrom &&
+                   recordingFunctionInvocationCount() == 1 && providerInvocationCount() == 1 &&
+                   lifecycleInvocationCount() == 0 && contributionAccessorInvocationCount() == 0;
         }
         // NOLINTEND(bugprone-use-after-move,clang-analyzer-cplusplus.Move)
 
         [[nodiscard]] bool invalidCapacityConsumesAdmissionBeforeDriver() {
             resetEligibilityProbeCounts();
-            auto admission = makePreRegistrationAdmission(
-                EligibilityHandoffMutationV1::InvalidCapacityFunction);
+            auto admission =
+                makePreRegistrationAdmission(EligibilityHandoffMutationV1::InvalidCapacityFunction);
             if (!admission) {
                 return false;
             }
@@ -98,17 +95,14 @@ namespace asharia::host_runtime::tests {
             if (!admission) {
                 return false;
             }
-            const auto pending =
-                recordAdmittedStaticFactoryProviders(std::move(*admission));
+            const auto pending = recordAdmittedStaticFactoryProviders(std::move(*admission));
             return !pending &&
-                   pending.error().stage ==
-                       ActivationEligibilityStageV1::ProviderRecording &&
-                   pending.error().code ==
-                       ActivationEligibilityErrorCodeV1::RegistrationFailed &&
+                   pending.error().stage == ActivationEligibilityStageV1::ProviderRecording &&
+                   pending.error().code == ActivationEligibilityErrorCodeV1::RegistrationFailed &&
                    pending.error().registrationCode ==
                        StaticFactoryRegistrationErrorCode::FactoryMissing &&
-                   recordingFunctionInvocationCount() == 1 &&
-                   providerInvocationCount() == 1 && lifecycleInvocationCount() == 0;
+                   recordingFunctionInvocationCount() == 1 && providerInvocationCount() == 1 &&
+                   lifecycleInvocationCount() == 0 && contributionAccessorInvocationCount() == 0;
         }
 
         [[nodiscard]] bool wrongThreadConsumesAdmissionBeforeDriver() {

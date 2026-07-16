@@ -249,9 +249,15 @@ class HostRegistrationSnapshotTests(unittest.TestCase):
             "registration": lambda data: data["registrations"][0].update(
                 {"callback": "forbidden"}
             ),
-            "contribution": lambda data: data["registrations"][0][
+            "contribution-type-key": lambda data: data["registrations"][0][
                 "contributions"
             ][0].update({"typeKey": "forbidden"}),
+            "contribution-payload-accessor": lambda data: data["registrations"][0][
+                "contributions"
+            ][0].update({"payloadAccessor": "forbidden"}),
+            "contribution-accessor": lambda data: data["registrations"][0][
+                "contributions"
+            ][0].update({"accessor": "forbidden"}),
         }
         for name, mutate in mutations.items():
             with self.subTest(name=name):

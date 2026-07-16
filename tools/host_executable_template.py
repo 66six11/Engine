@@ -29,8 +29,8 @@ HOST_TEMPLATE_RUNTIME_OUTPUT_DIRECTORY = renderer.HOST_TEMPLATE_RUNTIME_OUTPUT_D
 
 _TARGET_NAME = re.compile(r"^[A-Za-z0-9_.+\-]+$")
 _FILE_DESCRIPTORS = renderer.HOST_TEMPLATE_FILE_DESCRIPTORS
-_REQUIRED_STATIC_COMPOSITION_RENDERER_REVISION = 4
-_REQUIRED_STATIC_COMPOSITION_PROVIDER_API = "asharia-static-factory-provider-v3"
+_REQUIRED_STATIC_COMPOSITION_RENDERER_REVISION = 5
+_REQUIRED_STATIC_COMPOSITION_PROVIDER_API = "asharia-static-factory-provider-v4"
 
 
 @dataclass(frozen=True, order=True)
@@ -291,7 +291,7 @@ def generate_windows_development_host_template(
                         "host-template.composition-incompatible",
                         "/staticComposition",
                         "renderer revision 2 requires static composition "
-                        "revision 4 with provider API v3",
+                        "revision 5 with provider API v4",
                     )
                 )
     if (

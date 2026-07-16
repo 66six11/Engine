@@ -51,7 +51,8 @@ namespace asharia::host_runtime::tests {
             resetEligibilityProbeCounts();
             const auto result = makePreRegistrationAdmission();
             return result && recordingFunctionInvocationCount() == 0 &&
-                   providerInvocationCount() == 0 && lifecycleInvocationCount() == 0;
+                   providerInvocationCount() == 0 && lifecycleInvocationCount() == 0 &&
+                   contributionAccessorInvocationCount() == 0;
         }
 
         // Reusing the source is intentional here: consuming one handoff must leave
@@ -60,19 +61,17 @@ namespace asharia::host_runtime::tests {
         [[nodiscard]] bool movedFromHandoffFailsClosed() {
             resetEligibilityProbeCounts();
             EligibilityHandoffsV1 handoffs = makeEligibilityHandoffs();
-            [[maybe_unused]] ReadySessionHandoffV1 consumed =
-                std::move(handoffs.readySession);
+            [[maybe_unused]] ReadySessionHandoffV1 consumed = std::move(handoffs.readySession);
 
             const auto result = admitPreRegistration(
                 std::move(handoffs.readySession), std::move(handoffs.blueprint),
                 std::move(handoffs.binding), std::move(handoffs.launchHandoff));
             return !result &&
                    result.error().stage == ActivationEligibilityStageV1::PreRegistration &&
-                   result.error().code ==
-                       ActivationEligibilityErrorCodeV1::HandoffMovedFrom &&
+                   result.error().code == ActivationEligibilityErrorCodeV1::HandoffMovedFrom &&
                    result.error().field == ActivationEligibilityFieldV1::ReadySession &&
-                   recordingFunctionInvocationCount() == 0 &&
-                   providerInvocationCount() == 0 && lifecycleInvocationCount() == 0;
+                   recordingFunctionInvocationCount() == 0 && providerInvocationCount() == 0 &&
+                   lifecycleInvocationCount() == 0 && contributionAccessorInvocationCount() == 0;
         }
         // NOLINTEND(bugprone-use-after-move,clang-analyzer-cplusplus.Move)
 
@@ -124,8 +123,7 @@ namespace asharia::host_runtime::tests {
                     .field = ActivationEligibilityFieldV1::GenerationTuple,
                 },
                 Case{
-                    .mutation =
-                        EligibilityHandoffMutationV1::UnsupportedCompositionRenderer,
+                    .mutation = EligibilityHandoffMutationV1::UnsupportedCompositionRenderer,
                     .code = ActivationEligibilityErrorCodeV1::UnsupportedGenerationTuple,
                     .field = ActivationEligibilityFieldV1::GenerationTuple,
                 },
@@ -135,8 +133,7 @@ namespace asharia::host_runtime::tests {
                     .field = ActivationEligibilityFieldV1::GenerationTuple,
                 },
                 Case{
-                    .mutation =
-                        EligibilityHandoffMutationV1::UnsupportedSnapshotSchemaVersion,
+                    .mutation = EligibilityHandoffMutationV1::UnsupportedSnapshotSchemaVersion,
                     .code = ActivationEligibilityErrorCodeV1::UnsupportedGenerationTuple,
                     .field = ActivationEligibilityFieldV1::GenerationTuple,
                 },
@@ -171,14 +168,12 @@ namespace asharia::host_runtime::tests {
                     .field = ActivationEligibilityFieldV1::CurrentProcess,
                 },
                 Case{
-                    .mutation =
-                        EligibilityHandoffMutationV1::LaunchControlThreadEpochMissing,
+                    .mutation = EligibilityHandoffMutationV1::LaunchControlThreadEpochMissing,
                     .code = ActivationEligibilityErrorCodeV1::LaunchHandoffInvalid,
                     .field = ActivationEligibilityFieldV1::LaunchHandoff,
                 },
                 Case{
-                    .mutation =
-                        EligibilityHandoffMutationV1::LaunchRecordingFunctionMissing,
+                    .mutation = EligibilityHandoffMutationV1::LaunchRecordingFunctionMissing,
                     .code = ActivationEligibilityErrorCodeV1::LaunchHandoffInvalid,
                     .field = ActivationEligibilityFieldV1::LaunchHandoff,
                 },
@@ -188,12 +183,12 @@ namespace asharia::host_runtime::tests {
                 resetEligibilityProbeCounts();
                 const auto result = makePreRegistrationAdmission(testCase.mutation);
                 return !result &&
-                       result.error().stage ==
-                           ActivationEligibilityStageV1::PreRegistration &&
+                       result.error().stage == ActivationEligibilityStageV1::PreRegistration &&
                        result.error().code == testCase.code &&
                        result.error().field == testCase.field &&
-                       recordingFunctionInvocationCount() == 0 &&
-                       providerInvocationCount() == 0 && lifecycleInvocationCount() == 0;
+                       recordingFunctionInvocationCount() == 0 && providerInvocationCount() == 0 &&
+                       lifecycleInvocationCount() == 0 &&
+                       contributionAccessorInvocationCount() == 0;
             });
         }
 
@@ -216,8 +211,8 @@ namespace asharia::host_runtime::tests {
             return rejected && observed.stage == ActivationEligibilityStageV1::PreRegistration &&
                    observed.code == ActivationEligibilityErrorCodeV1::WrongControlThread &&
                    observed.field == ActivationEligibilityFieldV1::ControlThread &&
-                   recordingFunctionInvocationCount() == 0 &&
-                   providerInvocationCount() == 0 && lifecycleInvocationCount() == 0;
+                   recordingFunctionInvocationCount() == 0 && providerInvocationCount() == 0 &&
+                   lifecycleInvocationCount() == 0 && contributionAccessorInvocationCount() == 0;
         }
 
     } // namespace

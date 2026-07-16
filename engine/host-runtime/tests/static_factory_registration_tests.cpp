@@ -1,12 +1,15 @@
 ﻿#include <array>
+#include <cstdlib>
 #include <string_view>
 #include <type_traits>
 #include <utility>
 
+#include "asharia/host_runtime/static_factory_instance_token_provider_access.hpp"
 #include "asharia/host_runtime/static_factory_registration.hpp"
 
-#include "static_factory_callback_table_tests.hpp"
+#include "static_contribution_accessor_tests.hpp"
 #include "static_factory_callback_table_private_access.hpp"
+#include "static_factory_callback_table_tests.hpp"
 
 namespace {
 
@@ -51,26 +54,60 @@ namespace {
 
     struct MissingServiceContract final {};
 
+    struct CanonicalPayload final {
+        ServiceContractA firstService;
+        OtherServiceContract otherService;
+        ServiceContractA secondService;
+    };
+
+    template <typename Contract>
+    [[nodiscard]] Contract*
+    unusedPayloadAccessor(asharia::host_runtime::FactoryInstanceViewV1 unusedInstance) noexcept {
+        (void)unusedInstance;
+        std::abort();
+    }
+
+    [[nodiscard]] ServiceContractA*
+    serviceAFirstPayloadAccessor(asharia::host_runtime::FactoryInstanceViewV1 instance) noexcept {
+        auto* payload = static_cast<CanonicalPayload*>(
+            asharia::host_runtime::FactoryInstanceTokenProviderAccessV1::pointer(instance));
+        return &payload->firstService;
+    }
+
+    [[nodiscard]] ServiceContractA*
+    serviceASecondPayloadAccessor(asharia::host_runtime::FactoryInstanceViewV1 instance) noexcept {
+        auto* payload = static_cast<CanonicalPayload*>(
+            asharia::host_runtime::FactoryInstanceTokenProviderAccessV1::pointer(instance));
+        return &payload->secondService;
+    }
+
+    [[nodiscard]] OtherServiceContract*
+    otherPayloadAccessor(asharia::host_runtime::FactoryInstanceViewV1 instance) noexcept {
+        auto* payload = static_cast<CanonicalPayload*>(
+            asharia::host_runtime::FactoryInstanceTokenProviderAccessV1::pointer(instance));
+        return &payload->otherService;
+    }
+
     static_assert(asharia::host_runtime::StaticContributionContractV1<ServiceContractA>);
     static_assert(!asharia::host_runtime::StaticContributionContractV1<MissingServiceContract>);
     static_assert(
-        !std::is_default_constructible_v<asharia::host_runtime::StaticContributionBindingV1>);
-    static_assert(
-        std::is_trivially_copyable_v<asharia::host_runtime::StaticContributionBindingV1>);
+        !std::is_default_constructible_v<asharia::host_runtime::StaticContributionBindingV2>);
+    static_assert(std::is_trivially_copyable_v<asharia::host_runtime::StaticContributionBindingV2>);
 
-    constexpr auto kServiceABinding =
-        asharia::host_runtime::bindStaticContributionV1<ServiceContractA>("service-a.default");
-    constexpr auto kServiceBBinding =
-        asharia::host_runtime::bindStaticContributionV1<ServiceContractA>("service-b.default");
-    constexpr auto kDifferentTypeBinding =
-        asharia::host_runtime::bindStaticContributionV1<ServiceContractB>("service-b.default");
-    constexpr auto kMultipleBinding =
-        asharia::host_runtime::bindStaticContributionV1<MultipleServiceContract>(
-            "service-b.default");
+    constexpr auto kServiceABinding = asharia::host_runtime::bindStaticContributionV2<
+        ServiceContractA, &serviceAFirstPayloadAccessor>("service-a.default");
+    constexpr auto kServiceBBinding = asharia::host_runtime::bindStaticContributionV2<
+        ServiceContractA, &serviceASecondPayloadAccessor>("service-b.default");
+    constexpr auto kDifferentTypeBinding = asharia::host_runtime::bindStaticContributionV2<
+        ServiceContractB, &unusedPayloadAccessor<ServiceContractB>>("service-b.default");
+    constexpr auto kMultipleBinding = asharia::host_runtime::bindStaticContributionV2<
+        MultipleServiceContract, &unusedPayloadAccessor<MultipleServiceContract>>(
+        "service-b.default");
     constexpr auto kOtherBinding =
-        asharia::host_runtime::bindStaticContributionV1<OtherServiceContract>("other.default");
-    constexpr auto kWrongKindBinding =
-        asharia::host_runtime::bindStaticContributionV1<OtherServiceContract>("service-a.default");
+        asharia::host_runtime::bindStaticContributionV2<OtherServiceContract,
+                                                        &otherPayloadAccessor>("other.default");
+    constexpr auto kWrongKindBinding = asharia::host_runtime::bindStaticContributionV2<
+        OtherServiceContract, &unusedPayloadAccessor<OtherServiceContract>>("service-a.default");
 
     StaticFactoryRegistrar*
         capturedRegistrar{}; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
@@ -557,25 +594,29 @@ namespace {
         if (!result) {
             return false;
         }
-        const auto anchor = asharia::host_runtime::StaticFactoryCallbackTablePrivateAccessV1::
-            instanceAnchor(*result);
-        const auto evidence = asharia::host_runtime::StaticFactoryCallbackTablePrivateAccessV1::
-            contributionTypeEvidence(*result);
-        if (evidence.size() != 1 || evidence[0].registrationIndex != 0 ||
-            evidence[0].contributionIndex != 0 || evidence[0].typeKey == nullptr) {
+        const auto anchor =
+            asharia::host_runtime::StaticFactoryCallbackTablePrivateAccessV1::instanceAnchor(
+                *result);
+        const auto runtimeBindings = asharia::host_runtime::
+            StaticFactoryCallbackTablePrivateAccessV1::contributionRuntimeBindings(*result);
+        if (runtimeBindings.size() != 1 || runtimeBindings[0].registrationIndex != 0 ||
+            runtimeBindings[0].contributionIndex != 0 || runtimeBindings[0].typeKey == nullptr ||
+            runtimeBindings[0].payloadAccessor == nullptr) {
             return false;
         }
-        const auto* evidenceAddress = evidence.data();
-        const void* typeKey = evidence[0].typeKey;
+        const auto* runtimeBindingsAddress = runtimeBindings.data();
+        const void* typeKey = runtimeBindings[0].typeKey;
+        const auto payloadAccessor = runtimeBindings[0].payloadAccessor;
         asharia::host_runtime::StaticFactoryCallbackTableV1 movedTable{std::move(*result)};
-        const auto movedEvidence =
-            asharia::host_runtime::StaticFactoryCallbackTablePrivateAccessV1::
-                contributionTypeEvidence(movedTable);
+        const auto movedRuntimeBindings = asharia::host_runtime::
+            StaticFactoryCallbackTablePrivateAccessV1::contributionRuntimeBindings(movedTable);
         const auto& registrations = movedTable.registrationSnapshot().registrations;
         return anchor ==
-                   asharia::host_runtime::StaticFactoryCallbackTablePrivateAccessV1::
-                       instanceAnchor(movedTable) &&
-               movedEvidence.data() == evidenceAddress && movedEvidence[0].typeKey == typeKey &&
+                   asharia::host_runtime::StaticFactoryCallbackTablePrivateAccessV1::instanceAnchor(
+                       movedTable) &&
+               movedRuntimeBindings.data() == runtimeBindingsAddress &&
+               movedRuntimeBindings[0].typeKey == typeKey &&
+               movedRuntimeBindings[0].payloadAccessor == payloadAccessor &&
                registrations.size() == 1 && registrations[0].contributions.size() == 1 &&
                registrations[0].contributions[0].contributionId == "service-a.default" &&
                registrations[0].contributions[0].contributionKind == ServiceContractA::kind &&
@@ -584,7 +625,7 @@ namespace {
     }
 
     [[nodiscard]] StaticFactoryRegistrationErrorCode
-    contributionFailure(asharia::host_runtime::StaticFactoryProviderV3 provider) noexcept {
+    contributionFailure(asharia::host_runtime::StaticFactoryProviderV4 provider) noexcept {
         constexpr auto capacity = registrationCapacity(1, 1, kTextCapacity, 256, 1);
         auto recorderResult =
             asharia::host_runtime::createStaticFactoryRegistrationRecorder(capacity);
@@ -614,7 +655,7 @@ namespace {
     }
 
     [[nodiscard]] asharia::host_runtime::StaticFactoryRegistrationError
-    collectTypeConflict(asharia::host_runtime::StaticFactoryProviderV3 provider) noexcept {
+    collectTypeConflict(asharia::host_runtime::StaticFactoryProviderV4 provider) noexcept {
         constexpr auto capacity = registrationCapacity(1, 2, kTextCapacity, 256, 2);
         auto recorderResult =
             asharia::host_runtime::createStaticFactoryRegistrationRecorder(capacity);
@@ -766,27 +807,47 @@ namespace {
             factoryExpectation("service-a", firstContributions),
             factoryExpectation("service-b", secondContributions),
         };
-        recorder.invokeProvider(providerContext(factories),
-                                &provideUnorderedContributionEvidence);
+        recorder.invokeProvider(providerContext(factories), &provideUnorderedContributionEvidence);
         recorder.endComposition();
         auto result = std::move(recorder).finish();
         if (!result) {
             return false;
         }
         const auto& snapshot = result->registrationSnapshot();
-        const auto evidence = asharia::host_runtime::StaticFactoryCallbackTablePrivateAccessV1::
-            contributionTypeEvidence(*result);
-        return snapshot.registrations.size() == 2 &&
-               snapshot.registrations[0].factoryId == "service-a" &&
-               snapshot.registrations[1].factoryId == "service-b" &&
-               snapshot.registrations[1].contributions.size() == 2 &&
-               snapshot.registrations[1].contributions[0].contributionId == "other.default" &&
-               evidence.size() == 3 && evidence[0].registrationIndex == 0 &&
-               evidence[0].contributionIndex == 0 && evidence[1].registrationIndex == 1 &&
-               evidence[1].contributionIndex == 0 && evidence[2].registrationIndex == 1 &&
-               evidence[2].contributionIndex == 1 && evidence[0].typeKey != nullptr &&
-               evidence[1].typeKey != nullptr && evidence[0].typeKey == evidence[2].typeKey &&
-               evidence[0].typeKey != evidence[1].typeKey;
+        const auto runtimeBindings = asharia::host_runtime::
+            StaticFactoryCallbackTablePrivateAccessV1::contributionRuntimeBindings(*result);
+        if (snapshot.registrations.size() != 2 ||
+            snapshot.registrations[0].factoryId != "service-a" ||
+            snapshot.registrations[1].factoryId != "service-b" ||
+            snapshot.registrations[1].contributions.size() != 2 ||
+            snapshot.registrations[1].contributions[0].contributionId != "other.default" ||
+            runtimeBindings.size() != 3 || runtimeBindings[0].registrationIndex != 0 ||
+            runtimeBindings[0].contributionIndex != 0 ||
+            runtimeBindings[1].registrationIndex != 1 ||
+            runtimeBindings[1].contributionIndex != 0 ||
+            runtimeBindings[2].registrationIndex != 1 ||
+            runtimeBindings[2].contributionIndex != 1 || runtimeBindings[0].typeKey == nullptr ||
+            runtimeBindings[1].typeKey == nullptr ||
+            runtimeBindings[0].typeKey != runtimeBindings[2].typeKey ||
+            runtimeBindings[0].typeKey == runtimeBindings[1].typeKey ||
+            runtimeBindings[0].payloadAccessor == nullptr ||
+            runtimeBindings[1].payloadAccessor == nullptr ||
+            runtimeBindings[2].payloadAccessor == nullptr) {
+            return false;
+        }
+
+        CanonicalPayload payload{};
+        auto token =
+            asharia::host_runtime::FactoryInstanceTokenProviderAccessV1::fromPointer(&payload);
+        void* const firstService = runtimeBindings[0].payloadAccessor(token.view());
+        void* const otherService = runtimeBindings[1].payloadAccessor(token.view());
+        void* const secondService = runtimeBindings[2].payloadAccessor(token.view());
+        static_cast<void>(
+            asharia::host_runtime::FactoryInstanceTokenProviderAccessV1::consume(std::move(token)));
+
+        return firstService == static_cast<void*>(&payload.firstService) &&
+               otherService == static_cast<void*>(&payload.otherService) &&
+               secondService == static_cast<void*>(&payload.secondService);
     }
 
 } // namespace
@@ -800,8 +861,9 @@ int main(int argumentCount, char** arguments) noexcept {
     }
 
     using Test = bool (*)() noexcept;
-    constexpr std::array<Test, 23> tests{
+    constexpr std::array<Test, 24> tests{
         &asharia::host_runtime::tests::runStaticFactoryCallbackTableTests,
+        &asharia::host_runtime::tests::runStaticContributionAccessorTests,
         &validRegistrationOwnsCanonicalSnapshot,
         &equivalentOrdersProduceCanonicalSnapshot,
         &unknownFactoryFailsAtomically,

@@ -63,13 +63,20 @@ struct SyntheticRuntimeServiceContract final {
       asharia::host_runtime::StaticContributionCardinalityV1::Single};
 };
 
-constexpr std::array kRuntimeServiceContributions{
-    asharia::host_runtime::bindStaticContributionV1<
-        SyntheticRuntimeServiceContract>(
+[[nodiscard]] SyntheticRuntimeServiceContract* abortRuntimeServiceAccessor(
+    asharia::host_runtime::FactoryInstanceViewV1) noexcept {
+  std::abort();
+}
+
+constexpr std::array<asharia::host_runtime::StaticContributionBindingV2, 1>
+    kRuntimeServiceContributions{
+    asharia::host_runtime::bindStaticContributionV2<
+        SyntheticRuntimeServiceContract,
+        &abortRuntimeServiceAccessor>(
         "com.asharia.contribution.synthetic-runtime"),
 };
 
-// Registration-only verification must never invoke lifecycle callbacks.
+// Registration-only verification must never invoke payload accessors or lifecycle callbacks.
 asharia::host_runtime::FactoryCreateResultV1 createRuntimeService(
     asharia::host_runtime::FactoryCreateContextV1&) noexcept {
   std::abort();

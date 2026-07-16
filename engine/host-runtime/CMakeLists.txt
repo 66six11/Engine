@@ -103,6 +103,7 @@ if(ASHARIA_BUILD_TESTS)
   enable_testing()
 
   add_executable(asharia-host-runtime-registration-tests
+      tests/static_contribution_accessor_tests.cpp
       tests/static_factory_callback_table_tests.cpp
       tests/static_factory_registration_tests.cpp
   )

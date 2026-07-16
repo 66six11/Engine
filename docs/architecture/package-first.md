@@ -210,18 +210,20 @@ owner scope、required factory 与 contribution ownership 合同，并纳入 Can
 fingerprint；它不创建 instance。[Host Activation Blueprint v1](adr-host-activation-blueprint-v1.md) 已将 Ready Session、
 Host Composition 与 exact factory snapshots 派生为固定 scope topology、factory dependency order 和 selected contribution bindings；
 它是构建期逻辑蓝图，不伪造尚不存在的 artifact、symbol 或进程加载证据。
-[Static Factory Provider Bindings v1](adr-static-factory-provider-bindings-v1.md) 为 #286 建立了最初边界；#294 已将 active author
-bindings 与 derived Binding Plan 硬切为 schema/model v3/provider API v3。独立
-`asharia.package.static-factory-bindings.json` source sidecar、Factory/Build cross binding、Candidate Discovery exact snapshot、
-Locked Verification 与 Effective Session fingerprint；派生 Binding Plan 会进一步证明 provider target 已被本次 Source Build Plan
-选择。它只声明可直接编译引用的静态 provider 入口，不执行注册或 lifecycle，也不成为第三份 lock。
+[Static Factory Provider Bindings v1](adr-static-factory-provider-bindings-v1.md) 为 #286 建立了最初边界；#294 曾将 active author
+bindings 与 derived Binding Plan 硬切为 v3，#295 已再硬切为 schema/model v4/provider API v4。独立
+`asharia.package.static-factory-bindings.json` 继续作为 author-owned source sidecar；Factory/Build cross binding、Candidate Discovery exact
+snapshot、Locked Verification 与 Effective Session fingerprint 继续覆盖它。派生 Binding Plan 会进一步证明 provider target 已被本次
+Source Build Plan 选择。它只声明可直接编译引用的静态 provider 入口，不执行注册或 lifecycle，也不成为第三份 lock。
 [Generated Static Composition Root v1](adr-generated-static-composition-root-v1.md) 已实现 preflight CMake codemodel →
-content-addressed thin TU/controlled target attachment；current renderer 4 只接受 provider v3，并从 Blueprint 注入 exact
+content-addressed thin TU/controlled target attachment；current renderer 5 只接受 provider v4，并从 Blueprint 注入 exact
 factory/contribution ID 与 kind expectations。
 [Static Factory Callback Table v1](adr-static-factory-callback-table-v1.md) 已为 #291 把 `local factory ID + complete descriptor`
 冻结为 current-process table。[Static Typed Contribution Contract Bindings v1](adr-static-typed-contribution-contract-bindings-v1.md)
 又为 #294 将 public C++ contract type 的 logical kind/cardinality 与 selected contribution 绑定到同一次 factory registration；table
-私有持有 process-local type evidence，并只向 RegistrationSnapshot v2 投影稳定 ID/kind/cardinality。registration 不调用 lifecycle callback。
+私有持有 process-local type/accessor evidence，并只向 RegistrationSnapshot v2 投影稳定 ID/kind/cardinality。registration 不调用
+lifecycle callback 或 payload accessor。accessor 合同见
+[Static Contribution Payload Accessors v1](adr-static-contribution-payload-accessors-v1.md)。
 [Windows Development Host Template v1](adr-windows-development-host-template-v1.md) 已为 #290 实现固定 final Host target、受控
 configure/build、CMake File API target binding 与 registration-only verification。
 [Host Executable Binding Receipt v1](adr-host-executable-binding-receipt-v1.md) 已为 #288 把 immutable composition/Template、
@@ -317,7 +319,8 @@ flowchart LR
   public header 与受限 qualified function；它不是运行时字符串 symbol lookup，也不成为第三份 lock。
 - generated root 以 verified binding 为权威注入 package/version/module/entry point 与 exact selected factory/contribution
   ID/kind expectations；provider 只能在同一次 `registerFactory()` 提交 local factory ID、完整 callbacks 与 public contract type 产生的
-  available typed bindings。未选 binding 保持 inert；RegistrationSnapshot v2 是构建后 receipt 的稳定派生证据，不是新的 package graph
+  available typed bindings。当前 `StaticContributionBindingV2` 还携带 exact typed payload accessor；未选 binding 保持 inert，registration/
+  verification 不调用 accessor。RegistrationSnapshot v2 是构建后 receipt 的稳定派生证据，不是新的 package graph
   或 activation order，process-local type key 永不序列化。
 - Windows Development Host adapter 消费 immutable template/composition generation，受控 configure 后通过 latest CMake File API
   绑定 exact `EXECUTABLE`/configuration/primary artifact，再只构建该 target 并运行 restricted registration verification。它不执行
@@ -376,15 +379,17 @@ references、全图 dependency-first order、selected contribution intersection 
 [ADR：Static Factory Provider Bindings v1](adr-static-factory-provider-bindings-v1.md) 为 #286 建立 logical factory、
 same-module static build target、public header 与 type-safe provider function 的 exact cross-contract evidence；portable Factory
 Declaration 继续不携带 CMake、C++ 或 artifact 字段。派生 Binding Plan 只封装 verified input fingerprints 与 provider calls，
-不重新选择 package/module/target。#294 已将 active bindings/plan 与 provider API 硬切为 v3，不保留 pre-v3 reader。
+不重新选择 package/module/target。#294 曾将 bindings/plan 与 provider API 硬切为 v3；#295 已再硬切为 v4，不保留 pre-v4 reader。
 [ADR：Static Factory Registration v1](adr-static-factory-registration-v1.md) 为 #289 建立 provider-call capacity、exact context 注入、
 sticky first error 与 canonical owning snapshot；[Static Factory Callback Table v1](adr-static-factory-callback-table-v1.md) 后续加入完整
-lifecycle descriptor，[Static Typed Contribution Contract Bindings v1](adr-static-typed-contribution-contract-bindings-v1.md) 又将 active
-registrar 硬切为 v3，并由 table 拥有 Snapshot v2 与 private type evidence。snapshot 不保存 callback/type key，也不替代 Blueprint
-dependency order。
+lifecycle descriptor，[Static Typed Contribution Contract Bindings v1](adr-static-typed-contribution-contract-bindings-v1.md) 又建立
+type evidence，[Static Contribution Payload Accessors v1](adr-static-contribution-payload-accessors-v1.md) 再将 active
+registrar 硬切为 provider v4/`StaticContributionBindingV2`，并由 table 拥有 Snapshot v2 与 private type/accessor evidence。snapshot
+不保存 callback、accessor 或 type key，也不替代 Blueprint dependency order。
 [ADR：Windows Development Host Template v1](adr-windows-development-host-template-v1.md) 已为 #290 实现固定
 `windows-development-v1` template、final target/`main()`、受控 configure/build、latest File API binding 与 exact Host
-registration-only verification；#294 后 current renderer 2 继续从 table 读取 Snapshot v2，五个 lifecycle callbacks 调用次数仍为零。
+registration-only verification；#295 后 current renderer 2 继续从 table 读取 Snapshot v2，五个 lifecycle callbacks 与全部 payload
+accessors 的调用次数仍为零。
 [ADR：Host Executable Binding Receipt v1](adr-host-executable-binding-receipt-v1.md) 已为 #288 从 exact File API path 流式收集
 executable，运行 collector-owned staged bytes，交叉验证 registration identity，并发布可深度复验的 closed generation。
 

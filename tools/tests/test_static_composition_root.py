@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import os
 import shutil
@@ -218,8 +219,19 @@ class StaticCompositionRootTests(unittest.TestCase):
             first.manifest.renderer_revision,
         )
         self.assertEqual(
-            "asharia-static-factory-provider-v3",
+            "asharia-static-factory-provider-v4",
             first.manifest.provider_api,
+        )
+        manifest_data = composition_root.static_composition_root_manifest_to_data(
+            first.manifest
+        )
+        self.assertEqual(
+            {"id", "kind"},
+            set(
+                manifest_data["providers"][0]["factories"][0][
+                    "contributions"
+                ][0]
+            ),
         )
         revised_manifest = replace(
             first.manifest,
@@ -236,6 +248,24 @@ class StaticCompositionRootTests(unittest.TestCase):
             ),
         )
         files = {value.path: value.content for value in first.files}
+        golden_files = {
+            composition_root.STATIC_COMPOSITION_CMAKE_PATH: (
+                2010,
+                "a80cd23e5ec19e8e918d955b7796369026c1bb2cc39d1d1af631cfe628b995f3",
+            ),
+            composition_root.STATIC_COMPOSITION_HEADER_PATH: (
+                386,
+                "3a8cb3680298db89507a1398d0fc937c1c987f2a179c8dd9380905b79f0256bd",
+            ),
+            composition_root.STATIC_COMPOSITION_SOURCE_PATH: (
+                2211,
+                "c5d1d134cf99a91c869642c3bbb096f792b53b6a980837a7b3bed1cfb0e99561",
+            ),
+        }
+        for path, (length, digest) in golden_files.items():
+            with self.subTest(path=path):
+                self.assertEqual(length, len(files[path]))
+                self.assertEqual(digest, hashlib.sha256(files[path]).hexdigest())
         self.assertTrue(
             files[composition_root.STATIC_COMPOSITION_HEADER_PATH].startswith(
                 b"\xef\xbb\xbf"
@@ -250,7 +280,7 @@ class StaticCompositionRootTests(unittest.TestCase):
             "utf-8-sig"
         )
         self.assertIn("static_assert(std::is_same_v<", source)
-        self.assertIn("StaticFactoryProviderV3", source)
+        self.assertIn("StaticFactoryProviderV4", source)
         self.assertIn("StaticFactoryRegistrationCapacityV2", source)
         self.assertIn("recorder.beginComposition({", source)
         self.assertIn("recorder.invokeProvider(", source)
@@ -302,9 +332,9 @@ class StaticCompositionRootTests(unittest.TestCase):
             generation.manifest
         )
         legacy_api = copy.deepcopy(current)
-        legacy_api["providerApi"] = "asharia-static-factory-provider-v2"
+        legacy_api["providerApi"] = "asharia-static-factory-provider-v3"
         legacy_renderer = copy.deepcopy(current)
-        legacy_renderer["rendererRevision"] = 3
+        legacy_renderer["rendererRevision"] = 4
 
         for value in (
             legacy_api,
@@ -945,6 +975,7 @@ void provideRuntimeFactories(
             )
             (source_root / "provider.cpp").write_text(
                 """#include <array>
+#include <cstdlib>
 
 #include \"asharia/host_runtime/static_factory_instance_token_provider_access.hpp\"
 #include \"asharia/synthetic/runtime_provider.hpp\"
@@ -952,6 +983,12 @@ void provideRuntimeFactories(
 namespace {
 
 int gSyntheticInstance{};
+
+[[nodiscard]] asharia::synthetic::SyntheticRuntimeContributionContract*
+abortSyntheticContributionAccessor(
+    asharia::host_runtime::FactoryInstanceViewV1) noexcept {
+  std::abort();
+}
 
 asharia::host_runtime::FactoryCreateResultV1 createSynthetic(
     asharia::host_runtime::FactoryCreateContextV1&) noexcept {
@@ -988,9 +1025,11 @@ void destroySynthetic(
 
 void asharia::synthetic::provideRuntimeFactories(
     asharia::host_runtime::StaticFactoryRegistrar& registrar) noexcept {
-  constexpr std::array kContributions{
-      asharia::host_runtime::bindStaticContributionV1<
-          SyntheticRuntimeContributionContract>(
+  constexpr std::array<asharia::host_runtime::StaticContributionBindingV2, 1>
+      kContributions{
+      asharia::host_runtime::bindStaticContributionV2<
+          SyntheticRuntimeContributionContract,
+          &abortSyntheticContributionAccessor>(
           \"com.asharia.contribution.synthetic-runtime\")};
   registrar.registerFactory(
       "runtime-service",
@@ -1157,7 +1196,7 @@ asharia_attach_static_composition(host)
             self.assertNotEqual(0, mismatched.returncode, mismatch_output)
             self.assertTrue(
                 "static_assert" in mismatch_output
-                or "StaticFactoryProviderV3" in mismatch_output
+                or "StaticFactoryProviderV4" in mismatch_output
                 or "static_composition_root.cpp" in mismatch_output,
                 mismatch_output,
             )

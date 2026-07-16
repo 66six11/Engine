@@ -14,7 +14,7 @@ namespace asharia::host_runtime {
     public:
         void registerFactory(
             std::string_view localFactoryId, StaticFactoryCallbacksV1 callbacks,
-            std::span<const StaticContributionBindingV1> availableContributions) noexcept;
+            std::span<const StaticContributionBindingV2> availableContributions) noexcept;
 
     private:
         explicit StaticFactoryRegistrar(StaticFactoryRegistrationState& state) noexcept
@@ -32,6 +32,6 @@ namespace asharia::host_runtime {
         friend class StaticFactoryRegistrationState;
     };
 
-    using StaticFactoryProviderV3 = void (*)(StaticFactoryRegistrar& registrar) noexcept;
+    using StaticFactoryProviderV4 = void (*)(StaticFactoryRegistrar& registrar) noexcept;
 
 } // namespace asharia::host_runtime

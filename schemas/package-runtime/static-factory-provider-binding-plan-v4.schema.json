@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://schemas.asharia.dev/package-runtime/static-factory-provider-binding-plan-v3.schema.json",
-  "title": "Asharia Static Factory Provider Binding Plan v3",
-  "description": "Canonical verified handoff from selected logical factories and contributions to selected static C++ provider v3 targets and entry points.",
+  "$id": "https://schemas.asharia.dev/package-runtime/static-factory-provider-binding-plan-v4.schema.json",
+  "title": "Asharia Static Factory Provider Binding Plan v4",
+  "description": "Canonical verified handoff from selected logical factories and contributions to selected static C++ provider v4 targets and entry points.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -19,7 +19,7 @@
       "const": "com.asharia.static-factory-provider-binding-plan"
     },
     "schemaVersion": {
-      "const": 3
+      "const": 4
     },
     "inputs": {
       "$ref": "#/$defs/inputs"
@@ -28,7 +28,7 @@
       "$ref": "#/$defs/host"
     },
     "providerApi": {
-      "const": "asharia-static-factory-provider-v3"
+      "const": "asharia-static-factory-provider-v4"
     },
     "providers": {
       "type": "array",

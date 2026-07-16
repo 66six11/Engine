@@ -115,7 +115,7 @@ namespace asharia::host_runtime {
 
     void
     StaticFactoryRegistrationRecorder::invokeProvider(StaticFactoryProviderContextV2 context,
-                                                      StaticFactoryProviderV3 provider) noexcept {
+                                                      StaticFactoryProviderV4 provider) noexcept {
         if (!state_) {
             return;
         }
@@ -279,7 +279,7 @@ namespace asharia::host_runtime {
 
     void StaticFactoryRegistrar::registerFactory(
         std::string_view localFactoryId, StaticFactoryCallbacksV1 callbacks,
-        std::span<const StaticContributionBindingV1> availableContributions) noexcept {
+        std::span<const StaticContributionBindingV2> availableContributions) noexcept {
         state_->registerFactory(localFactoryId, callbacks, availableContributions);
     }
 

@@ -6,8 +6,10 @@
 `asharia::core` 的 `INTERFACE` target；root CMake 仍静态加入当前 source packages；`engine/package-runtime` 已建立 package control
 plane 的 headless v1 contracts；`engine/host-runtime` 已建立 registration、eligibility、
 [ProcessScope Lifecycle v1](adr-process-scope-lifecycle-v1.md) 与
-[Static Typed Contribution Contract Bindings v1](adr-static-typed-contribution-contract-bindings-v1.md) 的 headless C++ boundary。当前只证明
-selected contribution 的 C++ type/kind/cardinality，尚未发布 payload。其他 concrete Host scopes、activation lease、typed registry、
+[Static Typed Contribution Contract Bindings v1](adr-static-typed-contribution-contract-bindings-v1.md) 的 headless C++ boundary；#295 的
+[Static Contribution Payload Accessors v1](adr-static-contribution-payload-accessors-v1.md) 又冻结 selected contribution 的 future payload
+projection authority。当前只证明 C++ type/kind/cardinality 与 accessor evidence，尚未调用 accessor 或发布 payload。其他 concrete Host
+scopes、activation lease、typed registry、
 production Host/Bootstrap adapter、Memory & Budget、Settings、Runtime Storage、Tasks 等目标模块尚未实现。本文不能被
 用来宣称这些能力已经完成。
 
@@ -40,7 +42,7 @@ flowchart TB
     Binding["Deep-verified Host binding\nexact artifact + snapshot"]
     Launch["Verified launch handoff\nplanned adapter"]
     Eligibility["Activation Eligibility\nC++ boundary implemented; launcher adapter planned"]
-    Host["engine/host-runtime\nregistration + typed contract evidence + eligibility + ProcessScope\npayload registry/lease and other scopes planned"]
+    Host["engine/host-runtime\nregistration + typed payload-accessor evidence + eligibility + ProcessScope\npayload registry/lease and other scopes planned"]
     Package["engine/package-runtime\nmanifest / solve / lock / session planning"]
     Kernel["Bootstrap Kernel\ncore + minimal platform primitives"]
     Foundation["Default Foundation System Packages\nMemory / Observability / Storage / Settings / Tasks / Data"]
@@ -114,10 +116,12 @@ Core 只保存通用错误载体和上下文链，不枚举全部未来系统。
 Blueprint process projection，然后 dependencies-first `create -> activate`，失败或显式停止时执行完整 reverse
 quiesce/deactivate/destroy passes。它通过窄 factory contexts 暴露声明过且已经 Active 的 dependencies，并由 Host 唯一拥有 token。
 该 implementation 仍由 PRIVATE test issuer 驱动；production current-process issuer、normal Host、Bootstrap state mapping、其他 scopes、
-activation lease 与 typed contribution registry 均未实现。#294 只在该 table 内增加 public contract type、stable kind/cardinality 与
-private process-local type evidence，为后续 registry 提供可信输入，不改变 lifecycle。完整合同见
+activation lease 与 typed contribution registry 均未实现。#294 在该 table 内增加 public contract type、stable kind/cardinality 与
+private process-local type evidence；#295 再让同一 selected binding/table storage 保存 compile-time typed payload accessor，但 registration、
+verification 与 ProcessScope v1 都不调用它。两者为后续 registry 提供可信输入，不改变 lifecycle。完整合同见
 [ProcessScope Lifecycle v1](adr-process-scope-lifecycle-v1.md) 与
-[Static Typed Contribution Contract Bindings v1](adr-static-typed-contribution-contract-bindings-v1.md)。
+[Static Typed Contribution Contract Bindings v1](adr-static-typed-contribution-contract-bindings-v1.md)、
+[Static Contribution Payload Accessors v1](adr-static-contribution-payload-accessors-v1.md)。
 
 ### Editor Image 的固定 Bootstrap Closure
 
@@ -501,6 +505,9 @@ Host Activation Blueprint v1、generated static composition root 与
 [Static Factory Callback Table v1](adr-static-factory-callback-table-v1.md) 已为 #291 实现 current-process typed callback binding。
 [Static Typed Contribution Contract Bindings v1](adr-static-typed-contribution-contract-bindings-v1.md) 已为 #294 实现 Binding Plan v3、
 provider v3、Composition renderer 4、private C++ type evidence 与 RegistrationSnapshot v2；它不提供 payload lookup 或 lease。
+[Static Contribution Payload Accessors v1](adr-static-contribution-payload-accessors-v1.md) 已由 #295 实现 Binding Plan v4、provider v4、
+Composition renderer 5 与 `StaticContributionBindingV2` 的后继硬切；它只增加 private accessor evidence，仍不取得 payload、lookup
+或 lease。
 [Activation Eligibility v1](adr-activation-eligibility-v1.md) 已实现 sealed handoffs、按值线性消费、admitted recording wrapper 与
 exact-table affinity，并完成 #292 Done evidence。[ProcessScope Lifecycle v1](adr-process-scope-lifecycle-v1.md) 已增加 sealed process
 projection、exact descriptor mapping、factory contexts、token ownership、startup rollback 与 explicit reverse stop 的 headless C++

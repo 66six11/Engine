@@ -169,12 +169,12 @@ class PackageStaticFactoryBindingsTests(unittest.TestCase):
         }
         return {
             "schema": "com.asharia.package-static-factory-bindings",
-            "schemaVersion": 3,
+            "schemaVersion": 4,
             "package": {
                 "id": self.manifest["id"],
                 "version": self.manifest["version"],
             },
-            "providerApi": "asharia-static-factory-provider-v3",
+            "providerApi": "asharia-static-factory-provider-v4",
             "modules": [
                 {
                     "moduleId": module["id"],
@@ -427,8 +427,8 @@ class PackageStaticFactoryBindingsTests(unittest.TestCase):
             "entryPoint"
         ]["library"] = "runtime.dll"
         legacy = self.bindings()
-        legacy["schemaVersion"] = 2
-        legacy["providerApi"] = "asharia-static-factory-provider-v2"
+        legacy["schemaVersion"] = 3
+        legacy["providerApi"] = "asharia-static-factory-provider-v3"
 
         for value in (shared, symbol, runtime_lookup, legacy):
             with self.subTest(value=value):
@@ -655,9 +655,9 @@ class PackageStaticFactoryBindingsTests(unittest.TestCase):
                     result.plan
                 )
             )
-            self.assertEqual(3, plan_data["schemaVersion"])
+            self.assertEqual(4, plan_data["schemaVersion"])
             self.assertEqual(
-                "asharia-static-factory-provider-v3",
+                "asharia-static-factory-provider-v4",
                 plan_data["providerApi"],
             )
             for provider in plan_data["providers"]:
@@ -668,6 +668,8 @@ class PackageStaticFactoryBindingsTests(unittest.TestCase):
                         {"factoryId", "contributions"},
                         set(factory),
                     )
+                    for contribution in factory["contributions"]:
+                        self.assertEqual({"id", "kind"}, set(contribution))
             expected_factories = {
                 (
                     factory.reference.package_id,
@@ -703,8 +705,8 @@ class PackageStaticFactoryBindingsTests(unittest.TestCase):
             self.assertEqual(expected_factories, actual_factories)
             self.assertTrue(any(actual_factories.values()))
             legacy_plan = copy.deepcopy(plan_data)
-            legacy_plan["schemaVersion"] = 2
-            legacy_plan["providerApi"] = "asharia-static-factory-provider-v2"
+            legacy_plan["schemaVersion"] = 3
+            legacy_plan["providerApi"] = "asharia-static-factory-provider-v3"
             legacy_diagnostics = (
                 provider_bindings.validate_static_factory_provider_binding_plan_data(
                     legacy_plan,

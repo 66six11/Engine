@@ -9,7 +9,7 @@
 namespace asharia::host_runtime::tests {
     namespace {
 
-        constexpr std::string_view kProviderApi{"asharia-static-factory-provider-v3"};
+        constexpr std::string_view kProviderApi{"asharia-static-factory-provider-v4"};
 
         [[nodiscard]] std::string digest(char character) {
             // NOLINTNEXTLINE(modernize-return-braced-init-list)
@@ -192,7 +192,7 @@ namespace asharia::host_runtime::tests {
             .generationTuple =
                 {
                     .templateRendererRevision = 2,
-                    .compositionRendererRevision = 4,
+                    .compositionRendererRevision = 5,
                     .providerApi = std::string(kProviderApi),
                     .registrationSnapshotSchemaVersion = 2,
                 },

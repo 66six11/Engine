@@ -7,9 +7,11 @@ static-composition/Host Template、同一份 CMake File API reply 中的 final t
 collector-owned staged executable bytes，以及该 staged executable 实际输出的 registration snapshot 绑定为一个
 content-addressed generation。
 
-Receipt 的 schemaVersion 仍为 1，不代表保留旧 Host 生成兼容。#294 之后，collector、binding assembly 与 deep verifier 只接受
-Template renderer 2 + Composition renderer 4/provider v3 + RegistrationSnapshot v2；pre-current bindings/renderer/provider/snapshot
-没有 reader、adapter 或只读验证路径。Receipt v1 只绑定 snapshot bytes/path/hash，因此 Snapshot 的 hard cut 不要求机械提升 Receipt。
+Receipt 的 schemaVersion 仍为 1，不代表保留旧 Host 生成兼容。#295 当前硬切实现下，collector、binding assembly 与 deep verifier 只接受
+Template renderer 2 + Composition renderer 5/provider v4 + RegistrationSnapshot v2；pre-current bindings/renderer/provider/snapshot
+没有 reader、adapter 或只读验证路径。Receipt v1 只绑定 snapshot bytes/path/hash，因此 provider/runtime-binding hard cut 不要求机械
+提升 Receipt。[Static Contribution Payload Accessors v1](adr-static-contribution-payload-accessors-v1.md) 的 accessor/type key 仍是
+process-local private evidence，不进入 receipt。
 
 名称刻意不使用 `Activation Receipt`。该 receipt 证明“这些构建输入、target 语义、可执行文件 bytes 与注册 identity
 彼此一致”，不证明任何 factory instance 已创建，也不证明 Host 已完成 activation、进入 `Ready` 或正在当前进程中加载。

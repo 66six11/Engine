@@ -132,7 +132,7 @@ namespace asharia::host_runtime::tests {
         }
 
         [[nodiscard]] StaticFactoryRegistrationResult<StaticFactoryCallbackTableV1>
-        collectTable(StaticFactoryProviderV3 provider) noexcept {
+        collectTable(StaticFactoryProviderV4 provider) noexcept {
             auto recorderResult = createStaticFactoryRegistrationRecorder(kSingleFactoryCapacity);
             if (!recorderResult) {
                 return std::unexpected(std::move(recorderResult.error()));
@@ -209,7 +209,7 @@ namespace asharia::host_runtime::tests {
         }
 
         [[nodiscard]] bool missingCallbacksFailByLifecycleSlot() noexcept {
-            using Case = std::pair<StaticFactoryProviderV3, StaticFactoryRegistrationErrorCode>;
+            using Case = std::pair<StaticFactoryProviderV4, StaticFactoryRegistrationErrorCode>;
             constexpr std::array<Case, 5> cases{
                 Case{&provideWithoutCreate,
                      StaticFactoryRegistrationErrorCode::FactoryCreateCallbackMissing},

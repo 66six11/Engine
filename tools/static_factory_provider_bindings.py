@@ -19,8 +19,8 @@ STATIC_FACTORY_PROVIDER_BINDING_PLAN_NAME = (
 STATIC_FACTORY_PROVIDER_BINDING_PLAN_SCHEMA = (
     "com.asharia.static-factory-provider-binding-plan"
 )
-STATIC_FACTORY_PROVIDER_BINDING_PLAN_SCHEMA_VERSION = 3
-STATIC_FACTORY_PROVIDER_API = "asharia-static-factory-provider-v3"
+STATIC_FACTORY_PROVIDER_BINDING_PLAN_SCHEMA_VERSION = 4
+STATIC_FACTORY_PROVIDER_API = "asharia-static-factory-provider-v4"
 
 
 @dataclass(frozen=True, order=True)

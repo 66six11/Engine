@@ -54,13 +54,14 @@ namespace asharia::host_runtime::tests {
                                 EligibilityHandoffMutationV1::None);
 
     [[nodiscard]] ActivationEligibilityResultV1<PreRegistrationAdmissionV1>
-    makePreRegistrationAdmission(EligibilityHandoffMutationV1 mutation =
-                                     EligibilityHandoffMutationV1::None);
+    makePreRegistrationAdmission(
+        EligibilityHandoffMutationV1 mutation = EligibilityHandoffMutationV1::None);
 
     void resetEligibilityProbeCounts() noexcept;
     [[nodiscard]] std::size_t recordingFunctionInvocationCount() noexcept;
     [[nodiscard]] std::size_t providerInvocationCount() noexcept;
     [[nodiscard]] std::size_t lifecycleInvocationCount() noexcept;
+    [[nodiscard]] std::size_t contributionAccessorInvocationCount() noexcept;
 
     [[nodiscard]] StaticFactoryRegistrationResult<StaticFactoryCallbackTableV1>
     collectEvidenceOnlyTable(bool useAlternateCallbacks) noexcept;

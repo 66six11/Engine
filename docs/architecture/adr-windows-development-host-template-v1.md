@@ -15,6 +15,10 @@ registration-only `main()` 从 frozen table 读取 table-owned snapshot，但仍
 的 generated `main.cpp`/CMake bytes 不变，并将 active downstream 硬切为 Composition revision 4/provider v3/RegistrationSnapshot v2。
 本 ADR 下文的 C3/provider-v2/Snapshot-v1 形状只保留为历史记录；pre-current reader、adapter 或 deep verification path 均不存在。
 
+[Static Contribution Payload Accessors v1](adr-static-contribution-payload-accessors-v1.md) 已由 #295 实现 Composition revision 5/provider
+v4 的后继硬切。Template `main.cpp`/CMake bytes 仍保持不变，因此 Template renderer 继续为 2；restricted mode 只保存 accessor
+evidence，调用次数必须为零。
+
 ## 问题
 
 现有 generated static composition root 能把 exact provider targets、generated source 和
