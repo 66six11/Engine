@@ -95,6 +95,9 @@ snapshot 被替换或修改。
 - Distribution/Project/Lock/candidate fingerprints；
 - Host Profile path、kind、platform 与 exact bytes integrity。
 
+这里的 `Ready` 只是 [Activation Eligibility v1](adr-activation-eligibility-v1.md) Stage 1 的一个输入。它不授权调用
+generated providers、读取 callback descriptors、执行 lifecycle 或发布 future `ProjectReady`。
+
 canonical plan data 可用于日志、测试与缓存 key，但不得作为项目文件提交，也不得被当作新的依赖事实。任何时候都可以从
 Distribution、Project/Lock、candidates 与 Host Profile snapshot 重新派生。
 

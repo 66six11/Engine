@@ -1,13 +1,14 @@
 ﻿#pragma once
 
-#include <vector>
+#include <memory>
 
-#include "asharia/host_runtime/static_factory_callbacks.hpp"
 #include "asharia/host_runtime/static_factory_registration_snapshot.hpp"
 
 namespace asharia::host_runtime {
 
     class StaticFactoryCallbackTableBuilder;
+    class StaticFactoryCallbackTablePrivateAccessV1;
+    struct StaticFactoryCallbackTableStorageV1;
 
     class StaticFactoryCallbackTableV1 final {
     public:
@@ -21,13 +22,13 @@ namespace asharia::host_runtime {
         registrationSnapshot() const noexcept;
 
     private:
-        StaticFactoryCallbackTableV1(StaticFactoryRegistrationSnapshotV1 snapshot,
-                                     std::vector<StaticFactoryCallbacksV1> callbacks) noexcept;
+        explicit StaticFactoryCallbackTableV1(
+            std::shared_ptr<const StaticFactoryCallbackTableStorageV1> storage) noexcept;
 
-        StaticFactoryRegistrationSnapshotV1 snapshot_;
-        std::vector<StaticFactoryCallbacksV1> callbacks_;
+        std::shared_ptr<const StaticFactoryCallbackTableStorageV1> storage_;
 
         friend class StaticFactoryCallbackTableBuilder;
+        friend class StaticFactoryCallbackTablePrivateAccessV1;
     };
 
 } // namespace asharia::host_runtime

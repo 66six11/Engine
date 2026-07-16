@@ -2,16 +2,20 @@
 
 #include <algorithm>
 #include <exception>
+#include <memory>
 #include <new>
 #include <span>
 #include <stdexcept>
 #include <tuple>
 #include <utility>
+#include <vector>
 
 #include "static_factory_callback_table_internal.hpp"
+#include "static_factory_callback_table_state.hpp"
 #include "static_factory_registration_state.hpp"
 
 namespace asharia::host_runtime {
+
     namespace {
 
         struct MaterializedFactory final {
@@ -38,13 +42,15 @@ namespace asharia::host_runtime {
     }
 
     StaticFactoryCallbackTableV1::StaticFactoryCallbackTableV1(
-        StaticFactoryRegistrationSnapshotV1 snapshot,
-        std::vector<StaticFactoryCallbacksV1> callbacks) noexcept
-        : snapshot_(std::move(snapshot)), callbacks_(std::move(callbacks)) {}
+        std::shared_ptr<const StaticFactoryCallbackTableStorageV1> storage) noexcept
+        : storage_(std::move(storage)) {}
 
     const StaticFactoryRegistrationSnapshotV1&
     StaticFactoryCallbackTableV1::registrationSnapshot() const noexcept {
-        return snapshot_;
+        if (!storage_) {
+            std::terminate();
+        }
+        return storage_->snapshot;
     }
 
     StaticFactoryRegistrationResult<StaticFactoryCallbackTableV1>
@@ -87,7 +93,9 @@ namespace asharia::host_runtime {
                 callbacks.push_back(factory.callbacks);
             }
 
-            return StaticFactoryCallbackTableV1{std::move(snapshot), std::move(callbacks)};
+            auto storage = std::make_shared<const StaticFactoryCallbackTableStorageV1>(
+                std::move(snapshot), std::move(callbacks));
+            return StaticFactoryCallbackTableV1{std::move(storage)};
         } catch (const std::bad_alloc&) {
             return std::unexpected(makeStaticFactoryRegistrationError(
                 StaticFactoryRegistrationErrorCode::AllocationFailed));

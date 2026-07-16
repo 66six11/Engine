@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <expected>
 #include <memory>
 #include <span>
@@ -37,7 +38,7 @@ namespace asharia::host_runtime {
         std::span<const std::string_view> expectedFactoryIds;
     };
 
-    enum class StaticFactoryRegistrationErrorCode {
+    enum class StaticFactoryRegistrationErrorCode : std::uint8_t {
         InvalidCapacity,
         AllocationFailed,
         InvalidCompositionContext,

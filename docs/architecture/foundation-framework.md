@@ -32,8 +32,11 @@ flowchart TB
     Project["Project Manifest + Lock\nproject-owned graph"]
     Profile["Host Profile"]
     Session["Effective Session Plan\nderived state + subplan handoff"]
-    Host["engine/host-runtime planned\nscopes / activation / lifecycle / safe points"]
-    Package["engine/package-runtime planned\nmanifest / solve / lock / activation plan"]
+    Binding["Deep-verified Host binding\nexact artifact + snapshot"]
+    Launch["Verified launch handoff\nplanned adapter"]
+    Eligibility["Activation Eligibility\nC++ boundary implemented; launcher adapter planned"]
+    Host["engine/host-runtime\ncallback table implemented; scopes/lifecycle planned"]
+    Package["engine/package-runtime\nmanifest / solve / lock / session planning"]
     Kernel["Bootstrap Kernel\ncore + minimal platform primitives"]
     Foundation["Default Foundation System Packages\nMemory / Observability / Storage / Settings / Tasks / Data"]
     Domain["Domain System Packages\nContent / World / Input / Scripting / Rendering / Physics ..."]
@@ -45,7 +48,10 @@ flowchart TB
     Project -->|adds project graph| Package
     Profile -->|selects modules| Package
     Package -->|derives composition| Session
-    Session -->|when Ready, creates| Host
+    Session -->|when Ready, supplies evidence| Eligibility
+    Binding -->|binds exact Host generation| Eligibility
+    Launch -->|binds live process instance| Eligibility
+    Eligibility -->|admits recording and exact table| Host
     Host -->|uses primitives| Kernel
     Host -->|activates| Foundation
     Host -->|activates| Domain
@@ -476,8 +482,10 @@ required factory、contribution ownership、exact candidate snapshot 与 locked 
 Host Activation Blueprint v1、generated static composition root 与
 [Host Executable Binding Receipt v1](adr-host-executable-binding-receipt-v1.md) 已实现；
 [Static Factory Callback Table v1](adr-static-factory-callback-table-v1.md) 已为 #291 实现 current-process typed callback binding。
-Activation Eligibility、scope lifecycle executor、轻量启动 receipt 与 repair executor 仍未实现；
-Host Runtime 不会在这些可执行合同存在前解释逻辑 IDs。
+[Activation Eligibility v1](adr-activation-eligibility-v1.md) 已实现 sealed handoffs、按值线性消费、admitted recording wrapper 与
+exact-table affinity，并添加 focused tests；最终门禁结果以 #292 Done evidence 为准。production launch issuer、normal Host 接线、scope
+lifecycle executor、轻量启动 receipt 与 repair executor 仍未实现；production Host 不会在 launch handoff 与 lifecycle contract 落地前
+把逻辑 IDs 解释为已激活 instances。
 
 ## 拒绝的替代方案
 

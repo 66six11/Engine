@@ -227,6 +227,11 @@ same-index target/configured compiler、collector-owned staged executable bytes 
 repair executor、轻量启动 receipt、生产 catalog/lockfile 与 Editor Package Manager 尚未实现。Project Manifest / Lock v2 不保留
 v1 reader 或 migration adapter。
 
+[Activation Eligibility v1](adr-activation-eligibility-v1.md) 已冻结两阶段 normal Host contract：sealed Session/Blueprint/binding/launch
+handoff 先产生一次性 `PreRegistrationAdmissionV1`，同一次 recording 的 exact table instance/snapshot 再产生
+`ActivationAdmissionV1`。C++ validator、按值线性 wrappers、sealed recording driver pair 与 focused tests 已实现；最终门禁结果以 #292
+Done evidence 为准，production launch issuer 与 normal Host 接线尚未完成。Effective Session `Ready` 与 raw receipt/table 都不是 admission。
+
 长期目标是让用户通过 Editor Package Manager 为项目添加、移除和升级**完整可安装能力**。Data、Content、World、Input、Rendering、Physics 等基础能力各自以完整 System Package 表达；Advanced Camera、Dialogue、Weather 等附加能力以完整 Feature Package 表达；跨可选包桥接使用 Integration Package。三者都不能拆成需要用户手工拼装的 contract/runtime/editor/backend fragments。
 
 这条体验必须建立在 headless package control plane 上，同时服从
@@ -247,6 +252,8 @@ flowchart LR
     HostBuild["Windows Development Host<br/>template + exact-target build"]
     Handoff["File API target/compiler<br/>+ registration handoff"]
     Binding["Host Executable Binding Receipt<br/>exact staged bytes + snapshot"]
+    Launch["Verified current-process launch handoff<br/>planned adapter"]
+    Eligibility["Activation Eligibility<br/>two linear admissions"]
     Hosts["Editor / Runtime / Server / Tools"]
 
     Editor -->|"edit dependencies"| Manifest
@@ -259,7 +266,10 @@ flowchart LR
     Composition --> Build
     Build --> HostBuild --> Handoff --> Binding
     Composition --> Binding
-    Binding -.->|"future lifecycle input"| Hosts
+    Composition --> Eligibility
+    Binding --> Eligibility
+    Launch --> Eligibility
+    Eligibility -.->|"future admitted lifecycle input"| Hosts
 ```
 
 规则：

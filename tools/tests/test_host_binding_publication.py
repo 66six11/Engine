@@ -403,6 +403,40 @@ class HostBindingPublicationTests(unittest.TestCase):
             [item.code for item in verified.diagnostics],
         )
 
+    def test_deep_verifier_rejects_legacy_tuple_before_artifact_observation(
+        self,
+    ) -> None:
+        published = self.publish()
+        assert published.receipt is not None
+        legacy_composition = replace(
+            self.composition,
+            manifest=replace(
+                self.composition.manifest,
+                renderer_revision=2,
+                provider_api="asharia-static-factory-provider-v1",
+            ),
+        )
+
+        with mock.patch.object(
+            host_artifact_io,
+            "observe_host_artifact",
+        ) as observe_artifact:
+            verified = (
+                host_binding_generation_verifier.verify_published_host_binding_generation(
+                    published.receipt.generation_path,
+                    legacy_composition,
+                    self.template,
+                    self.validators,
+                )
+            )
+
+        self.assertIsNone(verified.verified)
+        self.assertIn(
+            "static-composition.schema",
+            [item.code for item in verified.diagnostics],
+        )
+        observe_artifact.assert_not_called()
+
     def test_deep_verifier_rescans_closed_layout_before_success(self) -> None:
         published = self.publish()
         assert published.receipt is not None

@@ -69,10 +69,23 @@ class HostExecutableTemplateTests(unittest.TestCase):
         self.assertIn("WIN32_EXECUTABLE FALSE", cmake)
         self.assertIn("asharia-host/bin/$<CONFIG>", cmake)
         self.assertIn("--asharia-verify-static-registration", main_text)
-        self.assertIn("recordStaticFactoryProviders", main_text)
+        self.assertEqual(
+            1,
+            main_text.count(
+                "asharia::generated::recordStaticFactoryProviders(*recorder);"
+            ),
+        )
         self.assertIn("auto table = std::move(*recorder).finish();", main_text)
         self.assertIn("table->registrationSnapshot()", main_text)
         self.assertIn("static_factory_callback_table.hpp", main_text)
+        for eligibility_api in (
+            "activation_eligibility.hpp",
+            "admitted_static_factory_recording.hpp",
+            "admitPreRegistration",
+            "recordAdmittedStaticFactoryProviders",
+            "admitStaticFactoryActivation",
+        ):
+            self.assertNotIn(eligibility_api, main_text)
         self.assertNotIn("activate", main_text.casefold())
         self.assertNotIn("factory instance", main_text.casefold())
 

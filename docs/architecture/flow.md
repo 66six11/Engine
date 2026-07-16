@@ -186,7 +186,7 @@ flowchart TD
 
 ```mermaid
 flowchart LR
-    Plans["Verified source/build/activation plans"] --> Composition["Static composition<br/>renderer 3 / provider v2"]
+    Plans["Verified Source Build Plan + Blueprint + Binding Plan"] --> Composition["Static composition<br/>renderer 3 / provider v2"]
     Composition --> Template["Windows development Host template<br/>renderer 2"]
     Conan["Caller-provided Conan toolchain + compiler environment"] --> Configure["Controlled final CMake configure"]
     Template --> Configure
@@ -216,6 +216,29 @@ Composition renderer 3/provider v2；bindings/Binding Plan v1 与 pre-current re
 Receipt v1 与 RegistrationSnapshot v1 仍是 active evidence schemas。详见
 [Host Executable Binding Receipt v1](adr-host-executable-binding-receipt-v1.md) 与
 [Static Factory Callback Table v1](adr-static-factory-callback-table-v1.md)。
+
+## Activation Eligibility 流（#292 C++ boundary implemented）
+
+下面是 [Activation Eligibility v1](adr-activation-eligibility-v1.md) 已实现的 headless C++ boundary；它尚未接入现有
+Editor/sample/generated Host 的 normal long-lived path。current renderer 2 executable 仍只是上面的 disposable registration-only
+verifier：
+
+```mermaid
+flowchart LR
+    Session["Ready Session handoff"] --> Pre["Stage 1 eligibility"]
+    Blueprint["Verified Blueprint handoff"] --> Pre
+    Binding["Deep-verified binding + expected snapshot"] --> Pre
+    Launch["Verified launch handoff\nplanned production issuer"] --> Pre
+    Pre --> Admission["PreRegistrationAdmissionV1"]
+    Admission -->|"consume once"| Recording["Admitted generated provider recording"]
+    Recording --> Pending["Pending table\nsame process/registration lineage"]
+    Pending --> Cross["Stage 2 snapshot + table-affinity check"]
+    Cross --> Active["Admitted table + ActivationAdmissionV1"]
+    Active -.-> Lifecycle["#293 ProcessScope lifecycle\nplanned"]
+```
+
+Stage 1 failure 必须发生在任何 project provider invocation 前；Stage 2 failure 不暴露 descriptor。snapshot byte-identical 的另一张
+table 也会因 private table lineage 不同而被拒绝。production launch issuer 缺失时没有 admission minting path，保持 fail closed。
 
 ## 当前架构总览
 

@@ -212,7 +212,7 @@ fixed-field bytes、无重复 registration、expected generation 与 expected Bl
 
 - 通用 Build Profile inheritance、Cook、Stage、Package、Deploy 或 Launch Session；
 - Editor/Bootstrap UI、ImGui 或 Avalonia；
-- factory callbacks、instance、scope、activation DAG、rollback 或 shutdown；
+- lifecycle callback invocation、admissions、long-lived Host、instance、scope、activation DAG、rollback 或 shutdown；
 - artifact hash/publication、Host Executable Binding Receipt、signing、installer 或 repair；
 - dynamic plugin、hot unload 或 stable cross-generation ABI；
 - 任意 package code 的运行时发现或 filesystem 扫描。

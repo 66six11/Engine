@@ -234,8 +234,9 @@ receipt 对本地 exact bytes 的语义。
 
 1. [Static Factory Callback Table v1](adr-static-factory-callback-table-v1.md)：#291 已绑定 current-process typed callbacks；table
    与 receipt 都不单独授权调用；
-2. Activation Eligibility 先交叉验证 receipt、session 与 current process，允许 long-lived Host 调用 providers；随后再对证 table
-   snapshot，才由 Host Runtime lifecycle 建立 scope、factory context、activation lease、rollback 与 shutdown；
+2. [Activation Eligibility v1](adr-activation-eligibility-v1.md) 只接受 deep verifier 的 constructor-restricted receipt/snapshot
+   projection；raw receipt JSON、generation directory 或自报 digest 都不能 mint admission。它先对证 Session/Blueprint/binding 与 sealed
+   launch handoff，允许一次 provider recording；随后再对证同一 table instance/snapshot，才允许后续 Host Runtime lifecycle；
 3. Bootstrap/Session adapter 把 missing/stale/verified receipt 与 runtime outcome 映射为 `PendingBuild`、`PendingRestart`、`Ready` 或
    `SafeMode`；
 4. signing、trusted builder identity 与 SLSA-compatible outer attestation 仅在 release/CI threat model 明确后单独设计。

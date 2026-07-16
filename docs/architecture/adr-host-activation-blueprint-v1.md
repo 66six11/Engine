@@ -69,7 +69,11 @@ table-owned registration snapshot + artifact verification
                 ↓
 Host Executable Binding Receipt
                 ↓
-Activation Eligibility
+PreRegistrationAdmissionV1
+                ↓
+admitted provider recording + frozen callback table
+                ↓
+ActivationAdmissionV1
                 ↓
 Host Runtime lifecycle
 ```
@@ -304,7 +308,8 @@ partial plan，也不修改 session、Host Composition、candidate 或 declarati
    受控构建、File API target binding 与 registration-only verification；
 5. [Host Executable Binding Receipt v1](adr-host-executable-binding-receipt-v1.md)：#288 已在构建后把 Blueprint fingerprint、
    registration snapshot 与 exact staged Host artifact 对证；该 receipt 不证明 lifecycle activation；
-6. Activation Eligibility：只对当前 Template renderer 2 + Composition renderer 3/provider v2 generation 交叉验证 receipt、session 与
-   current process，授权 callback access；
+6. [Activation Eligibility v1](adr-activation-eligibility-v1.md)：C++ boundary 已实现为只对当前 Template renderer 2 + Composition renderer 3/
+   provider v2 generation 交叉验证 sealed Session/Blueprint/binding/launch handoff，先授权一次 provider recording，再以同一 table
+   lineage 与 snapshot 授权 descriptor access；最终门禁结果以 #292 Done evidence 为准，production launch issuer 仍待后续 adapter；
 7. Host Runtime lifecycle：实现 concrete scope tree、factory context、lifecycle callbacks、activation lease、typed registries、rollback 与 shutdown；
 8. Bootstrap adapter：把上述 headless states 映射到 Ready/PendingBuild/PendingRestart/SafeMode UI。

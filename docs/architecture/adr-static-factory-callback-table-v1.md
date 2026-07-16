@@ -378,6 +378,8 @@ table identity mismatch 在第二阶段 fail，不产生 descriptor access permi
 public table API 不提供任意 consumer 可直接调用的 raw callback lookup。#291 只公开 table identity、generation/Blueprint attribution
 与 RegistrationSnapshot projection。private callback access 留给 future lifecycle executor；executor 必须取得 constructor-restricted
 Host Runtime `ActivationAdmission`，才能通过正常 API 读取 descriptor。
+实现上 table 只在 public type 中持有不透明 immutable storage；snapshot 通过 public projection 读取，callback storage layout 与 access bridge
+均留在 registration/Host Runtime 的 PRIVATE 源码边界，避免低层 registration 公共头反向依赖高层 eligibility 类型。
 
 两个 admission token 只防止 Host 代码意外绕过正常流程，不是 sandbox/security capability。同进程 native package 始终能调用
 自己的函数；hostile native code 不在 v1 threat model。
@@ -511,8 +513,10 @@ non-capturing lambda 只有在显式转换为完全匹配的 `noexcept` function
 
 ## 后继边界
 
-1. Activation Eligibility v1（#292）：先以 deep-verified #288 receipt、Ready session 与 current executable/process generation 产出
-   `PreRegistrationAdmission`；调用 providers 后再以 table identity/snapshot 对证产生 `ActivationAdmission`；
+1. [Activation Eligibility v1](adr-activation-eligibility-v1.md)（#292）：C++ boundary 已实现；先以 constructor-restricted Ready
+   Session/Blueprint/deep-verified binding/launch handoff 产出 `PreRegistrationAdmissionV1`，再以同一次 admitted recording 的 exact
+   table instance 与 snapshot 产出 `ActivationAdmissionV1`。最终门禁结果以 #292 Done evidence 为准，production launch issuer 与
+   normal Host 接线仍待实现；
 2. ProcessScope Lifecycle v1（#293，blocked by #292）：定义第一个 concrete contexts/executor，按 Blueprint order create/activate，失败时 reverse rollback，
    正常 shutdown 时 quiesce/deactivate/destroy；
 3. 其余 scope、typed contributions 与 activation leases：在 ProcessScope 证据稳定后逐层增加；
