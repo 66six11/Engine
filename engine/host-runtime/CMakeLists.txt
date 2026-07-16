@@ -78,6 +78,8 @@ target_link_libraries(asharia-host-runtime-activation-eligibility
 asharia_configure_target(asharia-host-runtime-activation-eligibility)
 
 add_library(asharia-host-runtime-process-scope STATIC
+    src/process_contribution_activation_lease.cpp
+    src/process_contribution_registry.cpp
     src/process_scope.cpp
     src/process_scope_cleanup.cpp
     src/process_scope_preflight.cpp
@@ -200,6 +202,9 @@ if(ASHARIA_BUILD_TESTS)
 
   add_executable(asharia-host-runtime-process-scope-tests
       tests/process_scope_cleanup_tests.cpp
+      tests/process_scope_contribution_contract_tests.cpp
+      tests/process_scope_contribution_lifecycle_tests.cpp
+      tests/process_scope_zero_contribution_tests.cpp
       tests/process_scope_contract_tests.cpp
       tests/process_scope_preflight_tests.cpp
       tests/process_scope_startup_tests.cpp

@@ -7,18 +7,18 @@
 
 namespace asharia::host_runtime {
 
-    ProcessScopeStopResultV1 ProcessScopeExecutorV1::stop() noexcept {
+    ProcessScopeStopResultV2 ProcessScopeExecutorV2::stop() noexcept {
         if (!state_) {
             return std::unexpected(makeProcessScopeOperationError(
-                ProcessScopeErrorCodeV1::ExecutorMovedFrom, ProcessScopeStateV1::MovedFrom));
+                ProcessScopeErrorCodeV2::ExecutorMovedFrom, ProcessScopeStateV2::MovedFrom));
         }
         if (state_->operationInProgress) {
             return std::unexpected(makeProcessScopeOperationError(
-                ProcessScopeErrorCodeV1::OperationInProgress, state_->lifecycleState));
+                ProcessScopeErrorCodeV2::OperationInProgress, state_->lifecycleState));
         }
-        if (state_->lifecycleState != ProcessScopeStateV1::Active) {
+        if (state_->lifecycleState != ProcessScopeStateV2::Active) {
             return std::unexpected(makeProcessScopeOperationError(
-                ProcessScopeErrorCodeV1::StopRequiresActive, state_->lifecycleState));
+                ProcessScopeErrorCodeV2::StopRequiresActive, state_->lifecycleState));
         }
 
         const auto executionView =
@@ -29,10 +29,10 @@ namespace asharia::host_runtime {
         }
 
         state_->diagnosticScratch.clear();
-        ProcessScopeOperationGuardV1 operationGuard{state_->operationInProgress};
+        ProcessScopeOperationGuardV2 operationGuard{state_->operationInProgress};
         cleanupProcessScopeFactories(*state_, executionView->callbacks);
-        state_->lifecycleState = ProcessScopeStateV1::Stopped;
-        return ProcessScopeStopReportV1{
+        state_->lifecycleState = ProcessScopeStateV2::Stopped;
+        return ProcessScopeStopReportV2{
             .cleanupDiagnostics = std::move(state_->diagnosticScratch),
         };
     }

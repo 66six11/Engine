@@ -4,14 +4,15 @@
 
 当前仓库事实是：`engine/core` 已提供 error/result、log 和严格 file IO baseline；`engine/platform` 仍是只传递
 `asharia::core` 的 `INTERFACE` target；root CMake 仍静态加入当前 source packages；`engine/package-runtime` 已建立 package control
-plane 的 headless v1 contracts；`engine/host-runtime` 已建立 registration、eligibility、
-[ProcessScope Lifecycle v1](adr-process-scope-lifecycle-v1.md) 与
-[Static Typed Contribution Contract Bindings v1](adr-static-typed-contribution-contract-bindings-v1.md) 的 headless C++ boundary；#295 的
-[Static Contribution Payload Accessors v1](adr-static-contribution-payload-accessors-v1.md) 又冻结 selected contribution 的 future payload
-projection authority。当前只证明 C++ type/kind/cardinality 与 accessor evidence，尚未调用 accessor 或发布 payload。其他 concrete Host
-scopes、activation lease、typed registry、
-production Host/Bootstrap adapter、Memory & Budget、Settings、Runtime Storage、Tasks 等目标模块尚未实现。本文不能被
-用来宣称这些能力已经完成。
+plane 的 headless v1 contracts；`engine/host-runtime` 已建立 registration、eligibility 与 root ProcessScope 的 headless C++ boundary。
+#295 的 [Static Contribution Payload Accessors v1](adr-static-contribution-payload-accessors-v1.md) 冻结 selected contribution 的 payload
+projection authority；#296 的
+[ProcessScope Contribution Registry and Activation Lease v1](adr-process-scope-contribution-registry-and-activation-lease-v1.md) 已在
+ProcessScope V2 内调用 accessor、建立 fixed-slot typed registry、weak generation view/handle 与 contribution-only lease。
+
+其他 concrete Host scopes、production Host/Bootstrap adapter、完整 system-instance/jobs/subscriptions lease、Memory & Budget、Settings、
+Runtime Storage、Tasks 等目标模块尚未实现。下一步必须以真实 Host + 真实 system/contribution 完成可观察 vertical feature，而不是继续
+预先增加抽象 Foundation。本文不能被用来宣称生产 Bootstrap、Editor UI 或完整 Foundation Services 已经完成。
 
 ## 目的
 
@@ -42,7 +43,7 @@ flowchart TB
     Binding["Deep-verified Host binding\nexact artifact + snapshot"]
     Launch["Verified launch handoff\nplanned adapter"]
     Eligibility["Activation Eligibility\nC++ boundary implemented; launcher adapter planned"]
-    Host["engine/host-runtime\nregistration + typed payload-accessor evidence + eligibility + ProcessScope\npayload registry/lease and other scopes planned"]
+    Host["engine/host-runtime\nregistration + eligibility + ProcessScope V2\nfixed-slot registry + contribution lease; other scopes planned"]
     Package["engine/package-runtime\nmanifest / solve / lock / session planning"]
     Kernel["Bootstrap Kernel\ncore + minimal platform primitives"]
     Foundation["Default Foundation System Packages\nMemory / Observability / Storage / Settings / Tasks / Data"]
@@ -112,16 +113,18 @@ Core 只保存通用错误载体和上下文链，不枚举全部未来系统。
 
 它不得返回任意全局 service pointer，也不得成为 World、Renderer、Storage 或 Settings 的实现所在地。
 
-当前 #293 implementation 只覆盖 root `ProcessScope`：它按值消费 admitted callback table，zero-callback preflight exact-map sealed
-Blueprint process projection，然后 dependencies-first `create -> activate`，失败或显式停止时执行完整 reverse
-quiesce/deactivate/destroy passes。它通过窄 factory contexts 暴露声明过且已经 Active 的 dependencies，并由 Host 唯一拥有 token。
-该 implementation 仍由 PRIVATE test issuer 驱动；production current-process issuer、normal Host、Bootstrap state mapping、其他 scopes、
-activation lease 与 typed contribution registry 均未实现。#294 在该 table 内增加 public contract type、stable kind/cardinality 与
-private process-local type evidence；#295 再让同一 selected binding/table storage 保存 compile-time typed payload accessor，但 registration、
-verification 与 ProcessScope v1 都不调用它。两者为后续 registry 提供可信输入，不改变 lifecycle。完整合同见
-[ProcessScope Lifecycle v1](adr-process-scope-lifecycle-v1.md) 与
+当前 #296 implementation 只覆盖 root `ProcessScope`：它按值消费 admitted callback table，在 preflight exact-map sealed Blueprint process
+projection 与 contribution runtime bindings，并建立 owner-ordered fixed slots。start 按 dependencies-first `create -> activate -> publish`
+执行；只有 per-factory contribution lease 原子提交后，该 factory 才成为 dependency-visible，全部 factories 成功后 public registry 才开放。
+它通过窄 factory contexts 暴露声明过且已 dependency-visible 的 dependencies，并由 Host 唯一拥有 instance token 与 contribution lease。
+
+rollback/stop 的 gate 固定为 reverse quiesce → registry `Revoking` → reverse lease revoke → reverse deactivate/destroy → registry
+`Revoked`。registry view/typed handle 只 weak-reference scope generation，所有 query/borrow 都复验 control thread、process epoch、phase、
+cardinality、type 与 payload。该 implementation 仍由 PRIVATE test issuer 驱动；production current-process issuer、normal Host、Bootstrap
+state mapping 与其他 scopes 均未实现。完整合同见 [ProcessScope Lifecycle v1](adr-process-scope-lifecycle-v1.md)、
 [Static Typed Contribution Contract Bindings v1](adr-static-typed-contribution-contract-bindings-v1.md)、
-[Static Contribution Payload Accessors v1](adr-static-contribution-payload-accessors-v1.md)。
+[Static Contribution Payload Accessors v1](adr-static-contribution-payload-accessors-v1.md) 与
+[ProcessScope Contribution Registry and Activation Lease v1](adr-process-scope-contribution-registry-and-activation-lease-v1.md)。
 
 ### Editor Image 的固定 Bootstrap Closure
 
@@ -506,14 +509,15 @@ Host Activation Blueprint v1、generated static composition root 与
 [Static Typed Contribution Contract Bindings v1](adr-static-typed-contribution-contract-bindings-v1.md) 已为 #294 实现 Binding Plan v3、
 provider v3、Composition renderer 4、private C++ type evidence 与 RegistrationSnapshot v2；它不提供 payload lookup 或 lease。
 [Static Contribution Payload Accessors v1](adr-static-contribution-payload-accessors-v1.md) 已由 #295 实现 Binding Plan v4、provider v4、
-Composition renderer 5 与 `StaticContributionBindingV2` 的后继硬切；它只增加 private accessor evidence，仍不取得 payload、lookup
-或 lease。
+Composition renderer 5 与 `StaticContributionBindingV2` 的后继硬切；该 ADR 自身只增加 private accessor evidence。
 [Activation Eligibility v1](adr-activation-eligibility-v1.md) 已实现 sealed handoffs、按值线性消费、admitted recording wrapper 与
-exact-table affinity，并完成 #292 Done evidence。[ProcessScope Lifecycle v1](adr-process-scope-lifecycle-v1.md) 已增加 sealed process
-projection、exact descriptor mapping、factory contexts、token ownership、startup rollback 与 explicit reverse stop 的 headless C++
-implementation，并已通过 #293 门禁。production launch issuer、normal Host/Bootstrap 接线、其他 scope owners、
-activation lease、typed contribution registry、轻量启动 receipt 与 repair executor 仍未实现；生产路径不会仅因这些 headless contracts
-存在就把逻辑 IDs 解释为已激活 instances。
+exact-table affinity，并完成 #292 Done evidence。[ProcessScope Lifecycle v1](adr-process-scope-lifecycle-v1.md) 已由 #293 建立 sealed process
+projection、factory contexts、token ownership、startup rollback 与 explicit reverse stop；#296 又将 public surface 硬切到 V2，并实现
+fixed-slot typed registry、weak handles、contribution-only lease、publication rollback 与 cleanup revocation gate。
+
+production launch issuer、normal Host/Bootstrap 接线、其他 scope owners、完整 instance/jobs/subscriptions lease、轻量启动 receipt 与 repair
+executor 仍未实现；生产路径不会仅因这些 headless contracts 存在就把逻辑 IDs 解释为已激活 instances。下一项实现应直接连接真实 Host
+和真实 system/contribution vertical feature。
 
 ## 拒绝的替代方案
 

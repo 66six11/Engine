@@ -35,8 +35,13 @@ namespace asharia::host_runtime {
 
         return AdmittedStaticFactoryExecutionViewV1{
             .callbacks = StaticFactoryCallbackTablePrivateAccessV1::callbacks(pending.table),
+            .contributionRuntimeBindings =
+                StaticFactoryCallbackTablePrivateAccessV1::contributionRuntimeBindings(
+                    pending.table),
             .snapshot = std::addressof(pending.table.registrationSnapshot()),
             .processScope = std::addressof(pending.lineage->processScope),
+            .processEpoch = pending.lineage->processEpoch,
+            .controlThreadEpoch = pending.lineage->controlThreadEpoch,
             .engineGenerationId = pending.lineage->host.engineGenerationId,
             .blueprintIntegrity = pending.lineage->blueprintIntegrity,
         };

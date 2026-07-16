@@ -77,13 +77,46 @@ namespace asharia::host_runtime::tests {
                             .moduleId = std::string(kSyntheticModuleId),
                             .factoryId = std::string(kSyntheticMiddleFactoryId),
                             .providerEntryPoint = std::string(kSyntheticProviderEntryPoint),
-                            .contributions = {},
+                            .contributions =
+                                {
+                                    {
+                                        .contributionId =
+                                            std::string(kSyntheticMiddleExtensionAContributionId),
+                                        .contributionKind =
+                                            std::string(SyntheticExtensionContractV1::kind),
+                                        .cardinality = StaticContributionCardinalityV1::Multiple,
+                                    },
+                                    {
+                                        .contributionId =
+                                            std::string(kSyntheticMiddleExtensionBContributionId),
+                                        .contributionKind =
+                                            std::string(SyntheticExtensionContractV1::kind),
+                                        .cardinality = StaticContributionCardinalityV1::Multiple,
+                                    },
+                                },
                         },
                         {
                             .packageId = std::string(kSyntheticPackageId),
                             .packageVersion = std::string(kSyntheticPackageVersion),
                             .moduleId = std::string(kSyntheticModuleId),
                             .factoryId = std::string(kSyntheticProjectOnlyFactoryId),
+                            .providerEntryPoint = std::string(kSyntheticProviderEntryPoint),
+                            .contributions =
+                                {
+                                    {
+                                        .contributionId =
+                                            std::string(kSyntheticProjectOnlyPrimaryContributionId),
+                                        .contributionKind =
+                                            std::string(SyntheticPrimaryServiceContractV1::kind),
+                                        .cardinality = StaticContributionCardinalityV1::Single,
+                                    },
+                                },
+                        },
+                        {
+                            .packageId = std::string(kSyntheticPackageId),
+                            .packageVersion = std::string(kSyntheticPackageVersion),
+                            .moduleId = std::string(kSyntheticModuleId),
+                            .factoryId = std::string(kSyntheticEmptyFactoryId),
                             .providerEntryPoint = std::string(kSyntheticProviderEntryPoint),
                             .contributions = {},
                         },
@@ -93,7 +126,16 @@ namespace asharia::host_runtime::tests {
                             .moduleId = std::string(kSyntheticModuleId),
                             .factoryId = std::string(kSyntheticLeafFactoryId),
                             .providerEntryPoint = std::string(kSyntheticProviderEntryPoint),
-                            .contributions = {},
+                            .contributions =
+                                {
+                                    {
+                                        .contributionId =
+                                            std::string(kSyntheticLeafExtensionContributionId),
+                                        .contributionKind =
+                                            std::string(SyntheticExtensionContractV1::kind),
+                                        .cardinality = StaticContributionCardinalityV1::Multiple,
+                                    },
+                                },
                         },
                         {
                             .packageId = std::string(kSyntheticPackageId),
@@ -101,7 +143,16 @@ namespace asharia::host_runtime::tests {
                             .moduleId = std::string(kSyntheticModuleId),
                             .factoryId = std::string(kSyntheticRootFactoryId),
                             .providerEntryPoint = std::string(kSyntheticProviderEntryPoint),
-                            .contributions = {},
+                            .contributions =
+                                {
+                                    {
+                                        .contributionId =
+                                            std::string(kSyntheticRootPrimaryContributionId),
+                                        .contributionKind =
+                                            std::string(SyntheticPrimaryServiceContractV1::kind),
+                                        .cardinality = StaticContributionCardinalityV1::Single,
+                                    },
+                                },
                         },
                     },
             };
@@ -153,6 +204,18 @@ namespace asharia::host_runtime::tests {
                 break;
             case ProcessPlanMutationV1::ForwardRequirement:
                 std::swap(projection.factories[0], projection.factories[1]);
+                break;
+            case ProcessPlanMutationV1::IncludeProjectOnlySingleConflict:
+                projection.factories.push_back({
+                    .reference = factoryReference(kSyntheticProjectOnlyFactoryId),
+                    .requirements = {},
+                });
+                break;
+            case ProcessPlanMutationV1::IncludeZeroContributionFactory:
+                projection.factories.push_back({
+                    .reference = factoryReference(kSyntheticEmptyFactoryId),
+                    .requirements = {},
+                });
                 break;
             }
         }

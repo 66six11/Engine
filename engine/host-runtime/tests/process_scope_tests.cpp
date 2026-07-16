@@ -16,6 +16,9 @@ int main(int argc, char** argv) {
     try {
         const std::array groups{
             asharia::host_runtime::tests::processScopeContractTests(),
+            asharia::host_runtime::tests::processScopeContributionContractTests(),
+            asharia::host_runtime::tests::processScopeContributionLifecycleTests(),
+            asharia::host_runtime::tests::processScopeZeroContributionTests(),
             asharia::host_runtime::tests::processScopePreflightTests(),
             asharia::host_runtime::tests::processScopeStartupTests(),
             asharia::host_runtime::tests::processScopeCleanupTests(),

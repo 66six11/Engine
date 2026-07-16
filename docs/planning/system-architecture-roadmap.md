@@ -196,11 +196,11 @@ rollback 和 lifecycle；Memory、Storage、Settings、Tasks、Data、Observabil
 5. renderer、scene、editor 之间已有契约雏形，但仍可能由 host 进行临时拼接；
 6. editor executable 承担过多领域规则，难以做 headless 测试；
 7. 当前单线程基线尚未完全显式化 owner thread、snapshot 和销毁时序；
-8. `asharia.package.json` schema v1 已把当前目录分类为不可选择的 source boundaries；installable v2、Project Manifest v2、Feature Set v2、Package Lockfile v2、五种 Host Profile v1、explicit-source Candidate Discovery、deterministic in-memory resolver、fail-closed Locked Graph Verification & Reuse、Host Composition Plan v1、Source Build Plan v1、Package Product & Artifact Evidence v1、显式流式 Artifact Collection/Publication v1、Engine Distribution Manifest v1 / content-derived `EngineGenerationId`、Effective Session v1、staged-byte Distribution Assembly v1、read-only Installed Distribution Repair Verifier v1、Package Factory Declaration v1、Host Activation Blueprint v1、Static Factory Callback Table v1、Static Typed Contribution Contract Bindings v1/RegistrationSnapshot v2、Windows Development Host Template renderer 2 与 Host Executable Binding Receipt v1 已落地；#295 已完成 active Static Factory Provider Bindings/Binding Plan v4、Generated Static Composition Root renderer 5/provider v4 与 `StaticContributionBindingV2` payload-accessor evidence 的硬切实现与验证；Activation Eligibility v1 已添加 sealed handoff、按值 linear typestate、sealed recording driver pair 与 exact-table affinity C++ 实现，并完成 #292 Done evidence；#293 ProcessScope Lifecycle v1 已完成 sealed process projection、factory contexts、exact mapping、token ownership、startup rollback 与 explicit reverse stop 的 headless C++ implementation、focused tests 与门禁；Project/Lock v1 与 pre-current provider/bindings/renderer/snapshot reader、adapter、双写、`bundled` lock evidence 和 Host Composition raw Project/Profile 入口已删除；当前仍无上游 catalog/index、lock update/apply、生产 manifest/lock/profile、repair executor/轻量启动 receipt、production launch issuer/normal Host 接线、其他 Host scope owners、activation lease/typed registry 和 Editor Package Manager 闭环；
+8. `asharia.package.json` schema v1 已把当前目录分类为不可选择的 source boundaries；installable v2、Project Manifest v2、Feature Set v2、Package Lockfile v2、五种 Host Profile v1、explicit-source Candidate Discovery、deterministic in-memory resolver、fail-closed Locked Graph Verification & Reuse、Host Composition Plan v1、Source Build Plan v1、Package Product & Artifact Evidence v1、显式流式 Artifact Collection/Publication v1、Engine Distribution Manifest v1 / content-derived `EngineGenerationId`、Effective Session v1、staged-byte Distribution Assembly v1、read-only Installed Distribution Repair Verifier v1、Package Factory Declaration v1、Host Activation Blueprint v1、Static Factory Callback Table v1、Static Typed Contribution Contract Bindings v1/RegistrationSnapshot v2、Windows Development Host Template renderer 2 与 Host Executable Binding Receipt v1 已落地；#295 已完成 active Static Factory Provider Bindings/Binding Plan v4、Generated Static Composition Root renderer 5/provider v4 与 `StaticContributionBindingV2` payload-accessor evidence 的硬切实现与验证；Activation Eligibility v1 已添加 sealed handoff、按值 linear typestate、sealed recording driver pair 与 exact-table affinity C++ 实现，并完成 #292 Done evidence；#293 ProcessScope Lifecycle v1 已完成 sealed process projection、factory contexts、exact mapping、token ownership、startup rollback 与 explicit reverse stop 的 headless C++ implementation；#296 已将 public ProcessScope surface 硬切到 V2，并实现 fixed-slot typed registry、weak generation view/handle、contribution-only lease、atomic publication/rollback 与 cleanup revocation gate；Project/Lock v1 与 pre-current provider/bindings/renderer/snapshot reader、adapter、双写、`bundled` lock evidence 和 Host Composition raw Project/Profile 入口已删除；当前仍无上游 catalog/index、lock update/apply、生产 manifest/lock/profile、repair executor/轻量启动 receipt、production launch issuer/normal Host 接线、其他 Host scope owners、完整 instance/jobs/subscriptions lease 和 Editor Package Manager 闭环；
 9. scripting、input、tasks、physics、animation、audio 等已进入目标 first-party system catalog，但尚未形成可由同一 package activation 模型创建和停止的完整实现；
 10. `engine/platform` 仍是空 `INTERFACE` target，应用 lifecycle 与 immutable platform capability generation 没有 runtime owner；
-11. 除 root ProcessScope 的 headless factory context、startup rollback 与 explicit stop baseline 外，尚无其他复用 Host scope owner、
-    activation lease、typed contribution registry、contribution rollback 或 application shutdown integration；
+11. root ProcessScope 已具有 V2 typed registry、weak handles、contribution-only lease 与 publication/revoke rollback；尚无其他复用 Host
+    scope owner、完整 instance/jobs/subscriptions lease、application shutdown integration 或真实 normal Host/system vertical feature；
 12. Memory & Budget、Runtime Storage、Settings/Device Profile、Tasks/time baseline、local crash evidence、capability grant/deny 与 early/late diagnostics 尚未形成 Foundation Gate；
 13. World 尚无 entity bounds、spatial identity、region query 和 immutable spatial snapshot；
 14. project/package/schema 已计划版本化，但尚无 Editor-owned project upgrade preflight/copy/migrate/validate/commit 闭环；
@@ -246,7 +246,7 @@ rollback 和 lifecycle；Memory、Storage、Settings、Tasks、Data、Observabil
 | Host Runtime | 复用的 scope、activation、lifecycle、safe point 和 typed registry 宿主；计划位于 `engine/host-runtime` | Package Manager、领域系统实现或全局 service locator |
 | Foundation System Package | Standard Profiles 默认/要求的完整基础系统，例如 Memory、Storage、Settings、Tasks、Data、Observability | 不可卸载 Kernel 或只有 interface 的占位包 |
 | Host Scope | Process/Project/Session/World/LocalUser/Editor/ToolJob 等真实 lifetime owner | 命名空间、线程名或任意 DI 容器标签 |
-| Activation Lease | 追踪 system instance、contributions、jobs、subscriptions 和撤销/销毁责任的 owner handle | 只调用一次的 startup callback |
+| Activation Lease | 目标完整形态追踪 instance/contributions/jobs/subscriptions；#296 当前只实现 ProcessScope contribution-only lease | 只调用一次的 startup callback，或已完成的通用 owner handle |
 | System | 对一类长期状态和规则负最终所有权的业务域 | 目录名或 UI panel |
 | Installable Capability Package | Package Manager 可直接安装、版本化、锁定和原子回滚的完整能力单元 | 任意 source package、target 或 module |
 | System Package | Package Manager 可直接导入的完整系统发行单元；共同版本化 runtime、editor、tool/cook、diagnostics 和当前 implementation modules | 单个 target、adapter 或只有 contract 的占位包 |
@@ -309,7 +309,7 @@ flowchart LR
     Binding["Host Executable Binding Receipt<br/>staged bytes + verified registrations"]
     Launch["Verified launch handoff<br/>planned adapter"]
     Eligibility["Activation Eligibility<br/>two linear admissions"]
-    ProcessScope["ProcessScope lifecycle<br/>headless C++ boundary"]
+    ProcessScope["ProcessScope V2<br/>fixed registry + contribution lease"]
     Build["Conan / CMake / Cook"]
     Host["Editor / Runtime / Server / Tool Host"]
 
@@ -349,9 +349,10 @@ flowchart LR
     logical factories、lifecycle order 与 contribution bindings；构建后 Host Executable Binding Receipt 绑定 exact staged artifact
     bytes 和可执行注册 identity，但不证明 lifecycle 已运行。Activation Eligibility C++ boundary 进一步要求 Ready/binding/launch
     lineage 在 provider recording 前交叉匹配，并将 descriptor authority 绑定到同一次 table instance；#292 已完成该边界与 Done
-    evidence。#293 ProcessScope executor 再按值消费 admitted owner，zero-callback preflight 后按 Blueprint process order
-    create/activate，并在失败或 explicit stop 时完成 reverse cleanup；该 boundary 已通过 #293 门禁，production issuer 与 normal Host
-    接线仍待后续 adapter。Module 默认
+    evidence。#293 ProcessScope baseline 按值消费 admitted owner，并依 Blueprint process order create/activate；#296 的
+    `ProcessScopeExecutorV2` 又在 preflight 建立 fixed slots，于 activate 后原子提交 per-factory contribution lease，并只在整个 start 成功后
+    开放 typed registry。cleanup 顺序为 reverse quiesce → `Revoking` → reverse lease revoke → reverse deactivate/destroy → `Revoked`；
+    weak view/handle 不延长 generation lifetime。production issuer 与 normal Host 接线仍待真实 vertical feature。Module 默认
   通过独立静态 CMake target 和薄 composition root 进入 v1 Host，activation 不承诺 DLL 或 hot unload。
 - native code package 的 add/remove/update 未来可以在 artifact/process evidence 存在时进入 `PendingBuild` / `PendingRestart`；
   Effective Session v1 不猜测这两个状态，也不能伪装成安全热加载。
@@ -977,7 +978,7 @@ sequenceDiagram
 - 定义 `asharia.packages.json` 与 committed `asharia.packages.lock.json`；
 - 实现 headless `discover -> solve/reuse -> compose -> verify` library/CLI，第一阶段只支持 bundled/project-embedded/local sources；
 - 先输出 canonical per-host logical composition，再由独立 adapters 输出 CMake build plan 和 artifact-neutral Host Activation Blueprint；构建后再绑定 verified executable registrations；不实现任意 native hot load；
-- 建立 `Minimal`、`Editor`、`Runtime`、`DedicatedServer`、`AssetWorker` Host Profiles，以及 versioned Standard3D/EditorAuthoring/DedicatedServer Feature Sets；五种 Host Profile 的 v1 schema/固定策略/纯数据投影基线、Host Composition Plan v1、Source Build Plan v1、Package Product & Artifact Evidence v1、Artifact Collection/Publication v1、Engine Distribution Manifest v1 / `EngineGenerationId`、Project Lock v2 硬切、Effective Session v1、Distribution Assembly v1、Installed Distribution Repair Verifier v1、Package Factory Declaration v1 与 Host Activation Blueprint v1 已落地；#294 已绑定 Blueprint-selected contribution type/kind/cardinality，并由 Static Factory Callback Table v1 拥有 callbacks、private type evidence 与 canonical RegistrationSnapshot v2。#295 已完成 active provider bindings/Binding Plan v4、provider API v4、Composition renderer 5 与 `StaticContributionBindingV2` payload accessor 的硬切实现；Host Template 保持 renderer 2，Host build、binding assembly 与 deep verifier 只接受 T2/C5/provider-v4/Snapshot-v2，pre-v4 bindings/Binding Plan 与 pre-current renderer/provider/snapshot 没有 reader/adapter，Host Executable Binding Receipt 保持 schema v1。[Activation Eligibility v1](../architecture/adr-activation-eligibility-v1.md) 已完成 C++ validator、linear wrappers、focused tests 与 #292 Done evidence；[ProcessScope Lifecycle v1](../architecture/adr-process-scope-lifecycle-v1.md) 已完成 headless C++ implementation、focused tests 与 #293 门禁；#295 的 production registration/verification/eligibility 路径不调用 accessor；仅 PRIVATE accessor projection unit probes 会显式调用，也不实现 payload/registry/lease，production profiles、repair executor/启动 adapter、production launch issuer/normal Host 接线、其他 scope owners 与 contribution payload/registry/lease 仍待后续 Slice；
+- 建立 `Minimal`、`Editor`、`Runtime`、`DedicatedServer`、`AssetWorker` Host Profiles，以及 versioned Standard3D/EditorAuthoring/DedicatedServer Feature Sets；五种 Host Profile 的 v1 schema/固定策略/纯数据投影基线、Host Composition Plan v1、Source Build Plan v1、Package Product & Artifact Evidence v1、Artifact Collection/Publication v1、Engine Distribution Manifest v1 / `EngineGenerationId`、Project Lock v2 硬切、Effective Session v1、Distribution Assembly v1、Installed Distribution Repair Verifier v1、Package Factory Declaration v1 与 Host Activation Blueprint v1 已落地；#294 已绑定 Blueprint-selected contribution type/kind/cardinality，并由 Static Factory Callback Table v1 拥有 callbacks、private type evidence 与 canonical RegistrationSnapshot v2。#295 已完成 active provider bindings/Binding Plan v4、provider API v4、Composition renderer 5 与 `StaticContributionBindingV2` payload accessor 的硬切实现；Host Template 保持 renderer 2，Host build、binding assembly 与 deep verifier 只接受 T2/C5/provider-v4/Snapshot-v2，pre-v4 bindings/Binding Plan 与 pre-current renderer/provider/snapshot 没有 reader/adapter，Host Executable Binding Receipt 保持 schema v1。[Activation Eligibility v1](../architecture/adr-activation-eligibility-v1.md) 已完成 C++ validator、linear wrappers、focused tests 与 #292 Done evidence；[ProcessScope Lifecycle v1](../architecture/adr-process-scope-lifecycle-v1.md) 已完成 #293 headless baseline；[ProcessScope Contribution Registry and Activation Lease v1](../architecture/adr-process-scope-contribution-registry-and-activation-lease-v1.md) 已由 #296 将 public surface 硬切到 V2，并实现 fixed slots、typed lookup、weak handles、contribution-only lease、atomic publication failure rollback 与 revocation gate；production profiles、repair executor/启动 adapter、production launch issuer/normal Host 接线、其他 scope owners 与完整 instance/jobs/subscriptions lease 仍待真实 vertical feature；
 - 检查全部 `PUBLIC` / `PRIVATE` / `INTERFACE` 依赖；
 - 使 optional target 的 package config 依赖保持 optional；
 - 增加禁止 include 其他 package `src/`、禁止 Vulkan 类型越层、禁止 RHI base 依赖 RG 的检查；
@@ -998,15 +999,15 @@ sequenceDiagram
 
 ### Phase 1.5：Host Runtime 与 Foundation Services
 
-**目标：** 在继续构建领域系统前，先让所有 Host 共享可验证的 scope、activation、lifecycle/platform capability、
-memory、IO、配置、任务、time/update、capability grant 和诊断基础。
+**目标：** #296 已完成 root ProcessScope 的最后一项通用 registry/lease baseline。下一步先用真实 Host + 真实 system/contribution
+验证这条 activation path，再由可观察功能需求拉动 platform capability、memory、IO、配置、任务、time/update、capability grant 与诊断。
 
 工作：
 
-- 在现有 `engine/host-runtime` registration、eligibility 与 root ProcessScope headless baseline 上，实现
-  Project/Editor/ToolJob/GameSession/World/LocalUser 等其余 scope owners，并接入首个 normal Host/Bootstrap adapter；
-- 复用 #293 已建立的显式 factory context、dependencies-first start、reverse stop 与 failure rollback 语义，补齐 activation lease、
-  typed contribution registry、contribution revoke 和跨 scope stale-generation contract；
+- 将现有 registration、eligibility 与 `ProcessScopeExecutorV2` 接入首个 minimal normal Host，并让一个真实 system factory 发布可查询、
+  可停止的 contribution，形成端到端 vertical feature；
+- 保持五个 lifecycle callbacks/model V1，复用 #296 的 fixed registry、weak handle、contribution-only lease 与 revocation gate；只有真实功能
+  需要时才增加 Project/Editor/ToolJob/GameSession/World/LocalUser scope、instance/jobs/subscriptions lease 或跨 scope stale-generation contract；
 - 建立 Platform application lifecycle facts、immutable `PlatformCapabilitiesSnapshot` 与 Host safe-point delivery，覆盖 focus/quit/suspend/resume/low-memory/device/display change，并保持 GPU capabilities 归 RHI、input device state 归 Input；
 - 建立完整 Memory & Budget System：domain/tag registry、budget/pressure snapshot、trim protocol、Platform/RHI projection 和 owner result；Kernel 只保留 activation 前 allocator/tag/fatal hook；
 - 建立 Runtime Storage & IO 的 mount/VFS、bundle reader、async request、priority/cancel、user/cache/log mounts；

@@ -44,14 +44,14 @@ namespace asharia::host_runtime::tests {
         };
 
         struct ReentrantStartObservationV1 final {
-            ProcessScopeExecutorV1* executor{};
+            ProcessScopeExecutorV2* executor{};
             std::size_t invocationCount{};
             std::size_t traceSizeBefore{};
             std::size_t traceSizeAfter{};
             SyntheticFactoryV1 factory{SyntheticFactoryV1::Middle};
             SyntheticLifecyclePhaseV1 phase{SyntheticLifecyclePhaseV1::Create};
-            ProcessScopeErrorCodeV1 errorCode{ProcessScopeErrorCodeV1::ExecutorMovedFrom};
-            ProcessScopeStateV1 errorState{ProcessScopeStateV1::MovedFrom};
+            ProcessScopeErrorCodeV2 errorCode{ProcessScopeErrorCodeV2::ExecutorMovedFrom};
+            ProcessScopeStateV2 errorState{ProcessScopeStateV2::MovedFrom};
             bool resultSucceeded{};
         };
 
@@ -64,7 +64,7 @@ namespace asharia::host_runtime::tests {
             reentrantStartObservation.phase = phase;
             reentrantStartObservation.traceSizeBefore = syntheticProviderTrace().size();
             if (reentrantStartObservation.executor != nullptr) {
-                const ProcessScopeStartResultV1 result =
+                const ProcessScopeStartResultV2 result =
                     reentrantStartObservation.executor->start();
                 reentrantStartObservation.resultSucceeded = result.has_value();
                 if (!result) {
@@ -75,12 +75,12 @@ namespace asharia::host_runtime::tests {
             reentrantStartObservation.traceSizeAfter = syntheticProviderTrace().size();
         }
 
-        [[nodiscard]] std::optional<ProcessScopeExecutorV1> preparedExecutor() {
+        [[nodiscard]] std::optional<ProcessScopeExecutorV2> preparedExecutor() {
             auto admitted = makeAdmittedSyntheticProcessScope();
             if (!admitted) {
                 return std::nullopt;
             }
-            auto prepared = prepareProcessScopeExecutor(std::move(*admitted));
+            auto prepared = prepareProcessScopeExecutorV2(std::move(*admitted));
             if (!prepared) {
                 return std::nullopt;
             }
@@ -112,32 +112,33 @@ namespace asharia::host_runtime::tests {
             case SyntheticFactoryV1::Leaf:
                 return 2;
             case SyntheticFactoryV1::ProjectOnly:
+            case SyntheticFactoryV1::Empty:
             case SyntheticFactoryV1::Count:
                 break;
             }
             return kProcessFactories.size();
         }
 
-        [[nodiscard]] constexpr ProcessScopeLifecycleStageV1
+        [[nodiscard]] constexpr ProcessScopeLifecycleStageV2
         lifecycleStageFor(SyntheticLifecyclePhaseV1 phase) noexcept {
             return phase == SyntheticLifecyclePhaseV1::Create
-                       ? ProcessScopeLifecycleStageV1::Create
-                       : ProcessScopeLifecycleStageV1::Activate;
+                       ? ProcessScopeLifecycleStageV2::Create
+                       : ProcessScopeLifecycleStageV2::Activate;
         }
 
         [[nodiscard]] bool
-        startupFailureDiagnosticMatches(const ProcessScopeStartFailureV1& failure,
+        startupFailureDiagnosticMatches(const ProcessScopeStartFailureV2& failure,
                                         const StartupFailureCaseV1& failureCase) noexcept {
             if (!failure.primary.has_value()) {
                 return false;
             }
-            const ProcessScopeLifecycleDiagnosticV1& primary = *failure.primary;
-            const ProcessScopeErrorCodeV1 expectedOperationCode =
+            const ProcessScopeLifecycleDiagnosticV2& primary = *failure.primary;
+            const ProcessScopeErrorCodeV2 expectedOperationCode =
                 failureCase.failedPhase == SyntheticLifecyclePhaseV1::Create
-                    ? ProcessScopeErrorCodeV1::FactoryCreateFailed
-                    : ProcessScopeErrorCodeV1::FactoryActivateFailed;
+                    ? ProcessScopeErrorCodeV2::FactoryCreateFailed
+                    : ProcessScopeErrorCodeV2::FactoryActivateFailed;
             return failure.operation.code == expectedOperationCode &&
-                   failure.operation.state == ProcessScopeStateV1::StartFailed &&
+                   failure.operation.state == ProcessScopeStateV2::StartFailed &&
                    primary.providerLocalCode() == failureCase.localCode &&
                    exactFactory(primary.factory(), failureCase.failedFactory) &&
                    primary.engineGenerationId() == kSyntheticEngineGenerationId &&
@@ -182,8 +183,8 @@ namespace asharia::host_runtime::tests {
             if (!executor) {
                 return false;
             }
-            const ProcessScopeStartResultV1 started = executor->start();
-            if (started || executor->state() != ProcessScopeStateV1::StartFailed ||
+            const ProcessScopeStartResultV2 started = executor->start();
+            if (started || executor->state() != ProcessScopeStateV2::StartFailed ||
                 !startupFailureDiagnosticMatches(started.error(), failureCase) ||
                 !std::ranges::all_of(kProcessFactories, [&failureCase](SyntheticFactoryV1 factory) {
                     return factoryCountsMatchFailureCase(failureCase, factory);
@@ -192,10 +193,10 @@ namespace asharia::host_runtime::tests {
             }
 
             const std::size_t traceSize = syntheticProviderTrace().size();
-            const ProcessScopeStartResultV1 replay = executor->start();
+            const ProcessScopeStartResultV2 replay = executor->start();
             return !replay &&
                    replay.error().operation.code ==
-                       ProcessScopeErrorCodeV1::StartRequiresPrepared &&
+                       ProcessScopeErrorCodeV2::StartRequiresPrepared &&
                    syntheticProviderTrace().size() == traceSize &&
                    syntheticProviderFixtureValid() && syntheticProjectOnlyInvocationCount() == 0;
         }
@@ -234,7 +235,7 @@ namespace asharia::host_runtime::tests {
             };
             armSyntheticProviderLifecycleHook(&reenterStart);
 
-            const ProcessScopeStartResultV1 started = executor->start();
+            const ProcessScopeStartResultV2 started = executor->start();
             if (!started) {
                 return false;
             }
@@ -244,14 +245,14 @@ namespace asharia::host_runtime::tests {
                 reentrantStartObservation.phase == SyntheticLifecyclePhaseV1::Create &&
                 !reentrantStartObservation.resultSucceeded &&
                 reentrantStartObservation.errorCode ==
-                    ProcessScopeErrorCodeV1::OperationInProgress &&
-                reentrantStartObservation.errorState == ProcessScopeStateV1::Prepared &&
+                    ProcessScopeErrorCodeV2::OperationInProgress &&
+                reentrantStartObservation.errorState == ProcessScopeStateV2::Prepared &&
                 reentrantStartObservation.traceSizeBefore == 1 &&
                 reentrantStartObservation.traceSizeAfter == 1 &&
                 std::ranges::equal(syntheticProviderTrace(), kExpectedStartupTrace) &&
-                executor->state() == ProcessScopeStateV1::Active &&
+                executor->state() == ProcessScopeStateV2::Active &&
                 syntheticProjectOnlyInvocationCount() == 0 && syntheticProviderFixtureValid();
-            const ProcessScopeStopResultV1 stopped = executor->stop();
+            const ProcessScopeStopResultV2 stopped = executor->stop();
             return guarded && stopped && stopped->callbacksSucceeded();
         }
 
@@ -306,15 +307,15 @@ namespace asharia::host_runtime::tests {
             rebindSyntheticCurrentProcessEpoch();
             const auto started = executor->start();
             if (started ||
-                started.error().operation.code != ProcessScopeErrorCodeV1::ProcessEpochStale ||
-                executor->state() != ProcessScopeStateV1::StartFailed ||
+                started.error().operation.code != ProcessScopeErrorCodeV2::ProcessEpochStale ||
+                executor->state() != ProcessScopeStateV2::StartFailed ||
                 !syntheticProviderTrace().empty()) {
                 return false;
             }
             const auto replay = executor->start();
             return !replay &&
                    replay.error().operation.code ==
-                       ProcessScopeErrorCodeV1::StartRequiresPrepared &&
+                       ProcessScopeErrorCodeV2::StartRequiresPrepared &&
                    syntheticProviderTrace().empty();
         }
 

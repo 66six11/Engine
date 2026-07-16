@@ -10,10 +10,11 @@
 
 #include "asharia/host_runtime/admitted_static_factory_recording.hpp"
 #include "asharia/host_runtime/factory_lifecycle_contexts.hpp"
+#include "asharia/host_runtime/process_contribution_registry.hpp"
 
 namespace asharia::host_runtime {
 
-    enum class ProcessScopeStateV1 : std::uint8_t {
+    enum class ProcessScopeStateV2 : std::uint8_t {
         Prepared,
         Active,
         StartFailed,
@@ -21,14 +22,19 @@ namespace asharia::host_runtime {
         MovedFrom,
     };
 
-    enum class ProcessScopeLifecycleStageV1 : std::uint8_t {
+    enum class ProcessScopeLifecycleStageV2 : std::uint8_t {
         Create,
         Activate,
         Quiesce,
         Deactivate,
     };
 
-    enum class ProcessScopeErrorCodeV1 : std::uint8_t {
+    enum class ProcessScopeContributionPublicationStageV2 : std::uint8_t {
+        PayloadAccess,
+        LeaseCommit,
+    };
+
+    enum class ProcessScopeErrorCodeV2 : std::uint8_t {
         AdmissionMovedFrom,
         WrongControlThread,
         ProcessEpochStale,
@@ -47,6 +53,8 @@ namespace asharia::host_runtime {
         RequirementDuplicate,
         RequirementMissing,
         RequirementOrderInvalid,
+        ContributionRuntimeBindingInvalid,
+        ContributionSingleConflict,
         AllocationFailed,
         ExecutorMovedFrom,
         OperationInProgress,
@@ -54,9 +62,11 @@ namespace asharia::host_runtime {
         StopRequiresActive,
         FactoryCreateFailed,
         FactoryActivateFailed,
+        ContributionAccessorReturnedNull,
+        ContributionPublicationFailed,
     };
 
-    struct ExactFactoryReferenceV1 final {
+    struct ExactFactoryReferenceV2 final {
         std::string packageId;
         std::string packageVersion;
         std::string moduleId;
@@ -71,36 +81,39 @@ namespace asharia::host_runtime {
             };
         }
 
-        [[nodiscard]] friend bool operator==(const ExactFactoryReferenceV1&,
-                                             const ExactFactoryReferenceV1&) = default;
+        [[nodiscard]] friend bool operator==(const ExactFactoryReferenceV2&,
+                                             const ExactFactoryReferenceV2&) = default;
     };
 
-    struct ProcessScopePreparationErrorV1 final {
-        ProcessScopeErrorCodeV1 code{ProcessScopeErrorCodeV1::AdmissionMovedFrom};
-        std::optional<ExactFactoryReferenceV1> factory;
-        std::optional<ExactFactoryReferenceV1> requirement;
+    struct ProcessScopePreparationErrorV2 final {
+        ProcessScopeErrorCodeV2 code{ProcessScopeErrorCodeV2::AdmissionMovedFrom};
+        std::optional<ExactFactoryReferenceV2> factory;
+        std::optional<ExactFactoryReferenceV2> requirement;
+        std::optional<std::string> contributionId;
+        std::optional<std::string> contributionKind;
     };
 
-    struct ProcessScopeOperationErrorV1 final {
-        ProcessScopeErrorCodeV1 code{ProcessScopeErrorCodeV1::ExecutorMovedFrom};
-        ProcessScopeStateV1 state{ProcessScopeStateV1::MovedFrom};
+    struct ProcessScopeOperationErrorV2 final {
+        ProcessScopeErrorCodeV2 code{ProcessScopeErrorCodeV2::ExecutorMovedFrom};
+        ProcessScopeStateV2 state{ProcessScopeStateV2::MovedFrom};
     };
 
-    struct ProcessScopeDiagnosticAttributionStateV1;
-    class ProcessScopeStateAccessV1;
+    struct ProcessScopeContributionDiagnosticAttributionStateV2;
+    struct ProcessScopeDiagnosticAttributionStateV2;
+    class ProcessScopeStateAccessV2;
 
-    class ProcessScopeLifecycleDiagnosticV1 final {
+    class ProcessScopeLifecycleDiagnosticV2 final {
     public:
-        ProcessScopeLifecycleDiagnosticV1(const ProcessScopeLifecycleDiagnosticV1&) noexcept =
+        ProcessScopeLifecycleDiagnosticV2(const ProcessScopeLifecycleDiagnosticV2&) noexcept =
             default;
-        ProcessScopeLifecycleDiagnosticV1&
-        operator=(const ProcessScopeLifecycleDiagnosticV1&) noexcept = default;
-        ProcessScopeLifecycleDiagnosticV1(ProcessScopeLifecycleDiagnosticV1&&) noexcept = default;
-        ProcessScopeLifecycleDiagnosticV1&
-        operator=(ProcessScopeLifecycleDiagnosticV1&&) noexcept = default;
-        ~ProcessScopeLifecycleDiagnosticV1() = default;
+        ProcessScopeLifecycleDiagnosticV2&
+        operator=(const ProcessScopeLifecycleDiagnosticV2&) noexcept = default;
+        ProcessScopeLifecycleDiagnosticV2(ProcessScopeLifecycleDiagnosticV2&&) noexcept = default;
+        ProcessScopeLifecycleDiagnosticV2&
+        operator=(ProcessScopeLifecycleDiagnosticV2&&) noexcept = default;
+        ~ProcessScopeLifecycleDiagnosticV2() = default;
 
-        [[nodiscard]] ProcessScopeLifecycleStageV1 stage() const noexcept;
+        [[nodiscard]] ProcessScopeLifecycleStageV2 stage() const noexcept;
         // Returned views remain valid only while this diagnostic or one of its copies
         // keeps the shared owning attribution alive.
         [[nodiscard]] std::string_view engineGenerationId() const noexcept;
@@ -108,63 +121,97 @@ namespace asharia::host_runtime {
         [[nodiscard]] std::uint32_t providerLocalCode() const noexcept;
 
     private:
-        ProcessScopeLifecycleDiagnosticV1(
-            std::shared_ptr<const ProcessScopeDiagnosticAttributionStateV1> attribution,
-            ProcessScopeLifecycleStageV1 stage, std::uint32_t providerLocalCode) noexcept;
+        ProcessScopeLifecycleDiagnosticV2(
+            std::shared_ptr<const ProcessScopeDiagnosticAttributionStateV2> attribution,
+            ProcessScopeLifecycleStageV2 stage, std::uint32_t providerLocalCode) noexcept;
 
-        std::shared_ptr<const ProcessScopeDiagnosticAttributionStateV1> attribution_;
-        ProcessScopeLifecycleStageV1 stage_{ProcessScopeLifecycleStageV1::Create};
+        std::shared_ptr<const ProcessScopeDiagnosticAttributionStateV2> attribution_;
+        ProcessScopeLifecycleStageV2 stage_{ProcessScopeLifecycleStageV2::Create};
         std::uint32_t providerLocalCode_{};
 
-        friend class ProcessScopeStateAccessV1;
+        friend class ProcessScopeStateAccessV2;
     };
 
-    struct ProcessScopeStartFailureV1 final {
-        ProcessScopeOperationErrorV1 operation;
-        std::optional<ProcessScopeLifecycleDiagnosticV1> primary;
-        std::vector<ProcessScopeLifecycleDiagnosticV1> cleanupDiagnostics;
+    class ProcessScopeContributionPublicationDiagnosticV2 final {
+    public:
+        ProcessScopeContributionPublicationDiagnosticV2(
+            const ProcessScopeContributionPublicationDiagnosticV2&) noexcept = default;
+        ProcessScopeContributionPublicationDiagnosticV2&
+        operator=(const ProcessScopeContributionPublicationDiagnosticV2&) noexcept = default;
+        ProcessScopeContributionPublicationDiagnosticV2(
+            ProcessScopeContributionPublicationDiagnosticV2&&) noexcept = default;
+        ProcessScopeContributionPublicationDiagnosticV2&
+        operator=(ProcessScopeContributionPublicationDiagnosticV2&&) noexcept = default;
+        ~ProcessScopeContributionPublicationDiagnosticV2() = default;
+
+        [[nodiscard]] ProcessScopeContributionPublicationStageV2 stage() const noexcept;
+        [[nodiscard]] std::string_view engineGenerationId() const noexcept;
+        [[nodiscard]] ExactFactoryReferenceViewV1 factory() const noexcept;
+        [[nodiscard]] std::string_view contributionId() const noexcept;
+        [[nodiscard]] std::string_view contributionKind() const noexcept;
+
+    private:
+        ProcessScopeContributionPublicationDiagnosticV2(
+            std::shared_ptr<const ProcessScopeContributionDiagnosticAttributionStateV2> attribution,
+            ProcessScopeContributionPublicationStageV2 stage) noexcept;
+
+        std::shared_ptr<const ProcessScopeContributionDiagnosticAttributionStateV2> attribution_;
+        ProcessScopeContributionPublicationStageV2 stage_{
+            ProcessScopeContributionPublicationStageV2::PayloadAccess};
+
+        friend class ProcessScopeStateAccessV2;
     };
 
-    struct ProcessScopeStopReportV1 final {
-        std::vector<ProcessScopeLifecycleDiagnosticV1> cleanupDiagnostics;
+    struct ProcessScopeStartFailureV2 final {
+        ProcessScopeOperationErrorV2 operation;
+        std::optional<ProcessScopeLifecycleDiagnosticV2> primary;
+        std::optional<ProcessScopeContributionPublicationDiagnosticV2> publication;
+        std::vector<ProcessScopeLifecycleDiagnosticV2> cleanupDiagnostics;
+    };
+
+    struct ProcessScopeStopReportV2 final {
+        std::vector<ProcessScopeLifecycleDiagnosticV2> cleanupDiagnostics;
 
         [[nodiscard]] bool callbacksSucceeded() const noexcept {
             return cleanupDiagnostics.empty();
         }
     };
 
-    using ProcessScopeStartResultV1 = std::expected<void, ProcessScopeStartFailureV1>;
-    using ProcessScopeStopResultV1 =
-        std::expected<ProcessScopeStopReportV1, ProcessScopeOperationErrorV1>;
+    using ProcessScopeStartResultV2 = std::expected<void, ProcessScopeStartFailureV2>;
+    using ProcessScopeStopResultV2 =
+        std::expected<ProcessScopeStopReportV2, ProcessScopeOperationErrorV2>;
 
-    struct ProcessScopeExecutorStateV1;
+    struct ProcessScopeExecutorStateV2;
 
-    class ProcessScopeExecutorV1 final {
+    class ProcessScopeExecutorV2 final {
     public:
-        ~ProcessScopeExecutorV1() noexcept;
+        ~ProcessScopeExecutorV2() noexcept;
 
-        ProcessScopeExecutorV1(ProcessScopeExecutorV1&&) noexcept;
-        ProcessScopeExecutorV1& operator=(ProcessScopeExecutorV1&&) = delete;
-        ProcessScopeExecutorV1(const ProcessScopeExecutorV1&) = delete;
-        ProcessScopeExecutorV1& operator=(const ProcessScopeExecutorV1&) = delete;
+        ProcessScopeExecutorV2(ProcessScopeExecutorV2&&) noexcept;
+        ProcessScopeExecutorV2& operator=(ProcessScopeExecutorV2&&) = delete;
+        ProcessScopeExecutorV2(const ProcessScopeExecutorV2&) = delete;
+        ProcessScopeExecutorV2& operator=(const ProcessScopeExecutorV2&) = delete;
 
-        [[nodiscard]] ProcessScopeStateV1 state() const noexcept;
-        [[nodiscard]] ProcessScopeStartResultV1 start() noexcept;
-        [[nodiscard]] ProcessScopeStopResultV1 stop() noexcept;
+        [[nodiscard]] ProcessScopeStateV2 state() const noexcept;
+        [[nodiscard]] std::expected<ProcessContributionRegistryViewV1,
+                                    ProcessContributionLookupErrorV1>
+        contributions() const noexcept;
+        [[nodiscard]] ProcessScopeStartResultV2 start() noexcept;
+        [[nodiscard]] ProcessScopeStopResultV2 stop() noexcept;
 
     private:
-        explicit ProcessScopeExecutorV1(
-            std::unique_ptr<ProcessScopeExecutorStateV1> state) noexcept;
+        explicit ProcessScopeExecutorV2(
+            std::unique_ptr<ProcessScopeExecutorStateV2> state) noexcept;
 
-        std::unique_ptr<ProcessScopeExecutorStateV1> state_;
+        std::unique_ptr<ProcessScopeExecutorStateV2> state_;
 
-        friend class ProcessScopeStateAccessV1;
+        friend class ProcessScopeStateAccessV2;
     };
 
-    using ProcessScopePreparationResultV1 =
-        std::expected<ProcessScopeExecutorV1, ProcessScopePreparationErrorV1>;
+    using ProcessScopePreparationResultV2 =
+        std::expected<ProcessScopeExecutorV2, ProcessScopePreparationErrorV2>;
 
-    [[nodiscard]] ProcessScopePreparationResultV1
-    prepareProcessScopeExecutor(AdmittedStaticFactoryCallbackTableV1 admittedTable) noexcept;
+    [[nodiscard]] ProcessScopePreparationResultV2
+    prepareProcessScopeExecutorV2(AdmittedStaticFactoryCallbackTableV1 admittedTable) noexcept;
 
 } // namespace asharia::host_runtime

@@ -17,13 +17,13 @@
 namespace asharia::host_runtime::tests {
     namespace {
 
-        [[nodiscard]] std::optional<ProcessScopeExecutorV1>
+        [[nodiscard]] std::optional<ProcessScopeExecutorV2>
         preparedExecutor(ProcessPlanMutationV1 mutation = ProcessPlanMutationV1::None) {
             auto admitted = makeAdmittedSyntheticProcessScope(mutation);
             if (!admitted) {
                 return std::nullopt;
             }
-            auto prepared = prepareProcessScopeExecutor(std::move(*admitted));
+            auto prepared = prepareProcessScopeExecutorV2(std::move(*admitted));
             if (!prepared) {
                 return std::nullopt;
             }
@@ -38,14 +38,15 @@ namespace asharia::host_runtime::tests {
             static_assert(!std::is_default_constructible_v<FactoryQuiesceContextV1>);
             static_assert(!std::is_default_constructible_v<FactoryDeactivateContextV1>);
 
-            static_assert(!std::is_default_constructible_v<ProcessScopeExecutorV1>);
-            static_assert(!std::is_copy_constructible_v<ProcessScopeExecutorV1>);
-            static_assert(std::is_move_constructible_v<ProcessScopeExecutorV1>);
-            static_assert(!std::is_move_assignable_v<ProcessScopeExecutorV1>);
+            static_assert(!std::is_default_constructible_v<ProcessScopeExecutorV2>);
+            static_assert(!std::is_copy_constructible_v<ProcessScopeExecutorV2>);
+            static_assert(std::is_move_constructible_v<ProcessScopeExecutorV2>);
+            static_assert(!std::is_move_assignable_v<ProcessScopeExecutorV2>);
 
             using PrepareFunction =
-                ProcessScopePreparationResultV1 (*)(AdmittedStaticFactoryCallbackTableV1) noexcept;
-            static_assert(std::is_same_v<decltype(&prepareProcessScopeExecutor), PrepareFunction>);
+                ProcessScopePreparationResultV2 (*)(AdmittedStaticFactoryCallbackTableV1) noexcept;
+            static_assert(
+                std::is_same_v<decltype(&prepareProcessScopeExecutorV2), PrepareFunction>);
             static_assert(!std::is_invocable_v<PrepareFunction, StaticFactoryCallbackTableV1>);
             static_assert(!std::is_invocable_v<PrepareFunction, PendingActivationFactoryTableV1>);
             return true;
@@ -54,17 +55,17 @@ namespace asharia::host_runtime::tests {
         [[nodiscard]] bool emptyScopeStartsAndStopsWithoutCallbacks() {
             resetSyntheticProviderFixture();
             auto executor = preparedExecutor(ProcessPlanMutationV1::Empty);
-            if (!executor || executor->state() != ProcessScopeStateV1::Prepared) {
+            if (!executor || executor->state() != ProcessScopeStateV2::Prepared) {
                 return false;
             }
             const auto started = executor->start();
-            if (!started || executor->state() != ProcessScopeStateV1::Active ||
+            if (!started || executor->state() != ProcessScopeStateV2::Active ||
                 !syntheticProviderTrace().empty()) {
                 return false;
             }
             const auto stopped = executor->stop();
             return stopped && stopped->callbacksSucceeded() &&
-                   executor->state() == ProcessScopeStateV1::Stopped &&
+                   executor->state() == ProcessScopeStateV2::Stopped &&
                    syntheticProviderTrace().empty() && syntheticProjectOnlyInvocationCount() == 0;
         }
 
@@ -76,7 +77,7 @@ namespace asharia::host_runtime::tests {
             }
             const auto stopBeforeStart = executor->stop();
             if (stopBeforeStart ||
-                stopBeforeStart.error().code != ProcessScopeErrorCodeV1::StopRequiresActive ||
+                stopBeforeStart.error().code != ProcessScopeErrorCodeV2::StopRequiresActive ||
                 !syntheticProviderTrace().empty()) {
                 return false;
             }
@@ -87,7 +88,7 @@ namespace asharia::host_runtime::tests {
             const auto doubleStart = executor->start();
             if (doubleStart ||
                 doubleStart.error().operation.code !=
-                    ProcessScopeErrorCodeV1::StartRequiresPrepared ||
+                    ProcessScopeErrorCodeV2::StartRequiresPrepared ||
                 syntheticProviderTrace().size() != startedTraceSize) {
                 return false;
             }
@@ -99,10 +100,10 @@ namespace asharia::host_runtime::tests {
             const auto doubleStop = executor->stop();
             const auto restart = executor->start();
             return !doubleStop &&
-                   doubleStop.error().code == ProcessScopeErrorCodeV1::StopRequiresActive &&
+                   doubleStop.error().code == ProcessScopeErrorCodeV2::StopRequiresActive &&
                    !restart &&
                    restart.error().operation.code ==
-                       ProcessScopeErrorCodeV1::StartRequiresPrepared &&
+                       ProcessScopeErrorCodeV2::StartRequiresPrepared &&
                    syntheticProviderTrace().size() == stoppedTraceSize;
         }
 
@@ -112,16 +113,16 @@ namespace asharia::host_runtime::tests {
             if (!source) {
                 return false;
             }
-            ProcessScopeExecutorV1 destination = std::move(*source);
+            ProcessScopeExecutorV2 destination = std::move(*source);
             const auto movedFromStart = source->start();
-            if (source->state() != ProcessScopeStateV1::MovedFrom || movedFromStart ||
+            if (source->state() != ProcessScopeStateV2::MovedFrom || movedFromStart ||
                 movedFromStart.error().operation.code !=
-                    ProcessScopeErrorCodeV1::ExecutorMovedFrom) {
+                    ProcessScopeErrorCodeV2::ExecutorMovedFrom) {
                 return false;
             }
 
             bool wrongStartRejected = false;
-            ProcessScopeErrorCodeV1 wrongStartCode{};
+            ProcessScopeErrorCodeV2 wrongStartCode{};
             std::jthread startWorker([&]() {
                 const auto result = destination.start();
                 wrongStartRejected = !result;
@@ -131,15 +132,15 @@ namespace asharia::host_runtime::tests {
             });
             startWorker.join();
             if (!wrongStartRejected ||
-                wrongStartCode != ProcessScopeErrorCodeV1::WrongControlThread ||
-                destination.state() != ProcessScopeStateV1::Prepared ||
+                wrongStartCode != ProcessScopeErrorCodeV2::WrongControlThread ||
+                destination.state() != ProcessScopeStateV2::Prepared ||
                 !syntheticProviderTrace().empty() || !destination.start()) {
                 return false;
             }
 
             const std::size_t activeTraceSize = syntheticProviderTrace().size();
             bool wrongStopRejected = false;
-            ProcessScopeErrorCodeV1 wrongStopCode{};
+            ProcessScopeErrorCodeV2 wrongStopCode{};
             std::jthread stopWorker([&]() {
                 const auto result = destination.stop();
                 wrongStopRejected = !result;
@@ -149,8 +150,8 @@ namespace asharia::host_runtime::tests {
             });
             stopWorker.join();
             return wrongStopRejected &&
-                   wrongStopCode == ProcessScopeErrorCodeV1::WrongControlThread &&
-                   destination.state() == ProcessScopeStateV1::Active &&
+                   wrongStopCode == ProcessScopeErrorCodeV2::WrongControlThread &&
+                   destination.state() == ProcessScopeStateV2::Active &&
                    syntheticProviderTrace().size() == activeTraceSize &&
                    destination.stop().has_value();
         }

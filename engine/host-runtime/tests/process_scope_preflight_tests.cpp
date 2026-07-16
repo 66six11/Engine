@@ -11,7 +11,7 @@
 namespace asharia::host_runtime::tests {
     namespace {
 
-        [[nodiscard]] ExactFactoryReferenceV1 syntheticReference(SyntheticFactoryV1 factory) {
+        [[nodiscard]] ExactFactoryReferenceV2 syntheticReference(SyntheticFactoryV1 factory) {
             return {
                 .packageId = std::string(kSyntheticPackageId),
                 .packageVersion = std::string(kSyntheticPackageVersion),
@@ -20,9 +20,9 @@ namespace asharia::host_runtime::tests {
             };
         }
 
-        [[nodiscard]] std::optional<ExactFactoryReferenceV1>
+        [[nodiscard]] std::optional<ExactFactoryReferenceV2>
         expectedFactoryAttribution(ProcessPlanMutationV1 mutation) {
-            ExactFactoryReferenceV1 middle = syntheticReference(SyntheticFactoryV1::Middle);
+            ExactFactoryReferenceV2 middle = syntheticReference(SyntheticFactoryV1::Middle);
             switch (mutation) {
             case ProcessPlanMutationV1::PackageIdentityMismatch:
                 middle.packageId = "com.asharia.test.other";
@@ -49,14 +49,16 @@ namespace asharia::host_runtime::tests {
             case ProcessPlanMutationV1::EngineGenerationMismatch:
             case ProcessPlanMutationV1::BlueprintMismatch:
             case ProcessPlanMutationV1::LifecycleModelMismatch:
+            case ProcessPlanMutationV1::IncludeProjectOnlySingleConflict:
+            case ProcessPlanMutationV1::IncludeZeroContributionFactory:
                 return std::nullopt;
             }
             return std::nullopt;
         }
 
-        [[nodiscard]] std::optional<ExactFactoryReferenceV1>
+        [[nodiscard]] std::optional<ExactFactoryReferenceV2>
         expectedRequirementAttribution(ProcessPlanMutationV1 mutation) {
-            ExactFactoryReferenceV1 root = syntheticReference(SyntheticFactoryV1::Root);
+            ExactFactoryReferenceV2 root = syntheticReference(SyntheticFactoryV1::Root);
             switch (mutation) {
             case ProcessPlanMutationV1::DuplicateRequirement:
             case ProcessPlanMutationV1::ForwardRequirement:
@@ -76,6 +78,8 @@ namespace asharia::host_runtime::tests {
             case ProcessPlanMutationV1::ModuleIdentityMismatch:
             case ProcessPlanMutationV1::FactoryIdentityMismatch:
             case ProcessPlanMutationV1::DuplicateFactory:
+            case ProcessPlanMutationV1::IncludeProjectOnlySingleConflict:
+            case ProcessPlanMutationV1::IncludeZeroContributionFactory:
                 return std::nullopt;
             }
             return std::nullopt;
@@ -84,60 +88,60 @@ namespace asharia::host_runtime::tests {
         [[nodiscard]] bool invalidProjectionMatrixFailsBeforeCallbacks() {
             struct Case final {
                 ProcessPlanMutationV1 mutation;
-                ProcessScopeErrorCodeV1 expectedCode;
+                ProcessScopeErrorCodeV2 expectedCode;
             };
             constexpr std::array cases{
                 Case{
                     .mutation = ProcessPlanMutationV1::NonProcessScope,
-                    .expectedCode = ProcessScopeErrorCodeV1::ProcessScopeExpected,
+                    .expectedCode = ProcessScopeErrorCodeV2::ProcessScopeExpected,
                 },
                 Case{
                     .mutation = ProcessPlanMutationV1::ParentedProcessScope,
-                    .expectedCode = ProcessScopeErrorCodeV1::ParentScopeInvalid,
+                    .expectedCode = ProcessScopeErrorCodeV2::ParentScopeInvalid,
                 },
                 Case{
                     .mutation = ProcessPlanMutationV1::EngineGenerationMismatch,
-                    .expectedCode = ProcessScopeErrorCodeV1::EngineGenerationMismatch,
+                    .expectedCode = ProcessScopeErrorCodeV2::EngineGenerationMismatch,
                 },
                 Case{
                     .mutation = ProcessPlanMutationV1::BlueprintMismatch,
-                    .expectedCode = ProcessScopeErrorCodeV1::BlueprintMismatch,
+                    .expectedCode = ProcessScopeErrorCodeV2::BlueprintMismatch,
                 },
                 Case{
                     .mutation = ProcessPlanMutationV1::LifecycleModelMismatch,
-                    .expectedCode = ProcessScopeErrorCodeV1::LifecycleModelMismatch,
+                    .expectedCode = ProcessScopeErrorCodeV2::LifecycleModelMismatch,
                 },
                 Case{
                     .mutation = ProcessPlanMutationV1::PackageIdentityMismatch,
-                    .expectedCode = ProcessScopeErrorCodeV1::DescriptorMissing,
+                    .expectedCode = ProcessScopeErrorCodeV2::DescriptorMissing,
                 },
                 Case{
                     .mutation = ProcessPlanMutationV1::VersionIdentityMismatch,
-                    .expectedCode = ProcessScopeErrorCodeV1::DescriptorMissing,
+                    .expectedCode = ProcessScopeErrorCodeV2::DescriptorMissing,
                 },
                 Case{
                     .mutation = ProcessPlanMutationV1::ModuleIdentityMismatch,
-                    .expectedCode = ProcessScopeErrorCodeV1::DescriptorMissing,
+                    .expectedCode = ProcessScopeErrorCodeV2::DescriptorMissing,
                 },
                 Case{
                     .mutation = ProcessPlanMutationV1::FactoryIdentityMismatch,
-                    .expectedCode = ProcessScopeErrorCodeV1::DescriptorMissing,
+                    .expectedCode = ProcessScopeErrorCodeV2::DescriptorMissing,
                 },
                 Case{
                     .mutation = ProcessPlanMutationV1::DuplicateFactory,
-                    .expectedCode = ProcessScopeErrorCodeV1::FactoryDuplicate,
+                    .expectedCode = ProcessScopeErrorCodeV2::FactoryDuplicate,
                 },
                 Case{
                     .mutation = ProcessPlanMutationV1::DuplicateRequirement,
-                    .expectedCode = ProcessScopeErrorCodeV1::RequirementDuplicate,
+                    .expectedCode = ProcessScopeErrorCodeV2::RequirementDuplicate,
                 },
                 Case{
                     .mutation = ProcessPlanMutationV1::MissingRequirement,
-                    .expectedCode = ProcessScopeErrorCodeV1::RequirementMissing,
+                    .expectedCode = ProcessScopeErrorCodeV2::RequirementMissing,
                 },
                 Case{
                     .mutation = ProcessPlanMutationV1::ForwardRequirement,
-                    .expectedCode = ProcessScopeErrorCodeV1::RequirementOrderInvalid,
+                    .expectedCode = ProcessScopeErrorCodeV2::RequirementOrderInvalid,
                 },
             };
 
@@ -147,7 +151,7 @@ namespace asharia::host_runtime::tests {
                 if (!admitted) {
                     return false;
                 }
-                const auto prepared = prepareProcessScopeExecutor(std::move(*admitted));
+                const auto prepared = prepareProcessScopeExecutorV2(std::move(*admitted));
                 const auto expectedFactory = expectedFactoryAttribution(testCase.mutation);
                 const auto expectedRequirement = expectedRequirementAttribution(testCase.mutation);
                 return !prepared && prepared.error().code == testCase.expectedCode &&
@@ -166,8 +170,8 @@ namespace asharia::host_runtime::tests {
                 return false;
             }
             [[maybe_unused]] AdmittedStaticFactoryCallbackTableV1 retained = std::move(*admitted);
-            const auto moved = prepareProcessScopeExecutor(std::move(*admitted));
-            if (moved || moved.error().code != ProcessScopeErrorCodeV1::AdmissionMovedFrom ||
+            const auto moved = prepareProcessScopeExecutorV2(std::move(*admitted));
+            if (moved || moved.error().code != ProcessScopeErrorCodeV2::AdmissionMovedFrom ||
                 !syntheticProviderTrace().empty()) {
                 return false;
             }
@@ -177,9 +181,9 @@ namespace asharia::host_runtime::tests {
                 return false;
             }
             rebindSyntheticCurrentProcessEpoch();
-            const auto stalePrepared = prepareProcessScopeExecutor(std::move(*stale));
+            const auto stalePrepared = prepareProcessScopeExecutorV2(std::move(*stale));
             return !stalePrepared &&
-                   stalePrepared.error().code == ProcessScopeErrorCodeV1::ProcessEpochStale &&
+                   stalePrepared.error().code == ProcessScopeErrorCodeV2::ProcessEpochStale &&
                    syntheticProviderTrace().empty();
         }
         // NOLINTEND(bugprone-use-after-move,clang-analyzer-cplusplus.Move)
@@ -191,16 +195,16 @@ namespace asharia::host_runtime::tests {
                 return false;
             }
             bool rejected = false;
-            ProcessScopeErrorCodeV1 code{};
+            ProcessScopeErrorCodeV2 code{};
             std::jthread worker([admitted = std::move(*admitted), &rejected, &code]() mutable {
-                const auto prepared = prepareProcessScopeExecutor(std::move(admitted));
+                const auto prepared = prepareProcessScopeExecutorV2(std::move(admitted));
                 rejected = !prepared;
                 if (!prepared) {
                     code = prepared.error().code;
                 }
             });
             worker.join();
-            return rejected && code == ProcessScopeErrorCodeV1::WrongControlThread &&
+            return rejected && code == ProcessScopeErrorCodeV2::WrongControlThread &&
                    syntheticProviderTrace().empty();
         }
 

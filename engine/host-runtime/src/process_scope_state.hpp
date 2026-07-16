@@ -9,52 +9,77 @@
 
 #include "asharia/host_runtime/process_scope.hpp"
 
+#include "process_contribution_activation_lease.hpp"
+#include "process_contribution_registry_state.hpp"
+
 namespace asharia::host_runtime {
 
-    struct ProcessScopeDiagnosticAttributionStateV1 final {
+    struct ProcessScopeDiagnosticAttributionStateV2 final {
         std::string engineGenerationId;
-        ExactFactoryReferenceV1 factory;
+        ExactFactoryReferenceV2 factory;
     };
 
-    struct ResolvedProcessFactoryStateV1 final {
-        std::shared_ptr<const ProcessScopeDiagnosticAttributionStateV1> attribution;
+    struct ProcessScopeContributionDiagnosticAttributionStateV2 final {
+        std::string engineGenerationId;
+        ExactFactoryReferenceV2 factory;
+        std::string contributionId;
+        std::string contributionKind;
+    };
+
+    struct ResolvedProcessFactoryStateV2 final {
+        std::shared_ptr<const ProcessScopeDiagnosticAttributionStateV2> attribution;
         std::size_t descriptorIndex{};
         std::vector<std::size_t> dependencyIndices;
         std::vector<FactoryDependencyViewV1> dependencyScratch;
+        std::vector<std::shared_ptr<const ProcessScopeContributionDiagnosticAttributionStateV2>>
+            contributionAttributions;
         std::optional<FactoryInstanceTokenV1> instance;
-        bool active{};
+        std::optional<ProcessContributionActivationLeaseV1> contributionLease;
+        bool lifecycleActivated{};
+        bool dependencyVisible{};
     };
 
-    struct ProcessScopeExecutorStateV1 final {
-        ProcessScopeExecutorStateV1(
+    struct ProcessScopeExecutorStateV2 final {
+        ProcessScopeExecutorStateV2(
             AdmittedStaticFactoryCallbackTableV1 admittedTableValue,
-            std::vector<ResolvedProcessFactoryStateV1> factoriesValue,
-            std::vector<ProcessScopeLifecycleDiagnosticV1> diagnosticScratchValue) noexcept
-            : admittedTable(std::move(admittedTableValue)), factories(std::move(factoriesValue)),
+            std::shared_ptr<ProcessContributionRegistryGenerationStateV1> contributionRegistryValue,
+            std::vector<ResolvedProcessFactoryStateV2> factoriesValue,
+            std::vector<ProcessScopeLifecycleDiagnosticV2> diagnosticScratchValue) noexcept
+            : admittedTable(std::move(admittedTableValue)),
+              contributionRegistry(std::move(contributionRegistryValue)),
+              factories(std::move(factoriesValue)),
               diagnosticScratch(std::move(diagnosticScratchValue)) {}
 
         // Keep the admitted owner before token-bearing records so member destruction
         // always tears records down before the exact callback table.
         AdmittedStaticFactoryCallbackTableV1 admittedTable;
-        std::vector<ResolvedProcessFactoryStateV1> factories;
-        std::vector<ProcessScopeLifecycleDiagnosticV1> diagnosticScratch;
-        ProcessScopeStateV1 lifecycleState{ProcessScopeStateV1::Prepared};
+        std::shared_ptr<ProcessContributionRegistryGenerationStateV1> contributionRegistry;
+        std::vector<ResolvedProcessFactoryStateV2> factories;
+        std::vector<ProcessScopeLifecycleDiagnosticV2> diagnosticScratch;
+        ProcessScopeStateV2 lifecycleState{ProcessScopeStateV2::Prepared};
         bool operationInProgress{};
     };
 
-    class ProcessScopeStateAccessV1 final {
+    class ProcessScopeStateAccessV2 final {
     public:
-        [[nodiscard]] static ProcessScopeExecutorV1
-        makeExecutor(std::unique_ptr<ProcessScopeExecutorStateV1> state) noexcept {
-            return ProcessScopeExecutorV1{std::move(state)};
+        [[nodiscard]] static ProcessScopeExecutorV2
+        makeExecutor(std::unique_ptr<ProcessScopeExecutorStateV2> state) noexcept {
+            return ProcessScopeExecutorV2{std::move(state)};
         }
 
-        [[nodiscard]] static ProcessScopeLifecycleDiagnosticV1
-        makeDiagnostic(std::shared_ptr<const ProcessScopeDiagnosticAttributionStateV1> attribution,
-                       ProcessScopeLifecycleStageV1 stage,
+        [[nodiscard]] static ProcessScopeLifecycleDiagnosticV2
+        makeDiagnostic(std::shared_ptr<const ProcessScopeDiagnosticAttributionStateV2> attribution,
+                       ProcessScopeLifecycleStageV2 stage,
                        std::uint32_t providerLocalCode) noexcept {
-            return ProcessScopeLifecycleDiagnosticV1{std::move(attribution), stage,
+            return ProcessScopeLifecycleDiagnosticV2{std::move(attribution), stage,
                                                      providerLocalCode};
+        }
+
+        [[nodiscard]] static ProcessScopeContributionPublicationDiagnosticV2
+        makePublicationDiagnostic(
+            std::shared_ptr<const ProcessScopeContributionDiagnosticAttributionStateV2> attribution,
+            ProcessScopeContributionPublicationStageV2 stage) noexcept {
+            return ProcessScopeContributionPublicationDiagnosticV2{std::move(attribution), stage};
         }
     };
 

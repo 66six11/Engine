@@ -2,14 +2,19 @@
 
 #include <cstdint>
 #include <expected>
+#include <memory>
 #include <optional>
 #include <span>
 #include <string_view>
 
 #include "asharia/host_runtime/admitted_static_factory_recording.hpp"
 
+#include "static_factory_callback_table_state.hpp"
+
 namespace asharia::host_runtime {
 
+    struct ControlThreadEpochAnchorV1;
+    struct CurrentProcessEpochAnchorV1;
     struct ProcessScopeBlueprintProjectionStateV1;
 
     enum class AdmittedFactoryExecutionAccessErrorV1 : std::uint8_t {
@@ -21,8 +26,11 @@ namespace asharia::host_runtime {
 
     struct AdmittedStaticFactoryExecutionViewV1 final {
         std::span<const StaticFactoryCallbacksV1> callbacks;
+        std::span<const StaticContributionRuntimeBindingV1> contributionRuntimeBindings;
         const StaticFactoryRegistrationSnapshotV2* snapshot{};
         const ProcessScopeBlueprintProjectionStateV1* processScope{};
+        std::shared_ptr<const CurrentProcessEpochAnchorV1> processEpoch;
+        std::shared_ptr<const ControlThreadEpochAnchorV1> controlThreadEpoch;
         std::string_view engineGenerationId;
         std::string_view blueprintIntegrity;
     };
@@ -33,8 +41,7 @@ namespace asharia::host_runtime {
         // It must not outlive the admitted owner or be cached across thread/epoch changes.
         [[nodiscard]] static std::expected<AdmittedStaticFactoryExecutionViewV1,
                                            AdmittedFactoryExecutionAccessErrorV1>
-        executionView(
-            const AdmittedStaticFactoryCallbackTableV1& admittedTable) noexcept;
+        executionView(const AdmittedStaticFactoryCallbackTableV1& admittedTable) noexcept;
 
         [[nodiscard]] static std::optional<std::span<const StaticFactoryCallbacksV1>>
         callbacks(const AdmittedStaticFactoryCallbackTableV1& admittedTable) noexcept {

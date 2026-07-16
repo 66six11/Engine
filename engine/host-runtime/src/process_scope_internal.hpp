@@ -9,46 +9,46 @@
 
 namespace asharia::host_runtime {
 
-    class ProcessScopeOperationGuardV1 final {
+    class ProcessScopeOperationGuardV2 final {
     public:
-        explicit ProcessScopeOperationGuardV1(bool& flag) noexcept : flag_(&flag) {
+        explicit ProcessScopeOperationGuardV2(bool& flag) noexcept : flag_(&flag) {
             flag = true;
         }
 
-        ~ProcessScopeOperationGuardV1() {
+        ~ProcessScopeOperationGuardV2() {
             *flag_ = false;
         }
 
-        ProcessScopeOperationGuardV1(const ProcessScopeOperationGuardV1&) = delete;
-        ProcessScopeOperationGuardV1& operator=(const ProcessScopeOperationGuardV1&) = delete;
-        ProcessScopeOperationGuardV1(ProcessScopeOperationGuardV1&&) = delete;
-        ProcessScopeOperationGuardV1& operator=(ProcessScopeOperationGuardV1&&) = delete;
+        ProcessScopeOperationGuardV2(const ProcessScopeOperationGuardV2&) = delete;
+        ProcessScopeOperationGuardV2& operator=(const ProcessScopeOperationGuardV2&) = delete;
+        ProcessScopeOperationGuardV2(ProcessScopeOperationGuardV2&&) = delete;
+        ProcessScopeOperationGuardV2& operator=(ProcessScopeOperationGuardV2&&) = delete;
 
     private:
         bool* flag_{};
     };
 
-    [[nodiscard]] ProcessScopeErrorCodeV1
+    [[nodiscard]] ProcessScopeErrorCodeV2
     mapExecutionAccessError(AdmittedFactoryExecutionAccessErrorV1 error) noexcept;
 
-    [[nodiscard]] ProcessScopeOperationErrorV1
-    makeProcessScopeOperationError(ProcessScopeErrorCodeV1 code,
-                                   ProcessScopeStateV1 state) noexcept;
+    [[nodiscard]] ProcessScopeOperationErrorV2
+    makeProcessScopeOperationError(ProcessScopeErrorCodeV2 code,
+                                   ProcessScopeStateV2 state) noexcept;
 
     [[nodiscard]] FactoryAttributionViewV1
-    processFactoryAttribution(const ResolvedProcessFactoryStateV1& factory) noexcept;
+    processFactoryAttribution(const ResolvedProcessFactoryStateV2& factory) noexcept;
 
-    [[nodiscard]] ProcessScopeLifecycleDiagnosticV1
-    makeProcessScopeDiagnostic(const ResolvedProcessFactoryStateV1& factory,
-                               ProcessScopeLifecycleStageV1 stage,
+    [[nodiscard]] ProcessScopeLifecycleDiagnosticV2
+    makeProcessScopeDiagnostic(const ResolvedProcessFactoryStateV2& factory,
+                               ProcessScopeLifecycleStageV2 stage,
                                std::uint32_t providerLocalCode) noexcept;
 
-    void appendProcessScopeCleanupDiagnostic(ProcessScopeExecutorStateV1& state,
-                                             const ResolvedProcessFactoryStateV1& factory,
-                                             ProcessScopeLifecycleStageV1 stage,
+    void appendProcessScopeCleanupDiagnostic(ProcessScopeExecutorStateV2& state,
+                                             const ResolvedProcessFactoryStateV2& factory,
+                                             ProcessScopeLifecycleStageV2 stage,
                                              std::uint32_t providerLocalCode) noexcept;
 
-    void cleanupProcessScopeFactories(ProcessScopeExecutorStateV1& state,
+    void cleanupProcessScopeFactories(ProcessScopeExecutorStateV2& state,
                                       std::span<const StaticFactoryCallbacksV1> callbacks) noexcept;
 
 } // namespace asharia::host_runtime

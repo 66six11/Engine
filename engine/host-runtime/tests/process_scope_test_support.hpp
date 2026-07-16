@@ -23,6 +23,8 @@ namespace asharia::host_runtime::tests {
         DuplicateRequirement,
         MissingRequirement,
         ForwardRequirement,
+        IncludeProjectOnlySingleConflict,
+        IncludeZeroContributionFactory,
     };
 
     struct NamedProcessScopeTestV1 final {
@@ -36,6 +38,12 @@ namespace asharia::host_runtime::tests {
     void rebindSyntheticCurrentProcessEpoch();
 
     [[nodiscard]] std::span<const NamedProcessScopeTestV1> processScopeContractTests() noexcept;
+    [[nodiscard]] std::span<const NamedProcessScopeTestV1>
+    processScopeContributionContractTests() noexcept;
+    [[nodiscard]] std::span<const NamedProcessScopeTestV1>
+    processScopeContributionLifecycleTests() noexcept;
+    [[nodiscard]] std::span<const NamedProcessScopeTestV1>
+    processScopeZeroContributionTests() noexcept;
     [[nodiscard]] std::span<const NamedProcessScopeTestV1> processScopePreflightTests() noexcept;
     [[nodiscard]] std::span<const NamedProcessScopeTestV1> processScopeStartupTests() noexcept;
     [[nodiscard]] std::span<const NamedProcessScopeTestV1> processScopeCleanupTests() noexcept;

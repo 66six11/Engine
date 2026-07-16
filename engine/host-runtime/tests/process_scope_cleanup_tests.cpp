@@ -74,14 +74,14 @@ namespace asharia::host_runtime::tests {
         };
 
         struct ReentrantStopObservationV1 final {
-            ProcessScopeExecutorV1* executor{};
+            ProcessScopeExecutorV2* executor{};
             std::size_t invocationCount{};
             std::size_t traceSizeBefore{};
             std::size_t traceSizeAfter{};
             SyntheticFactoryV1 factory{SyntheticFactoryV1::Middle};
             SyntheticLifecyclePhaseV1 phase{SyntheticLifecyclePhaseV1::Create};
-            ProcessScopeErrorCodeV1 errorCode{ProcessScopeErrorCodeV1::ExecutorMovedFrom};
-            ProcessScopeStateV1 errorState{ProcessScopeStateV1::MovedFrom};
+            ProcessScopeErrorCodeV2 errorCode{ProcessScopeErrorCodeV2::ExecutorMovedFrom};
+            ProcessScopeStateV2 errorState{ProcessScopeStateV2::MovedFrom};
             bool resultSucceeded{};
         };
 
@@ -94,7 +94,7 @@ namespace asharia::host_runtime::tests {
             reentrantStopObservation.phase = phase;
             reentrantStopObservation.traceSizeBefore = syntheticProviderTrace().size();
             if (reentrantStopObservation.executor != nullptr) {
-                const ProcessScopeStopResultV1 result = reentrantStopObservation.executor->stop();
+                const ProcessScopeStopResultV2 result = reentrantStopObservation.executor->stop();
                 reentrantStopObservation.resultSucceeded = result.has_value();
                 if (!result) {
                     reentrantStopObservation.errorCode = result.error().code;
@@ -104,21 +104,21 @@ namespace asharia::host_runtime::tests {
             reentrantStopObservation.traceSizeAfter = syntheticProviderTrace().size();
         }
 
-        [[nodiscard]] std::optional<ProcessScopeExecutorV1> activeExecutor() {
+        [[nodiscard]] std::optional<ProcessScopeExecutorV2> activeExecutor() {
             auto admitted = makeAdmittedSyntheticProcessScope();
             if (!admitted) {
                 return std::nullopt;
             }
-            auto prepared = prepareProcessScopeExecutor(std::move(*admitted));
+            auto prepared = prepareProcessScopeExecutorV2(std::move(*admitted));
             if (!prepared || !prepared->start()) {
                 return std::nullopt;
             }
             return std::move(*prepared);
         }
 
-        [[nodiscard]] bool diagnosticMatches(const ProcessScopeLifecycleDiagnosticV1& diagnostic,
+        [[nodiscard]] bool diagnosticMatches(const ProcessScopeLifecycleDiagnosticV2& diagnostic,
                                              SyntheticFactoryV1 factory,
-                                             ProcessScopeLifecycleStageV1 stage,
+                                             ProcessScopeLifecycleStageV2 stage,
                                              std::uint32_t localCode) noexcept {
             const ExactFactoryReferenceViewV1 reference = diagnostic.factory();
             return diagnostic.stage() == stage && diagnostic.providerLocalCode() == localCode &&
@@ -140,7 +140,7 @@ namespace asharia::host_runtime::tests {
                 return false;
             }
             if (!std::ranges::equal(syntheticProviderTrace(), kExpectedStopTrace) ||
-                executor->state() != ProcessScopeStateV1::Stopped ||
+                executor->state() != ProcessScopeStateV2::Stopped ||
                 syntheticProjectOnlyInvocationCount() != 0) {
                 return false;
             }
@@ -171,19 +171,19 @@ namespace asharia::host_runtime::tests {
             };
             armSyntheticProviderLifecycleHook(&reenterStop);
 
-            const ProcessScopeStopResultV1 stopped = executor->stop();
+            const ProcessScopeStopResultV2 stopped = executor->stop();
             return stopped && stopped->callbacksSucceeded() &&
                    reentrantStopObservation.invocationCount == 1 &&
                    reentrantStopObservation.factory == SyntheticFactoryV1::Leaf &&
                    reentrantStopObservation.phase == SyntheticLifecyclePhaseV1::Quiesce &&
                    !reentrantStopObservation.resultSucceeded &&
                    reentrantStopObservation.errorCode ==
-                       ProcessScopeErrorCodeV1::OperationInProgress &&
-                   reentrantStopObservation.errorState == ProcessScopeStateV1::Active &&
+                       ProcessScopeErrorCodeV2::OperationInProgress &&
+                   reentrantStopObservation.errorState == ProcessScopeStateV2::Active &&
                    reentrantStopObservation.traceSizeBefore == 7 &&
                    reentrantStopObservation.traceSizeAfter == 7 &&
                    std::ranges::equal(syntheticProviderTrace(), kExpectedStopTrace) &&
-                   executor->state() == ProcessScopeStateV1::Stopped &&
+                   executor->state() == ProcessScopeStateV2::Stopped &&
                    syntheticProjectOnlyInvocationCount() == 0 && syntheticProviderFixtureValid();
         }
 
@@ -197,7 +197,7 @@ namespace asharia::host_runtime::tests {
                                                 SyntheticLifecyclePhaseV1::Deactivate, 43)) {
                 return false;
             }
-            ProcessScopeStopReportV1 report;
+            ProcessScopeStopReportV2 report;
             {
                 auto executor = activeExecutor();
                 if (!executor) {
@@ -205,7 +205,7 @@ namespace asharia::host_runtime::tests {
                 }
                 auto stopped = executor->stop();
                 if (!stopped || stopped->callbacksSucceeded() ||
-                    executor->state() != ProcessScopeStateV1::Stopped) {
+                    executor->state() != ProcessScopeStateV2::Stopped) {
                     return false;
                 }
                 report = std::move(*stopped);
@@ -213,11 +213,11 @@ namespace asharia::host_runtime::tests {
 
             return report.cleanupDiagnostics.size() == 3 &&
                    diagnosticMatches(report.cleanupDiagnostics.at(0), SyntheticFactoryV1::Leaf,
-                                     ProcessScopeLifecycleStageV1::Quiesce, 41) &&
+                                     ProcessScopeLifecycleStageV2::Quiesce, 41) &&
                    diagnosticMatches(report.cleanupDiagnostics.at(1), SyntheticFactoryV1::Root,
-                                     ProcessScopeLifecycleStageV1::Quiesce, 42) &&
+                                     ProcessScopeLifecycleStageV2::Quiesce, 42) &&
                    diagnosticMatches(report.cleanupDiagnostics.at(2), SyntheticFactoryV1::Middle,
-                                     ProcessScopeLifecycleStageV1::Deactivate, 43) &&
+                                     ProcessScopeLifecycleStageV2::Deactivate, 43) &&
                    syntheticProviderInvocationCount(SyntheticFactoryV1::Root,
                                                     SyntheticLifecyclePhaseV1::Destroy) == 1 &&
                    syntheticProviderInvocationCount(SyntheticFactoryV1::Middle,
@@ -241,28 +241,28 @@ namespace asharia::host_runtime::tests {
             if (!admitted) {
                 return false;
             }
-            auto prepared = prepareProcessScopeExecutor(std::move(*admitted));
+            auto prepared = prepareProcessScopeExecutorV2(std::move(*admitted));
             if (!prepared) {
                 return false;
             }
-            const ProcessScopeStartResultV1 started = prepared->start();
+            const ProcessScopeStartResultV2 started = prepared->start();
             if (started) {
                 return false;
             }
-            const ProcessScopeStartFailureV1& failure = started.error();
+            const ProcessScopeStartFailureV2& failure = started.error();
             if (!failure.primary.has_value()) {
                 return false;
             }
-            const ProcessScopeLifecycleDiagnosticV1& primary = *failure.primary;
+            const ProcessScopeLifecycleDiagnosticV2& primary = *failure.primary;
             if (!diagnosticMatches(primary, SyntheticFactoryV1::Middle,
-                                   ProcessScopeLifecycleStageV1::Activate, 31) ||
+                                   ProcessScopeLifecycleStageV2::Activate, 31) ||
                 failure.cleanupDiagnostics.size() != 2) {
                 return false;
             }
             return diagnosticMatches(failure.cleanupDiagnostics.at(0), SyntheticFactoryV1::Root,
-                                     ProcessScopeLifecycleStageV1::Quiesce, 41) &&
+                                     ProcessScopeLifecycleStageV2::Quiesce, 41) &&
                    diagnosticMatches(failure.cleanupDiagnostics.at(1), SyntheticFactoryV1::Root,
-                                     ProcessScopeLifecycleStageV1::Deactivate, 42) &&
+                                     ProcessScopeLifecycleStageV2::Deactivate, 42) &&
                    syntheticProviderInvocationCount(SyntheticFactoryV1::Middle,
                                                     SyntheticLifecyclePhaseV1::Destroy) == 1 &&
                    syntheticProviderInvocationCount(SyntheticFactoryV1::Root,

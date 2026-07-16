@@ -284,9 +284,10 @@ JSON，也不在 registration/verification 中调用。public table 不暴露 ra
 contribution payload 或 lookup；#292 已实现 headless Activation Eligibility C++ boundary：对证
 receipt、session 与 current process 后才允许 long-lived Host 调用 providers，table snapshot 再次对证后才允许 lifecycle executor
 访问。[ProcessScope Lifecycle v1](adr-process-scope-lifecycle-v1.md) 已为 #293 增加按值消费 admitted table 的 headless executor、
-factory contexts、exact Blueprint order、token ownership、startup rollback 与 explicit reverse stop；当前 implementation 与 focused tests
-已完成并通过 #293 门禁。production launch issuer、normal Host 与 Bootstrap/Session adapter 仍未实现。#288 的
-registration-only subprocess 是取证用 disposable exception，不是 normal Editor startup。author provider bindings 与 derived
+factory contexts、exact Blueprint order、token ownership、startup rollback 与 explicit reverse stop；#296 又将 public ProcessScope surface
+硬切到 V2，并实现 fixed-slot typed registry、weak generation view/handle、contribution-only lease 与 publication/revocation gate。当前仍无
+production launch issuer、normal Host 或 Bootstrap/Session adapter。#288 的 registration-only subprocess 是取证用 disposable exception，
+不是 normal Editor startup。author provider bindings 与 derived
 Binding Plan 提升为 v4；static-composition renderer 提升为 5，Windows Development Host Template renderer 保持 2，且只接受
 该 current generation pair；旧 bindings/renderer/provider generation 不保留兼容路径。
 
@@ -412,10 +413,11 @@ Editor project-open bootstrap 分为固定 Image 启动和项目会话派生：
    `Ready`、`RepairRequired`、`UpgradeRequired` 或 `SafeMode`，不重新求解、保存第三个 lock 或静默覆盖 bundled inventory；
    `PendingBuild` / `PendingRestart` 只有在后继 artifact freshness / current-process generation evidence 存在后才能产生；
 6. 只有 Effective Session `Ready` 才可进入 [Activation Eligibility v1](adr-activation-eligibility-v1.md)；后者必须先取得一次性
-   `PreRegistrationAdmissionV1`，再将同一次 recording 的 table 对证为 `ActivationAdmissionV1`。只有 admitted process factories 在
-   `ProcessScopeExecutorV1::start()` 成功后进入 `Active`；项目 modules/contributions 仍需要后续 scope owners 与 typed registry/lease。
-   #293 已实现该 headless executor，但 production launch issuer、normal Host 与 Bootstrap state adapter 均未实现，因此当前 Editor
-   project-open path 仍不会执行这一步或发布 `ProjectReady`；
+   `PreRegistrationAdmissionV1`，再将同一次 recording 的 table 对证为 `ActivationAdmissionV1`。当前
+   `ProcessScopeExecutorV2::start()` 在 admitted process factories activate 后提交 contribution-only leases，并只在整个 start 成功后
+   开放 typed registry；weak handles 在 revocation、stale epoch 或 owner 销毁后 fail closed。#296 已实现该 headless boundary，但
+   production launch issuer、normal Host、其他 scope owners 与 Bootstrap state adapter 均未实现，因此当前 Editor project-open path
+   仍不会执行这一步或发布 `ProjectReady`；
 7. 恢复 workspace 和 documents；用户本地 workspace failure 不得破坏项目事实；
 8. 发布结构化 session state；完整项目会话发布 `ProjectReady`，其他状态仍保留基础 UI、diagnostics、Package Manager 与
    Build/Repair/Restart commands。
@@ -601,9 +603,9 @@ asharia-launch --project <path> --profile standalone-game
   [Static Contribution Payload Accessors v1](adr-static-contribution-payload-accessors-v1.md)，当前 Host build/assembly/deep verification 只接受
   Template renderer 2 + Composition renderer 5/provider v4 + RegistrationSnapshot v2；#292 已添加 Activation
   Eligibility validator、linear wrappers 与 focused
-  tests 并完成 Done evidence；#293 [ProcessScope Lifecycle v1](adr-process-scope-lifecycle-v1.md) 已完成 admitted ProcessScope 的
-  headless implementation、focused tests 与门禁；production launch issuer、normal Host 与
-  Bootstrap/Session adapter 继续后置；
+  tests 并完成 Done evidence；#293 [ProcessScope Lifecycle v1](adr-process-scope-lifecycle-v1.md) 已完成 admitted ProcessScope lifecycle
+  baseline；#296 已完成 ProcessScope V2 fixed registry、weak handles、contribution-only lease 与 cleanup revocation gate。下一项实现必须把
+  normal Host adapter 与一个真实 system/contribution 接成可观察 vertical feature；production Bootstrap/Session UI 仍继续后置；
 - Effective Editor Session v1 已建立 Ready/Upgrade/Repair/SafeMode 与 exact Profile binding；轻量启动检查和实际 UI/进程状态仍待实现；
 - 冻结 `asharia.build.json` v1 的 owner、Build/Launch Profile 与 local override 规则；
 - 建立 CPU-only parser/validator、BuildPlan/BuildReport、LaunchPlan/SessionReport；

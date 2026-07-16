@@ -20,8 +20,20 @@ namespace asharia::host_runtime::tests {
             bool enabled{};
         };
 
+        struct ContributionAccessorState final {
+            std::size_t invocationCount{};
+            std::size_t nullReturnCount{};
+            bool nullReturnArmed{};
+            bool dependentCreateObserved{};
+        };
+
         struct FactoryState final {
             std::array<std::size_t, kSyntheticLifecyclePhaseCount> invocationCounts{};
+            std::array<ContributionAccessorState, kSyntheticContributionSlotCount>
+                contributionAccessors{};
+            SyntheticPrimaryServiceContractV1 primaryContribution{};
+            SyntheticExtensionContractV1 extensionAContribution{};
+            SyntheticExtensionContractV1 extensionBContribution{};
             std::uint8_t observedDependencyMask{};
             std::size_t tokenIssueCount{};
             std::size_t destroyCount{};
@@ -61,6 +73,16 @@ namespace asharia::host_runtime::tests {
             return static_cast<std::size_t>(phase);
         }
 
+        [[nodiscard]] constexpr std::size_t
+        contributionIndex(SyntheticContributionSlotV1 contribution) noexcept {
+            return static_cast<std::size_t>(contribution);
+        }
+
+        [[nodiscard]] constexpr bool
+        isContributionValid(SyntheticContributionSlotV1 contribution) noexcept {
+            return contributionIndex(contribution) < kSyntheticContributionSlotCount;
+        }
+
         [[nodiscard]] constexpr bool isFactoryValid(SyntheticFactoryV1 factory) noexcept {
             return factoryIndex(factory) < kSyntheticFactoryCount;
         }
@@ -69,12 +91,57 @@ namespace asharia::host_runtime::tests {
             return phaseIndex(phase) < kSyntheticLifecyclePhaseCount;
         }
 
+        [[nodiscard]] constexpr bool
+        hasSyntheticContribution(SyntheticFactoryV1 factory,
+                                 SyntheticContributionSlotV1 contribution) noexcept {
+            return (contribution == SyntheticContributionSlotV1::Primary &&
+                    (factory == SyntheticFactoryV1::Root ||
+                     factory == SyntheticFactoryV1::ProjectOnly)) ||
+                   (contribution == SyntheticContributionSlotV1::ExtensionA &&
+                    (factory == SyntheticFactoryV1::Middle ||
+                     factory == SyntheticFactoryV1::Leaf)) ||
+                   (contribution == SyntheticContributionSlotV1::ExtensionB &&
+                    factory == SyntheticFactoryV1::Middle);
+        }
+
+        [[nodiscard]] constexpr std::string_view
+        syntheticContributionId(SyntheticFactoryV1 factory,
+                                SyntheticContributionSlotV1 contribution) noexcept {
+            if (factory == SyntheticFactoryV1::Root &&
+                contribution == SyntheticContributionSlotV1::Primary) {
+                return kSyntheticRootPrimaryContributionId;
+            }
+            if (factory == SyntheticFactoryV1::ProjectOnly &&
+                contribution == SyntheticContributionSlotV1::Primary) {
+                return kSyntheticProjectOnlyPrimaryContributionId;
+            }
+            if (factory == SyntheticFactoryV1::Middle &&
+                contribution == SyntheticContributionSlotV1::ExtensionA) {
+                return kSyntheticMiddleExtensionAContributionId;
+            }
+            if (factory == SyntheticFactoryV1::Middle &&
+                contribution == SyntheticContributionSlotV1::ExtensionB) {
+                return kSyntheticMiddleExtensionBContributionId;
+            }
+            if (factory == SyntheticFactoryV1::Leaf &&
+                contribution == SyntheticContributionSlotV1::ExtensionA) {
+                return kSyntheticLeafExtensionContributionId;
+            }
+            return {};
+        }
+
         [[nodiscard]] constexpr std::uint8_t factoryMask(SyntheticFactoryV1 factory) noexcept {
             return std::uint8_t{1} << static_cast<std::uint8_t>(factory);
         }
 
         [[nodiscard]] FactoryState& stateFor(SyntheticFactoryV1 factory) noexcept {
             return fixture.factories.at(factoryIndex(factory));
+        }
+
+        [[nodiscard]] ContributionAccessorState&
+        contributionStateFor(SyntheticFactoryV1 factory,
+                             SyntheticContributionSlotV1 contribution) noexcept {
+            return stateFor(factory).contributionAccessors.at(contributionIndex(contribution));
         }
 
         [[nodiscard]] bool isProjectOnly(SyntheticFactoryV1 factory) noexcept {
@@ -125,9 +192,8 @@ namespace asharia::host_runtime::tests {
         [[nodiscard]] std::optional<SyntheticFactoryV1>
         identifyFactory(ExactFactoryReferenceViewV1 reference) noexcept {
             constexpr std::array<SyntheticFactoryV1, kSyntheticFactoryCount> factories{
-                SyntheticFactoryV1::Middle,
-                SyntheticFactoryV1::ProjectOnly,
-                SyntheticFactoryV1::Leaf,
+                SyntheticFactoryV1::Middle, SyntheticFactoryV1::ProjectOnly,
+                SyntheticFactoryV1::Empty,  SyntheticFactoryV1::Leaf,
                 SyntheticFactoryV1::Root,
             };
             for (const SyntheticFactoryV1 factory : factories) {
@@ -188,6 +254,74 @@ namespace asharia::host_runtime::tests {
                 return std::nullopt;
             }
             return slot.localCode;
+        }
+
+        template <SyntheticFactoryV1 Factory, SyntheticContributionSlotV1 Contribution>
+        [[nodiscard]] FactoryState*
+        accessContributionInstance(FactoryInstanceViewV1 instance) noexcept {
+            FactoryState& state = stateFor(Factory);
+            ContributionAccessorState& accessor = contributionStateFor(Factory, Contribution);
+            ++accessor.invocationCount;
+            if constexpr (Factory == SyntheticFactoryV1::Root) {
+                accessor.dependentCreateObserved |=
+                    stateFor(SyntheticFactoryV1::Middle)
+                            .invocationCounts.at(phaseIndex(SyntheticLifecyclePhaseV1::Create)) !=
+                        0 ||
+                    stateFor(SyntheticFactoryV1::Leaf)
+                            .invocationCounts.at(phaseIndex(SyntheticLifecyclePhaseV1::Create)) !=
+                        0;
+            } else if constexpr (Factory == SyntheticFactoryV1::Middle) {
+                accessor.dependentCreateObserved |=
+                    stateFor(SyntheticFactoryV1::Leaf)
+                        .invocationCounts.at(phaseIndex(SyntheticLifecyclePhaseV1::Create)) != 0;
+            }
+            if (!instance.isValid() || !state.active || !state.tokenOutstanding ||
+                FactoryInstanceTokenProviderAccessV1::pointer(instance) != &state) {
+                state.instanceMismatch = true;
+                return nullptr;
+            }
+            if (!accessor.nullReturnArmed) {
+                return &state;
+            }
+            accessor.nullReturnArmed = false;
+            ++accessor.nullReturnCount;
+            return nullptr;
+        }
+
+        template <SyntheticFactoryV1 Factory>
+        [[nodiscard]] SyntheticPrimaryServiceContractV1*
+        accessPrimaryContribution(FactoryInstanceViewV1 instance) noexcept {
+            FactoryState* const state =
+                accessContributionInstance<Factory, SyntheticContributionSlotV1::Primary>(instance);
+            if (state == nullptr) {
+                return nullptr;
+            }
+            state->primaryContribution = {
+                .owner = Factory,
+                .contributionId =
+                    syntheticContributionId(Factory, SyntheticContributionSlotV1::Primary),
+            };
+            return &state->primaryContribution;
+        }
+
+        template <SyntheticFactoryV1 Factory, SyntheticContributionSlotV1 Contribution>
+            requires(Contribution == SyntheticContributionSlotV1::ExtensionA ||
+                     Contribution == SyntheticContributionSlotV1::ExtensionB)
+        [[nodiscard]] SyntheticExtensionContractV1*
+        accessExtensionContribution(FactoryInstanceViewV1 instance) noexcept {
+            FactoryState* const state = accessContributionInstance<Factory, Contribution>(instance);
+            if (state == nullptr) {
+                return nullptr;
+            }
+            SyntheticExtensionContractV1& payload =
+                Contribution == SyntheticContributionSlotV1::ExtensionA
+                    ? state->extensionAContribution
+                    : state->extensionBContribution;
+            payload = {
+                .owner = Factory,
+                .contributionId = syntheticContributionId(Factory, Contribution),
+            };
+            return &payload;
         }
 
         template <SyntheticFactoryV1 Factory>
@@ -283,18 +417,53 @@ namespace asharia::host_runtime::tests {
                 .destroy = &destroy<Factory>,
             };
         }
+        constexpr auto kMiddleExtensionABinding = bindStaticContributionV2<
+            SyntheticExtensionContractV1,
+            &accessExtensionContribution<SyntheticFactoryV1::Middle,
+                                         SyntheticContributionSlotV1::ExtensionA>>(
+            kSyntheticMiddleExtensionAContributionId);
+        constexpr auto kMiddleExtensionBBinding = bindStaticContributionV2<
+            SyntheticExtensionContractV1,
+            &accessExtensionContribution<SyntheticFactoryV1::Middle,
+                                         SyntheticContributionSlotV1::ExtensionB>>(
+            kSyntheticMiddleExtensionBContributionId);
+        constexpr auto kProjectOnlyPrimaryBinding =
+            bindStaticContributionV2<SyntheticPrimaryServiceContractV1,
+                                     &accessPrimaryContribution<SyntheticFactoryV1::ProjectOnly>>(
+                kSyntheticProjectOnlyPrimaryContributionId);
+        constexpr auto kLeafExtensionBinding = bindStaticContributionV2<
+            SyntheticExtensionContractV1,
+            &accessExtensionContribution<SyntheticFactoryV1::Leaf,
+                                         SyntheticContributionSlotV1::ExtensionA>>(
+            kSyntheticLeafExtensionContributionId);
+        constexpr auto kRootPrimaryBinding =
+            bindStaticContributionV2<SyntheticPrimaryServiceContractV1,
+                                     &accessPrimaryContribution<SyntheticFactoryV1::Root>>(
+                kSyntheticRootPrimaryContributionId);
+
+        constexpr std::array kMiddleContributions{
+            kMiddleExtensionABinding,
+            kMiddleExtensionBBinding,
+        };
+        constexpr std::array kProjectOnlyContributions{kProjectOnlyPrimaryBinding};
+        constexpr std::array kLeafContributions{kLeafExtensionBinding};
+        constexpr std::array kRootContributions{kRootPrimaryBinding};
 
         void provideSyntheticProcessScopeFactories(StaticFactoryRegistrar& registrar) noexcept {
-            // Registration is canonical (a, b, m, z), deliberately unlike the
+            // Registration is canonical (a, b, c, m, z), deliberately unlike the
             // sealed ProcessScope plan (z, a, m).
             registrar.registerFactory(kSyntheticMiddleFactoryId,
-                                      callbacks<SyntheticFactoryV1::Middle>(), {});
+                                      callbacks<SyntheticFactoryV1::Middle>(),
+                                      kMiddleContributions);
             registrar.registerFactory(kSyntheticProjectOnlyFactoryId,
-                                      callbacks<SyntheticFactoryV1::ProjectOnly>(), {});
+                                      callbacks<SyntheticFactoryV1::ProjectOnly>(),
+                                      kProjectOnlyContributions);
+            registrar.registerFactory(kSyntheticEmptyFactoryId,
+                                      callbacks<SyntheticFactoryV1::Empty>(), {});
             registrar.registerFactory(kSyntheticLeafFactoryId,
-                                      callbacks<SyntheticFactoryV1::Leaf>(), {});
+                                      callbacks<SyntheticFactoryV1::Leaf>(), kLeafContributions);
             registrar.registerFactory(kSyntheticRootFactoryId,
-                                      callbacks<SyntheticFactoryV1::Root>(), {});
+                                      callbacks<SyntheticFactoryV1::Root>(), kRootContributions);
         }
 
         [[nodiscard]] bool stateValid(SyntheticFactoryV1 factory,
@@ -304,9 +473,22 @@ namespace asharia::host_runtime::tests {
                 state.tokenIssueCount < state.destroyCount) {
                 return false;
             }
+            for (const ContributionAccessorState& accessor : state.contributionAccessors) {
+                if (accessor.nullReturnCount > accessor.invocationCount) {
+                    return false;
+                }
+                if (accessor.dependentCreateObserved) {
+                    return false;
+                }
+            }
             if (isProjectOnly(factory)) {
                 for (const std::size_t count : state.invocationCounts) {
                     if (count != 0) {
+                        return false;
+                    }
+                }
+                for (const ContributionAccessorState& accessor : state.contributionAccessors) {
+                    if (accessor.invocationCount != 0) {
                         return false;
                     }
                 }
@@ -322,6 +504,8 @@ namespace asharia::host_runtime::tests {
             return kSyntheticMiddleFactoryId;
         case SyntheticFactoryV1::ProjectOnly:
             return kSyntheticProjectOnlyFactoryId;
+        case SyntheticFactoryV1::Empty:
+            return kSyntheticEmptyFactoryId;
         case SyntheticFactoryV1::Leaf:
             return kSyntheticLeafFactoryId;
         case SyntheticFactoryV1::Root:
@@ -338,6 +522,7 @@ namespace asharia::host_runtime::tests {
             return kSyntheticMiddleDependencyMask;
         case SyntheticFactoryV1::Leaf:
             return kSyntheticLeafDependencyMask;
+        case SyntheticFactoryV1::Empty:
         case SyntheticFactoryV1::ProjectOnly:
         case SyntheticFactoryV1::Root:
         case SyntheticFactoryV1::Count:
@@ -350,7 +535,7 @@ namespace asharia::host_runtime::tests {
         return {
             .providerCount = 1,
             .factoryCount = kSyntheticFactoryCount,
-            .contributionCount = 0,
+            .contributionCount = 5,
             .textBytes = 1024,
             .diagnosticFactoryIdBytes = 256,
             .diagnosticContributionIdBytes = 256,
@@ -363,24 +548,57 @@ namespace asharia::host_runtime::tests {
             .hostActivationBlueprintSha256 = kSyntheticBlueprintSha256,
             .capacity = syntheticRegistrationCapacity(),
         });
-        constexpr std::array<StaticFactoryExpectationV1, kSyntheticFactoryCount> expectedFactories{
-            StaticFactoryExpectationV1{
-                .factoryId = kSyntheticMiddleFactoryId,
-                .contributions = {},
+        static constexpr std::array middleContributions{
+            StaticContributionExpectationV1{
+                .contributionId = kSyntheticMiddleExtensionAContributionId,
+                .contributionKind = SyntheticExtensionContractV1::kind,
             },
-            StaticFactoryExpectationV1{
-                .factoryId = kSyntheticProjectOnlyFactoryId,
-                .contributions = {},
-            },
-            StaticFactoryExpectationV1{
-                .factoryId = kSyntheticLeafFactoryId,
-                .contributions = {},
-            },
-            StaticFactoryExpectationV1{
-                .factoryId = kSyntheticRootFactoryId,
-                .contributions = {},
+            StaticContributionExpectationV1{
+                .contributionId = kSyntheticMiddleExtensionBContributionId,
+                .contributionKind = SyntheticExtensionContractV1::kind,
             },
         };
+        static constexpr std::array projectOnlyContributions{
+            StaticContributionExpectationV1{
+                .contributionId = kSyntheticProjectOnlyPrimaryContributionId,
+                .contributionKind = SyntheticPrimaryServiceContractV1::kind,
+            },
+        };
+        static constexpr std::array leafContributions{
+            StaticContributionExpectationV1{
+                .contributionId = kSyntheticLeafExtensionContributionId,
+                .contributionKind = SyntheticExtensionContractV1::kind,
+            },
+        };
+        static constexpr std::array rootContributions{
+            StaticContributionExpectationV1{
+                .contributionId = kSyntheticRootPrimaryContributionId,
+                .contributionKind = SyntheticPrimaryServiceContractV1::kind,
+            },
+        };
+        static constexpr std::array<StaticFactoryExpectationV1, kSyntheticFactoryCount>
+            expectedFactories{
+                StaticFactoryExpectationV1{
+                    .factoryId = kSyntheticMiddleFactoryId,
+                    .contributions = middleContributions,
+                },
+                StaticFactoryExpectationV1{
+                    .factoryId = kSyntheticProjectOnlyFactoryId,
+                    .contributions = projectOnlyContributions,
+                },
+                StaticFactoryExpectationV1{
+                    .factoryId = kSyntheticEmptyFactoryId,
+                    .contributions = {},
+                },
+                StaticFactoryExpectationV1{
+                    .factoryId = kSyntheticLeafFactoryId,
+                    .contributions = leafContributions,
+                },
+                StaticFactoryExpectationV1{
+                    .factoryId = kSyntheticRootFactoryId,
+                    .contributions = rootContributions,
+                },
+            };
         recorder.invokeProvider(
             {
                 .packageId = kSyntheticPackageId,
@@ -420,6 +638,20 @@ namespace asharia::host_runtime::tests {
         return true;
     }
 
+    bool injectSyntheticContributionNullOnce(SyntheticFactoryV1 factory,
+                                             SyntheticContributionSlotV1 contribution) noexcept {
+        if (!isFactoryValid(factory) || !isContributionValid(contribution) ||
+            !hasSyntheticContribution(factory, contribution)) {
+            return false;
+        }
+        ContributionAccessorState& accessor = contributionStateFor(factory, contribution);
+        if (accessor.nullReturnArmed) {
+            return false;
+        }
+        accessor.nullReturnArmed = true;
+        return true;
+    }
+
     std::span<const SyntheticLifecycleEventV1> syntheticProviderTrace() noexcept {
         return {fixture.trace.data(), fixture.traceSize};
     }
@@ -454,6 +686,21 @@ namespace asharia::host_runtime::tests {
         };
     }
 
+    SyntheticContributionAccessorObservationV1
+    syntheticContributionAccessorObservation(SyntheticFactoryV1 factory,
+                                             SyntheticContributionSlotV1 contribution) noexcept {
+        if (!isFactoryValid(factory) || !isContributionValid(contribution) ||
+            !hasSyntheticContribution(factory, contribution)) {
+            return {};
+        }
+        const ContributionAccessorState& accessor = contributionStateFor(factory, contribution);
+        return {
+            .invocationCount = accessor.invocationCount,
+            .nullReturnCount = accessor.nullReturnCount,
+            .nullReturnArmed = accessor.nullReturnArmed,
+        };
+    }
+
     std::size_t syntheticProjectOnlyInvocationCount() noexcept {
         const FactoryState& state = stateFor(SyntheticFactoryV1::ProjectOnly);
         std::size_t count = 0;
@@ -472,10 +719,8 @@ namespace asharia::host_runtime::tests {
             return false;
         }
         constexpr std::array<SyntheticFactoryV1, kSyntheticFactoryCount> factories{
-            SyntheticFactoryV1::Middle,
-            SyntheticFactoryV1::ProjectOnly,
-            SyntheticFactoryV1::Leaf,
-            SyntheticFactoryV1::Root,
+            SyntheticFactoryV1::Middle, SyntheticFactoryV1::ProjectOnly, SyntheticFactoryV1::Empty,
+            SyntheticFactoryV1::Leaf,   SyntheticFactoryV1::Root,
         };
         return std::ranges::all_of(factories, [](SyntheticFactoryV1 factory) {
             return stateValid(factory, stateFor(factory));

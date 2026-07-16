@@ -131,11 +131,14 @@ flowchart TD
   canonical RegistrationSnapshot v2、private process-local type/accessor evidence 与无 IO JSON renderer；registration 不调用 lifecycle
   callback 或 payload accessor，不发布 contribution payload，也不包含 scope/activation 逻辑。
   `asharia::host_runtime_activation_eligibility` 再把 sealed current-process lineage 与 exact table instance 绑定；
-  `asharia::host_runtime_process_scope` 只消费 admitted owner，zero-callback preflight 后按 sealed Blueprint process order 执行
-  create/activate、失败 rollback 与 explicit reverse stop。四个 targets 只按 contract → registration → eligibility → process-scope
-  方向依赖；ProcessScope 不解析 package JSON、receipt 或 artifact bytes，也不提供其他 scopes、registry/lease 或 Bootstrap 状态映射。
+  `asharia::host_runtime_process_scope` 只消费 admitted owner，preflight 按 sealed Blueprint process order 建立 fixed contribution slots。
+  `ProcessScopeExecutorV2::start()` 执行 create/activate、per-factory accessor staging/atomic lease commit，并在全部 factories 成功后开放
+  typed registry；weak view/handle 的 query/borrow 对错误 thread、stale epoch、revoking/revoked/expired generation fail closed。rollback/stop
+  顺序是 reverse quiesce → `Revoking` → reverse lease revoke → reverse deactivate/destroy → `Revoked`。四个 targets 只按 contract →
+  registration → eligibility → process-scope 方向依赖；ProcessScope 不解析 package JSON、receipt 或 artifact bytes，也不提供其他 scopes、
+  jobs/subscriptions lease 或 Bootstrap 状态映射。
   现有 sample/editor app 尚未直接链接 process-scope target；renderer revision 5 的 generated CMake handoff 只在生成的 Windows Development
-  Host target 上链接 registration target 与 exact static provider targets。
+  Host target 上链接 registration target 与 exact static provider targets。因此生产 Host vertical feature 仍未接线。
 - `asharia::rhi_vulkan` 是基础 Vulkan 后端，不公开依赖 RenderGraph。
 - `asharia::rhi_vulkan_rendergraph` 是 RenderGraph/Vulkan 适配层，负责把抽象 graph state 翻译为 Vulkan 类型。
 - `renderer-basic` 只描述后端无关的 basic renderer graph 片段。
