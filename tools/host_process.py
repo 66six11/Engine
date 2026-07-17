@@ -1,4 +1,4 @@
-"""Bounded process runner for registration-only Host verification."""
+"""Bounded process runner for generated Host execution."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from typing import Any
 
 
 PROCESS_READ_CHUNK_SIZE = 64 * 1024
-MAX_VERIFICATION_STDERR_BYTES = 1024 * 1024
+MAX_HOST_STDERR_BYTES = 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -85,11 +85,11 @@ def run_bounded_host_process(
     environment: dict[str, str],
     timeout_seconds: float,
     max_stdout_bytes: int,
-    max_stderr_bytes: int = MAX_VERIFICATION_STDERR_BYTES,
+    max_stderr_bytes: int = MAX_HOST_STDERR_BYTES,
 ) -> BoundedHostProcessResult:
     """Run with typed argv, isolated cwd, and live stdout/stderr limits."""
 
-    with tempfile.TemporaryDirectory(prefix="asharia-host-verification-") as scratch:
+    with tempfile.TemporaryDirectory(prefix="asharia-host-process-") as scratch:
         try:
             process = subprocess.Popen(
                 arguments,
@@ -165,6 +165,6 @@ __all__ = [
     "BoundedHostProcessResult",
     "HostProcessSpawnFailure",
     "HostProcessTimeout",
-    "MAX_VERIFICATION_STDERR_BYTES",
+    "MAX_HOST_STDERR_BYTES",
     "run_bounded_host_process",
 ]

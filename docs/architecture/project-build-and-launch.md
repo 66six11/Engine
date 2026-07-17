@@ -417,23 +417,29 @@ Dedicated Server Profile 跳过 window/render/audio；Tool Profile 可以跳过 
 
 Editor project-open bootstrap 分为固定 Image 启动和项目会话派生：
 
+当前已实现的 headless project-open contract 见
+[Bootstrap Project-Open Session v1](adr-bootstrap-project-open-session-v1.md)；以下 UI、workspace 与完整 profile 步骤仍包含目标态。
+
 1. Project Manager 或 CLI 用 argument vector 启动固定 Editor Image，并创建 open-session/crash metadata；
 2. Editor Image 初始化 L0 Kernel、固定 Package/Host Runtime、最小 platform、logging、UI Shell、package diagnostics、
    Package Manager、Build/Repair 与 Safe Mode；这些能力不等待项目 graph，UI backend 失败时降级到 OS-native dialog/console/log；
 3. 读取只读 `asharia.engine-distribution.json`，绑定 exact `EngineGenerationId`；边界信号异常或显式 Verify/Repair 时完整复验发行 bytes，Image 本身损坏由外部 launcher/installer 修复；
-4. 固定 `packages/project-bootstrap` 定位并读取 `asharia.project.json`，再由 Package Runtime 读取项目 manifest/lock；项目不得替换
-   Project Bootstrap provider，也不得覆盖核心 distribution nodes；
-5. 分别验证 Engine Distribution、Project Lock 与 Editor Host Profile，并派生 Effective Session Plan；当前 v1 实际得到
+4. #298 的 project-open request 先规范化一个 canonical root。只读 Package Runtime 从该 root 读取 Project Manifest/Lock exact bytes，
+   只按 Lock 与显式 local source mapping 执行 fresh candidate discovery；它不读取 `asharia.project.json`、不调用 resolver、也不写回；
+   项目不得替换固定 Project Bootstrap provider，也不得覆盖核心 distribution nodes；
+5. 分别验证 Engine Distribution、Project Lock 与 Editor Host Profile，并派生 Effective Session Plan；Effective Session v1 自身得到
    `Ready`、`RepairRequired`、`UpgradeRequired` 或 `SafeMode`，不重新求解、保存第三个 lock 或静默覆盖 bundled inventory；
-   `PendingBuild` / `PendingRestart` 只有在后继 artifact freshness / current-process generation evidence 存在后才能产生；
-6. Ready composition 由 C6 封存 generated current-image descriptor；Eligibility V2 一次性产生
+6. Ready session 与 C6、verified published Host binding 的 session/Engine/Host/platform/configuration identity 对证。missing、stale 或
+   invalid current project Host 由 Bootstrap adapter 产生 `PendingBuild`，且不启动旧 Host；`PendingRestart` 仍等待 current-process
+   generation evidence，v1 不产生；
+7. matching published Host 内由 C6 封存 generated current-image descriptor；Eligibility V2 一次性产生
    `PreRegistrationAdmissionV2`，record providers 后再把同一 table 对证为 admitted V2 owner。`ProcessScopeExecutorV2::start()`
    提交 contribution-only leases 并开放 Active registry，Host 借用 `ProcessApplicationV1`、运行、release borrow，再显式 stop；
-   normal startup 不读取/hash executable path，也不等待 launcher receipt；
-   #297 已在 generated Windows Development Host 中以真实 `asharia.project.json` 接通这条链，但现有 `apps/editor` 尚未采用该入口，
-   其他 scope owners、Bootstrap state adapter 与 `ProjectReady` 发布仍未实现；
-7. 恢复 workspace 和 documents；用户本地 workspace failure 不得破坏项目事实；
-8. 发布结构化 session state；完整项目会话发布 `ProjectReady`，其他状态仍保留基础 UI、diagnostics、Package Manager 与
+   #298 只用参数数组将同一 canonical root 传给 binding 指向的 published artifact，normal-open 只复验 path/type/size，不重新 hash
+   executable，也不等待 launcher receipt；strict Summary v1 成功后得到 Bootstrap `Ready`。现有 `apps/editor` 尚未采用该入口，
+   其他 scope owners、完整 Editor Profile activation 与 `ProjectReady` 发布仍未实现；
+8. 恢复 workspace 和 documents；用户本地 workspace failure 不得破坏项目事实；
+9. 发布结构化 session state；完整项目会话发布 `ProjectReady`，其他状态仍保留基础 UI、diagnostics、Package Manager 与
    Build/Repair/Restart commands。
 
 v0 允许切换含 native module graph 的项目时重启 Editor。只有 package/module lifetime、thread join、ABI 与 document teardown 均可证明安全后，才支持同进程任意切换或 hot unload。`--safe-mode` 不执行项目及其 packages 的 native contributions，但继续运行固定 Editor Image 的最小 Shell、diagnostics、Package Manager 与修复入口，使损坏 package/editor contribution 不会阻止用户修复项目；项目 lock 不负责证明 Editor Bootstrap 存在。

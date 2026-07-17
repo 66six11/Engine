@@ -70,10 +70,15 @@ handoff 时，除全量 Python tests 外，开发中至少先运行以下 focuse
 ```powershell
 python -m unittest tools.tests.test_package_factory_contracts tools.tests.test_package_static_factory_bindings tools.tests.test_effective_session tools.tests.test_host_package_composition tools.tests.test_package_source_build_plan tools.tests.test_package_artifact_evidence tools.tests.test_engine_distribution_assembly tools.tests.test_engine_distribution_repair_verifier tools.tests.test_host_activation_blueprint tools.tests.test_static_composition_root
 python -m unittest tools.tests.test_host_build_request tools.tests.test_host_cmake_target tools.tests.test_host_build_adapter tools.tests.test_host_executable_template tools.tests.test_host_generation_compatibility tools.tests.test_host_registration_snapshot tools.tests.test_host_registration_cross_verifier tools.tests.test_host_registration_verification tools.tests.test_host_binding_inputs tools.tests.test_host_executable_binding tools.tests.test_host_binding_assembly tools.tests.test_host_binding_publication
+python -m unittest tools.tests.test_bootstrap_session tools.tests.test_bootstrap_project_inspection tools.tests.test_bootstrap_current_host tools.tests.test_bootstrap_project_host tools.tests.test_bootstrap_host_session
 ```
 
 Effective Session v1 只能产生 `Ready`、`UpgradeRequired`、`RepairRequired` 或 `SafeMode`；没有 artifact freshness 或
-current-process generation evidence 的改动不得让 composer 猜测 `PendingBuild` / `PendingRestart`。
+current-process generation evidence 的改动不得让 composer 猜测 `PendingBuild` / `PendingRestart`。#298 的
+[Bootstrap Project-Open Session v1](../architecture/adr-bootstrap-project-open-session-v1.md) 在 composer 之外使用 verified
+published Host/C6 与 path/type/size evidence 产生 `PendingBuild`；它只从一个 canonical project root 读取 Manifest/Lock、按 Lock
+执行 fresh candidate discovery，不得 resolve、写 lock 或读取另一个 root。matching Host 必须由 binding 指向的 immutable publication
+执行，normal-open 不重算 executable hash；`PendingRestart` 仍不可产生。
 Package Factory Declaration v1 只声明 logical factory、owner scope、required factory 与 contribution ownership；不得加入
 CMake target、artifact path、DLL symbol、作者自定义 phase/lifetime，或把 module/JSON 顺序解释为 activation order。
 Host Activation Blueprint v1 只能从 Ready Session、匹配的 Host Composition 和 exact factory snapshots 派生固定的
@@ -166,8 +171,9 @@ configuration/`EXECUTABLE`/primary artifact，并在 build 后复验普通文件
 File API index 的 configured CXX compiler，把 exact executable 流式复制到 collector-owned staging，运行 staged bytes，交叉验证
 registration handoff，并发布/deep-verify Host Executable Binding Receipt；这份 receipt 只属于 build/publication evidence，不是 normal
 startup ticket。current T3 normal Host 直接消费 C6 sealed descriptor，执行 admission → recording → table admission → ProcessScope start →
-借用并运行 `ProcessApplicationV1` → release → explicit stop。修改任一边界时，除 focused Python tests 外，运行双编译器 exact Host
-integration：
+借用并运行 `ProcessApplicationV1` → release → explicit stop。Bootstrap project-open adapter 只接受 strict Summary v1
+schema/version/exact fields；exit `65` 是项目拒绝，spawn/timeout/overflow/其他 exit/stderr/protocol failure 是 fixed-Host failure。
+修改任一边界时，除 focused Python tests 外，运行双编译器 exact Host integration：
 
 ```powershell
 cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && set ""CXX=clang-cl"" && set ""ASHARIA_HOST_TEST_ENABLE_CLANG_TIDY=1"" && set ""ASHARIA_EXPECT_CMAKE_CXX_COMPILER_ID=Clang"" && set ""ASHARIA_EXPECT_CMAKE_CXX_COMPILER_VERSION=19.1.5"" && set ""ASHARIA_RUN_HOST_TEMPLATE_INTEGRATION_TESTS=1"" && set ""ASHARIA_HOST_TEST_TOOLCHAIN_FILE=build\conan\clangcl-debug\Debug\generators\conan_toolchain.cmake"" && python -m unittest tools.tests.test_generated_host_executable.GeneratedHostExecutableIntegrationTests.test_exact_host_build_and_project_bootstrap -v"
@@ -179,7 +185,9 @@ focused compatibility tests 必须证明 Template renderer 3 + Composition rende
 refresh、receipt atomic publication 与 closed-tree deep-verification negatives；双编译器 fixture 必须以当前组合端到端覆盖 restricted
 process stdout/stderr/exit contract、expected generation/Blueprint snapshot 对证、same-index configured compiler、collector-owned staged
 Host 执行、receipt publication/deep verification，以及 normal Host 的真实项目 success、坏 descriptor exit 65 + stable diagnostic、非法
-restricted/normal 参数混用 exit 64 与所有结果的 clean stop。MSVC/ClangCL receipts 可以因 compiler identity/executable bytes 不同而不同。
+restricted/normal 参数混用 exit 64 与所有结果的 clean stop。#298 后 fixture 还必须将 descriptor、Manifest 与 Lock 放在同一 root，
+证明只执行 published artifact、Bootstrap `Ready`/`SafeMode`、同 native graph 下只改 `projectId` 可复用 C6，并保持每个编译器只构建一次。
+MSVC/ClangCL receipts 可以因 compiler identity/executable bytes 不同而不同。
 synthetic provider 的五个 callbacks 与全部 selected payload accessors 必须为 abort/counter probes，以证明 registration/receipt path
 零 lifecycle/accessor invocation。
 该 gate 不要求 clean-first 或默认 all-target build。restricted 半边不执行 lifecycle；normal 半边必须证明完整 start/run/stop，但不等于

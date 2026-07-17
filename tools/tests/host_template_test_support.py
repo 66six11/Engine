@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 
 from tools import check_package_contracts as contracts
+from tools import effective_session
 from tools import host_activation_blueprint as activation
 from tools import source_build_plan
 from tools import static_composition_root
@@ -71,6 +72,8 @@ def build_plan(
     compiler_id: str = "Clang",
     provider_fixture: ProviderFixture = SYNTHETIC_PROVIDER_FIXTURE,
     tool_provider_fixture: ProviderFixture | None = None,
+    *,
+    session: effective_session.EffectiveSessionPlan | None = None,
 ) -> source_build_plan.SourceBuildPlan:
     fixtures = (provider_fixture,)
     if tool_provider_fixture is not None:
@@ -101,8 +104,16 @@ def build_plan(
                 "sha256", digest("5")
             ),
         ),
-        host_kind="asset-worker" if tool_provider_fixture else "minimal",
-        target_platform="com.asharia.platform.windows-x86-64",
+        host_kind=(
+            session.host_kind
+            if session is not None
+            else "asset-worker" if tool_provider_fixture else "minimal"
+        ),
+        target_platform=(
+            session.target_platform
+            if session is not None
+            else "com.asharia.platform.windows-x86-64"
+        ),
         configuration="Debug",
         generator=CMakeGeneratorEvidence("Ninja", False),
         toolchain=CMakeToolchainEvidence(
@@ -151,15 +162,18 @@ def _factory_activation(
 def blueprint(
     provider_fixture: ProviderFixture = SYNTHETIC_PROVIDER_FIXTURE,
     tool_provider_fixture: ProviderFixture | None = None,
+    *,
+    session: effective_session.EffectiveSessionPlan | None = None,
 ) -> activation.HostActivationBlueprint:
     scope_templates = [
         activation.ScopeActivationTemplate(
             "process", None, (_factory_activation(provider_fixture),)
         )
     ]
-    host_kind = "minimal"
+    host_kind = session.host_kind if session is not None else "minimal"
     if tool_provider_fixture is not None:
-        host_kind = "asset-worker"
+        if session is None:
+            host_kind = "asset-worker"
         scope_templates.append(
             activation.ScopeActivationTemplate(
                 "tool-job",
@@ -171,7 +185,16 @@ def blueprint(
     value = activation.HostActivationBlueprint(
         inputs=activation.HostActivationBlueprintInputs(
             effective_session_integrity=activation.IntegrityRecord(
-                "sha256", digest("6")
+                (
+                    session.session_fingerprint.algorithm
+                    if session is not None
+                    else "sha256"
+                ),
+                (
+                    session.session_fingerprint.digest
+                    if session is not None
+                    else digest("6")
+                ),
             ),
             host_composition_integrity=activation.IntegrityRecord(
                 "sha256", digest("1")
@@ -180,9 +203,17 @@ def blueprint(
                 "sha256", digest("7")
             ),
         ),
-        engine_generation_id="sha256-" + digest("a"),
+        engine_generation_id=(
+            session.verified_graph.engine_generation_id
+            if session is not None
+            else "sha256-" + digest("a")
+        ),
         host_kind=host_kind,
-        target_platform="com.asharia.platform.windows-x86-64",
+        target_platform=(
+            session.target_platform
+            if session is not None
+            else "com.asharia.platform.windows-x86-64"
+        ),
         lifecycle_model=activation.LIFECYCLE_MODEL,
         scope_templates=tuple(scope_templates),
         integrity=activation.IntegrityRecord("sha256", digest("0")),
@@ -241,7 +272,8 @@ def binding_plan(
     value = provider_bindings.StaticFactoryProviderBindingPlan(
         inputs=provider_bindings.StaticFactoryProviderBindingInputs(
             effective_session_integrity=provider_bindings.IntegrityRecord(
-                "sha256", digest("6")
+                host_blueprint.inputs.effective_session_integrity.algorithm,
+                host_blueprint.inputs.effective_session_integrity.digest,
             ),
             source_build_plan_integrity=provider_bindings.IntegrityRecord(
                 plan.integrity.algorithm, plan.integrity.digest
@@ -278,11 +310,21 @@ def composition_generation(
     compiler_id: str = "Clang",
     provider_fixture: ProviderFixture = SYNTHETIC_PROVIDER_FIXTURE,
     tool_provider_fixture: ProviderFixture | None = None,
+    *,
+    session: effective_session.EffectiveSessionPlan | None = None,
 ) -> static_composition_root.StaticCompositionRootGeneration:
     plan = build_plan(
-        compiler_version, compiler_id, provider_fixture, tool_provider_fixture
+        compiler_version,
+        compiler_id,
+        provider_fixture,
+        tool_provider_fixture,
+        session=session,
     )
-    host_blueprint = blueprint(provider_fixture, tool_provider_fixture)
+    host_blueprint = blueprint(
+        provider_fixture,
+        tool_provider_fixture,
+        session=session,
+    )
     result = static_composition_root.generate_static_composition_root(
         plan,
         host_blueprint,

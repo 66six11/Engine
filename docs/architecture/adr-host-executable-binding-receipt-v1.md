@@ -239,6 +239,7 @@ receipt 对本地 exact bytes 的语义。
 2. [Activation Eligibility v1](adr-activation-eligibility-v1.md) 只接受 deep verifier 的 constructor-restricted receipt/snapshot
    projection；raw receipt JSON、generation directory 或自报 digest 都不能 mint admission。它先对证 Session/Blueprint/binding 与 sealed
    launch handoff，允许一次 provider recording；随后再对证同一 table instance/snapshot，才允许后续 Host Runtime lifecycle；
-3. Bootstrap/Session adapter 把 missing/stale/verified receipt 与 runtime outcome 映射为 `PendingBuild`、`PendingRestart`、`Ready` 或
-   `SafeMode`；
+3. #298 的 [Bootstrap Project-Open Session v1](adr-bootstrap-project-open-session-v1.md) 已把 missing/stale/invalid published binding
+   映射为 `PendingBuild`，并把 matching binding 的 Project Bootstrap outcome 映射为 bootstrap `Ready`、`SafeMode` 或 fixed-Host
+   failure；`PendingRestart` 仍等待 current-process generation evidence；
 4. signing、trusted builder identity 与 SLSA-compatible outer attestation 仅在 release/CI threat model 明确后单独设计。

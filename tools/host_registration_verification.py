@@ -7,7 +7,7 @@ from typing import Any, Iterable
 
 from tools import check_package_contracts as contracts
 from tools import host_artifact_collection
-from tools import host_registration_process
+from tools import host_process
 from tools import host_registration_request
 from tools import host_registration_snapshot
 
@@ -109,13 +109,13 @@ def _run_registration_verification(
         HOST_REGISTRATION_VERIFICATION_ARGUMENT,
     )
     try:
-        completed = host_registration_process.run_bounded_host_process(
+        completed = host_process.run_bounded_host_process(
             arguments,
             normalized.environment,
             request.timeout_seconds,
             request.max_snapshot_bytes,
         )
-    except host_registration_process.HostProcessTimeout:
+    except host_process.HostProcessTimeout:
         return _failure(
             [
                 _diagnostic(
@@ -125,7 +125,7 @@ def _run_registration_verification(
                 )
             ]
         )
-    except (host_registration_process.HostProcessSpawnFailure, OSError):
+    except (host_process.HostProcessSpawnFailure, OSError):
         return _failure(
             [
                 _diagnostic(

@@ -223,7 +223,8 @@ fixed Editor Image starts
 ```
 
 ImGui 可用于早期固定 Bootstrap UI，稳定后再把前端迁移到 Avalonia；该 UI 技术选择不改变本 ADR 的 headless reader、Host Runtime
-和 Safe Mode ownership，也不属于 #297 实现范围。
+和 Safe Mode ownership。#298 的 [Bootstrap Project-Open Session v1](adr-bootstrap-project-open-session-v1.md) 已增加 headless state
+reducer/adapter，但 UI 仍不属于 #297 或 #298 实现范围。
 
 ## 8. Failure matrix
 

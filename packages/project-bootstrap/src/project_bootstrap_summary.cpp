@@ -23,6 +23,15 @@ namespace asharia::project_bootstrap {
 
         auto rendered = archive::writeJsonArchive(archive::ArchiveValue::object({
             archive::ArchiveMember{
+                .key = "schema",
+                .value = archive::ArchiveValue::string(
+                    std::string{"com.asharia.project-bootstrap-summary"}),
+            },
+            archive::ArchiveMember{
+                .key = "schemaVersion",
+                .value = archive::ArchiveValue::integer(1),
+            },
+            archive::ArchiveMember{
                 .key = "projectName",
                 .value = archive::ArchiveValue::string(summary.projectName),
             },

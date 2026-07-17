@@ -249,15 +249,20 @@ T3/C6/provider-v4/Snapshot-v2 tuple、ProcessScope projection、process/control-
 generation/Blueprint digest，Stage 2 再绑定同一 exact table instance。Effective Session `Ready`、raw receipt/table 或 detached boolean
 都不是 admission。
 
+[Bootstrap Project-Open Session v1](adr-bootstrap-project-open-session-v1.md) 已为 #298 把 canonical project root 下的 Manifest/Lock
+exact bytes、fresh candidates、Effective Session、C6 与 verified published Host binding 收敛为一个 headless project-open result。它在每个
+副作用前使用纯 reducer：non-Ready graph 不启动 Host，missing/stale/invalid project Host 产生 `PendingBuild`，matching binding 才以同一
+root 有界运行固定 Project Bootstrap。normal-open 不 hash executable，`PendingRestart` 与完整 `ProjectReady` 仍未产生。
+
 [ProcessScope Lifecycle v1](adr-process-scope-lifecycle-v1.md) 已在 #293 增加独立
 `asharia::host_runtime_process_scope` headless target；#296 将其 public surface 硬切到 V2，并在同一 target 内实现 fixed-slot typed registry、
 weak generation view/handle 与 contribution-only lease。factory 只有在 activate 后的 selected accessors 全部成功且 lease 原子提交后才成为
 dependency-visible，整个 start 成功后 registry 才开放；rollback/stop 在 quiesce 后进入 `Revoking`，反向撤销 leases，再
 deactivate/destroy，最后进入 `Revoked`。
 
-normal generated Host 已运行固定 `packages/project-bootstrap` provider 并读取真实 `asharia.project.json`；Editor Bootstrap state/UI adapter、
-其他 scope owners 与完整 instance/jobs/subscriptions lease 仍未实现。后续功能应继续以可观察 vertical feature 拉动边界，不预建抽象
-registry/scope 层。
+normal generated Host 已运行固定 `packages/project-bootstrap` provider 并读取真实 `asharia.project.json`；#298 已增加 headless
+Bootstrap state adapter 与 published-Host project-open 执行链，Editor Bootstrap UI、其他 scope owners 与完整
+instance/jobs/subscriptions lease 仍未实现。后续功能应继续以可观察 vertical feature 拉动边界，不预建抽象 registry/scope 层。
 
 长期目标是让用户通过 Editor Package Manager 为项目添加、移除和升级**完整可安装能力**。Data、Content、World、Input、Rendering、Physics 等基础能力各自以完整 System Package 表达；Advanced Camera、Dialogue、Weather 等附加能力以完整 Feature Package 表达；跨可选包桥接使用 Integration Package。三者都不能拆成需要用户手工拼装的 contract/runtime/editor/backend fragments。
 
@@ -353,8 +358,9 @@ flowchart LR
 - 第一阶段只支持 bundled/project-embedded/local sources。远程 registry、签名、商业分发和任意 native hot unload 必须后置。
 - 第一阶段的 native modules 默认保持独立 CMake 静态库/工具 target，由生成的薄 Host composition root 链接并显式调用
   provider；restricted registration 生成 snapshot，normal admission 成功后由 ProcessScope executor 按 Blueprint process projection 激活。
-  #297 已以固定 Project Bootstrap contribution 接通首个 generated normal Host；package、module、target 和 DLL 不是同义词。native graph
-  变化进入 `PendingBuild -> PendingRestart`。
+  #297 已以固定 Project Bootstrap contribution 接通首个 generated normal Host；#298 已在 fresh session 与 current published Host/C6
+  不匹配时产生 `PendingBuild`。package、module、target 和 DLL 不是同义词；build/publish controller 与有 current-process evidence 的
+  `PendingRestart` 仍是后续边界。
 
 推荐的默认组合不是硬编码 Host 依赖，而是版本化 Feature Set meta-packages：
 
@@ -387,7 +393,9 @@ package-relative file/size/SHA-256 evidence 的纯验证边界；它不执行 bu
 [ADR：Engine Distribution Manifest v1](adr-engine-distribution-manifest-v1.md) 已为 #279 实现固定 Editor Image、bundled package、
 package artifact reference 与 Host Profile inventory；Project Lock v2 已与其完成所有权分离。Distribution 不是第二个 lock。
 [ADR：Effective Session v1](adr-effective-session-v1.md) 已为 #281 实现 exact Profile binding、状态归类、canonical fingerprints 与
-Host Composition raw Project/Profile 入口删除；`PendingBuild` / `PendingRestart` 仍等待 artifact/process evidence。
+Host Composition raw Project/Profile 入口删除；它自身不产生 `PendingBuild` / `PendingRestart`。#298 的
+[Bootstrap Project-Open Session v1](adr-bootstrap-project-open-session-v1.md) 已用 verified C6/published binding 与 artifact
+path/type/size evidence 产生 `PendingBuild`，`PendingRestart` 仍等待 current-process generation evidence。
 [ADR：Installed Distribution Repair Verifier v1](adr-installed-distribution-repair-verifier-v1.md) 已为 #283 实现 trusted expected ID、
 disk-only artifact generation reconstruction、`Healthy/RepairRequired` report 与 read-only closed-tree 验证；当前尚未接入
 Effective Session 或 Editor Bootstrap。

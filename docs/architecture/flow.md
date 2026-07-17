@@ -276,6 +276,42 @@ Host 在 Active registry 中同步借用 `ProcessApplicationV1`，固定 Project
 canonical project ID 与 asset source root count 的确定性 JSON；成功和失败路径均先 release borrow，再显式 stop。该 Slice 不发布
 `ProjectReady`，也不实现 Editor UI/状态机，但 normal admission 已不再依赖 PRIVATE test issuer 或外部 launch receipt。
 
+## Bootstrap Project-Open Session 流（#298）
+
+[Bootstrap Project-Open Session v1](adr-bootstrap-project-open-session-v1.md) 已在 #297 的 Host vertical 之外增加固定 Editor Image
+拥有的 headless 控制面。一个 request 只接受一个 canonical project root；package inspection 从该 root 读取并复验
+`asharia.packages.json` 与 `asharia.packages.lock.json` exact bytes，固定 Project Bootstrap Host 随后仍从同一 root 读取
+`asharia.project.json`。inspection 不 resolve、不写 lock，也不读取项目描述。
+
+```mermaid
+flowchart LR
+    Request["Project-open request<br/>one canonical root"]
+    Inspect["Read-only package inspection<br/>Manifest + Lock + fresh candidates"]
+    Session["Effective Session"]
+    State["Pure Bootstrap reducer"]
+    Image["C6 + verified published Host binding"]
+    Run["Bounded published Host run<br/>--asharia-project-root"]
+    Summary["Project Bootstrap Summary v1"]
+
+    Request --> Inspect
+    Inspect --> Session
+    Session --> State
+    Session --> Image
+    Image -->|"missing / stale / invalid"| Pending["PendingBuild"]
+    Image -->|"exact identity + path/type/size"| Run
+    Run --> Summary
+    Summary --> State
+```
+
+current image 对证覆盖 Effective Session fingerprint、`EngineGenerationId`、host kind、target platform、configuration、C6 generation
+与 binding receipt。normal-open 只检查已深度验证 publication 下 artifact 的路径、regular-file 类型与 size，不重新 hash bytes；深度
+验证仍属于 build/publication/install/repair 边界。执行入口只使用 binding 指向的 published artifact，不回退到 mutable build target，
+binding receipt 也不会作为 activation ticket 传给 Host。
+
+纯 reducer 在每个副作用前归约现有 evidence：非 Ready session 不启动 Host；current image 不可用时得到 `PendingBuild`；exit `65`
+得到 `SafeMode`；spawn/timeout/output/protocol/Host lifecycle 失败得到 `FatalDistributionError`；exit `0`、empty stderr 和 strict
+versioned summary 才得到 Bootstrap `Ready`。`PendingRestart` 与完整 `ProjectReady` 均不由该 v1 产生。
+
 ## 当前架构总览
 
 这张图按“谁拥有抽象、谁拥有 Vulkan、谁负责组装运行”来读。横向是包边界，纵向是每帧数据从应用入口落到

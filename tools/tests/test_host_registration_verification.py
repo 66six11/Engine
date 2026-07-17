@@ -13,7 +13,7 @@ from unittest import mock
 from tools import check_package_contracts as contracts
 from tools import host_artifact_collection
 from tools import host_cmake_target
-from tools import host_registration_process
+from tools import host_process
 from tools import host_registration_snapshot
 from tools import host_registration_verification as verification
 
@@ -104,7 +104,7 @@ class HostRegistrationVerificationTests(unittest.TestCase):
         stdout: bytes | None = None,
         stderr: bytes = b"",
         limit_exceeded: str | None = None,
-    ) -> host_registration_process.BoundedHostProcessResult:
+    ) -> host_process.BoundedHostProcessResult:
         rendered_stdout = (
             host_registration_snapshot.render_host_registration_snapshot(
                 self.snapshot
@@ -112,7 +112,7 @@ class HostRegistrationVerificationTests(unittest.TestCase):
             if stdout is None
             else stdout
         )
-        return host_registration_process.BoundedHostProcessResult(
+        return host_process.BoundedHostProcessResult(
             return_code=exit_code,
             stdout=rendered_stdout,
             stderr=stderr,
@@ -123,11 +123,11 @@ class HostRegistrationVerificationTests(unittest.TestCase):
 
     def run_with(
         self,
-        completed: host_registration_process.BoundedHostProcessResult,
+        completed: host_process.BoundedHostProcessResult,
         request: verification.HostRegistrationVerificationRequestV1 | None = None,
     ) -> verification.HostRegistrationVerificationOutcomeV1:
         with mock.patch.object(
-            host_registration_process,
+            host_process,
             "run_bounded_host_process",
             return_value=completed,
         ) as runner:
@@ -193,9 +193,9 @@ class HostRegistrationVerificationTests(unittest.TestCase):
 
     def test_timeout_is_stable_and_has_no_process_evidence(self) -> None:
         with mock.patch.object(
-            host_registration_process,
+            host_process,
             "run_bounded_host_process",
-            side_effect=host_registration_process.HostProcessTimeout,
+            side_effect=host_process.HostProcessTimeout,
         ):
             result = verification.run_host_registration_verification(
                 self.request(),
@@ -210,7 +210,7 @@ class HostRegistrationVerificationTests(unittest.TestCase):
 
     def test_non_finite_timeout_is_rejected_before_spawn(self) -> None:
         with mock.patch.object(
-            host_registration_process, "run_bounded_host_process"
+            host_process, "run_bounded_host_process"
         ) as runner:
             result = verification.run_host_registration_verification(
                 self.request(timeout_seconds=float("nan")),
@@ -225,7 +225,7 @@ class HostRegistrationVerificationTests(unittest.TestCase):
 
     def test_invalid_expected_identity_is_rejected_before_spawn(self) -> None:
         with mock.patch.object(
-            host_registration_process, "run_bounded_host_process"
+            host_process, "run_bounded_host_process"
         ) as runner:
             result = verification.run_staged_host_registration_verification(
                 self.staged_request(
@@ -247,7 +247,7 @@ class HostRegistrationVerificationTests(unittest.TestCase):
     def test_missing_artifact_is_rejected_before_spawn(self) -> None:
         self.artifact.unlink()
         with mock.patch.object(
-            host_registration_process, "run_bounded_host_process"
+            host_process, "run_bounded_host_process"
         ) as runner:
             result = verification.run_host_registration_verification(
                 self.request(),
@@ -262,7 +262,7 @@ class HostRegistrationVerificationTests(unittest.TestCase):
 
     def test_staged_artifact_runs_without_fabricated_cmake_evidence(self) -> None:
         with mock.patch.object(
-            host_registration_process,
+            host_process,
             "run_bounded_host_process",
             return_value=self.completed(),
         ) as runner:
@@ -281,7 +281,7 @@ class HostRegistrationVerificationTests(unittest.TestCase):
         outside = Path(self.temporary_directory.name) / "outside.exe"
         outside.write_bytes(b"outside")
         with mock.patch.object(
-            host_registration_process, "run_bounded_host_process"
+            host_process, "run_bounded_host_process"
         ) as runner:
             result = verification.run_staged_host_registration_verification(
                 self.staged_request(
@@ -303,7 +303,7 @@ class HostRegistrationVerificationTests(unittest.TestCase):
         outside = self.staging_root / ".." / "outside.exe"
         outside.write_bytes(self.staged_artifact.staged_path.read_bytes())
         with mock.patch.object(
-            host_registration_process, "run_bounded_host_process"
+            host_process, "run_bounded_host_process"
         ) as runner:
             result = verification.run_staged_host_registration_verification(
                 self.staged_request(
@@ -324,12 +324,12 @@ class HostRegistrationVerificationTests(unittest.TestCase):
     def test_staged_artifact_changed_by_process_discards_snapshot(self) -> None:
         def mutate_artifact(
             *_args: object, **_kwargs: object
-        ) -> host_registration_process.BoundedHostProcessResult:
+        ) -> host_process.BoundedHostProcessResult:
             self.staged_artifact.staged_path.write_bytes(b"changed")
             return self.completed()
 
         with mock.patch.object(
-            host_registration_process,
+            host_process,
             "run_bounded_host_process",
             side_effect=mutate_artifact,
         ):
@@ -345,7 +345,7 @@ class HostRegistrationVerificationTests(unittest.TestCase):
         )
 
     def test_bounded_runner_terminates_stdout_overflow(self) -> None:
-        result = host_registration_process.run_bounded_host_process(
+        result = host_process.run_bounded_host_process(
             (
                 sys.executable,
                 "-c",

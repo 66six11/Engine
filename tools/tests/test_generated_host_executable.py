@@ -3,25 +3,33 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import shutil
-import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 
+from tools import bootstrap_host_session
+from tools import bootstrap_session
 from tools import check_package_contracts as contracts
+from tools import effective_session
+from tools import engine_distribution_repair_verifier as distribution_verifier
 from tools import host_binding_generation_verifier
 from tools import host_binding_publication
 from tools import host_build_adapter
 from tools import host_executable_template as host_template
+from tools import host_process
 from tools import host_registration_verification
 from tools import host_template_publication
+from tools import package_resolver
 from tools import static_composition_root
 from tools.tests import host_template_test_support as support
+from tools.tests import package_test_support
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+PACKAGE_FIXTURE_ROOT = Path(__file__).parent / "fixtures/package-contracts"
 
 VALID_PROJECT_DESCRIPTOR = """{
   "schema": "com.asharia.project",
@@ -48,11 +56,15 @@ VALID_PROJECT_DESCRIPTOR = """{
 """
 
 EXPECTED_PROJECT_BOOTSTRAP_SUMMARY = b"""{
+  "schema": "com.asharia.project-bootstrap-summary",
+  "schemaVersion": 1,
   "projectName": "Bootstrap Project",
   "projectId": "9f7a31a0-0b63-4d4c-9f18-bd9a0d2e9c21",
   "assetSourceRootCount": 2
 }
 """
+
+SECOND_PROJECT_ID = "6ad468bb-e099-46d4-a91b-911e86cf7188"
 
 RESTRICTED_SENTINEL_HEADER = """#pragma once
 
@@ -138,25 +150,6 @@ void asharia::sentinel::provideRestrictedSentinelFactories(
 """
 
 
-def run_host(
-    executable: Path,
-    arguments: tuple[str, ...],
-    build_root: Path,
-    environment: tuple[tuple[str, str], ...],
-) -> subprocess.CompletedProcess[bytes]:
-    return subprocess.run(
-        [str(executable), *arguments],
-        cwd=build_root,
-        env=dict(environment),
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        timeout=30,
-        check=False,
-        shell=False,
-    )
-
-
 @unittest.skipUnless(
     os.environ.get("ASHARIA_RUN_HOST_TEMPLATE_INTEGRATION_TESTS") == "1",
     "set ASHARIA_RUN_HOST_TEMPLATE_INTEGRATION_TESTS=1 to build the generated Host",
@@ -207,6 +200,98 @@ asharia_include_generated_host_template()
             newline="\n",
         )
 
+    @staticmethod
+    def write_json(path: Path, value: object) -> bytes:
+        content = (
+            json.dumps(value, ensure_ascii=False, indent=2) + "\n"
+        ).encode("utf-8")
+        path.write_bytes(content)
+        return content
+
+    def prepare_project_open(
+        self,
+        project_root: Path,
+        distribution_root: Path,
+    ) -> tuple[
+        bootstrap_session.ProjectOpenRequestV1,
+        effective_session.EffectiveSessionPlan,
+    ]:
+        profile = json.loads(
+            (
+                PACKAGE_FIXTURE_ROOT
+                / "valid-host-profile-asset-worker.json"
+            ).read_text(encoding="utf-8")
+        )
+        profile_snapshot = package_test_support.make_host_profile_snapshot(
+            profile,
+            path="profiles/asset-worker/asharia.host-profile.json",
+        )
+        distribution = package_test_support.make_engine_distribution(
+            host_profile_snapshots=(profile_snapshot,)
+        )
+        project = {
+            "schema": "com.asharia.project-packages",
+            "schemaVersion": 2,
+            "engine": package_test_support.engine_requirement(),
+            "directPackages": [],
+            "directFeatureSets": [],
+            "packageOptions": [],
+        }
+        resolved = package_resolver.resolve_package_graph(
+            project,
+            distribution,
+            (),
+            self.validators,
+        )
+        self.assertTrue(
+            resolved.succeeded,
+            "\n".join(value.render() for value in resolved.diagnostics),
+        )
+        assert resolved.lock is not None
+        self.write_json(
+            project_root / contracts.PROJECT_MANIFEST_NAME,
+            project,
+        )
+        self.write_json(
+            project_root / contracts.PACKAGE_LOCK_NAME,
+            resolved.lock,
+        )
+        distribution_bytes = (
+            json.dumps(distribution, ensure_ascii=False, indent=2) + "\n"
+        ).encode("utf-8")
+        verified_distribution = (
+            distribution_verifier.VerifiedInstalledDistribution(
+                engine_generation_id=distribution["engineGenerationId"],
+                generation_root=distribution_root,
+                manifest=distribution,
+                manifest_bytes=distribution_bytes,
+                manifest_integrity=contracts.compute_bytes_integrity(
+                    distribution_bytes
+                ),
+            )
+        )
+        planned = effective_session.plan_effective_session(
+            distribution,
+            project,
+            resolved.lock,
+            (),
+            profile_snapshot,
+            self.validators,
+        )
+        self.assertTrue(
+            planned.succeeded,
+            "\n".join(value.render() for value in planned.diagnostics),
+        )
+        assert planned.plan is not None
+        return (
+            bootstrap_session.ProjectOpenRequestV1(
+                project_root=project_root,
+                verified_distribution=verified_distribution,
+                host_profile_snapshot=profile_snapshot,
+            ),
+            planned.plan,
+        )
+
     def test_exact_host_build_and_project_bootstrap(self) -> None:
         cmake_program = shutil.which("cmake")
         ninja_program = shutil.which("ninja")
@@ -235,25 +320,41 @@ asharia_include_generated_host_template()
         )
         assert expected_compiler_id is not None
         assert expected_compiler_version is not None
-        composition = support.composition_generation(
-            self.validators,
-            compiler_version=expected_compiler_version,
-            compiler_id=expected_compiler_id,
-            provider_fixture=support.PROJECT_BOOTSTRAP_PROVIDER_FIXTURE,
-            tool_provider_fixture=support.RESTRICTED_SENTINEL_PROVIDER_FIXTURE,
-        )
-        generated_template = (
-            host_template.generate_windows_development_host_template(
-                composition.manifest,
-                "asharia-generated-host",
-                self.validators,
-            )
-        )
-        self.assertTrue(generated_template.succeeded)
-        assert generated_template.generation is not None
 
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
+            project_root = root / "project"
+            distribution_root = root / "distribution-generation"
+            project_root.mkdir()
+            distribution_root.mkdir()
+            (project_root / "asharia.project.json").write_text(
+                VALID_PROJECT_DESCRIPTOR,
+                encoding="utf-8",
+                newline="\n",
+            )
+            open_request, session_plan = self.prepare_project_open(
+                project_root,
+                distribution_root,
+            )
+            composition = support.composition_generation(
+                self.validators,
+                compiler_version=expected_compiler_version,
+                compiler_id=expected_compiler_id,
+                provider_fixture=support.PROJECT_BOOTSTRAP_PROVIDER_FIXTURE,
+                tool_provider_fixture=(
+                    support.RESTRICTED_SENTINEL_PROVIDER_FIXTURE
+                ),
+                session=session_plan,
+            )
+            generated_template = (
+                host_template.generate_windows_development_host_template(
+                    composition.manifest,
+                    "asharia-generated-host",
+                    self.validators,
+                )
+            )
+            self.assertTrue(generated_template.succeeded)
+            assert generated_template.generation is not None
             composition_publication = (
                 static_composition_root.publish_static_composition_root(
                     composition,
@@ -410,57 +511,110 @@ asharia_include_generated_host_template()
                 deep_verification.succeeded,
                 [item.render() for item in deep_verification.diagnostics],
             )
+            assert deep_verification.verified is not None
+            published_artifact = (
+                receipt.generation_path / receipt.receipt.artifact.path
+            )
+            self.assertTrue(published_artifact.is_file())
+            self.assertNotEqual(
+                built.target.artifact_path.resolve(),
+                published_artifact.resolve(),
+            )
 
-            project_root = root / "valid-project"
-            project_root.mkdir()
+            direct = host_process.run_bounded_host_process(
+                (
+                    str(published_artifact),
+                    "--asharia-project-root",
+                    str(project_root),
+                ),
+                dict(environment),
+                30.0,
+                64 * 1024,
+            )
+            self.assertEqual(0, direct.return_code)
+            self.assertEqual(EXPECTED_PROJECT_BOOTSTRAP_SUMMARY, direct.stdout)
+            self.assertEqual(b"", direct.stderr)
+
+            # The project-open path must consume the immutable publication,
+            # not fall back to the mutable build-tree target.
+            built.target.artifact_path.unlink()
+            context = bootstrap_host_session.BootstrapHostAdapterContextV1(
+                static_composition=composition,
+                verified_binding=deep_verification.verified,
+                environment=environment,
+            )
+            ready = bootstrap_host_session.open_bootstrap_session(
+                open_request,
+                context,
+                self.validators,
+            )
+            self.assertEqual(
+                bootstrap_session.BootstrapSessionState.READY,
+                ready.state,
+            )
+            self.assertEqual(session_plan.session_fingerprint, ready.desired_session_integrity)
+            self.assertEqual(session_plan.session_fingerprint, ready.current_session_integrity)
+            assert ready.project is not None
+            self.assertEqual(
+                "9f7a31a0-0b63-4d4c-9f18-bd9a0d2e9c21",
+                ready.project.project_id,
+            )
+
             (project_root / "asharia.project.json").write_text(
-                VALID_PROJECT_DESCRIPTOR,
+                VALID_PROJECT_DESCRIPTOR.replace(
+                    "9f7a31a0-0b63-4d4c-9f18-bd9a0d2e9c21",
+                    SECOND_PROJECT_ID,
+                ),
                 encoding="utf-8",
                 newline="\n",
             )
-            normal = run_host(
-                built.target.artifact_path,
-                ("--asharia-project-root", str(project_root)),
-                built.target.build_root,
-                environment,
+            same_native_graph = bootstrap_host_session.open_bootstrap_session(
+                open_request,
+                context,
+                self.validators,
             )
-            self.assertEqual(0, normal.returncode, normal.stderr.decode("utf-8"))
-            self.assertEqual(EXPECTED_PROJECT_BOOTSTRAP_SUMMARY, normal.stdout)
-            self.assertEqual(b"", normal.stderr)
+            self.assertEqual(
+                bootstrap_session.BootstrapSessionState.READY,
+                same_native_graph.state,
+            )
+            self.assertEqual(
+                session_plan.session_fingerprint,
+                same_native_graph.current_session_integrity,
+            )
+            assert same_native_graph.project is not None
+            self.assertEqual(SECOND_PROJECT_ID, same_native_graph.project.project_id)
 
-            invalid_project_root = root / "invalid-project"
-            invalid_project_root.mkdir()
-            (invalid_project_root / "asharia.project.json").write_text(
+            (project_root / "asharia.project.json").write_text(
                 "{",
                 encoding="utf-8",
                 newline="\n",
             )
-            invalid_project = run_host(
-                built.target.artifact_path,
-                ("--asharia-project-root", str(invalid_project_root)),
-                built.target.build_root,
-                environment,
+            invalid_project = bootstrap_host_session.open_bootstrap_session(
+                open_request,
+                context,
+                self.validators,
             )
-            self.assertEqual(65, invalid_project.returncode)
-            self.assertEqual(b"", invalid_project.stdout)
-            self.assertTrue(
-                invalid_project.stderr.startswith(
-                    b"project-bootstrap.project-read-failed: "
-                ),
-                invalid_project.stderr,
+            self.assertEqual(
+                bootstrap_session.BootstrapSessionState.SAFE_MODE,
+                invalid_project.state,
+            )
+            self.assertIn(
+                "bootstrap.host.project-rejected",
+                {value.code for value in invalid_project.diagnostics},
             )
 
-            invalid_verification = run_host(
-                built.target.artifact_path,
+            invalid_verification = host_process.run_bounded_host_process(
                 (
+                    str(published_artifact),
                     "--asharia-verify-static-registration",
                     "--asharia-project-root",
                     str(project_root),
                 ),
-                built.target.build_root,
-                environment,
+                dict(environment),
+                30.0,
+                64 * 1024,
             )
-            self.assertEqual(64, invalid_verification.returncode)
+            self.assertEqual(64, invalid_verification.return_code)
             self.assertEqual(b"", invalid_verification.stdout)
             self.assertEqual(
                 ["host-verification.invalid-arguments"],

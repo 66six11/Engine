@@ -3,17 +3,24 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import tempfile
 import unittest
 from dataclasses import replace
 from pathlib import Path
 
 from tools import check_package_contracts as contracts
+from tools import effective_session
 from tools import host_executable_template as host_template
 from tools import host_template_renderer
 from tools import host_template_publication
+from tools import package_resolver
 from tools import static_composition_root as composition
 from tools.tests import host_template_test_support as support
+from tools.tests import package_test_support
+
+
+FIXTURE_ROOT = Path(__file__).parent / "fixtures/package-contracts"
 
 
 class HostExecutableTemplateTests(unittest.TestCase):
@@ -55,6 +62,63 @@ class HostExecutableTemplateTests(unittest.TestCase):
                 self.validators,
             ),
         )
+
+    def test_composition_identity_can_follow_a_real_effective_session(self) -> None:
+        profile = json.loads(
+            (FIXTURE_ROOT / "valid-host-profile-minimal.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        snapshot = package_test_support.make_host_profile_snapshot(
+            profile,
+            path="profiles/minimal/asharia.host-profile.json",
+        )
+        distribution = package_test_support.make_engine_distribution(
+            host_profile_snapshots=[snapshot]
+        )
+        project = {
+            "schema": "com.asharia.project-packages",
+            "schemaVersion": 2,
+            "engine": package_test_support.engine_requirement(),
+            "directPackages": [],
+            "directFeatureSets": [],
+            "packageOptions": [],
+        }
+        resolved = package_resolver.resolve_package_graph(
+            project, distribution, (), self.validators
+        )
+        self.assertTrue(resolved.succeeded)
+        assert resolved.lock is not None
+        session = effective_session.plan_effective_session(
+            distribution,
+            project,
+            resolved.lock,
+            (),
+            snapshot,
+            self.validators,
+        )
+        self.assertTrue(session.succeeded)
+        assert session.plan is not None
+
+        generated = support.composition_generation(
+            self.validators, session=session.plan
+        )
+        manifest = generated.manifest
+
+        self.assertEqual(
+            session.plan.session_fingerprint.algorithm,
+            manifest.inputs.effective_session_integrity.algorithm,
+        )
+        self.assertEqual(
+            session.plan.session_fingerprint.digest,
+            manifest.inputs.effective_session_integrity.digest,
+        )
+        self.assertEqual(
+            session.plan.verified_graph.engine_generation_id,
+            manifest.engine_generation_id,
+        )
+        self.assertEqual(session.plan.host_kind, manifest.host_kind)
+        self.assertEqual(session.plan.target_platform, manifest.target_platform)
 
     def test_renderer_revision_three_keeps_exact_output_bytes(self) -> None:
         outputs = {

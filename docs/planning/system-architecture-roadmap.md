@@ -202,9 +202,11 @@ rollback 和 lifecycle；Memory、Storage、Settings、Tasks、Data、Observabil
    #295 的 provider/binding v4 与 payload accessor、#293/#296 的 ProcessScope V2 registry/lease/rollback 均已完成；#297 又把 active
    generation 硬切到 Template renderer 3 + Composition renderer 6 + provider v4 + Snapshot v2，以 generated sealed current-image descriptor
    驱动 Eligibility V2，并接通 normal Host → ProcessScope → `ProcessApplicationV1` → 固定 `project-bootstrap` → real
-   `asharia.project.json` → explicit stop。artifact hash/receipt 继续属于 build/publication/install/cache restore/repair evidence，normal startup
-   不自 hash executable 或依赖外部 launch receipt。当前仍无上游 catalog/index、lock update/apply、生产 manifest/lock/profile、repair
-   executor、其他 Host scope owners、完整 instance/jobs/subscriptions lease 和 Editor Package Manager 闭环；
+   `asharia.project.json` → explicit stop。#298 又用 canonical project root、fresh locked discovery、Effective Session 与 verified
+   published Host/C6 evidence 建立 headless Bootstrap project-open reducer/adapter；normal-open 只检查 artifact path/type/size，missing/stale/
+   invalid Host 可证明 `PendingBuild`，而不自 hash executable 或依赖外部 launch receipt。当前仍无上游 catalog/index、lock update/apply、
+   生产 manifest/lock/profile、repair executor、`PendingRestart` process tracker、其他 Host scope owners、完整 instance/jobs/subscriptions
+   lease 和 Editor Package Manager 闭环；
 9. scripting、input、tasks、physics、animation、audio 等已进入目标 first-party system catalog，但尚未形成可由同一 package activation 模型创建和停止的完整实现；
 10. `engine/platform` 仍是空 `INTERFACE` target，应用 lifecycle 与 immutable platform capability generation 没有 runtime owner；
 11. root ProcessScope 已具有 V2 typed registry、weak handles、contribution-only lease 与 publication/revoke rollback，并被首个 generated
@@ -362,15 +364,16 @@ flowchart LR
   generation/Blueprint digest，并把 Stage 2 authority 绑定到同一 table instance。#293/#296 ProcessScope V2 依 Blueprint order
   create/activate，在 accessors 成功后原子提交 per-factory contribution lease，并只在整个 start 成功后开放 typed registry。cleanup 顺序为
   reverse quiesce → `Revoking` → reverse lease revoke → reverse deactivate/destroy → `Revoked`；weak view/handle 不延长 generation
-  lifetime。#297 T3 normal Host 已借用/运行/release 固定 Project Bootstrap `ProcessApplicationV1` 并显式 stop。Module 默认通过独立
-  静态 CMake target 和薄 composition root 进入 v1 Host，activation 不承诺 DLL 或 hot unload。
-- native code package 的 add/remove/update 未来可以在 artifact/process evidence 存在时进入 `PendingBuild` / `PendingRestart`；
-  Effective Session v1 不猜测这两个状态，也不能伪装成安全热加载。
+  lifetime。#297 T3 normal Host 已借用/运行/release 固定 Project Bootstrap `ProcessApplicationV1` 并显式 stop；#298 已在启动前把 fresh
+  Effective Session 与 C6/verified published binding 对证，并以同一 canonical root 执行该 Host。Module 默认通过独立静态 CMake target
+  和薄 composition root 进入 v1 Host，activation 不承诺 DLL 或 hot unload。
+- native code package 的 add/remove/update 现在可因 fresh session 与 current published Host identity 不匹配而进入 `PendingBuild`；实际
+  build/publish controller 与可证明的 `PendingRestart` 仍属后续。Effective Session v1 自身不猜测这两个状态，也不能伪装成安全热加载。
 - 系统实例仍由对应 system owner 创建和销毁；Package Service 只提供 descriptor、logical factory reference 和有序 Blueprint。
 - Package Runtime、Host Runtime 执行骨架、固定 `packages/project-bootstrap`、最小 Editor Shell、Package Manager、diagnostics 与
   修复入口属于 Editor Image/Distribution，不能由项目 lock 或正在运行的 UI 卸载；Host Runtime 是 L1 而非 Kernel，
   Project Bootstrap reader/provider 已由独立 source boundary 拥有；引擎/编辑器 generation 更新与项目 package 选择是不同工作流。
-  固定 Bootstrap UI 未来可以先用 ImGui 快速实现、稳定后迁移到 Avalonia；该前端方向不改变 headless ownership，也不属于 #297。
+  固定 Bootstrap UI 未来可以先用 ImGui 快速实现、稳定后迁移到 Avalonia；该前端方向不改变 headless ownership，也不属于 #298。
 
 ### 6.2 核心 package 依赖方向
 
@@ -995,8 +998,10 @@ sequenceDiagram
   已有 v1 基线。#295 的 provider/binding v4 与 payload accessor、#293/#296 的 ProcessScope V2 registry/lease/revocation 已落地；
   #297 将 active generation 硬切到 T3/C6/provider-v4/Snapshot-v2，并用 generated sealed current-image descriptor 驱动 Eligibility V2，
   不再让 normal startup 消费 V1 四 handoff、artifact hash 或外部 launch receipt。generated Host 已借用/运行/release
-  `ProcessApplicationV1`，由固定 `packages/project-bootstrap` 读取真实 `asharia.project.json`，再显式 stop。production profiles、repair
-  executor/Editor Bootstrap state/UI adapter、其他 scope owners 与完整 instance/jobs/subscriptions lease 仍待后续 vertical features；
+  `ProcessApplicationV1`，由固定 `packages/project-bootstrap` 读取真实 `asharia.project.json`，再显式 stop。#298 已将同根
+  Project Manifest/Lock inspection、fresh Effective Session、published Host/C6 current evidence 与这条 run/stop 链归约为 headless
+  Bootstrap Session；production profiles、repair executor/Editor Bootstrap UI、`PendingRestart` tracker、其他 scope owners 与完整
+  instance/jobs/subscriptions lease 仍待后续 vertical features；
 - 检查全部 `PUBLIC` / `PRIVATE` / `INTERFACE` 依赖；
 - 使 optional target 的 package config 依赖保持 optional；
 - 增加禁止 include 其他 package `src/`、禁止 Vulkan 类型越层、禁止 RHI base 依赖 RG 的检查；
@@ -1012,17 +1017,20 @@ sequenceDiagram
 - `asharia.packages.json` 只接受完整 System/Feature/Integration/Content Package 或 Feature Set identity；直接写入 contract、backend、provider、editor 或 cook 内部 module 会被 schema/validator 拒绝；
 - package 缺少其 catalog type 声明适用的 runtime/current implementation/authoring/cook/diagnostics root module/content root 时不能进入 catalog；
 - 版本冲突、cycle、missing named dependency、platform mismatch 和 integrity mismatch 有确定性 diagnostics；
-- 添加 native code package 会明确进入 `PendingBuild` / `PendingRestart`；
+- 添加 native code package 会在 current Host identity 不匹配时明确进入 `PendingBuild`；只有 current-process generation tracker
+  落地后才允许产生 `PendingRestart`；
 - clangcl-debug 与 msvc-debug 全量构建通过。
 
 ### Phase 1.5：Host Runtime 与 Foundation Services
 
-**目标：** #297 已用固定 Project Bootstrap contribution 完成首个 generated normal Host vertical feature。下一步由可观察功能需求拉动
-platform capability、memory、IO、配置、任务、time/update、capability grant 与诊断，不继续预建通用 scope/registry 抽象。
+**目标：** #297 已用固定 Project Bootstrap contribution 完成首个 generated normal Host vertical feature，#298 已将其接入同根
+package/session inspection 与 headless Bootstrap 状态。下一步先补固定 Editor 控制面的 build/repair/restart 与最小 UI 消费，再由可观察
+功能需求拉动 platform capability、memory、IO、配置、任务、time/update、capability grant 与诊断，不继续预建通用 scope/registry 抽象。
 
 工作：
 
-- 保持 #297 的 T3/C6 normal Host、Eligibility V2、`ProcessApplicationV1`、真实 project descriptor 与 explicit stop 作为端到端回归；
+- 保持 #297 的 T3/C6 normal Host、Eligibility V2、`ProcessApplicationV1`、真实 project descriptor 与 explicit stop，以及 #298 的
+  canonical-root/published-binding Bootstrap state chain 作为端到端回归；
 - 保持五个 lifecycle callbacks/model V1，复用 #296 的 fixed registry、weak handle、contribution-only lease 与 revocation gate；只有真实功能
   需要时才增加 Project/Editor/ToolJob/GameSession/World/LocalUser scope、instance/jobs/subscriptions lease 或跨 scope stale-generation contract；
 - 建立 Platform application lifecycle facts、immutable `PlatformCapabilitiesSnapshot` 与 Host safe-point delivery，覆盖 focus/quit/suspend/resume/low-memory/device/display change，并保持 GPU capabilities 归 RHI、input device state 归 Input；

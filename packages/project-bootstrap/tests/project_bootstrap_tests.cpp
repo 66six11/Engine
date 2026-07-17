@@ -98,6 +98,8 @@ namespace {
 
         auto rendered = asharia::project_bootstrap::renderProjectBootstrapSummaryJsonV1(*summary);
         constexpr std::string_view kExpected = R"json({
+  "schema": "com.asharia.project-bootstrap-summary",
+  "schemaVersion": 1,
   "projectName": "Bootstrap Project",
   "projectId": "9f7a31a0-0b63-4d4c-9f18-bd9a0d2e9c21",
   "assetSourceRootCount": 2
