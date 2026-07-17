@@ -17,14 +17,14 @@ namespace asharia::host_runtime {
     struct CurrentProcessEpochAnchorV1;
     struct ProcessScopeBlueprintProjectionStateV1;
 
-    enum class AdmittedFactoryExecutionAccessErrorV1 : std::uint8_t {
+    enum class AdmittedFactoryExecutionAccessErrorV2 : std::uint8_t {
         MovedFrom,
         WrongControlThread,
         ProcessEpochStale,
         TableInvalid,
     };
 
-    struct AdmittedStaticFactoryExecutionViewV1 final {
+    struct AdmittedStaticFactoryExecutionViewV2 final {
         std::span<const StaticFactoryCallbacksV1> callbacks;
         std::span<const StaticContributionRuntimeBindingV1> contributionRuntimeBindings;
         const StaticFactoryRegistrationSnapshotV2* snapshot{};
@@ -35,16 +35,16 @@ namespace asharia::host_runtime {
         std::string_view blueprintIntegrity;
     };
 
-    class AdmittedStaticFactoryCallbackTableAccessV1 final {
+    class AdmittedStaticFactoryCallbackTableAccessV2 final {
     public:
         // The returned view is borrowed for immediate synchronous lifecycle use.
         // It must not outlive the admitted owner or be cached across thread/epoch changes.
-        [[nodiscard]] static std::expected<AdmittedStaticFactoryExecutionViewV1,
-                                           AdmittedFactoryExecutionAccessErrorV1>
-        executionView(const AdmittedStaticFactoryCallbackTableV1& admittedTable) noexcept;
+        [[nodiscard]] static std::expected<AdmittedStaticFactoryExecutionViewV2,
+                                           AdmittedFactoryExecutionAccessErrorV2>
+        executionView(const AdmittedStaticFactoryCallbackTableV2& admittedTable) noexcept;
 
         [[nodiscard]] static std::optional<std::span<const StaticFactoryCallbacksV1>>
-        callbacks(const AdmittedStaticFactoryCallbackTableV1& admittedTable) noexcept {
+        callbacks(const AdmittedStaticFactoryCallbackTableV2& admittedTable) noexcept {
             const auto view = executionView(admittedTable);
             if (!view) {
                 return std::nullopt;

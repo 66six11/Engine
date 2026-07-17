@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "packageKind": "source-boundary",
+  "sourceRole": "module-group",
+  "ownerDomain": "product",
+  "plannedOwnershipRoot": "com.asharia.system.project-product",
+  "selectable": false,
+  "catalogVisible": false,
+  "name": "com.asharia.project-bootstrap",
+  "version": "0.1.0",
+  "displayName": "Asharia Project Bootstrap",
+  "description": "Fixed Engine Distribution project reader and ProcessApplication provider; project package intent cannot select or replace this bootstrap boundary.",
+  "dependencies": [
+    "com.asharia.core",
+    "com.asharia.archive",
+    "com.asharia.project-core",
+    "com.asharia.host-runtime"
+  ],
+  "targets": [
+    "asharia-project-bootstrap-reader",
+    "asharia-project-bootstrap-provider"
+  ],
+  "testTargets": ["asharia-project-bootstrap-tests"],
+  "targetRoles": {
+    "asharia-project-bootstrap-reader": "bootstrap",
+    "asharia-project-bootstrap-provider": "bootstrap",
+    "asharia-project-bootstrap-tests": "test"
+  },
+  "targetDependencies": {
+    "asharia-project-bootstrap-reader": [
+      "asharia-core",
+      "asharia-archive",
+      "asharia-project-core-io"
+    ],
+    "asharia-project-bootstrap-provider": [
+      "asharia-host-runtime-contract",
+      "asharia-host-runtime-provider-bridge",
+      "asharia-project-bootstrap-reader"
+    ],
+    "asharia-project-bootstrap-tests": [
+      "asharia-host-runtime-contract",
+      "asharia-project-bootstrap-reader",
+      "asharia-project-core-io"
+    ]
+  }
+}

@@ -2,6 +2,12 @@
 
 ## 状态
 
+Superseded for normal Host activation by
+[Generated Current-Image Host 与 Project Bootstrap v1](adr-generated-current-image-project-bootstrap-host-v1.md)（#297）。
+本文件保留 #292 当时的设计与验证记录；`ReadySessionHandoffV1`、Blueprint/binding/launch 四 handoff、
+`VerifiedCurrentProcessLaunchHandoffV1`、artifact hash runtime 对证和 T2/C5 tuple 已被硬切删除，不再是当前实现。
+
+以下内容是 #292 的历史设计与验证记录：
 Accepted for #292；C++ contracts、validator、linear wrappers、focused tests 与最终门禁已由 #292 Done evidence 记录，生产启动接入尚未完成。
 
 后继 [ProcessScope Lifecycle v1](adr-process-scope-lifecycle-v1.md) 已在 `engine/host-runtime` 增加只消费 admitted owner 的

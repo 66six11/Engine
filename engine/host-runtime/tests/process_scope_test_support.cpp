@@ -1,5 +1,6 @@
 ﻿#include "process_scope_test_support.hpp"
 
+#include <memory>
 #include <string>
 #include <utility>
 
@@ -10,6 +11,7 @@ namespace asharia::host_runtime::tests {
     namespace {
 
         constexpr std::string_view kProviderApi{"asharia-static-factory-provider-v4"};
+        constexpr std::string_view kLifecycleModel{"create-activate-quiesce-deactivate-destroy-v1"};
 
         [[nodiscard]] std::string digest(char character) {
             // NOLINTNEXTLINE(modernize-return-braced-init-list)
@@ -20,7 +22,7 @@ namespace asharia::host_runtime::tests {
             return "sha256-" + digest(character);
         }
 
-        [[nodiscard]] ExactHostIdentityStateV1 hostIdentity() {
+        [[nodiscard]] ExactHostIdentityStateV2 hostIdentity() {
             return {
                 .engineGenerationId = std::string(kSyntheticEngineGenerationId),
                 .hostKind = "runtime",
@@ -46,7 +48,7 @@ namespace asharia::host_runtime::tests {
                 .parentScope = std::nullopt,
                 .engineGenerationId = std::string(kSyntheticEngineGenerationId),
                 .blueprintIntegrity = std::string(kSyntheticBlueprintSha256),
-                .lifecycleModel = "create-activate-quiesce-deactivate-destroy-v1",
+                .lifecycleModel = std::string(kLifecycleModel),
                 .factories =
                     {
                         {
@@ -60,99 +62,6 @@ namespace asharia::host_runtime::tests {
                         {
                             .reference = leaf,
                             .requirements = {root, middle},
-                        },
-                    },
-            };
-        }
-
-        [[nodiscard]] StaticFactoryRegistrationSnapshotV2 expectedSnapshot() {
-            return {
-                .generationId = std::string(kSyntheticCompositionGenerationId),
-                .hostActivationBlueprintSha256 = std::string(kSyntheticBlueprintSha256),
-                .registrations =
-                    {
-                        {
-                            .packageId = std::string(kSyntheticPackageId),
-                            .packageVersion = std::string(kSyntheticPackageVersion),
-                            .moduleId = std::string(kSyntheticModuleId),
-                            .factoryId = std::string(kSyntheticMiddleFactoryId),
-                            .providerEntryPoint = std::string(kSyntheticProviderEntryPoint),
-                            .contributions =
-                                {
-                                    {
-                                        .contributionId =
-                                            std::string(kSyntheticMiddleExtensionAContributionId),
-                                        .contributionKind =
-                                            std::string(SyntheticExtensionContractV1::kind),
-                                        .cardinality = StaticContributionCardinalityV1::Multiple,
-                                    },
-                                    {
-                                        .contributionId =
-                                            std::string(kSyntheticMiddleExtensionBContributionId),
-                                        .contributionKind =
-                                            std::string(SyntheticExtensionContractV1::kind),
-                                        .cardinality = StaticContributionCardinalityV1::Multiple,
-                                    },
-                                },
-                        },
-                        {
-                            .packageId = std::string(kSyntheticPackageId),
-                            .packageVersion = std::string(kSyntheticPackageVersion),
-                            .moduleId = std::string(kSyntheticModuleId),
-                            .factoryId = std::string(kSyntheticProjectOnlyFactoryId),
-                            .providerEntryPoint = std::string(kSyntheticProviderEntryPoint),
-                            .contributions =
-                                {
-                                    {
-                                        .contributionId =
-                                            std::string(kSyntheticProjectOnlyPrimaryContributionId),
-                                        .contributionKind =
-                                            std::string(SyntheticPrimaryServiceContractV1::kind),
-                                        .cardinality = StaticContributionCardinalityV1::Single,
-                                    },
-                                },
-                        },
-                        {
-                            .packageId = std::string(kSyntheticPackageId),
-                            .packageVersion = std::string(kSyntheticPackageVersion),
-                            .moduleId = std::string(kSyntheticModuleId),
-                            .factoryId = std::string(kSyntheticEmptyFactoryId),
-                            .providerEntryPoint = std::string(kSyntheticProviderEntryPoint),
-                            .contributions = {},
-                        },
-                        {
-                            .packageId = std::string(kSyntheticPackageId),
-                            .packageVersion = std::string(kSyntheticPackageVersion),
-                            .moduleId = std::string(kSyntheticModuleId),
-                            .factoryId = std::string(kSyntheticLeafFactoryId),
-                            .providerEntryPoint = std::string(kSyntheticProviderEntryPoint),
-                            .contributions =
-                                {
-                                    {
-                                        .contributionId =
-                                            std::string(kSyntheticLeafExtensionContributionId),
-                                        .contributionKind =
-                                            std::string(SyntheticExtensionContractV1::kind),
-                                        .cardinality = StaticContributionCardinalityV1::Multiple,
-                                    },
-                                },
-                        },
-                        {
-                            .packageId = std::string(kSyntheticPackageId),
-                            .packageVersion = std::string(kSyntheticPackageVersion),
-                            .moduleId = std::string(kSyntheticModuleId),
-                            .factoryId = std::string(kSyntheticRootFactoryId),
-                            .providerEntryPoint = std::string(kSyntheticProviderEntryPoint),
-                            .contributions =
-                                {
-                                    {
-                                        .contributionId =
-                                            std::string(kSyntheticRootPrimaryContributionId),
-                                        .contributionKind =
-                                            std::string(SyntheticPrimaryServiceContractV1::kind),
-                                        .cardinality = StaticContributionCardinalityV1::Single,
-                                    },
-                                },
                         },
                     },
             };
@@ -220,83 +129,60 @@ namespace asharia::host_runtime::tests {
             }
         }
 
+        [[nodiscard]] ActivationEligibilityErrorV2 processEpochClaimError() noexcept {
+            return {
+                .stage = ActivationEligibilityStageV2::PreRegistration,
+                .code = ActivationEligibilityErrorCodeV2::ProcessEpochConsumed,
+                .field = ActivationEligibilityFieldV2::CurrentProcess,
+                .registrationCode = std::nullopt,
+            };
+        }
+
     } // namespace
 
-    // All handoffs are made through the existing PRIVATE test issuer. Production
-    // code still has no public constructor for any admission input.
-    // NOLINTBEGIN(clang-analyzer-cplusplus.NewDeleteLeaks)
-    ActivationEligibilityResultV1<AdmittedStaticFactoryCallbackTableV1>
+    ActivationEligibilityResultV2<AdmittedStaticFactoryCallbackTableV2>
     makeAdmittedSyntheticProcessScope(ProcessPlanMutationV1 mutation) {
-        ReadySessionHandoffStateV1 ready{
-            .host = hostIdentity(),
-            .sessionFingerprint = digest('1'),
-        };
         ProcessScopeBlueprintProjectionStateV1 projection = processProjection();
         mutateProjection(projection, mutation);
-        VerifiedHostActivationBlueprintHandoffStateV1 blueprint{
-            .host = hostIdentity(),
-            .effectiveSessionIntegrity = digest('1'),
-            .blueprintIntegrity = digest('b'),
-            .processScope = std::move(projection),
-        };
-        DeepVerifiedHostBindingHandoffStateV1 binding{
-            .host = hostIdentity(),
-            .bindingGenerationId = generationId('d'),
-            .staticComposition =
-                {
-                    .generationId = std::string(kSyntheticCompositionGenerationId),
-                    .manifestSha256 = digest('3'),
-                },
-            .hostTemplate =
-                {
-                    .generationId = generationId('e'),
-                    .manifestSha256 = digest('4'),
-                },
-            .generationTuple =
-                {
-                    .templateRendererRevision = 2,
-                    .compositionRendererRevision = 5,
-                    .providerApi = std::string(kProviderApi),
-                    .registrationSnapshotSchemaVersion = 2,
-                },
-            .blueprintIntegrity = digest('b'),
-            .artifact =
-                {
-                    .size = 4096,
-                    .sha256 = digest('5'),
-                },
-            .expectedSnapshot = expectedSnapshot(),
-        };
-        VerifiedCurrentProcessLaunchHandoffStateV1 launch{
-            .host = hostIdentity(),
-            .sessionFingerprint = digest('1'),
-            .bindingGenerationId = generationId('d'),
-            .staticComposition = binding.staticComposition,
-            .hostTemplate = binding.hostTemplate,
-            .generationTuple = binding.generationTuple,
-            .blueprintIntegrity = digest('b'),
-            .artifact = binding.artifact,
-            .processEpoch = createAndBindCurrentProcessEpoch(),
-            .controlThreadEpoch = createAndBindCurrentControlThreadEpoch(),
-            .registrationCapacity = &syntheticRegistrationCapacity,
-            .recordProviders = &recordSyntheticFactoryProviders,
-        };
 
-        auto admission = admitPreRegistration(
-            ActivationEligibilityStateAccessV1::makeReadySession(std::move(ready)),
-            ActivationEligibilityStateAccessV1::makeBlueprint(std::move(blueprint)),
-            ActivationEligibilityStateAccessV1::makeBinding(std::move(binding)),
-            ActivationEligibilityStateAccessV1::makeLaunchHandoff(std::move(launch)));
-        if (!admission) {
-            return std::unexpected(admission.error());
+        const auto processEpoch = createAndBindCurrentProcessEpoch();
+        const auto controlThreadEpoch = createAndBindCurrentControlThreadEpoch();
+        if (!tryClaimCurrentProcessEpoch(processEpoch)) {
+            return std::unexpected(processEpochClaimError());
         }
-        auto pending = recordAdmittedStaticFactoryProviders(std::move(*admission));
+
+        // Tests-only defense-in-depth fixture: intentionally bypass Stage1 so
+        // ProcessScope can receive invalid projections and exercise its own
+        // preflight. Ordinary tests and generated providers must never use it.
+        auto lineage = std::make_unique<ActivationEligibilityLineageStateV2>(
+            ActivationEligibilityLineageStateV2{
+                .host = hostIdentity(),
+                .effectiveSessionIntegrity = digest('1'),
+                .staticCompositionGenerationId = std::string(kSyntheticCompositionGenerationId),
+                .blueprintIntegrity = std::string(kSyntheticBlueprintSha256),
+                .generationTuple =
+                    {
+                        .templateRendererRevision = 3,
+                        .compositionRendererRevision = 6,
+                        .providerApi = std::string(kProviderApi),
+                        .registrationSnapshotSchemaVersion = 2,
+                    },
+                .lifecycleModel = std::string(kLifecycleModel),
+                .processScope = std::move(projection),
+                .processEpoch = processEpoch,
+                .controlThreadEpoch = controlThreadEpoch,
+                .registrationCapacity = &syntheticRegistrationCapacity,
+                .recordProviders = &recordSyntheticFactoryProviders,
+            });
+
+        auto admission =
+            ActivationEligibilityStateAccessV2::makePreRegistrationAdmission(std::move(lineage));
+        auto pending = recordAdmittedStaticFactoryProviders(std::move(admission));
         if (!pending) {
             return std::unexpected(pending.error());
         }
         return admitStaticFactoryActivation(std::move(*pending));
     }
-    // NOLINTEND(clang-analyzer-cplusplus.NewDeleteLeaks)
 
     void rebindSyntheticCurrentProcessEpoch() {
         [[maybe_unused]] const auto currentEpoch = createAndBindCurrentProcessEpoch();

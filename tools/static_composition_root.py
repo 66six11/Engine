@@ -25,12 +25,15 @@ from tools import static_factory_provider_bindings as provider_bindings
 STATIC_COMPOSITION_ROOT_NAME = "asharia.static-composition-root.json"
 STATIC_COMPOSITION_ROOT_SCHEMA = "com.asharia.static-composition-root"
 STATIC_COMPOSITION_ROOT_SCHEMA_VERSION = 1
-STATIC_COMPOSITION_RENDERER_REVISION = 5
+STATIC_COMPOSITION_RENDERER_REVISION = 6
+STATIC_COMPOSITION_TEMPLATE_RENDERER_REVISION = 3
+STATIC_COMPOSITION_REGISTRATION_SNAPSHOT_SCHEMA_VERSION = 2
 STATIC_COMPOSITION_PROVIDER_API = "asharia-static-factory-provider-v4"
 STATIC_COMPOSITION_HEADER_PATH = (
     "include/asharia/generated/static_composition_root.hpp"
 )
 STATIC_COMPOSITION_SOURCE_PATH = "src/static_composition_root.cpp"
+STATIC_COMPOSITION_ACTIVATION_SOURCE_PATH = "src/current_image_activation.cpp"
 STATIC_COMPOSITION_CMAKE_PATH = "asharia-static-composition.cmake"
 _MIN_DIAGNOSTIC_FACTORY_ID_BYTES = 256
 _MIN_DIAGNOSTIC_CONTRIBUTION_ID_BYTES = 256
@@ -52,6 +55,11 @@ _FILE_DESCRIPTORS = (
         "registration-source",
         "text/x-c++src",
     ),
+    (
+        STATIC_COMPOSITION_ACTIVATION_SOURCE_PATH,
+        "current-image-activation-source",
+        "text/x-c++src",
+    ),
 )
 
 
@@ -67,9 +75,36 @@ class IntegrityRecord:
 class StaticCompositionInputs:
     """Fingerprints of every authoritative generator input."""
 
+    effective_session_integrity: IntegrityRecord
     source_build_plan_integrity: IntegrityRecord
     host_activation_blueprint_integrity: IntegrityRecord
     static_factory_provider_binding_plan_integrity: IntegrityRecord
+
+
+@dataclass(frozen=True, order=True)
+class StaticCompositionExactFactoryReference:
+    """Exact factory identity retained for current-image activation."""
+
+    package_id: str
+    package_version: str
+    module_id: str
+    factory_id: str
+
+
+@dataclass(frozen=True)
+class StaticCompositionProcessFactory:
+    """One ProcessScope factory and its dependency-first requirements."""
+
+    reference: StaticCompositionExactFactoryReference
+    requirements: tuple[StaticCompositionExactFactoryReference, ...]
+
+
+@dataclass(frozen=True)
+class StaticCompositionProcessScope:
+    """Exact ProcessScope projection sealed into the current image."""
+
+    lifecycle_model: str
+    factories: tuple[StaticCompositionProcessFactory, ...]
 
 
 @dataclass(frozen=True, order=True)
@@ -91,6 +126,7 @@ class StaticCompositionRootManifest:
     renderer_revision: int
     provider_api: str
     inputs: StaticCompositionInputs
+    process_scope: StaticCompositionProcessScope
     engine_generation_id: str
     host_kind: str
     target_platform: str
@@ -212,6 +248,62 @@ def _integrity_data(value: IntegrityRecord) -> dict[str, str]:
     return {"algorithm": value.algorithm, "digest": value.digest}
 
 
+def _factory_reference_data(
+    value: StaticCompositionExactFactoryReference,
+) -> dict[str, str]:
+    return {
+        "packageId": value.package_id,
+        "packageVersion": value.package_version,
+        "moduleId": value.module_id,
+        "factoryId": value.factory_id,
+    }
+
+
+def _factory_reference_from_data(
+    value: dict[str, str],
+) -> StaticCompositionExactFactoryReference:
+    return StaticCompositionExactFactoryReference(
+        package_id=value["packageId"],
+        package_version=value["packageVersion"],
+        module_id=value["moduleId"],
+        factory_id=value["factoryId"],
+    )
+
+
+def _process_scope_data(value: StaticCompositionProcessScope) -> dict[str, Any]:
+    return {
+        "scope": "process",
+        "parentScope": None,
+        "lifecycleModel": value.lifecycle_model,
+        "factories": [
+            {
+                "reference": _factory_reference_data(factory.reference),
+                "requires": [
+                    _factory_reference_data(requirement)
+                    for requirement in factory.requirements
+                ],
+            }
+            for factory in value.factories
+        ],
+    }
+
+
+def _process_scope_from_data(value: dict[str, Any]) -> StaticCompositionProcessScope:
+    return StaticCompositionProcessScope(
+        lifecycle_model=value["lifecycleModel"],
+        factories=tuple(
+            StaticCompositionProcessFactory(
+                reference=_factory_reference_from_data(factory["reference"]),
+                requirements=tuple(
+                    _factory_reference_from_data(requirement)
+                    for requirement in factory["requires"]
+                ),
+            )
+            for factory in value["factories"]
+        ),
+    )
+
+
 def _canonical_integrity(value: Any) -> IntegrityRecord:
     data = json.dumps(
         value,
@@ -284,6 +376,9 @@ def _generation_descriptor_data(
         "schemaVersion": STATIC_COMPOSITION_ROOT_SCHEMA_VERSION,
         "rendererRevision": manifest.renderer_revision,
         "inputs": {
+            "effectiveSessionIntegrity": _integrity_data(
+                manifest.inputs.effective_session_integrity
+            ),
             "sourceBuildPlanIntegrity": _integrity_data(
                 manifest.inputs.source_build_plan_integrity
             ),
@@ -299,6 +394,7 @@ def _generation_descriptor_data(
             "hostKind": manifest.host_kind,
             "targetPlatform": manifest.target_platform,
         },
+        "processScope": _process_scope_data(manifest.process_scope),
         "configuration": {
             "name": manifest.configuration,
             "generator": {
@@ -415,6 +511,7 @@ def _manifest_from_data(data: dict[str, Any]) -> StaticCompositionRootManifest:
         renderer_revision=data["rendererRevision"],
         provider_api=data["providerApi"],
         inputs=StaticCompositionInputs(
+            _integrity_record(data["inputs"]["effectiveSessionIntegrity"]),
             _integrity_record(data["inputs"]["sourceBuildPlanIntegrity"]),
             _integrity_record(
                 data["inputs"]["hostActivationBlueprintIntegrity"]
@@ -423,6 +520,7 @@ def _manifest_from_data(data: dict[str, Any]) -> StaticCompositionRootManifest:
                 data["inputs"]["staticFactoryProviderBindingPlanIntegrity"]
             ),
         ),
+        process_scope=_process_scope_from_data(data["processScope"]),
         engine_generation_id=data["host"]["engineGenerationId"],
         host_kind=data["host"]["hostKind"],
         target_platform=data["host"]["targetPlatform"],
@@ -534,6 +632,76 @@ def validate_static_composition_root_manifest_data(
                 else:
                     contribution_owners[owner_key] = owner
 
+    process_references = tuple(
+        factory.reference for factory in parsed.process_scope.factories
+    )
+    process_locations: dict[StaticCompositionExactFactoryReference, int] = {}
+    provider_references = {
+        StaticCompositionExactFactoryReference(
+            provider.package_id,
+            provider.package_version,
+            provider.module_id,
+            factory.factory_id,
+        )
+        for provider in parsed.providers
+        for factory in provider.factories
+    }
+    for factory_index, factory in enumerate(parsed.process_scope.factories):
+        reference = factory.reference
+        if reference in process_locations:
+            diagnostics.append(
+                _diagnostic(
+                    "static-composition.process-factory-duplicate",
+                    f"/processScope/factories/{factory_index}/reference",
+                    "ProcessScope factory references must be unique",
+                )
+            )
+        else:
+            process_locations[reference] = factory_index
+        if reference not in provider_references:
+            diagnostics.append(
+                _diagnostic(
+                    "static-composition.process-factory-unbound",
+                    f"/processScope/factories/{factory_index}/reference",
+                    "ProcessScope factory has no generated static provider binding",
+                )
+            )
+        if len(factory.requirements) != len(set(factory.requirements)):
+            diagnostics.append(
+                _diagnostic(
+                    "static-composition.process-requirement-duplicate",
+                    f"/processScope/factories/{factory_index}/requires",
+                    "ProcessScope factory requirements must be unique",
+                )
+            )
+
+    all_process_locations = {
+        reference: index for index, reference in enumerate(process_references)
+    }
+    for factory_index, factory in enumerate(parsed.process_scope.factories):
+        for requirement_index, requirement in enumerate(factory.requirements):
+            target_index = all_process_locations.get(requirement)
+            pointer = (
+                f"/processScope/factories/{factory_index}/requires/"
+                f"{requirement_index}"
+            )
+            if target_index is None:
+                diagnostics.append(
+                    _diagnostic(
+                        "static-composition.process-requirement-missing",
+                        pointer,
+                        "ProcessScope requirement does not name a selected factory",
+                    )
+                )
+            elif target_index >= factory_index:
+                diagnostics.append(
+                    _diagnostic(
+                        "static-composition.process-requirement-order",
+                        pointer,
+                        "ProcessScope requirement must precede its dependent factory",
+                    )
+                )
+
     expected_file_shapes = tuple(_FILE_DESCRIPTORS)
     actual_file_shapes = tuple(
         (value.path, value.role, value.media_type) for value in parsed.files
@@ -569,6 +737,7 @@ def validate_static_composition_root_manifest_data(
 def _render_recording_header() -> bytes:
     text = """#pragma once
 
+#include \"asharia/host_runtime/activation_eligibility.hpp\"
 #include \"asharia/host_runtime/static_factory_registration.hpp\"
 
 namespace asharia::generated {
@@ -578,6 +747,10 @@ staticFactoryRegistrationCapacity() noexcept;
 
 void recordStaticFactoryProviders(
     asharia::host_runtime::StaticFactoryRegistrationRecorder& recorder) noexcept;
+
+[[nodiscard]] asharia::host_runtime::ActivationEligibilityResultV2<
+    asharia::host_runtime::PreRegistrationAdmissionV2>
+admitCurrentImagePreRegistration() noexcept;
 
 } // namespace asharia::generated
 """
@@ -777,6 +950,130 @@ def _render_recording_source(
     return _UTF8_BOM + "\n".join(lines).encode("utf-8")
 
 
+def _render_current_image_activation_source(
+    manifest: StaticCompositionRootManifest,
+) -> bytes:
+    lines = [
+        "#include <array>",
+        "#include <expected>",
+        "#include <span>",
+        "#include <utility>",
+        "",
+        '#include "asharia/generated/static_composition_root.hpp"',
+        (
+            '#include "asharia/host_runtime/'
+            'current_image_activation_descriptor_provider_access.hpp"'
+        ),
+        "",
+        "namespace {",
+        "",
+    ]
+    for factory_index, factory in enumerate(manifest.process_scope.factories):
+        lines.extend(
+            (
+                "constexpr asharia::host_runtime::CurrentImageExactFactoryReferenceProviderV2",
+                f"    kProcessFactoryReference{factory_index}{{",
+                f'        .packageId = "{factory.reference.package_id}",',
+                f'        .packageVersion = "{factory.reference.package_version}",',
+                f'        .moduleId = "{factory.reference.module_id}",',
+                f'        .factoryId = "{factory.reference.factory_id}",',
+                "    };",
+                "",
+                "constexpr std::array<",
+                "    asharia::host_runtime::CurrentImageExactFactoryReferenceProviderV2,",
+                f"    {len(factory.requirements)}> kProcessFactoryRequirements{factory_index}{{{{",
+            )
+        )
+        for requirement in factory.requirements:
+            lines.extend(
+                (
+                    "    {",
+                    f'        .packageId = "{requirement.package_id}",',
+                    f'        .packageVersion = "{requirement.package_version}",',
+                    f'        .moduleId = "{requirement.module_id}",',
+                    f'        .factoryId = "{requirement.factory_id}",',
+                    "    },",
+                )
+            )
+        lines.extend(("}};", ""))
+
+    lines.extend(
+        (
+            "constexpr std::array<",
+            "    asharia::host_runtime::CurrentImageProcessFactoryProviderV2,",
+            f"    {len(manifest.process_scope.factories)}> kProcessFactories{{{{",
+        )
+    )
+    for factory_index, _factory in enumerate(manifest.process_scope.factories):
+        lines.extend(
+            (
+                "    {",
+                f"        .reference = kProcessFactoryReference{factory_index},",
+                "        .requirements = std::span<const",
+                "            asharia::host_runtime::CurrentImageExactFactoryReferenceProviderV2>{",
+                f"                kProcessFactoryRequirements{factory_index}",
+                "            },",
+                "    },",
+            )
+        )
+    lines.extend(
+        (
+            "}};",
+            "",
+            "constexpr asharia::host_runtime::CurrentImageActivationDescriptorProviderV2",
+            "    kStaticProvider{",
+            f'        .engineGenerationId = "{manifest.engine_generation_id}",',
+            f'        .hostKind = "{manifest.host_kind}",',
+            f'        .targetPlatform = "{manifest.target_platform}",',
+            "        .effectiveSessionIntegrity =",
+            f'            "{manifest.inputs.effective_session_integrity.digest}",',
+            "        .staticCompositionGenerationId =",
+            f'            "{manifest.generation_id}",',
+            "        .hostActivationBlueprintSha256 =",
+            f'            "{manifest.inputs.host_activation_blueprint_integrity.digest}",',
+            (
+                "        .templateRendererRevision = "
+                f"{STATIC_COMPOSITION_TEMPLATE_RENDERER_REVISION}U,"
+            ),
+            (
+                "        .compositionRendererRevision = "
+                f"{STATIC_COMPOSITION_RENDERER_REVISION}U,"
+            ),
+            f'        .providerApi = "{manifest.provider_api}",',
+            (
+                "        .registrationSnapshotSchemaVersion = "
+                f"{STATIC_COMPOSITION_REGISTRATION_SNAPSHOT_SCHEMA_VERSION}U,"
+            ),
+            f'        .lifecycleModel = "{manifest.process_scope.lifecycle_model}",',
+            "        .processFactories = std::span<const",
+            "            asharia::host_runtime::CurrentImageProcessFactoryProviderV2>{",
+            "                kProcessFactories",
+            "            },",
+            "        .registrationCapacity =",
+            "            &asharia::generated::staticFactoryRegistrationCapacity,",
+            "        .recordProviders =",
+            "            &asharia::generated::recordStaticFactoryProviders,",
+            "    };",
+            "",
+            "} // namespace",
+            "",
+            "asharia::host_runtime::ActivationEligibilityResultV2<",
+            "    asharia::host_runtime::PreRegistrationAdmissionV2>",
+            "asharia::generated::admitCurrentImagePreRegistration() noexcept {",
+            "  auto descriptor = asharia::host_runtime::",
+            "      CurrentImageActivationDescriptorProviderAccessV2::seal<kStaticProvider>();",
+            "  if (!descriptor) {",
+            "    return std::unexpected(descriptor.error());",
+            "  }",
+            "  return asharia::host_runtime::admitCurrentImagePreRegistration(",
+            "      std::move(*descriptor));",
+            "}",
+            "",
+        )
+    )
+    return _UTF8_BOM + "\n".join(lines).encode("utf-8")
+
+
 def _render_cmake_attachment(
     generation_id: str,
     providers: tuple[provider_bindings.StaticFactoryProvider, ...],
@@ -802,8 +1099,17 @@ def _render_cmake_attachment(
         "  if(_asharia_already_attached)",
         '    message(FATAL_ERROR "Static composition is already attached to \'${target_name}\'")',
         "  endif()",
-        "  if(NOT TARGET asharia::host_runtime_registration)",
-        '    message(FATAL_ERROR "Required target asharia::host_runtime_registration does not exist")',
+        "  if(NOT TARGET asharia::host_runtime_current_image_provider_bridge)",
+        (
+            '    message(FATAL_ERROR "Required target '
+            'asharia::host_runtime_current_image_provider_bridge does not exist")'
+        ),
+        "  endif()",
+        "  if(NOT TARGET asharia::host_runtime_process_scope)",
+        (
+            '    message(FATAL_ERROR "Required target '
+            'asharia::host_runtime_process_scope does not exist")'
+        ),
         "  endif()",
     ]
     for target in targets:
@@ -821,12 +1127,30 @@ def _render_cmake_attachment(
     lines.extend(
         (
             '  get_filename_component(_asharia_composition_root "${CMAKE_CURRENT_FUNCTION_LIST_DIR}" ABSOLUTE)',
+            '  set(_asharia_composition_object_target "${target_name}-asharia-static-composition")',
+            '  if(TARGET "${_asharia_composition_object_target}")',
+            '    message(FATAL_ERROR "Static composition OBJECT target already exists")',
+            "  endif()",
+            '  add_library("${_asharia_composition_object_target}" OBJECT',
+            '      "${_asharia_composition_root}/src/static_composition_root.cpp"',
+            '      "${_asharia_composition_root}/src/current_image_activation.cpp")',
+            '  target_include_directories("${_asharia_composition_object_target}" PRIVATE',
+            '      "${_asharia_composition_root}/include")',
+            '  target_link_libraries("${_asharia_composition_object_target}" PRIVATE',
+            "      asharia::host_runtime_current_image_provider_bridge",
+        )
+    )
+    lines.extend(f"      {value}" for value in targets)
+    lines.extend(
+        (
+            "  )",
+            '  asharia_configure_target("${_asharia_composition_object_target}")',
             '  target_sources("${target_name}" PRIVATE',
-            '      "${_asharia_composition_root}/src/static_composition_root.cpp")',
+            '      $<TARGET_OBJECTS:${_asharia_composition_object_target}>)',
             '  target_include_directories("${target_name}" PRIVATE',
             '      "${_asharia_composition_root}/include")',
             '  target_link_libraries("${target_name}" PRIVATE',
-            "      asharia::host_runtime_registration",
+            "      asharia::host_runtime_process_scope",
         )
     )
     lines.extend(f"      {value}" for value in targets)
@@ -862,6 +1186,7 @@ def _render_files_for_manifest(
         manifest.inputs.host_activation_blueprint_integrity.digest,
         manifest.providers,
     )
+    activation_source = _render_current_image_activation_source(manifest)
 
     return (
         GeneratedStaticCompositionFile(
@@ -882,11 +1207,48 @@ def _render_files_for_manifest(
             "text/x-c++src",
             source,
         ),
+        GeneratedStaticCompositionFile(
+            STATIC_COMPOSITION_ACTIVATION_SOURCE_PATH,
+            "current-image-activation-source",
+            "text/x-c++src",
+            activation_source,
+        ),
     )
 
 
 def _same_integrity(left: Any, right: Any) -> bool:
     return left.algorithm == right.algorithm and left.digest == right.digest
+
+
+def _process_scope_projection(
+    blueprint: activation.HostActivationBlueprint,
+) -> StaticCompositionProcessScope:
+    process_template = next(
+        value for value in blueprint.scope_templates if value.scope == "process"
+    )
+
+    def reference(
+        value: activation.ExactFactoryReference,
+    ) -> StaticCompositionExactFactoryReference:
+        return StaticCompositionExactFactoryReference(
+            package_id=value.package_id,
+            package_version=value.package_version,
+            module_id=value.module_id,
+            factory_id=value.factory_id,
+        )
+
+    return StaticCompositionProcessScope(
+        lifecycle_model=blueprint.lifecycle_model,
+        factories=tuple(
+            StaticCompositionProcessFactory(
+                reference=reference(factory.reference),
+                requirements=tuple(
+                    reference(requirement) for requirement in factory.requirements
+                ),
+            )
+            for factory in process_template.factories
+        ),
+    )
 
 
 def generate_static_composition_root(
@@ -1085,6 +1447,10 @@ def generate_static_composition_root(
 
     providers = tuple(sorted(binding_plan.providers, key=_provider_sort_key))
     inputs = StaticCompositionInputs(
+        effective_session_integrity=IntegrityRecord(
+            blueprint.inputs.effective_session_integrity.algorithm,
+            blueprint.inputs.effective_session_integrity.digest,
+        ),
         source_build_plan_integrity=IntegrityRecord(
             build_plan.integrity.algorithm, build_plan.integrity.digest
         ),
@@ -1100,6 +1466,7 @@ def generate_static_composition_root(
         renderer_revision=STATIC_COMPOSITION_RENDERER_REVISION,
         provider_api=STATIC_COMPOSITION_PROVIDER_API,
         inputs=inputs,
+        process_scope=_process_scope_projection(blueprint),
         engine_generation_id=blueprint.engine_generation_id,
         host_kind=blueprint.host_kind,
         target_platform=blueprint.target_platform,

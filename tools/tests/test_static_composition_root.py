@@ -233,6 +233,29 @@ class StaticCompositionRootTests(unittest.TestCase):
                 ][0]
             ),
         )
+        self.assertEqual(
+            _digest("6"),
+            manifest_data["inputs"]["effectiveSessionIntegrity"]["digest"],
+        )
+        self.assertEqual(
+            {
+                "scope": "process",
+                "parentScope": None,
+                "lifecycleModel": activation.LIFECYCLE_MODEL,
+                "factories": [
+                    {
+                        "reference": {
+                            "packageId": "com.asharia.synthetic",
+                            "packageVersion": "1.0.0",
+                            "moduleId": "implementation",
+                            "factoryId": "runtime-service",
+                        },
+                        "requires": [],
+                    }
+                ],
+            },
+            manifest_data["processScope"],
+        )
         revised_manifest = replace(
             first.manifest,
             renderer_revision=first.manifest.renderer_revision + 1,
@@ -250,16 +273,20 @@ class StaticCompositionRootTests(unittest.TestCase):
         files = {value.path: value.content for value in first.files}
         golden_files = {
             composition_root.STATIC_COMPOSITION_CMAKE_PATH: (
-                2010,
-                "a80cd23e5ec19e8e918d955b7796369026c1bb2cc39d1d1af631cfe628b995f3",
+                2977,
+                "a210d5051439a34a2d5b65d92d5f584327aa11059d531d3dc1824e20c7aa9c94",
             ),
             composition_root.STATIC_COMPOSITION_HEADER_PATH: (
-                386,
-                "3a8cb3680298db89507a1398d0fc937c1c987f2a179c8dd9380905b79f0256bd",
+                614,
+                "cdba4305e6fdd9d9e3611c58c3e4379f4cb1556033bbd01d1b7a8555e262e9e2",
             ),
             composition_root.STATIC_COMPOSITION_SOURCE_PATH: (
                 2211,
-                "c5d1d134cf99a91c869642c3bbb096f792b53b6a980837a7b3bed1cfb0e99561",
+                "7293ae8256c81d117f2fe29b32af45a13488967a28e513913d9bf29a3073e571",
+            ),
+            composition_root.STATIC_COMPOSITION_ACTIVATION_SOURCE_PATH: (
+                2793,
+                "4afacd8fd3f851905204b3707e3d7a2d39a29725783ad3cd8e753b07ba0af103",
             ),
         }
         for path, (length, digest) in golden_files.items():
@@ -275,6 +302,11 @@ class StaticCompositionRootTests(unittest.TestCase):
             files[composition_root.STATIC_COMPOSITION_SOURCE_PATH].startswith(
                 b"\xef\xbb\xbf"
             )
+        )
+        self.assertTrue(
+            files[
+                composition_root.STATIC_COMPOSITION_ACTIVATION_SOURCE_PATH
+            ].startswith(b"\xef\xbb\xbf")
         )
         source = files[composition_root.STATIC_COMPOSITION_SOURCE_PATH].decode(
             "utf-8-sig"
@@ -317,10 +349,50 @@ class StaticCompositionRootTests(unittest.TestCase):
             "unordered_map",
         ):
             self.assertNotIn(forbidden, source)
+        activation_source = files[
+            composition_root.STATIC_COMPOSITION_ACTIVATION_SOURCE_PATH
+        ].decode("utf-8-sig")
+        for expected in (
+            "CurrentImageActivationDescriptorProviderV2",
+            ".effectiveSessionIntegrity =",
+            ".templateRendererRevision = 3U",
+            ".compositionRendererRevision = 6U",
+            '.providerApi = "asharia-static-factory-provider-v4"',
+            ".registrationSnapshotSchemaVersion = 2U",
+            ".processFactories =",
+            ".registrationCapacity =",
+            ".recordProviders =",
+            "CurrentImageActivationDescriptorProviderAccessV2::seal<kStaticProvider>()",
+            "admitCurrentImagePreRegistration(",
+        ):
+            self.assertIn(expected, activation_source)
+        self.assertNotIn("GetProcAddress", activation_source)
+        self.assertNotIn("dlsym", activation_source)
+
         cmake = files[composition_root.STATIC_COMPOSITION_CMAKE_PATH].decode("utf-8")
-        self.assertIn("target_sources", cmake)
+        self.assertIn('add_library("${_asharia_composition_object_target}" OBJECT', cmake)
+        self.assertIn("$<TARGET_OBJECTS:${_asharia_composition_object_target}>", cmake)
         self.assertIn("target_link_libraries", cmake)
-        self.assertIn("asharia::host_runtime_registration", cmake)
+        self.assertIn("asharia::host_runtime_current_image_provider_bridge", cmake)
+        self.assertIn("asharia::host_runtime_process_scope", cmake)
+        object_link = cmake[
+            cmake.index(
+                'target_link_libraries("${_asharia_composition_object_target}" PRIVATE'
+            ) : cmake.index(
+                "\n  )",
+                cmake.index(
+                    'target_link_libraries("${_asharia_composition_object_target}" PRIVATE'
+                ),
+            )
+        ]
+        host_link = cmake[
+            cmake.index('target_link_libraries("${target_name}" PRIVATE') : cmake.index(
+                "\n  )",
+                cmake.index('target_link_libraries("${target_name}" PRIVATE'),
+            )
+        ]
+        self.assertIn("asharia::host_runtime_current_image_provider_bridge", object_link)
+        self.assertNotIn("asharia::host_runtime_current_image_provider_bridge", host_link)
         self.assertNotIn("add_executable", cmake)
         self.assertNotIn("add_custom_command", cmake)
         self.assertNotIn("add_subdirectory", cmake)
@@ -334,7 +406,7 @@ class StaticCompositionRootTests(unittest.TestCase):
         legacy_api = copy.deepcopy(current)
         legacy_api["providerApi"] = "asharia-static-factory-provider-v3"
         legacy_renderer = copy.deepcopy(current)
-        legacy_renderer["rendererRevision"] = 4
+        legacy_renderer["rendererRevision"] = 5
 
         for value in (
             legacy_api,
@@ -351,6 +423,45 @@ class StaticCompositionRootTests(unittest.TestCase):
                     {"static-composition.schema"},
                     {item.code for item in diagnostics},
                 )
+
+    def test_process_scope_projection_rejects_invalid_exact_references(self) -> None:
+        generation = self.generate()
+        current = composition_root.static_composition_root_manifest_to_data(
+            generation.manifest
+        )
+        selected = copy.deepcopy(current["processScope"]["factories"][0]["reference"])
+
+        duplicate = copy.deepcopy(current)
+        duplicate["processScope"]["factories"].append(
+            {"reference": selected, "requires": [selected]}
+        )
+        unbound = copy.deepcopy(current)
+        unbound["processScope"]["factories"][0]["reference"][
+            "factoryId"
+        ] = "unbound-service"
+        missing = copy.deepcopy(current)
+        missing_reference = copy.deepcopy(selected)
+        missing_reference["factoryId"] = "missing-service"
+        missing["processScope"]["factories"][0]["requires"] = [
+            missing_reference
+        ]
+        wrong_order = copy.deepcopy(current)
+        wrong_order["processScope"]["factories"][0]["requires"] = [selected]
+
+        mutations = {
+            "static-composition.process-factory-duplicate": duplicate,
+            "static-composition.process-factory-unbound": unbound,
+            "static-composition.process-requirement-missing": missing,
+            "static-composition.process-requirement-order": wrong_order,
+        }
+        for expected, value in mutations.items():
+            with self.subTest(expected=expected):
+                diagnostics = (
+                    composition_root.validate_static_composition_root_manifest_data(
+                        value, self.validators
+                    )
+                )
+                self.assertIn(expected, {item.code for item in diagnostics})
 
     def test_manifest_rejects_noncanonical_or_duplicate_nested_bindings(self) -> None:
         generation = self.generate()

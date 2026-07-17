@@ -68,6 +68,8 @@ add_library(asharia::host_runtime_activation_eligibility ALIAS
 target_include_directories(asharia-host-runtime-activation-eligibility
     PUBLIC
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include-current-image"
 )
 
 target_link_libraries(asharia-host-runtime-activation-eligibility
@@ -76,6 +78,23 @@ target_link_libraries(asharia-host-runtime-activation-eligibility
 )
 
 asharia_configure_target(asharia-host-runtime-activation-eligibility)
+
+add_library(asharia-host-runtime-current-image-provider-bridge INTERFACE)
+add_library(asharia::host_runtime_current_image_provider_bridge ALIAS
+    asharia-host-runtime-current-image-provider-bridge)
+
+target_include_directories(asharia-host-runtime-current-image-provider-bridge
+    INTERFACE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include-current-image"
+)
+
+target_link_libraries(asharia-host-runtime-current-image-provider-bridge
+    INTERFACE
+        asharia::host_runtime_activation_eligibility
+)
+
+asharia_configure_target(
+    asharia-host-runtime-current-image-provider-bridge)
 
 add_library(asharia-host-runtime-process-scope STATIC
     src/process_contribution_activation_lease.cpp
@@ -154,6 +173,23 @@ if(ASHARIA_BUILD_TESTS)
       COMMAND asharia-host-runtime-registration-snapshot-json-tests
   )
 
+  add_library(asharia-host-runtime-current-image-test-provider STATIC
+      tests/current_image_activation_test_provider.cpp
+  )
+
+  target_include_directories(asharia-host-runtime-current-image-test-provider
+      PUBLIC
+          "${CMAKE_CURRENT_SOURCE_DIR}/tests"
+  )
+
+  target_link_libraries(asharia-host-runtime-current-image-test-provider
+      PRIVATE
+          asharia::host_runtime_current_image_provider_bridge
+  )
+
+  asharia_configure_target(
+      asharia-host-runtime-current-image-test-provider)
+
   add_executable(asharia-host-runtime-activation-eligibility-tests
       tests/activation_eligibility_test_support.cpp
       tests/activation_eligibility_tests.cpp
@@ -169,6 +205,7 @@ if(ASHARIA_BUILD_TESTS)
   target_link_libraries(asharia-host-runtime-activation-eligibility-tests
       PRIVATE
           asharia::host_runtime_activation_eligibility
+          asharia-host-runtime-current-image-test-provider
   )
 
   asharia_configure_target(asharia-host-runtime-activation-eligibility-tests)

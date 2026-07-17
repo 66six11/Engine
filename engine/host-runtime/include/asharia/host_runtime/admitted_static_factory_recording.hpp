@@ -1,95 +1,89 @@
 ﻿#pragma once
 
 #include <memory>
-#include <optional>
-#include <span>
 
 #include "asharia/host_runtime/activation_eligibility.hpp"
 #include "asharia/host_runtime/static_factory_registration.hpp"
 
 namespace asharia::host_runtime {
 
-    struct PendingActivationFactoryTableStateV1;
-    struct AdmittedStaticFactoryCallbackTableStateV1;
-    class ActivationEligibilityStateAccessV1;
-    class AdmittedStaticFactoryCallbackTableAccessV1;
+    struct PendingActivationFactoryTableStateV2;
+    struct AdmittedStaticFactoryCallbackTableStateV2;
+    class ActivationEligibilityStateAccessV2;
+    class AdmittedStaticFactoryCallbackTableAccessV2;
 
-    using StaticFactoryRegistrationCapacityFunctionV1 =
+    using StaticFactoryRegistrationCapacityFunctionV2 =
         StaticFactoryRegistrationCapacityV2 (*)() noexcept;
-    using StaticFactoryRecordingFunctionV1 =
+    using StaticFactoryRecordingFunctionV2 =
         void (*)(StaticFactoryRegistrationRecorder& recorder) noexcept;
 
-    class PendingActivationFactoryTableV1 final {
+    class PendingActivationFactoryTableV2 final {
     public:
-        ~PendingActivationFactoryTableV1();
+        ~PendingActivationFactoryTableV2();
 
-        PendingActivationFactoryTableV1(PendingActivationFactoryTableV1&&) noexcept;
-        PendingActivationFactoryTableV1&
-        operator=(PendingActivationFactoryTableV1&&) = delete;
-        PendingActivationFactoryTableV1(const PendingActivationFactoryTableV1&) = delete;
-        PendingActivationFactoryTableV1&
-        operator=(const PendingActivationFactoryTableV1&) = delete;
+        PendingActivationFactoryTableV2(PendingActivationFactoryTableV2&&) noexcept;
+        PendingActivationFactoryTableV2& operator=(PendingActivationFactoryTableV2&&) = delete;
+        PendingActivationFactoryTableV2(const PendingActivationFactoryTableV2&) = delete;
+        PendingActivationFactoryTableV2& operator=(const PendingActivationFactoryTableV2&) = delete;
 
     private:
-        explicit PendingActivationFactoryTableV1(
-            std::unique_ptr<PendingActivationFactoryTableStateV1> state) noexcept;
+        explicit PendingActivationFactoryTableV2(
+            std::unique_ptr<PendingActivationFactoryTableStateV2> state) noexcept;
 
-        std::unique_ptr<PendingActivationFactoryTableStateV1> state_;
+        std::unique_ptr<PendingActivationFactoryTableStateV2> state_;
 
-        friend class ActivationEligibilityStateAccessV1;
+        friend class ActivationEligibilityStateAccessV2;
     };
 
-    class ActivationAdmissionV1 final {
+    class ActivationAdmissionV2 final {
     public:
-        ~ActivationAdmissionV1() = default;
+        ~ActivationAdmissionV2() = default;
 
-        ActivationAdmissionV1(ActivationAdmissionV1&& other) noexcept;
-        ActivationAdmissionV1& operator=(ActivationAdmissionV1&&) = delete;
-        ActivationAdmissionV1(const ActivationAdmissionV1&) = delete;
-        ActivationAdmissionV1& operator=(const ActivationAdmissionV1&) = delete;
+        ActivationAdmissionV2(ActivationAdmissionV2&& other) noexcept;
+        ActivationAdmissionV2& operator=(ActivationAdmissionV2&&) = delete;
+        ActivationAdmissionV2(const ActivationAdmissionV2&) = delete;
+        ActivationAdmissionV2& operator=(const ActivationAdmissionV2&) = delete;
 
     private:
-        explicit ActivationAdmissionV1(bool valid) noexcept : valid_(valid) {}
+        explicit ActivationAdmissionV2(bool valid) noexcept : valid_(valid) {}
 
         bool valid_{};
 
-        friend class ActivationEligibilityStateAccessV1;
-        friend class AdmittedStaticFactoryCallbackTableAccessV1;
-        friend class AdmittedStaticFactoryCallbackTableV1;
+        friend class ActivationEligibilityStateAccessV2;
+        friend class AdmittedStaticFactoryCallbackTableAccessV2;
+        friend class AdmittedStaticFactoryCallbackTableV2;
     };
 
-    class AdmittedStaticFactoryCallbackTableV1 final {
+    class AdmittedStaticFactoryCallbackTableV2 final {
     public:
-        ~AdmittedStaticFactoryCallbackTableV1();
+        ~AdmittedStaticFactoryCallbackTableV2();
 
-        AdmittedStaticFactoryCallbackTableV1(
-            AdmittedStaticFactoryCallbackTableV1&& other) noexcept;
-        AdmittedStaticFactoryCallbackTableV1&
-        operator=(AdmittedStaticFactoryCallbackTableV1&&) = delete;
-        AdmittedStaticFactoryCallbackTableV1(
-            const AdmittedStaticFactoryCallbackTableV1&) = delete;
-        AdmittedStaticFactoryCallbackTableV1&
-        operator=(const AdmittedStaticFactoryCallbackTableV1&) = delete;
+        AdmittedStaticFactoryCallbackTableV2(AdmittedStaticFactoryCallbackTableV2&& other) noexcept;
+        AdmittedStaticFactoryCallbackTableV2&
+        operator=(AdmittedStaticFactoryCallbackTableV2&&) = delete;
+        AdmittedStaticFactoryCallbackTableV2(const AdmittedStaticFactoryCallbackTableV2&) = delete;
+        AdmittedStaticFactoryCallbackTableV2&
+        operator=(const AdmittedStaticFactoryCallbackTableV2&) = delete;
 
         [[nodiscard]] const StaticFactoryRegistrationSnapshotV2&
         registrationSnapshot() const noexcept;
 
     private:
-        AdmittedStaticFactoryCallbackTableV1(
-            std::unique_ptr<AdmittedStaticFactoryCallbackTableStateV1> state,
-            ActivationAdmissionV1 admission) noexcept;
+        AdmittedStaticFactoryCallbackTableV2(
+            std::unique_ptr<AdmittedStaticFactoryCallbackTableStateV2> state,
+            ActivationAdmissionV2 admission) noexcept;
 
-        std::unique_ptr<AdmittedStaticFactoryCallbackTableStateV1> state_;
-        ActivationAdmissionV1 admission_;
+        std::unique_ptr<AdmittedStaticFactoryCallbackTableStateV2> state_;
+        ActivationAdmissionV2 admission_;
 
-        friend class ActivationEligibilityStateAccessV1;
-        friend class AdmittedStaticFactoryCallbackTableAccessV1;
+        friend class ActivationEligibilityStateAccessV2;
+        friend class AdmittedStaticFactoryCallbackTableAccessV2;
     };
 
-    [[nodiscard]] ActivationEligibilityResultV1<PendingActivationFactoryTableV1>
-    recordAdmittedStaticFactoryProviders(PreRegistrationAdmissionV1 admission) noexcept;
+    [[nodiscard]] ActivationEligibilityResultV2<PendingActivationFactoryTableV2>
+    recordAdmittedStaticFactoryProviders(PreRegistrationAdmissionV2 admission) noexcept;
 
-    [[nodiscard]] ActivationEligibilityResultV1<AdmittedStaticFactoryCallbackTableV1>
-    admitStaticFactoryActivation(PendingActivationFactoryTableV1 pendingTable) noexcept;
+    [[nodiscard]] ActivationEligibilityResultV2<AdmittedStaticFactoryCallbackTableV2>
+    admitStaticFactoryActivation(PendingActivationFactoryTableV2 pendingTable) noexcept;
 
 } // namespace asharia::host_runtime

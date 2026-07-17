@@ -9,27 +9,21 @@ namespace asharia::host_runtime {
 
     enum class StaticFactoryRegistrationErrorCode : std::uint8_t;
 
-    enum class ActivationEligibilityStageV1 : std::uint8_t {
+    enum class ActivationEligibilityStageV2 : std::uint8_t {
         PreRegistration,
         ProviderRecording,
         Activation,
     };
 
-    enum class ActivationEligibilityFieldV1 : std::uint8_t {
+    enum class ActivationEligibilityFieldV2 : std::uint8_t {
         None,
-        ReadySession,
-        Blueprint,
-        Binding,
-        LaunchHandoff,
+        CurrentImageDescriptor,
         EffectiveSessionIntegrity,
         HostIdentity,
         BlueprintIntegrity,
         StaticComposition,
-        HostTemplate,
         GenerationTuple,
-        BindingGeneration,
-        ArtifactIdentity,
-        ExpectedSnapshot,
+        ProcessProjection,
         ControlThread,
         CurrentProcess,
         Admission,
@@ -40,21 +34,11 @@ namespace asharia::host_runtime {
         TableSnapshot,
     };
 
-    enum class ActivationEligibilityErrorCodeV1 : std::uint8_t {
-        HandoffMovedFrom,
-        ReadySessionInvalid,
-        BlueprintInvalid,
-        BindingInvalid,
-        LaunchHandoffInvalid,
-        EffectiveSessionMismatch,
-        HostIdentityMismatch,
-        BlueprintMismatch,
-        StaticCompositionMismatch,
-        HostTemplateMismatch,
+    enum class ActivationEligibilityErrorCodeV2 : std::uint8_t {
+        DescriptorMovedFrom,
+        CurrentImageDescriptorInvalid,
         UnsupportedGenerationTuple,
-        BindingGenerationMismatch,
-        ArtifactMismatch,
-        ExpectedSnapshotInvalid,
+        ProcessProjectionInvalid,
         WrongControlThread,
         ProcessEpochStale,
         ProcessEpochConsumed,
@@ -68,131 +52,62 @@ namespace asharia::host_runtime {
         TableSnapshotMismatch,
     };
 
-    struct ActivationEligibilityErrorV1 final {
-        ActivationEligibilityStageV1 stage{ActivationEligibilityStageV1::PreRegistration};
-        ActivationEligibilityErrorCodeV1 code{
-            ActivationEligibilityErrorCodeV1::HandoffMovedFrom};
-        ActivationEligibilityFieldV1 field{ActivationEligibilityFieldV1::None};
+    struct ActivationEligibilityErrorV2 final {
+        ActivationEligibilityStageV2 stage{ActivationEligibilityStageV2::PreRegistration};
+        ActivationEligibilityErrorCodeV2 code{
+            ActivationEligibilityErrorCodeV2::DescriptorMovedFrom};
+        ActivationEligibilityFieldV2 field{ActivationEligibilityFieldV2::None};
         std::optional<StaticFactoryRegistrationErrorCode> registrationCode;
 
-        [[nodiscard]] friend bool operator==(const ActivationEligibilityErrorV1&,
-                                             const ActivationEligibilityErrorV1&) = default;
+        [[nodiscard]] friend bool operator==(const ActivationEligibilityErrorV2&,
+                                             const ActivationEligibilityErrorV2&) = default;
     };
 
     template <typename T>
-    using ActivationEligibilityResultV1 = std::expected<T, ActivationEligibilityErrorV1>;
+    using ActivationEligibilityResultV2 = std::expected<T, ActivationEligibilityErrorV2>;
 
-    struct ReadySessionHandoffStateV1;
-    struct VerifiedHostActivationBlueprintHandoffStateV1;
-    struct DeepVerifiedHostBindingHandoffStateV1;
-    struct VerifiedCurrentProcessLaunchHandoffStateV1;
-    struct ActivationEligibilityLineageStateV1;
-    class ActivationEligibilityStateAccessV1;
+    struct ActivationEligibilityLineageStateV2;
+    class ActivationEligibilityStateAccessV2;
 
-    class ReadySessionHandoffV1 final {
+    class CurrentImageActivationDescriptorV2 final {
     public:
-        ~ReadySessionHandoffV1();
+        ~CurrentImageActivationDescriptorV2();
 
-        ReadySessionHandoffV1(ReadySessionHandoffV1&&) noexcept;
-        ReadySessionHandoffV1& operator=(ReadySessionHandoffV1&&) = delete;
-        ReadySessionHandoffV1(const ReadySessionHandoffV1&) = delete;
-        ReadySessionHandoffV1& operator=(const ReadySessionHandoffV1&) = delete;
+        CurrentImageActivationDescriptorV2(CurrentImageActivationDescriptorV2&&) noexcept;
+        CurrentImageActivationDescriptorV2&
+        operator=(CurrentImageActivationDescriptorV2&&) = delete;
+        CurrentImageActivationDescriptorV2(const CurrentImageActivationDescriptorV2&) = delete;
+        CurrentImageActivationDescriptorV2&
+        operator=(const CurrentImageActivationDescriptorV2&) = delete;
 
     private:
-        explicit ReadySessionHandoffV1(
-            std::unique_ptr<ReadySessionHandoffStateV1> state) noexcept;
+        explicit CurrentImageActivationDescriptorV2(
+            std::unique_ptr<ActivationEligibilityLineageStateV2> state) noexcept;
 
-        std::unique_ptr<ReadySessionHandoffStateV1> state_;
+        std::unique_ptr<ActivationEligibilityLineageStateV2> state_;
 
-        friend class ActivationEligibilityStateAccessV1;
+        friend class ActivationEligibilityStateAccessV2;
     };
 
-    class VerifiedHostActivationBlueprintHandoffV1 final {
+    class PreRegistrationAdmissionV2 final {
     public:
-        ~VerifiedHostActivationBlueprintHandoffV1();
+        ~PreRegistrationAdmissionV2();
 
-        VerifiedHostActivationBlueprintHandoffV1(
-            VerifiedHostActivationBlueprintHandoffV1&&) noexcept;
-        VerifiedHostActivationBlueprintHandoffV1&
-        operator=(VerifiedHostActivationBlueprintHandoffV1&&) = delete;
-        VerifiedHostActivationBlueprintHandoffV1(
-            const VerifiedHostActivationBlueprintHandoffV1&) = delete;
-        VerifiedHostActivationBlueprintHandoffV1&
-        operator=(const VerifiedHostActivationBlueprintHandoffV1&) = delete;
+        PreRegistrationAdmissionV2(PreRegistrationAdmissionV2&&) noexcept;
+        PreRegistrationAdmissionV2& operator=(PreRegistrationAdmissionV2&&) = delete;
+        PreRegistrationAdmissionV2(const PreRegistrationAdmissionV2&) = delete;
+        PreRegistrationAdmissionV2& operator=(const PreRegistrationAdmissionV2&) = delete;
 
     private:
-        explicit VerifiedHostActivationBlueprintHandoffV1(
-            std::unique_ptr<VerifiedHostActivationBlueprintHandoffStateV1> state) noexcept;
+        explicit PreRegistrationAdmissionV2(
+            std::unique_ptr<ActivationEligibilityLineageStateV2> state) noexcept;
 
-        std::unique_ptr<VerifiedHostActivationBlueprintHandoffStateV1> state_;
+        std::unique_ptr<ActivationEligibilityLineageStateV2> state_;
 
-        friend class ActivationEligibilityStateAccessV1;
+        friend class ActivationEligibilityStateAccessV2;
     };
 
-    class DeepVerifiedHostBindingHandoffV1 final {
-    public:
-        ~DeepVerifiedHostBindingHandoffV1();
-
-        DeepVerifiedHostBindingHandoffV1(DeepVerifiedHostBindingHandoffV1&&) noexcept;
-        DeepVerifiedHostBindingHandoffV1&
-        operator=(DeepVerifiedHostBindingHandoffV1&&) = delete;
-        DeepVerifiedHostBindingHandoffV1(const DeepVerifiedHostBindingHandoffV1&) = delete;
-        DeepVerifiedHostBindingHandoffV1&
-        operator=(const DeepVerifiedHostBindingHandoffV1&) = delete;
-
-    private:
-        explicit DeepVerifiedHostBindingHandoffV1(
-            std::unique_ptr<DeepVerifiedHostBindingHandoffStateV1> state) noexcept;
-
-        std::unique_ptr<DeepVerifiedHostBindingHandoffStateV1> state_;
-
-        friend class ActivationEligibilityStateAccessV1;
-    };
-
-    class VerifiedCurrentProcessLaunchHandoffV1 final {
-    public:
-        ~VerifiedCurrentProcessLaunchHandoffV1();
-
-        VerifiedCurrentProcessLaunchHandoffV1(
-            VerifiedCurrentProcessLaunchHandoffV1&&) noexcept;
-        VerifiedCurrentProcessLaunchHandoffV1&
-        operator=(VerifiedCurrentProcessLaunchHandoffV1&&) = delete;
-        VerifiedCurrentProcessLaunchHandoffV1(
-            const VerifiedCurrentProcessLaunchHandoffV1&) = delete;
-        VerifiedCurrentProcessLaunchHandoffV1&
-        operator=(const VerifiedCurrentProcessLaunchHandoffV1&) = delete;
-
-    private:
-        explicit VerifiedCurrentProcessLaunchHandoffV1(
-            std::unique_ptr<VerifiedCurrentProcessLaunchHandoffStateV1> state) noexcept;
-
-        std::unique_ptr<VerifiedCurrentProcessLaunchHandoffStateV1> state_;
-
-        friend class ActivationEligibilityStateAccessV1;
-    };
-
-    class PreRegistrationAdmissionV1 final {
-    public:
-        ~PreRegistrationAdmissionV1();
-
-        PreRegistrationAdmissionV1(PreRegistrationAdmissionV1&&) noexcept;
-        PreRegistrationAdmissionV1& operator=(PreRegistrationAdmissionV1&&) = delete;
-        PreRegistrationAdmissionV1(const PreRegistrationAdmissionV1&) = delete;
-        PreRegistrationAdmissionV1& operator=(const PreRegistrationAdmissionV1&) = delete;
-
-    private:
-        explicit PreRegistrationAdmissionV1(
-            std::unique_ptr<ActivationEligibilityLineageStateV1> state) noexcept;
-
-        std::unique_ptr<ActivationEligibilityLineageStateV1> state_;
-
-        friend class ActivationEligibilityStateAccessV1;
-    };
-
-    [[nodiscard]] ActivationEligibilityResultV1<PreRegistrationAdmissionV1>
-    admitPreRegistration(ReadySessionHandoffV1 readySession,
-                         VerifiedHostActivationBlueprintHandoffV1 blueprint,
-                         DeepVerifiedHostBindingHandoffV1 binding,
-                         VerifiedCurrentProcessLaunchHandoffV1 launchHandoff) noexcept;
+    [[nodiscard]] ActivationEligibilityResultV2<PreRegistrationAdmissionV2>
+    admitCurrentImagePreRegistration(CurrentImageActivationDescriptorV2 descriptor) noexcept;
 
 } // namespace asharia::host_runtime

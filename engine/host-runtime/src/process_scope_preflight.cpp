@@ -149,7 +149,7 @@ namespace asharia::host_runtime {
         }
 
         [[nodiscard]] std::optional<ProcessScopePreparationErrorV2>
-        validateProjectionHeader(const AdmittedStaticFactoryExecutionViewV1& executionView,
+        validateProjectionHeader(const AdmittedStaticFactoryExecutionViewV2& executionView,
                                  const StaticFactoryRegistrationSnapshotV2& snapshot,
                                  const ProcessScopeBlueprintProjectionStateV1& projection) {
             if (projection.scope != HostScopeKindStateV1::Process) {
@@ -285,7 +285,7 @@ namespace asharia::host_runtime {
                           ProcessScopePreparationErrorV2>;
 
         [[nodiscard]] RegistrySlotPlanResultV1
-        materializeRegistrySlotPlans(const AdmittedStaticFactoryExecutionViewV1& executionView,
+        materializeRegistrySlotPlans(const AdmittedStaticFactoryExecutionViewV2& executionView,
                                      const StaticFactoryRegistrationSnapshotV2& snapshot,
                                      const ProcessScopeBlueprintProjectionStateV1& projection) {
             std::size_t slotCount = 0;
@@ -393,7 +393,7 @@ namespace asharia::host_runtime {
                                                       ProcessScopePreparationErrorV2>;
 
         [[nodiscard]] ResolvedFactoryResultV2
-        materializeFactories(const AdmittedStaticFactoryExecutionViewV1& executionView,
+        materializeFactories(const AdmittedStaticFactoryExecutionViewV2& executionView,
                              const StaticFactoryRegistrationSnapshotV2& snapshot,
                              const ProcessScopeBlueprintProjectionStateV1& projection) {
             std::vector<ResolvedProcessFactoryStateV2> factories;
@@ -455,9 +455,9 @@ namespace asharia::host_runtime {
     } // namespace
 
     ProcessScopePreparationResultV2
-    prepareProcessScopeExecutorV2(AdmittedStaticFactoryCallbackTableV1 admittedTable) noexcept {
+    prepareProcessScopeExecutorV2(AdmittedStaticFactoryCallbackTableV2 admittedTable) noexcept {
         const auto executionView =
-            AdmittedStaticFactoryCallbackTableAccessV1::executionView(admittedTable);
+            AdmittedStaticFactoryCallbackTableAccessV2::executionView(admittedTable);
         if (!executionView) {
             return std::unexpected(ProcessScopePreparationErrorV2{
                 .code = mapExecutionAccessError(executionView.error()),

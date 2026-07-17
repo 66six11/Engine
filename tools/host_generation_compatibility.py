@@ -4,8 +4,8 @@ from __future__ import annotations
 
 
 CURRENT_HOST_GENERATION_PAIR = (
-    2,
-    5,
+    3,
+    6,
     "asharia-static-factory-provider-v4",
 )
 

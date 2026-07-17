@@ -1,7 +1,8 @@
 """Generate deterministic Windows Development Host executable templates.
 
-This boundary owns the final CMake target and registration-only ``main``. It
-does not execute CMake, discover packages, or collect final artifact bytes.
+This boundary owns the final CMake target, restricted verifier, and normal
+Host entry. It does not execute CMake, discover packages, or collect final
+artifact bytes.
 """
 
 from __future__ import annotations
@@ -20,16 +21,23 @@ from tools import static_composition_root as composition
 HOST_TEMPLATE_NAME = "asharia.windows-development-host-template.json"
 HOST_TEMPLATE_SCHEMA = "com.asharia.windows-development-host-template"
 HOST_TEMPLATE_SCHEMA_VERSION = 1
-HOST_TEMPLATE_RENDERER_REVISION = 2
+HOST_TEMPLATE_RENDERER_REVISION = 3
 HOST_TEMPLATE_KIND = "windows-development-v1"
 HOST_TEMPLATE_CMAKE_PATH = renderer.HOST_TEMPLATE_CMAKE_PATH
+HOST_TEMPLATE_INTERNAL_HEADER_PATH = (
+    renderer.HOST_TEMPLATE_INTERNAL_HEADER_PATH
+)
 HOST_TEMPLATE_MAIN_PATH = renderer.HOST_TEMPLATE_MAIN_PATH
+HOST_TEMPLATE_PROCESS_APPLICATION_PATH = (
+    renderer.HOST_TEMPLATE_PROCESS_APPLICATION_PATH
+)
+HOST_TEMPLATE_REGISTRATION_PATH = renderer.HOST_TEMPLATE_REGISTRATION_PATH
 HOST_TEMPLATE_SUBSYSTEM = renderer.HOST_TEMPLATE_SUBSYSTEM
 HOST_TEMPLATE_RUNTIME_OUTPUT_DIRECTORY = renderer.HOST_TEMPLATE_RUNTIME_OUTPUT_DIRECTORY
 
 _TARGET_NAME = re.compile(r"^[A-Za-z0-9_.+\-]+$")
 _FILE_DESCRIPTORS = renderer.HOST_TEMPLATE_FILE_DESCRIPTORS
-_REQUIRED_STATIC_COMPOSITION_RENDERER_REVISION = 5
+_REQUIRED_STATIC_COMPOSITION_RENDERER_REVISION = 6
 _REQUIRED_STATIC_COMPOSITION_PROVIDER_API = "asharia-static-factory-provider-v4"
 
 
@@ -290,8 +298,10 @@ def generate_windows_development_host_template(
                     _diagnostic(
                         "host-template.composition-incompatible",
                         "/staticComposition",
-                        "renderer revision 2 requires static composition "
-                        "revision 5 with provider API v4",
+                        f"renderer revision {HOST_TEMPLATE_RENDERER_REVISION} "
+                        "requires static composition revision "
+                        f"{_REQUIRED_STATIC_COMPOSITION_RENDERER_REVISION} "
+                        "with provider API v4",
                     )
                 )
     if (
@@ -355,10 +365,28 @@ def generate_windows_development_host_template(
             ),
         ),
         GeneratedHostTemplateFile(
+            HOST_TEMPLATE_INTERNAL_HEADER_PATH,
+            "internal-host-entry-header",
+            "text/x-c++hdr",
+            renderer.render_internal_header(),
+        ),
+        GeneratedHostTemplateFile(
             HOST_TEMPLATE_MAIN_PATH,
-            "registration-verification-main",
+            "host-main",
             "text/x-c++src",
-            renderer.render_registration_verification_main(),
+            renderer.render_main(),
+        ),
+        GeneratedHostTemplateFile(
+            HOST_TEMPLATE_PROCESS_APPLICATION_PATH,
+            "process-application-host",
+            "text/x-c++src",
+            renderer.render_process_application_host(),
+        ),
+        GeneratedHostTemplateFile(
+            HOST_TEMPLATE_REGISTRATION_PATH,
+            "registration-verification",
+            "text/x-c++src",
+            renderer.render_registration_verification(),
         ),
     )
     evidence = tuple(

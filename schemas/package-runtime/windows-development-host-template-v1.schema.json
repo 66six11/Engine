@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://schemas.asharia.dev/package-runtime/windows-development-host-template-v1.schema.json",
   "title": "Asharia Windows Development Host Template v1",
-  "description": "Content-addressed generated final Host target and registration-only main for one Windows development composition.",
+  "description": "Content-addressed generated final Host target with restricted registration verification and normal current-image execution.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -25,7 +25,7 @@
       "const": 1
     },
     "rendererRevision": {
-      "const": 2
+      "const": 3
     },
     "templateKind": {
       "const": "windows-development-v1"
@@ -44,8 +44,8 @@
     },
     "files": {
       "type": "array",
-      "minItems": 2,
-      "maxItems": 2,
+      "minItems": 5,
+      "maxItems": 5,
       "uniqueItems": true,
       "items": {
         "$ref": "#/$defs/file"
@@ -173,18 +173,25 @@
         "path": {
           "enum": [
             "asharia-host-template.cmake",
-            "src/main.cpp"
+            "src/host_entry.hpp",
+            "src/main.cpp",
+            "src/process_application_host.cpp",
+            "src/registration_verification.cpp"
           ]
         },
         "role": {
           "enum": [
             "cmake-host-template",
-            "registration-verification-main"
+            "internal-host-entry-header",
+            "host-main",
+            "process-application-host",
+            "registration-verification"
           ]
         },
         "mediaType": {
           "enum": [
             "text/x-cmake",
+            "text/x-c++hdr",
             "text/x-c++src"
           ]
         },

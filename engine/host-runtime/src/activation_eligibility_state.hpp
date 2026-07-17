@@ -14,62 +14,23 @@
 
 namespace asharia::host_runtime {
 
-    struct ExactHostIdentityStateV1 final {
+    struct ExactHostIdentityStateV2 final {
         std::string engineGenerationId;
         std::string hostKind;
         std::string targetPlatform;
 
-        [[nodiscard]] friend bool operator==(const ExactHostIdentityStateV1&,
-                                             const ExactHostIdentityStateV1&) = default;
+        [[nodiscard]] friend bool operator==(const ExactHostIdentityStateV2&,
+                                             const ExactHostIdentityStateV2&) = default;
     };
 
-    struct HostArtifactIdentityStateV1 final {
-        std::uint64_t size{};
-        std::string sha256;
-
-        [[nodiscard]] friend bool operator==(const HostArtifactIdentityStateV1&,
-                                             const HostArtifactIdentityStateV1&) = default;
-    };
-
-    struct GeneratedHostInputIdentityStateV1 final {
-        std::string generationId;
-        std::string manifestSha256;
-
-        [[nodiscard]] friend bool operator==(const GeneratedHostInputIdentityStateV1&,
-                                             const GeneratedHostInputIdentityStateV1&) = default;
-    };
-
-    struct HostGenerationTupleStateV1 final {
+    struct HostGenerationTupleStateV2 final {
         std::uint32_t templateRendererRevision{};
         std::uint32_t compositionRendererRevision{};
         std::string providerApi;
         std::uint32_t registrationSnapshotSchemaVersion{};
 
-        [[nodiscard]] friend bool operator==(const HostGenerationTupleStateV1&,
-                                             const HostGenerationTupleStateV1&) = default;
-    };
-
-    struct ReadySessionHandoffStateV1 final {
-        ExactHostIdentityStateV1 host;
-        std::string sessionFingerprint;
-    };
-
-    struct VerifiedHostActivationBlueprintHandoffStateV1 final {
-        ExactHostIdentityStateV1 host;
-        std::string effectiveSessionIntegrity;
-        std::string blueprintIntegrity;
-        ProcessScopeBlueprintProjectionStateV1 processScope;
-    };
-
-    struct DeepVerifiedHostBindingHandoffStateV1 final {
-        ExactHostIdentityStateV1 host;
-        std::string bindingGenerationId;
-        GeneratedHostInputIdentityStateV1 staticComposition;
-        GeneratedHostInputIdentityStateV1 hostTemplate;
-        HostGenerationTupleStateV1 generationTuple;
-        std::string blueprintIntegrity;
-        HostArtifactIdentityStateV1 artifact;
-        StaticFactoryRegistrationSnapshotV2 expectedSnapshot;
+        [[nodiscard]] friend bool operator==(const HostGenerationTupleStateV2&,
+                                             const HostGenerationTupleStateV2&) = default;
     };
 
     struct CurrentProcessEpochAnchorV1 final {
@@ -95,148 +56,90 @@ namespace asharia::host_runtime {
     [[nodiscard]] bool isCurrentControlThread(
         const std::shared_ptr<const ControlThreadEpochAnchorV1>& expected) noexcept;
 
-    struct VerifiedCurrentProcessLaunchHandoffStateV1 final {
-        ExactHostIdentityStateV1 host;
-        std::string sessionFingerprint;
-        std::string bindingGenerationId;
-        GeneratedHostInputIdentityStateV1 staticComposition;
-        GeneratedHostInputIdentityStateV1 hostTemplate;
-        HostGenerationTupleStateV1 generationTuple;
+    struct ActivationEligibilityLineageStateV2 final {
+        ExactHostIdentityStateV2 host;
+        std::string effectiveSessionIntegrity;
+        std::string staticCompositionGenerationId;
         std::string blueprintIntegrity;
-        HostArtifactIdentityStateV1 artifact;
-        std::shared_ptr<const CurrentProcessEpochAnchorV1> processEpoch;
-        std::shared_ptr<const ControlThreadEpochAnchorV1> controlThreadEpoch;
-        StaticFactoryRegistrationCapacityFunctionV1 registrationCapacity{};
-        StaticFactoryRecordingFunctionV1 recordProviders{};
-    };
-
-    struct ActivationEligibilityLineageStateV1 final {
-        ExactHostIdentityStateV1 host;
-        std::string sessionFingerprint;
-        std::string bindingGenerationId;
-        GeneratedHostInputIdentityStateV1 staticComposition;
-        GeneratedHostInputIdentityStateV1 hostTemplate;
-        HostGenerationTupleStateV1 generationTuple;
-        std::string blueprintIntegrity;
+        HostGenerationTupleStateV2 generationTuple;
+        std::string lifecycleModel;
         ProcessScopeBlueprintProjectionStateV1 processScope;
-        HostArtifactIdentityStateV1 artifact;
-        StaticFactoryRegistrationSnapshotV2 expectedSnapshot;
         std::shared_ptr<const CurrentProcessEpochAnchorV1> processEpoch;
         std::shared_ptr<const ControlThreadEpochAnchorV1> controlThreadEpoch;
-        StaticFactoryRegistrationCapacityFunctionV1 registrationCapacity{};
-        StaticFactoryRecordingFunctionV1 recordProviders{};
+        StaticFactoryRegistrationCapacityFunctionV2 registrationCapacity{};
+        StaticFactoryRecordingFunctionV2 recordProviders{};
     };
 
-    enum class PendingFactoryTableOriginV1 : std::uint8_t {
+    enum class PendingFactoryTableOriginV2 : std::uint8_t {
         EvidenceOnly,
         AdmittedRegistration,
     };
 
-    struct PendingActivationFactoryTableStateV1 final {
-        PendingActivationFactoryTableStateV1(
-            std::unique_ptr<ActivationEligibilityLineageStateV1> lineageValue,
-            StaticFactoryCallbackTableV1 tableValue,
-            PendingFactoryTableOriginV1 originValue) noexcept
-            : lineage(std::move(lineageValue)), table(std::move(tableValue)),
-              origin(originValue), expectedTableAddress(std::addressof(table)),
+    struct PendingActivationFactoryTableStateV2 final {
+        PendingActivationFactoryTableStateV2(
+            std::unique_ptr<ActivationEligibilityLineageStateV2> lineageValue,
+            StaticFactoryCallbackTableV1 tableValue, PendingFactoryTableOriginV2 originValue)
+            : lineage(std::move(lineageValue)), table(std::move(tableValue)), origin(originValue),
+              expectedTableAddress(std::addressof(table)),
               expectedTableInstance(
                   StaticFactoryCallbackTablePrivateAccessV1::instanceAnchor(table)) {}
 
-        std::unique_ptr<ActivationEligibilityLineageStateV1> lineage;
+        std::unique_ptr<ActivationEligibilityLineageStateV2> lineage;
         StaticFactoryCallbackTableV1 table;
-        PendingFactoryTableOriginV1 origin{PendingFactoryTableOriginV1::EvidenceOnly};
+        PendingFactoryTableOriginV2 origin{PendingFactoryTableOriginV2::EvidenceOnly};
         const StaticFactoryCallbackTableV1* expectedTableAddress{};
-        std::shared_ptr<const StaticFactoryCallbackTableStorageV1>
-            expectedTableInstance;
+        std::shared_ptr<const StaticFactoryCallbackTableStorageV1> expectedTableInstance;
     };
 
-    struct AdmittedStaticFactoryCallbackTableStateV1 final {
-        AdmittedStaticFactoryCallbackTableStateV1(
-            std::unique_ptr<PendingActivationFactoryTableStateV1> pendingValue) noexcept
+    struct AdmittedStaticFactoryCallbackTableStateV2 final {
+        explicit AdmittedStaticFactoryCallbackTableStateV2(
+            std::unique_ptr<PendingActivationFactoryTableStateV2> pendingValue) noexcept
             : pending(std::move(pendingValue)) {}
 
-        std::unique_ptr<PendingActivationFactoryTableStateV1> pending;
+        std::unique_ptr<PendingActivationFactoryTableStateV2> pending;
     };
 
-    class ActivationEligibilityStateAccessV1 final {
+    class ActivationEligibilityStateAccessV2 final {
     public:
-        [[nodiscard]] static ReadySessionHandoffV1
-        makeReadySession(ReadySessionHandoffStateV1 state) {
-            return ReadySessionHandoffV1{
-                std::make_unique<ReadySessionHandoffStateV1>(std::move(state))};
+        [[nodiscard]] static CurrentImageActivationDescriptorV2
+        makeDescriptor(std::unique_ptr<ActivationEligibilityLineageStateV2> state) noexcept {
+            return CurrentImageActivationDescriptorV2{std::move(state)};
         }
 
-        [[nodiscard]] static VerifiedHostActivationBlueprintHandoffV1
-        makeBlueprint(VerifiedHostActivationBlueprintHandoffStateV1 state) {
-            return VerifiedHostActivationBlueprintHandoffV1{
-                std::make_unique<VerifiedHostActivationBlueprintHandoffStateV1>(
-                    std::move(state))};
+        [[nodiscard]] static std::unique_ptr<ActivationEligibilityLineageStateV2>
+        take(CurrentImageActivationDescriptorV2&& descriptor) noexcept {
+            return std::move(descriptor.state_);
         }
 
-        [[nodiscard]] static DeepVerifiedHostBindingHandoffV1
-        makeBinding(DeepVerifiedHostBindingHandoffStateV1 state) {
-            return DeepVerifiedHostBindingHandoffV1{
-                std::make_unique<DeepVerifiedHostBindingHandoffStateV1>(std::move(state))};
+        [[nodiscard]] static PreRegistrationAdmissionV2 makePreRegistrationAdmission(
+            std::unique_ptr<ActivationEligibilityLineageStateV2> state) noexcept {
+            return PreRegistrationAdmissionV2{std::move(state)};
         }
 
-        [[nodiscard]] static VerifiedCurrentProcessLaunchHandoffV1
-        makeLaunchHandoff(VerifiedCurrentProcessLaunchHandoffStateV1 state) {
-            return VerifiedCurrentProcessLaunchHandoffV1{
-                std::make_unique<VerifiedCurrentProcessLaunchHandoffStateV1>(
-                    std::move(state))};
-        }
-
-        [[nodiscard]] static std::unique_ptr<ReadySessionHandoffStateV1>
-        take(ReadySessionHandoffV1&& handoff) noexcept {
-            return std::move(handoff.state_);
-        }
-
-        [[nodiscard]] static std::unique_ptr<VerifiedHostActivationBlueprintHandoffStateV1>
-        take(VerifiedHostActivationBlueprintHandoffV1&& handoff) noexcept {
-            return std::move(handoff.state_);
-        }
-
-        [[nodiscard]] static std::unique_ptr<DeepVerifiedHostBindingHandoffStateV1>
-        take(DeepVerifiedHostBindingHandoffV1&& handoff) noexcept {
-            return std::move(handoff.state_);
-        }
-
-        [[nodiscard]] static std::unique_ptr<VerifiedCurrentProcessLaunchHandoffStateV1>
-        take(VerifiedCurrentProcessLaunchHandoffV1&& handoff) noexcept {
-            return std::move(handoff.state_);
-        }
-
-        [[nodiscard]] static PreRegistrationAdmissionV1 makePreRegistrationAdmission(
-            std::unique_ptr<ActivationEligibilityLineageStateV1> state) noexcept {
-            return PreRegistrationAdmissionV1{std::move(state)};
-        }
-
-        [[nodiscard]] static std::unique_ptr<ActivationEligibilityLineageStateV1>
-        take(PreRegistrationAdmissionV1&& admission) noexcept {
+        [[nodiscard]] static std::unique_ptr<ActivationEligibilityLineageStateV2>
+        take(PreRegistrationAdmissionV2&& admission) noexcept {
             return std::move(admission.state_);
         }
 
-        [[nodiscard]] static PendingActivationFactoryTableV1 makePendingTable(
-            std::unique_ptr<PendingActivationFactoryTableStateV1> state) noexcept {
-            return PendingActivationFactoryTableV1{std::move(state)};
+        [[nodiscard]] static PendingActivationFactoryTableV2
+        makePendingTable(std::unique_ptr<PendingActivationFactoryTableStateV2> state) noexcept {
+            return PendingActivationFactoryTableV2{std::move(state)};
         }
 
-        [[nodiscard]] static std::unique_ptr<PendingActivationFactoryTableStateV1>
-        take(PendingActivationFactoryTableV1&& pendingTable) noexcept {
+        [[nodiscard]] static std::unique_ptr<PendingActivationFactoryTableStateV2>
+        take(PendingActivationFactoryTableV2&& pendingTable) noexcept {
             return std::move(pendingTable.state_);
         }
 
-        [[nodiscard]] static ActivationAdmissionV1 makeActivationAdmission() noexcept {
-            return ActivationAdmissionV1{true};
+        [[nodiscard]] static ActivationAdmissionV2 makeActivationAdmission() noexcept {
+            return ActivationAdmissionV2{true};
         }
 
-        [[nodiscard]] static AdmittedStaticFactoryCallbackTableV1 makeAdmittedTable(
-            std::unique_ptr<AdmittedStaticFactoryCallbackTableStateV1> state,
-            ActivationAdmissionV1 admission) noexcept {
-            return AdmittedStaticFactoryCallbackTableV1{std::move(state),
-                                                        std::move(admission)};
+        [[nodiscard]] static AdmittedStaticFactoryCallbackTableV2
+        makeAdmittedTable(std::unique_ptr<AdmittedStaticFactoryCallbackTableStateV2> state,
+                          ActivationAdmissionV2 admission) noexcept {
+            return AdmittedStaticFactoryCallbackTableV2{std::move(state), std::move(admission)};
         }
-
     };
 
 } // namespace asharia::host_runtime

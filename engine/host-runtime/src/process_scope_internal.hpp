@@ -29,7 +29,7 @@ namespace asharia::host_runtime {
     };
 
     [[nodiscard]] ProcessScopeErrorCodeV2
-    mapExecutionAccessError(AdmittedFactoryExecutionAccessErrorV1 error) noexcept;
+    mapExecutionAccessError(AdmittedFactoryExecutionAccessErrorV2 error) noexcept;
 
     [[nodiscard]] ProcessScopeOperationErrorV2
     makeProcessScopeOperationError(ProcessScopeErrorCodeV2 code,

@@ -169,7 +169,7 @@ namespace asharia::host_runtime::tests {
             if (!admitted) {
                 return false;
             }
-            [[maybe_unused]] AdmittedStaticFactoryCallbackTableV1 retained = std::move(*admitted);
+            [[maybe_unused]] AdmittedStaticFactoryCallbackTableV2 retained = std::move(*admitted);
             const auto moved = prepareProcessScopeExecutorV2(std::move(*admitted));
             if (moved || moved.error().code != ProcessScopeErrorCodeV2::AdmissionMovedFrom ||
                 !syntheticProviderTrace().empty()) {

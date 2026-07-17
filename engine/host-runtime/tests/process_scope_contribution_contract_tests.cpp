@@ -19,7 +19,7 @@ namespace asharia::host_runtime::tests {
         struct AbsentContributionContractV1 final {
             static constexpr std::string_view kind{"com.asharia.test.process-scope.absent"};
             static constexpr StaticContributionCardinalityV1 cardinality{
-                StaticContributionCardinalityV1::Multiple};
+                StaticContributionCardinalityV1::Single};
         };
 
         struct WrongTypeExtensionContractV1 final {
@@ -303,12 +303,15 @@ namespace asharia::host_runtime::tests {
             }
             const ProcessContributionRegistryViewV1& registry = *registryResult;
             const auto absent = registry.size<AbsentContributionContractV1>();
+            const auto absentSingle = registry.single<AbsentContributionContractV1>();
             const auto wrongType = registry.size<WrongTypeExtensionContractV1>();
             const auto wrongCardinality = registry.size<WrongCardinalityExtensionContractV1>();
             const auto outOfRange = registry.at<SyntheticExtensionContractV1>(3);
 
             const bool rejected =
                 hasLookupError(absent, ProcessContributionLookupErrorCodeV1::ContractAbsent) &&
+                hasLookupError(absentSingle,
+                               ProcessContributionLookupErrorCodeV1::ContractAbsent) &&
                 hasLookupError(wrongType,
                                ProcessContributionLookupErrorCodeV1::ContractTypeMismatch) &&
                 hasLookupError(wrongCardinality,

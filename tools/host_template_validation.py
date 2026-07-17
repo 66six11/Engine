@@ -149,10 +149,28 @@ def _expected_files(
             ),
         ),
         host_template.GeneratedHostTemplateFile(
+            renderer.HOST_TEMPLATE_INTERNAL_HEADER_PATH,
+            "internal-host-entry-header",
+            "text/x-c++hdr",
+            renderer.render_internal_header(),
+        ),
+        host_template.GeneratedHostTemplateFile(
             renderer.HOST_TEMPLATE_MAIN_PATH,
-            "registration-verification-main",
+            "host-main",
             "text/x-c++src",
-            renderer.render_registration_verification_main(),
+            renderer.render_main(),
+        ),
+        host_template.GeneratedHostTemplateFile(
+            renderer.HOST_TEMPLATE_PROCESS_APPLICATION_PATH,
+            "process-application-host",
+            "text/x-c++src",
+            renderer.render_process_application_host(),
+        ),
+        host_template.GeneratedHostTemplateFile(
+            renderer.HOST_TEMPLATE_REGISTRATION_PATH,
+            "registration-verification",
+            "text/x-c++src",
+            renderer.render_registration_verification(),
         ),
     )
 

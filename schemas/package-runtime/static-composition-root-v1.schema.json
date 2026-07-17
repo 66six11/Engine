@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://schemas.asharia.dev/package-runtime/static-composition-root-v1.schema.json",
   "title": "Asharia Static Composition Root v1",
-  "description": "Content-addressed evidence for generated static provider registration source and its CMake attachment handoff.",
+  "description": "Content-addressed evidence for generated static provider registration, current-image activation, and CMake attachment handoff.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -12,6 +12,7 @@
     "generationId",
     "inputs",
     "host",
+    "processScope",
     "configuration",
     "providerApi",
     "providers",
@@ -26,7 +27,7 @@
       "const": 1
     },
     "rendererRevision": {
-      "const": 5
+      "const": 6
     },
     "generationId": {
       "$ref": "#/$defs/generationId"
@@ -36,6 +37,9 @@
     },
     "host": {
       "$ref": "#/$defs/host"
+    },
+    "processScope": {
+      "$ref": "#/$defs/processScope"
     },
     "configuration": {
       "$ref": "#/$defs/configuration"
@@ -52,8 +56,8 @@
     },
     "files": {
       "type": "array",
-      "minItems": 3,
-      "maxItems": 3,
+      "minItems": 4,
+      "maxItems": 4,
       "uniqueItems": true,
       "items": {
         "$ref": "#/$defs/file"
@@ -89,11 +93,15 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
+        "effectiveSessionIntegrity",
         "sourceBuildPlanIntegrity",
         "hostActivationBlueprintIntegrity",
         "staticFactoryProviderBindingPlanIntegrity"
       ],
       "properties": {
+        "effectiveSessionIntegrity": {
+          "$ref": "#/$defs/integrity"
+        },
         "sourceBuildPlanIntegrity": {
           "$ref": "#/$defs/integrity"
         },
@@ -122,6 +130,78 @@
         },
         "targetPlatform": {
           "$ref": "package-contract-common-v1.schema.json#/$defs/platformId"
+        }
+      }
+    },
+    "exactFactoryReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "packageId",
+        "packageVersion",
+        "moduleId",
+        "factoryId"
+      ],
+      "properties": {
+        "packageId": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/packageId"
+        },
+        "packageVersion": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/semanticVersion"
+        },
+        "moduleId": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/localId"
+        },
+        "factoryId": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/localId"
+        }
+      }
+    },
+    "processFactory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reference",
+        "requires"
+      ],
+      "properties": {
+        "reference": {
+          "$ref": "#/$defs/exactFactoryReference"
+        },
+        "requires": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/exactFactoryReference"
+          }
+        }
+      }
+    },
+    "processScope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scope",
+        "parentScope",
+        "lifecycleModel",
+        "factories"
+      ],
+      "properties": {
+        "scope": {
+          "const": "process"
+        },
+        "parentScope": {
+          "type": "null"
+        },
+        "lifecycleModel": {
+          "const": "create-activate-quiesce-deactivate-destroy-v1"
+        },
+        "factories": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/processFactory"
+          }
         }
       }
     },
@@ -326,14 +406,16 @@
           "enum": [
             "asharia-static-composition.cmake",
             "include/asharia/generated/static_composition_root.hpp",
-            "src/static_composition_root.cpp"
+            "src/static_composition_root.cpp",
+            "src/current_image_activation.cpp"
           ]
         },
         "role": {
           "enum": [
             "cmake-attachment",
             "declaration-header",
-            "registration-source"
+            "registration-source",
+            "current-image-activation-source"
           ]
         },
         "mediaType": {

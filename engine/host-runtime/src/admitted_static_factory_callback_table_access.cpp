@@ -6,34 +6,37 @@
 
 namespace asharia::host_runtime {
 
-    std::expected<AdmittedStaticFactoryExecutionViewV1, AdmittedFactoryExecutionAccessErrorV1>
-    AdmittedStaticFactoryCallbackTableAccessV1::executionView(
-        const AdmittedStaticFactoryCallbackTableV1& admittedTable) noexcept {
+    std::expected<AdmittedStaticFactoryExecutionViewV2, AdmittedFactoryExecutionAccessErrorV2>
+    AdmittedStaticFactoryCallbackTableAccessV2::executionView(
+        const AdmittedStaticFactoryCallbackTableV2& admittedTable) noexcept {
         if (!admittedTable.state_ || !admittedTable.state_->pending ||
             !admittedTable.admission_.valid_) {
-            return std::unexpected(AdmittedFactoryExecutionAccessErrorV1::MovedFrom);
+            return std::unexpected(AdmittedFactoryExecutionAccessErrorV2::MovedFrom);
         }
 
-        const PendingActivationFactoryTableStateV1& pending = *admittedTable.state_->pending;
+        const PendingActivationFactoryTableStateV2& pending = *admittedTable.state_->pending;
         if (!pending.lineage) {
-            return std::unexpected(AdmittedFactoryExecutionAccessErrorV1::TableInvalid);
+            return std::unexpected(AdmittedFactoryExecutionAccessErrorV2::TableInvalid);
         }
         if (!isCurrentControlThread(pending.lineage->controlThreadEpoch)) {
-            return std::unexpected(AdmittedFactoryExecutionAccessErrorV1::WrongControlThread);
+            return std::unexpected(AdmittedFactoryExecutionAccessErrorV2::WrongControlThread);
         }
         if (!isClaimedCurrentProcessEpoch(pending.lineage->processEpoch)) {
-            return std::unexpected(AdmittedFactoryExecutionAccessErrorV1::ProcessEpochStale);
+            return std::unexpected(AdmittedFactoryExecutionAccessErrorV2::ProcessEpochStale);
         }
-        if (pending.origin != PendingFactoryTableOriginV1::AdmittedRegistration ||
+        if (pending.origin != PendingFactoryTableOriginV2::AdmittedRegistration ||
             pending.expectedTableAddress != std::addressof(pending.table) ||
             pending.expectedTableInstance == nullptr ||
             pending.expectedTableInstance !=
                 StaticFactoryCallbackTablePrivateAccessV1::instanceAnchor(pending.table) ||
-            pending.table.registrationSnapshot() != pending.lineage->expectedSnapshot) {
-            return std::unexpected(AdmittedFactoryExecutionAccessErrorV1::TableInvalid);
+            pending.table.registrationSnapshot().generationId !=
+                pending.lineage->staticCompositionGenerationId ||
+            pending.table.registrationSnapshot().hostActivationBlueprintSha256 !=
+                pending.lineage->blueprintIntegrity) {
+            return std::unexpected(AdmittedFactoryExecutionAccessErrorV2::TableInvalid);
         }
 
-        return AdmittedStaticFactoryExecutionViewV1{
+        return AdmittedStaticFactoryExecutionViewV2{
             .callbacks = StaticFactoryCallbackTablePrivateAccessV1::callbacks(pending.table),
             .contributionRuntimeBindings =
                 StaticFactoryCallbackTablePrivateAccessV1::contributionRuntimeBindings(

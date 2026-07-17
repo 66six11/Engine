@@ -44,11 +44,11 @@ namespace asharia::host_runtime::tests {
             static_assert(!std::is_move_assignable_v<ProcessScopeExecutorV2>);
 
             using PrepareFunction =
-                ProcessScopePreparationResultV2 (*)(AdmittedStaticFactoryCallbackTableV1) noexcept;
+                ProcessScopePreparationResultV2 (*)(AdmittedStaticFactoryCallbackTableV2) noexcept;
             static_assert(
                 std::is_same_v<decltype(&prepareProcessScopeExecutorV2), PrepareFunction>);
             static_assert(!std::is_invocable_v<PrepareFunction, StaticFactoryCallbackTableV1>);
-            static_assert(!std::is_invocable_v<PrepareFunction, PendingActivationFactoryTableV1>);
+            static_assert(!std::is_invocable_v<PrepareFunction, PendingActivationFactoryTableV2>);
             return true;
         }
 

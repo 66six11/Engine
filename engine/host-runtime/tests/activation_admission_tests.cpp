@@ -1,16 +1,16 @@
-﻿#include "activation_eligibility_test_support.hpp"
-
-#include <array>
+﻿#include <array>
 #include <thread>
 #include <type_traits>
 #include <utility>
 
+#include "activation_eligibility_test_support.hpp"
+
 namespace asharia::host_runtime::tests {
     namespace {
 
-        [[nodiscard]] ActivationEligibilityResultV1<PendingActivationFactoryTableV1>
-        makePendingTable(EligibilityHandoffMutationV1 mutation =
-                             EligibilityHandoffMutationV1::None) {
+        [[nodiscard]] ActivationEligibilityResultV2<PendingActivationFactoryTableV2>
+        makePendingTable(
+            CurrentImageDescriptorMutationV2 mutation = CurrentImageDescriptorMutationV2::None) {
             auto admission = makePreRegistrationAdmission(mutation);
             if (!admission) {
                 return std::unexpected(admission.error());
@@ -20,26 +20,19 @@ namespace asharia::host_runtime::tests {
 
         [[nodiscard]] bool activationApiRequiresPendingTypestate() {
             using ActivationFunction = decltype(&admitStaticFactoryActivation);
-            static_assert(std::is_invocable_v<ActivationFunction,
-                                              PendingActivationFactoryTableV1>);
-            static_assert(!std::is_invocable_v<ActivationFunction,
-                                               StaticFactoryCallbackTableV1>);
-            static_assert(!std::is_constructible_v<PendingActivationFactoryTableV1,
+            static_assert(std::is_invocable_v<ActivationFunction, PendingActivationFactoryTableV2>);
+            static_assert(!std::is_invocable_v<ActivationFunction, StaticFactoryCallbackTableV1>);
+            static_assert(!std::is_constructible_v<PendingActivationFactoryTableV2,
                                                    StaticFactoryCallbackTableV1>);
-            static_assert(!std::is_default_constructible_v<ActivationAdmissionV1>);
-            static_assert(!std::is_copy_constructible_v<ActivationAdmissionV1>);
-            static_assert(std::is_move_constructible_v<ActivationAdmissionV1>);
-            static_assert(!std::is_move_assignable_v<ActivationAdmissionV1>);
-            static_assert(!std::is_default_constructible_v<
-                          AdmittedStaticFactoryCallbackTableV1>);
-            static_assert(!std::is_copy_constructible_v<
-                          AdmittedStaticFactoryCallbackTableV1>);
-            static_assert(std::is_move_constructible_v<
-                          AdmittedStaticFactoryCallbackTableV1>);
-            static_assert(!std::is_move_assignable_v<
-                          AdmittedStaticFactoryCallbackTableV1>);
-            static_assert(!std::is_convertible_v<
-                          AdmittedStaticFactoryCallbackTableV1, bool>);
+            static_assert(!std::is_default_constructible_v<ActivationAdmissionV2>);
+            static_assert(!std::is_copy_constructible_v<ActivationAdmissionV2>);
+            static_assert(std::is_move_constructible_v<ActivationAdmissionV2>);
+            static_assert(!std::is_move_assignable_v<ActivationAdmissionV2>);
+            static_assert(!std::is_default_constructible_v<AdmittedStaticFactoryCallbackTableV2>);
+            static_assert(!std::is_copy_constructible_v<AdmittedStaticFactoryCallbackTableV2>);
+            static_assert(std::is_move_constructible_v<AdmittedStaticFactoryCallbackTableV2>);
+            static_assert(!std::is_move_assignable_v<AdmittedStaticFactoryCallbackTableV2>);
+            static_assert(!std::is_convertible_v<AdmittedStaticFactoryCallbackTableV2, bool>);
             return true;
         }
 
@@ -61,7 +54,7 @@ namespace asharia::host_runtime::tests {
 
         [[nodiscard]] bool zeroFactoryAdmissionReturnsEngagedEmptyView() {
             resetEligibilityProbeCounts();
-            auto pending = makePendingTable(EligibilityHandoffMutationV1::ZeroFactoryFunction);
+            auto pending = makePendingTable(CurrentImageDescriptorMutationV2::ZeroFactoryFunction);
             if (!pending) {
                 return false;
             }
@@ -71,39 +64,7 @@ namespace asharia::host_runtime::tests {
             }
             const auto descriptorCount = admittedDescriptorCount(*admitted);
             return descriptorCount && *descriptorCount == 0 &&
-                   recordingFunctionInvocationCount() == 1 &&
-                   providerInvocationCount() == 0 && lifecycleInvocationCount() == 0;
-        }
-
-        [[nodiscard]] bool unexpectedSnapshotCannotProduceActivationAdmission() {
-            resetEligibilityProbeCounts();
-            auto pending =
-                makePendingTable(EligibilityHandoffMutationV1::UnexpectedSnapshotFunction);
-            if (!pending) {
-                return false;
-            }
-            const auto admitted = admitStaticFactoryActivation(std::move(*pending));
-            return !admitted &&
-                   admitted.error().stage == ActivationEligibilityStageV1::Activation &&
-                   admitted.error().code ==
-                       ActivationEligibilityErrorCodeV1::TableSnapshotMismatch &&
-                   admitted.error().field == ActivationEligibilityFieldV1::TableSnapshot &&
-                   recordingFunctionInvocationCount() == 1 && providerInvocationCount() == 1 &&
-                   lifecycleInvocationCount() == 0 && contributionAccessorInvocationCount() == 0;
-        }
-
-        [[nodiscard]] bool corruptedExpectedSnapshotFailsClosed() {
-            resetEligibilityProbeCounts();
-            auto pending = makePendingTable();
-            if (!pending) {
-                return false;
-            }
-            PendingActivationFactoryTableV1 corrupt =
-                corruptPendingExpectedSnapshot(std::move(*pending));
-            const auto admitted = admitStaticFactoryActivation(std::move(corrupt));
-            return !admitted &&
-                   admitted.error().code ==
-                       ActivationEligibilityErrorCodeV1::TableSnapshotMismatch &&
+                   recordingFunctionInvocationCount() == 1 && providerInvocationCount() == 0 &&
                    lifecycleInvocationCount() == 0;
         }
 
@@ -113,13 +74,13 @@ namespace asharia::host_runtime::tests {
             if (!pending) {
                 return false;
             }
-            PendingActivationFactoryTableV1 evidenceOnly =
+            PendingActivationFactoryTableV2 evidenceOnly =
                 markPendingTableEvidenceOnly(std::move(*pending));
             const auto admitted = admitStaticFactoryActivation(std::move(evidenceOnly));
             return !admitted &&
-                   admitted.error().code ==
-                       ActivationEligibilityErrorCodeV1::TableOriginInvalid &&
-                   admitted.error().field == ActivationEligibilityFieldV1::TableOrigin &&
+                   admitted.error().stage == ActivationEligibilityStageV2::Activation &&
+                   admitted.error().code == ActivationEligibilityErrorCodeV2::TableOriginInvalid &&
+                   admitted.error().field == ActivationEligibilityFieldV2::TableOrigin &&
                    lifecycleInvocationCount() == 0;
         }
 
@@ -129,13 +90,13 @@ namespace asharia::host_runtime::tests {
             if (!pending) {
                 return false;
             }
-            PendingActivationFactoryTableV1 corrupt =
+            PendingActivationFactoryTableV2 corrupt =
                 corruptPendingTableAddress(std::move(*pending));
             const auto admitted = admitStaticFactoryActivation(std::move(corrupt));
             return !admitted &&
                    admitted.error().code ==
-                       ActivationEligibilityErrorCodeV1::TableInstanceMismatch &&
-                   admitted.error().field == ActivationEligibilityFieldV1::TableInstance &&
+                       ActivationEligibilityErrorCodeV2::TableInstanceMismatch &&
+                   admitted.error().field == ActivationEligibilityFieldV2::TableInstance &&
                    lifecycleInvocationCount() == 0;
         }
 
@@ -152,10 +113,10 @@ namespace asharia::host_runtime::tests {
             const auto admitted = admitStaticFactoryActivation(std::move(*replaced));
             return !admitted &&
                    admitted.error().code ==
-                       ActivationEligibilityErrorCodeV1::TableInstanceMismatch &&
-                   admitted.error().field == ActivationEligibilityFieldV1::TableInstance &&
-                   recordingFunctionInvocationCount() == 2 &&
-                   providerInvocationCount() == 2 && lifecycleInvocationCount() == 0;
+                       ActivationEligibilityErrorCodeV2::TableInstanceMismatch &&
+                   admitted.error().field == ActivationEligibilityFieldV2::TableInstance &&
+                   recordingFunctionInvocationCount() == 2 && providerInvocationCount() == 2 &&
+                   lifecycleInvocationCount() == 0;
         }
 
         [[nodiscard]] bool staleProcessEpochFailsActivation() {
@@ -167,15 +128,13 @@ namespace asharia::host_runtime::tests {
             rebindCurrentProcessEpochForTest();
             const auto admitted = admitStaticFactoryActivation(std::move(*pending));
             return !admitted &&
-                   admitted.error().code ==
-                       ActivationEligibilityErrorCodeV1::ProcessEpochStale &&
-                   admitted.error().field ==
-                       ActivationEligibilityFieldV1::CurrentProcess &&
+                   admitted.error().code == ActivationEligibilityErrorCodeV2::ProcessEpochStale &&
+                   admitted.error().field == ActivationEligibilityFieldV2::CurrentProcess &&
                    lifecycleInvocationCount() == 0;
         }
 
-        // Reusing the source is intentional here: the pending typestate must
-        // reject a second admission attempt after ownership was transferred.
+        // Reusing the source is intentional: ownership transfer must invalidate
+        // the original pending typestate.
         // NOLINTBEGIN(bugprone-use-after-move,clang-analyzer-cplusplus.Move)
         [[nodiscard]] bool movedPendingTargetWorksAndSourceCannotBeReused() {
             resetEligibilityProbeCounts();
@@ -183,8 +142,8 @@ namespace asharia::host_runtime::tests {
             if (!pendingResult) {
                 return false;
             }
-            PendingActivationFactoryTableV1 pending = std::move(*pendingResult);
-            PendingActivationFactoryTableV1 moved = std::move(pending);
+            PendingActivationFactoryTableV2 pending = std::move(*pendingResult);
+            PendingActivationFactoryTableV2 moved = std::move(pending);
             const auto admitted = admitStaticFactoryActivation(std::move(moved));
             if (!admitted || lifecycleInvocationCount() != 0) {
                 return false;
@@ -192,8 +151,7 @@ namespace asharia::host_runtime::tests {
 
             const auto reused = admitStaticFactoryActivation(std::move(pending));
             return !reused &&
-                   reused.error().code ==
-                       ActivationEligibilityErrorCodeV1::PendingTableMovedFrom &&
+                   reused.error().code == ActivationEligibilityErrorCodeV2::PendingTableMovedFrom &&
                    lifecycleInvocationCount() == 0;
         }
         // NOLINTEND(bugprone-use-after-move,clang-analyzer-cplusplus.Move)
@@ -205,7 +163,7 @@ namespace asharia::host_runtime::tests {
                 return false;
             }
 
-            ActivationEligibilityErrorV1 observed{};
+            ActivationEligibilityErrorV2 observed{};
             bool rejected = false;
             std::jthread worker([pending = std::move(*pending), &observed, &rejected]() mutable {
                 const auto admitted = admitStaticFactoryActivation(std::move(pending));
@@ -215,15 +173,15 @@ namespace asharia::host_runtime::tests {
                 }
             });
             worker.join();
-            return rejected && observed.stage == ActivationEligibilityStageV1::Activation &&
-                   observed.code == ActivationEligibilityErrorCodeV1::WrongControlThread &&
-                   observed.field == ActivationEligibilityFieldV1::ControlThread &&
+            return rejected && observed.stage == ActivationEligibilityStageV2::Activation &&
+                   observed.code == ActivationEligibilityErrorCodeV2::WrongControlThread &&
+                   observed.field == ActivationEligibilityFieldV2::ControlThread &&
                    recordingFunctionInvocationCount() == 1 && providerInvocationCount() == 1 &&
                    lifecycleInvocationCount() == 0 && contributionAccessorInvocationCount() == 0;
         }
 
-        // Private white-box access is used only to verify that moving the admitted
-        // wrapper transfers the callback table instead of aliasing it.
+        // Private white-box access verifies that moving the admitted wrapper
+        // transfers authority rather than leaving an alias in the source.
         // NOLINTBEGIN(bugprone-use-after-move,clang-analyzer-cplusplus.Move)
         [[nodiscard]] bool movedAdmittedSourceHasNoPrivateDescriptorAccess() {
             resetEligibilityProbeCounts();
@@ -235,8 +193,8 @@ namespace asharia::host_runtime::tests {
             if (!admittedResult) {
                 return false;
             }
-            AdmittedStaticFactoryCallbackTableV1 admitted = std::move(*admittedResult);
-            AdmittedStaticFactoryCallbackTableV1 moved = std::move(admitted);
+            AdmittedStaticFactoryCallbackTableV2 admitted = std::move(*admittedResult);
+            AdmittedStaticFactoryCallbackTableV2 moved = std::move(admitted);
             const auto sourceCount = admittedDescriptorCount(admitted);
             const auto targetCount = admittedDescriptorCount(moved);
             return !sourceCount && targetCount && *targetCount == 1 &&
@@ -256,10 +214,9 @@ namespace asharia::host_runtime::tests {
             }
 
             std::optional<std::size_t> observedCount;
-            std::jthread worker(
-                [admitted = std::move(*admitted), &observedCount]() mutable {
-                    observedCount = admittedDescriptorCount(admitted);
-                });
+            std::jthread worker([admitted = std::move(*admitted), &observedCount]() mutable {
+                observedCount = admittedDescriptorCount(admitted);
+            });
             worker.join();
             return !observedCount && lifecycleInvocationCount() == 0;
         }
@@ -284,71 +241,63 @@ namespace asharia::host_runtime::tests {
             const auto alternate = collectEvidenceOnlyTable(true);
             return expected && alternate &&
                    expected->registrationSnapshot() == alternate->registrationSnapshot() &&
-                   recordingFunctionInvocationCount() == 2 &&
-                   providerInvocationCount() == 2 && lifecycleInvocationCount() == 0;
+                   recordingFunctionInvocationCount() == 2 && providerInvocationCount() == 2 &&
+                   lifecycleInvocationCount() == 0;
         }
 
     } // namespace
 
-    std::span<const NamedEligibilityTestV1> activationAdmissionTests() noexcept {
+    std::span<const NamedEligibilityTestV2> activationAdmissionTests() noexcept {
         static constexpr std::array tests{
-            NamedEligibilityTestV1{
-                .name = "activation API requires pending typestate",
+            NamedEligibilityTestV2{
+                .name = "activation API requires V2 pending typestate",
                 .function = &activationApiRequiresPendingTypestate,
             },
-            NamedEligibilityTestV1{
+            NamedEligibilityTestV2{
                 .name = "exact pending table admits private descriptors",
                 .function = &exactPendingTableProducesAdmittedDescriptorAccess,
             },
-            NamedEligibilityTestV1{
+            NamedEligibilityTestV2{
                 .name = "zero-factory admission has an engaged empty view",
                 .function = &zeroFactoryAdmissionReturnsEngagedEmptyView,
             },
-            NamedEligibilityTestV1{
-                .name = "unexpected snapshot fails activation",
-                .function = &unexpectedSnapshotCannotProduceActivationAdmission,
-            },
-            NamedEligibilityTestV1{
-                .name = "corrupted expected snapshot fails",
-                .function = &corruptedExpectedSnapshotFailsClosed,
-            },
-            NamedEligibilityTestV1{
+            NamedEligibilityTestV2{
                 .name = "evidence-only origin cannot be upgraded",
                 .function = &evidenceOnlyOriginCannotBeUpgraded,
             },
-            NamedEligibilityTestV1{
+            NamedEligibilityTestV2{
                 .name = "substituted table address fails",
                 .function = &substitutedTableAddressFailsClosed,
             },
-            NamedEligibilityTestV1{
-                .name = "same-address equivalent replacement table fails",
+            NamedEligibilityTestV2{
+                .name = "same-address replacement table fails",
                 .function = &equivalentReplacementTableFailsClosed,
             },
-            NamedEligibilityTestV1{
+            NamedEligibilityTestV2{
                 .name = "stale process epoch fails activation",
                 .function = &staleProcessEpochFailsActivation,
             },
-            NamedEligibilityTestV1{
+            NamedEligibilityTestV2{
                 .name = "moved pending cannot be reused",
                 .function = &movedPendingTargetWorksAndSourceCannotBeReused,
             },
-            NamedEligibilityTestV1{
+            NamedEligibilityTestV2{
                 .name = "wrong thread consumes pending",
                 .function = &wrongThreadConsumesPendingBeforeDescriptorAccess,
             },
-            NamedEligibilityTestV1{
+            NamedEligibilityTestV2{
                 .name = "moved admitted source has no private access",
                 .function = &movedAdmittedSourceHasNoPrivateDescriptorAccess,
             },
-            NamedEligibilityTestV1{
+            NamedEligibilityTestV2{
                 .name = "wrong thread has no admitted descriptor access",
                 .function = &wrongThreadCannotReadAdmittedDescriptors,
             },
-            NamedEligibilityTestV1{
+            NamedEligibilityTestV2{
                 .name = "stale process has no admitted descriptor access",
                 .function = &staleProcessCannotReadAdmittedDescriptors,
             },
-            NamedEligibilityTestV1{
+            NamedEligibilityTestV2{
                 .name = "equivalent evidence tables stay outside activation",
                 .function = &byteIdenticalEvidenceTablesRemainOutsideActivationApi,
             },

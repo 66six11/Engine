@@ -1,53 +1,35 @@
-﻿#include "activation_eligibility_test_support.hpp"
-
-#include <algorithm>
+﻿#include <algorithm>
 #include <array>
 #include <cstdio>
 #include <thread>
 #include <type_traits>
 #include <utility>
 
+#include "activation_eligibility_test_support.hpp"
+
+#if __has_include("asharia/host_runtime/current_image_activation_descriptor_provider_access.hpp")
+#error "The current-image provider bridge must not propagate to ordinary test consumers."
+#endif
+
 namespace asharia::host_runtime::tests {
     namespace {
 
         [[nodiscard]] bool sealedTypesAreLinear() {
-            static_assert(!std::is_default_constructible_v<ReadySessionHandoffV1>);
-            static_assert(!std::is_copy_constructible_v<ReadySessionHandoffV1>);
-            static_assert(std::is_move_constructible_v<ReadySessionHandoffV1>);
-            static_assert(!std::is_move_assignable_v<ReadySessionHandoffV1>);
+            static_assert(!std::is_default_constructible_v<CurrentImageActivationDescriptorV2>);
+            static_assert(!std::is_copy_constructible_v<CurrentImageActivationDescriptorV2>);
+            static_assert(std::is_move_constructible_v<CurrentImageActivationDescriptorV2>);
+            static_assert(!std::is_move_assignable_v<CurrentImageActivationDescriptorV2>);
+            static_assert(!std::is_convertible_v<CurrentImageActivationDescriptorV2, bool>);
 
-            static_assert(!std::is_default_constructible_v<
-                          VerifiedHostActivationBlueprintHandoffV1>);
-            static_assert(!std::is_copy_constructible_v<
-                          VerifiedHostActivationBlueprintHandoffV1>);
-            static_assert(std::is_move_constructible_v<
-                          VerifiedHostActivationBlueprintHandoffV1>);
-            static_assert(!std::is_move_assignable_v<
-                          VerifiedHostActivationBlueprintHandoffV1>);
-
-            static_assert(!std::is_default_constructible_v<DeepVerifiedHostBindingHandoffV1>);
-            static_assert(!std::is_copy_constructible_v<DeepVerifiedHostBindingHandoffV1>);
-            static_assert(std::is_move_constructible_v<DeepVerifiedHostBindingHandoffV1>);
-            static_assert(!std::is_move_assignable_v<DeepVerifiedHostBindingHandoffV1>);
-
-            static_assert(!std::is_default_constructible_v<
-                          VerifiedCurrentProcessLaunchHandoffV1>);
-            static_assert(!std::is_copy_constructible_v<
-                          VerifiedCurrentProcessLaunchHandoffV1>);
-            static_assert(std::is_move_constructible_v<
-                          VerifiedCurrentProcessLaunchHandoffV1>);
-            static_assert(!std::is_move_assignable_v<
-                          VerifiedCurrentProcessLaunchHandoffV1>);
-
-            static_assert(!std::is_default_constructible_v<PreRegistrationAdmissionV1>);
-            static_assert(!std::is_copy_constructible_v<PreRegistrationAdmissionV1>);
-            static_assert(std::is_move_constructible_v<PreRegistrationAdmissionV1>);
-            static_assert(!std::is_move_assignable_v<PreRegistrationAdmissionV1>);
-            static_assert(!std::is_convertible_v<PreRegistrationAdmissionV1, bool>);
+            static_assert(!std::is_default_constructible_v<PreRegistrationAdmissionV2>);
+            static_assert(!std::is_copy_constructible_v<PreRegistrationAdmissionV2>);
+            static_assert(std::is_move_constructible_v<PreRegistrationAdmissionV2>);
+            static_assert(!std::is_move_assignable_v<PreRegistrationAdmissionV2>);
+            static_assert(!std::is_convertible_v<PreRegistrationAdmissionV2, bool>);
             return true;
         }
 
-        [[nodiscard]] bool validLineageProducesOneAdmissionWithoutInvokingCode() {
+        [[nodiscard]] bool validDescriptorProducesOneAdmissionWithoutInvokingCode() {
             resetEligibilityProbeCounts();
             const auto result = makePreRegistrationAdmission();
             return result && recordingFunctionInvocationCount() == 0 &&
@@ -55,127 +37,103 @@ namespace asharia::host_runtime::tests {
                    contributionAccessorInvocationCount() == 0;
         }
 
-        // Reusing the source is intentional here: consuming one handoff must leave
-        // an observable fail-closed state for a second admission attempt.
+        // Reusing the source is intentional: a moved descriptor must fail closed,
+        // while the move target remains the sole authority-bearing value.
         // NOLINTBEGIN(bugprone-use-after-move,clang-analyzer-cplusplus.Move)
-        [[nodiscard]] bool movedFromHandoffFailsClosed() {
+        [[nodiscard]] bool movedDescriptorSourceFailsClosed() {
             resetEligibilityProbeCounts();
-            EligibilityHandoffsV1 handoffs = makeEligibilityHandoffs();
-            [[maybe_unused]] ReadySessionHandoffV1 consumed = std::move(handoffs.readySession);
+            resetCurrentImageEpochForTest();
+            auto issued = issueCurrentImageActivationDescriptor();
+            if (!issued) {
+                return false;
+            }
 
-            const auto result = admitPreRegistration(
-                std::move(handoffs.readySession), std::move(handoffs.blueprint),
-                std::move(handoffs.binding), std::move(handoffs.launchHandoff));
-            return !result &&
-                   result.error().stage == ActivationEligibilityStageV1::PreRegistration &&
-                   result.error().code == ActivationEligibilityErrorCodeV1::HandoffMovedFrom &&
-                   result.error().field == ActivationEligibilityFieldV1::ReadySession &&
-                   recordingFunctionInvocationCount() == 0 && providerInvocationCount() == 0 &&
-                   lifecycleInvocationCount() == 0 && contributionAccessorInvocationCount() == 0;
+            CurrentImageActivationDescriptorV2 descriptor = std::move(*issued);
+            CurrentImageActivationDescriptorV2 moved = std::move(descriptor);
+            const auto reused = admitCurrentImagePreRegistration(std::move(descriptor));
+            if (reused || reused.error().stage != ActivationEligibilityStageV2::PreRegistration ||
+                reused.error().code != ActivationEligibilityErrorCodeV2::DescriptorMovedFrom ||
+                reused.error().field != ActivationEligibilityFieldV2::CurrentImageDescriptor) {
+                return false;
+            }
+
+            const auto admitted = admitCurrentImagePreRegistration(std::move(moved));
+            return admitted && recordingFunctionInvocationCount() == 0 &&
+                   providerInvocationCount() == 0 && lifecycleInvocationCount() == 0;
         }
         // NOLINTEND(bugprone-use-after-move,clang-analyzer-cplusplus.Move)
 
-        [[nodiscard]] bool lineageMismatchMatrixFailsBeforeProviderCode() {
+        [[nodiscard]] bool invalidDescriptorMatrixFailsBeforeProviderCode() {
             struct Case final {
-                EligibilityHandoffMutationV1 mutation;
-                ActivationEligibilityErrorCodeV1 code;
-                ActivationEligibilityFieldV1 field;
+                CurrentImageDescriptorMutationV2 mutation;
+                ActivationEligibilityErrorCodeV2 code;
+                ActivationEligibilityFieldV2 field;
             };
             constexpr std::array cases{
                 Case{
-                    .mutation = EligibilityHandoffMutationV1::InvalidReadySession,
-                    .code = ActivationEligibilityErrorCodeV1::ReadySessionInvalid,
-                    .field = ActivationEligibilityFieldV1::ReadySession,
+                    .mutation = CurrentImageDescriptorMutationV2::InvalidHostIdentity,
+                    .code = ActivationEligibilityErrorCodeV2::CurrentImageDescriptorInvalid,
+                    .field = ActivationEligibilityFieldV2::HostIdentity,
                 },
                 Case{
-                    .mutation = EligibilityHandoffMutationV1::InvalidBinding,
-                    .code = ActivationEligibilityErrorCodeV1::BindingInvalid,
-                    .field = ActivationEligibilityFieldV1::Binding,
+                    .mutation = CurrentImageDescriptorMutationV2::InvalidEffectiveSession,
+                    .code = ActivationEligibilityErrorCodeV2::CurrentImageDescriptorInvalid,
+                    .field = ActivationEligibilityFieldV2::EffectiveSessionIntegrity,
                 },
                 Case{
-                    .mutation = EligibilityHandoffMutationV1::SessionFingerprintMismatch,
-                    .code = ActivationEligibilityErrorCodeV1::EffectiveSessionMismatch,
-                    .field = ActivationEligibilityFieldV1::EffectiveSessionIntegrity,
+                    .mutation = CurrentImageDescriptorMutationV2::InvalidStaticComposition,
+                    .code = ActivationEligibilityErrorCodeV2::CurrentImageDescriptorInvalid,
+                    .field = ActivationEligibilityFieldV2::StaticComposition,
                 },
                 Case{
-                    .mutation = EligibilityHandoffMutationV1::HostIdentityMismatch,
-                    .code = ActivationEligibilityErrorCodeV1::HostIdentityMismatch,
-                    .field = ActivationEligibilityFieldV1::HostIdentity,
+                    .mutation = CurrentImageDescriptorMutationV2::InvalidBlueprintIntegrity,
+                    .code = ActivationEligibilityErrorCodeV2::CurrentImageDescriptorInvalid,
+                    .field = ActivationEligibilityFieldV2::BlueprintIntegrity,
                 },
                 Case{
-                    .mutation = EligibilityHandoffMutationV1::BlueprintMismatch,
-                    .code = ActivationEligibilityErrorCodeV1::BlueprintMismatch,
-                    .field = ActivationEligibilityFieldV1::BlueprintIntegrity,
+                    .mutation = CurrentImageDescriptorMutationV2::UnsupportedTemplateRenderer,
+                    .code = ActivationEligibilityErrorCodeV2::UnsupportedGenerationTuple,
+                    .field = ActivationEligibilityFieldV2::GenerationTuple,
                 },
                 Case{
-                    .mutation = EligibilityHandoffMutationV1::StaticCompositionMismatch,
-                    .code = ActivationEligibilityErrorCodeV1::StaticCompositionMismatch,
-                    .field = ActivationEligibilityFieldV1::StaticComposition,
+                    .mutation = CurrentImageDescriptorMutationV2::UnsupportedCompositionRenderer,
+                    .code = ActivationEligibilityErrorCodeV2::UnsupportedGenerationTuple,
+                    .field = ActivationEligibilityFieldV2::GenerationTuple,
                 },
                 Case{
-                    .mutation = EligibilityHandoffMutationV1::HostTemplateMismatch,
-                    .code = ActivationEligibilityErrorCodeV1::HostTemplateMismatch,
-                    .field = ActivationEligibilityFieldV1::HostTemplate,
+                    .mutation = CurrentImageDescriptorMutationV2::UnsupportedProviderApi,
+                    .code = ActivationEligibilityErrorCodeV2::UnsupportedGenerationTuple,
+                    .field = ActivationEligibilityFieldV2::GenerationTuple,
                 },
                 Case{
-                    .mutation = EligibilityHandoffMutationV1::UnsupportedTemplateRenderer,
-                    .code = ActivationEligibilityErrorCodeV1::UnsupportedGenerationTuple,
-                    .field = ActivationEligibilityFieldV1::GenerationTuple,
+                    .mutation = CurrentImageDescriptorMutationV2::UnsupportedSnapshotSchemaVersion,
+                    .code = ActivationEligibilityErrorCodeV2::UnsupportedGenerationTuple,
+                    .field = ActivationEligibilityFieldV2::GenerationTuple,
                 },
                 Case{
-                    .mutation = EligibilityHandoffMutationV1::UnsupportedCompositionRenderer,
-                    .code = ActivationEligibilityErrorCodeV1::UnsupportedGenerationTuple,
-                    .field = ActivationEligibilityFieldV1::GenerationTuple,
+                    .mutation = CurrentImageDescriptorMutationV2::InvalidLifecycleModel,
+                    .code = ActivationEligibilityErrorCodeV2::ProcessProjectionInvalid,
+                    .field = ActivationEligibilityFieldV2::ProcessProjection,
                 },
                 Case{
-                    .mutation = EligibilityHandoffMutationV1::UnsupportedProviderApi,
-                    .code = ActivationEligibilityErrorCodeV1::UnsupportedGenerationTuple,
-                    .field = ActivationEligibilityFieldV1::GenerationTuple,
+                    .mutation = CurrentImageDescriptorMutationV2::InvalidFactoryReference,
+                    .code = ActivationEligibilityErrorCodeV2::ProcessProjectionInvalid,
+                    .field = ActivationEligibilityFieldV2::ProcessProjection,
                 },
                 Case{
-                    .mutation = EligibilityHandoffMutationV1::UnsupportedSnapshotSchemaVersion,
-                    .code = ActivationEligibilityErrorCodeV1::UnsupportedGenerationTuple,
-                    .field = ActivationEligibilityFieldV1::GenerationTuple,
+                    .mutation = CurrentImageDescriptorMutationV2::MissingFactoryRequirement,
+                    .code = ActivationEligibilityErrorCodeV2::ProcessProjectionInvalid,
+                    .field = ActivationEligibilityFieldV2::ProcessProjection,
                 },
                 Case{
-                    .mutation = EligibilityHandoffMutationV1::BindingGenerationMismatch,
-                    .code = ActivationEligibilityErrorCodeV1::BindingGenerationMismatch,
-                    .field = ActivationEligibilityFieldV1::BindingGeneration,
+                    .mutation = CurrentImageDescriptorMutationV2::MissingCapacityFunction,
+                    .code = ActivationEligibilityErrorCodeV2::CurrentImageDescriptorInvalid,
+                    .field = ActivationEligibilityFieldV2::RecordingFunction,
                 },
                 Case{
-                    .mutation = EligibilityHandoffMutationV1::ArtifactMismatch,
-                    .code = ActivationEligibilityErrorCodeV1::ArtifactMismatch,
-                    .field = ActivationEligibilityFieldV1::ArtifactIdentity,
-                },
-                Case{
-                    .mutation = EligibilityHandoffMutationV1::ExpectedSnapshotInvalid,
-                    .code = ActivationEligibilityErrorCodeV1::ExpectedSnapshotInvalid,
-                    .field = ActivationEligibilityFieldV1::ExpectedSnapshot,
-                },
-                Case{
-                    .mutation = EligibilityHandoffMutationV1::LaunchProcessEpochMissing,
-                    .code = ActivationEligibilityErrorCodeV1::LaunchHandoffInvalid,
-                    .field = ActivationEligibilityFieldV1::LaunchHandoff,
-                },
-                Case{
-                    .mutation = EligibilityHandoffMutationV1::LaunchProcessEpochStale,
-                    .code = ActivationEligibilityErrorCodeV1::ProcessEpochStale,
-                    .field = ActivationEligibilityFieldV1::CurrentProcess,
-                },
-                Case{
-                    .mutation = EligibilityHandoffMutationV1::LaunchProcessEpochConsumed,
-                    .code = ActivationEligibilityErrorCodeV1::ProcessEpochConsumed,
-                    .field = ActivationEligibilityFieldV1::CurrentProcess,
-                },
-                Case{
-                    .mutation = EligibilityHandoffMutationV1::LaunchControlThreadEpochMissing,
-                    .code = ActivationEligibilityErrorCodeV1::LaunchHandoffInvalid,
-                    .field = ActivationEligibilityFieldV1::LaunchHandoff,
-                },
-                Case{
-                    .mutation = EligibilityHandoffMutationV1::LaunchRecordingFunctionMissing,
-                    .code = ActivationEligibilityErrorCodeV1::LaunchHandoffInvalid,
-                    .field = ActivationEligibilityFieldV1::LaunchHandoff,
+                    .mutation = CurrentImageDescriptorMutationV2::MissingRecordingFunction,
+                    .code = ActivationEligibilityErrorCodeV2::CurrentImageDescriptorInvalid,
+                    .field = ActivationEligibilityFieldV2::RecordingFunction,
                 },
             };
 
@@ -183,7 +141,7 @@ namespace asharia::host_runtime::tests {
                 resetEligibilityProbeCounts();
                 const auto result = makePreRegistrationAdmission(testCase.mutation);
                 return !result &&
-                       result.error().stage == ActivationEligibilityStageV1::PreRegistration &&
+                       result.error().stage == ActivationEligibilityStageV2::PreRegistration &&
                        result.error().code == testCase.code &&
                        result.error().field == testCase.field &&
                        recordingFunctionInvocationCount() == 0 && providerInvocationCount() == 0 &&
@@ -192,52 +150,78 @@ namespace asharia::host_runtime::tests {
             });
         }
 
-        [[nodiscard]] bool wrongThreadFailsAndConsumesAllHandoffs() {
+        [[nodiscard]] bool wrongThreadConsumesDescriptorBeforeAdmission() {
             resetEligibilityProbeCounts();
-            EligibilityHandoffsV1 handoffs = makeEligibilityHandoffs();
-            ActivationEligibilityErrorV1 observed{};
+            resetCurrentImageEpochForTest();
+            auto descriptor = issueCurrentImageActivationDescriptor();
+            if (!descriptor) {
+                return false;
+            }
+
+            ActivationEligibilityErrorV2 observed{};
             bool rejected = false;
             std::jthread worker(
-                [handoffs = std::move(handoffs), &observed, &rejected]() mutable {
-                    const auto result = admitPreRegistration(
-                        std::move(handoffs.readySession), std::move(handoffs.blueprint),
-                        std::move(handoffs.binding), std::move(handoffs.launchHandoff));
+                [descriptor = std::move(*descriptor), &observed, &rejected]() mutable {
+                    const auto result = admitCurrentImagePreRegistration(std::move(descriptor));
                     rejected = !result;
                     if (!result) {
                         observed = result.error();
                     }
                 });
             worker.join();
-            return rejected && observed.stage == ActivationEligibilityStageV1::PreRegistration &&
-                   observed.code == ActivationEligibilityErrorCodeV1::WrongControlThread &&
-                   observed.field == ActivationEligibilityFieldV1::ControlThread &&
+            return rejected && observed.stage == ActivationEligibilityStageV2::PreRegistration &&
+                   observed.code == ActivationEligibilityErrorCodeV2::WrongControlThread &&
+                   observed.field == ActivationEligibilityFieldV2::ControlThread &&
                    recordingFunctionInvocationCount() == 0 && providerInvocationCount() == 0 &&
-                   lifecycleInvocationCount() == 0 && contributionAccessorInvocationCount() == 0;
+                   lifecycleInvocationCount() == 0;
+        }
+
+        [[nodiscard]] bool processEpochCanBeClaimedOnlyOnce() {
+            resetEligibilityProbeCounts();
+            resetCurrentImageEpochForTest();
+            auto firstDescriptor = issueCurrentImageActivationDescriptor();
+            auto secondDescriptor = issueCurrentImageActivationDescriptor();
+            if (!firstDescriptor || !secondDescriptor) {
+                return false;
+            }
+
+            const auto first = admitCurrentImagePreRegistration(std::move(*firstDescriptor));
+            const auto second = admitCurrentImagePreRegistration(std::move(*secondDescriptor));
+            return first && !second &&
+                   second.error().stage == ActivationEligibilityStageV2::PreRegistration &&
+                   second.error().code == ActivationEligibilityErrorCodeV2::ProcessEpochConsumed &&
+                   second.error().field == ActivationEligibilityFieldV2::CurrentProcess &&
+                   recordingFunctionInvocationCount() == 0 && providerInvocationCount() == 0 &&
+                   lifecycleInvocationCount() == 0;
         }
 
     } // namespace
 
-    std::span<const NamedEligibilityTestV1> preRegistrationEligibilityTests() noexcept {
+    std::span<const NamedEligibilityTestV2> preRegistrationEligibilityTests() noexcept {
         static constexpr std::array tests{
-            NamedEligibilityTestV1{
-                .name = "sealed types are linear",
+            NamedEligibilityTestV2{
+                .name = "sealed V2 types are linear",
                 .function = &sealedTypesAreLinear,
             },
-            NamedEligibilityTestV1{
-                .name = "valid lineage produces one admission",
-                .function = &validLineageProducesOneAdmissionWithoutInvokingCode,
+            NamedEligibilityTestV2{
+                .name = "valid descriptor produces one admission",
+                .function = &validDescriptorProducesOneAdmissionWithoutInvokingCode,
             },
-            NamedEligibilityTestV1{
-                .name = "moved-from handoff fails closed",
-                .function = &movedFromHandoffFailsClosed,
+            NamedEligibilityTestV2{
+                .name = "moved descriptor source fails closed",
+                .function = &movedDescriptorSourceFailsClosed,
             },
-            NamedEligibilityTestV1{
-                .name = "lineage mismatch matrix fails before provider code",
-                .function = &lineageMismatchMatrixFailsBeforeProviderCode,
+            NamedEligibilityTestV2{
+                .name = "invalid descriptor matrix fails before provider code",
+                .function = &invalidDescriptorMatrixFailsBeforeProviderCode,
             },
-            NamedEligibilityTestV1{
-                .name = "wrong thread consumes handoffs",
-                .function = &wrongThreadFailsAndConsumesAllHandoffs,
+            NamedEligibilityTestV2{
+                .name = "wrong thread consumes descriptor",
+                .function = &wrongThreadConsumesDescriptorBeforeAdmission,
+            },
+            NamedEligibilityTestV2{
+                .name = "process epoch is claimed only once",
+                .function = &processEpochCanBeClaimedOnlyOnce,
             },
         };
         return tests;
@@ -246,7 +230,7 @@ namespace asharia::host_runtime::tests {
 } // namespace asharia::host_runtime::tests
 
 int main() {
-    using asharia::host_runtime::tests::NamedEligibilityTestV1;
+    using asharia::host_runtime::tests::NamedEligibilityTestV2;
     try {
         const std::array groups{
             asharia::host_runtime::tests::preRegistrationEligibilityTests(),
@@ -254,9 +238,9 @@ int main() {
             asharia::host_runtime::tests::activationAdmissionTests(),
         };
 
-        const bool succeeded = std::ranges::all_of(
-            groups, [](const std::span<const NamedEligibilityTestV1> group) {
-                return std::ranges::all_of(group, [](const NamedEligibilityTestV1& test) {
+        const bool succeeded =
+            std::ranges::all_of(groups, [](const std::span<const NamedEligibilityTestV2> group) {
+                return std::ranges::all_of(group, [](const NamedEligibilityTestV2& test) {
                     if (test.function()) {
                         return true;
                     }

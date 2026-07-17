@@ -16,7 +16,7 @@ flowchart TD
     EditorApp["apps/editor<br/>Dear ImGui host + editor smoke harness"]
     Core["engine/core"]
     Platform["engine/platform"]
-    HostRuntime["engine/host-runtime<br/>provider v4 + typed payload-accessor evidence<br/>callback table + eligibility + ProcessScope C++"]
+    HostRuntime["engine/host-runtime<br/>provider v4 + Eligibility V2<br/>callback table + ProcessScope V2"]
     Window["packages/window-glfw"]
     Profiling["packages/profiling"]
     Schema["packages/schema"]
@@ -28,6 +28,7 @@ flowchart TD
     SceneCore["packages/scene-core"]
     ProjectCore["packages/project-core"]
     ProjectCoreIo["packages/project-core<br/>asharia::project_core_io"]
+    ProjectBootstrap["packages/project-bootstrap<br/>reader + ProcessApplicationV1 provider"]
     AssetCore["packages/asset-core"]
     AssetCoreIo["packages/asset-core<br/>asharia::asset_core_io"]
     AssetPipeline["packages/asset-pipeline"]
@@ -63,6 +64,8 @@ flowchart TD
     ProjectCore --> Core
     ProjectCoreIo --> ProjectCore
     ProjectCoreIo --> Archive
+    ProjectBootstrap --> HostRuntime
+    ProjectBootstrap --> ProjectCoreIo
     AssetCore --> Core
     AssetCoreIo --> AssetCore
     AssetCoreIo --> Archive
@@ -124,21 +127,23 @@ flowchart TD
   是 package-level 粗粒度边界，不能替代 target-level 依赖审查。
 - `engine/platform` 当前是预留 boundary target，只传递 `core` 依赖，不导出公共 header；真实
   GLFW/window/surface glue 仍在 `window-glfw`。
-- `engine/host-runtime` 的 `asharia::host_runtime_contract` 导出 callback/token V1、public contribution contract helper 与 provider V4
-  registrar：provider 只能 `registerFactory(localFactoryId, completeDescriptor, availableTypedBindings)`。provider implementation 通过 PRIVATE
-  `asharia::host_runtime_provider_bridge` 构造/消费 opaque token，普通 Host-facing include surface 不暴露该能力。
+- `engine/host-runtime` 的 `asharia::host_runtime_contract` 导出 callback/token V1、`ProcessApplicationV1`、public contribution helper 与
+  provider V4 registrar；provider implementation 仍只能经 PRIVATE `asharia::host_runtime_provider_bridge` 构造/消费 opaque token。
   `asharia::host_runtime_registration` 实现 move-only recorder、预留 capacity、sticky first error、frozen callback table、table-owned
   canonical RegistrationSnapshot v2、private process-local type/accessor evidence 与无 IO JSON renderer；registration 不调用 lifecycle
-  callback 或 payload accessor，不发布 contribution payload，也不包含 scope/activation 逻辑。
-  `asharia::host_runtime_activation_eligibility` 再把 sealed current-process lineage 与 exact table instance 绑定；
+  callback 或 payload accessor。
+  `asharia::host_runtime_activation_eligibility` 已硬切 Eligibility V2：T3/C6 private attachment 经
+  `asharia::host_runtime_current_image_provider_bridge` 封存 generated current-image descriptor，Stage 1 在 provider invocation 前校验
+  T3/C6/provider-v4/Snapshot-v2 tuple、ProcessScope projection、process/control-thread epoch 与一次性 claim；recording 完成后校验
+  composition generation/Blueprint digest，Stage 2 再把 authority 绑定到同一 exact table instance。
   `asharia::host_runtime_process_scope` 只消费 admitted owner，preflight 按 sealed Blueprint process order 建立 fixed contribution slots。
   `ProcessScopeExecutorV2::start()` 执行 create/activate、per-factory accessor staging/atomic lease commit，并在全部 factories 成功后开放
   typed registry；weak view/handle 的 query/borrow 对错误 thread、stale epoch、revoking/revoked/expired generation fail closed。rollback/stop
-  顺序是 reverse quiesce → `Revoking` → reverse lease revoke → reverse deactivate/destroy → `Revoked`。四个 targets 只按 contract →
+  顺序是 reverse quiesce → `Revoking` → reverse lease revoke → reverse deactivate/destroy → `Revoked`。targets 只按 contract →
   registration → eligibility → process-scope 方向依赖；ProcessScope 不解析 package JSON、receipt 或 artifact bytes，也不提供其他 scopes、
   jobs/subscriptions lease 或 Bootstrap 状态映射。
-  现有 sample/editor app 尚未直接链接 process-scope target；renderer revision 5 的 generated CMake handoff 只在生成的 Windows Development
-  Host target 上链接 registration target 与 exact static provider targets。因此生产 Host vertical feature 仍未接线。
+  现有 sample/editor app 仍未直接链接 process-scope target；但 renderer 6 attachment 已为 generated Windows Development Host 私有链接
+  current-image bridge、exact static providers 与 ProcessScope，renderer 3 normal mode 已形成第一条真实 Host vertical path。
 - `asharia::rhi_vulkan` 是基础 Vulkan 后端，不公开依赖 RenderGraph。
 - `asharia::rhi_vulkan_rendergraph` 是 RenderGraph/Vulkan 适配层，负责把抽象 graph state 翻译为 Vulkan 类型。
 - `renderer-basic` 只描述后端无关的 basic renderer graph 片段。
@@ -151,6 +156,9 @@ flowchart TD
 - `project-core` 目前只拥有最小 project descriptor model；`asharia::project_core_io` 通过 `archive`
   strict JSON facade 读写 `asharia.project.json`，不保存 cook/package profiles、editor workspace 或 runtime
   resource state。
+- `packages/project-bootstrap` 是 Engine Distribution 固定选择、项目不可替换的 source boundary。reader/summary target 复用
+  `project_core_io`，provider target 发布单例 `ProcessApplicationV1`；factory create/activate 不做 IO，只有 ProcessScope Active 后的
+  `run()` 才读取真实 `asharia.project.json` 并返回确定性摘要。
 - `asset-pipeline` 当前做 CPU-only metadata discovery / product execution：显式 source/.ameta 条目进入
   discovery facade，输出 deterministic manifest、`AssetCatalog` 输入、product blob 和 diagnostics；它可以
   私有复用 importer-specific package，例如 texture importer、`material-instance` 和 `shader-authoring`，但不做
@@ -187,16 +195,16 @@ flowchart TD
   `EditorSelectionSet` 的稳定 `sceneId + EntityId` snapshot，但仍不消费 runtime scene hierarchy 或 inspector
   data model；当前 UI 只表达 selection contract 状态，避免伪造场景数据。
 
-## 当前 Windows Development Host 生成、绑定与验证流
+## 当前 Windows Development Host 生成、验证与 normal 执行流
 
-这是 #290 构建、#291 callback-table registration handoff、#294 typed contribution evidence、#295 payload-accessor evidence 与 #288 Host executable binding
-已落地的 opt-in 工具路径，
+这是 #290 构建、#291 callback-table registration、#294 typed contribution evidence、#295 payload accessor、#288 Host executable binding
+与 #297 generated current-image normal Host 已落地的 opt-in 工具路径，
 不替换现有 sample/editor 开发入口：
 
 ```mermaid
 flowchart LR
-    Plans["Verified Source Build Plan + Blueprint + Binding Plan"] --> Composition["Static composition<br/>renderer 5 / provider v4"]
-    Composition --> Template["Windows development Host template<br/>renderer 2"]
+    Plans["Verified Session + Source Build + Blueprint + Binding Plan"] --> Composition["Static composition<br/>renderer 6 / provider v4"]
+    Composition --> Template["Windows development Host template<br/>renderer 3"]
     Conan["Caller-provided Conan toolchain + compiler environment"] --> Configure["Controlled final CMake configure"]
     Template --> Configure
     Configure --> Bind["Latest CMake File API exact target binding"]
@@ -214,52 +222,59 @@ flowchart LR
     Deep --> Publish["Single directory rename"]
 ```
 
-Host template 固定拥有唯一 `main()`、console subsystem 和 build-root 内 runtime output layout；build adapter 使用参数数组、
-受控环境与 `shell=False`，且 Conan 仍由 caller 先行完成。#288 publisher 不信任 mutable build-tree executable 是最终对象：
-它流式复制到 collector-owned staging，运行并复验 staged bytes，再以 receipt、snapshot 和 `host/<nameOnDisk>` 形成
-content-addressed closed generation。该路径只观察 stable registration/typed-contract evidence 与 artifact bytes，不执行 factory
-activation/lifecycle、
-不启动 Editor UI，也不证明 `Ready` 或 current process generation。模板和 composition 各只有一个薄 TU，构建只指定 exact Host
-target，且不使用 clean-first。restricted Host 会冻结 callback table，但 synthetic provider 使用 abort probes，验证 registration、
-receipt 路径对五个 lifecycle callbacks 和全部 payload accessors 的调用次数为零。Host build、binding assembly 与 deep verifier 只接受
-Template renderer 2 + Composition renderer 5/provider v4；pre-v4 bindings/Binding Plan 与 pre-current renderer/provider tuple 没有 reader 或 adapter，
-Receipt v1 保持 artifact binding envelope，RegistrationSnapshot v2 是唯一 active registration evidence schema。详见
+T3 Host template 固定拥有唯一 `main()`、console subsystem 和 build-root 内 runtime output layout；它把 CLI dispatch、restricted
+registration verification 与 normal ProcessApplication orchestration 分到小 TU。build adapter 使用参数数组、受控环境与 `shell=False`，
+且 Conan 仍由 caller 先行完成。#288 publisher 不信任 mutable build-tree executable 是最终对象：它流式复制到 collector-owned
+staging，运行并复验 staged bytes，再以 receipt、snapshot 和 `host/<nameOnDisk>` 形成 content-addressed closed generation。
+该 restricted 路径只观察 stable registration/typed-contract evidence 与 artifact bytes，不执行 factory activation/lifecycle，
+不启动 Editor UI，也不证明 normal lifecycle 已运行。C6 composition 仍是薄 generated attachment，构建只指定 exact Host target，
+且不使用 clean-first。restricted Host 会冻结 callback table，但 synthetic provider 使用 abort probes，验证 registration/receipt
+路径对五个 lifecycle callbacks 和全部 payload accessors 的调用次数为零。
+
+Host build、binding assembly 与 deep verifier 只接受 Template renderer 3 + Composition renderer 6/provider v4；pre-current
+bindings/Binding Plan 与 renderer/provider tuple 没有 reader 或 adapter。Receipt v1 保持 build/publication artifact binding envelope，
+RegistrationSnapshot v2 仍是 stable registration evidence schema。normal startup 走 generated current-image descriptor，不读取或 hash
+executable path，也不依赖外部 launch receipt。详见
 [Host Executable Binding Receipt v1](adr-host-executable-binding-receipt-v1.md) 与
 [Static Typed Contribution Contract Bindings v1](adr-static-typed-contribution-contract-bindings-v1.md)、
-[Static Contribution Payload Accessors v1](adr-static-contribution-payload-accessors-v1.md)。
+[Static Contribution Payload Accessors v1](adr-static-contribution-payload-accessors-v1.md) 和
+[Generated Current-Image Host 与 Project Bootstrap v1](adr-generated-current-image-project-bootstrap-host-v1.md)。
 
-## Activation Eligibility 与 ProcessScope 流（#292/#293 headless C++ boundaries）
+## Activation Eligibility V2 与 Project Bootstrap normal Host 流（#297）
 
-下面是 [Activation Eligibility v1](adr-activation-eligibility-v1.md) 与
-[ProcessScope Lifecycle v1](adr-process-scope-lifecycle-v1.md) 的当前 headless C++ boundaries。#293 implementation 与 focused tests 已
-完成并通过门禁；两者均尚未接入现有 Editor/sample/generated Host 的 normal long-lived path。
-current renderer 2 executable 仍只是上面的 disposable registration-only verifier：
+下面是 [Generated Current-Image Host 与 Project Bootstrap v1](adr-generated-current-image-project-bootstrap-host-v1.md) 的当前执行路径。
+它保留 V1 的 provider-before/after 两阶段与 exact-table affinity，但 active public API 已硬切 V2；四个外部 handoff、artifact identity
+和 launch receipt 不再是 normal startup 输入。restricted mode 仍是零 lifecycle/accessor 的 disposable 取证路径；normal mode 才执行：
 
 ```mermaid
 flowchart LR
-    Session["Ready Session handoff"] --> Pre["Stage 1 eligibility"]
-    Blueprint["Verified Blueprint handoff"] --> Pre
-    Binding["Deep-verified binding + expected snapshot"] --> Pre
-    Launch["Verified launch handoff\nplanned production issuer"] --> Pre
-    Pre --> Admission["PreRegistrationAdmissionV1"]
-    Admission -->|"consume once"| Recording["Admitted generated provider recording"]
+    C6["C6 sealed current-image descriptor"] --> Pre["Stage 1 eligibility"]
+    Pre --> Admission["PreRegistrationAdmissionV2"]
+    Admission -->|"consume once"| Recording["recordAdmittedStaticFactoryProviders"]
     Recording --> Pending["Pending table\nsame process/registration lineage"]
-    Pending --> Cross["Stage 2 snapshot + table-affinity check"]
-    Cross --> Admitted["Admitted table + ActivationAdmissionV1"]
-    Admitted --> Prepare["prepareProcessScopeExecutor\nzero-callback preflight"]
-    Prepare --> Prepared["Prepared\nsealed process order + descriptor indices"]
-    Prepared --> Start["start\ncreate -> activate"]
-    Start -->|success| ScopeActive["Active"]
+    Pending --> Cross["Stage 2 exact-table affinity"]
+    Cross --> Admitted["AdmittedStaticFactoryCallbackTableV2"]
+    Admitted --> Prepare["prepareProcessScopeExecutorV2\nzero-callback preflight"]
+    Prepare --> Start["start\ncreate -> activate -> publish"]
+    Start -->|success| Active["ProcessScope Active"]
     Start -->|failure| Rollback["reverse rollback\nStartFailed"]
-    ScopeActive --> Stop["explicit stop\nreverse quiesce / deactivate / destroy"]
+    Active --> Registry["registry.single<ProcessApplicationV1>()"]
+    Registry --> Borrow["borrow"]
+    Borrow --> Run["run(--asharia-project-root ...)"]
+    Run --> Project["read real asharia.project.json"]
+    Project --> Release["release borrow"]
+    Release --> Stop["explicit stop\nreverse quiesce / revoke / deactivate / destroy"]
     Stop --> Stopped["Stopped"]
 ```
 
-Stage 1 failure 必须发生在任何 project provider invocation 前；Stage 2 failure 不暴露 descriptor。snapshot byte-identical 的另一张
-table 也会因 private table lineage 不同而被拒绝。ProcessScope preparation exact-map sealed process projection，不把 callback table
-canonical order 当作 lifecycle order；表中不属于 process projection 的 descriptors 保持 inert。startup 与 normal stop 都由 Host 唯一
-拥有 tokens，并完成独立 reverse cleanup passes。production launch issuer 缺失时，只有 PRIVATE test issuer 能驱动这条路径；当前
-normal Host 仍没有 admission minting path，保持 fail closed，也不会发布 `ProjectReady`。
+Stage 1 failure 必须发生在任何 provider invocation 前，并校验 T3/C6/provider-v4/Snapshot-v2 tuple、generated ProcessScope projection、
+process/control-thread epoch 与一次性 claim。recording 后必须对证 composition generation 和 Blueprint digest；Stage 2 failure 不暴露
+descriptor，snapshot byte-identical 的另一张 table 也会因 private lineage 不同而被拒绝。ProcessScope preparation exact-map sealed
+process projection，不把 callback table canonical order 当作 lifecycle order；表中不属于 process projection 的 descriptors 保持 inert。
+
+Host 在 Active registry 中同步借用 `ProcessApplicationV1`，固定 Project Bootstrap 只在 `run()` 读取项目描述并输出 project name、
+canonical project ID 与 asset source root count 的确定性 JSON；成功和失败路径均先 release borrow，再显式 stop。该 Slice 不发布
+`ProjectReady`，也不实现 Editor UI/状态机，但 normal admission 已不再依赖 PRIVATE test issuer 或外部 launch receipt。
 
 ## 当前架构总览
 

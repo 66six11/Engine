@@ -22,7 +22,7 @@ namespace asharia::host_runtime {
         }
 
         const auto executionView =
-            AdmittedStaticFactoryCallbackTableAccessV1::executionView(state_->admittedTable);
+            AdmittedStaticFactoryCallbackTableAccessV2::executionView(state_->admittedTable);
         if (!executionView) {
             return std::unexpected(makeProcessScopeOperationError(
                 mapExecutionAccessError(executionView.error()), state_->lifecycleState));

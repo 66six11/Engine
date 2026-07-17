@@ -105,19 +105,19 @@ namespace asharia::host_runtime {
         }
 
         const auto executionView =
-            AdmittedStaticFactoryCallbackTableAccessV1::executionView(state_->admittedTable);
+            AdmittedStaticFactoryCallbackTableAccessV2::executionView(state_->admittedTable);
         if (!executionView) {
             ProcessContributionLookupErrorCodeV1 code =
                 ProcessContributionLookupErrorCodeV1::RegistryExpired;
             switch (executionView.error()) {
-            case AdmittedFactoryExecutionAccessErrorV1::WrongControlThread:
+            case AdmittedFactoryExecutionAccessErrorV2::WrongControlThread:
                 code = ProcessContributionLookupErrorCodeV1::WrongControlThread;
                 break;
-            case AdmittedFactoryExecutionAccessErrorV1::ProcessEpochStale:
+            case AdmittedFactoryExecutionAccessErrorV2::ProcessEpochStale:
                 code = ProcessContributionLookupErrorCodeV1::ProcessEpochStale;
                 break;
-            case AdmittedFactoryExecutionAccessErrorV1::MovedFrom:
-            case AdmittedFactoryExecutionAccessErrorV1::TableInvalid:
+            case AdmittedFactoryExecutionAccessErrorV2::MovedFrom:
+            case AdmittedFactoryExecutionAccessErrorV2::TableInvalid:
                 break;
             }
             return std::unexpected(ProcessContributionLookupErrorV1{.code = code});
@@ -126,15 +126,15 @@ namespace asharia::host_runtime {
     }
 
     ProcessScopeErrorCodeV2
-    mapExecutionAccessError(AdmittedFactoryExecutionAccessErrorV1 error) noexcept {
+    mapExecutionAccessError(AdmittedFactoryExecutionAccessErrorV2 error) noexcept {
         switch (error) {
-        case AdmittedFactoryExecutionAccessErrorV1::MovedFrom:
+        case AdmittedFactoryExecutionAccessErrorV2::MovedFrom:
             return ProcessScopeErrorCodeV2::AdmissionMovedFrom;
-        case AdmittedFactoryExecutionAccessErrorV1::WrongControlThread:
+        case AdmittedFactoryExecutionAccessErrorV2::WrongControlThread:
             return ProcessScopeErrorCodeV2::WrongControlThread;
-        case AdmittedFactoryExecutionAccessErrorV1::ProcessEpochStale:
+        case AdmittedFactoryExecutionAccessErrorV2::ProcessEpochStale:
             return ProcessScopeErrorCodeV2::ProcessEpochStale;
-        case AdmittedFactoryExecutionAccessErrorV1::TableInvalid:
+        case AdmittedFactoryExecutionAccessErrorV2::TableInvalid:
             return ProcessScopeErrorCodeV2::AdmittedTableInvalid;
         }
         return ProcessScopeErrorCodeV2::AdmittedTableInvalid;

@@ -41,7 +41,7 @@ namespace asharia::host_runtime {
 
     struct ProcessScopeExecutorStateV2 final {
         ProcessScopeExecutorStateV2(
-            AdmittedStaticFactoryCallbackTableV1 admittedTableValue,
+            AdmittedStaticFactoryCallbackTableV2 admittedTableValue,
             std::shared_ptr<ProcessContributionRegistryGenerationStateV1> contributionRegistryValue,
             std::vector<ResolvedProcessFactoryStateV2> factoriesValue,
             std::vector<ProcessScopeLifecycleDiagnosticV2> diagnosticScratchValue) noexcept
@@ -52,7 +52,7 @@ namespace asharia::host_runtime {
 
         // Keep the admitted owner before token-bearing records so member destruction
         // always tears records down before the exact callback table.
-        AdmittedStaticFactoryCallbackTableV1 admittedTable;
+        AdmittedStaticFactoryCallbackTableV2 admittedTable;
         std::shared_ptr<ProcessContributionRegistryGenerationStateV1> contributionRegistry;
         std::vector<ResolvedProcessFactoryStateV2> factories;
         std::vector<ProcessScopeLifecycleDiagnosticV2> diagnosticScratch;

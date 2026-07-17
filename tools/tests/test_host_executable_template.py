@@ -39,7 +39,7 @@ class HostExecutableTemplateTests(unittest.TestCase):
         self.assertEqual(first.generation, second.generation)
         assert first.generation is not None
         manifest = first.generation.manifest
-        self.assertEqual(2, manifest.renderer_revision)
+        self.assertEqual(3, manifest.renderer_revision)
         self.assertEqual(
             self.composition.manifest.generation_id,
             manifest.static_composition_generation_id,
@@ -56,60 +56,131 @@ class HostExecutableTemplateTests(unittest.TestCase):
             ),
         )
 
-    def test_renderer_revision_two_keeps_exact_output_bytes(self) -> None:
-        main = host_template_renderer.render_registration_verification_main()
-        cmake = host_template_renderer.render_windows_development_cmake(
-            "asharia-generated-host",
-            "sha256-" + "b" * 64,
-            "sha256-" + "a" * 64,
-        )
+    def test_renderer_revision_three_keeps_exact_output_bytes(self) -> None:
+        outputs = {
+            host_template.HOST_TEMPLATE_CMAKE_PATH: (
+                host_template_renderer.render_windows_development_cmake(
+                    "asharia-generated-host",
+                    "sha256-" + "b" * 64,
+                    "sha256-" + "a" * 64,
+                )
+            ),
+            host_template.HOST_TEMPLATE_INTERNAL_HEADER_PATH: (
+                host_template_renderer.render_internal_header()
+            ),
+            host_template.HOST_TEMPLATE_MAIN_PATH: host_template_renderer.render_main(),
+            host_template.HOST_TEMPLATE_PROCESS_APPLICATION_PATH: (
+                host_template_renderer.render_process_application_host()
+            ),
+            host_template.HOST_TEMPLATE_REGISTRATION_PATH: (
+                host_template_renderer.render_registration_verification()
+            ),
+        }
+        expected = {
+            host_template.HOST_TEMPLATE_CMAKE_PATH: (
+                1685,
+                "f41cdb4c59add9803c948561aefdc426e08aa195c9c7e0c9c1f312d559317631",
+            ),
+            host_template.HOST_TEMPLATE_INTERNAL_HEADER_PATH: (
+                227,
+                "2b7009c9de51a93367f65db7db1ddb265e04260a1ae3ff6234a2e4295911c69d",
+            ),
+            host_template.HOST_TEMPLATE_MAIN_PATH: (
+                1133,
+                "10fca8c88c9dcff56179673fecd9bd512f97d0ba7fe634279f03c54bfbeaf5a8",
+            ),
+            host_template.HOST_TEMPLATE_PROCESS_APPLICATION_PATH: (
+                4756,
+                "07bced1fd352fb4e6221a654617292066f7785846f428c37a170fa8fb612911d",
+            ),
+            host_template.HOST_TEMPLATE_REGISTRATION_PATH: (
+                1678,
+                "7264488d33402e08d043f654af782952e285c3e9428c77feb41bcb9c28dcaf97",
+            ),
+        }
 
-        self.assertEqual(2, host_template.HOST_TEMPLATE_RENDERER_REVISION)
-        self.assertEqual(2005, len(main))
-        self.assertEqual(
-            "2d469f14469137a599e7c4888919ff5a4fee06ec1b4d21c6f748a329a2dd3012",
-            hashlib.sha256(main).hexdigest(),
-        )
-        self.assertEqual(1554, len(cmake))
-        self.assertEqual(
-            "7ad02abdab4d4fc268af2a3b15fb2a6eec9b77de60b1551f02f5f00cf7b886a5",
-            hashlib.sha256(cmake).hexdigest(),
-        )
+        self.assertEqual(3, host_template.HOST_TEMPLATE_RENDERER_REVISION)
+        for path, content in outputs.items():
+            with self.subTest(path=path):
+                self.assertEqual(expected[path][0], len(content))
+                self.assertEqual(expected[path][1], hashlib.sha256(content).hexdigest())
 
-    def test_generated_files_keep_target_main_and_attachment_narrow(self) -> None:
+    def test_generated_files_separate_modes_and_keep_attachment_narrow(self) -> None:
         result = self.generate()
         assert result.generation is not None
         files = {value.path: value.content for value in result.generation.files}
         cmake = files[host_template.HOST_TEMPLATE_CMAKE_PATH].decode("utf-8")
-        main = files[host_template.HOST_TEMPLATE_MAIN_PATH]
+        main = files[host_template.HOST_TEMPLATE_MAIN_PATH].decode("utf-8-sig")
+        restricted = files[host_template.HOST_TEMPLATE_REGISTRATION_PATH].decode(
+            "utf-8-sig"
+        )
+        normal = files[host_template.HOST_TEMPLATE_PROCESS_APPLICATION_PATH].decode(
+            "utf-8-sig"
+        )
 
-        self.assertFalse(cmake.encode("utf-8").startswith(b"\xef\xbb\xbf"))
-        self.assertTrue(main.startswith(b"\xef\xbb\xbf"))
-        main_text = main.removeprefix(b"\xef\xbb\xbf").decode("utf-8")
+        self.assertFalse(
+            files[host_template.HOST_TEMPLATE_CMAKE_PATH].startswith(b"\xef\xbb\xbf")
+        )
+        for path, content in files.items():
+            if path != host_template.HOST_TEMPLATE_CMAKE_PATH:
+                self.assertTrue(content.startswith(b"\xef\xbb\xbf"), path)
         self.assertIn("add_executable(asharia-generated-host", cmake)
+        self.assertIn("src/process_application_host.cpp", cmake)
+        self.assertIn("src/registration_verification.cpp", cmake)
         self.assertEqual(1, cmake.count("asharia_attach_static_composition("))
         self.assertIn("WIN32_EXECUTABLE FALSE", cmake)
         self.assertIn("asharia-host/bin/$<CONFIG>", cmake)
-        self.assertIn("--asharia-verify-static-registration", main_text)
+
+        self.assertIn("--asharia-verify-static-registration", main)
+        self.assertIn("runRegistrationVerification()", main)
+        self.assertIn("runProcessApplicationHost(argc, argv)", main)
         self.assertEqual(
             1,
-            main_text.count(
+            restricted.count(
                 "asharia::generated::recordStaticFactoryProviders(*recorder);"
             ),
         )
-        self.assertIn("auto table = std::move(*recorder).finish();", main_text)
-        self.assertIn("table->registrationSnapshot()", main_text)
-        self.assertIn("static_factory_callback_table.hpp", main_text)
-        for eligibility_api in (
-            "activation_eligibility.hpp",
-            "admitted_static_factory_recording.hpp",
-            "admitPreRegistration",
-            "recordAdmittedStaticFactoryProviders",
-            "admitStaticFactoryActivation",
+        self.assertIn("auto table = std::move(*recorder).finish();", restricted)
+        self.assertIn("table->registrationSnapshot()", restricted)
+        for forbidden in (
+            "admitCurrentImagePreRegistration",
+            "prepareProcessScopeExecutorV2",
+            "ProcessApplicationV1",
+            "tryBorrow",
         ):
-            self.assertNotIn(eligibility_api, main_text)
-        self.assertNotIn("activate", main_text.casefold())
-        self.assertNotIn("factory instance", main_text.casefold())
+            self.assertNotIn(forbidden, restricted)
+
+        for expected_call in (
+            "admitCurrentImagePreRegistration()",
+            "recordAdmittedStaticFactoryProviders(",
+            "admitStaticFactoryActivation(",
+            "prepareProcessScopeExecutorV2(",
+            "executor->start()",
+            "single<asharia::host_runtime::ProcessApplicationV1>()",
+            "applicationHandle->tryBorrow()",
+            "application->get().run(",
+            "stopAfterFailure(*executor",
+            "executor->stop()",
+        ):
+            self.assertIn(expected_call, normal)
+
+        self.assertIn("catch (...)", normal)
+        self.assertIn(
+            "The helper returns only after the synchronous contribution borrow is",
+            normal,
+        )
+        self.assertIn(
+            "const int reportedExitCode = fail(code, result.diagnosticMessage, exitCode);",
+            normal,
+        )
+        self.assertIn(
+            "return stopAfterFailure(*executor, reportedExitCode);",
+            normal,
+        )
+        self.assertNotIn(
+            "stopAfterFailure(*executor, code, result.diagnosticMessage",
+            normal,
+        )
 
     def test_invalid_target_is_rejected_without_generation(self) -> None:
         result = self.generate("asharia::invalid")
@@ -125,8 +196,8 @@ class HostExecutableTemplateTests(unittest.TestCase):
         legacy = replace(
             self.composition.manifest,
             generation_id="sha256-" + "0" * 64,
-            renderer_revision=4,
-            provider_api="asharia-static-factory-provider-v3",
+            renderer_revision=5,
+            provider_api="asharia-static-factory-provider-v4",
             integrity=composition.IntegrityRecord("sha256", "0" * 64),
         )
         legacy = replace(
@@ -172,7 +243,7 @@ class HostExecutableTemplateTests(unittest.TestCase):
         first_evidence = generation.manifest.files[0]
         malformed_layout = replace(
             first_evidence,
-            role="registration-verification-main",
+            role="host-main",
             media_type="text/x-c++src",
         )
         mutations = {

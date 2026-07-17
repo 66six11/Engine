@@ -1,35 +1,43 @@
 ﻿#include "asharia/host_runtime/activation_eligibility.hpp"
 
 #include <algorithm>
+#include <memory>
+#include <mutex>
 #include <new>
 #include <optional>
+#include <stdexcept>
 #include <string_view>
-#include <tuple>
 #include <utility>
+
+#include "asharia/host_runtime/current_image_activation_descriptor_provider_access.hpp"
 
 #include "activation_eligibility_state.hpp"
 
 namespace asharia::host_runtime {
     namespace {
 
-        // One out-of-line TLS slot is shared by all callers in the process image;
-        // keeping it in a header can produce separate slots across static libraries.
+        // These out-of-line slots are shared by every static-library caller in one image.
         thread_local std::weak_ptr<const ControlThreadEpochAnchorV1>
             currentControlThreadEpoch; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+        std::atomic<std::shared_ptr<const ControlThreadEpochAnchorV1>>
+            currentImageControlThreadEpoch; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
         std::atomic<std::shared_ptr<const CurrentProcessEpochAnchorV1>>
             currentProcessEpoch; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+        std::mutex
+            currentImageEpochMutex; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
 
-        constexpr std::uint32_t kCurrentTemplateRendererRevision = 2;
-        constexpr std::uint32_t kCurrentCompositionRendererRevision = 5;
+        constexpr std::uint32_t kCurrentTemplateRendererRevision = 3;
+        constexpr std::uint32_t kCurrentCompositionRendererRevision = 6;
         constexpr std::uint32_t kCurrentRegistrationSnapshotSchemaVersion = 2;
-        constexpr std::string_view kCurrentProviderApi{
-            "asharia-static-factory-provider-v4"};
+        constexpr std::string_view kCurrentProviderApi{"asharia-static-factory-provider-v4"};
+        constexpr std::string_view kCurrentLifecycleModel{
+            "create-activate-quiesce-deactivate-destroy-v1"};
 
-        [[nodiscard]] ActivationEligibilityErrorV1
-        makeError(ActivationEligibilityErrorCodeV1 code,
-                  ActivationEligibilityFieldV1 field) noexcept {
+        [[nodiscard]] ActivationEligibilityErrorV2
+        makeError(ActivationEligibilityErrorCodeV2 code,
+                  ActivationEligibilityFieldV2 field) noexcept {
             return {
-                .stage = ActivationEligibilityStageV1::PreRegistration,
+                .stage = ActivationEligibilityStageV2::PreRegistration,
                 .code = code,
                 .field = field,
                 .registrationCode = std::nullopt,
@@ -37,8 +45,7 @@ namespace asharia::host_runtime {
         }
 
         [[nodiscard]] bool isLowerHexSha256(std::string_view value) noexcept {
-            return value.size() == 64 &&
-                   std::ranges::all_of(value, [](const char character) {
+            return value.size() == 64 && std::ranges::all_of(value, [](const char character) {
                        return (character >= '0' && character <= '9') ||
                               (character >= 'a' && character <= 'f');
                    });
@@ -46,277 +53,169 @@ namespace asharia::host_runtime {
 
         [[nodiscard]] bool isGenerationId(std::string_view value) noexcept {
             constexpr std::string_view kPrefix{"sha256-"};
-            return value.starts_with(kPrefix) &&
-                   isLowerHexSha256(value.substr(kPrefix.size()));
+            return value.starts_with(kPrefix) && isLowerHexSha256(value.substr(kPrefix.size()));
         }
 
-        [[nodiscard]] bool isValid(const ExactHostIdentityStateV1& host) noexcept {
+        [[nodiscard]] bool isValid(const ExactHostIdentityStateV2& host) noexcept {
             return isGenerationId(host.engineGenerationId) && !host.hostKind.empty() &&
                    !host.targetPlatform.empty();
         }
 
-        [[nodiscard]] bool
-        isValid(const GeneratedHostInputIdentityStateV1& input) noexcept {
-            return isGenerationId(input.generationId) &&
-                   isLowerHexSha256(input.manifestSha256);
-        }
-
-        [[nodiscard]] bool isValid(const HostArtifactIdentityStateV1& artifact) noexcept {
-            return artifact.size != 0 && isLowerHexSha256(artifact.sha256);
-        }
-
-        [[nodiscard]] bool isCurrent(const HostGenerationTupleStateV1& tuple) noexcept {
+        [[nodiscard]] bool isCurrent(const HostGenerationTupleStateV2& tuple) noexcept {
             return tuple.templateRendererRevision == kCurrentTemplateRendererRevision &&
-                   tuple.compositionRendererRevision ==
-                       kCurrentCompositionRendererRevision &&
+                   tuple.compositionRendererRevision == kCurrentCompositionRendererRevision &&
                    tuple.providerApi == kCurrentProviderApi &&
                    tuple.registrationSnapshotSchemaVersion ==
                        kCurrentRegistrationSnapshotSchemaVersion;
         }
 
-        [[nodiscard]] auto registrationKey(const StaticFactoryRegistrationV2& value) noexcept {
-            return std::tie(value.packageId, value.packageVersion, value.moduleId,
-                            value.factoryId, value.providerEntryPoint);
+        [[nodiscard]] bool isValid(const ExactFactoryReferenceStateV1& reference) noexcept {
+            return !reference.packageId.empty() && !reference.packageVersion.empty() &&
+                   !reference.moduleId.empty() && !reference.factoryId.empty();
         }
 
-        [[nodiscard]] auto contributionKey(
-            const StaticContributionRegistrationV2& value) noexcept {
-            return std::tie(value.contributionId, value.contributionKind, value.cardinality);
-        }
-
-        [[nodiscard]] bool isValidCardinality(
-            StaticContributionCardinalityV1 cardinality) noexcept {
-            return cardinality == StaticContributionCardinalityV1::Single ||
-                   cardinality == StaticContributionCardinalityV1::Multiple;
-        }
-
-        [[nodiscard]] bool hasPriorCardinalityConflict(
-            const StaticFactoryRegistrationSnapshotV2& snapshot,
-            std::size_t registrationIndex, std::size_t contributionIndex) noexcept {
-            const StaticContributionRegistrationV2& contribution =
-                snapshot.registrations[registrationIndex].contributions[contributionIndex];
-            for (std::size_t previousRegistrationIndex = 0;
-                 previousRegistrationIndex <= registrationIndex; ++previousRegistrationIndex) {
-                const StaticFactoryRegistrationV2& previousRegistration =
-                    snapshot.registrations[previousRegistrationIndex];
-                const std::size_t previousContributionCount =
-                    previousRegistrationIndex == registrationIndex
-                        ? contributionIndex
-                        : previousRegistration.contributions.size();
-                for (std::size_t previousContributionIndex = 0;
-                     previousContributionIndex < previousContributionCount;
-                     ++previousContributionIndex) {
-                    const StaticContributionRegistrationV2& previous =
-                        previousRegistration.contributions[previousContributionIndex];
-                    if (previous.contributionKind == contribution.contributionKind &&
-                        previous.cardinality != contribution.cardinality) {
-                        return true;
-                    }
-                }
-            }
-            return false;
-        }
-
-        [[nodiscard]] bool isValidContributions(
-            const StaticFactoryRegistrationSnapshotV2& snapshot,
-            std::size_t registrationIndex) noexcept {
-            const StaticFactoryRegistrationV2& registration =
-                snapshot.registrations[registrationIndex];
-            for (std::size_t index = 0; index < registration.contributions.size(); ++index) {
-                const StaticContributionRegistrationV2& contribution =
-                    registration.contributions[index];
-                if (contribution.contributionId.empty() ||
-                    contribution.contributionKind.empty() ||
-                    !isValidCardinality(contribution.cardinality)) {
-                    return false;
-                }
-                if (index != 0 &&
-                    contributionKey(registration.contributions[index - 1]) >=
-                        contributionKey(contribution)) {
-                    return false;
-                }
-                if (hasPriorCardinalityConflict(snapshot, registrationIndex, index)) {
-                    return false;
-                }
-            }
-            return true;
-        }
-
-        [[nodiscard]] bool isValidRegistration(
-            const StaticFactoryRegistrationSnapshotV2& snapshot,
-            std::size_t registrationIndex) noexcept {
-            const StaticFactoryRegistrationV2& registration =
-                snapshot.registrations[registrationIndex];
-            if (registration.packageId.empty() || registration.packageVersion.empty() ||
-                registration.moduleId.empty() || registration.factoryId.empty() ||
-                registration.providerEntryPoint.empty()) {
-                return false;
-            }
-            if (registrationIndex != 0 &&
-                registrationKey(snapshot.registrations[registrationIndex - 1]) >=
-                    registrationKey(registration)) {
-                return false;
-            }
-            return isValidContributions(snapshot, registrationIndex);
-        }
-
-        [[nodiscard]] bool isValidExpectedSnapshot(
-            const DeepVerifiedHostBindingHandoffStateV1& binding) noexcept {
-            const StaticFactoryRegistrationSnapshotV2& snapshot = binding.expectedSnapshot;
-            if (snapshot.generationId != binding.staticComposition.generationId ||
-                snapshot.hostActivationBlueprintSha256 != binding.blueprintIntegrity ||
-                !isGenerationId(snapshot.generationId) ||
-                !isLowerHexSha256(snapshot.hostActivationBlueprintSha256)) {
-                return false;
-            }
-
-            for (std::size_t index = 0; index < snapshot.registrations.size(); ++index) {
-                if (!isValidRegistration(snapshot, index)) {
-                    return false;
-                }
-            }
-            return true;
-        }
-
-        [[nodiscard]] bool isValid(const ReadySessionHandoffStateV1& ready) noexcept {
-            return isValid(ready.host) && isLowerHexSha256(ready.sessionFingerprint);
-        }
-
-        [[nodiscard]] bool isValid(
-            const VerifiedHostActivationBlueprintHandoffStateV1& blueprint) noexcept {
-            return isValid(blueprint.host) &&
-                   isLowerHexSha256(blueprint.effectiveSessionIntegrity) &&
-                   isLowerHexSha256(blueprint.blueprintIntegrity);
+        [[nodiscard]] bool sameFactory(const ExactFactoryReferenceStateV1& left,
+                                       const ExactFactoryReferenceStateV1& right) noexcept {
+            return left == right;
         }
 
         [[nodiscard]] bool
-        isValidBindingCore(const DeepVerifiedHostBindingHandoffStateV1& binding) noexcept {
-            return isValid(binding.host) && isGenerationId(binding.bindingGenerationId) &&
-                   isValid(binding.staticComposition) && isValid(binding.hostTemplate) &&
-                   isLowerHexSha256(binding.blueprintIntegrity) && isValid(binding.artifact);
+        isValidProcessProjection(const ActivationEligibilityLineageStateV2& lineage) noexcept {
+            const ProcessScopeBlueprintProjectionStateV1& projection = lineage.processScope;
+            if (projection.scope != HostScopeKindStateV1::Process ||
+                projection.parentScope.has_value() ||
+                projection.engineGenerationId != lineage.host.engineGenerationId ||
+                projection.blueprintIntegrity != lineage.blueprintIntegrity ||
+                projection.lifecycleModel != lineage.lifecycleModel ||
+                projection.lifecycleModel != kCurrentLifecycleModel) {
+                return false;
+            }
+
+            for (std::size_t factoryIndex = 0; factoryIndex < projection.factories.size();
+                 ++factoryIndex) {
+                const ProcessFactoryProjectionStateV1& factory = projection.factories[factoryIndex];
+                if (!isValid(factory.reference)) {
+                    return false;
+                }
+                for (std::size_t previous = 0; previous < factoryIndex; ++previous) {
+                    if (sameFactory(projection.factories[previous].reference, factory.reference)) {
+                        return false;
+                    }
+                }
+                for (std::size_t requirementIndex = 0;
+                     requirementIndex < factory.requirements.size(); ++requirementIndex) {
+                    const ExactFactoryReferenceStateV1& requirement =
+                        factory.requirements[requirementIndex];
+                    if (!isValid(requirement)) {
+                        return false;
+                    }
+                    for (std::size_t previous = 0; previous < requirementIndex; ++previous) {
+                        if (sameFactory(factory.requirements[previous], requirement)) {
+                            return false;
+                        }
+                    }
+                    const auto dependency = std::ranges::find_if(
+                        projection.factories.begin(),
+                        projection.factories.begin() + static_cast<std::ptrdiff_t>(factoryIndex),
+                        [&requirement](const ProcessFactoryProjectionStateV1& candidate) {
+                            return sameFactory(candidate.reference, requirement);
+                        });
+                    if (dependency ==
+                        projection.factories.begin() + static_cast<std::ptrdiff_t>(factoryIndex)) {
+                        return false;
+                    }
+                }
+            }
+            return true;
         }
 
-        [[nodiscard]] bool isValid(
-            const VerifiedCurrentProcessLaunchHandoffStateV1& launchHandoff) noexcept {
-            return isValid(launchHandoff.host) &&
-                   isLowerHexSha256(launchHandoff.sessionFingerprint) &&
-                   isGenerationId(launchHandoff.bindingGenerationId) &&
-                   isValid(launchHandoff.staticComposition) &&
-                   isValid(launchHandoff.hostTemplate) &&
-                   isLowerHexSha256(launchHandoff.blueprintIntegrity) &&
-                   isValid(launchHandoff.artifact) && launchHandoff.processEpoch != nullptr &&
-                   launchHandoff.controlThreadEpoch != nullptr &&
-                   launchHandoff.registrationCapacity != nullptr &&
-                   launchHandoff.recordProviders != nullptr;
-        }
-
-        [[nodiscard]] std::optional<ActivationEligibilityErrorV1>
-        validateAndClaimLaunchAuthority(
-            const VerifiedCurrentProcessLaunchHandoffStateV1& launch) noexcept {
-            if (!launch.processEpoch || !launch.controlThreadEpoch) {
-                return makeError(ActivationEligibilityErrorCodeV1::LaunchHandoffInvalid,
-                                 ActivationEligibilityFieldV1::LaunchHandoff);
+        [[nodiscard]] std::optional<ActivationEligibilityErrorV2>
+        validateDescriptor(const ActivationEligibilityLineageStateV2& lineage) noexcept {
+            if (!isValid(lineage.host)) {
+                return makeError(ActivationEligibilityErrorCodeV2::CurrentImageDescriptorInvalid,
+                                 ActivationEligibilityFieldV2::HostIdentity);
             }
-            if (!isCurrentControlThread(launch.controlThreadEpoch)) {
-                return makeError(ActivationEligibilityErrorCodeV1::WrongControlThread,
-                                 ActivationEligibilityFieldV1::ControlThread);
+            if (!isLowerHexSha256(lineage.effectiveSessionIntegrity)) {
+                return makeError(ActivationEligibilityErrorCodeV2::CurrentImageDescriptorInvalid,
+                                 ActivationEligibilityFieldV2::EffectiveSessionIntegrity);
             }
-            if (!isCurrentProcessEpoch(launch.processEpoch)) {
-                return makeError(ActivationEligibilityErrorCodeV1::ProcessEpochStale,
-                                 ActivationEligibilityFieldV1::CurrentProcess);
+            if (!isGenerationId(lineage.staticCompositionGenerationId)) {
+                return makeError(ActivationEligibilityErrorCodeV2::CurrentImageDescriptorInvalid,
+                                 ActivationEligibilityFieldV2::StaticComposition);
             }
-            // Claim before checking the remaining lineage so a duplicated launch
-            // anchor cannot replay a failed attempt with corrected facts.
-            if (!tryClaimCurrentProcessEpoch(launch.processEpoch)) {
-                return makeError(ActivationEligibilityErrorCodeV1::ProcessEpochConsumed,
-                                 ActivationEligibilityFieldV1::CurrentProcess);
+            if (!isLowerHexSha256(lineage.blueprintIntegrity)) {
+                return makeError(ActivationEligibilityErrorCodeV2::CurrentImageDescriptorInvalid,
+                                 ActivationEligibilityFieldV2::BlueprintIntegrity);
+            }
+            if (!isCurrent(lineage.generationTuple)) {
+                return makeError(ActivationEligibilityErrorCodeV2::UnsupportedGenerationTuple,
+                                 ActivationEligibilityFieldV2::GenerationTuple);
+            }
+            if (lineage.registrationCapacity == nullptr || lineage.recordProviders == nullptr) {
+                return makeError(ActivationEligibilityErrorCodeV2::CurrentImageDescriptorInvalid,
+                                 ActivationEligibilityFieldV2::RecordingFunction);
+            }
+            if (!isValidProcessProjection(lineage)) {
+                return makeError(ActivationEligibilityErrorCodeV2::ProcessProjectionInvalid,
+                                 ActivationEligibilityFieldV2::ProcessProjection);
             }
             return std::nullopt;
         }
 
-        [[nodiscard]] std::optional<ActivationEligibilityErrorV1> validateHandoffFacts(
-            const ReadySessionHandoffStateV1& ready,
-            const VerifiedHostActivationBlueprintHandoffStateV1& blueprint,
-            const DeepVerifiedHostBindingHandoffStateV1& binding,
-            const VerifiedCurrentProcessLaunchHandoffStateV1& launch) noexcept {
-            if (!isValid(ready)) {
-                return makeError(ActivationEligibilityErrorCodeV1::ReadySessionInvalid,
-                                 ActivationEligibilityFieldV1::ReadySession);
+        [[nodiscard]] std::pair<std::shared_ptr<const CurrentProcessEpochAnchorV1>,
+                                std::shared_ptr<const ControlThreadEpochAnchorV1>>
+        bindCurrentImageEpochs() {
+            const std::scoped_lock lock{currentImageEpochMutex};
+            auto processEpoch = currentProcessEpoch.load(std::memory_order_acquire);
+            auto controlEpoch = currentImageControlThreadEpoch.load(std::memory_order_acquire);
+            if (processEpoch == nullptr || controlEpoch == nullptr) {
+                processEpoch = createAndBindCurrentProcessEpoch();
+                controlEpoch = createAndBindCurrentControlThreadEpoch();
             }
-            if (!isValid(blueprint)) {
-                return makeError(ActivationEligibilityErrorCodeV1::BlueprintInvalid,
-                                 ActivationEligibilityFieldV1::Blueprint);
-            }
-            if (!isValidBindingCore(binding)) {
-                return makeError(ActivationEligibilityErrorCodeV1::BindingInvalid,
-                                 ActivationEligibilityFieldV1::Binding);
-            }
-            if (!isValidExpectedSnapshot(binding)) {
-                return makeError(
-                    ActivationEligibilityErrorCodeV1::ExpectedSnapshotInvalid,
-                    ActivationEligibilityFieldV1::ExpectedSnapshot);
-            }
-            if (!isValid(launch)) {
-                return makeError(ActivationEligibilityErrorCodeV1::LaunchHandoffInvalid,
-                                 ActivationEligibilityFieldV1::LaunchHandoff);
-            }
-            return std::nullopt;
+            return {std::move(processEpoch), std::move(controlEpoch)};
         }
 
-        [[nodiscard]] std::optional<ActivationEligibilityErrorV1> validateExactLineage(
-            const ReadySessionHandoffStateV1& ready,
-            const VerifiedHostActivationBlueprintHandoffStateV1& blueprint,
-            const DeepVerifiedHostBindingHandoffStateV1& binding,
-            const VerifiedCurrentProcessLaunchHandoffStateV1& launch) noexcept {
-            if (ready.sessionFingerprint != blueprint.effectiveSessionIntegrity ||
-                ready.sessionFingerprint != launch.sessionFingerprint) {
-                return makeError(
-                    ActivationEligibilityErrorCodeV1::EffectiveSessionMismatch,
-                    ActivationEligibilityFieldV1::EffectiveSessionIntegrity);
+        [[nodiscard]] ExactFactoryReferenceStateV1
+        ownReference(const CurrentImageExactFactoryReferenceProviderV2& reference) {
+            return {
+                .packageId = std::string(reference.packageId),
+                .packageVersion = std::string(reference.packageVersion),
+                .moduleId = std::string(reference.moduleId),
+                .factoryId = std::string(reference.factoryId),
+            };
+        }
+
+        [[nodiscard]] ProcessScopeBlueprintProjectionStateV1
+        ownProcessProjection(const CurrentImageActivationDescriptorProviderV2& provider) {
+            ProcessScopeBlueprintProjectionStateV1 projection{
+                .scope = HostScopeKindStateV1::Process,
+                .parentScope = std::nullopt,
+                .engineGenerationId = std::string(provider.engineGenerationId),
+                .blueprintIntegrity = std::string(provider.hostActivationBlueprintSha256),
+                .lifecycleModel = std::string(provider.lifecycleModel),
+                .factories = {},
+            };
+            projection.factories.reserve(provider.processFactories.size());
+            for (const CurrentImageProcessFactoryProviderV2& factory : provider.processFactories) {
+                ProcessFactoryProjectionStateV1 owned{
+                    .reference = ownReference(factory.reference),
+                    .requirements = {},
+                };
+                owned.requirements.reserve(factory.requirements.size());
+                for (const CurrentImageExactFactoryReferenceProviderV2& requirement :
+                     factory.requirements) {
+                    owned.requirements.push_back(ownReference(requirement));
+                }
+                projection.factories.push_back(std::move(owned));
             }
-            if (ready.host != blueprint.host || ready.host != binding.host ||
-                ready.host != launch.host) {
-                return makeError(ActivationEligibilityErrorCodeV1::HostIdentityMismatch,
-                                 ActivationEligibilityFieldV1::HostIdentity);
-            }
-            if (blueprint.blueprintIntegrity != binding.blueprintIntegrity ||
-                blueprint.blueprintIntegrity != launch.blueprintIntegrity) {
-                return makeError(ActivationEligibilityErrorCodeV1::BlueprintMismatch,
-                                 ActivationEligibilityFieldV1::BlueprintIntegrity);
-            }
-            if (!isCurrent(binding.generationTuple) ||
-                !isCurrent(launch.generationTuple) ||
-                binding.generationTuple != launch.generationTuple) {
-                return makeError(
-                    ActivationEligibilityErrorCodeV1::UnsupportedGenerationTuple,
-                    ActivationEligibilityFieldV1::GenerationTuple);
-            }
-            if (binding.staticComposition != launch.staticComposition) {
-                return makeError(
-                    ActivationEligibilityErrorCodeV1::StaticCompositionMismatch,
-                    ActivationEligibilityFieldV1::StaticComposition);
-            }
-            if (binding.hostTemplate != launch.hostTemplate) {
-                return makeError(ActivationEligibilityErrorCodeV1::HostTemplateMismatch,
-                                 ActivationEligibilityFieldV1::HostTemplate);
-            }
-            if (binding.bindingGenerationId != launch.bindingGenerationId) {
-                return makeError(
-                    ActivationEligibilityErrorCodeV1::BindingGenerationMismatch,
-                    ActivationEligibilityFieldV1::BindingGeneration);
-            }
-            if (binding.artifact != launch.artifact) {
-                return makeError(ActivationEligibilityErrorCodeV1::ArtifactMismatch,
-                                 ActivationEligibilityFieldV1::ArtifactIdentity);
-            }
-            return std::nullopt;
+            return projection;
         }
 
     } // namespace
 
-    std::shared_ptr<const ControlThreadEpochAnchorV1>
-    createAndBindCurrentControlThreadEpoch() {
+    std::shared_ptr<const ControlThreadEpochAnchorV1> createAndBindCurrentControlThreadEpoch() {
         auto epoch = std::make_shared<const ControlThreadEpochAnchorV1>();
+        currentImageControlThreadEpoch.store(epoch, std::memory_order_release);
         currentControlThreadEpoch = epoch;
         return epoch;
     }
@@ -328,8 +227,7 @@ namespace asharia::host_runtime {
         return current != nullptr && current == expected;
     }
 
-    std::shared_ptr<const CurrentProcessEpochAnchorV1>
-    createAndBindCurrentProcessEpoch() {
+    std::shared_ptr<const CurrentProcessEpochAnchorV1> createAndBindCurrentProcessEpoch() {
         auto epoch = std::make_shared<const CurrentProcessEpochAnchorV1>();
         currentProcessEpoch.store(epoch, std::memory_order_release);
         return epoch;
@@ -347,124 +245,103 @@ namespace asharia::host_runtime {
             return false;
         }
         bool unclaimed = false;
-        return expected->claimed.compare_exchange_strong(
-            unclaimed, true, std::memory_order_acq_rel, std::memory_order_acquire);
+        return expected->claimed.compare_exchange_strong(unclaimed, true, std::memory_order_acq_rel,
+                                                         std::memory_order_acquire);
     }
 
     bool isClaimedCurrentProcessEpoch(
         const std::shared_ptr<const CurrentProcessEpochAnchorV1>& expected) noexcept {
-        return isCurrentProcessEpoch(expected) &&
-               expected->claimed.load(std::memory_order_acquire);
+        return isCurrentProcessEpoch(expected) && expected->claimed.load(std::memory_order_acquire);
     }
 
-    ReadySessionHandoffV1::ReadySessionHandoffV1(
-        std::unique_ptr<ReadySessionHandoffStateV1> state) noexcept
+    CurrentImageActivationDescriptorV2::CurrentImageActivationDescriptorV2(
+        std::unique_ptr<ActivationEligibilityLineageStateV2> state) noexcept
         : state_(std::move(state)) {}
 
-    ReadySessionHandoffV1::~ReadySessionHandoffV1() = default;
-    ReadySessionHandoffV1::ReadySessionHandoffV1(ReadySessionHandoffV1&&) noexcept = default;
+    CurrentImageActivationDescriptorV2::~CurrentImageActivationDescriptorV2() = default;
+    CurrentImageActivationDescriptorV2::CurrentImageActivationDescriptorV2(
+        CurrentImageActivationDescriptorV2&&) noexcept = default;
 
-    VerifiedHostActivationBlueprintHandoffV1::
-        VerifiedHostActivationBlueprintHandoffV1(
-            std::unique_ptr<VerifiedHostActivationBlueprintHandoffStateV1> state) noexcept
+    PreRegistrationAdmissionV2::PreRegistrationAdmissionV2(
+        std::unique_ptr<ActivationEligibilityLineageStateV2> state) noexcept
         : state_(std::move(state)) {}
 
-    VerifiedHostActivationBlueprintHandoffV1::
-        ~VerifiedHostActivationBlueprintHandoffV1() = default;
-    VerifiedHostActivationBlueprintHandoffV1::
-        VerifiedHostActivationBlueprintHandoffV1(
-            VerifiedHostActivationBlueprintHandoffV1&&) noexcept = default;
+    PreRegistrationAdmissionV2::~PreRegistrationAdmissionV2() = default;
+    PreRegistrationAdmissionV2::PreRegistrationAdmissionV2(PreRegistrationAdmissionV2&&) noexcept =
+        default;
 
-    DeepVerifiedHostBindingHandoffV1::DeepVerifiedHostBindingHandoffV1(
-        std::unique_ptr<DeepVerifiedHostBindingHandoffStateV1> state) noexcept
-        : state_(std::move(state)) {}
-
-    DeepVerifiedHostBindingHandoffV1::~DeepVerifiedHostBindingHandoffV1() = default;
-    DeepVerifiedHostBindingHandoffV1::DeepVerifiedHostBindingHandoffV1(
-        DeepVerifiedHostBindingHandoffV1&&) noexcept = default;
-
-    VerifiedCurrentProcessLaunchHandoffV1::VerifiedCurrentProcessLaunchHandoffV1(
-        std::unique_ptr<VerifiedCurrentProcessLaunchHandoffStateV1> state) noexcept
-        : state_(std::move(state)) {}
-
-    VerifiedCurrentProcessLaunchHandoffV1::~VerifiedCurrentProcessLaunchHandoffV1() = default;
-    VerifiedCurrentProcessLaunchHandoffV1::VerifiedCurrentProcessLaunchHandoffV1(
-        VerifiedCurrentProcessLaunchHandoffV1&&) noexcept = default;
-
-    PreRegistrationAdmissionV1::PreRegistrationAdmissionV1(
-        std::unique_ptr<ActivationEligibilityLineageStateV1> state) noexcept
-        : state_(std::move(state)) {}
-
-    PreRegistrationAdmissionV1::~PreRegistrationAdmissionV1() = default;
-    PreRegistrationAdmissionV1::PreRegistrationAdmissionV1(
-        PreRegistrationAdmissionV1&&) noexcept = default;
-
-    ActivationEligibilityResultV1<PreRegistrationAdmissionV1>
-    admitPreRegistration(ReadySessionHandoffV1 readySession,
-                         VerifiedHostActivationBlueprintHandoffV1 blueprint,
-                         DeepVerifiedHostBindingHandoffV1 binding,
-                         VerifiedCurrentProcessLaunchHandoffV1 launchHandoff) noexcept {
-        auto readyState = ActivationEligibilityStateAccessV1::take(std::move(readySession));
-        auto blueprintState = ActivationEligibilityStateAccessV1::take(std::move(blueprint));
-        auto bindingState = ActivationEligibilityStateAccessV1::take(std::move(binding));
-        auto launchState = ActivationEligibilityStateAccessV1::take(std::move(launchHandoff));
-
-        if (!readyState) {
-            return std::unexpected(makeError(
-                ActivationEligibilityErrorCodeV1::HandoffMovedFrom,
-                ActivationEligibilityFieldV1::ReadySession));
-        }
-        if (!blueprintState) {
-            return std::unexpected(makeError(
-                ActivationEligibilityErrorCodeV1::HandoffMovedFrom,
-                ActivationEligibilityFieldV1::Blueprint));
-        }
-        if (!bindingState) {
-            return std::unexpected(makeError(
-                ActivationEligibilityErrorCodeV1::HandoffMovedFrom,
-                ActivationEligibilityFieldV1::Binding));
-        }
-        if (!launchState) {
-            return std::unexpected(makeError(
-                ActivationEligibilityErrorCodeV1::HandoffMovedFrom,
-                ActivationEligibilityFieldV1::LaunchHandoff));
-        }
-        if (auto failure = validateAndClaimLaunchAuthority(*launchState)) {
-            return std::unexpected(*failure);
-        }
-        if (auto failure = validateHandoffFacts(
-                *readyState, *blueprintState, *bindingState, *launchState)) {
-            return std::unexpected(*failure);
-        }
-        if (auto failure = validateExactLineage(
-                *readyState, *blueprintState, *bindingState, *launchState)) {
-            return std::unexpected(*failure);
-        }
+    ActivationEligibilityResultV2<CurrentImageActivationDescriptorV2>
+    detail::issueCurrentImageActivationDescriptorV2(
+        const CurrentImageActivationDescriptorProviderV2& provider) noexcept {
         try {
-            auto lineage = std::make_unique<ActivationEligibilityLineageStateV1>(
-                ActivationEligibilityLineageStateV1{
-                    .host = std::move(bindingState->host),
-                    .sessionFingerprint = std::move(readyState->sessionFingerprint),
-                    .bindingGenerationId = std::move(bindingState->bindingGenerationId),
-                    .staticComposition = std::move(bindingState->staticComposition),
-                    .hostTemplate = std::move(bindingState->hostTemplate),
-                    .generationTuple = std::move(bindingState->generationTuple),
-                    .blueprintIntegrity = std::move(bindingState->blueprintIntegrity),
-                    .processScope = std::move(blueprintState->processScope),
-                    .artifact = std::move(bindingState->artifact),
-                    .expectedSnapshot = std::move(bindingState->expectedSnapshot),
-                    .processEpoch = std::move(launchState->processEpoch),
-                    .controlThreadEpoch = std::move(launchState->controlThreadEpoch),
-                    .registrationCapacity = launchState->registrationCapacity,
-                    .recordProviders = launchState->recordProviders,
+            auto [processEpoch, controlThreadEpoch] = bindCurrentImageEpochs();
+            auto state = std::make_unique<ActivationEligibilityLineageStateV2>(
+                ActivationEligibilityLineageStateV2{
+                    .host =
+                        {
+                            .engineGenerationId = std::string(provider.engineGenerationId),
+                            .hostKind = std::string(provider.hostKind),
+                            .targetPlatform = std::string(provider.targetPlatform),
+                        },
+                    .effectiveSessionIntegrity = std::string(provider.effectiveSessionIntegrity),
+                    .staticCompositionGenerationId =
+                        std::string(provider.staticCompositionGenerationId),
+                    .blueprintIntegrity = std::string(provider.hostActivationBlueprintSha256),
+                    .generationTuple =
+                        {
+                            .templateRendererRevision = provider.templateRendererRevision,
+                            .compositionRendererRevision = provider.compositionRendererRevision,
+                            .providerApi = std::string(provider.providerApi),
+                            .registrationSnapshotSchemaVersion =
+                                provider.registrationSnapshotSchemaVersion,
+                        },
+                    .lifecycleModel = std::string(provider.lifecycleModel),
+                    .processScope = ownProcessProjection(provider),
+                    .processEpoch = std::move(processEpoch),
+                    .controlThreadEpoch = std::move(controlThreadEpoch),
+                    .registrationCapacity = provider.registrationCapacity,
+                    .recordProviders = provider.recordProviders,
                 });
-            return ActivationEligibilityStateAccessV1::makePreRegistrationAdmission(
-                std::move(lineage));
+            return ActivationEligibilityStateAccessV2::makeDescriptor(std::move(state));
         } catch (const std::bad_alloc&) {
-            return std::unexpected(makeError(
-                ActivationEligibilityErrorCodeV1::AllocationFailed,
-                ActivationEligibilityFieldV1::Admission));
+            return std::unexpected(makeError(ActivationEligibilityErrorCodeV2::AllocationFailed,
+                                             ActivationEligibilityFieldV2::CurrentImageDescriptor));
+        } catch (const std::length_error&) {
+            return std::unexpected(makeError(ActivationEligibilityErrorCodeV2::AllocationFailed,
+                                             ActivationEligibilityFieldV2::CurrentImageDescriptor));
         }
+    }
+
+    ActivationEligibilityResultV2<PreRegistrationAdmissionV2>
+    admitCurrentImagePreRegistration(CurrentImageActivationDescriptorV2 descriptor) noexcept {
+        auto lineage = ActivationEligibilityStateAccessV2::take(std::move(descriptor));
+        if (!lineage) {
+            return std::unexpected(makeError(ActivationEligibilityErrorCodeV2::DescriptorMovedFrom,
+                                             ActivationEligibilityFieldV2::CurrentImageDescriptor));
+        }
+        if (!lineage->processEpoch || !lineage->controlThreadEpoch) {
+            return std::unexpected(
+                makeError(ActivationEligibilityErrorCodeV2::CurrentImageDescriptorInvalid,
+                          ActivationEligibilityFieldV2::CurrentImageDescriptor));
+        }
+        if (!isCurrentControlThread(lineage->controlThreadEpoch)) {
+            return std::unexpected(makeError(ActivationEligibilityErrorCodeV2::WrongControlThread,
+                                             ActivationEligibilityFieldV2::ControlThread));
+        }
+        if (!isCurrentProcessEpoch(lineage->processEpoch)) {
+            return std::unexpected(makeError(ActivationEligibilityErrorCodeV2::ProcessEpochStale,
+                                             ActivationEligibilityFieldV2::CurrentProcess));
+        }
+        // Claim before validating remaining facts so a failed image cannot replay
+        // with a second descriptor carrying corrected data.
+        if (!tryClaimCurrentProcessEpoch(lineage->processEpoch)) {
+            return std::unexpected(makeError(ActivationEligibilityErrorCodeV2::ProcessEpochConsumed,
+                                             ActivationEligibilityFieldV2::CurrentProcess));
+        }
+        if (auto failure = validateDescriptor(*lineage)) {
+            return std::unexpected(*failure);
+        }
+        return ActivationEligibilityStateAccessV2::makePreRegistrationAdmission(std::move(lineage));
     }
 
 } // namespace asharia::host_runtime

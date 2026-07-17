@@ -3,6 +3,7 @@
 #include <exception>
 #include <memory>
 #include <new>
+#include <stdexcept>
 #include <utility>
 
 #include "activation_eligibility_state.hpp"
@@ -10,12 +11,11 @@
 namespace asharia::host_runtime {
     namespace {
 
-        [[nodiscard]] ActivationEligibilityErrorV1 makeError(
-            ActivationEligibilityStageV1 stage,
-            ActivationEligibilityErrorCodeV1 code,
-            ActivationEligibilityFieldV1 field,
-            std::optional<StaticFactoryRegistrationErrorCode> registrationCode =
-                std::nullopt) noexcept {
+        [[nodiscard]] ActivationEligibilityErrorV2
+        makeError(ActivationEligibilityStageV2 stage, ActivationEligibilityErrorCodeV2 code,
+                  ActivationEligibilityFieldV2 field,
+                  std::optional<StaticFactoryRegistrationErrorCode> registrationCode =
+                      std::nullopt) noexcept {
             return {
                 .stage = stage,
                 .code = code,
@@ -24,75 +24,71 @@ namespace asharia::host_runtime {
             };
         }
 
-        [[nodiscard]] ActivationEligibilityErrorV1 registrationError(
-            const StaticFactoryRegistrationError& error) noexcept {
-            return makeError(ActivationEligibilityStageV1::ProviderRecording,
-                             ActivationEligibilityErrorCodeV1::RegistrationFailed,
-                             ActivationEligibilityFieldV1::Registration, error.code);
+        [[nodiscard]] ActivationEligibilityErrorV2
+        registrationError(const StaticFactoryRegistrationError& error) noexcept {
+            return makeError(ActivationEligibilityStageV2::ProviderRecording,
+                             ActivationEligibilityErrorCodeV2::RegistrationFailed,
+                             ActivationEligibilityFieldV2::Registration, error.code);
         }
 
     } // namespace
 
-    PendingActivationFactoryTableV1::PendingActivationFactoryTableV1(
-        std::unique_ptr<PendingActivationFactoryTableStateV1> state) noexcept
+    PendingActivationFactoryTableV2::PendingActivationFactoryTableV2(
+        std::unique_ptr<PendingActivationFactoryTableStateV2> state) noexcept
         : state_(std::move(state)) {}
 
-    PendingActivationFactoryTableV1::~PendingActivationFactoryTableV1() = default;
-    PendingActivationFactoryTableV1::PendingActivationFactoryTableV1(
-        PendingActivationFactoryTableV1&&) noexcept = default;
+    PendingActivationFactoryTableV2::~PendingActivationFactoryTableV2() = default;
+    PendingActivationFactoryTableV2::PendingActivationFactoryTableV2(
+        PendingActivationFactoryTableV2&&) noexcept = default;
 
-    ActivationAdmissionV1::ActivationAdmissionV1(ActivationAdmissionV1&& other) noexcept
+    ActivationAdmissionV2::ActivationAdmissionV2(ActivationAdmissionV2&& other) noexcept
         : valid_(std::exchange(other.valid_, false)) {}
 
-    AdmittedStaticFactoryCallbackTableV1::AdmittedStaticFactoryCallbackTableV1(
-        std::unique_ptr<AdmittedStaticFactoryCallbackTableStateV1> state,
-        ActivationAdmissionV1 admission) noexcept
+    AdmittedStaticFactoryCallbackTableV2::AdmittedStaticFactoryCallbackTableV2(
+        std::unique_ptr<AdmittedStaticFactoryCallbackTableStateV2> state,
+        ActivationAdmissionV2 admission) noexcept
         : state_(std::move(state)), admission_(std::move(admission)) {}
 
-    AdmittedStaticFactoryCallbackTableV1::~AdmittedStaticFactoryCallbackTableV1() = default;
+    AdmittedStaticFactoryCallbackTableV2::~AdmittedStaticFactoryCallbackTableV2() = default;
 
-    AdmittedStaticFactoryCallbackTableV1::AdmittedStaticFactoryCallbackTableV1(
-        AdmittedStaticFactoryCallbackTableV1&& other) noexcept
+    AdmittedStaticFactoryCallbackTableV2::AdmittedStaticFactoryCallbackTableV2(
+        AdmittedStaticFactoryCallbackTableV2&& other) noexcept
         : state_(std::move(other.state_)), admission_(std::move(other.admission_)) {}
 
     const StaticFactoryRegistrationSnapshotV2&
-    AdmittedStaticFactoryCallbackTableV1::registrationSnapshot() const noexcept {
+    AdmittedStaticFactoryCallbackTableV2::registrationSnapshot() const noexcept {
         if (!state_ || !state_->pending || !admission_.valid_) {
             std::terminate();
         }
         return state_->pending->table.registrationSnapshot();
     }
 
-    ActivationEligibilityResultV1<PendingActivationFactoryTableV1>
-    recordAdmittedStaticFactoryProviders(PreRegistrationAdmissionV1 admission) noexcept {
-        auto lineage = ActivationEligibilityStateAccessV1::take(std::move(admission));
+    ActivationEligibilityResultV2<PendingActivationFactoryTableV2>
+    recordAdmittedStaticFactoryProviders(PreRegistrationAdmissionV2 admission) noexcept {
+        auto lineage = ActivationEligibilityStateAccessV2::take(std::move(admission));
         if (!lineage) {
-            return std::unexpected(makeError(
-                ActivationEligibilityStageV1::ProviderRecording,
-                ActivationEligibilityErrorCodeV1::AdmissionMovedFrom,
-                ActivationEligibilityFieldV1::Admission));
+            return std::unexpected(makeError(ActivationEligibilityStageV2::ProviderRecording,
+                                             ActivationEligibilityErrorCodeV2::AdmissionMovedFrom,
+                                             ActivationEligibilityFieldV2::Admission));
         }
         if (!isCurrentControlThread(lineage->controlThreadEpoch)) {
-            return std::unexpected(makeError(
-                ActivationEligibilityStageV1::ProviderRecording,
-                ActivationEligibilityErrorCodeV1::WrongControlThread,
-                ActivationEligibilityFieldV1::ControlThread));
+            return std::unexpected(makeError(ActivationEligibilityStageV2::ProviderRecording,
+                                             ActivationEligibilityErrorCodeV2::WrongControlThread,
+                                             ActivationEligibilityFieldV2::ControlThread));
         }
         if (!isClaimedCurrentProcessEpoch(lineage->processEpoch)) {
-            return std::unexpected(makeError(
-                ActivationEligibilityStageV1::ProviderRecording,
-                ActivationEligibilityErrorCodeV1::ProcessEpochStale,
-                ActivationEligibilityFieldV1::CurrentProcess));
+            return std::unexpected(makeError(ActivationEligibilityStageV2::ProviderRecording,
+                                             ActivationEligibilityErrorCodeV2::ProcessEpochStale,
+                                             ActivationEligibilityFieldV2::CurrentProcess));
         }
         if (lineage->registrationCapacity == nullptr || lineage->recordProviders == nullptr) {
-            return std::unexpected(makeError(
-                ActivationEligibilityStageV1::ProviderRecording,
-                ActivationEligibilityErrorCodeV1::RecordingFunctionMissing,
-                ActivationEligibilityFieldV1::RecordingFunction));
+            return std::unexpected(
+                makeError(ActivationEligibilityStageV2::ProviderRecording,
+                          ActivationEligibilityErrorCodeV2::RecordingFunctionMissing,
+                          ActivationEligibilityFieldV2::RecordingFunction));
         }
 
-        const StaticFactoryRegistrationCapacityV2 capacity =
-            lineage->registrationCapacity();
+        const StaticFactoryRegistrationCapacityV2 capacity = lineage->registrationCapacity();
         auto recorderResult = createStaticFactoryRegistrationRecorder(capacity);
         if (!recorderResult) {
             return std::unexpected(registrationError(recorderResult.error()));
@@ -105,85 +101,94 @@ namespace asharia::host_runtime {
             return std::unexpected(registrationError(tableResult.error()));
         }
 
+        const StaticFactoryRegistrationSnapshotV2& snapshot = tableResult->registrationSnapshot();
+        if (snapshot.generationId != lineage->staticCompositionGenerationId ||
+            snapshot.hostActivationBlueprintSha256 != lineage->blueprintIntegrity) {
+            return std::unexpected(
+                makeError(ActivationEligibilityStageV2::ProviderRecording,
+                          ActivationEligibilityErrorCodeV2::TableSnapshotMismatch,
+                          ActivationEligibilityFieldV2::TableSnapshot));
+        }
+
         try {
-            auto state = std::make_unique<PendingActivationFactoryTableStateV1>(
+            auto state = std::make_unique<PendingActivationFactoryTableStateV2>(
                 std::move(lineage), std::move(*tableResult),
-                PendingFactoryTableOriginV1::AdmittedRegistration);
-            return ActivationEligibilityStateAccessV1::makePendingTable(std::move(state));
+                PendingFactoryTableOriginV2::AdmittedRegistration);
+            return ActivationEligibilityStateAccessV2::makePendingTable(std::move(state));
         } catch (const std::bad_alloc&) {
-            return std::unexpected(makeError(
-                ActivationEligibilityStageV1::ProviderRecording,
-                ActivationEligibilityErrorCodeV1::AllocationFailed,
-                ActivationEligibilityFieldV1::Registration));
+            return std::unexpected(makeError(ActivationEligibilityStageV2::ProviderRecording,
+                                             ActivationEligibilityErrorCodeV2::AllocationFailed,
+                                             ActivationEligibilityFieldV2::Registration));
+        } catch (const std::length_error&) {
+            return std::unexpected(makeError(ActivationEligibilityStageV2::ProviderRecording,
+                                             ActivationEligibilityErrorCodeV2::AllocationFailed,
+                                             ActivationEligibilityFieldV2::Registration));
         }
     }
 
-    ActivationEligibilityResultV1<AdmittedStaticFactoryCallbackTableV1>
-    admitStaticFactoryActivation(PendingActivationFactoryTableV1 pendingTable) noexcept {
-        auto state = ActivationEligibilityStateAccessV1::take(std::move(pendingTable));
+    ActivationEligibilityResultV2<AdmittedStaticFactoryCallbackTableV2>
+    admitStaticFactoryActivation(PendingActivationFactoryTableV2 pendingTable) noexcept {
+        auto state = ActivationEligibilityStateAccessV2::take(std::move(pendingTable));
         if (!state) {
-            return std::unexpected(makeError(
-                ActivationEligibilityStageV1::Activation,
-                ActivationEligibilityErrorCodeV1::PendingTableMovedFrom,
-                ActivationEligibilityFieldV1::Admission));
+            return std::unexpected(
+                makeError(ActivationEligibilityStageV2::Activation,
+                          ActivationEligibilityErrorCodeV2::PendingTableMovedFrom,
+                          ActivationEligibilityFieldV2::Admission));
         }
         if (!state->lineage || !state->lineage->processEpoch) {
-            return std::unexpected(makeError(
-                ActivationEligibilityStageV1::Activation,
-                ActivationEligibilityErrorCodeV1::PendingTableMovedFrom,
-                ActivationEligibilityFieldV1::Admission));
+            return std::unexpected(
+                makeError(ActivationEligibilityStageV2::Activation,
+                          ActivationEligibilityErrorCodeV2::PendingTableMovedFrom,
+                          ActivationEligibilityFieldV2::Admission));
         }
         if (!isCurrentControlThread(state->lineage->controlThreadEpoch)) {
-            return std::unexpected(makeError(
-                ActivationEligibilityStageV1::Activation,
-                ActivationEligibilityErrorCodeV1::WrongControlThread,
-                ActivationEligibilityFieldV1::ControlThread));
+            return std::unexpected(makeError(ActivationEligibilityStageV2::Activation,
+                                             ActivationEligibilityErrorCodeV2::WrongControlThread,
+                                             ActivationEligibilityFieldV2::ControlThread));
         }
         if (!isClaimedCurrentProcessEpoch(state->lineage->processEpoch)) {
-            return std::unexpected(makeError(
-                ActivationEligibilityStageV1::Activation,
-                ActivationEligibilityErrorCodeV1::ProcessEpochStale,
-                ActivationEligibilityFieldV1::CurrentProcess));
+            return std::unexpected(makeError(ActivationEligibilityStageV2::Activation,
+                                             ActivationEligibilityErrorCodeV2::ProcessEpochStale,
+                                             ActivationEligibilityFieldV2::CurrentProcess));
         }
-        if (state->origin != PendingFactoryTableOriginV1::AdmittedRegistration) {
-            return std::unexpected(makeError(
-                ActivationEligibilityStageV1::Activation,
-                ActivationEligibilityErrorCodeV1::TableOriginInvalid,
-                ActivationEligibilityFieldV1::TableOrigin));
+        if (state->origin != PendingFactoryTableOriginV2::AdmittedRegistration) {
+            return std::unexpected(makeError(ActivationEligibilityStageV2::Activation,
+                                             ActivationEligibilityErrorCodeV2::TableOriginInvalid,
+                                             ActivationEligibilityFieldV2::TableOrigin));
         }
         if (state->expectedTableAddress != std::addressof(state->table)) {
-            return std::unexpected(makeError(
-                ActivationEligibilityStageV1::Activation,
-                ActivationEligibilityErrorCodeV1::TableInstanceMismatch,
-                ActivationEligibilityFieldV1::TableInstance));
+            return std::unexpected(
+                makeError(ActivationEligibilityStageV2::Activation,
+                          ActivationEligibilityErrorCodeV2::TableInstanceMismatch,
+                          ActivationEligibilityFieldV2::TableInstance));
         }
         if (state->expectedTableInstance == nullptr ||
             state->expectedTableInstance !=
                 StaticFactoryCallbackTablePrivateAccessV1::instanceAnchor(state->table)) {
-            return std::unexpected(makeError(
-                ActivationEligibilityStageV1::Activation,
-                ActivationEligibilityErrorCodeV1::TableInstanceMismatch,
-                ActivationEligibilityFieldV1::TableInstance));
+            return std::unexpected(
+                makeError(ActivationEligibilityStageV2::Activation,
+                          ActivationEligibilityErrorCodeV2::TableInstanceMismatch,
+                          ActivationEligibilityFieldV2::TableInstance));
         }
-        if (state->table.registrationSnapshot() != state->lineage->expectedSnapshot) {
-            return std::unexpected(makeError(
-                ActivationEligibilityStageV1::Activation,
-                ActivationEligibilityErrorCodeV1::TableSnapshotMismatch,
-                ActivationEligibilityFieldV1::TableSnapshot));
+        const StaticFactoryRegistrationSnapshotV2& snapshot = state->table.registrationSnapshot();
+        if (snapshot.generationId != state->lineage->staticCompositionGenerationId ||
+            snapshot.hostActivationBlueprintSha256 != state->lineage->blueprintIntegrity) {
+            return std::unexpected(
+                makeError(ActivationEligibilityStageV2::Activation,
+                          ActivationEligibilityErrorCodeV2::TableSnapshotMismatch,
+                          ActivationEligibilityFieldV2::TableSnapshot));
         }
 
         try {
             auto admittedState =
-                std::make_unique<AdmittedStaticFactoryCallbackTableStateV1>(
-                    std::move(state));
-            return ActivationEligibilityStateAccessV1::makeAdmittedTable(
+                std::make_unique<AdmittedStaticFactoryCallbackTableStateV2>(std::move(state));
+            return ActivationEligibilityStateAccessV2::makeAdmittedTable(
                 std::move(admittedState),
-                ActivationEligibilityStateAccessV1::makeActivationAdmission());
+                ActivationEligibilityStateAccessV2::makeActivationAdmission());
         } catch (const std::bad_alloc&) {
-            return std::unexpected(makeError(
-                ActivationEligibilityStageV1::Activation,
-                ActivationEligibilityErrorCodeV1::AllocationFailed,
-                ActivationEligibilityFieldV1::Admission));
+            return std::unexpected(makeError(ActivationEligibilityStageV2::Activation,
+                                             ActivationEligibilityErrorCodeV2::AllocationFailed,
+                                             ActivationEligibilityFieldV2::Admission));
         }
     }
 

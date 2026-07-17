@@ -32,7 +32,7 @@ namespace asharia::host_runtime::tests {
         bool (*function)();
     };
 
-    [[nodiscard]] ActivationEligibilityResultV1<AdmittedStaticFactoryCallbackTableV1>
+    [[nodiscard]] ActivationEligibilityResultV2<AdmittedStaticFactoryCallbackTableV2>
     makeAdmittedSyntheticProcessScope(ProcessPlanMutationV1 mutation = ProcessPlanMutationV1::None);
 
     void rebindSyntheticCurrentProcessEpoch();

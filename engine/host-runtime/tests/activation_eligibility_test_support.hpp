@@ -7,87 +7,41 @@
 
 #include "asharia/host_runtime/admitted_static_factory_recording.hpp"
 
+#include "current_image_activation_test_provider.hpp"
+
 namespace asharia::host_runtime::tests {
 
-    enum class EligibilityHandoffMutationV1 {
-        None,
-        InvalidReadySession,
-        InvalidBinding,
-        SessionFingerprintMismatch,
-        HostIdentityMismatch,
-        BlueprintMismatch,
-        StaticCompositionMismatch,
-        HostTemplateMismatch,
-        UnsupportedTemplateRenderer,
-        UnsupportedCompositionRenderer,
-        UnsupportedProviderApi,
-        UnsupportedSnapshotSchemaVersion,
-        BindingGenerationMismatch,
-        ArtifactMismatch,
-        ExpectedSnapshotInvalid,
-        LaunchProcessEpochMissing,
-        LaunchProcessEpochStale,
-        LaunchProcessEpochConsumed,
-        LaunchControlThreadEpochMissing,
-        LaunchRecordingFunctionMissing,
-        InvalidCapacityFunction,
-        RegistrationFailureFunction,
-        UnexpectedSnapshotFunction,
-        AlternateCallbacksFunction,
-        ZeroFactoryFunction,
-    };
-
-    struct EligibilityHandoffsV1 final {
-        ReadySessionHandoffV1 readySession;
-        VerifiedHostActivationBlueprintHandoffV1 blueprint;
-        DeepVerifiedHostBindingHandoffV1 binding;
-        VerifiedCurrentProcessLaunchHandoffV1 launchHandoff;
-    };
-
-    struct NamedEligibilityTestV1 final {
+    struct NamedEligibilityTestV2 final {
         std::string_view name;
         bool (*function)();
     };
 
-    [[nodiscard]] EligibilityHandoffsV1
-    makeEligibilityHandoffs(EligibilityHandoffMutationV1 mutation =
-                                EligibilityHandoffMutationV1::None);
-
-    [[nodiscard]] ActivationEligibilityResultV1<PreRegistrationAdmissionV1>
+    [[nodiscard]] ActivationEligibilityResultV2<PreRegistrationAdmissionV2>
     makePreRegistrationAdmission(
-        EligibilityHandoffMutationV1 mutation = EligibilityHandoffMutationV1::None);
-
-    void resetEligibilityProbeCounts() noexcept;
-    [[nodiscard]] std::size_t recordingFunctionInvocationCount() noexcept;
-    [[nodiscard]] std::size_t providerInvocationCount() noexcept;
-    [[nodiscard]] std::size_t lifecycleInvocationCount() noexcept;
-    [[nodiscard]] std::size_t contributionAccessorInvocationCount() noexcept;
+        CurrentImageDescriptorMutationV2 mutation = CurrentImageDescriptorMutationV2::None);
 
     [[nodiscard]] StaticFactoryRegistrationResult<StaticFactoryCallbackTableV1>
     collectEvidenceOnlyTable(bool useAlternateCallbacks) noexcept;
 
-    [[nodiscard]] PendingActivationFactoryTableV1
-    markPendingTableEvidenceOnly(PendingActivationFactoryTableV1 pendingTable) noexcept;
-    [[nodiscard]] PendingActivationFactoryTableV1
-    corruptPendingTableAddress(PendingActivationFactoryTableV1 pendingTable) noexcept;
-    [[nodiscard]] PendingActivationFactoryTableV1
-    corruptPendingExpectedSnapshot(PendingActivationFactoryTableV1 pendingTable) noexcept;
-    [[nodiscard]] std::optional<PendingActivationFactoryTableV1>
-    replacePendingWithEquivalentTable(
-        PendingActivationFactoryTableV1 pendingTable) noexcept;
+    [[nodiscard]] PendingActivationFactoryTableV2
+    markPendingTableEvidenceOnly(PendingActivationFactoryTableV2 pendingTable) noexcept;
+    [[nodiscard]] PendingActivationFactoryTableV2
+    corruptPendingTableAddress(PendingActivationFactoryTableV2 pendingTable) noexcept;
+    [[nodiscard]] std::optional<PendingActivationFactoryTableV2>
+    replacePendingWithEquivalentTable(PendingActivationFactoryTableV2 pendingTable) noexcept;
 
+    void resetCurrentImageEpochForTest();
     void rebindCurrentProcessEpochForTest();
 
-    [[nodiscard]] std::optional<std::size_t> admittedDescriptorCount(
-        const AdmittedStaticFactoryCallbackTableV1& admittedTable) noexcept;
+    [[nodiscard]] std::optional<std::size_t>
+    admittedDescriptorCount(const AdmittedStaticFactoryCallbackTableV2& admittedTable) noexcept;
     [[nodiscard]] bool admittedTableUsesExpectedCallbacks(
-        const AdmittedStaticFactoryCallbackTableV1& admittedTable) noexcept;
+        const AdmittedStaticFactoryCallbackTableV2& admittedTable) noexcept;
 
-    [[nodiscard]] std::span<const NamedEligibilityTestV1>
+    [[nodiscard]] std::span<const NamedEligibilityTestV2>
     preRegistrationEligibilityTests() noexcept;
-    [[nodiscard]] std::span<const NamedEligibilityTestV1>
+    [[nodiscard]] std::span<const NamedEligibilityTestV2>
     admittedStaticFactoryRecordingTests() noexcept;
-    [[nodiscard]] std::span<const NamedEligibilityTestV1>
-    activationAdmissionTests() noexcept;
+    [[nodiscard]] std::span<const NamedEligibilityTestV2> activationAdmissionTests() noexcept;
 
 } // namespace asharia::host_runtime::tests

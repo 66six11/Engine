@@ -45,13 +45,13 @@ class HostBindingInputTests(unittest.TestCase):
             self.composition,
             manifest=replace(
                 self.composition.manifest,
-                renderer_revision=4,
-                provider_api="asharia-static-factory-provider-v3",
+                renderer_revision=5,
+                provider_api="asharia-static-factory-provider-v4",
             ),
         )
         legacy_template = replace(
             self.template,
-            manifest=replace(self.template.manifest, renderer_revision=1),
+            manifest=replace(self.template.manifest, renderer_revision=2),
         )
 
         for composition, template in (

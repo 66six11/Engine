@@ -1,4 +1,4 @@
-"""Dual-compiler synthetic final Host build and verification integration."""
+"""Dual-compiler generated Project Bootstrap Host integration."""
 
 from __future__ import annotations
 
@@ -23,6 +23,139 @@ from tools.tests import host_template_test_support as support
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 
+VALID_PROJECT_DESCRIPTOR = """{
+  "schema": "com.asharia.project",
+  "schemaVersion": 1,
+  "projectName": "Bootstrap Project",
+  "projectId": "9f7a31a0-0b63-4d4c-9f18-bd9a0d2e9c21",
+  "assetSourceRoots": [
+    {
+      "rootName": "assets",
+      "directory": "Assets",
+      "sourcePathPrefix": "Assets"
+    },
+    {
+      "rootName": "plugins",
+      "directory": "Plugins",
+      "sourcePathPrefix": "Plugins"
+    }
+  ],
+  "assetCacheRoot": ".asharia/cache/assets",
+  "assetDiscovery": {
+    "ignoredDirectories": [".git", ".asharia"]
+  }
+}
+"""
+
+EXPECTED_PROJECT_BOOTSTRAP_SUMMARY = b"""{
+  "projectName": "Bootstrap Project",
+  "projectId": "9f7a31a0-0b63-4d4c-9f18-bd9a0d2e9c21",
+  "assetSourceRootCount": 2
+}
+"""
+
+RESTRICTED_SENTINEL_HEADER = """#pragma once
+
+#include "asharia/host_runtime/static_factory_provider.hpp"
+
+namespace asharia::sentinel {
+
+void provideRestrictedSentinelFactories(
+    asharia::host_runtime::StaticFactoryRegistrar& registrar) noexcept;
+
+} // namespace asharia::sentinel
+"""
+
+RESTRICTED_SENTINEL_SOURCE = """#include <array>
+#include <cstdlib>
+#include <string_view>
+
+#include "asharia/sentinel/restricted_sentinel_provider.hpp"
+
+namespace {
+
+struct RestrictedSentinelContract final {
+  static constexpr std::string_view kind{
+      "com.asharia.contribution.restricted-sentinel"};
+  static constexpr auto cardinality =
+      asharia::host_runtime::StaticContributionCardinalityV1::Single;
+};
+
+[[nodiscard]] RestrictedSentinelContract* abortSentinelAccessor(
+    asharia::host_runtime::FactoryInstanceViewV1) noexcept {
+  std::abort();
+}
+
+[[nodiscard]] asharia::host_runtime::FactoryCreateResultV1 createSentinel(
+    asharia::host_runtime::FactoryCreateContextV1&) noexcept {
+  std::abort();
+}
+
+[[nodiscard]] asharia::host_runtime::FactoryCallbackResultV1 activateSentinel(
+    asharia::host_runtime::FactoryActivateContextV1&,
+    asharia::host_runtime::FactoryInstanceViewV1) noexcept {
+  std::abort();
+}
+
+[[nodiscard]] asharia::host_runtime::FactoryCallbackResultV1 quiesceSentinel(
+    asharia::host_runtime::FactoryQuiesceContextV1&,
+    asharia::host_runtime::FactoryInstanceViewV1) noexcept {
+  std::abort();
+}
+
+[[nodiscard]] asharia::host_runtime::FactoryCallbackResultV1 deactivateSentinel(
+    asharia::host_runtime::FactoryDeactivateContextV1&,
+    asharia::host_runtime::FactoryInstanceViewV1) noexcept {
+  std::abort();
+}
+
+void destroySentinel(asharia::host_runtime::FactoryInstanceTokenV1) noexcept {
+  std::abort();
+}
+
+constexpr auto kSentinelContribution =
+    asharia::host_runtime::bindStaticContributionV2<
+        RestrictedSentinelContract,
+        &abortSentinelAccessor>(
+        "com.asharia.contribution.restricted-sentinel");
+constexpr std::array kSentinelContributions{kSentinelContribution};
+
+constexpr asharia::host_runtime::StaticFactoryCallbacksV1 kSentinelCallbacks{
+    .create = &createSentinel,
+    .activate = &activateSentinel,
+    .quiesce = &quiesceSentinel,
+    .deactivate = &deactivateSentinel,
+    .destroy = &destroySentinel,
+};
+
+} // namespace
+
+void asharia::sentinel::provideRestrictedSentinelFactories(
+    asharia::host_runtime::StaticFactoryRegistrar& registrar) noexcept {
+  registrar.registerFactory(
+      "restricted-sentinel", kSentinelCallbacks, kSentinelContributions);
+}
+"""
+
+
+def run_host(
+    executable: Path,
+    arguments: tuple[str, ...],
+    build_root: Path,
+    environment: tuple[tuple[str, str], ...],
+) -> subprocess.CompletedProcess[bytes]:
+    return subprocess.run(
+        [str(executable), *arguments],
+        cwd=build_root,
+        env=dict(environment),
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=30,
+        check=False,
+        shell=False,
+    )
+
 
 @unittest.skipUnless(
     os.environ.get("ASHARIA_RUN_HOST_TEMPLATE_INTEGRATION_TESTS") == "1",
@@ -35,96 +168,19 @@ class GeneratedHostExecutableIntegrationTests(unittest.TestCase):
 
     @staticmethod
     def write_fixture_source(source_root: Path) -> None:
-        (source_root / "include/asharia/synthetic").mkdir(parents=True)
-        (source_root / "include/asharia/synthetic/runtime_provider.hpp").write_text(
-            """#pragma once
-#include "asharia/host_runtime/static_factory_provider.hpp"
-namespace asharia::synthetic {
-void provideRuntimeFactories(
-    asharia::host_runtime::StaticFactoryRegistrar& registrar) noexcept;
-}
-""",
+        sentinel_include = source_root / "include/asharia/sentinel"
+        sentinel_include.mkdir(parents=True)
+        (sentinel_include / "restricted_sentinel_provider.hpp").write_text(
+            RESTRICTED_SENTINEL_HEADER,
             encoding="utf-8-sig",
             newline="\n",
         )
-        (source_root / "provider.cpp").write_text(
-            """#include <array>
-#include <cstdlib>
-#include <string_view>
-
-#include "asharia/synthetic/runtime_provider.hpp"
-
-namespace {
-
-struct SyntheticRuntimeServiceContract final {
-  static constexpr std::string_view kind{
-      "com.asharia.contribution.synthetic-service"};
-  static constexpr asharia::host_runtime::StaticContributionCardinalityV1 cardinality{
-      asharia::host_runtime::StaticContributionCardinalityV1::Single};
-};
-
-[[nodiscard]] SyntheticRuntimeServiceContract* abortRuntimeServiceAccessor(
-    asharia::host_runtime::FactoryInstanceViewV1) noexcept {
-  std::abort();
-}
-
-constexpr std::array<asharia::host_runtime::StaticContributionBindingV2, 1>
-    kRuntimeServiceContributions{
-    asharia::host_runtime::bindStaticContributionV2<
-        SyntheticRuntimeServiceContract,
-        &abortRuntimeServiceAccessor>(
-        "com.asharia.contribution.synthetic-runtime"),
-};
-
-// Registration-only verification must never invoke payload accessors or lifecycle callbacks.
-asharia::host_runtime::FactoryCreateResultV1 createRuntimeService(
-    asharia::host_runtime::FactoryCreateContextV1&) noexcept {
-  std::abort();
-}
-
-asharia::host_runtime::FactoryCallbackResultV1 activateRuntimeService(
-    asharia::host_runtime::FactoryActivateContextV1&,
-    asharia::host_runtime::FactoryInstanceViewV1) noexcept {
-  std::abort();
-}
-
-asharia::host_runtime::FactoryCallbackResultV1 quiesceRuntimeService(
-    asharia::host_runtime::FactoryQuiesceContextV1&,
-    asharia::host_runtime::FactoryInstanceViewV1) noexcept {
-  std::abort();
-}
-
-asharia::host_runtime::FactoryCallbackResultV1 deactivateRuntimeService(
-    asharia::host_runtime::FactoryDeactivateContextV1&,
-    asharia::host_runtime::FactoryInstanceViewV1) noexcept {
-  std::abort();
-}
-
-void destroyRuntimeService(
-    asharia::host_runtime::FactoryInstanceTokenV1) noexcept {
-  std::abort();
-}
-
-constexpr asharia::host_runtime::StaticFactoryCallbacksV1 kRuntimeServiceCallbacks{
-    .create = &createRuntimeService,
-    .activate = &activateRuntimeService,
-    .quiesce = &quiesceRuntimeService,
-    .deactivate = &deactivateRuntimeService,
-    .destroy = &destroyRuntimeService,
-};
-
-} // namespace
-
-void asharia::synthetic::provideRuntimeFactories(
-    asharia::host_runtime::StaticFactoryRegistrar& registrar) noexcept {
-  registrar.registerFactory(
-      "runtime-service", kRuntimeServiceCallbacks,
-      kRuntimeServiceContributions);
-}
-""",
+        (source_root / "restricted_sentinel_provider.cpp").write_text(
+            RESTRICTED_SENTINEL_SOURCE,
             encoding="utf-8-sig",
             newline="\n",
         )
+
         repository_root = REPOSITORY_ROOT.as_posix()
         (source_root / "CMakeLists.txt").write_text(
             f"""cmake_minimum_required(VERSION 3.28)
@@ -138,20 +194,20 @@ list(APPEND CMAKE_MODULE_PATH "{repository_root}/cmake")
 include(AshariaCompilerOptions)
 include(AshariaGeneratedHost)
 set(ASHARIA_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-add_subdirectory("{repository_root}/engine/host-runtime" asharia-host-runtime)
-add_library(asharia_synthetic_runtime STATIC provider.cpp)
-target_include_directories(asharia_synthetic_runtime PUBLIC include)
-target_link_libraries(asharia_synthetic_runtime
+add_subdirectory("{repository_root}/packages/project-bootstrap" asharia-project-bootstrap)
+add_library(asharia_restricted_sentinel STATIC restricted_sentinel_provider.cpp)
+target_include_directories(asharia_restricted_sentinel PUBLIC include)
+target_link_libraries(asharia_restricted_sentinel
     PUBLIC asharia::host_runtime_contract
     PRIVATE asharia::host_runtime_provider_bridge)
-asharia_configure_target(asharia_synthetic_runtime)
+asharia_configure_target(asharia_restricted_sentinel)
 asharia_include_generated_host_template()
 """,
             encoding="utf-8",
             newline="\n",
         )
 
-    def test_exact_host_build_and_restricted_verification(self) -> None:
+    def test_exact_host_build_and_project_bootstrap(self) -> None:
         cmake_program = shutil.which("cmake")
         ninja_program = shutil.which("ninja")
         toolchain_value = os.environ.get("ASHARIA_HOST_TEST_TOOLCHAIN_FILE")
@@ -183,6 +239,8 @@ asharia_include_generated_host_template()
             self.validators,
             compiler_version=expected_compiler_version,
             compiler_id=expected_compiler_id,
+            provider_fixture=support.PROJECT_BOOTSTRAP_PROVIDER_FIXTURE,
+            tool_provider_fixture=support.RESTRICTED_SENTINEL_PROVIDER_FIXTURE,
         )
         generated_template = (
             host_template.generate_windows_development_host_template(
@@ -296,10 +354,13 @@ asharia_include_generated_host_template()
                 [item.render() for item in verified.diagnostics],
             )
             assert verified.snapshot is not None
-            self.assertEqual(1, len(verified.snapshot.registrations))
+            self.assertEqual(2, len(verified.snapshot.registrations))
             self.assertEqual(
-                "runtime-service",
-                verified.snapshot.registrations[0].factory_id,
+                {"project-bootstrap-application", "restricted-sentinel"},
+                {
+                    registration.factory_id
+                    for registration in verified.snapshot.registrations
+                },
             )
 
             binding_publication = (
@@ -350,22 +411,60 @@ asharia_include_generated_host_template()
                 [item.render() for item in deep_verification.diagnostics],
             )
 
-            invalid_mode = subprocess.run(
-                [str(built.target.artifact_path)],
-                cwd=built.target.build_root,
-                env=dict(environment),
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                timeout=30,
-                check=False,
-                shell=False,
+            project_root = root / "valid-project"
+            project_root.mkdir()
+            (project_root / "asharia.project.json").write_text(
+                VALID_PROJECT_DESCRIPTOR,
+                encoding="utf-8",
+                newline="\n",
             )
-            self.assertEqual(64, invalid_mode.returncode)
-            self.assertEqual(b"", invalid_mode.stdout)
+            normal = run_host(
+                built.target.artifact_path,
+                ("--asharia-project-root", str(project_root)),
+                built.target.build_root,
+                environment,
+            )
+            self.assertEqual(0, normal.returncode, normal.stderr.decode("utf-8"))
+            self.assertEqual(EXPECTED_PROJECT_BOOTSTRAP_SUMMARY, normal.stdout)
+            self.assertEqual(b"", normal.stderr)
+
+            invalid_project_root = root / "invalid-project"
+            invalid_project_root.mkdir()
+            (invalid_project_root / "asharia.project.json").write_text(
+                "{",
+                encoding="utf-8",
+                newline="\n",
+            )
+            invalid_project = run_host(
+                built.target.artifact_path,
+                ("--asharia-project-root", str(invalid_project_root)),
+                built.target.build_root,
+                environment,
+            )
+            self.assertEqual(65, invalid_project.returncode)
+            self.assertEqual(b"", invalid_project.stdout)
+            self.assertTrue(
+                invalid_project.stderr.startswith(
+                    b"project-bootstrap.project-read-failed: "
+                ),
+                invalid_project.stderr,
+            )
+
+            invalid_verification = run_host(
+                built.target.artifact_path,
+                (
+                    "--asharia-verify-static-registration",
+                    "--asharia-project-root",
+                    str(project_root),
+                ),
+                built.target.build_root,
+                environment,
+            )
+            self.assertEqual(64, invalid_verification.returncode)
+            self.assertEqual(b"", invalid_verification.stdout)
             self.assertEqual(
                 ["host-verification.invalid-arguments"],
-                invalid_mode.stderr.decode("utf-8").splitlines(),
+                invalid_verification.stderr.decode("utf-8").splitlines(),
             )
 
 

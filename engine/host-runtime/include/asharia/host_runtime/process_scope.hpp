@@ -212,6 +212,6 @@ namespace asharia::host_runtime {
         std::expected<ProcessScopeExecutorV2, ProcessScopePreparationErrorV2>;
 
     [[nodiscard]] ProcessScopePreparationResultV2
-    prepareProcessScopeExecutorV2(AdmittedStaticFactoryCallbackTableV1 admittedTable) noexcept;
+    prepareProcessScopeExecutorV2(AdmittedStaticFactoryCallbackTableV2 admittedTable) noexcept;
 
 } // namespace asharia::host_runtime

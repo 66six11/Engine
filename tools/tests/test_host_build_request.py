@@ -269,7 +269,7 @@ class FinalHostBuildRequestTests(unittest.TestCase):
                 request.host_template_generation,
                 manifest=replace(
                     request.host_template_generation.manifest,
-                    renderer_revision=1,
+                    renderer_revision=2,
                 ),
             )
 
