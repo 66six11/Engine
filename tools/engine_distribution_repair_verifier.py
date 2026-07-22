@@ -47,7 +47,7 @@ class InstalledDistributionVerificationRequest:
 
 @dataclass(frozen=True)
 class VerifiedInstalledDistribution:
-    """Process-local handoff produced only by complete deep verification."""
+    """Process-local handoff shape emitted by complete deep verification."""
 
     engine_generation_id: str
     generation_root: Path = field(repr=False)
@@ -181,9 +181,11 @@ def _is_link_or_reparse(status: os.stat_result) -> bool:
     return bool(getattr(status, "st_file_attributes", 0) & reparse_attribute)
 
 
-def _inspect_generation_root(
+def inspect_installed_engine_distribution_root(
     root: Path,
 ) -> tuple[Path | None, contracts.Diagnostic | None]:
+    """Resolve one installed generation root without crossing links/reparse points."""
+
     absolute = stable_file_identity.extended_path(root)
     current = Path(absolute.anchor)
     for component in absolute.parts[1:]:
@@ -998,7 +1000,9 @@ def verify_installed_engine_distribution(
         )
 
     expected_generation_id = request.expected_engine_generation_id
-    generation_root, root_finding = _inspect_generation_root(request.generation_root)
+    generation_root, root_finding = inspect_installed_engine_distribution_root(
+        request.generation_root
+    )
     if root_finding is not None:
         return _report(expected_generation_id, (root_finding,))
     assert generation_root is not None

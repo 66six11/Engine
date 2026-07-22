@@ -215,6 +215,10 @@ powershell -ExecutionPolicy Bypass -File tools\count-code-lines.ps1
   canonical Distribution Manifest bootstrap、disk-only artifact generation reconstruction、Editor/package/artifact/profile/closed-tree
   故障注入、稳定多 finding、bounded streaming，以及成功/失败路径只读保证。verifier 不执行 repair、active selection、
   Bootstrap/Session integration 或 Activation。
+- `tools/tests/test_engine_distribution_package_catalog.py` 覆盖 #301 verified handoff 捕获、bundled inventory 排列确定性、
+  duplicate identity/root、strict-loader source failure/mutation、exact candidate evidence mismatch、snapshot 隔离，以及
+  `catalog -> resolver -> canonical Lock v2 -> locked verify/reuse` 的无 existing Lock headless 链。catalog 不持久化第二份 inventory，
+  不实现 Project/local index、Lock update/apply 或 UI。
 - `tools/tests/test_package_lock_contracts.py` 覆盖 exact graph closure、source/integrity、cross-document selected-result validation、
   package tree digest 与 normalized lock writer determinism。
 - `tools/tests/test_package_resolver.py` 覆盖纯内存 candidate validation、最高兼容版本、稳定回溯、嵌套 Feature Set、

@@ -204,8 +204,10 @@ rollback 和 lifecycle；Memory、Storage、Settings、Tasks、Data、Observabil
    驱动 Eligibility V2，并接通 normal Host → ProcessScope → `ProcessApplicationV1` → 固定 `project-bootstrap` → real
    `asharia.project.json` → explicit stop。#298 又用 canonical project root、fresh locked discovery、Effective Session 与 verified
    published Host/C6 evidence 建立 headless Bootstrap project-open reducer/adapter；normal-open 只检查 artifact path/type/size，missing/stale/
-   invalid Host 可证明 `PendingBuild`，而不自 hash executable 或依赖外部 launch receipt。当前仍无上游 catalog/index、lock update/apply、
-   生产 manifest/lock/profile、repair executor、`PendingRestart` process tracker、其他 Host scope owners、完整 instance/jobs/subscriptions
+   invalid Host 可证明 `PendingBuild`，而不自 hash executable 或依赖外部 launch receipt。#301 又从
+   `VerifiedInstalledDistribution` 派生无需 existing Lock 的完整 bundled candidate snapshot，并以 fresh manifest/payload evidence 对证
+   Distribution inventory。当前仍无 Project/local source index、lock update/apply、production installable package/lock/profile declarations、
+   repair executor、`PendingRestart` process tracker、其他 Host scope owners、完整 instance/jobs/subscriptions
    lease 和 Editor Package Manager 闭环；
 9. scripting、input、tasks、physics、animation、audio 等已进入目标 first-party system catalog，但尚未形成可由同一 package activation 模型创建和停止的完整实现；
 10. `engine/platform` 仍是空 `INTERFACE` target，应用 lifecycle 与 immutable platform capability generation 没有 runtime owner；
@@ -271,6 +273,7 @@ rollback 和 lifecycle；Memory、Storage、Settings、Tasks、Data、Observabil
 | Host Profile | 某类进程允许和要求的 module/contribution 集合 | 用户机器上的临时 UI 状态 |
 | Editor Image | 随 Engine/Editor 固定发行且可在项目 graph 激活前启动的 executable、最小 UI Shell、Package Manager diagnostics、Build/Repair 与 Safe Mode | 由项目 lock 从零组装的可选 package 集合 |
 | Engine Distribution Manifest | `asharia.engine-distribution.json`；build/installer 生成的只读 Editor Image、bundled package、package artifact 与 Host Profile inventory | resolver 维护的第二个 lock、项目可覆盖的 package graph |
+| [Engine Distribution Package Catalog Snapshot](../architecture/adr-engine-distribution-package-catalog-snapshot-v1.md) | 从 `VerifiedInstalledDistribution` 的完整 bundled inventory 与 fresh strict-loader evidence 派生的、确定且 process-local 的候选集 | 第二份持久 catalog、Project/local index、resolver 选择、Lock update/apply |
 | EngineGenerationId | 省略自身后的 canonical Engine Distribution payload 的 `sha256-<digest>` content identity | 单 package `artifact_generation_id`、随机 build UUID、跨版本 C++ ABI 承诺 |
 | Source Boundary Manifest | schema v1 的 `asharia.package.json`；记录当前 source role、owner、planned ownership root、target role 和构建依赖，且不可选择/不可见 | Installable Capability Package 或 Package Manager catalog entry |
 | Package Manifest | 每个 Installable Capability Package 的 `asharia.package.json`，描述 catalog type、完整能力 identity、logical modules/contributions 和 package dependencies；source/target 映射属于独立 build descriptor | 每个 target 各自的安装清单 |
@@ -992,6 +995,8 @@ sequenceDiagram
 - 冻结 Installable Capability Package manifest vNext 的 identity、catalog type、completeness roles、package dependencies、internal modules/contributions 和 shipping 字段；
 - 定义 `asharia.packages.json` 与 committed `asharia.packages.lock.json`；
 - 实现 headless `discover -> solve/reuse -> compose -> verify` library/CLI，第一阶段只支持 bundled/project-embedded/local sources；
+- #301 已实现 verified Distribution bundled provider：无需 existing Lock，把每个 inventory entry 恰好一次投影为 fresh candidate；
+  Project-embedded index、local workspace mapping 与 source precedence 保持为后继 Slice，不由 bundled provider 推断；
 - 先输出 canonical per-host logical composition，再由独立 adapters 输出 CMake build plan 和 artifact-neutral Host Activation Blueprint；构建后再绑定 verified executable registrations；不实现任意 native hot load；
 - 建立 `Minimal`、`Editor`、`Runtime`、`DedicatedServer`、`AssetWorker` Host Profiles，以及 versioned
   Standard3D/EditorAuthoring/DedicatedServer Feature Sets；五种 Host Profile 与从 composition 到 Blueprint/artifact/registration 的 contracts

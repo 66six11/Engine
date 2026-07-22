@@ -15,6 +15,9 @@ ProcessScope V2 内调用 accessor、建立 fixed-slot typed registry、weak gen
 #298 的 [Bootstrap Project-Open Session v1](adr-bootstrap-project-open-session-v1.md) 进一步把同一 canonical project root 下的
 Project Manifest/Lock、fresh Effective Session、C6 与已验证 published Host binding 对证，并通过纯 reducer 产出 headless Bootstrap
 状态；匹配时才以同一 root 有界运行 Project Bootstrap Host。
+#301 的 [Engine Distribution Package Catalog Snapshot v1](adr-engine-distribution-package-catalog-snapshot-v1.md) 已从
+`VerifiedInstalledDistribution` 派生完整、确定、只读且无需 existing Lock 的 bundled candidate snapshot；Project/local source index、
+Lock update/apply 与 UI 仍是独立后继边界。
 其他 concrete Host scopes、完整 system-instance/jobs/subscriptions lease、Memory & Budget、Settings、Runtime Storage、Tasks 等目标模块尚未实现。
 本文不能被用来宣称生产 Editor Bootstrap、Editor UI 或完整 Foundation Services 已经完成。
 
@@ -510,8 +513,10 @@ F1 的数据合同基线已经覆盖 installable/Feature Set/Project Manifest/Pa
 explicit-source Candidate Discovery v1、deterministic in-memory resolver、fail-closed locked graph verification/reuse 和 logical
 module/contribution projection。Host Composition Plan v1 的 schema、pure planner、dependency ordering、entry/provenance 与 canonical IR
 已经实现。[Source Build Plan v1](adr-source-build-plan-v1.md) 的 independent source descriptor、normalized CMake codemodel
-snapshot 与 pure build-root planner 也已实现。它仍不代表 F1 完成：上游 catalog/index、lock update/apply 与 production
-Project Lock 尚未实现。#299 只为固定 Windows x64 Studio 提供 production Editor Host Profile exact-byte input 和 statically-qualified、
+snapshot 与 pure build-root planner 也已实现。
+[Engine Distribution Package Catalog Snapshot v1](adr-engine-distribution-package-catalog-snapshot-v1.md) 已将 verified Distribution
+inventory 转换为无 existing Lock 前置的 bundled candidate snapshot。它仍不代表 F1 完成：Project/local source index、lock
+update/apply 与 production Project Lock 尚未实现。#299 只为固定 Windows x64 Studio 提供 production Editor Host Profile exact-byte input 和 statically-qualified、
 byte-bound closed Editor Image input；真实 installable package inputs、canonical assembly invocation、#283 installed byte-health handoff 与 launcher-owned
 current selection 仍未闭环。[Package Product & Artifact Evidence v1](adr-package-product-artifact-evidence-v1.md) 的作者声明、候选
 快照和 pure verifier 已落地；[Package Artifact Collection & Publication v1](adr-package-artifact-collection-publication-v1.md)
