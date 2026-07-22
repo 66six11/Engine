@@ -111,6 +111,70 @@ build\cmake\msvc-debug\tools\asset-processor\asharia-asset-processor.exe dry-run
 build\cmake\msvc-debug\tools\asset-processor\asharia-asset-processor.exe execute --source-root Content --source-path-prefix Content --target-profile windows-msvc-debug --output-root build\asset-cache
 ```
 
+### Studio Distribution 输入物化
+
+固定 Studio 的发行输入不再由测试手写 metadata，也不由 Python 构建路径生成。当前 v1 是 Windows x64
+release contract。先完成 `msvc-release` native build，再使用标准 `dotnet publish` 与 `EditorImage.pubxml`
+生成 release-orchestrator-owned、全新且不复用的 Studio publish 目录；`dotnet publish` 不负责清理旧 `PublishDir`。
+完整可复制命令、required file set、参数、输出布局、receipt 与失败恢复见
+`tools/studio-distribution/README.md`。
+
+```powershell
+$releaseRoot = 'D:\Build\Asharia'
+New-Item -ItemType Directory -Force -Path $releaseRoot | Out-Null
+$publishRoot = Join-Path $releaseRoot ("studio-publish-" + [guid]::NewGuid().ToString('N'))
+$sdkVersion = '10.0.302'
+$hostFxrVersion = '10.0.10'
+$hostRuntimeVersion = '10.0.10'
+$referencePackVersion = '10.0.10'
+
+if ((dotnet --version).Trim() -ne $sdkVersion) {
+  throw "Repository global.json did not select the required .NET SDK $sdkVersion."
+}
+
+dotnet publish apps\studio\Editor.csproj `
+  -c Release `
+  -p:PublishProfile=EditorImage `
+  -p:PublishDir="$publishRoot\"
+
+dotnet run --project tools\studio-distribution\Asharia.Studio.Distribution.csproj `
+  -c Release -- `
+  stage-editor-image `
+  --publish-root $publishRoot `
+  --entry-point Editor.exe `
+  --dotnet-root "C:\Program Files\dotnet" `
+  --sdk-version $sdkVersion `
+  --hostfxr-version $hostFxrVersion `
+  --host-runtime-version $hostRuntimeVersion `
+  --reference-pack-version $referencePackVersion `
+  --runtime-contract (Join-Path $publishRoot 'Asharia.Runtime.Contracts.dll') `
+  --editor-contract (Join-Path $publishRoot 'Asharia.Editor.dll') `
+  --output-root D:\Build\Asharia\editor-image
+
+dotnet run --project tools\studio-distribution\Asharia.Studio.Distribution.csproj `
+  -c Release -- `
+  stage-editor-host-profile `
+  --output-root D:\Build\Asharia\editor-host-profile
+```
+
+focused functional tests 为：
+
+```powershell
+dotnet test tools\studio-distribution.Tests\Asharia.Studio.Distribution.Tests.csproj -c Release
+python -m unittest tools.tests.test_host_profile_contracts
+```
+
+Editor Image receipt 与 Host Profile receipt 都只是 canonical Distribution assembler 的 typed inputs。
+Editor Image producer 要求 release orchestration 显式钉住四个版本目录；它静态核对 apphost binding、managed identity/runtime
+evidence、required native direct exports 和关键 .NET component version evidence；apphost 的 `.rsrc` 必须是 fixed `Editor.dll`
+资源经 .NET 10 HostModel 规则重建出的 exact canonical bytes，SDK bundled-version XML 也不得通过大小写变体或 Import 覆盖证据值。
+通过资格检查后再复制并逐字节绑定所选树。该过程不执行
+候选 EXE、不加载 DLL、不调用 hostfxr，也不证明 loadability、ABI 或 runtime health。
+Python 只属于仓库内开发、验证与 CI 工具层；正式 Studio、Editor Image、Host Profile、Launcher、Repair 与用户运行时均不得依赖或携带 Python。Editor Image producer 会拒绝所选 publish/.NET 树中的常规 Python 源码、字节码、wheel/extension、虚拟环境/package 目录与解释器/runtime artifact。
+两份 receipt 都不选择 installable packages，不生成或暗示 `EngineGenerationId`，也不证明完整 Distribution health。
+真实 installable package artifacts、canonical assembly invocation、installed-generation byte-health handoff 与
+launcher-owned current selection 仍是 downstream work。
+
 ## 仓库维护工具
 
 这些脚本不替代构建门禁，但用于本地自检和变更审查：

@@ -11,6 +11,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from tools import check_package_contracts as contracts
+from tools import stable_file_identity
 from tools import static_composition_root as composition
 
 
@@ -72,10 +73,10 @@ def _fingerprint(status: os.stat_result) -> FileFingerprint:
     return FileFingerprint(
         status.st_dev,
         status.st_ino,
-        stat.S_IFMT(status.st_mode),
+        stable_file_identity.file_kind(status),
         status.st_size,
         status.st_mtime_ns,
-        status.st_ctime_ns,
+        stable_file_identity.changed_ns(status),
         getattr(status, "st_file_attributes", 0),
     )
 

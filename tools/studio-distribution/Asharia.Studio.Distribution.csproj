@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>Asharia.Studio.Distribution</AssemblyName>
+    <RootNamespace>Asharia.Studio.Distribution</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <EmbeddedResource
+      Include="..\..\apps\studio\Distribution\profiles\editor\asharia.host-profile.json"
+      LogicalName="Asharia.Studio.Distribution.Profiles.editor.asharia.host-profile.json" />
+  </ItemGroup>
+</Project>

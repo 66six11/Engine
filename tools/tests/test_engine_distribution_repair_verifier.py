@@ -13,6 +13,7 @@ from unittest import mock
 from tools import check_package_contracts as contracts
 from tools import engine_distribution_repair_verifier as repair
 from tools import package_artifact_publication as publication
+from tools import stable_file_identity
 from tools.tests import test_engine_distribution_assembly as assembly_tests
 
 
@@ -35,6 +36,9 @@ class InstalledDistributionRepairVerifierTests(unittest.TestCase):
         self.receipt = assembled.receipt
         assert self.receipt is not None
         self.generation_root = self.receipt.engine_generation_path
+        self.generation_io_root = stable_file_identity.extended_path(
+            self.generation_root
+        )
         self.generation_id = self.receipt.engine_generation_id
 
     def tearDown(self) -> None:
@@ -69,6 +73,7 @@ class InstalledDistributionRepairVerifierTests(unittest.TestCase):
 
     @staticmethod
     def tree_snapshot(root: Path) -> tuple[tuple[str, str, int], ...]:
+        root = stable_file_identity.extended_path(root)
         values: list[tuple[str, str, int]] = []
         for path in sorted(root.rglob("*"), key=lambda value: value.as_posix()):
             relative = path.relative_to(root).as_posix()
@@ -99,6 +104,7 @@ class InstalledDistributionRepairVerifierTests(unittest.TestCase):
         verified = result.report.verified_distribution
         self.assertIsNotNone(verified)
         self.assertEqual(self.generation_id, verified.engine_generation_id)
+        self.assertEqual(self.generation_root, verified.generation_root)
         self.assertEqual(
             contracts.compute_bytes_integrity(verified.manifest_bytes),
             verified.manifest_integrity,
@@ -201,7 +207,7 @@ class InstalledDistributionRepairVerifierTests(unittest.TestCase):
             b"{}\n"
         )
         package_manifest = (
-            self.generation_root
+            self.generation_io_root
             / "packages/systems"
             / self.fixture.candidate.identity
             / contracts.PACKAGE_MANIFEST_NAME
@@ -225,7 +231,7 @@ class InstalledDistributionRepairVerifierTests(unittest.TestCase):
 
     def test_excluded_package_content_is_rejected_even_though_tree_hash_ignores_it(self) -> None:
         excluded = (
-            self.generation_root
+            self.generation_io_root
             / "packages/systems"
             / self.fixture.candidate.identity
             / "build"
@@ -242,7 +248,7 @@ class InstalledDistributionRepairVerifierTests(unittest.TestCase):
 
     def test_artifact_byte_corruption_is_detected_without_publication_receipt(self) -> None:
         artifact_root = (
-            self.generation_root
+            self.generation_io_root
             / "artifacts"
             / self.fixture.artifact_receipt.artifact_generation_id
         )
@@ -270,7 +276,7 @@ class InstalledDistributionRepairVerifierTests(unittest.TestCase):
 
     def test_artifact_generation_extra_file_fails_disk_closed_layout(self) -> None:
         generation_id = self.fixture.artifact_receipt.artifact_generation_id
-        artifact_root = self.generation_root / "artifacts" / generation_id
+        artifact_root = self.generation_io_root / "artifacts" / generation_id
         (artifact_root / "undeclared.txt").write_bytes(b"extra")
 
         result = publication.verify_published_package_artifact_generation(
@@ -287,7 +293,7 @@ class InstalledDistributionRepairVerifierTests(unittest.TestCase):
 
     def test_artifact_manifest_noncanonical_bytes_fail_disk_bootstrap(self) -> None:
         generation_id = self.fixture.artifact_receipt.artifact_generation_id
-        artifact_root = self.generation_root / "artifacts" / generation_id
+        artifact_root = self.generation_io_root / "artifacts" / generation_id
         manifest_path = (
             artifact_root
             / "packages"
@@ -313,7 +319,7 @@ class InstalledDistributionRepairVerifierTests(unittest.TestCase):
 
     def test_disk_artifact_loader_reconstructs_canonical_generation(self) -> None:
         generation_id = self.fixture.artifact_receipt.artifact_generation_id
-        artifact_root = self.generation_root / "artifacts" / generation_id
+        artifact_root = self.generation_io_root / "artifacts" / generation_id
 
         result = publication.verify_published_package_artifact_generation(
             artifact_root,

@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import json
 import os
+import shutil
 import tempfile
 import unittest
 from dataclasses import replace
@@ -16,6 +17,7 @@ from tools import engine_distribution_assembly as assembly
 from tools import package_artifact_evidence as artifacts
 from tools import package_artifact_publication as publication
 from tools import package_candidate_discovery as discovery
+from tools import stable_file_identity
 
 
 FIXTURE_ROOT = Path(__file__).parent / "fixtures/package-contracts"
@@ -78,6 +80,8 @@ class EngineDistributionAssemblyTests(unittest.TestCase):
         self.publication_root.mkdir()
 
     def tearDown(self) -> None:
+        if self.root.exists():
+            shutil.rmtree(stable_file_identity.extended_path(self.root))
         self.temporary_directory.cleanup()
 
     @staticmethod
@@ -245,6 +249,12 @@ class EngineDistributionAssemblyTests(unittest.TestCase):
         generation = first.receipt.engine_generation_path
         self.assertEqual(first.receipt.engine_generation_id, generation.name)
         self.assertEqual(
+            self.publication_root
+            / "generations"
+            / first.receipt.engine_generation_id,
+            generation,
+        )
+        self.assertEqual(
             first.receipt.manifest,
             json.loads(
                 (generation / contracts.ENGINE_DISTRIBUTION_MANIFEST_NAME).read_text(
@@ -264,6 +274,29 @@ class EngineDistributionAssemblyTests(unittest.TestCase):
                 path
                 for path in (self.publication_root / ".asharia-distribution-staging").iterdir()
             ],
+        )
+
+    @unittest.skipUnless(os.name == "nt", "Windows extended-path regression")
+    def test_publication_root_with_dot_segments_uses_a_standard_receipt_path(self) -> None:
+        marker = self.root / "marker"
+        marker.mkdir()
+        publication_with_dot_segments = marker / ".." / self.publication_root.name
+
+        result = assembly.assemble_engine_distribution(
+            self.request(),
+            publication_with_dot_segments,
+            self.validators,
+        )
+
+        self.assertTrue(
+            result.succeeded,
+            [diagnostic.render() for diagnostic in result.diagnostics],
+        )
+        self.assertEqual(
+            self.publication_root
+            / "generations"
+            / result.receipt.engine_generation_id,
+            result.receipt.engine_generation_path,
         )
 
     def test_large_payloads_are_streamed_without_path_read_bytes(self) -> None:

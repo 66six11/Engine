@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Iterable
 
 from tools import host_artifact_io
+from tools import stable_file_identity
 
 
 class HostBindingGenerationIOError(Exception):
@@ -47,10 +48,10 @@ def _same_file_observation(
         return (
             value.st_dev,
             value.st_ino,
-            stat.S_IFMT(value.st_mode),
+            stable_file_identity.file_kind(value),
             value.st_size,
             value.st_mtime_ns,
-            value.st_ctime_ns,
+            stable_file_identity.changed_ns(value),
             getattr(value, "st_file_attributes", 0),
         )
 

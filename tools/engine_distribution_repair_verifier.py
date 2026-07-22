@@ -21,6 +21,7 @@ from typing import Any, Iterable
 from tools import check_package_contracts as contracts
 from tools import package_artifact_evidence as artifact_evidence
 from tools import package_artifact_publication as artifact_publication
+from tools import stable_file_identity
 
 
 _HASH_CHUNK_SIZE = 1024 * 1024
@@ -165,10 +166,10 @@ def _fingerprint(status: os.stat_result) -> _FileFingerprint:
     return _FileFingerprint(
         device=status.st_dev,
         inode=status.st_ino,
-        kind=stat.S_IFMT(status.st_mode),
+        kind=stable_file_identity.file_kind(status),
         size=status.st_size,
         modified_ns=status.st_mtime_ns,
-        changed_ns=status.st_ctime_ns,
+        changed_ns=stable_file_identity.changed_ns(status),
     )
 
 
@@ -182,7 +183,7 @@ def _is_link_or_reparse(status: os.stat_result) -> bool:
 def _inspect_generation_root(
     root: Path,
 ) -> tuple[Path | None, contracts.Diagnostic | None]:
-    absolute = root.absolute()
+    absolute = stable_file_identity.extended_path(root)
     current = Path(absolute.anchor)
     for component in absolute.parts[1:]:
         current /= component
@@ -969,7 +970,7 @@ def verify_installed_engine_distribution(
     if not findings:
         verified = VerifiedInstalledDistribution(
             engine_generation_id=expected_generation_id,
-            generation_root=generation_root,
+            generation_root=stable_file_identity.standard_path(generation_root),
             manifest=copy.deepcopy(manifest),
             manifest_bytes=bytes(manifest_bytes),
             manifest_integrity=contracts.compute_bytes_integrity(manifest_bytes),

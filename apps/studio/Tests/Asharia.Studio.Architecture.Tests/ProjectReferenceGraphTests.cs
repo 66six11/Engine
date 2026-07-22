@@ -396,7 +396,7 @@ public sealed class ProjectReferenceGraphTests
     }
 
     [Fact]
-    public void Legacy_editor_references_only_the_public_editor_and_application_projects()
+    public void Legacy_editor_references_only_the_runtime_public_editor_and_application_projects()
     {
         var projectPath = Path.Combine(FindStudioRoot(), "Editor.csproj");
         var project = XDocument.Load(projectPath);
@@ -411,6 +411,7 @@ public sealed class ProjectReferenceGraphTests
         Assert.Equal(
             [
                 "src/Asharia.Editor/Asharia.Editor.csproj",
+                "src/Asharia.Runtime.Contracts/Asharia.Runtime.Contracts.csproj",
                 "src/Asharia.Studio.Application/Asharia.Studio.Application.csproj",
             ],
             references);
@@ -489,6 +490,7 @@ public sealed class ProjectReferenceGraphTests
                 "Tests/Asharia.Studio.Architecture.Tests/Asharia.Studio.Architecture.Tests.csproj",
                 "Tests/Editor.Tests/Editor.Tests.csproj",
                 "src/Asharia.Editor/Asharia.Editor.csproj",
+                "src/Asharia.Runtime.Contracts/Asharia.Runtime.Contracts.csproj",
                 "src/Asharia.Studio.Application/Asharia.Studio.Application.csproj",
             ],
             projectPaths);

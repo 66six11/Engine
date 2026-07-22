@@ -50,6 +50,7 @@ root/link 检查、file identity、复制后 source 复扫、staged rehash 与 c
 | Installed Distribution Repair Verifier（#283） | 从外部 expected ID 只读复验已安装 generation 并生成 Health Report | 修复动作、active generation selection |
 
 Assembler 位于 build/release tool boundary，不进入 L0 Kernel，不被 Project Package Manager 调用，也不成为 Editor Image 启动依赖。
+当前 Python assembler 与 verifier 实现仅供仓库内开发、验证和 CI 使用，不进入 Studio、Editor Image、Launcher、Installer、Repair 或用户运行时。后继产品流程必须以 C# 或 native 实现消费相同的 portable contracts，不能在已安装产品中启动仓库 Python 工具。
 
 ## 决策
 
@@ -133,6 +134,10 @@ flowchart LR
 7. 读取刚写入的 exact manifest bytes，确认无 BOM/LF/canonical data，并完整复验 staged closed tree；
 8. 以 canonical inventory 得到 `EngineGenerationId`，final path 为 `generations/<EngineGenerationId>`；
 9. final 不存在时使用一次 `os.rename()` 提交；已存在或并发 winner 出现时，完整复验 existing generation 后才返回复用。
+
+Windows 实现把 path-stat 与 handle-stat 共同稳定的 file-kind、size、mtime、birthtime 作为观察指纹字段，byte hash 继续承担内容证据；
+完成原有 component-wise reparse 检查后，内部 I/O 使用已先规范化 `.`/`..` 的 extended-length path，以免依赖全局
+`LongPathsEnabled`。Receipt 与 verifier handoff 仍返回不含 `\\?\` 的标准绝对逻辑路径，消费方在自己的 I/O 边界再转换。
 
 输出布局：
 
@@ -227,6 +232,11 @@ Editor root、candidate roots 与 artifact publication receipts。
 - assembler 需要两次或多次读取 payload，换取 source/staging drift detection 与 existing-generation integrity；
 - #283 已在独立边界实现 Installed Distribution Repair Verifier；CMake install adapter、repair executor、active generation
   pointer 与 crash-durable installer transaction 仍是独立工作。
+- #299 在独立的 BCL-only .NET build/release boundary 物化两个固定 Windows x64 upstream inputs：
+  从 fresh Studio `dotnet publish` 与 exact .NET selection 生成 statically-qualified、byte-bound、closed、no-overwrite 的 Editor Image，
+  并把 repo-owned production Editor Host Profile 作为 canonical exact bytes 生成独立 closed root；两份 receipt
+  都不拥有 `EngineGenerationId`，且只证明 selected/staged byte bindings，不证明 loadability、ABI、runtime behavior 或
+  完整 Distribution health。
 
 ## 验证
 
@@ -242,7 +252,8 @@ Editor root、candidate roots 与 artifact publication receipts。
 ## 后续
 
 1. Installed Distribution Repair Verifier + structured Health Report 已由 #283 完成；
-2. CMake install adapter，为 Editor Image/package inputs 生成显式隔离 roots；
+2. Studio Editor Image 与 production Editor Host Profile 的独立 input producers 由 #299 负责；完成门禁后，下一步先产生真实
+   installable package artifact inputs，再把全部 closed inputs 交给本 ADR 的 canonical Distribution assembler；
 3. 外部 Launcher/Installer repair executor、轻量启动 receipt 与 active generation selection；
 4. 静态薄 composition root；
 5. Factory/Activation、Scope/Lifecycle 与 Host Runtime。

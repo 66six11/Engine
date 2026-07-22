@@ -196,10 +196,11 @@ struct ScriptExecutionContext {
 | --- | --- | --- | --- |
 | Lua | 集成轻，启动快，适合工具脚本、玩法原型、import rule | 静态类型和 IDE 体验弱，长期大型 gameplay 维护成本高 | 适合第一版验证 ScriptHost 和 binding |
 | C#/.NET | 类型系统、IDE、生态和大型 gameplay 体验好 | 集成、热重载、调试、GC 和部署复杂 | 适合中长期，不宜在 schema/scene 未稳时先上 |
-| Python | 工具生态强，适合离线 pipeline | runtime 部署和性能不适合 gameplay 主路径 | 可用于 tool/asset processor，不建议作为 runtime gameplay 第一语言 |
+| Python | 仓库内开发、验证、CI 与离线研究生态强 | 不是产品语言；不得进入 Studio、Editor Image、安装包、Launcher、Repair 或用户运行时 | 仅限仓库维护工具，不作为 ScriptHost backend、Editor tool/asset processor 或 gameplay 语言 |
 | 自研 DSL | 可控 | 成本极高，生态为零 | 暂缓 |
 
 关键约束：不要让语言选择反向决定引擎对象模型。引擎暴露 `ScriptHost` 和 `BindingRegistry`，语言 backend 是 adapter。
+上表中的 Python 仅记录仓库开发工具边界，不是候选产品 backend。若未来确有 DCC pipeline 互操作需求，应通过独立外部 adapter 与显式产品决策重新立项，不能把当前 `tools/*.py` 直接带入正式编辑器。
 
 ## Binding Registry
 

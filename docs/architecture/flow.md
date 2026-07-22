@@ -312,6 +312,39 @@ binding receipt 也不会作为 activation ticket 传给 Host。
 得到 `SafeMode`；spawn/timeout/output/protocol/Host lifecycle 失败得到 `FatalDistributionError`；exit `0`、empty stderr 和 strict
 versioned summary 才得到 Bootstrap `Ready`。`PendingRestart` 与完整 `ProjectReady` 均不由该 v1 产生。
 
+## Studio Distribution 固定输入物化流（#299）
+
+这是 build/release flow，不是 Project Open 或 runtime activation：
+
+```mermaid
+flowchart LR
+    Native["msvc-release native outputs<br/>editor_native.dll + slang.dll"]
+    Publish["dotnet publish<br/>EditorImage / fresh Windows x64 root"]
+    DotNet["exact .NET selection<br/>host + SDK + hostfxr + runtime + reference pack"]
+    ImageProducer["stage-editor-image<br/>static identity qualification + copy/rehash<br/>+ closed-root verify"]
+    ImageInput["closed Editor Image input<br/>typed byte bindings"]
+    ProfileSource["repo-owned production Editor Host Profile<br/>canonical exact bytes"]
+    ProfileProducer["stage-editor-host-profile"]
+    ProfileInput["closed Host Profile input<br/>typed exact-byte binding"]
+    Packages["real installable package inputs<br/>downstream"]
+    Assembler["canonical Distribution Assembler<br/>not invoked by #299"]
+
+    Native --> Publish
+    Publish --> ImageProducer
+    DotNet --> ImageProducer
+    ImageProducer --> ImageInput
+    ProfileSource --> ProfileProducer
+    ProfileProducer --> ProfileInput
+    ImageInput -.assembler input only.-> Assembler
+    ProfileInput -.assembler input only.-> Assembler
+    Packages -.required downstream.-> Assembler
+```
+
+两个 producer 都要求 fresh output root；失败或 drift 不返回 successful receipt，也不覆盖已有 root。
+#299 不生成 `EngineGenerationId`，不执行 package selection、canonical assembly、#283 installed-generation byte health、
+current selection、Project Open 或 Host activation。Editor Image 的资格检查不加载或执行候选输入，也不证明 ABI、
+launch behavior 或 runtime health。
+
 ## 当前架构总览
 
 这张图按“谁拥有抽象、谁拥有 Vulkan、谁负责组装运行”来读。横向是包边界，纵向是每帧数据从应用入口落到

@@ -18,6 +18,7 @@ from typing import Any, Iterable
 from tools import check_package_contracts as contracts
 from tools import package_artifact_evidence as artifact_evidence
 from tools import package_artifact_publication as artifact_publication
+from tools import stable_file_identity
 from tools.package_candidates import PackageCandidate
 
 
@@ -160,12 +161,10 @@ def _fingerprint(status: os.stat_result) -> _FileFingerprint:
     return _FileFingerprint(
         device=status.st_dev,
         inode=status.st_ino,
-        # Windows Path.stat() may synthesize execute bits from the filename
-        # while fstat() does not. File kind is the stable identity component.
-        mode=stat.S_IFMT(status.st_mode),
+        mode=stable_file_identity.file_kind(status),
         size=status.st_size,
         modified_ns=status.st_mtime_ns,
-        changed_ns=status.st_ctime_ns,
+        changed_ns=stable_file_identity.changed_ns(status),
     )
 
 
@@ -1090,8 +1089,14 @@ def assemble_engine_distribution(
             package_fingerprints,
         ) = _preflight(request, publication_root, validators)
 
-        staging_parent = canonical_publication_root / _STAGING_DIRECTORY_NAME
-        generations_parent = canonical_publication_root / _GENERATIONS_DIRECTORY_NAME
+        publication_io_root = stable_file_identity.extended_path(
+            canonical_publication_root
+        )
+        publication_logical_root = stable_file_identity.standard_path(
+            publication_io_root
+        )
+        staging_parent = publication_io_root / _STAGING_DIRECTORY_NAME
+        generations_parent = publication_io_root / _GENERATIONS_DIRECTORY_NAME
         staging_parent.mkdir(exist_ok=True)
         generations_parent.mkdir(exist_ok=True)
         canonical_staging_parent = _inspect_existing_directory(staging_parent, "Distribution staging root")
@@ -1225,6 +1230,11 @@ def assemble_engine_distribution(
 
         engine_generation_id = manifest["engineGenerationId"]
         final_path = canonical_generations_parent / engine_generation_id
+        logical_final_path = (
+            publication_logical_root
+            / _GENERATIONS_DIRECTORY_NAME
+            / engine_generation_id
+        )
         _verify_distribution_tree(
             staging_path,
             manifest,
@@ -1261,7 +1271,7 @@ def assemble_engine_distribution(
         return EngineDistributionAssemblyResult(
             receipt=EngineDistributionAssemblyReceipt(
                 engine_generation_id=engine_generation_id,
-                engine_generation_path=final_path,
+                engine_generation_path=logical_final_path,
                 manifest=manifest,
                 manifest_integrity=contracts.compute_bytes_integrity(manifest_bytes),
                 reused=reused,

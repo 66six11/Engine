@@ -1,6 +1,10 @@
 # Build output
 /build*/
 /out/
+tools/studio-distribution/bin/
+tools/studio-distribution/obj/
+tools/studio-distribution.Tests/bin/
+tools/studio-distribution.Tests/obj/
 /.vs/
 /.idea/
 /.worktrees/

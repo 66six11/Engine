@@ -12,6 +12,10 @@ from tools import check_package_contracts
 
 
 FIXTURE_ROOT = Path(__file__).parent / "fixtures/package-contracts"
+PRODUCTION_EDITOR_PROFILE = (
+    Path(__file__).parents[2]
+    / "apps/studio/Distribution/profiles/editor/asharia.host-profile.json"
+)
 PROFILE_NAMES = (
     "minimal",
     "editor",
@@ -65,6 +69,29 @@ class HostProfileContractTests(unittest.TestCase):
                     path.read_text(encoding="utf-8"),
                     check_package_contracts.render_normalized_host_profile(profile),
                 )
+
+    def test_production_editor_profile_matches_the_canonical_contract_oracle(self) -> None:
+        production_bytes = PRODUCTION_EDITOR_PROFILE.read_bytes()
+        fixture_bytes = (
+            FIXTURE_ROOT / "valid-host-profile-editor.json"
+        ).read_bytes()
+        profile = json.loads(production_bytes.decode("utf-8"))
+
+        self.assertEqual(fixture_bytes, production_bytes)
+        self.assertEqual(
+            [],
+            check_package_contracts.validate_manifest_data(
+                profile,
+                check_package_contracts.HOST_PROFILE_NAME,
+                self.validators,
+            ),
+        )
+        self.assertEqual(
+            production_bytes,
+            check_package_contracts.render_normalized_host_profile(profile).encode(
+                "utf-8"
+            ),
+        )
 
     def test_schema_is_closed_and_requires_a_concrete_target_platform(self) -> None:
         profile = self.profile("runtime")

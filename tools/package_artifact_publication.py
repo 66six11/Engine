@@ -20,6 +20,7 @@ from typing import Any, Iterable
 from tools import check_package_contracts as contracts
 from tools import package_artifact_evidence as artifacts
 from tools import source_build_plan
+from tools import stable_file_identity
 
 
 _COPY_CHUNK_SIZE = 1024 * 1024
@@ -168,10 +169,10 @@ def _fingerprint(status: os.stat_result) -> _FileFingerprint:
     return _FileFingerprint(
         device=status.st_dev,
         inode=status.st_ino,
-        mode=status.st_mode,
+        mode=stable_file_identity.file_kind(status),
         size=status.st_size,
         modified_ns=status.st_mtime_ns,
-        changed_ns=status.st_ctime_ns,
+        changed_ns=stable_file_identity.changed_ns(status),
     )
 
 
@@ -878,7 +879,10 @@ def verify_published_package_artifact_generation(
                 "expected artifact generation ID must be sha256- followed by 64 lowercase hex digits",
             )
 
-        root = _inspect_existing_directory(generation_root, "artifact generation")
+        root = _inspect_existing_directory(
+            stable_file_identity.extended_path(generation_root),
+            "artifact generation",
+        )
         if root.name != expected_generation_id:
             _raise(
                 "artifact.generation.path-mismatch",
@@ -982,7 +986,7 @@ def verify_published_package_artifact_generation(
         return PackageArtifactGenerationVerificationResult(
             verified_generation=VerifiedPackageArtifactGeneration(
                 artifact_generation_id=expected_generation_id,
-                artifact_generation_path=root,
+                artifact_generation_path=stable_file_identity.standard_path(root),
                 manifest_set_integrity=set_integrity,
                 manifests=canonical_manifests,
             ),
