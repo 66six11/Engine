@@ -229,6 +229,7 @@ public sealed class EditorImagePublishTests
                 },
             };
             process.StartInfo.ArgumentList.Add("publish");
+            process.StartInfo.ArgumentList.Add("--disable-build-servers");
             process.StartInfo.ArgumentList.Add(Path.Combine(
                 repositoryRoot,
                 "apps",

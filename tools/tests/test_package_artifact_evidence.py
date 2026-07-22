@@ -19,6 +19,7 @@ from tools import package_artifact_evidence as artifacts
 from tools import package_artifact_publication as publication
 from tools import package_candidate_discovery as discovery
 from tools import package_resolver
+from tools import product_payload_policy
 from tools import source_build_plan
 from tools.cmake_file_api import (
     CMakeCodemodelSnapshot,
@@ -27,7 +28,7 @@ from tools.cmake_file_api import (
     CMakeToolchainEvidence,
 )
 from tools.package_candidates import PackageCandidate
-from tools.tests import package_test_support
+from tools.tests import package_test_support, product_payload_test_support
 
 
 FIXTURE_ROOT = Path(__file__).parent / "fixtures/package-contracts"
@@ -342,6 +343,28 @@ class PackageArtifactEvidenceTests(unittest.TestCase):
             ),
         )
 
+    def observations_with_primary_path(
+        self,
+        path: str,
+    ) -> tuple[artifacts.ProductArtifactObservation, ...]:
+        observations = self.observations()
+        runtime_library = replace(
+            observations[0],
+            files=(
+                self.file(path, "primary", b"library"),
+                observations[0].files[1],
+            ),
+        )
+        return (runtime_library, observations[1])
+
+    @staticmethod
+    def byte_tree_snapshot(root: Path) -> tuple[tuple[str, bytes], ...]:
+        return tuple(
+            (path.relative_to(root).as_posix(), path.read_bytes())
+            for path in sorted(root.rglob("*"), key=lambda value: value.as_posix())
+            if path.is_file()
+        )
+
     def collection(
         self,
         artifact_root: Path,
@@ -449,6 +472,251 @@ class PackageArtifactEvidenceTests(unittest.TestCase):
         self.assertNotIn("asharia-synthetic-artifacts", rendered)
         self.assertNotIn("factory", rendered)
         self.assertNotIn("stage", rendered)
+
+    def test_shared_python_payload_fixtures_fail_pure_verification_atomically(
+        self,
+    ) -> None:
+        host_plan, source_plan, verified = self.prepare()
+        cases = product_payload_test_support.load_python_product_payload_cases()
+
+        for relative in cases.forbidden:
+            with self.subTest(relative=relative):
+                result = self.verify(
+                    host_plan,
+                    source_plan,
+                    verified,
+                    self.observations_with_primary_path(relative),
+                )
+
+                self.assertFalse(result.succeeded)
+                self.assertEqual((), result.manifests)
+                self.assertIsNone(result.manifest_set_integrity)
+                matches = [
+                    diagnostic
+                    for diagnostic in result.diagnostics
+                    if diagnostic.code == "artifact.python-payload-forbidden"
+                ]
+                self.assertEqual(1, len(matches))
+                self.assertIn(PACKAGE_ID, matches[0].message)
+                self.assertIn(relative, matches[0].message)
+                self.assertNotIn(str(self.candidate_root), matches[0].message)
+
+    def test_shared_non_python_controls_have_zero_matches_and_verify(self) -> None:
+        host_plan, source_plan, verified = self.prepare()
+        cases = product_payload_test_support.load_python_product_payload_cases()
+        self.assertEqual(
+            (),
+            product_payload_policy.find_forbidden_python_product_payloads(
+                cases.allowed
+            ),
+        )
+
+        for relative in cases.allowed:
+            with self.subTest(relative=relative):
+                result = self.verify(
+                    host_plan,
+                    source_plan,
+                    verified,
+                    self.observations_with_primary_path(relative),
+                )
+                self.assertTrue(
+                    result.succeeded,
+                    [diagnostic.render() for diagnostic in result.diagnostics],
+                )
+
+    def test_shared_python_payload_fixtures_fail_publication_before_mutation(
+        self,
+    ) -> None:
+        host_plan, source_plan, verified = self.prepare()
+        cases = product_payload_test_support.load_python_product_payload_cases()
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            publication_root = root / "publication"
+            publication_root.mkdir()
+            valid_source = root / "valid-source"
+            self.write_collection_root(valid_source)
+            valid = self.publish(
+                host_plan,
+                source_plan,
+                verified,
+                self.collection(valid_source),
+                publication_root,
+            )
+            self.assertTrue(
+                valid.succeeded,
+                [diagnostic.render() for diagnostic in valid.diagnostics],
+            )
+            assert valid.receipt is not None
+            valid_before = self.byte_tree_snapshot(
+                valid.receipt.artifact_generation_path
+            )
+
+            for index, relative in enumerate(cases.forbidden):
+                with self.subTest(relative=relative):
+                    observations = self.observations_with_primary_path(relative)
+                    source_root = root / f"forbidden-source-{index}"
+                    self.write_collection_root(source_root, observations)
+                    result = self.publish(
+                        host_plan,
+                        source_plan,
+                        verified,
+                        self.collection(source_root, observations),
+                        publication_root,
+                    )
+
+                    self.assertFalse(result.succeeded)
+                    self.assertIsNone(result.receipt)
+                    matches = [
+                        diagnostic
+                        for diagnostic in result.diagnostics
+                        if diagnostic.code == "artifact.python-payload-forbidden"
+                    ]
+                    self.assertEqual(1, len(matches))
+                    self.assertIn(PACKAGE_ID, matches[0].message)
+                    self.assertIn(relative, matches[0].message)
+                    self.assertNotIn(str(root), matches[0].message)
+                    self.assertEqual(
+                        valid_before,
+                        self.byte_tree_snapshot(
+                            valid.receipt.artifact_generation_path
+                        ),
+                    )
+                    self.assertEqual(
+                        [valid.receipt.artifact_generation_id],
+                        sorted(
+                            path.name
+                            for path in (
+                                publication_root
+                                / publication._GENERATIONS_DIRECTORY_NAME
+                            ).iterdir()
+                        ),
+                    )
+                    self.assertEqual(
+                        [],
+                        list(
+                            (
+                                publication_root
+                                / publication._STAGING_DIRECTORY_NAME
+                            ).iterdir()
+                        ),
+                    )
+
+    def test_self_consistent_legacy_python_receipt_and_disk_manifest_fail_closed(
+        self,
+    ) -> None:
+        host_plan, source_plan, verified = self.prepare()
+        valid = self.verify(
+            host_plan,
+            source_plan,
+            verified,
+            self.observations(),
+        )
+        self.assertTrue(valid.succeeded)
+        self.assertEqual(1, len(valid.manifests))
+        forbidden = "runtime/pythonplugin.dll"
+        manifest = valid.manifests[0]
+        modules: list[artifacts.ModuleArtifactEvidence] = []
+        for module in manifest.modules:
+            products: list[artifacts.ProductArtifactEvidence] = []
+            for product in module.products:
+                files = product.files
+                if product.product_id == "runtime-library":
+                    files = (replace(files[0], path=forbidden),) + files[1:]
+                products.append(replace(product, files=files))
+            modules.append(replace(module, products=tuple(products)))
+        legacy = replace(manifest, modules=tuple(modules))
+        legacy_integrity = artifacts.compute_package_artifact_manifest_integrity(
+            legacy
+        )
+        legacy = replace(
+            legacy,
+            integrity=artifacts.IntegrityRecord(
+                legacy_integrity["algorithm"],
+                legacy_integrity["digest"],
+            ),
+        )
+        set_integrity_data = contracts.compute_bytes_integrity(
+            artifacts.render_package_artifact_manifest_set((legacy,)).encode("utf-8")
+        )
+        set_integrity = artifacts.IntegrityRecord(
+            set_integrity_data["algorithm"],
+            set_integrity_data["digest"],
+        )
+        generation_id = f"{set_integrity.algorithm}-{set_integrity.digest}"
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            generation_root = Path(temporary_directory) / generation_id
+            package_root = generation_root / "packages" / PACKAGE_ID
+            contents = {
+                forbidden: b"library",
+                "symbols/runtime.pdb": b"symbols",
+                "metadata/runtime.json": b"{}",
+            }
+            for relative, exact_bytes in contents.items():
+                path = package_root.joinpath(*relative.split("/"))
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(exact_bytes)
+            (package_root / contracts.PACKAGE_ARTIFACT_MANIFEST_NAME).write_text(
+                artifacts.render_package_artifact_manifest(legacy),
+                encoding="utf-8",
+                newline="\n",
+            )
+            receipt = publication.PackageArtifactPublicationReceipt(
+                artifact_generation_id=generation_id,
+                artifact_generation_path=generation_root,
+                manifest_set_integrity=set_integrity,
+                manifests=(legacy,),
+                reused=False,
+            )
+            legacy_data = artifacts.package_artifact_manifest_to_data(legacy)
+            self.assertEqual(
+                [],
+                contracts.validate_manifest_data(
+                    legacy_data,
+                    contracts.PACKAGE_ARTIFACT_MANIFEST_NAME,
+                    self.validators,
+                ),
+            )
+            self.assertEqual(
+                legacy.integrity,
+                artifacts.IntegrityRecord(
+                    legacy_integrity["algorithm"],
+                    legacy_integrity["digest"],
+                ),
+            )
+            before = self.byte_tree_snapshot(generation_root)
+
+            receipt_diagnostics = (
+                publication.verify_package_artifact_publication_receipt(
+                    receipt,
+                    self.validators,
+                )
+            )
+            disk_result = publication.verify_published_package_artifact_generation(
+                generation_root,
+                generation_id,
+                self.validators,
+            )
+
+            self.assertIn(
+                "artifact.python-payload-forbidden",
+                [diagnostic.code for diagnostic in receipt_diagnostics],
+            )
+            self.assertFalse(disk_result.succeeded)
+            self.assertIsNone(disk_result.verified_generation)
+            self.assertIn(
+                "artifact.python-payload-forbidden",
+                [diagnostic.code for diagnostic in disk_result.diagnostics],
+            )
+            self.assertTrue(
+                all(
+                    forbidden in diagnostic.message
+                    and str(generation_root) not in diagnostic.message
+                    for diagnostic in (*receipt_diagnostics, *disk_result.diagnostics)
+                    if diagnostic.code == "artifact.python-payload-forbidden"
+                )
+            )
+            self.assertEqual(before, self.byte_tree_snapshot(generation_root))
 
     def test_missing_duplicate_and_unknown_products_fail_atomically(self) -> None:
         host_plan, source_plan, verified = self.prepare()

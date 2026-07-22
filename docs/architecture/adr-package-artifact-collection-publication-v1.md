@@ -116,6 +116,12 @@ flowchart LR
 
 v1 不修改 source root，也不在 source root 中写 receipt。调用方负责在 build/install 完成后 quiesce root，直到函数返回。
 
+产品 closed tree 还必须满足 [Package Product & Artifact Evidence v1](adr-package-product-artifact-evidence-v1.md) 的
+Python payload 禁入政策。collector 在创建 publication/staging namespace 前，通过 pure verifier 对全部逻辑 artifact path
+执行该语义检查；任一命中返回 `artifact.python-payload-forbidden` 与空 receipt。已经提交的旧 generation 在 receipt 或
+disk replay 深度复验时也应用同一政策，即使其 manifest、hash 与 content-derived ID 自洽也不能复用。该检查不扫描文件内容，
+不修改 source root，也不覆盖既有 generation。
+
 ### 5. 复制、复验与 publication 顺序固定
 
 `collect_and_publish_package_artifacts()` 按以下顺序执行：
@@ -200,6 +206,7 @@ composition 与 Host Runtime。
 - Windows/POSIX portable path、reserved manifest/name、case-fold 与 ancestor collision；
 - 大于两个 chunks 的 artifact 不调用 `Path.read_bytes()`，首次 publication 与乱序输入复用得到同一 ID；
 - logical preflight 在创建 staging/generation parents 前失败；
+- 共享 Python product-payload fixture 在 publication mutation 前原子失败，旧自洽 receipt 不能复用，合法 controls 零命中；
 - missing/extra file、overlap root、link/reparse、source drift；
 - rename 注入失败清空 staging 且不暴露 final generation；
 - 已存在 generation 被篡改时失败且不覆盖损坏现场。

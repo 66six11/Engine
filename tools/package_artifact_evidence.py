@@ -11,6 +11,7 @@ from typing import Any, Iterable
 
 from tools import check_package_contracts as contracts
 from tools import host_package_composition as composition
+from tools import product_payload_policy
 from tools import source_build_plan as source_build
 from tools.effective_session import (
     VerifiedResolvedGraph,
@@ -310,6 +311,28 @@ def validate_package_artifact_manifest_data(
                 "Package Artifact Manifest integrity does not match canonical fields",
             )
         )
+    for module in data["modules"]:
+        for product in module["delivery"].get("products", []):
+            owner = f"{module['moduleId']}:{product['id']}"
+            for artifact in product["files"]:
+                match = (
+                    product_payload_policy.match_forbidden_python_product_payload(
+                        artifact["path"]
+                    )
+                )
+                if match is not None:
+                    diagnostics.append(
+                        _diagnostic(
+                            "artifact.python-payload-forbidden",
+                            "/modules",
+                            (
+                                f"package '{data['package']['id']}' product '{owner}' "
+                                "contains forbidden Python product payload "
+                                f"'{match.path}' ({match.reason}); "
+                                "Python is repository-only tooling"
+                            ),
+                        )
+                    )
     return sorted(diagnostics, key=_diagnostic_sort_key)
 
 

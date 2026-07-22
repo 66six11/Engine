@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "forbidden": [
+    "scripts/automation.py",
+    "cache/module.pyc",
+    "native/module.pyd",
+    "packages/tool.whl",
+    "Lib/SITE-PACKAGES/example/data.bin",
+    "virtualenv/Scripts/activate",
+    "venv/pyvenv.cfg",
+    "runtime/python.exe",
+    "runtime/python-launcher.exe",
+    "runtime/PYTHON3.14T.EXE",
+    "runtime/python314.dll",
+    "runtime/pythonplugin.dll",
+    "runtime/python314.lib",
+    "runtime/libpython3.14.dll",
+    "runtime/libpython-custom.dll",
+    "runtime/libpython3.14.lib",
+    "runtime/libpython3.14.a",
+    "runtime/pypy3.11-c.dll",
+    "runtime/Python.Runtime.dll"
+  ],
+  "allowed": [
+    "controls/Studio.Managed.dll",
+    "controls/dotnet.exe",
+    "controls/sdk/10.0.302/dotnet.dll",
+    "controls/hostfxr.dll",
+    "controls/coreclr.dll",
+    "controls/editor_native.dll",
+    "controls/slang.dll",
+    "controls/runtime.lib",
+    "controls/runtime.pdb",
+    "controls/runtime.json",
+    "controls/pipeline.dll"
+  ]
+}

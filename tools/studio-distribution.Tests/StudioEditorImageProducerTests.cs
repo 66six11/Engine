@@ -274,20 +274,9 @@ public sealed class StudioEditorImageProducerTests
     }
 
     [Theory]
-    [InlineData("automation.py")]
-    [InlineData("cache/module.pyc")]
-    [InlineData("native/module.pyd")]
-    [InlineData("runtime/python314.dll")]
-    [InlineData("runtime/python.exe")]
-    [InlineData("runtime/PYTHON3.14T.EXE")]
-    [InlineData("runtime/python314t_d.dll")]
-    [InlineData("runtime/python314.zip")]
-    [InlineData("runtime/pymanager.exe")]
-    [InlineData("runtime/Python.Runtime.dll")]
-    [InlineData("runtime/IronPython.Modules.dll")]
-    [InlineData("runtime/ipy.exe")]
-    [InlineData("venv/pyvenv.cfg")]
-    [InlineData("Lib/site-packages/example/data.bin")]
+    [MemberData(
+        nameof(PythonProductPayloadFixture.ForbiddenPaths),
+        MemberType = typeof(PythonProductPayloadFixture))]
     public void Produce_rejects_python_payload_from_the_publish_tree(string relativePath)
     {
         if (!OperatingSystem.IsWindows())
@@ -305,12 +294,47 @@ public sealed class StudioEditorImageProducerTests
         var result = StudioEditorImageProducer.Produce(fixture.Request);
 
         Assert.False(result.Succeeded);
-        Assert.Contains(
+        var diagnostic = Assert.Single(
             result.Diagnostics,
-            diagnostic => diagnostic.Code
-                == "studio-distribution.editor-image.python-payload-forbidden"
-                && diagnostic.Location == $"bin/{relativePath}");
+            value => value.Code
+                == "studio-distribution.editor-image.python-payload-forbidden");
+        Assert.Equal($"bin/{relativePath}", diagnostic.Location);
+        Assert.DoesNotContain(fixture.Root, diagnostic.Message, StringComparison.OrdinalIgnoreCase);
         Assert.False(Directory.Exists(fixture.OutputRoot));
+        Assert.Empty(
+            Directory.EnumerateDirectories(
+                fixture.Root,
+                ".asharia-editor-image-staging-*",
+                SearchOption.TopDirectoryOnly));
+    }
+
+    [Fact]
+    public void Produce_accepts_shared_non_python_product_controls()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using var fixture = new ProducerFixture(inputs_);
+        foreach (var relativePath in PythonProductPayloadFixture.AllowedPaths)
+        {
+            var path = Path.Combine(
+                fixture.PublishRoot,
+                relativePath.Replace('/', Path.DirectorySeparatorChar));
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, "non-Python product control", Encoding.UTF8);
+        }
+
+        var result = StudioEditorImageProducer.Produce(fixture.Request);
+
+        Assert.True(result.Succeeded, Render(result));
+        var receipt = Assert.IsType<StudioEditorImageProductionReceipt>(result.Receipt);
+        Assert.All(
+            PythonProductPayloadFixture.AllowedPaths,
+            relativePath => Assert.Contains(
+                receipt.Files,
+                file => file.Path == $"bin/{relativePath}"));
     }
 
     [Theory]

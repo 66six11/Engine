@@ -288,6 +288,7 @@ public sealed class StudioEditorImageTestInputs : IDisposable
             projectRoot,
             TimeSpan.FromMinutes(2),
             "publish",
+            "--disable-build-servers",
             Path.Combine(projectRoot, "Editor.csproj"),
             "-c",
             "Release",

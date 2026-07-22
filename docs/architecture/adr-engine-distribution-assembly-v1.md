@@ -87,9 +87,15 @@ policy 复制到 request 的另一份结构中。
 4. Editor root closed-tree、bundled candidate author manifest/payload evidence 与 source stability 检查；
 5. package artifact receipt ID、manifest-set、canonical manifests、closed layout 与全部 artifact hashes 深度复验；
 6. artifact package 必须属于当前 bundled `installable-capability`，且 version/platform/configuration 完全匹配；
-7. 使用 source evidence 构造 provisional Distribution Manifest，并运行 v1 schema/semantic validation。
+7. Editor、bundled package、artifact receipt 与 Host Profile 的全部规范化逻辑路径必须通过 Python product-payload 禁入政策；
+8. 使用 source evidence 构造 provisional Distribution Manifest，并运行 v1 schema/semantic validation。
 
 任何 preflight 失败返回空 receipt，且不创建 publication staging/generation namespace。
+
+该产品政策拒绝 `.py`、`.pyc`、`.pyd`、`.whl`、Python package/virtual-environment tree 与 interpreter/runtime
+artifact。Package Artifact receipt 的旧 schema/hash/content ID 自洽不能绕过消费边界复验；命中统一映射为
+`distribution.assembly.python-payload-forbidden`，消息只包含稳定 owner 与逻辑路径，不泄漏 source/staging 绝对路径。
+最终 staged generation 还会按相同规则扫描，防止 descriptor 或复制路径绕过 preflight。
 
 ### 3. Staged bytes 是最终 manifest 的唯一证据
 
@@ -188,6 +194,7 @@ diagnostics 使用 `distribution.assembly.*` code、`asharia.engine-distribution
 - request/context/profile/package/artifact coverage 不合法；
 - path collision、root invalid/link/overlap、closed-tree missing/extra/special entry；
 - candidate/receipt evidence stale、source drift、copy/hash/write/staging drift；
+- 任一输入或既有 generation 含 Python product payload；
 - provisional/final manifest contract failure；
 - cross-filesystem、rename 或 cleanup failure；
 - existing generation layout/evidence 损坏。
@@ -246,6 +253,7 @@ Editor root、candidate roots 与 artifact publication receipts。
 - root link/overlap、missing/extra/special entry、source/staging drift；
 - write/rehash/rename/cleanup failure injection 与空 receipt；
 - existing valid generation idempotent reuse，existing corrupt/extra/missing generation no-overwrite failure；
+- 四边界共享 Python fixture 的 preflight 原子失败、旧自洽 artifact receipt 拒绝与合法 generation 零命中；
 - Engine Distribution、artifact publication、Effective Session 与全量 package-runtime tests；
 - encoding、docs、topology、asset boundary、Vulkan review 与双编译器 repository gates。
 

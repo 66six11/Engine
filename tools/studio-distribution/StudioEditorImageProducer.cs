@@ -55,6 +55,7 @@ public static partial class StudioEditorImageProducer
         "pythonnet",
         "site-packages",
         "venv",
+        "virtualenv",
     };
     private static readonly string[] EditorNativeRequiredExports =
     [
@@ -880,6 +881,7 @@ public static partial class StudioEditorImageProducer
             || fileName.Equals("pywmanager.exe", StringComparison.OrdinalIgnoreCase)
             || fileName.Equals("pyvenv.cfg", StringComparison.OrdinalIgnoreCase)
             || PythonRuntimeFilePattern().IsMatch(fileName)
+            || PipRuntimeFilePattern().IsMatch(fileName)
             || LibPythonRuntimeFilePattern().IsMatch(fileName)
             || ManagedPythonRuntimeFilePattern().IsMatch(fileName)
             || AlternativePythonRuntimeFilePattern().IsMatch(fileName)
@@ -1742,12 +1744,17 @@ public static partial class StudioEditorImageProducer
     private static partial Regex PythonRuntimeDirectoryPattern();
 
     [GeneratedRegex(
-        "^(?:pythonw?|pip)(?:[0-9]+(?:\\.[0-9]+)*)?t?(?:_d)?(?:\\.exe|\\.dll|\\.zip|\\._pth|\\.pth)$",
+        "^python[a-z0-9._-]*(?:\\.exe|\\.dll|\\.lib|\\.zip|\\._pth|\\.pth)$",
         RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)]
     private static partial Regex PythonRuntimeFilePattern();
 
     [GeneratedRegex(
-        "^libpython(?:[0-9]+(?:\\.[0-9]+)*)?t?(?:_d)?\\.(?:dll|so|dylib)(?:\\.[0-9]+)*$",
+        "^pip(?:[0-9]+(?:\\.[0-9]+)*)?(?:\\.exe|\\.dll|\\.zip|\\._pth|\\.pth)$",
+        RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)]
+    private static partial Regex PipRuntimeFilePattern();
+
+    [GeneratedRegex(
+        "^libpython[a-z0-9._-]*\\.(?:a|dll|dylib|lib|so)(?:\\.[0-9]+)*$",
         RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)]
     private static partial Regex LibPythonRuntimeFilePattern();
 
@@ -1762,7 +1769,7 @@ public static partial class StudioEditorImageProducer
     private static partial Regex AlternativePythonRuntimeFilePattern();
 
     [GeneratedRegex(
-        "^libpypy(?:3)?(?:-[a-z0-9._-]+)?\\.dll$",
+        "^libpypy(?:3)?[a-z0-9._-]*\\.(?:a|dll|dylib|lib|so)(?:\\.[0-9]+)*$",
         RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)]
     private static partial Regex LibPyPyRuntimeFilePattern();
 

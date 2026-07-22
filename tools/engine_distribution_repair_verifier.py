@@ -21,6 +21,7 @@ from typing import Any, Iterable
 from tools import check_package_contracts as contracts
 from tools import package_artifact_evidence as artifact_evidence
 from tools import package_artifact_publication as artifact_publication
+from tools import product_payload_policy
 from tools import stable_file_identity
 
 
@@ -419,6 +420,56 @@ def _parents(relative: str) -> set[str]:
     return {"/".join(parts[:length]) for length in range(1, len(parts) + 1)}
 
 
+def _python_payload_owner_and_pointer(
+    manifest: dict[str, Any],
+    relative: str,
+) -> tuple[str, str]:
+    for index, file in enumerate(manifest["editorImage"]["files"]):
+        if relative == file["path"]:
+            return "Editor Image", f"/editorImage/files/{index}"
+    for index, package in enumerate(manifest["bundledPackages"]):
+        root = package["root"]
+        if relative == root or relative.startswith(f"{root}/"):
+            return (
+                f"bundled package '{package['id']}'",
+                f"/bundledPackages/{index}",
+            )
+    for index, reference in enumerate(manifest["packageArtifacts"]):
+        root = (
+            f"{_ARTIFACTS_DIRECTORY_NAME}/{reference['artifactGenerationId']}"
+            f"/packages/{reference['package']['id']}"
+        )
+        if relative == root or relative.startswith(f"{root}/"):
+            return (
+                f"artifact package '{reference['package']['id']}'",
+                f"/packageArtifacts/{index}",
+            )
+    for index, profile in enumerate(manifest["hostProfiles"]):
+        if relative == profile["path"]:
+            return "Host Profile", f"/hostProfiles/{index}"
+    return "installed Distribution generation", ""
+
+
+def _python_product_payload_findings(
+    manifest: dict[str, Any],
+    matches: Iterable[product_payload_policy.ForbiddenPythonProductPayload],
+) -> list[contracts.Diagnostic]:
+    findings: list[contracts.Diagnostic] = []
+    for match in matches:
+        owner, pointer = _python_payload_owner_and_pointer(manifest, match.path)
+        findings.append(
+            _diagnostic(
+                "distribution.repair.python-payload-forbidden",
+                pointer,
+                (
+                    f"{owner} contains forbidden Python product payload "
+                    f"'{match.path}' ({match.reason}); Python is repository-only tooling"
+                ),
+            )
+        )
+    return findings
+
+
 def _manifest_trust_findings(
     generation_root: Path,
     expected_generation_id: str,
@@ -659,6 +710,7 @@ def _verify_artifact_generations(
     root: Path,
     manifest: dict[str, Any],
     validators: contracts.ContractValidators,
+    actual_python_paths: frozenset[str],
 ) -> tuple[list[contracts.Diagnostic], list[str]]:
     findings: list[contracts.Diagnostic] = []
     artifact_roots: list[str] = []
@@ -678,6 +730,20 @@ def _verify_artifact_generations(
         )
         if not result.succeeded:
             for diagnostic in result.diagnostics:
+                if diagnostic.code == "artifact.python-payload-forbidden":
+                    if not _artifact_python_diagnostic_matches_actual_path(
+                        diagnostic,
+                        relative_root,
+                        actual_python_paths,
+                    ):
+                        findings.append(
+                            _diagnostic(
+                                "distribution.repair.python-payload-forbidden",
+                                "/packageArtifacts",
+                                diagnostic.message,
+                            )
+                        )
+                    continue
                 findings.append(
                     _diagnostic(
                         "distribution.repair.artifact-invalid",
@@ -762,6 +828,29 @@ def _verify_artifact_generations(
                 )
             )
     return findings, artifact_roots
+
+
+def _artifact_python_diagnostic_matches_actual_path(
+    diagnostic: contracts.Diagnostic,
+    relative_root: str,
+    actual_python_paths: frozenset[str],
+) -> bool:
+    """Deduplicate only the exact package/path already reported by the tree scan."""
+
+    packages_prefix = f"{relative_root}/packages/"
+    for actual_path in actual_python_paths:
+        if not actual_path.startswith(packages_prefix):
+            continue
+        package_and_relative = actual_path[len(packages_prefix) :]
+        package_id, separator, package_relative = package_and_relative.partition("/")
+        if not separator:
+            continue
+        if (
+            f"package '{package_id}'" in diagnostic.message
+            and f"'{package_relative}'" in diagnostic.message
+        ):
+            return True
+    return False
 
 
 def _verify_host_profiles(
@@ -940,6 +1029,10 @@ def verify_installed_engine_distribution(
         )
 
     actual_files, actual_directories, findings = _scan_regular_tree(generation_root)
+    python_matches = product_payload_policy.find_forbidden_python_product_payloads(
+        actual_files
+    )
+    findings.extend(_python_product_payload_findings(manifest, python_matches))
     findings.extend(_verify_editor_files(generation_root, manifest))
     findings.extend(
         _verify_bundled_packages(
@@ -954,6 +1047,7 @@ def verify_installed_engine_distribution(
         generation_root,
         manifest,
         validators,
+        frozenset(match.path for match in python_matches),
     )
     findings.extend(artifact_findings)
     findings.extend(_verify_host_profiles(generation_root, manifest, validators))

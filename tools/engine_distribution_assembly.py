@@ -18,6 +18,7 @@ from typing import Any, Iterable
 from tools import check_package_contracts as contracts
 from tools import package_artifact_evidence as artifact_evidence
 from tools import package_artifact_publication as artifact_publication
+from tools import product_payload_policy
 from tools import stable_file_identity
 from tools.package_candidates import PackageCandidate
 
@@ -250,6 +251,25 @@ def _relative_parts(value: Any, pointer: str) -> tuple[str, ...]:
     return tuple(value.split("/"))
 
 
+def _ensure_no_python_product_payload(
+    relative: str,
+    *,
+    owner: str,
+    pointer: str,
+) -> None:
+    match = product_payload_policy.match_forbidden_python_product_payload(relative)
+    if match is None:
+        return
+    _raise(
+        "distribution.assembly.python-payload-forbidden",
+        pointer,
+        (
+            f"{owner} contains forbidden Python product payload "
+            f"'{match.path}' ({match.reason}); Python is repository-only tooling"
+        ),
+    )
+
+
 def _parents(relative: str) -> set[str]:
     parts = relative.split("/")[:-1]
     return {"/".join(parts[:length]) for length in range(1, len(parts) + 1)}
@@ -259,6 +279,8 @@ def _scan_regular_tree(
     root: Path,
     *,
     excluded_root_names: frozenset[str] = frozenset(),
+    product_owner: str = "Distribution product tree",
+    pointer: str = "",
 ) -> tuple[dict[str, _FileFingerprint], set[str]]:
     files: dict[str, _FileFingerprint] = {}
     directories: set[str] = set()
@@ -297,7 +319,17 @@ def _scan_regular_tree(
             if stat.S_ISDIR(status.st_mode):
                 directories.add(relative)
                 visit(Path(entry.path), child_parts)
+                _ensure_no_python_product_payload(
+                    relative,
+                    owner=product_owner,
+                    pointer=pointer,
+                )
             elif stat.S_ISREG(status.st_mode):
+                _ensure_no_python_product_payload(
+                    relative,
+                    owner=product_owner,
+                    pointer=pointer,
+                )
                 try:
                     regular_status = Path(entry.path).lstat()
                 except OSError as error:
@@ -490,12 +522,20 @@ def _validate_typed_request(request: Any) -> None:
         _raise("distribution.assembly.request-invalid", "/bundledPackages", "invalid bundled package binding")
     for value in request.bundled_packages:
         if (
-            not isinstance(value.availability, str)
+            not isinstance(value.candidate, PackageCandidate)
+            or not isinstance(value.availability, str)
             or not value.availability
             or not isinstance(value.root, str)
             or not value.root
         ):
-            _raise("distribution.assembly.request-invalid", "/bundledPackages", "bundled package availability/root must be non-empty strings")
+            _raise(
+                "distribution.assembly.request-invalid",
+                "/bundledPackages",
+                (
+                    "bundled package candidate must be typed and availability/root "
+                    "must be non-empty strings"
+                ),
+            )
     if any(not isinstance(value, HostProfileAssembly) for value in request.host_profiles):
         _raise("distribution.assembly.request-invalid", "/hostProfiles", "invalid Host Profile binding")
 
@@ -610,9 +650,19 @@ def _validate_destination_ownership(
     ]
     for file in request.editor_image.files:
         _relative_parts(file.path, "/editorImage/files/path")
+        _ensure_no_python_product_payload(
+            file.path,
+            owner="Editor Image",
+            pointer="/editorImage/files",
+        )
         owners.append((file.path, "Editor Image file", False))
     for package in request.bundled_packages:
         _relative_parts(package.root, "/bundledPackages/root")
+        _ensure_no_python_product_payload(
+            package.root,
+            owner=f"bundled package '{package.candidate.identity}' destination",
+            pointer="/bundledPackages",
+        )
         owners.append((package.root, "bundled package root", True))
     for receipt in request.artifact_publications:
         if isinstance(receipt, artifact_publication.PackageArtifactPublicationReceipt):
@@ -625,6 +675,11 @@ def _validate_destination_ownership(
             )
     for profile in request.host_profiles:
         _relative_parts(profile.path, "/hostProfiles/path")
+        _ensure_no_python_product_payload(
+            profile.path,
+            owner="Host Profile",
+            pointer="/hostProfiles",
+        )
         owners.append((profile.path, "Host Profile file", False))
 
     folded: dict[str, tuple[str, str, bool]] = {}
@@ -695,6 +750,20 @@ def _preflight(
             receipt, validators
         )
         if diagnostics:
+            python_diagnostic = next(
+                (
+                    diagnostic
+                    for diagnostic in diagnostics
+                    if diagnostic.code == "artifact.python-payload-forbidden"
+                ),
+                None,
+            )
+            if python_diagnostic is not None:
+                _raise(
+                    "distribution.assembly.python-payload-forbidden",
+                    "/packageArtifacts",
+                    python_diagnostic.message,
+                )
             raise _AssemblyFailure(
                 _diagnostic(
                     "distribution.assembly.artifact-receipt-invalid",
@@ -729,7 +798,11 @@ def _preflight(
                     f"source roots '{other_label}' and '{label}' overlap",
                 )
 
-    editor_files, editor_directories = _scan_regular_tree(editor_root)
+    editor_files, editor_directories = _scan_regular_tree(
+        editor_root,
+        product_owner="Editor Image",
+        pointer="/editorImage/files",
+    )
     expected_editor_files = {file.path for file in request.editor_image.files}
     expected_editor_directories = set().union(
         *(_parents(path) for path in expected_editor_files)
@@ -817,6 +890,8 @@ def _preflight(
         package_fingerprints[candidate.identity] = _scan_regular_tree(
             root,
             excluded_root_names=frozenset(contracts.PACKAGE_TREE_ROOT_EXCLUDES),
+            product_owner=f"bundled package '{candidate.identity}'",
+            pointer="/bundledPackages",
         )[0]
         bundled_entries.append(
             {
@@ -1002,7 +1077,11 @@ def _verify_distribution_tree(
             _raise("distribution.assembly.existing-corrupt", "/bundledPackages", f"bundled package '{package['id']}' is corrupt: {error}")
         if manifest_integrity != package["manifestIntegrity"] or payload_integrity != package["payloadIntegrity"]:
             _raise("distribution.assembly.existing-corrupt", "/bundledPackages", f"bundled package '{package['id']}' evidence is corrupt")
-        package_files, _ = _scan_regular_tree(root)
+        package_files, _ = _scan_regular_tree(
+            root,
+            product_owner=f"bundled package '{package['id']}'",
+            pointer="/bundledPackages",
+        )
         if any(relative.split("/", 1)[0] in contracts.PACKAGE_TREE_ROOT_EXCLUDES for relative in package_files):
             _raise("distribution.assembly.existing-corrupt", "/bundledPackages", f"bundled package '{package['id']}' contains excluded publication content")
         package_roots.append(root_text)
@@ -1025,6 +1104,20 @@ def _verify_distribution_tree(
             staged_receipt, validators
         )
         if artifact_diagnostics:
+            python_diagnostic = next(
+                (
+                    diagnostic
+                    for diagnostic in artifact_diagnostics
+                    if diagnostic.code == "artifact.python-payload-forbidden"
+                ),
+                None,
+            )
+            if python_diagnostic is not None:
+                _raise(
+                    "distribution.assembly.python-payload-forbidden",
+                    "/packageArtifacts",
+                    python_diagnostic.message,
+                )
             _raise(
                 "distribution.assembly.existing-corrupt",
                 "/packageArtifacts",
@@ -1032,7 +1125,10 @@ def _verify_distribution_tree(
             )
         artifact_roots.append(relative_root)
 
-    actual_files, actual_directories = _scan_regular_tree(generation_root)
+    actual_files, actual_directories = _scan_regular_tree(
+        generation_root,
+        product_owner="assembled Distribution generation",
+    )
     for relative in actual_files:
         if relative in allowed_exact:
             continue
@@ -1110,7 +1206,11 @@ def assemble_engine_distribution(
         staging_path = Path(tempfile.mkdtemp(prefix="generation-", dir=canonical_staging_parent))
 
         staged_editor_entries: list[dict[str, Any]] = []
-        editor_source_files = _scan_regular_tree(editor_root)[0]
+        editor_source_files = _scan_regular_tree(
+            editor_root,
+            product_owner="Editor Image",
+            pointer="/editorImage/files",
+        )[0]
         for binding in sorted(request.editor_image.files, key=lambda value: _utf8_key(value.path)):
             relative = binding.path
             size, integrity, source_fingerprint, _ = _copy_regular_file(
@@ -1128,7 +1228,11 @@ def assemble_engine_distribution(
                     "integrity": integrity,
                 }
             )
-        if _scan_regular_tree(editor_root)[0] != editor_source_files:
+        if _scan_regular_tree(
+            editor_root,
+            product_owner="Editor Image",
+            pointer="/editorImage/files",
+        )[0] != editor_source_files:
             _raise(
                 "distribution.assembly.source-drift",
                 "/editorImage/files",
@@ -1151,6 +1255,8 @@ def assemble_engine_distribution(
                     excluded_root_names=frozenset(
                         contracts.PACKAGE_TREE_ROOT_EXCLUDES
                     ),
+                    product_owner=f"bundled package '{candidate.identity}'",
+                    pointer="/bundledPackages",
                 )[0]
                 != package_fingerprints[candidate.identity]
             ):
@@ -1184,10 +1290,22 @@ def assemble_engine_distribution(
             )
 
         for receipt in sorted(request.artifact_publications, key=lambda value: value.artifact_generation_id):
-            source_files = _scan_regular_tree(receipt.artifact_generation_path)[0]
+            source_files = _scan_regular_tree(
+                receipt.artifact_generation_path,
+                product_owner=(
+                    f"artifact generation '{receipt.artifact_generation_id}'"
+                ),
+                pointer="/packageArtifacts",
+            )[0]
             destination_root = staging_path / _ARTIFACTS_DIRECTORY_NAME / receipt.artifact_generation_id
             _copy_tree(receipt.artifact_generation_path, destination_root, source_files)
-            if _scan_regular_tree(receipt.artifact_generation_path)[0] != source_files:
+            if _scan_regular_tree(
+                receipt.artifact_generation_path,
+                product_owner=(
+                    f"artifact generation '{receipt.artifact_generation_id}'"
+                ),
+                pointer="/packageArtifacts",
+            )[0] != source_files:
                 _raise(
                     "distribution.assembly.source-drift",
                     "/packageArtifacts",

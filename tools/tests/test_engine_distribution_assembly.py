@@ -17,7 +17,9 @@ from tools import engine_distribution_assembly as assembly
 from tools import package_artifact_evidence as artifacts
 from tools import package_artifact_publication as publication
 from tools import package_candidate_discovery as discovery
+from tools import product_payload_policy
 from tools import stable_file_identity
+from tools.tests import product_payload_test_support
 
 
 FIXTURE_ROOT = Path(__file__).parent / "fixtures/package-contracts"
@@ -91,6 +93,9 @@ class EngineDistributionAssemblyTests(unittest.TestCase):
 
     def make_artifact_receipt(
         self,
+        artifact_path: str = "lib/distribution-test.lib",
+        *,
+        assert_valid: bool = True,
     ) -> publication.PackageArtifactPublicationReceipt:
         artifact_contents = b"static-library"
         placeholder = artifacts.IntegrityRecord("sha256", "0" * 64)
@@ -116,7 +121,7 @@ class EngineDistributionAssemblyTests(unittest.TestCase):
                             purpose="link-input",
                             files=(
                                 artifacts.ArtifactFileEvidence(
-                                    path="lib/distribution-test.lib",
+                                    path=artifact_path,
                                     role="primary",
                                     media_type="application/octet-stream",
                                     size=len(artifact_contents),
@@ -147,8 +152,9 @@ class EngineDistributionAssemblyTests(unittest.TestCase):
         generation_id = f"{set_integrity.algorithm}-{set_integrity.digest}"
         generation_root = self.root / "artifact-publication" / generation_id
         package_root = generation_root / "packages" / PACKAGE_ID
-        (package_root / "lib").mkdir(parents=True)
-        (package_root / "lib/distribution-test.lib").write_bytes(artifact_contents)
+        artifact_file = package_root.joinpath(*artifact_path.split("/"))
+        artifact_file.parent.mkdir(parents=True)
+        artifact_file.write_bytes(artifact_contents)
         (package_root / contracts.PACKAGE_ARTIFACT_MANIFEST_NAME).write_text(
             artifacts.render_package_artifact_manifest(manifest),
             encoding="utf-8",
@@ -161,12 +167,13 @@ class EngineDistributionAssemblyTests(unittest.TestCase):
             manifests=(manifest,),
             reused=False,
         )
-        self.assertEqual(
-            (),
-            publication.verify_package_artifact_publication_receipt(
-                receipt, self.validators
-            ),
-        )
+        if assert_valid:
+            self.assertEqual(
+                (),
+                publication.verify_package_artifact_publication_receipt(
+                    receipt, self.validators
+                ),
+            )
         return receipt
 
     def request(self) -> assembly.DistributionAssemblyRequest:
@@ -225,6 +232,199 @@ class EngineDistributionAssemblyTests(unittest.TestCase):
             self.publication_root,
             self.validators,
         )
+
+    def remove_added_file(self, path: Path, root: Path) -> None:
+        path.unlink()
+        parent = path.parent
+        while parent != root:
+            try:
+                parent.rmdir()
+            except OSError:
+                break
+            parent = parent.parent
+
+    def test_shared_python_payload_fixtures_fail_preflight_without_overwrite(
+        self,
+    ) -> None:
+        valid = self.assemble()
+        self.assertTrue(
+            valid.succeeded,
+            [diagnostic.render() for diagnostic in valid.diagnostics],
+        )
+        assert valid.receipt is not None
+        valid_manifest = (
+            valid.receipt.engine_generation_path
+            / contracts.ENGINE_DISTRIBUTION_MANIFEST_NAME
+        )
+        manifest_before = valid_manifest.read_bytes()
+        cases = product_payload_test_support.load_python_product_payload_cases()
+
+        for relative in cases.forbidden:
+            with self.subTest(relative=relative):
+                source = self.editor_root.joinpath(*relative.split("/"))
+                source.parent.mkdir(parents=True, exist_ok=True)
+                source.write_bytes(b"repository-only Python payload")
+                request = self.request()
+                request = replace(
+                    request,
+                    editor_image=replace(
+                        request.editor_image,
+                        files=request.editor_image.files
+                        + (
+                            assembly.EditorImageFileBinding(
+                                path=relative,
+                                role="resource",
+                                media_type="application/octet-stream",
+                            ),
+                        ),
+                    ),
+                )
+
+                result = self.assemble(request)
+
+                self.assertFalse(result.succeeded)
+                self.assertIsNone(result.receipt)
+                diagnostic = self.assert_python_policy_diagnostic(result, relative)
+                self.assertNotIn(str(self.root), diagnostic.message)
+                self.assertEqual(manifest_before, valid_manifest.read_bytes())
+                generations = list(
+                    (self.publication_root / "generations").iterdir()
+                )
+                self.assertEqual([valid.receipt.engine_generation_path], generations)
+                staging = self.publication_root / ".asharia-distribution-staging"
+                self.assertEqual([], list(staging.iterdir()))
+                self.remove_added_file(source, self.editor_root)
+
+        generation_files = (
+            path.relative_to(valid.receipt.engine_generation_path).as_posix()
+            for path in valid.receipt.engine_generation_path.rglob("*")
+            if path.is_file()
+        )
+        self.assertEqual(
+            (),
+            product_payload_policy.find_forbidden_python_product_payloads(
+                generation_files
+            ),
+        )
+
+    def assert_python_policy_diagnostic(
+        self,
+        result: assembly.EngineDistributionAssemblyResult,
+        relative: str,
+    ) -> contracts.Diagnostic:
+        matches = [
+            diagnostic
+            for diagnostic in result.diagnostics
+            if diagnostic.code
+            == "distribution.assembly.python-payload-forbidden"
+        ]
+        diagnostic = self.assert_single(matches)
+        self.assertIn(relative, diagnostic.message)
+        return diagnostic
+
+    def assert_single(self, values: list[contracts.Diagnostic]) -> contracts.Diagnostic:
+        self.assertEqual(1, len(values), [value.render() for value in values])
+        return values[0]
+
+    def test_bundled_package_python_payload_is_rejected_with_current_evidence(
+        self,
+    ) -> None:
+        forbidden_relative = "Lib/site-packages/example/data.bin"
+        forbidden = self.package_root.joinpath(*forbidden_relative.split("/"))
+        forbidden.parent.mkdir(parents=True)
+        forbidden.write_bytes(b"repository-only Python package")
+        rediscovered = discovery.load_package_candidates(
+            [
+                discovery.LocalCandidateLocation(
+                    "com.asharia.source.distribution-test",
+                    self.package_root,
+                )
+            ],
+            self.validators,
+        )
+        self.assertTrue(rediscovered.succeeded)
+        request = self.request()
+        request = replace(
+            request,
+            bundled_packages=(
+                replace(request.bundled_packages[0], candidate=rediscovered.candidates[0]),
+            ),
+        )
+
+        result = self.assemble(request)
+
+        self.assertFalse(result.succeeded)
+        self.assertIsNone(result.receipt)
+        diagnostic = self.assert_python_policy_diagnostic(
+            result,
+            forbidden_relative,
+        )
+        self.assertIn(PACKAGE_ID, diagnostic.message)
+        self.assertEqual([], list(self.publication_root.iterdir()))
+
+    def test_malformed_bundled_candidate_fails_as_a_typed_request(self) -> None:
+        request = self.request()
+        request = replace(
+            request,
+            bundled_packages=(
+                replace(request.bundled_packages[0], candidate=object()),
+            ),
+        )
+
+        result = self.assemble(request)
+
+        self.assertFalse(result.succeeded)
+        self.assertIsNone(result.receipt)
+        self.assertEqual(
+            ["distribution.assembly.request-invalid"],
+            [diagnostic.code for diagnostic in result.diagnostics],
+        )
+        self.assertEqual([], list(self.publication_root.iterdir()))
+
+    def test_self_consistent_legacy_python_artifact_receipt_is_not_assemblable(
+        self,
+    ) -> None:
+        forbidden_relative = "runtime/pythonplugin.dll"
+        legacy = self.make_artifact_receipt(
+            forbidden_relative,
+            assert_valid=False,
+        )
+        self.assertEqual(1, len(legacy.manifests))
+        manifest = legacy.manifests[0]
+        computed_manifest = artifacts.compute_package_artifact_manifest_integrity(
+            manifest
+        )
+        self.assertEqual(manifest.integrity.algorithm, computed_manifest["algorithm"])
+        self.assertEqual(manifest.integrity.digest, computed_manifest["digest"])
+        computed_set = contracts.compute_bytes_integrity(
+            artifacts.render_package_artifact_manifest_set(legacy.manifests).encode(
+                "utf-8"
+            )
+        )
+        self.assertEqual(legacy.manifest_set_integrity.algorithm, computed_set["algorithm"])
+        self.assertEqual(legacy.manifest_set_integrity.digest, computed_set["digest"])
+        self.assertEqual(
+            legacy.artifact_generation_id,
+            f"{computed_set['algorithm']}-{computed_set['digest']}",
+        )
+        artifact_file = (
+            legacy.artifact_generation_path
+            / "packages"
+            / PACKAGE_ID
+            / Path(*forbidden_relative.split("/"))
+        )
+        self.assertEqual(
+            manifest.modules[0].products[0].files[0].integrity,
+            self.integrity(artifact_file.read_bytes()),
+        )
+        request = replace(self.request(), artifact_publications=(legacy,))
+
+        result = self.assemble(request)
+
+        self.assertFalse(result.succeeded)
+        self.assertIsNone(result.receipt)
+        self.assert_python_policy_diagnostic(result, forbidden_relative)
+        self.assertEqual([], list(self.publication_root.iterdir()))
 
     def test_valid_assembly_is_canonical_atomic_and_idempotent(self) -> None:
         request = self.request()

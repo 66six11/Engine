@@ -21,4 +21,10 @@
     <ProjectReference Include="..\..\apps\studio\src\Asharia.Runtime.Contracts\Asharia.Runtime.Contracts.csproj" />
     <ProjectReference Include="..\studio-distribution\Asharia.Studio.Distribution.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\tests\fixtures\product-boundaries\python-product-payload-v1.json"
+          Link="product-boundaries\python-product-payload-v1.json"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

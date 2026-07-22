@@ -45,6 +45,11 @@ Package Product Declaration、Source Build Plan 与 verified Package Artifact Ma
   源文件：<https://dev.epicgames.com/documentation/en-us/unreal-engine/unreal-engine-modules>、
   <https://dev.epicgames.com/documentation/en-us/unreal-engine/plugins-in-unreal-engine>、
   <https://docs.unity3d.com/cn/2023.2/Manual/NativePlugins.html>。
+- Python 的标准虚拟环境会留下 `pyvenv.cfg`、解释器和 `site-packages`；Windows embeddable distribution
+  包含 Python executable/DLL、标准库 ZIP 与 `._pth`；Wheel 使用 `.whl` 容器并安装到 Python package tree：
+  <https://docs.python.org/3.14/library/venv.html>、
+  <https://docs.python.org/3/using/windows.html>、
+  <https://packaging.python.org/en/latest/specifications/binary-distribution-format/>。
 
 由这些外部行为得到的 Asharia 结论是：Editor 可以与引擎深度集成，但它的最低启动和修复能力不能依赖当前
 项目 package graph 成功激活。
@@ -200,6 +205,19 @@ Package Artifact collector 可以：
 - 选择 Host modules、生成 factory 或执行 Activation；
 - 扫描源码猜测产品、执行 CMake/Conan、直接加载 native module；
 - 成为每次 Editor 启动或每次源码编辑的强制全量 hash gate。
+
+### 8. Python 只属于仓库工具，不属于产品库存
+
+正式 Editor、package artifact、Engine Distribution、Launcher、Installer、Repair 与用户运行时不得携带或启动仓库
+Python。当前 `tools/*.py` 是开发验证、CI 与 portable contract 的 reference oracle；它们不是产品 scripting backend、
+Editor extension API 或安装时依赖。正式产品流程继续使用 C#/.NET 或 native 实现消费相同合同。
+
+产品资格采用规范化逻辑路径上的 fail-closed 规则，而不读取文件内容猜语言。`.py`、`.pyc`、`.pyd`、`.whl`，
+`site-packages`/virtual-environment tree，`python*.exe`、`python*.dll`/import library 与 `libpython*`/PyPy runtime
+artifact 均不具备产品资格。
+Editor Image producer、Package Artifact verifier/publication、Distribution Assembler 与 Installed Repair Verifier 必须各自在
+自己的信任边界重复检查；旧 manifest/receipt 即使 schema、canonical bytes、hash 与 generation ID 自洽，也不能绕过该
+语义政策。失败不得产生 partial publication 或覆盖既有 generation；installed verifier 只报告 `RepairRequired`，不执行修复。
 
 ## 被拒绝的方案
 

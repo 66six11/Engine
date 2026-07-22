@@ -170,7 +170,7 @@ evidence、required native direct exports 和关键 .NET component version evide
 资源经 .NET 10 HostModel 规则重建出的 exact canonical bytes，SDK bundled-version XML 也不得通过大小写变体或 Import 覆盖证据值。
 通过资格检查后再复制并逐字节绑定所选树。该过程不执行
 候选 EXE、不加载 DLL、不调用 hostfxr，也不证明 loadability、ABI 或 runtime health。
-Python 只属于仓库内开发、验证与 CI 工具层；正式 Studio、Editor Image、Host Profile、Launcher、Repair 与用户运行时均不得依赖或携带 Python。Editor Image producer 会拒绝所选 publish/.NET 树中的常规 Python 源码、字节码、wheel/extension、虚拟环境/package 目录与解释器/runtime artifact。
+Python 只属于仓库内开发、验证与 CI 工具层；正式 Studio、Editor Image、Host Profile、package artifact、Engine Distribution、Launcher、Installer、Repair 与用户运行时均不得依赖或携带 Python。Editor Image producer 会拒绝所选 publish/.NET 树中的常规 Python 源码、字节码、wheel/extension、虚拟环境/package 目录与解释器/runtime artifact；Package Artifact、canonical assembly 与 installed health/repair 三个下游边界会独立重复同一逻辑路径政策。旧 manifest/receipt 的 schema、hash 与 generation ID 即使自洽也不能取得产品资格。这里运行的 Python 命令只是仓库 reference-oracle/CI 门禁，不是正式发行流程的运行依赖。
 两份 receipt 都不选择 installable packages，不生成或暗示 `EngineGenerationId`，也不证明完整 Distribution health。
 真实 installable package artifacts、canonical assembly invocation、installed-generation byte-health handoff 与
 launcher-owned current selection 仍是 downstream work。
