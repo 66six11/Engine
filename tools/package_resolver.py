@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import json
+from collections.abc import Mapping, Set
 from dataclasses import dataclass
 from functools import cmp_to_key
 from typing import Any, Iterable
@@ -14,6 +15,11 @@ from tools.package_candidates import PackageCandidate
 
 RESOLVER_VERSION = "0.1.0"
 RESOLUTION_POLICY_VERSION = 1
+LOCKED_PREFERENCE_POLICY_VERSION = 2
+SUPPORTED_RESOLUTION_POLICY_VERSIONS = (
+    RESOLUTION_POLICY_VERSION,
+    LOCKED_PREFERENCE_POLICY_VERSION,
+)
 
 
 @dataclass(frozen=True)
@@ -47,6 +53,65 @@ class ResolutionResult:
     @property
     def succeeded(self) -> bool:
         return self.lock is not None and not self.diagnostics
+
+
+@dataclass(frozen=True)
+class CandidatePreference:
+    """Canonical exact locked selection preferred by policy v2."""
+
+    identity: str
+    version: str
+    package_kind: str
+    _source_json: str
+    _manifest_integrity_json: str | None
+    _payload_integrity_json: str | None
+
+    @classmethod
+    def capture(
+        cls,
+        *,
+        identity: str,
+        version: str,
+        package_kind: str,
+        source: dict[str, Any],
+        manifest_integrity: dict[str, Any] | None = None,
+        payload_integrity: dict[str, Any] | None = None,
+    ) -> CandidatePreference:
+        return cls(
+            identity=identity,
+            version=version,
+            package_kind=package_kind,
+            _source_json=_stable_json(source),
+            _manifest_integrity_json=(
+                _stable_json(manifest_integrity)
+                if manifest_integrity is not None
+                else None
+            ),
+            _payload_integrity_json=(
+                _stable_json(payload_integrity)
+                if payload_integrity is not None
+                else None
+            ),
+        )
+
+    @classmethod
+    def from_candidate(cls, candidate: PackageCandidate) -> CandidatePreference:
+        return cls.capture(
+            identity=candidate.identity,
+            version=candidate.version,
+            package_kind=candidate.package_kind,
+            source=candidate.source,
+            manifest_integrity=(
+                candidate.manifest_integrity
+                if candidate.source.get("kind") != "engine-distribution"
+                else None
+            ),
+            payload_integrity=(
+                candidate.payload_integrity
+                if candidate.source.get("kind") != "engine-distribution"
+                else None
+            ),
+        )
 
 
 @dataclass(frozen=True)
@@ -223,13 +288,19 @@ def _validate_inputs(
                 message=f"resolver version '{resolver_version}' is not Semantic Version",
             )
         )
-    if type(policy_version) is not int or policy_version != RESOLUTION_POLICY_VERSION:
+    if (
+        type(policy_version) is not int
+        or policy_version not in SUPPORTED_RESOLUTION_POLICY_VERSIONS
+    ):
         diagnostics.append(
             ResolverDiagnostic(
                 code="resolver.input.policy-version-unsupported",
                 message=(
                     f"policy version {policy_version} is unsupported; "
-                    f"expected {RESOLUTION_POLICY_VERSION}"
+                    "expected one of "
+                    + ", ".join(
+                        str(value) for value in SUPPORTED_RESOLUTION_POLICY_VERSIONS
+                    )
                 ),
             )
         )
@@ -415,6 +486,231 @@ def _candidate_order(left: PackageCandidate, right: PackageCandidate) -> int:
     return -1 if left.origin < right.origin else (1 if left.origin > right.origin else 0)
 
 
+def _candidate_order_with_preference(
+    left: PackageCandidate,
+    right: PackageCandidate,
+    preference: CandidatePreference | None,
+) -> int:
+    if preference is not None:
+        left_is_preferred = _candidate_matches_preference(left, preference)
+        right_is_preferred = _candidate_matches_preference(right, preference)
+        if left_is_preferred != right_is_preferred:
+            return -1 if left_is_preferred else 1
+    return _candidate_order(left, right)
+
+
+def _candidate_matches_preference(
+    candidate: PackageCandidate,
+    preference: CandidatePreference,
+) -> bool:
+    if (
+        candidate.identity != preference.identity
+        or candidate.version != preference.version
+        or candidate.package_kind != preference.package_kind
+        or _stable_json(candidate.source) != preference._source_json
+    ):
+        return False
+    if preference._manifest_integrity_json is not None and (
+        _stable_json(candidate.manifest_integrity)
+        != preference._manifest_integrity_json
+    ):
+        return False
+    if preference._payload_integrity_json is not None and (
+        _stable_json(candidate.payload_integrity) != preference._payload_integrity_json
+    ):
+        return False
+    return True
+
+
+def _validate_candidate_preference_contract(
+    preference: CandidatePreference,
+    source: dict[str, Any],
+    manifest_integrity: dict[str, Any] | None,
+    payload_integrity: dict[str, Any] | None,
+    validators: contracts.ContractValidators,
+    index: int,
+) -> list[ResolverDiagnostic]:
+    root_collection = (
+        "directPackages"
+        if preference.package_kind == "installable-capability"
+        else "directFeatureSets"
+    )
+    empty_collection = (
+        "directFeatureSets"
+        if root_collection == "directPackages"
+        else "directPackages"
+    )
+    reference = {
+        "id": preference.identity,
+        "version": preference.version,
+        "packageKind": preference.package_kind,
+    }
+    node: dict[str, Any] = {
+        **reference,
+        "source": source,
+        "dependencies": [],
+    }
+    if source.get("kind") != "engine-distribution":
+        node["manifestIntegrity"] = manifest_integrity
+        node["payloadIntegrity"] = payload_integrity
+    lock = {
+        "schema": "com.asharia.package-lock",
+        "schemaVersion": 2,
+        "resolver": {
+            "version": RESOLVER_VERSION,
+            "policyVersion": LOCKED_PREFERENCE_POLICY_VERSION,
+        },
+        "inputs": {
+            "engine": {
+                "distributionId": "com.asharia.distribution.placeholder",
+                "engineApiVersion": "0.0.0",
+                "engineGenerationId": f"sha256-{'0' * 64}",
+            },
+            "projectManifestIntegrity": {
+                "algorithm": "sha256",
+                "digest": "0" * 64,
+            },
+        },
+        "roots": {root_collection: [reference], empty_collection: []},
+        "nodes": [node],
+    }
+    path = f"candidatePreferences/{index}"
+    return [
+        ResolverDiagnostic(
+            code="resolver.input.preference-invalid",
+            identity=preference.identity,
+            location=(
+                f"{diagnostic.manifest_path}{diagnostic.pointer}"
+                if diagnostic.pointer
+                else diagnostic.manifest_path
+            ),
+            message=(
+                "candidate preference violates "
+                f"[{diagnostic.code}]: {diagnostic.message}"
+            ),
+        )
+        for diagnostic in contracts.validate_manifest_data(lock, path, validators)
+    ]
+
+
+def _validate_candidate_preferences(
+    candidate_preferences: tuple[object, ...],
+    policy_version: int,
+    validators: contracts.ContractValidators,
+) -> tuple[dict[str, CandidatePreference], list[ResolverDiagnostic]]:
+    diagnostics: list[ResolverDiagnostic] = []
+    if candidate_preferences and policy_version != LOCKED_PREFERENCE_POLICY_VERSION:
+        diagnostics.append(
+            ResolverDiagnostic(
+                code="resolver.input.preference-policy-mismatch",
+                message=(
+                    "candidate preferences require locked-preference policy version "
+                    f"{LOCKED_PREFERENCE_POLICY_VERSION}"
+                ),
+            )
+        )
+        return {}, diagnostics
+
+    preferences: dict[str, CandidatePreference] = {}
+    for index, value in enumerate(candidate_preferences):
+        if not isinstance(value, CandidatePreference):
+            diagnostics.append(
+                ResolverDiagnostic(
+                    code="resolver.input.preference-invalid",
+                    location=f"candidatePreferences/{index}",
+                    message="every candidate preference must use CandidatePreference",
+                )
+            )
+            continue
+        try:
+            source = json.loads(value._source_json)
+            manifest_integrity = (
+                json.loads(value._manifest_integrity_json)
+                if value._manifest_integrity_json is not None
+                else None
+            )
+            payload_integrity = (
+                json.loads(value._payload_integrity_json)
+                if value._payload_integrity_json is not None
+                else None
+            )
+        except (TypeError, json.JSONDecodeError):
+            source = None
+            manifest_integrity = None
+            payload_integrity = None
+        evidence_required = (
+            isinstance(source, dict) and source.get("kind") != "engine-distribution"
+        )
+        if (
+            not isinstance(value.identity, str)
+            or not isinstance(value.version, str)
+            or not isinstance(value.package_kind, str)
+            or not isinstance(source, dict)
+            or value._source_json != _stable_json(source)
+            or (evidence_required and not isinstance(manifest_integrity, dict))
+            or (evidence_required and not isinstance(payload_integrity, dict))
+            or (not evidence_required and manifest_integrity is not None)
+            or (not evidence_required and payload_integrity is not None)
+            or (
+                evidence_required
+                and value._manifest_integrity_json is None
+            )
+            or (
+                evidence_required
+                and value._payload_integrity_json is None
+            )
+            or (
+                not evidence_required
+                and value._manifest_integrity_json is not None
+            )
+            or (
+                not evidence_required
+                and value._payload_integrity_json is not None
+            )
+            or (
+                manifest_integrity is not None
+                and value._manifest_integrity_json
+                != _stable_json(manifest_integrity)
+            )
+            or (
+                payload_integrity is not None
+                and value._payload_integrity_json != _stable_json(payload_integrity)
+            )
+        ):
+            diagnostics.append(
+                ResolverDiagnostic(
+                    code="resolver.input.preference-invalid",
+                    identity=value.identity,
+                    location=f"candidatePreferences/{index}",
+                    message="candidate preference fields are not a canonical exact selection",
+                )
+            )
+            continue
+        contract_diagnostics = _validate_candidate_preference_contract(
+            value,
+            source,
+            manifest_integrity,
+            payload_integrity,
+            validators,
+            index,
+        )
+        if contract_diagnostics:
+            diagnostics.extend(contract_diagnostics)
+            continue
+        if value.identity in preferences:
+            diagnostics.append(
+                ResolverDiagnostic(
+                    code="resolver.input.preference-duplicate",
+                    identity=value.identity,
+                    location=f"candidatePreferences/{index}",
+                    message="at most one candidate may be preferred for one identity",
+                )
+            )
+            continue
+        preferences[value.identity] = value
+    return preferences, diagnostics
+
+
 def _requirements_for_candidate(
     candidate: PackageCandidate,
     parent_requirements: tuple[_Requirement, ...],
@@ -575,6 +871,8 @@ def _search(
     engine_api_version: str,
     requirements: dict[str, tuple[_Requirement, ...]],
     selected: dict[str, PackageCandidate],
+    preferences: dict[str, CandidatePreference],
+    backtrack_cycles: bool,
 ) -> tuple[dict[str, PackageCandidate] | None, ResolverDiagnostic | None]:
     for identity in sorted(selected):
         identity_requirements = requirements.get(identity, ())
@@ -589,12 +887,56 @@ def _search(
                 engine_api_version,
             )
 
-    unresolved = sorted(set(requirements) - set(selected))
+    unresolved = sorted(
+        set(requirements) - set(selected),
+        key=lambda identity: (
+            identity in preferences,
+            identity.encode("utf-8", errors="surrogatepass"),
+        ),
+    )
     if not unresolved:
+        if backtrack_cycles:
+            cycle = _find_cycle(selected)
+            if cycle is not None:
+                resolved_requirements = _expand_selected_requirements(
+                    requirements,
+                    selected,
+                )
+                return None, ResolverDiagnostic(
+                    code="resolver.dependency.cycle",
+                    identity=cycle[0],
+                    message=f"selected dependency cycle: {' -> '.join(cycle)}",
+                    requirement_chains=_sorted_chains(
+                        resolved_requirements.get(cycle[0], ())
+                    ),
+                )
         return selected, None
 
     identity = unresolved[0]
     identity_requirements = requirements[identity]
+    preference = preferences.get(identity)
+    preferred_candidate: PackageCandidate | None = None
+    if preference is not None:
+        preferred_matches = tuple(
+            candidate
+            for candidate in catalog.get(identity, ())
+            if _candidate_matches_preference(candidate, preference)
+        )
+        if not preferred_matches:
+            return None, ResolverDiagnostic(
+                code="resolver.preference.unavailable",
+                identity=identity,
+                message="exact retained candidate is unavailable in the validated catalog",
+                requirement_chains=_sorted_chains(identity_requirements),
+            )
+        if len(preferred_matches) > 1:
+            return None, ResolverDiagnostic(
+                code="resolver.preference.ambiguous",
+                identity=identity,
+                message="exact retained candidate matches multiple catalog entries",
+                requirement_chains=_sorted_chains(identity_requirements),
+            )
+        preferred_candidate = preferred_matches[0]
     expected_kinds = {requirement.package_kind for requirement in identity_requirements}
     version_candidates = tuple(
         candidate
@@ -631,6 +973,26 @@ def _search(
         )
         if not engine_compatible:
             continue
+        if preferred_candidate is not None and preferred_candidate in engine_compatible:
+            branch_selected = dict(selected)
+            branch_selected[identity] = preferred_candidate
+            branch_requirements = _add_requirements(
+                requirements,
+                _requirements_for_candidate(preferred_candidate, identity_requirements),
+            )
+            solution, failure = _search(
+                catalog,
+                engine_api_version,
+                branch_requirements,
+                branch_selected,
+                preferences,
+                backtrack_cycles,
+            )
+            if solution is not None:
+                return solution, None
+            if first_failure is None:
+                first_failure = failure
+            continue
         if len(exact_candidates) > 1:
             sources = ", ".join(
                 f"{item.origin}={_stable_json(item.source)}" for item in exact_candidates
@@ -653,6 +1015,8 @@ def _search(
             engine_api_version,
             branch_requirements,
             branch_selected,
+            preferences,
+            backtrack_cycles,
         )
         if solution is not None:
             return solution, None
@@ -807,10 +1171,35 @@ def resolve_package_graph(
     *,
     resolver_version: str = RESOLVER_VERSION,
     policy_version: int = RESOLUTION_POLICY_VERSION,
+    candidate_preferences: Iterable[CandidatePreference] = (),
 ) -> ResolutionResult:
     """Resolve caller-provided candidates into one validated canonical lock graph."""
 
     candidate_snapshot = tuple(candidates)
+    if isinstance(candidate_preferences, (Mapping, Set)):
+        return ResolutionResult(
+            lock=None,
+            selected_candidates=(),
+            diagnostics=(
+                ResolverDiagnostic(
+                    code="resolver.input.preferences-unordered",
+                    message="candidate preferences must use an ordered finite iterable",
+                ),
+            ),
+        )
+    try:
+        candidate_preference_snapshot: tuple[object, ...] = tuple(candidate_preferences)
+    except Exception:
+        return ResolutionResult(
+            lock=None,
+            selected_candidates=(),
+            diagnostics=(
+                ResolverDiagnostic(
+                    code="resolver.input.preferences-invalid",
+                    message="candidate preferences must be iterable",
+                ),
+            ),
+        )
     valid_candidates, diagnostics = _validate_inputs(
         project,
         distribution,
@@ -826,6 +1215,20 @@ def resolve_package_graph(
             diagnostics=tuple(sorted(diagnostics, key=_diagnostic_sort_key)),
         )
 
+    preferences, preference_diagnostics = _validate_candidate_preferences(
+        candidate_preference_snapshot,
+        policy_version,
+        validators,
+    )
+    if preference_diagnostics:
+        return ResolutionResult(
+            lock=None,
+            selected_candidates=(),
+            diagnostics=tuple(
+                sorted(preference_diagnostics, key=_diagnostic_sort_key)
+            ),
+        )
+
     normalized_distribution = contracts.normalize_engine_distribution_manifest(distribution)
     engine_api_version = normalized_distribution["distribution"]["engineApiVersion"]
 
@@ -833,7 +1236,16 @@ def resolve_package_graph(
     for candidate in valid_candidates:
         catalog_lists.setdefault(candidate.identity, []).append(candidate)
     catalog = {
-        identity: tuple(sorted(items, key=cmp_to_key(_candidate_order)))
+        identity: tuple(
+            sorted(
+                items,
+                key=cmp_to_key(
+                    lambda left, right, preferred=preferences.get(identity): (
+                        _candidate_order_with_preference(left, right, preferred)
+                    )
+                ),
+            )
+        )
         for identity, items in catalog_lists.items()
     }
 
@@ -857,7 +1269,14 @@ def resolve_package_graph(
                 )
             )
     requirements = _add_requirements(requirements, root_requirements)
-    selected, failure = _search(catalog, engine_api_version, requirements, {})
+    selected, failure = _search(
+        catalog,
+        engine_api_version,
+        requirements,
+        {},
+        preferences,
+        policy_version == LOCKED_PREFERENCE_POLICY_VERSION,
+    )
     if selected is None:
         assert failure is not None
         return ResolutionResult(lock=None, selected_candidates=(), diagnostics=(failure,))

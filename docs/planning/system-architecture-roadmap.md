@@ -276,6 +276,7 @@ rollback 和 lifecycle；Memory、Storage、Settings、Tasks、Data、Observabil
 | Engine Distribution Manifest | `asharia.engine-distribution.json`；build/installer 生成的只读 Editor Image、bundled package、package artifact 与 Host Profile inventory | resolver 维护的第二个 lock、项目可覆盖的 package graph |
 | [Engine Distribution Package Catalog Snapshot](../architecture/adr-engine-distribution-package-catalog-snapshot-v1.md) | 从 `VerifiedInstalledDistribution` 的完整 bundled inventory 与 fresh strict-loader evidence 派生的、确定且 process-local 的候选集 | 第二份持久 catalog、Project/local index、resolver 选择、Lock update/apply |
 | [Project / Local Package Source Catalog](../architecture/adr-project-local-package-source-catalog-v1.md) | `asharia.packages.sources.json` 中的 explicit Project-relative roots / logical local IDs，与调用进程提供的 selected local absolute mapping，经 strict loader 派生的原子 candidate snapshot | 目录扫描、机器路径持久化、source precedence、existing Lock 替代品、Lock update/apply |
+| [Package Lock Update Plan](../architecture/adr-package-lock-update-plan-v1.md) | base/proposed Project、existing Lock、verified Distribution、complete fresh candidates 与 full 或 split-targeted request 派生的 immutable proposed Project/Lock、graph-only impacts、domain-separated stable fingerprints 与 canonical path-redacted preview | Project/Lock 文件写入、journal/recovery、UI、acquisition、build/restart 推断 |
 | EngineGenerationId | 省略自身后的 canonical Engine Distribution payload 的 `sha256-<digest>` content identity | 单 package `artifact_generation_id`、随机 build UUID、跨版本 C++ ABI 承诺 |
 | Source Boundary Manifest | schema v1 的 `asharia.package.json`；记录当前 source role、owner、planned ownership root、target role 和构建依赖，且不可选择/不可见 | Installable Capability Package 或 Package Manager catalog entry |
 | Package Manifest | 每个 Installable Capability Package 的 `asharia.package.json`，描述 catalog type、完整能力 identity、logical modules/contributions 和 package dependencies；source/target 映射属于独立 build descriptor | 每个 target 各自的安装清单 |
@@ -1006,7 +1007,9 @@ sequenceDiagram
 - 实现 headless `discover -> solve/reuse -> compose -> verify` library/CLI，第一阶段只支持 bundled/project-embedded/local sources；
 - #301 已实现 verified Distribution bundled provider：无需 existing Lock，把每个 inventory entry 恰好一次投影为 fresh candidate；
   #302 已实现 `asharia.packages.sources.json` 的 exact Project-embedded roots、logical local IDs 与 caller-provided process-local mapping
-  provider；两个 providers 都不定义 source precedence，Lock update/apply 仍为后继 Slice；
+  provider；两个 providers 都不定义 source precedence；#303 已在它们之上增加 pure no-write full/targeted-conservative Lock update
+  planner，以互斥 `unlockTargets` / `intentOnlyTargets` 区分主动解锁与 intent-only 授权，并用 explicit Resolver Policy v2
+  `CandidatePreference` / `candidatePreferences` 优先 non-unlock locked candidates；atomic apply/journal/recovery 仍为后继 Slice；
 - 先输出 canonical per-host logical composition，再由独立 adapters 输出 CMake build plan 和 artifact-neutral Host Activation Blueprint；构建后再绑定 verified executable registrations；不实现任意 native hot load；
 - 建立 `Minimal`、`Editor`、`Runtime`、`DedicatedServer`、`AssetWorker` Host Profiles，以及 versioned
   Standard3D/EditorAuthoring/DedicatedServer Feature Sets；五种 Host Profile 与从 composition 到 Blueprint/artifact/registration 的 contracts
@@ -1032,6 +1035,10 @@ sequenceDiagram
 - `asharia.packages.json` 只接受完整 System/Feature/Integration/Content Package 或 Feature Set identity；直接写入 contract、backend、provider、editor 或 cook 内部 module 会被 schema/validator 拒绝；
 - package 缺少其 catalog type 声明适用的 runtime/current implementation/authoring/cook/diagnostics root module/content root 时不能进入 catalog；
 - 版本冲突、cycle、missing named dependency、platform mismatch 和 integrity mismatch 有确定性 diagnostics；
+- 相同 base/proposed Project、existing Lock、verified Distribution、complete fresh candidates 与 update request 在 Editor/CLI/CI
+  得到字节等价的 proposed graph、impact preview 与 diagnostics；direct package/Feature Set add/remove/constraint changes 必须由
+  `unlockTargets` 覆盖，option changes 可由两个 target sets 的 union 覆盖；option-only intent 不得解锁版本，non-unlock same-version
+  source/evidence drift fail closed；
 - 添加 native code package 会在 current Host identity 不匹配时明确进入 `PendingBuild`；只有 current-process generation tracker
   落地后才允许产生 `PendingRestart`；
 - clangcl-debug 与 msvc-debug 全量构建通过。

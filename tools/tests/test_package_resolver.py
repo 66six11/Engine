@@ -258,6 +258,422 @@ class PackageResolverTests(unittest.TestCase):
             check_package_contracts.render_normalized_lock_manifest(second.lock),
         )
 
+    def test_locked_preference_policy_retains_a_compatible_exact_candidate(self) -> None:
+        identity = "com.asharia.system.rendering"
+        project = self.project(
+            packages=[requirement(identity, version_range("1.0.0", "3.0.0"))]
+        )
+        locked = self.candidate(self.installable(identity, "1.0.0"))
+        latest = self.candidate(self.installable(identity, "2.0.0"))
+        candidates = [latest, locked]
+        distribution = package_test_support.make_engine_distribution(candidates)
+
+        ordinary = package_resolver.resolve_package_graph(
+            project,
+            distribution,
+            candidates,
+            self.validators,
+        )
+        preferred = package_resolver.resolve_package_graph(
+            project,
+            distribution,
+            list(reversed(candidates)),
+            self.validators,
+            policy_version=package_resolver.LOCKED_PREFERENCE_POLICY_VERSION,
+            candidate_preferences=[
+                package_resolver.CandidatePreference.from_candidate(locked)
+            ],
+        )
+
+        self.assertTrue(ordinary.succeeded)
+        self.assertTrue(preferred.succeeded)
+        self.assertEqual("2.0.0", ordinary.lock["nodes"][0]["version"])
+        self.assertEqual("1.0.0", preferred.lock["nodes"][0]["version"])
+        self.assertEqual(
+            package_resolver.LOCKED_PREFERENCE_POLICY_VERSION,
+            preferred.lock["resolver"]["policyVersion"],
+        )
+
+    def test_locked_preference_policy_backtracks_only_when_the_lock_cannot_satisfy(self) -> None:
+        root = "com.asharia.system.root"
+        dependency = "com.asharia.system.dependency"
+        project = self.project(packages=[requirement(root, exact("2.0.0"))])
+        root_candidate = self.candidate(
+            self.installable(
+                root,
+                "2.0.0",
+                dependencies=[
+                    requirement(dependency, version_range("2.0.0", "3.0.0"))
+                ],
+            )
+        )
+        locked_dependency = self.candidate(self.installable(dependency, "1.0.0"))
+        updated_dependency = self.candidate(self.installable(dependency, "2.0.0"))
+        candidates = [updated_dependency, root_candidate, locked_dependency]
+
+        result = package_resolver.resolve_package_graph(
+            project,
+            package_test_support.make_engine_distribution(candidates),
+            candidates,
+            self.validators,
+            policy_version=package_resolver.LOCKED_PREFERENCE_POLICY_VERSION,
+            candidate_preferences=[
+                package_resolver.CandidatePreference.from_candidate(
+                    locked_dependency
+                )
+            ],
+        )
+
+        self.assertTrue(result.succeeded)
+        versions = {node["id"]: node["version"] for node in result.lock["nodes"]}
+        self.assertEqual("2.0.0", versions[dependency])
+
+    def test_locked_preferred_branch_backtracks_after_deep_dependency_conflict(self) -> None:
+        anchor = "com.asharia.system.anchor"
+        retained = "com.asharia.system.retained"
+        dependency = "com.asharia.system.deep-dependency"
+        project = self.project(
+            packages=[
+                requirement(anchor, exact("1.0.0")),
+                requirement(retained, version_range("1.0.0", "3.0.0")),
+            ]
+        )
+        anchor_candidate = self.candidate(
+            self.installable(
+                anchor,
+                "1.0.0",
+                dependencies=[requirement(dependency, exact("2.0.0"))],
+            )
+        )
+        retained_v1 = self.candidate(
+            self.installable(
+                retained,
+                "1.0.0",
+                dependencies=[requirement(dependency, exact("1.0.0"))],
+            )
+        )
+        retained_v2 = self.candidate(
+            self.installable(
+                retained,
+                "2.0.0",
+                dependencies=[requirement(dependency, exact("2.0.0"))],
+            )
+        )
+        dependency_v1 = self.candidate(self.installable(dependency, "1.0.0"))
+        dependency_v2 = self.candidate(self.installable(dependency, "2.0.0"))
+        candidates = [
+            retained_v1,
+            dependency_v1,
+            anchor_candidate,
+            retained_v2,
+            dependency_v2,
+        ]
+
+        result = package_resolver.resolve_package_graph(
+            project,
+            package_test_support.make_engine_distribution(candidates),
+            candidates,
+            self.validators,
+            policy_version=package_resolver.LOCKED_PREFERENCE_POLICY_VERSION,
+            candidate_preferences=[
+                package_resolver.CandidatePreference.from_candidate(retained_v1)
+            ],
+        )
+
+        self.assertTrue(result.succeeded)
+        versions = {node["id"]: node["version"] for node in result.lock["nodes"]}
+        self.assertEqual("2.0.0", versions[retained])
+        self.assertEqual("2.0.0", versions[dependency])
+
+    def test_locked_preferred_cycle_backtracks_to_an_acyclic_version(self) -> None:
+        root = "com.asharia.system.cycle-root"
+        dependency = "com.asharia.system.cycle-dependency"
+        project = self.project(
+            packages=[requirement(root, version_range("1.0.0", "3.0.0"))]
+        )
+        preferred = self.candidate(
+            self.installable(
+                root,
+                "1.0.0",
+                dependencies=[requirement(dependency, exact("1.0.0"))],
+            )
+        )
+        acyclic = self.candidate(self.installable(root, "2.0.0"))
+        cycle_dependency = self.candidate(
+            self.installable(
+                dependency,
+                "1.0.0",
+                dependencies=[requirement(root, exact("1.0.0"))],
+            )
+        )
+        candidates = [preferred, acyclic, cycle_dependency]
+        distribution = package_test_support.make_engine_distribution(candidates)
+
+        ordinary = package_resolver.resolve_package_graph(
+            project,
+            distribution,
+            candidates,
+            self.validators,
+        )
+        retained = package_resolver.resolve_package_graph(
+            project,
+            distribution,
+            candidates,
+            self.validators,
+            policy_version=package_resolver.LOCKED_PREFERENCE_POLICY_VERSION,
+            candidate_preferences=[
+                package_resolver.CandidatePreference.from_candidate(preferred)
+            ],
+        )
+
+        self.assertTrue(ordinary.succeeded)
+        self.assertTrue(retained.succeeded)
+        self.assertEqual("2.0.0", ordinary.lock["nodes"][0]["version"])
+        self.assertEqual("2.0.0", retained.lock["nodes"][0]["version"])
+        self.assertEqual(1, len(retained.lock["nodes"]))
+
+    def test_locked_preference_selects_exact_source_and_rejects_duplicate_matches(self) -> None:
+        identity = "com.asharia.system.source-retained"
+        project = self.project(packages=[requirement(identity, exact("1.0.0"))])
+        retained = self.candidate(
+            self.installable(identity, "1.0.0"),
+            source_id="com.asharia.source.retained",
+        )
+        alternate = self.candidate(
+            self.installable(identity, "1.0.0"),
+            source_id="com.asharia.source.alternate",
+        )
+        candidates = [alternate, retained]
+        distribution = package_test_support.make_engine_distribution(candidates)
+        preference = package_resolver.CandidatePreference.from_candidate(retained)
+
+        selected = package_resolver.resolve_package_graph(
+            project,
+            distribution,
+            candidates,
+            self.validators,
+            policy_version=package_resolver.LOCKED_PREFERENCE_POLICY_VERSION,
+            candidate_preferences=[preference],
+        )
+        duplicate = package_resolver.resolve_package_graph(
+            project,
+            distribution,
+            [retained, copy.deepcopy(retained)],
+            self.validators,
+            policy_version=package_resolver.LOCKED_PREFERENCE_POLICY_VERSION,
+            candidate_preferences=[preference],
+        )
+
+        self.assertTrue(selected.succeeded)
+        self.assertEqual(
+            {"kind": "local", "sourceId": "com.asharia.source.retained"},
+            selected.lock["nodes"][0]["source"],
+        )
+        self.assertFalse(duplicate.succeeded)
+        self.assertEqual("resolver.preference.ambiguous", duplicate.diagnostics[0].code)
+
+    def test_unlocked_identity_is_selected_before_lexically_earlier_preferences(self) -> None:
+        dependency = "com.asharia.system.a-dependency"
+        target = "com.asharia.system.z-target"
+        broad = version_range("1.0.0", "3.0.0")
+        project = self.project(
+            packages=[requirement(dependency, broad), requirement(target, broad)]
+        )
+        dependency_v1 = self.candidate(self.installable(dependency, "1.0.0"))
+        dependency_v2 = self.candidate(self.installable(dependency, "2.0.0"))
+        target_v1 = self.candidate(
+            self.installable(
+                target,
+                "1.0.0",
+                dependencies=[requirement(dependency, exact("1.0.0"))],
+            )
+        )
+        target_v2 = self.candidate(
+            self.installable(
+                target,
+                "2.0.0",
+                dependencies=[requirement(dependency, exact("2.0.0"))],
+            )
+        )
+        candidates = [dependency_v1, target_v1, dependency_v2, target_v2]
+
+        result = package_resolver.resolve_package_graph(
+            project,
+            package_test_support.make_engine_distribution(candidates),
+            candidates,
+            self.validators,
+            policy_version=package_resolver.LOCKED_PREFERENCE_POLICY_VERSION,
+            candidate_preferences=[
+                package_resolver.CandidatePreference.from_candidate(dependency_v1)
+            ],
+        )
+
+        self.assertTrue(result.succeeded)
+        versions = {node["id"]: node["version"] for node in result.lock["nodes"]}
+        self.assertEqual("2.0.0", versions[target])
+        self.assertEqual("2.0.0", versions[dependency])
+
+    def test_candidate_preferences_are_explicit_and_must_bind_the_catalog(self) -> None:
+        identity = "com.asharia.system.rendering"
+        project = self.project(packages=[requirement(identity, exact("1.0.0"))])
+        candidate = self.candidate(self.installable(identity, "1.0.0"))
+        unavailable = self.candidate(
+            self.installable(identity, "1.0.0"),
+            source_id="com.asharia.source.unavailable",
+        )
+        distribution = package_test_support.make_engine_distribution([candidate])
+
+        wrong_policy = package_resolver.resolve_package_graph(
+            project,
+            distribution,
+            [candidate],
+            self.validators,
+            candidate_preferences=[
+                package_resolver.CandidatePreference.from_candidate(candidate)
+            ],
+        )
+        missing = package_resolver.resolve_package_graph(
+            project,
+            distribution,
+            [candidate],
+            self.validators,
+            policy_version=package_resolver.LOCKED_PREFERENCE_POLICY_VERSION,
+            candidate_preferences=[
+                package_resolver.CandidatePreference.from_candidate(unavailable)
+            ],
+        )
+        duplicate = package_resolver.resolve_package_graph(
+            project,
+            distribution,
+            [candidate],
+            self.validators,
+            policy_version=package_resolver.LOCKED_PREFERENCE_POLICY_VERSION,
+            candidate_preferences=[
+                package_resolver.CandidatePreference.from_candidate(candidate),
+                package_resolver.CandidatePreference.from_candidate(candidate),
+            ],
+        )
+
+        self.assertEqual(
+            "resolver.input.preference-policy-mismatch",
+            wrong_policy.diagnostics[0].code,
+        )
+        self.assertEqual(
+            "resolver.preference.unavailable",
+            missing.diagnostics[0].code,
+        )
+        self.assertEqual(
+            "resolver.input.preference-duplicate",
+            duplicate.diagnostics[0].code,
+        )
+
+    def test_candidate_preferences_reject_malformed_and_unordered_inputs_atomically(self) -> None:
+        project = self.project()
+        candidate = self.candidate(
+            self.installable("com.asharia.system.preference", "1.0.0")
+        )
+        distribution = package_test_support.make_engine_distribution([candidate])
+        valid_preference = package_resolver.CandidatePreference.from_candidate(candidate)
+        malformed = package_resolver.CandidatePreference(
+            identity="not-a-package-id",
+            version="not-semver",
+            package_kind="not-a-package-kind",
+            _source_json="{}",
+            _manifest_integrity_json="{}",
+            _payload_integrity_json="{}",
+        )
+        unhashable_identity = package_resolver.CandidatePreference(
+            identity=[],  # type: ignore[arg-type]
+            version=valid_preference.version,
+            package_kind=valid_preference.package_kind,
+            _source_json=valid_preference._source_json,
+            _manifest_integrity_json=valid_preference._manifest_integrity_json,
+            _payload_integrity_json=valid_preference._payload_integrity_json,
+        )
+        noncanonical_json = package_resolver.CandidatePreference(
+            identity=valid_preference.identity,
+            version=valid_preference.version,
+            package_kind=valid_preference.package_kind,
+            _source_json=json.dumps(candidate.source, indent=2),
+            _manifest_integrity_json=json.dumps(candidate.manifest_integrity, indent=2),
+            _payload_integrity_json=json.dumps(candidate.payload_integrity, indent=2),
+        )
+        engine_evidence_null = package_resolver.CandidatePreference(
+            identity=valid_preference.identity,
+            version=valid_preference.version,
+            package_kind=valid_preference.package_kind,
+            _source_json='{"kind":"engine-distribution"}',
+            _manifest_integrity_json="null",
+            _payload_integrity_json="null",
+        )
+
+        malformed_result = package_resolver.resolve_package_graph(
+            project,
+            distribution,
+            [candidate],
+            self.validators,
+            policy_version=package_resolver.LOCKED_PREFERENCE_POLICY_VERSION,
+            candidate_preferences=[malformed],
+        )
+        unhashable_result = package_resolver.resolve_package_graph(
+            project,
+            distribution,
+            [candidate],
+            self.validators,
+            policy_version=package_resolver.LOCKED_PREFERENCE_POLICY_VERSION,
+            candidate_preferences=[unhashable_identity],
+        )
+        noncanonical_result = package_resolver.resolve_package_graph(
+            project,
+            distribution,
+            [candidate],
+            self.validators,
+            policy_version=package_resolver.LOCKED_PREFERENCE_POLICY_VERSION,
+            candidate_preferences=[noncanonical_json],
+        )
+        engine_evidence_result = package_resolver.resolve_package_graph(
+            project,
+            distribution,
+            [candidate],
+            self.validators,
+            policy_version=package_resolver.LOCKED_PREFERENCE_POLICY_VERSION,
+            candidate_preferences=[engine_evidence_null],
+        )
+        unordered_result = package_resolver.resolve_package_graph(
+            project,
+            distribution,
+            [candidate],
+            self.validators,
+            policy_version=package_resolver.LOCKED_PREFERENCE_POLICY_VERSION,
+            candidate_preferences={valid_preference},
+        )
+
+        self.assertFalse(malformed_result.succeeded)
+        self.assertEqual(
+            "resolver.input.preference-invalid",
+            malformed_result.diagnostics[0].code,
+        )
+        self.assertFalse(unhashable_result.succeeded)
+        self.assertEqual(
+            "resolver.input.preference-invalid",
+            unhashable_result.diagnostics[0].code,
+        )
+        self.assertFalse(unordered_result.succeeded)
+        self.assertEqual(
+            "resolver.input.preferences-unordered",
+            unordered_result.diagnostics[0].code,
+        )
+        self.assertFalse(noncanonical_result.succeeded)
+        self.assertEqual(
+            "resolver.input.preference-invalid",
+            noncanonical_result.diagnostics[0].code,
+        )
+        self.assertFalse(engine_evidence_result.succeeded)
+        self.assertEqual(
+            "resolver.input.preference-invalid",
+            engine_evidence_result.diagnostics[0].code,
+        )
+
     def test_backtracks_from_highest_candidate_to_compatible_graph(self) -> None:
         alpha = "com.asharia.system.alpha"
         charlie = "com.asharia.system.charlie"

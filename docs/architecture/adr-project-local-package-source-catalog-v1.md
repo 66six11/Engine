@@ -7,7 +7,9 @@ Accepted and implemented for #302。
 本文补齐 [显式来源 Package Candidate Discovery v1](adr-package-candidate-discovery-v1.md) 的 Project/local 上游位置提供器。
 [Engine Distribution Package Catalog Snapshot v1](adr-engine-distribution-package-catalog-snapshot-v1.md) 已独立拥有 verified
 Distribution 的 bundled candidates；本文只拥有项目提交的 Project-embedded 来源选择、逻辑 local source 选择，以及调用进程提供的
-机器本地路径映射。它不改变 resolver、Project Lock v2 或 Engine Distribution 的所有权。
+机器本地路径映射。它不改变 resolver、Project Lock v2 或 Engine Distribution 的所有权。#303 的
+[Package Lock Update Plan 与 Impact Preview v1](adr-package-lock-update-plan-v1.md) 只把本 provider 的 complete fresh snapshot
+作为 no-write planning input；update targets、locked preferences、impact 与 proposed documents 不回流到 source index。
 
 ## 背景
 
@@ -139,8 +141,15 @@ manifest-before/after、regular-file、link 与 observable mutation 检查。整
 
 首次求解将本 snapshot 的 candidates 与 verified Distribution catalog candidates 合并后交给 resolver；resolver 产生 canonical
 Project Lock v2。已有 Lock 的 reuse 路径仍以 Lock 的 exact nodes、`source` 和 integrity 为 selected graph authority，并在使用前重新读取、
-重 hash。`asharia.packages.sources.json` 可以为未来 update planning 提供候选位置，但不能在 existing locked reuse 中静默增加、替换或
+重 hash。`asharia.packages.sources.json` 可以为 explicit update planning 提供候选位置，但不能在 existing locked reuse 中静默增加、替换或
 重定向已选来源。
+
+#303 的 update planner 已实现该后继消费边界：它组合 verified Distribution 与本 snapshot 形成 complete fresh candidate set；full
+request 可以重新求解整图，targeted-conservative request 只对 `unlockTargets` 解除 preference，`intentOnlyTargets` 与其他 non-unlock
+identities 通过 resolver `candidatePreferences` 中的 `CandidatePreference` records 继续显式优先 existing locked candidates。Provider
+不因 request kind 改变枚举结果，也不读取 target sets。Planner 对
+non-unlock same-version source/evidence drift fail closed，避免 local mapping 或 payload bytes 变化被预览为“未变化”；source index 和
+machine-local mapping 仍不会被 planner 修改或序列化进 preview。
 
 ```mermaid
 flowchart LR
@@ -180,7 +189,8 @@ resolver v1 继续以 ambiguity fail closed；Project/local 与 Engine Distribut
 | Strict Candidate Loader | exact root 的 manifest/payload/safety evidence | 来源枚举、mapping persistence、resolver policy |
 | Resolver | complete candidate set 到 canonical exact graph | source IO、mapping、apply transaction |
 | Locked verification/reuse | existing Lock source/integrity 的再次对证 | 从 source index 静默更新 Lock |
-| 后继 update/apply owner | update policy、impact preview、Project Manifest/Lock transaction 与 recovery | Engine Distribution mutation、source scanning |
+| Lock update planner | full/split-targeted request、locked preferences、proposed Project/Lock、graph-only impact 与脱敏 preview | source enumeration、文件写入、Engine Distribution mutation |
+| 后继 apply owner | plan precondition revalidation、Project Manifest/Lock transaction 与 recovery | 重新求解、source scanning、静默扩大 targets |
 
 当前 `tools/project_package_source_catalog.py` 是仓库内 reference oracle 与 CI 验证实现。正式 Editor、Launcher、Installer、Repair 或
 Runtime 不得启动、携带或依赖 Python；产品实现应由 C#/.NET 或 native 代码共享本文 schema、owner、失败、确定性和脱敏合同。
@@ -214,7 +224,9 @@ Runtime 不得启动、携带或依赖 Python；产品实现应由 C#/.NET 或 n
 ## 非目标
 
 - source precedence、override/patch/fallback 或 resolver policy 修改；
-- Lock update planning、minimal-change policy、impact preview、apply、journal、rollback 或 recovery；
+- update target/policy、impact preview 与 proposed graph 由独立
+  [Package Lock Update Plan v1](adr-package-lock-update-plan-v1.md) 拥有；本 provider 仍不拥有这些语义，也不拥有 apply、journal、
+  rollback 或 recovery；
 - registry、git、download、credential、signature、publisher trust、license 或 acquisition cache；
 - local mapping 的持久文件、Settings UI、Package Manager UI 或 CLI command surface；
 - Project Manifest direct intent 或 Project Lock v2 wire shape 修改；
@@ -258,9 +270,10 @@ Distribution ABI、Project Lock 或 diagnostics；坏来源不会静默缩小候
 代价：团队必须显式维护每个 Project-embedded root 和 local source ID；每台机器必须配置所选 local mapping；每次 snapshot 都重新读取
 和 hash payload；普通 filesystem 仍有 TOCTOU，因此 locked revalidation 不能省略。
 
-后继 Slice 保持独立：
+后继边界保持独立：
 
-1. Lock update planning、impact preview 与 minimal-change policy；
+1. #303 的 [Package Lock Update Plan 与 Impact Preview v1](adr-package-lock-update-plan-v1.md) 消费 complete fresh snapshot，
+   但不修改本 source contract；
 2. Project Manifest/Lock atomic apply、journal、rollback 与 recovery；
 3. local mapping 的产品 Settings/CLI owner；
 4. registry/acquisition/trust；
@@ -274,4 +287,5 @@ Distribution ABI、Project Lock 或 diagnostics；坏来源不会静默缩小候
 - [显式来源 Package Candidate Discovery v1](adr-package-candidate-discovery-v1.md)；
 - [Engine Distribution Package Catalog Snapshot v1](adr-engine-distribution-package-catalog-snapshot-v1.md)；
 - [Deterministic in-memory Package Resolver v1](adr-package-resolver-v1.md)；
-- [Locked Package Graph Verification & Reuse v1](adr-package-lock-verification-v1.md)。
+- [Locked Package Graph Verification & Reuse v1](adr-package-lock-verification-v1.md)；
+- [Package Lock Update Plan 与 Impact Preview v1](adr-package-lock-update-plan-v1.md)。

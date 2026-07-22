@@ -5,7 +5,9 @@
 Accepted for #272；其中版本求解、回溯和确定性诊断仍有效。裸 `engineApiVersion` 输入、`bundled` candidate
 所有权和 Lock v1 物化已由
 [Project Manifest 与 Package Lock v2 硬切](adr-project-manifest-lock-v2-hard-cut.md) 取代。当前 resolver 接收 verified
-Engine Distribution，并只写 Project Lock v2。
+Engine Distribution，并只物化 Project Lock v2。#303 的
+[Package Lock Update Plan 与 Impact Preview v1](adr-package-lock-update-plan-v1.md) 保持默认 Resolution Policy v1 不变，另增加
+显式 `CandidatePreference` / `candidatePreferences` Policy v2；target coverage、impact、preview 与文件 apply 不进入 resolver。
 
 ## 背景
 
@@ -21,6 +23,9 @@ Engine Distribution，并只写 Project Lock v2。
 exact payload roots 产生 candidates；它不改变 Resolver 的纯内存、无 filesystem IO 边界。
 [Locked Graph Verification & Reuse v1](adr-package-lock-verification-v1.md) 也已实现 existing lock 的只读、fail-closed 复用；
 它组合现有 validators 并重新读取 selected payload，但不会调用本 Resolver。
+[Package Lock Update Plan 与 Impact Preview v1](adr-package-lock-update-plan-v1.md) 现在作为独立 caller，在 full update 时继续使用
+Policy v1，在 targeted-conservative update 时通过 `candidatePreferences` 显式提供由 existing Lock 派生的 immutable
+`CandidatePreference` records 并使用 Policy v2；Resolver 本身不读取 existing Lock，也不决定哪些 Project intent changes 被授权。
 
 ## 决策
 
@@ -80,6 +85,24 @@ Policy version `1` 使用以下规则：
 
 Policy 选择的是“最高兼容图”，而不是孤立地为每个 package 选择最高版本。Candidate input order、manifest array order 与
 dictionary insertion order 都没有语义。
+
+#### Resolution Policy v2：显式 `CandidatePreference`
+
+Policy version `2` 只在调用方通过 `candidatePreferences` 提供 immutable `CandidatePreference` records 时表达“对这些 identities
+先尝试 exact candidate”。每个 record 绑定 identity、version、package kind、canonical source，以及非 Distribution source 所需的
+manifest/payload integrity；它不是 `PackageCandidate`，不携带 manifest、payload location 或调用方对象 identity。同一 package identity
+最多一个 preference；Policy v1 携带 preferences、重复/非 canonical preference，或仍可达的 preference 在 validated catalog 中没有唯一
+exact match 都稳定失败。`candidatePreferences` 必须由有稳定 enumeration order 的有限 iterable 提供，unordered set/mapping 会被拒绝。
+
+对仍可达且有 preference 的 identity，Policy v2 在搜索点先证明 exact match 恰好一个，再尝试该 candidate；它若不能满足完整
+Project/Feature Set/dependency constraints，Resolver 按 Policy v1 稳定 version ordering 与 DFS/backtracking 继续其他 versions，但不尝试
+同 version alternate source/evidence。Policy v2 因而是允许必要 transitive version change 的 preference，不是跳过 graph validation 的
+hard pin，也不会把 same-version source/evidence drift 静默解释成 fallback。
+
+Policy v2 不读取 existing Lock、不知道 full/targeted request、不验证 Project intent target coverage，也不计算 graph diff。#303 的 update
+planner 负责把 existing Lock 精确投影为 `unlockTargets` 之外的 `CandidatePreference` records，包含 `intentOnlyTargets`。Resolver 的
+preference search point 保证 non-unlock same-version source/evidence 不会漂移；planner 仍对 proposed Lock nodes 与 selected candidates 做
+exact output validation。首次求解与 full update 继续使用 default Policy v1，因此 #303 不改变既有调用结果。
 
 ### 4. Diagnostics 保留 requirement chains
 
@@ -154,7 +177,8 @@ source configuration。
 - candidate discovery 或目录约定；
 - registry、download、authentication、signature 或 trust policy；
 - source override/precedence rules；
-- existing-lock verify、reuse、update 或 minimal-change policy；
+- existing-lock verify/reuse orchestration、update target coverage、impact preview 或 file apply；Policy v2 只提供显式
+  `CandidatePreference` / `candidatePreferences` primitive，完整 targeted-conservative policy 由 update planner 拥有；
 - Build Plan、Artifact Plan、Host Activation Plan 或 Activation Executor；
 - Editor Package Manager UI；
 - capability-provider resolution 或同一 identity 的多 selected versions。

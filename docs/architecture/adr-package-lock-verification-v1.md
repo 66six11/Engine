@@ -41,7 +41,9 @@ Engine Distribution、Project Manifest v2 与 Project Lock v2。
 由此冻结三条顺序边界：
 
 1. `verify/reuse`：只读、已有 lock 必需、失败即关闭；
-2. `update planning`：显式决定 full、targeted 或 minimal-change graph，后继 ADR 负责；
+2. `update planning`：由
+   [Package Lock Update Plan 与 Impact Preview v1](adr-package-lock-update-plan-v1.md) 显式决定 full 或
+   targeted-conservative graph，并返回无写入的 canonical preview；
 3. `apply`：把已经验证的 proposed documents 安全写入文件系统，再后继 ADR 负责。
 
 本 Slice 只覆盖第一条。
@@ -216,6 +218,11 @@ renderNormalizedLock(result.lock)
 
 拒绝。当前 Resolver v1 选择最高兼容图，没有“保留未受影响 locked nodes”、targeted package、recursive update depth 或 security-only update policy。把 existing lock 传给 resolver 而不先冻结这些规则，会让所谓 minimal change 依赖实现偶然性。
 
+#303 后续以独立
+[Package Lock Update Plan 与 Impact Preview v1](adr-package-lock-update-plan-v1.md) 冻结了 full/targeted-conservative request、互斥的
+`unlockTargets` / `intentOnlyTargets`、显式 Resolution Policy v2 `CandidatePreference` / `candidatePreferences`、target coverage、graph-only impact 与
+no-write preview。该后继不改变本 verifier 的 fail-closed/no-resolver 语义。
+
 ### 只验证 lock schema 与 graph-local 结构
 
 拒绝。合法 JSON 不能证明它对应当前 Project Manifest、当前 engine API、当前 author dependencies 或当前 payload bytes。
@@ -267,20 +274,24 @@ renderNormalizedLock(result.lock)
 
 ## 后继边界
 
-只有 #274 实现与验证完成后，才根据真实需求设计 update policy。该 ADR 至少需要决定：
+#303 的 [Package Lock Update Plan 与 Impact Preview v1](adr-package-lock-update-plan-v1.md) 已承担 update policy：full request 使用
+default Policy v1；targeted-conservative request 只对 `unlockTargets` 解除 preference，`intentOnlyTargets` 与其他 non-unlock locked
+candidates 通过 `candidatePreferences` 继续显式优先，只有完整 graph constraints 无法满足时才产生必要 version changes；
+direct package/Feature Set add/remove/constraint changes 必须由 `unlockTargets` 覆盖，只有 option changes 可由两个 target sets 的 union 覆盖；
+non-unlock same-version source/evidence
+drift fail closed。Planner 返回 immutable proposed Project/Lock、
+graph-only impacts、domain-separated stable fingerprints（包括 `requestIntegrity`、`selectedCandidateSetIntegrity` 与
+`impactSetIntegrity`）以及 path-redacted canonical preview，但不写文件。
 
-- full update、targeted update 与 transitive unlock 的区别；
-- 未受影响 locked nodes 的保留规则；
-- prerelease、source change 与 integrity-only refresh 是否允许；
-- proposed lock 如何解释差异，何时需要用户确认。
-
-apply transaction 再独立决定单文件/跨文件原子性、锁、临时文件、flush、replace、journal、rollback 与 crash recovery。当前不提前创建这些未来 Slice。
+apply transaction 仍独立决定单文件/跨文件原子性、并发锁、stale-plan revalidation、临时文件、flush、replace、journal、rollback 与
+crash recovery。Package Manager UI、acquisition/trust、build/repair/restart 判断也不属于 verification 或 planning。
 
 ## 相关资料
 
 - [Package Candidate 与 Lockfile v1](adr-package-candidate-lockfile-v1.md)
 - [确定性内存 Package Resolver v1](adr-package-resolver-v1.md)
 - [显式来源 Package Candidate Discovery v1](adr-package-candidate-discovery-v1.md)
+- [Package Lock Update Plan 与 Impact Preview v1](adr-package-lock-update-plan-v1.md)
 - [Project Package Manifest v1](adr-project-package-manifest-v1.md)
 - [Package-first 架构](package-first.md)
 - GitHub #264、#270、#271、#272、#273 与 #274

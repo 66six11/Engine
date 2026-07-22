@@ -216,6 +216,11 @@ exact Host Profiles 组装为 staged-byte-derived immutable generation。
 [Project / Local Package Source Catalog v1](adr-project-local-package-source-catalog-v1.md) 已冻结
 `asharia.packages.sources.json` v1：项目只提交 explicit Project-embedded relative roots 与 logical local `sourceId`，本机 absolute
 mapping 由调用进程持有；provider 复用 strict loader 产生原子、脱敏且无需 existing Lock 的 candidate snapshot。
+[Package Lock Update Plan 与 Impact Preview v1](adr-package-lock-update-plan-v1.md) 已为 #303 冻结纯内存、no-write planning：full
+request 继续使用 default Resolver Policy v1；targeted-conservative request 以互斥 `unlockTargets` / `intentOnlyTargets` 区分主动解锁与
+intent-only 授权，并用显式 Policy v2 `CandidatePreference` / `candidatePreferences` 优先 non-unlock existing candidates；输出 immutable
+proposed Project/Lock、graph-only impacts、domain-separated stable fingerprints 与 path-redacted canonical preview。Direct package/Feature Set
+add/remove/constraint changes 必须进入 `unlockTargets`；package option changes 才可由两个集合的 union 覆盖。
 [Package Factory / Scope / Lifecycle Declaration v1](adr-package-factory-scope-lifecycle-v1.md) 已实现 package-local logical factory、
 owner scope、required factory 与 contribution ownership 合同，并纳入 Candidate Discovery、Locked Verification 和 Effective Session
 fingerprint；它不创建 instance。[Host Activation Blueprint v1](adr-host-activation-blueprint-v1.md) 已将 Ready Session、
@@ -246,7 +251,7 @@ recording → exact-table admission → ProcessScope start → borrow/run/releas
 same-index target/configured compiler、collector-owned staged executable bytes 与 exact owning snapshot 绑定并原子发布；receipt 不
 序列化 callback address，也不拥有 activation lifecycle 或 UI，不证明 `Ready`/current process state。artifact hash/receipt 留在
 build/publication/install/cache restore/repair 边界，normal startup 不自 hash executable，也不等待外部 launch receipt。Verified
-Distribution 与 Project/local candidate providers 已实现；lock update/apply、local mapping 产品配置、repair executor、production
+Distribution 与 Project/local candidate providers、no-write Lock update planning 已实现；atomic apply/journal/recovery、local mapping 产品配置、repair executor、production
 installable package/lock declarations 与 Editor Package Manager 尚未实现。Project Manifest / Lock v2 不保留
 v1 reader 或 migration adapter。
 
@@ -399,7 +404,10 @@ normalized writer、resolver/verifier 绑定与 synthetic fixtures 已实现；v
 [ADR：Engine Distribution Package Catalog Snapshot v1](adr-engine-distribution-package-catalog-snapshot-v1.md) 已补齐无 existing Lock
 前置的 verified Distribution bundled candidate provider；
 [ADR：Project / Local Package Source Catalog v1](adr-project-local-package-source-catalog-v1.md) 已补齐 portable Project source index、
-process-local mapping 与 strict-loader candidate provider。Lock update/apply、production Feature Set/lockfile 仍未实现。
+process-local mapping 与 strict-loader candidate provider。
+[ADR：Package Lock Update Plan 与 Impact Preview v1](adr-package-lock-update-plan-v1.md) 已补齐 full/targeted-conservative update policy、
+显式 `CandidatePreference` / `candidatePreferences`、proposed graph 与 canonical graph-only preview；它不写 Project/Lock。Atomic apply/journal/recovery 与
+production Feature Set/lockfile 仍未实现。
 
 [ADR：Host Profile v1](adr-host-profile-v1.md) 冻结五个标准宿主的 required/allowed roles、shipping/contribution policy、
 capability grants 与确定性 module/contribution 投影。[ADR：Host Composition Plan v1](adr-host-composition-plan-v1.md) 进一步实现

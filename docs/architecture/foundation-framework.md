@@ -18,8 +18,10 @@ Project Manifest/Lock、fresh Effective Session、C6 与已验证 published Host
 #301 的 [Engine Distribution Package Catalog Snapshot v1](adr-engine-distribution-package-catalog-snapshot-v1.md) 已从
 `VerifiedInstalledDistribution` 派生完整、确定、只读且无需 existing Lock 的 bundled candidate snapshot；#302 的
 [Project / Local Package Source Catalog v1](adr-project-local-package-source-catalog-v1.md) 已以 portable
-`asharia.packages.sources.json` + process-local absolute mapping 派生 Project/local candidate snapshot。Lock update/apply、local mapping
-产品配置与 UI 仍是独立后继边界。
+`asharia.packages.sources.json` + process-local absolute mapping 派生 Project/local candidate snapshot。#303 的
+[Package Lock Update Plan 与 Impact Preview v1](adr-package-lock-update-plan-v1.md) 又增加 full/targeted-conservative no-write planner、
+explicit `CandidatePreference` / `candidatePreferences` 与 canonical graph-only preview。Atomic apply/journal/recovery、local mapping 产品配置与
+UI 仍是独立后继边界。
 其他 concrete Host scopes、完整 system-instance/jobs/subscriptions lease、Memory & Budget、Settings、Runtime Storage、Tasks 等目标模块尚未实现。
 本文不能被用来宣称生产 Editor Bootstrap、Editor UI 或完整 Foundation Services 已经完成。
 
@@ -498,7 +500,7 @@ Package/version/schema 已可演进后，Editor 必须通过统一 upgrade plan 
 | Foundation Gate | 交付 | 退出证据 |
 | --- | --- | --- |
 | F0 Current Facts | source-boundary manifest schema、target/package/module-role inventory、planned ownership roots、Kernel allowlist、Host roles | topology gate 能检测 identity/dependency/target/CMake 漂移；current 与 installable 不混淆 |
-| F1 Package Plan | manifest vNext、resolver、lockfile、Host Profiles、logical composition、generated build/activation plan | Editor/CLI/CI 对同一输入得到字节等价 graph |
+| F1 Package Plan | manifest vNext、resolver、lockfile、update plan/preview、Host Profiles、logical composition、generated build/activation plan | Editor/CLI/CI 对同一输入得到字节等价 graph/preview |
 | F2 Host Runtime | scope tree、typed factory/contribution registry、activation lease、rollback、lifecycle | synthetic systems 验证 order/failure/cancel/drain/stale generation |
 | F3 Foundation Services | Platform lifecycle/capability snapshot、Memory & Budget、Runtime Storage、Settings/Device Profile、Tasks baseline、Host time/update contract、Observability/local crash、capability grant/deny | Minimal/Runtime/Server/Tool Host headless smokes；pressure/phase/crash/capability negative evidence |
 | F4 Data & Content | canonical schema/persistence、artifact/cache/resource runtime | source-free runtime 与 corrupt/migration/reload tests |
@@ -521,8 +523,12 @@ snapshot 与 pure build-root planner 也已实现。
 [Engine Distribution Package Catalog Snapshot v1](adr-engine-distribution-package-catalog-snapshot-v1.md) 已将 verified Distribution
 inventory 转换为无 existing Lock 前置的 bundled candidate snapshot；
 [Project / Local Package Source Catalog v1](adr-project-local-package-source-catalog-v1.md) 已将 committed relative roots/logical IDs 与
-process-local mappings 转换为严格、原子的 Project/local snapshot。它们仍不代表 F1 完成：Lock update/apply、local mapping 产品 owner
-与 production Project Lock 尚未实现。#299 只为固定 Windows x64 Studio 提供 production Editor Host Profile exact-byte input 和 statically-qualified、
+process-local mappings 转换为严格、原子的 Project/local snapshot。
+[Package Lock Update Plan 与 Impact Preview v1](adr-package-lock-update-plan-v1.md) 已消费这些 complete fresh candidates，保持 default
+Policy v1 不变；targeted-conservative plan 只对 `unlockTargets` 解除 preference，`intentOnlyTargets` 与其他 non-unlock identities 由
+explicit Policy v2 `CandidatePreference` / `candidatePreferences` 优先保留 locked candidates；成功结果只包含 immutable proposed
+Project/Lock、selected candidates、graph-only impacts、domain-separated fingerprints 与脱敏 preview。它们仍不代表 F1 完成：atomic apply/
+journal/recovery、local mapping 产品 owner 与 production Project Lock 尚未实现。#299 只为固定 Windows x64 Studio 提供 production Editor Host Profile exact-byte input 和 statically-qualified、
 byte-bound closed Editor Image input；真实 installable package inputs、canonical assembly invocation、#283 installed byte-health handoff 与 launcher-owned
 current selection 仍未闭环。[Package Product & Artifact Evidence v1](adr-package-product-artifact-evidence-v1.md) 的作者声明、候选
 快照和 pure verifier 已落地；[Package Artifact Collection & Publication v1](adr-package-artifact-collection-publication-v1.md)
