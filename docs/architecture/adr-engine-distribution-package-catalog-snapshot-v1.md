@@ -239,11 +239,12 @@ Adapter 不把 failure 转换为 `RepairRequired`、`SafeMode` 或 `FatalDistrib
 未来 Editor UI 可以共享相同 headless catalog 边界；坏 package 不会静默缩小 candidate set。
 
 代价：catalog derivation 会再次读取所有 bundled package manifest/payload bytes；snapshot 是 point-in-time 观察，使用前仍需 locked
-verification；Project/local sources 尚不能仅凭本 ADR 加入首次求解。
+verification；Project/local sources 不能仅凭本 ADR 加入首次求解，已由独立
+[Project / Local Package Source Catalog v1](adr-project-local-package-source-catalog-v1.md) 在 #302 补齐。
 
 后继工作必须保持独立：
 
-1. Project-embedded index 与 local workspace mapping provider；
+1. Project-embedded index 与 local workspace mapping provider（#302 已实现）；
 2. Lock update planning、impact preview 与最小变更政策；
 3. Project Manifest/Lock atomic apply、journal、rollback 与 recovery；
 4. production installable package/profile declarations；

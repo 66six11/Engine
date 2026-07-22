@@ -213,6 +213,9 @@ exact Host Profiles 组装为 staged-byte-derived immutable generation。
 [Engine Distribution Package Catalog Snapshot v1](adr-engine-distribution-package-catalog-snapshot-v1.md) 已把
 `VerifiedInstalledDistribution` 的完整 bundled inventory 投影为确定、原子、只读的内存 candidate snapshot，并在交给 resolver 前
 重新收集和对证 exact manifest/payload evidence；它不持久化第二份 catalog，也不依赖 existing Project Lock。
+[Project / Local Package Source Catalog v1](adr-project-local-package-source-catalog-v1.md) 已冻结
+`asharia.packages.sources.json` v1：项目只提交 explicit Project-embedded relative roots 与 logical local `sourceId`，本机 absolute
+mapping 由调用进程持有；provider 复用 strict loader 产生原子、脱敏且无需 existing Lock 的 candidate snapshot。
 [Package Factory / Scope / Lifecycle Declaration v1](adr-package-factory-scope-lifecycle-v1.md) 已实现 package-local logical factory、
 owner scope、required factory 与 contribution ownership 合同，并纳入 Candidate Discovery、Locked Verification 和 Effective Session
 fingerprint；它不创建 instance。[Host Activation Blueprint v1](adr-host-activation-blueprint-v1.md) 已将 Ready Session、
@@ -243,8 +246,8 @@ recording → exact-table admission → ProcessScope start → borrow/run/releas
 same-index target/configured compiler、collector-owned staged executable bytes 与 exact owning snapshot 绑定并原子发布；receipt 不
 序列化 callback address，也不拥有 activation lifecycle 或 UI，不证明 `Ready`/current process state。artifact hash/receipt 留在
 build/publication/install/cache restore/repair 边界，normal startup 不自 hash executable，也不等待外部 launch receipt。Verified
-Distribution bundled catalog snapshot 已实现；Project/local source index、lock update/apply、repair executor、production installable
-package/lock declarations 与 Editor Package Manager 尚未实现。Project Manifest / Lock v2 不保留
+Distribution 与 Project/local candidate providers 已实现；lock update/apply、local mapping 产品配置、repair executor、production
+installable package/lock declarations 与 Editor Package Manager 尚未实现。Project Manifest / Lock v2 不保留
 v1 reader 或 migration adapter。
 
 [Generated Current-Image Host 与 Project Bootstrap v1](adr-generated-current-image-project-bootstrap-host-v1.md) 已由 #297 取代 V1 的
@@ -280,6 +283,9 @@ flowchart LR
     CLI["CLI / CI"]
     Distribution["Engine Distribution Manifest<br/>fixed EngineGenerationId + bundled inventory"]
     Manifest["Project asharia.packages.json<br/>direct packages + Feature Sets + options"]
+    SourceIndex["Project asharia.packages.sources.json<br/>embedded roots + local source IDs"]
+    LocalMapping["Machine-local source mapping<br/>process-local absolute roots"]
+    Candidates["Verified Distribution + Project/local<br/>candidate snapshots"]
     Resolver["Headless Resolver"]
     Lock["Project asharia.packages.lock.json"]
     Profile["Host Profile"]
@@ -297,6 +303,10 @@ flowchart LR
     Editor -->|"edit dependencies"| Manifest
     CLI -->|"edit or restore"| Manifest
     Manifest --> Resolver
+    Distribution --> Candidates
+    SourceIndex --> Candidates
+    LocalMapping --> Candidates
+    Candidates --> Resolver
     Resolver --> Lock
     Distribution --> Composition
     Lock --> Composition
@@ -335,6 +345,9 @@ flowchart LR
 - `asharia.project.json` 继续由 `project-core` 保存项目身份、资产源和缓存；package-runtime 不解析它。固定
   `packages/project-bootstrap` 只通过 `project_core_io` 读取并发布 summary，不取得 project/package schema 所有权。
 - `asharia.packages.json` / lock 使用 package-runtime 自己拥有的窄 schema，不能依赖由它负责解析的可选 Data Model package。
+- `asharia.packages.sources.json` 只拥有可提交的 Project-embedded relative roots 与 logical local `sourceId`；local absolute path
+  留在 Settings/CLI/CI adapter 的进程内 mapping。它是首次求解的 source-location input，不是 direct intent、candidate evidence 或
+  existing Lock 的替代品。
 - “引擎自带”由 Engine Distribution Manifest 的 `bundledPackages` 固定；Project Lock v2 只用
   `source.kind = engine-distribution` 引用其 identity，不复制 root/hash。`project-embedded` 专指位于项目内、由项目版本控制
   并可编辑的 package。项目/local source 不能用同 identity 覆盖发行 package；v1 `bundled` lock source 不再接受。
@@ -384,8 +397,9 @@ normalized writer、resolver/verifier 绑定与 synthetic fixtures 已实现；v
 物化见 [ADR：Deterministic in-memory Package Resolver v1](adr-package-resolver-v1.md)，只读 locked graph 复用边界见
 [ADR：Locked Package Graph Verification & Reuse v1](adr-package-lock-verification-v1.md)。
 [ADR：Engine Distribution Package Catalog Snapshot v1](adr-engine-distribution-package-catalog-snapshot-v1.md) 已补齐无 existing Lock
-前置的 verified Distribution bundled candidate provider；Project/local source index、lock update/apply、production Feature Set/lockfile
-仍未实现。
+前置的 verified Distribution bundled candidate provider；
+[ADR：Project / Local Package Source Catalog v1](adr-project-local-package-source-catalog-v1.md) 已补齐 portable Project source index、
+process-local mapping 与 strict-loader candidate provider。Lock update/apply、production Feature Set/lockfile 仍未实现。
 
 [ADR：Host Profile v1](adr-host-profile-v1.md) 冻结五个标准宿主的 required/allowed roles、shipping/contribution policy、
 capability grants 与确定性 module/contribution 投影。[ADR：Host Composition Plan v1](adr-host-composition-plan-v1.md) 进一步实现

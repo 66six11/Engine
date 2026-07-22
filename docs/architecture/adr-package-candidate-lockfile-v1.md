@@ -11,8 +11,9 @@ validator、normalized writer、payload tree digest 与 synthetic fixtures；
 lock graph 的求解基线。[Explicit-source Package Candidate Discovery v1](adr-package-candidate-discovery-v1.md) 也已实现 strict
 candidate loader；[Locked Graph Verification & Reuse v1](adr-package-lock-verification-v1.md) 也已实现只读、fail-closed 的
 exact graph 复用边界。[Engine Distribution Package Catalog Snapshot v1](adr-engine-distribution-package-catalog-snapshot-v1.md) 已实现
-无需 existing Lock 的 verified Distribution bundled provider；Project/local source index、lock update/apply workflow 与 production
-lockfile 仍未实现。
+无需 existing Lock 的 verified Distribution bundled provider；
+[Project / Local Package Source Catalog v1](adr-project-local-package-source-catalog-v1.md) 已实现 portable source index 与 process-local
+mapping provider。Lock update/apply workflow 与 production lockfile 仍未实现。
 
 架构校准：v1 允许 `bundled` candidate/node，因此当前实现是过渡期统一 exact graph。后续
 [Editor Image、Engine Distribution 与原生组合 ADR](adr-editor-engine-distribution-and-native-composition.md) 已冻结新的所有权：

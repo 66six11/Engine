@@ -16,8 +16,10 @@ ProcessScope V2 内调用 accessor、建立 fixed-slot typed registry、weak gen
 Project Manifest/Lock、fresh Effective Session、C6 与已验证 published Host binding 对证，并通过纯 reducer 产出 headless Bootstrap
 状态；匹配时才以同一 root 有界运行 Project Bootstrap Host。
 #301 的 [Engine Distribution Package Catalog Snapshot v1](adr-engine-distribution-package-catalog-snapshot-v1.md) 已从
-`VerifiedInstalledDistribution` 派生完整、确定、只读且无需 existing Lock 的 bundled candidate snapshot；Project/local source index、
-Lock update/apply 与 UI 仍是独立后继边界。
+`VerifiedInstalledDistribution` 派生完整、确定、只读且无需 existing Lock 的 bundled candidate snapshot；#302 的
+[Project / Local Package Source Catalog v1](adr-project-local-package-source-catalog-v1.md) 已以 portable
+`asharia.packages.sources.json` + process-local absolute mapping 派生 Project/local candidate snapshot。Lock update/apply、local mapping
+产品配置与 UI 仍是独立后继边界。
 其他 concrete Host scopes、完整 system-instance/jobs/subscriptions lease、Memory & Budget、Settings、Runtime Storage、Tasks 等目标模块尚未实现。
 本文不能被用来宣称生产 Editor Bootstrap、Editor UI 或完整 Foundation Services 已经完成。
 
@@ -44,7 +46,8 @@ flowchart TB
     EditorImage["Editor Image\nbootstrap shell / diagnostics / repair / Safe Mode"]
     Apps["Other Host executables\nRuntime / Server / Tool"]
     Distribution["Engine Distribution Manifest\nfixed EngineGenerationId + bundled inventory"]
-    Project["Project Manifest + Lock\nproject-owned graph"]
+    Project["Project Manifest + Sources + Lock\nproject-owned portable facts"]
+    LocalSources["Machine-local source mapping\nprocess-local"]
     Profile["Host Profile"]
     Session["Effective Session Plan\nderived state + subplan handoff"]
     CurrentImage["Generated current-image descriptor\nT3 / C6 / provider v4 / Snapshot v2"]
@@ -60,6 +63,7 @@ flowchart TB
     Apps -->|provides fixed composition root| Session
     Distribution -->|binds engine generation| Session
     Project -->|adds project graph| Package
+    LocalSources -->|resolves selected local IDs| Package
     Profile -->|selects modules| Package
     Package -->|derives composition| Session
     Session -->|generates sealed composition facts| CurrentImage
@@ -515,8 +519,10 @@ module/contribution projection。Host Composition Plan v1 的 schema、pure plan
 已经实现。[Source Build Plan v1](adr-source-build-plan-v1.md) 的 independent source descriptor、normalized CMake codemodel
 snapshot 与 pure build-root planner 也已实现。
 [Engine Distribution Package Catalog Snapshot v1](adr-engine-distribution-package-catalog-snapshot-v1.md) 已将 verified Distribution
-inventory 转换为无 existing Lock 前置的 bundled candidate snapshot。它仍不代表 F1 完成：Project/local source index、lock
-update/apply 与 production Project Lock 尚未实现。#299 只为固定 Windows x64 Studio 提供 production Editor Host Profile exact-byte input 和 statically-qualified、
+inventory 转换为无 existing Lock 前置的 bundled candidate snapshot；
+[Project / Local Package Source Catalog v1](adr-project-local-package-source-catalog-v1.md) 已将 committed relative roots/logical IDs 与
+process-local mappings 转换为严格、原子的 Project/local snapshot。它们仍不代表 F1 完成：Lock update/apply、local mapping 产品 owner
+与 production Project Lock 尚未实现。#299 只为固定 Windows x64 Studio 提供 production Editor Host Profile exact-byte input 和 statically-qualified、
 byte-bound closed Editor Image input；真实 installable package inputs、canonical assembly invocation、#283 installed byte-health handoff 与 launcher-owned
 current selection 仍未闭环。[Package Product & Artifact Evidence v1](adr-package-product-artifact-evidence-v1.md) 的作者声明、候选
 快照和 pure verifier 已落地；[Package Artifact Collection & Publication v1](adr-package-artifact-collection-publication-v1.md)

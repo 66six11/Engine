@@ -206,8 +206,9 @@ rollback 和 lifecycle；Memory、Storage、Settings、Tasks、Data、Observabil
    published Host/C6 evidence 建立 headless Bootstrap project-open reducer/adapter；normal-open 只检查 artifact path/type/size，missing/stale/
    invalid Host 可证明 `PendingBuild`，而不自 hash executable 或依赖外部 launch receipt。#301 又从
    `VerifiedInstalledDistribution` 派生无需 existing Lock 的完整 bundled candidate snapshot，并以 fresh manifest/payload evidence 对证
-   Distribution inventory。当前仍无 Project/local source index、lock update/apply、production installable package/lock/profile declarations、
-   repair executor、`PendingRestart` process tracker、其他 Host scope owners、完整 instance/jobs/subscriptions
+   Distribution inventory。#302 又以 portable `asharia.packages.sources.json` 和 process-local local-source mapping 派生严格、原子且
+   脱敏的 Project/local candidate snapshot。当前仍无 lock update/apply、local mapping 产品配置、production installable
+   package/lock/profile declarations、repair executor、`PendingRestart` process tracker、其他 Host scope owners、完整 instance/jobs/subscriptions
    lease 和 Editor Package Manager 闭环；
 9. scripting、input、tasks、physics、animation、audio 等已进入目标 first-party system catalog，但尚未形成可由同一 package activation 模型创建和停止的完整实现；
 10. `engine/platform` 仍是空 `INTERFACE` target，应用 lifecycle 与 immutable platform capability generation 没有 runtime owner；
@@ -274,6 +275,7 @@ rollback 和 lifecycle；Memory、Storage、Settings、Tasks、Data、Observabil
 | Editor Image | 随 Engine/Editor 固定发行且可在项目 graph 激活前启动的 executable、最小 UI Shell、Package Manager diagnostics、Build/Repair 与 Safe Mode | 由项目 lock 从零组装的可选 package 集合 |
 | Engine Distribution Manifest | `asharia.engine-distribution.json`；build/installer 生成的只读 Editor Image、bundled package、package artifact 与 Host Profile inventory | resolver 维护的第二个 lock、项目可覆盖的 package graph |
 | [Engine Distribution Package Catalog Snapshot](../architecture/adr-engine-distribution-package-catalog-snapshot-v1.md) | 从 `VerifiedInstalledDistribution` 的完整 bundled inventory 与 fresh strict-loader evidence 派生的、确定且 process-local 的候选集 | 第二份持久 catalog、Project/local index、resolver 选择、Lock update/apply |
+| [Project / Local Package Source Catalog](../architecture/adr-project-local-package-source-catalog-v1.md) | `asharia.packages.sources.json` 中的 explicit Project-relative roots / logical local IDs，与调用进程提供的 selected local absolute mapping，经 strict loader 派生的原子 candidate snapshot | 目录扫描、机器路径持久化、source precedence、existing Lock 替代品、Lock update/apply |
 | EngineGenerationId | 省略自身后的 canonical Engine Distribution payload 的 `sha256-<digest>` content identity | 单 package `artifact_generation_id`、随机 build UUID、跨版本 C++ ABI 承诺 |
 | Source Boundary Manifest | schema v1 的 `asharia.package.json`；记录当前 source role、owner、planned ownership root、target role 和构建依赖，且不可选择/不可见 | Installable Capability Package 或 Package Manager catalog entry |
 | Package Manifest | 每个 Installable Capability Package 的 `asharia.package.json`，描述 catalog type、完整能力 identity、logical modules/contributions 和 package dependencies；source/target 映射属于独立 build descriptor | 每个 target 各自的安装清单 |
@@ -311,7 +313,9 @@ flowchart LR
     Image["Editor Image<br/>bootstrap + Safe Mode + repair"]
     Distribution["Engine Distribution Manifest<br/>fixed generation + bundled inventory"]
     Manifest["Project asharia.packages.json<br/>direct packages + Feature Sets + package options"]
-    Sources["Embedded / Local / Registry Sources"]
+    SourceIndex["asharia.packages.sources.json<br/>embedded roots + local IDs"]
+    LocalMappings["Machine-local mappings<br/>sourceId -> absolute root"]
+    Catalogs["Distribution + Project/local catalogs<br/>strict fresh evidence"]
     Service["Package Service<br/>discover + resolve + validate"]
     Lock["Project asharia.packages.lock.json<br/>exact graph + integrity"]
     Profile["Host Profile<br/>host policy"]
@@ -330,7 +334,10 @@ flowchart LR
     EditorUI -->|"edit desired set"| Manifest
     CLI -->|"edit or restore"| Manifest
     Manifest --> Service
-    Sources --> Service
+    Distribution --> Catalogs
+    SourceIndex --> Catalogs
+    LocalMappings --> Catalogs
+    Catalogs --> Service
     Service --> Lock
     Image --> Session
     Distribution --> Session
@@ -356,6 +363,8 @@ flowchart LR
 
 - `asharia.packages.json` 和 `asharia.packages.lock.json` 是团队可提交的项目 package graph 事实；只读
   `asharia.engine-distribution.json` 独立拥有 Engine/Editor 发行库存，Editor UI 不是任一事实源。
+- `asharia.packages.sources.json` 是团队可提交的 portable source-location selection，只保存 Project-relative roots 与 logical local
+  IDs；machine-local absolute mapping 不提交。它为首次求解提供 candidates，但 existing Lock 仍拥有已选 exact graph/source。
 - 固定 Editor Image 在项目 graph 之前启动。Distribution + Project Lock + Host Profile 只派生 Effective Session，不写回第三个 lock；
   项目同 identity package 不能覆盖 bundled inventory。
 - resolver 必须是 headless library/CLI，不能依赖 ImGui、Avalonia、Vulkan 或 editor document state。
@@ -996,7 +1005,8 @@ sequenceDiagram
 - 定义 `asharia.packages.json` 与 committed `asharia.packages.lock.json`；
 - 实现 headless `discover -> solve/reuse -> compose -> verify` library/CLI，第一阶段只支持 bundled/project-embedded/local sources；
 - #301 已实现 verified Distribution bundled provider：无需 existing Lock，把每个 inventory entry 恰好一次投影为 fresh candidate；
-  Project-embedded index、local workspace mapping 与 source precedence 保持为后继 Slice，不由 bundled provider 推断；
+  #302 已实现 `asharia.packages.sources.json` 的 exact Project-embedded roots、logical local IDs 与 caller-provided process-local mapping
+  provider；两个 providers 都不定义 source precedence，Lock update/apply 仍为后继 Slice；
 - 先输出 canonical per-host logical composition，再由独立 adapters 输出 CMake build plan 和 artifact-neutral Host Activation Blueprint；构建后再绑定 verified executable registrations；不实现任意 native hot load；
 - 建立 `Minimal`、`Editor`、`Runtime`、`DedicatedServer`、`AssetWorker` Host Profiles，以及 versioned
   Standard3D/EditorAuthoring/DedicatedServer Feature Sets；五种 Host Profile 与从 composition 到 Blueprint/artifact/registration 的 contracts

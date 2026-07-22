@@ -33,6 +33,7 @@ PACKAGE_STATIC_FACTORY_BINDINGS_NAME = "asharia.package.static-factory-bindings.
 PACKAGE_ARTIFACT_MANIFEST_NAME = "asharia.package.artifacts.json"
 ENGINE_DISTRIBUTION_MANIFEST_NAME = "asharia.engine-distribution.json"
 PROJECT_MANIFEST_NAME = "asharia.packages.json"
+PROJECT_PACKAGE_SOURCES_NAME = "asharia.packages.sources.json"
 PACKAGE_LOCK_NAME = "asharia.packages.lock.json"
 HOST_PROFILE_NAME = "asharia.host-profile.json"
 IGNORED_PATH_PARTS = {".git", "build", "generated"}
@@ -42,6 +43,7 @@ COMMON_SCHEMA_NAME = "package-contract-common-v1.schema.json"
 INSTALLABLE_SCHEMA_NAME = "installable-package-v2.schema.json"
 FEATURE_SET_SCHEMA_NAME = "feature-set-v2.schema.json"
 PROJECT_SCHEMA_NAME = "project-package-manifest-v2.schema.json"
+PROJECT_PACKAGE_SOURCES_SCHEMA_NAME = "project-package-sources-v1.schema.json"
 LOCK_SCHEMA_NAME = "package-lock-v2.schema.json"
 HOST_PROFILE_SCHEMA_NAME = "host-profile-v1.schema.json"
 HOST_COMPOSITION_PLAN_SCHEMA_NAME = "host-composition-plan-v1.schema.json"
@@ -217,6 +219,7 @@ class ContractValidators:
     installable: Draft202012Validator
     feature_set: Draft202012Validator
     project: Draft202012Validator
+    project_package_sources: Draft202012Validator
     lock: Draft202012Validator
     host_profile: Draft202012Validator
     host_composition_plan: Draft202012Validator
@@ -350,6 +353,7 @@ def load_contract_validators(schema_root: Path = DEFAULT_SCHEMA_ROOT) -> Contrac
         installable=create(INSTALLABLE_SCHEMA_NAME),
         feature_set=create(FEATURE_SET_SCHEMA_NAME),
         project=create(PROJECT_SCHEMA_NAME),
+        project_package_sources=create(PROJECT_PACKAGE_SOURCES_SCHEMA_NAME),
         lock=create(LOCK_SCHEMA_NAME),
         host_profile=create(HOST_PROFILE_SCHEMA_NAME),
         host_composition_plan=create(HOST_COMPOSITION_PLAN_SCHEMA_NAME),
@@ -1101,6 +1105,101 @@ def _is_normalized_relative_path(value: str) -> bool:
     )
 
 
+def _project_package_sources_semantic_diagnostics(
+    manifest: dict[str, Any], manifest_path: str
+) -> list[Diagnostic]:
+    diagnostics: list[Diagnostic] = []
+    exact_counts: dict[tuple[str, str], int] = {}
+    folded_values: dict[tuple[str, str], set[str]] = {}
+    portable_project_paths: set[str] = set()
+
+    for source in manifest["sources"]:
+        kind = source["kind"]
+        field = "relativePath" if kind == "project-embedded" else "sourceId"
+        value = source[field]
+        exact_key = (kind, value)
+        exact_counts[exact_key] = exact_counts.get(exact_key, 0) + 1
+        folded_values.setdefault((kind, value.casefold()), set()).add(value)
+
+        if kind != "project-embedded":
+            continue
+        if _is_portable_relative_path(value):
+            portable_project_paths.add(value)
+        else:
+            diagnostics.append(
+                Diagnostic(
+                    code="project.sources.invalid-relative-path",
+                    manifest_path=manifest_path,
+                    pointer="/sources",
+                    message=(
+                        f"{value!r} must be a Unicode NFC portable relative path"
+                    ),
+                )
+            )
+
+    def source_key_order(value: tuple[str, str]) -> tuple[bytes, bytes]:
+        return value[0].encode("utf-8"), value[1].encode("utf-8")
+
+    for (kind, value), count in sorted(
+        exact_counts.items(), key=lambda item: source_key_order(item[0])
+    ):
+        if count > 1:
+            diagnostics.append(
+                Diagnostic(
+                    code="project.sources.duplicate",
+                    manifest_path=manifest_path,
+                    pointer="/sources",
+                    message=f"{kind} source {value!r} is declared more than once",
+                )
+            )
+
+    for (kind, _), values in sorted(
+        folded_values.items(), key=lambda item: source_key_order(item[0])
+    ):
+        ordered_values = sorted(values, key=lambda value: value.encode("utf-8"))
+        for left_index, left in enumerate(ordered_values):
+            for right in ordered_values[left_index + 1 :]:
+                diagnostics.append(
+                    Diagnostic(
+                        code="project.sources.casefold-collision",
+                        manifest_path=manifest_path,
+                        pointer="/sources",
+                        message=(
+                            f"{kind} sources {left!r} and {right!r} collide by "
+                            "Unicode case-folding"
+                        ),
+                    )
+                )
+
+    ordered_project_paths = sorted(
+        portable_project_paths, key=lambda value: value.encode("utf-8")
+    )
+    for left_index, left in enumerate(ordered_project_paths):
+        left_folded = left.casefold()
+        for right in ordered_project_paths[left_index + 1 :]:
+            right_folded = right.casefold()
+            if left_folded == right_folded:
+                continue
+            if not (
+                left_folded.startswith(f"{right_folded}/")
+                or right_folded.startswith(f"{left_folded}/")
+            ):
+                continue
+            diagnostics.append(
+                Diagnostic(
+                    code="project.sources.overlapping-root",
+                    manifest_path=manifest_path,
+                    pointer="/sources",
+                    message=(
+                        f"project-embedded roots {left!r} and {right!r} overlap "
+                        "lexically"
+                    ),
+                )
+            )
+
+    return sorted(diagnostics, key=_diagnostic_sort_key)
+
+
 _WINDOWS_RESERVED_PATH_STEMS = {
     "con",
     "prn",
@@ -1112,7 +1211,7 @@ _WINDOWS_RESERVED_PATH_STEMS = {
 _WINDOWS_INVALID_PATH_CHARACTERS = frozenset('<>:"\\|?*')
 
 
-def _is_portable_distribution_path(value: str) -> bool:
+def _is_portable_relative_path(value: str) -> bool:
     if not _is_normalized_relative_path(value):
         return False
     for segment in value.split("/"):
@@ -1135,7 +1234,7 @@ def _engine_distribution_semantic_diagnostics(
     registered_paths: list[tuple[str, str, str]] = []
 
     def register_path(value: str, pointer: str, path_kind: str) -> None:
-        if not _is_portable_distribution_path(value):
+        if not _is_portable_relative_path(value):
             diagnostics.append(
                 Diagnostic(
                     code="distribution.path.invalid",
@@ -1196,7 +1295,7 @@ def _engine_distribution_semantic_diagnostics(
         editor_files_by_path.setdefault(path, file)
 
     entry_point = manifest["editorImage"]["entryPoint"]
-    if not _is_portable_distribution_path(entry_point):
+    if not _is_portable_relative_path(entry_point):
         diagnostics.append(
             Diagnostic(
                 code="distribution.path.invalid",
@@ -2633,12 +2732,16 @@ def _contract_kind(manifest: Any, manifest_path: str) -> str | None:
         return "host-profile"
     if Path(manifest_path).name == PACKAGE_LOCK_NAME:
         return "lock"
+    if Path(manifest_path).name == PROJECT_PACKAGE_SOURCES_NAME:
+        return "project-package-sources"
     if Path(manifest_path).name == PROJECT_MANIFEST_NAME:
         return "project"
     if not isinstance(manifest, dict):
         return None
     if manifest.get("schema") == "com.asharia.project-packages":
         return "project"
+    if manifest.get("schema") == "com.asharia.project-package-sources":
+        return "project-package-sources"
     if manifest.get("schema") == "com.asharia.package-lock":
         return "lock"
     if manifest.get("schema") == "com.asharia.host-profile":
@@ -2780,6 +2883,10 @@ def validate_manifest_data(
         validator = validators.project
         schema_code = "project.manifest.schema"
         semantic_validator = _project_semantic_diagnostics
+    elif kind == "project-package-sources":
+        validator = validators.project_package_sources
+        schema_code = "project.sources.schema"
+        semantic_validator = _project_package_sources_semantic_diagnostics
     elif kind == "feature-set":
         validator = validators.feature_set
         schema_code = "feature-set.manifest.schema"
@@ -3414,6 +3521,7 @@ def discover_contract_manifests(root: Path) -> list[Path]:
         + list(root.rglob(PACKAGE_ARTIFACT_MANIFEST_NAME))
         + list(root.rglob(ENGINE_DISTRIBUTION_MANIFEST_NAME))
         + list(root.rglob(PROJECT_MANIFEST_NAME))
+        + list(root.rglob(PROJECT_PACKAGE_SOURCES_NAME))
         + list(root.rglob(PACKAGE_LOCK_NAME))
         + list(root.rglob(HOST_PROFILE_NAME))
     )
@@ -3981,6 +4089,52 @@ def write_normalized_project_manifest(path: Path, manifest: dict[str, Any]) -> N
     """Write one normalized Project Manifest using UTF-8 without BOM and LF endings."""
 
     path.write_text(render_normalized_project_manifest(manifest), encoding="utf-8", newline="\n")
+
+
+def normalize_project_package_sources(manifest: dict[str, Any]) -> dict[str, Any]:
+    """Return the deterministic representation of validated Project Package Sources."""
+
+    def stable_key(source: dict[str, Any]) -> tuple[bytes, bytes]:
+        field = "relativePath" if source["kind"] == "project-embedded" else "sourceId"
+        return source["kind"].encode("utf-8"), source[field].encode("utf-8")
+
+    sources: list[dict[str, Any]] = []
+    for source in sorted(manifest["sources"], key=stable_key):
+        if source["kind"] == "project-embedded":
+            sources.append(
+                {
+                    "kind": "project-embedded",
+                    "relativePath": source["relativePath"],
+                }
+            )
+        else:
+            sources.append({"kind": "local", "sourceId": source["sourceId"]})
+
+    return {
+        "schema": "com.asharia.project-package-sources",
+        "schemaVersion": 1,
+        "sources": sources,
+    }
+
+
+def render_normalized_project_package_sources(manifest: dict[str, Any]) -> str:
+    """Render normalized Project Package Sources as UTF-8-compatible LF text."""
+
+    return json.dumps(
+        normalize_project_package_sources(manifest), ensure_ascii=False, indent=2
+    ) + "\n"
+
+
+def write_normalized_project_package_sources(
+    path: Path, manifest: dict[str, Any]
+) -> None:
+    """Write Project Package Sources using UTF-8 without BOM and LF endings."""
+
+    path.write_text(
+        render_normalized_project_package_sources(manifest),
+        encoding="utf-8",
+        newline="\n",
+    )
 
 
 def _normalize_integrity(integrity: dict[str, Any]) -> dict[str, Any]:
