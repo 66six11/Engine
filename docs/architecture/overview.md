@@ -98,8 +98,11 @@ Asharia Engine 当前目标仍是先做一个小而完整的 Vulkan renderer，�
   supersession 都 fail closed。artifact inspector 只消费 current raw-output lease，使用 BCL
   `PEReader`/`MetadataReader` 无执行复验 implementation/reference identity、MVID/IL flags、credential
   reference closure、exact reference marker、PE-associated portable PDB/canonical documents 与严格
-  single-project `.deps.json`，并签发不含绝对路径的 content-addressed metadata report；它不发布 candidate、
-  不创建 ALC，也不加载 assembly。该路径仍不支持 `.asmdef`/Package。
+  single-project `.deps.json`，并签发不含绝对路径的 content-addressed metadata report。artifact publisher
+  内部重新执行检查，再用 bounded BCL stream copy/hash、staged rehash、exact closed-tree verification 与一次
+  directory rename，把四文件及 deterministic `artifact.json` 发布成跨物理根 identity/manifest 稳定的 immutable
+  evidence；它不生成 module index/current pointer，不创建 ALC，也不加载 assembly。该路径仍不支持
+  `.asmdef`/Package。
   Studio 在 Windows 上必须优先配置 `Win32RenderingMode.Vulkan`，再回退到 `AngleEgl` / `Software`，否则 Avalonia
   composition GPU interop 可能只暴露 D3D/ANGLE 共享纹理路径，无法进入 Vulkan opaque NT image/semaphore spike。
 

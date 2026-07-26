@@ -139,6 +139,220 @@ public sealed class ProjectCodeSdkBuildControllerTests
             report.ReportId,
             equivalentInspection.Report!.ReportId);
 
+        var publicationRoot = PublicationRoot(project, "real");
+        var publication = await ProjectCodeArtifactPublisher.PublishAsync(
+            result.Lease,
+            publicationRoot);
+        Assert.True(publication.Succeeded, Render(publication));
+        var receipt = publication.Receipt!;
+        Assert.Equal(report.ReportId, receipt.Report.ReportId);
+        Assert.Equal(publicationRoot, receipt.AbsoluteRoot);
+        Assert.Equal(
+            [
+                "artifact.json",
+                $"bin/{output.AssemblyName}.deps.json",
+                $"bin/{output.AssemblyName}.dll",
+                $"bin/{output.AssemblyName}.pdb",
+                $"ref/{output.AssemblyName}.dll",
+            ],
+            receipt.Files
+                .Select(file => file.RelativePath)
+                .Order(StringComparer.Ordinal)
+                .ToArray());
+        Assert.Equal(
+            receipt.Files
+                .Select(file => file.RelativePath)
+                .Order(StringComparer.Ordinal),
+            Directory
+                .EnumerateFiles(
+                    publicationRoot,
+                    "*",
+                    SearchOption.AllDirectories)
+                .Select(path => Path.GetRelativePath(publicationRoot, path)
+                    .Replace(Path.DirectorySeparatorChar, '/'))
+                .Order(StringComparer.Ordinal));
+        foreach (var file in receipt.Files)
+        {
+            var contents = File.ReadAllBytes(Path.Combine(
+                publicationRoot,
+                file.RelativePath.Replace(
+                    '/',
+                    Path.DirectorySeparatorChar)));
+            Assert.Equal(file.Size, contents.LongLength);
+            Assert.Equal(
+                file.Sha256,
+                Convert.ToHexString(SHA256.HashData(contents))
+                    .ToLowerInvariant());
+        }
+
+        Assert.Equal(
+            report.Implementation.File.Sha256,
+            receipt.Implementation.Sha256);
+        Assert.Equal(
+            report.ReferenceAssembly.File.Sha256,
+            receipt.ReferenceAssembly.Sha256);
+        Assert.Equal(
+            report.PortablePdb.File.Sha256,
+            receipt.PortablePdb.Sha256);
+        Assert.Equal(
+            report.Dependencies.File.Sha256,
+            receipt.Dependencies.Sha256);
+        var manifestBytes = File.ReadAllBytes(Path.Combine(
+            publicationRoot,
+            receipt.Manifest.RelativePath));
+        using (var manifest = System.Text.Json.JsonDocument.Parse(
+                   manifestBytes))
+        {
+            var root = manifest.RootElement;
+            Assert.Equal(
+                "com.asharia.project-code-artifact-publication",
+                root.GetProperty("schema").GetString());
+            Assert.Equal(1, root.GetProperty("schemaVersion").GetInt32());
+            Assert.Equal(
+                receipt.PublicationId,
+                root.GetProperty("publicationId").GetString());
+            Assert.Equal(
+                report.ReportId,
+                root.GetProperty("reportId").GetString());
+        }
+
+        AssertNoAbsolutePathLeak(
+            Encoding.UTF8.GetString(manifestBytes),
+            project.ProjectRoot,
+            project.WorkspaceRoot,
+            output.AbsoluteRoot,
+            publicationRoot);
+        var equivalentPublicationRoot =
+            PublicationRoot(equivalentProject, "equivalent");
+        var equivalentPublication =
+            await ProjectCodeArtifactPublisher.PublishAsync(
+                equivalentLease,
+                equivalentPublicationRoot);
+        Assert.True(
+            equivalentPublication.Succeeded,
+            Render(equivalentPublication));
+        Assert.Equal(
+            receipt.PublicationId,
+            equivalentPublication.Receipt!.PublicationId);
+        Assert.Equal(
+            receipt.Files.Select(FileEnvelope),
+            equivalentPublication.Receipt.Files.Select(FileEnvelope));
+        Assert.Equal(
+            manifestBytes,
+            File.ReadAllBytes(Path.Combine(
+                equivalentPublicationRoot,
+                equivalentPublication.Receipt.Manifest.RelativePath)));
+
+        var existingPublication =
+            PublicationRoot(project, "existing-publication");
+        Directory.CreateDirectory(existingPublication);
+        var marker = Path.Combine(existingPublication, "preserve.txt");
+        File.WriteAllText(marker, "preserve");
+        var existingResult =
+            await ProjectCodeArtifactPublisher.PublishAsync(
+                result.Lease,
+                existingPublication);
+        AssertDiagnostic(
+            existingResult,
+            "project-code.artifact-publication.output-path-invalid");
+        Assert.Equal("preserve", File.ReadAllText(marker));
+        var overlapResult =
+            await ProjectCodeArtifactPublisher.PublishAsync(
+                result.Lease,
+                Path.Combine(output.AbsoluteRoot, "publication"));
+        AssertDiagnostic(
+            overlapResult,
+            "project-code.artifact-publication.output-overlap");
+        var relativeResult =
+            await ProjectCodeArtifactPublisher.PublishAsync(
+                result.Lease,
+                "relative-publication");
+        AssertDiagnostic(
+            relativeResult,
+            "project-code.artifact-publication.output-path-invalid");
+        using (var canceled = new CancellationTokenSource())
+        {
+            canceled.Cancel();
+            var canceledRoot = PublicationRoot(project, "canceled");
+            await Assert.ThrowsAsync<OperationCanceledException>(() =>
+                ProjectCodeArtifactPublisher.PublishAsync(
+                    result.Lease,
+                    canceledRoot,
+                    canceled.Token));
+            Assert.False(Directory.Exists(canceledRoot));
+        }
+
+        var enlargedImplementationPath = output.Files
+            .Single(file => file.RelativePath
+                == output.ImplementationAssemblyRelativePath)
+            .AbsolutePath;
+        var implementationLength =
+            new FileInfo(enlargedImplementationPath).Length;
+        try
+        {
+            using (var stream = new FileStream(
+                       enlargedImplementationPath,
+                       FileMode.Open,
+                       FileAccess.Write,
+                       FileShare.None))
+            {
+                stream.SetLength(
+                    implementationLength + (32L * 1024 * 1024));
+            }
+
+            var enlargedLease = RefreshRawOutputLease(
+                workspace,
+                output);
+            var stagedTamperRoot =
+                PublicationRoot(project, "staged-tamper");
+            var stagedTamper = AddCandidateFileAsync(
+                stagedTamperRoot,
+                "unexpected.bin");
+            var stagedTamperResult =
+                await ProjectCodeArtifactPublisher.PublishAsync(
+                    enlargedLease,
+                    stagedTamperRoot);
+            await stagedTamper;
+            AssertDiagnostic(
+                stagedTamperResult,
+                "project-code.artifact-publication.staging-changed");
+            Assert.False(Directory.Exists(stagedTamperRoot));
+            AssertNoOwnedOutputCandidates(
+                Path.GetDirectoryName(stagedTamperRoot)!);
+
+            var sourceDriftRoot =
+                PublicationRoot(project, "source-drift");
+            var sourceDrift = MutateSourceAfterStagingBeginsAsync(
+                sourceDriftRoot,
+                enlargedImplementationPath);
+            var sourceDriftResult =
+                await ProjectCodeArtifactPublisher.PublishAsync(
+                    enlargedLease,
+                    sourceDriftRoot);
+            await sourceDrift;
+            Assert.False(sourceDriftResult.Succeeded);
+            Assert.Contains(
+                sourceDriftResult.Diagnostics,
+                diagnostic => diagnostic.Code is
+                    "project-code.artifact-publication.source-changed"
+                    or "project-code.artifact-publication.raw-output-changed");
+            Assert.False(Directory.Exists(sourceDriftRoot));
+            AssertNoOwnedOutputCandidates(
+                Path.GetDirectoryName(sourceDriftRoot)!);
+        }
+        finally
+        {
+            using var stream = new FileStream(
+                enlargedImplementationPath,
+                FileMode.Open,
+                FileAccess.Write,
+                FileShare.None);
+            stream.SetLength(implementationLength);
+        }
+
+        AssertNoOwnedOutputCandidates(
+            Path.GetDirectoryName(publicationRoot)!);
+
         var mutableOutput = equivalentLease.Output;
         var dependencyPath = mutableOutput.Files
             .Single(file => file.RelativePath
@@ -773,36 +987,72 @@ public sealed class ProjectCodeSdkBuildControllerTests
                 workspace,
                 OutputRoot(project, "output-drift")));
         Assert.True(first.Succeeded, Render(first));
+        var firstLease = first.Lease!;
+        var invalidPublicationRoot =
+            PublicationRoot(project, "invalid-metadata");
+        var invalidPublication =
+            await ProjectCodeArtifactPublisher.PublishAsync(
+                firstLease,
+                invalidPublicationRoot);
+        Assert.False(invalidPublication.Succeeded);
+        Assert.Contains(
+            invalidPublication.Diagnostics,
+            diagnostic => diagnostic.Code
+                == "project-code.artifact.managed-image-invalid");
+        Assert.False(Directory.Exists(invalidPublicationRoot));
         File.AppendAllText(
-            first.Lease!.Output.Files[0].AbsolutePath,
+            firstLease.Output.Files[0].AbsolutePath,
             "drift");
 
         Assert.False(
             await ProjectCodeSdkBuildController
-                .IsRawOutputCurrentAsync(first.Lease));
+                .IsRawOutputCurrentAsync(firstLease));
         var driftedInspection =
-            await ProjectCodeArtifactInspector.InspectAsync(first.Lease);
+            await ProjectCodeArtifactInspector.InspectAsync(firstLease);
         Assert.Contains(
             driftedInspection.Diagnostics,
             diagnostic => diagnostic.Code
                 == "project-code.artifact.raw-output-not-current");
+        var driftedPublicationRoot =
+            PublicationRoot(project, "drifted");
+        var driftedPublication =
+            await ProjectCodeArtifactPublisher.PublishAsync(
+                firstLease,
+                driftedPublicationRoot);
+        Assert.Contains(
+            driftedPublication.Diagnostics,
+            diagnostic => diagnostic.Code
+                == "project-code.artifact.raw-output-not-current");
+        Assert.False(Directory.Exists(driftedPublicationRoot));
 
         var second = await controller.ExecuteLatestAsync(
             new ProjectCodeSdkBuildRequest(
                 workspace,
                 OutputRoot(project, "output-revoke")));
         Assert.True(second.Succeeded, Render(second));
-        second.Lease!.Revoke();
-        Assert.False(second.Lease.IsCurrent);
+        var secondLease = second.Lease!;
+        secondLease.Revoke();
+        Assert.False(secondLease.IsCurrent);
         Assert.False(
             await ProjectCodeSdkBuildController
-                .IsRawOutputCurrentAsync(second.Lease));
+                .IsRawOutputCurrentAsync(secondLease));
         var revokedInspection =
-            await ProjectCodeArtifactInspector.InspectAsync(second.Lease);
+            await ProjectCodeArtifactInspector.InspectAsync(secondLease);
         Assert.Contains(
             revokedInspection.Diagnostics,
             diagnostic => diagnostic.Code
                 == "project-code.artifact.raw-output-not-current");
+        var revokedPublicationRoot =
+            PublicationRoot(project, "revoked");
+        var revokedPublication =
+            await ProjectCodeArtifactPublisher.PublishAsync(
+                secondLease,
+                revokedPublicationRoot);
+        Assert.Contains(
+            revokedPublication.Diagnostics,
+            diagnostic => diagnostic.Code
+                == "project-code.artifact.raw-output-not-current");
+        Assert.False(Directory.Exists(revokedPublicationRoot));
         Assert.True(workspace.IsCurrent);
     }
 
@@ -932,8 +1182,19 @@ public sealed class ProjectCodeSdkBuildControllerTests
             Path.GetDirectoryName(project.WorkspaceRoot)!,
             "raw-" + name);
 
+    private static string PublicationRoot(
+        ProjectFixture project,
+        string name) =>
+        Path.Combine(
+            Path.GetDirectoryName(project.WorkspaceRoot)!,
+            "publication-" + name);
+
     private static string FileEnvelope(
         ProjectCodeRawBuildOutputFile file) =>
+        $"{file.RelativePath}|{file.Size}|{file.Sha256}";
+
+    private static string FileEnvelope(
+        ProjectCodeArtifactFileEvidence file) =>
         $"{file.RelativePath}|{file.Size}|{file.Sha256}";
 
     private static async Task<ProjectCodeArtifactInspectionResult>
@@ -961,6 +1222,16 @@ public sealed class ProjectCodeSdkBuildControllerTests
 
     private static void AssertDiagnostic(
         ProjectCodeArtifactInspectionResult result,
+        string code)
+    {
+        Assert.False(result.Succeeded);
+        Assert.Contains(
+            result.Diagnostics,
+            diagnostic => diagnostic.Code == code);
+    }
+
+    private static void AssertDiagnostic(
+        ProjectCodeArtifactPublicationResult result,
         string code)
     {
         Assert.False(result.Succeeded);
@@ -1055,6 +1326,78 @@ public sealed class ProjectCodeSdkBuildControllerTests
                 StringComparison.Ordinal));
     }
 
+    private static async Task AddCandidateFileAsync(
+        string outputRoot,
+        string fileName)
+    {
+        var candidate = await WaitForCandidateAsync(outputRoot);
+        await File.WriteAllTextAsync(
+            Path.Combine(candidate, fileName),
+            "unexpected");
+    }
+
+    private static async Task MutateSourceAfterStagingBeginsAsync(
+        string outputRoot,
+        string source)
+    {
+        _ = await WaitForCandidateAsync(outputRoot);
+        using var timeout = new CancellationTokenSource(
+            TimeSpan.FromSeconds(30));
+        while (true)
+        {
+            timeout.Token.ThrowIfCancellationRequested();
+            try
+            {
+                await using var stream = new FileStream(
+                    source,
+                    FileMode.Open,
+                    FileAccess.Write,
+                    FileShare.ReadWrite,
+                    4096,
+                    FileOptions.Asynchronous);
+                stream.Position = stream.Length - 1;
+                await stream.WriteAsync(
+                    new byte[] { 0x7f },
+                    timeout.Token);
+                await stream.FlushAsync(timeout.Token);
+                stream.Flush(flushToDisk: true);
+                return;
+            }
+            catch (IOException)
+            {
+                await Task.Delay(1, timeout.Token);
+            }
+        }
+    }
+
+    private static async Task<string> WaitForCandidateAsync(
+        string outputRoot)
+    {
+        var parent = Path.GetDirectoryName(outputRoot)!;
+        var pattern = $".{Path.GetFileName(outputRoot)}.candidate-*";
+        using var timeout = new CancellationTokenSource(
+            TimeSpan.FromSeconds(30));
+        while (true)
+        {
+            timeout.Token.ThrowIfCancellationRequested();
+            try
+            {
+                var candidate = Directory
+                    .EnumerateDirectories(parent, pattern)
+                    .SingleOrDefault();
+                if (candidate is not null)
+                {
+                    return candidate;
+                }
+            }
+            catch (IOException)
+            {
+            }
+
+            await Task.Delay(1, timeout.Token);
+        }
+    }
+
     private static void AssertNoAbsolutePathLeak(
         ProjectCodeSdkBuildResult result,
         params string[] roots)
@@ -1075,6 +1418,19 @@ public sealed class ProjectCodeSdkBuildControllerTests
         }
     }
 
+    private static void AssertNoAbsolutePathLeak(
+        string value,
+        params string[] roots)
+    {
+        foreach (var root in roots)
+        {
+            Assert.DoesNotContain(
+                root,
+                value,
+                StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
     private static string Render(ProjectCodeSdkBuildResult result) =>
         string.Join(
             Environment.NewLine,
@@ -1085,6 +1441,13 @@ public sealed class ProjectCodeSdkBuildControllerTests
 
     private static string Render(
         ProjectCodeArtifactInspectionResult result) =>
+        string.Join(
+            Environment.NewLine,
+            result.Diagnostics.Select(diagnostic =>
+                $"{diagnostic.Code} {diagnostic.Location}: {diagnostic.Message}"));
+
+    private static string Render(
+        ProjectCodeArtifactPublicationResult result) =>
         string.Join(
             Environment.NewLine,
             result.Diagnostics.Select(diagnostic =>

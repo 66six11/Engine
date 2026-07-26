@@ -30,6 +30,8 @@
 - fingerprint 包含 source、`.asmdef`、Package lock、Editor API、SDK、analyzer/source generator 和 RID；
 - generated project 使用 canonical source root、`PathMap` 和 deterministic/CI build setting，不把 checkout/cache 绝对路径写入 artifact；
 - raw build product 在 candidate publication 或任何 assembly load 前，必须通过不执行代码的 PE/reference/PDB/dependency metadata inspection；检查只接受 build credential 和 current raw-output lease 已声明的文件与 identity；
+- 通过检查的四个 product 只能由 publisher 从 current raw-output lease 重新检查后，以 BCL bounded stream 复制并复验到全新、互不重叠的 staging root；`artifact.json` 与四个 product 构成 exact closed tree，完成后以一次 directory rename 发布；
+- 该 immutable publication 是 path-free、content-addressed build evidence，不是 loadable generation，不拥有 module index、`current`/`latest`、active/LKG 或 ALC；
 - build diagnostic 结构化投影到 Problems/Console；
 - `FileSystemWatcher` 只触发 debounce，重新计算 fingerprint 才决定是否构建；
 - 构建期间输入再次变化时取消或丢弃旧结果。

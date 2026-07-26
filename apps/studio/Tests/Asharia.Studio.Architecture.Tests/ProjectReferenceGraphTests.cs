@@ -607,6 +607,45 @@ public sealed class ProjectReferenceGraphTests
     }
 
     [Fact]
+    public void Project_code_artifact_publisher_only_copies_inspected_evidence()
+    {
+        var sourcePath = Path.Combine(
+            FindStudioRoot(),
+            "src",
+            "Asharia.Studio.Application",
+            "ProjectCode",
+            "ProjectCodeArtifactPublisher.cs");
+        var source = File.ReadAllText(sourcePath);
+        var forbiddenTokens = new[]
+        {
+            "Assembly.Load(",
+            "AssemblyName.GetAssemblyName",
+            "AssemblyLoadContext",
+            "MetadataLoadContext",
+            "DllImport",
+            "LibraryImport",
+            "Mono.Cecil",
+            "Process.Start",
+            "Avalonia",
+            "current.json",
+            "latest.json",
+        };
+
+        Assert.Contains(
+            "ProjectCodeRawBuildOutputLease lease",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "ProjectCodeArtifactInspector",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains("Directory.Move", source, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            forbiddenTokens,
+            token => source.Contains(token, StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Project_code_implicit_workspace_does_not_execute_or_load_candidates()
     {
         var sourceRoot = Path.Combine(

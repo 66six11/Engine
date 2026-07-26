@@ -345,7 +345,7 @@ flowchart LR
 current selection、Project Open 或 Host activation。Editor Image 的资格检查不加载或执行候选输入，也不证明 ABI、
 launch behavior 或 runtime health。
 
-## Studio Project Code 隔离 SDK 构建流（#305–#311）
+## Studio Project Code 隔离 SDK 构建与产物发布流（#305–#312）
 
 这是 `Asharia.Studio.Application` 的 headless Project Code control plane，不经过 Avalonia storage API，也不加载
 项目 assembly：
@@ -363,7 +363,8 @@ flowchart LR
     Raw["immutable raw output<br/>DLL + ref DLL + PDB + deps.json"]
     Inspect["no-execute artifact inspection<br/>PE + ref marker + PDB + deps"]
     Report["path-free metadata report<br/>content-addressed"]
-    Candidate["module index / candidate publication<br/>next slice"]
+    Publication["immutable inspected publication<br/>artifact.json + four evidence files"]
+    Candidate["module index / loadable candidate<br/>next slice"]
 
     Image --> Projection
     Projection --> Credential
@@ -376,15 +377,19 @@ flowchart LR
     Build --> Raw
     Raw --> Inspect
     Inspect --> Report
-    Report -.not implemented.-> Candidate
+    Report --> Publication
+    Publication -.not implemented.-> Candidate
 ```
 
 workspace 和 dotnet closure 在每个外部步骤后复验；同 project 新调用会 supersede 旧调用。CLI 环境从空白
 allowlist 构造，工作根使用固定短前缀以保留 Windows legacy path budget；最终 candidate 留在 output 同级并以
 directory move 发布。失败、timeout、cancel、output overflow、输入/SDK drift 都不发布 raw output，也不修改
 active/LKG 状态。#311 的 inspector 只消费 current raw-output lease，在检查前后复验完整输入与四文件 evidence；
-它只读 CLR/PDB/JSON metadata，不加载或执行 assembly。report 仍不是 generation candidate，#311 尚未建立
-module index、candidate publication、active 或 LKG。
+它只读 CLR/PDB/JSON metadata，不加载或执行 assembly。#312 publisher 只消费 current raw lease 与 fresh
+publication root，内部重新检查后以 BCL bounded stream copy/hash、staged rehash、exact 五文件 closed-tree
+verification 和一次 directory rename 发布 path-free、content-addressed immutable evidence。失败、取消、
+source/staging drift 或 existing/overlap/reparse path 不覆盖 final root。report/publication 仍不是 loadable
+generation candidate；#312 尚未建立 module index、current pointer、active、LKG 或 ALC。
 
 ## 当前架构总览
 

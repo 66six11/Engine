@@ -138,9 +138,12 @@ artifact inspector 只消费 current raw-output lease，并在检查前后复验
 `PEReader`/`MetadataReader`，不创建 ALC 或执行 assembly。检查器要求 implementation/reference identity、
 module/MVID、IL-only flags、exact `ReferenceAssemblyAttribute`、credential reference closure、PE-associated
 portable PDB、canonical `PathMap` documents 和当前单-project `.deps.json` shape 全部一致，然后生成不含绝对
-路径的 content-addressed metadata report。遇到任何 `.asmdef` 仍稳定失败，等待下一个显式 graph Slice；
-Package、Avalonia resource、NuGet lock、aggregate host、module index、candidate generation publication 和
-ALC generation 也尚未实现。
+路径的 content-addressed metadata report。artifact publisher 只接受 current raw-output lease 与全新、互不重叠的
+publication root，并在内部重新执行该检查；它以 bounded BCL stream 复制和二次 hash 复验四个 product，生成
+deterministic `artifact.json`，复验 exact 五文件 closed tree 后以一次 directory rename 提交。publication identity
+和 manifest 不含 source/output 绝对路径；receipt 的 absolute root 只供当前进程寻址。遇到任何 `.asmdef` 仍稳定
+失败，等待下一个显式 graph Slice；Package、Avalonia resource、NuGet lock、aggregate host、module index、
+loadable candidate generation 和 ALC generation 也尚未实现。
 
 外部自定义 `.csproj` 必须由 `asharia.package.json.editor` 显式声明，视为受信任 external build，默认 `restart-required`。Host 记录实际 project、SDK、binlog 和 artifact，但不把它伪装成标准可重复 `.asmdef` build。
 
@@ -172,7 +175,8 @@ resolve graph
 当前 implicit 子集还没有 active/LKG 或 generation pointer。controller 只发布 current raw output lease；发布前再次
 验证 source、credential、workspace 与 sealed SDK mirror，失败、取消、超时或被更新调用替代时删除 controller-owned
 working/candidate tree，不覆盖任何既有 output。raw output 只有通过 current lease、PE/reference/PDB/deps
-无执行检查后才能形成 metadata report；report 仍不是可加载 candidate，不推进 generation、active 或 LKG。
+无执行检查后才能形成 metadata report。publisher 再把 exact 四文件与 deterministic manifest 原子复制到 immutable
+publication；report/publication 都不是可加载 candidate，不推进 generation、active 或 LKG。
 
 ## 6. Package lock 与安装
 
@@ -422,7 +426,8 @@ Collectible host 的 leak 将 reload unit 升级为 process-lifetime restart-req
 - build cancel/supersession、restore failure、immutable publish；
 - raw-output lease 漂移、implementation/reference identity 和 exact reference marker、unknown/wrong-identity
   reference、PE/PDB content-id mismatch、non-canonical PDB document、strict single-project `.deps.json` shape，
-  以及 metadata report 不泄露绝对路径且跨等价 output root 保持同一 identity；
+  metadata report 不泄露绝对路径且跨等价 output root 保持同一 identity，以及 publication 的五文件闭包、
+  跨物理根稳定 manifest/identity、source/staging drift、existing/overlap path 与 cancel cleanup；
 - Coexist/QuiesceThenActivate handover、mixed Coexist-dependent → QTA-dependency 的 delayed propagation、commit 前 dependencies-first resume、dependency partial-closure rejection；
 - rollback `ResumeAsync()` fault 进入 Degraded/restart-required，且不误报成功；
 - Dormant lazy module 不在 staging 强制激活，首次使用失败只隔离其 contribution；
