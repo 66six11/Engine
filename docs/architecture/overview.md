@@ -83,6 +83,9 @@ Asharia Engine 当前目标仍是先做一个小而完整的 Vulkan renderer，�
   P/Invoke entry points 和 native packet release bridge；`Features/SceneView` 拥有 Avalonia composition
   probing、drawing surface host 和 external image/semaphore import。Studio 不录制 Vulkan commands，不拥有
   native GPU resource，只通过 `editor_native` ABI 请求 native-owned present packet 并在 managed import/update 后释放。
+  `Asharia.Studio.Application.Bootstrap.Distribution` 只从外部 owner 已选择的 exact
+  `EngineGenerationId` 与 generation root 复验 Editor Image inventory，并签发进程内可撤销 lease；它不负责
+  generation selection、完整 Distribution health、repair/install/update 或项目 package graph。
   Studio 在 Windows 上必须优先配置 `Win32RenderingMode.Vulkan`，再回退到 `AngleEgl` / `Software`，否则 Avalonia
   composition GPU interop 可能只暴露 D3D/ANGLE 共享纹理路径，无法进入 Vulkan opaque NT image/semaphore spike。
 
@@ -106,6 +109,9 @@ Asharia Engine 当前目标仍是先做一个小而完整的 Vulkan renderer，�
   `Core/Interop/Viewports` 负责把 Avalonia compositor device id/handle capability 转成 native ABI request，并负责释放
   native present packet；`Features/SceneView` 持有 `SceneViewCompositionHost`、`CompositionDrawingSurface` 和
   `SceneViewCompositionPresenter`，只导入 native opaque NT image/semaphore handle 到 Avalonia composition。
+- `Asharia.Studio.Application` 的 Editor Image inventory lease 是只读 Application 层产品策略：实现使用 .NET BCL
+  文件 API；Avalonia `IStorageProvider` 只拥有用户文件选择、bookmark 与平台权限 UI，native Core File IO 继续只服务
+  C++ engine/runtime 的低层 IO 与事务。
 - native shared viewport runtime 仍由 C++ `apps/editor` / `rhi-vulkan` / `renderer_basic_vulkan` 侧拥有 Vulkan
   image、semaphore、RenderView recording 和 deferred GPU lifetime。managed Studio 只能观察 packet metadata，
   不能关闭、重用或延迟销毁 Vulkan resource。

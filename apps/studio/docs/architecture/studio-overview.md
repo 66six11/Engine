@@ -2,7 +2,7 @@
 
 状态：Target（迁移中）
 
-更新日期：2026-07-11
+更新日期：2026-07-26
 
 ## 1. 目的
 
@@ -18,19 +18,40 @@ Studio 不拥有 Engine truth。World、simulation、renderer、Vulkan device、
 
 ## 2. 当前实现
 
-当前 production `apps/studio` 仍是一个 `Editor.csproj` Avalonia 应用，目录分为 `Core`、`Shell`、`UI`、`Features` 和 `Tests`。已有 Dock、command、diagnostics、selection、transaction、built-in extension host、Code-first UI、Scene snapshot、panel scheduler 和 Windows Scene View GPU interop 的 v0 路径。迁移用 `Asharia.Studio.sln` 已加入独立 `Asharia.Editor` public assembly；目前只落地 module identity/policy/lifecycle 与 capability Epoch snapshot，还没有 production consumer。
+当前 production `apps/studio` 仍由 `Editor.csproj` Avalonia host 与迁移中的 managed projects 共同组成，目录分为
+`Core`、`Shell`、`UI`、`Features`、`src` 和 `Tests`。已有 Dock、command、diagnostics、selection、transaction、
+built-in extension host、Code-first UI、Scene snapshot、panel scheduler 和 Windows Scene View GPU interop 的 v0 路径。
+`Asharia.Studio.sln` 已包含独立 `Asharia.Editor`、`Asharia.Runtime.Contracts` 与
+`Asharia.Studio.Application`；Application 已拥有 static module host 基线和只读 Editor Image inventory
+verifier，但 Project Code workspace/build/artifact pipeline 尚未落地。
 
 当前仍为 Partial：
 
 - `Core` 混合 UI-neutral model、service、P/Invoke、native adapter 和部分 Avalonia vocabulary；
 - App、View、Shell 和静态 native API 分散拥有启动与关闭；
 - `WorkbenchFeatureModule` 聚合大多数 Feature 和 fixture provider；
-- `Asharia.Editor` 尚无 contribution/service/Code-first API、项目 `Editor/` build 或 Package loader，legacy app 也尚未引用它；
+- `Asharia.Editor` 与 `Asharia.Studio.Application` 已有独立合同和 static host 基线，但项目 `Editor/` build、
+  Package loader 与 dynamic generation 尚未形成闭环；
 - `ViewportScheduler` 未接入 production frame loop；
 - Scene View bridge 固定使用 Windows NT handle；
 - 尚无正式 Project/Edit/Play/Preview session、Game View 和 Linux/macOS backend。
 
 这些事实只约束迁移顺序，不是目标边界。
+
+### 2.1 当前 Editor Image inventory handoff
+
+`Asharia.Studio.Application.Bootstrap.Distribution` 当前接受外部 owner 已选择的 canonical
+`EngineGenerationId` 和对应 generation root。它严格复验 Distribution manifest identity、Editor Image
+清单与每个声明文件的 size/SHA-256，拒绝 reparse escape 和产品 Python payload，成功后只签发进程内、
+可撤销的 exact Editor Image lease。
+
+该 lease 不是完整 `VerifiedInstalledDistribution` 或 `DistributionHealthReport`：它不复验 bundled
+package、package artifact 或 Host Profile bytes，也不拥有 current selection、repair、install、update 或
+restart。后继 Project Code 服务只能从 current lease 查询声明文件，不能重新扫描任意目录。
+
+这是 Application 层的只读产品策略，直接使用 .NET BCL 文件 API。Avalonia `IStorageProvider` 只负责用户文件
+选择、bookmark 和平台权限 UI；native Core File IO 服务于 C++ engine/runtime 的低层 IO 与事务，不反向成为
+Studio managed bootstrap 的依赖。
 
 ## 3. 核心原则
 
@@ -201,7 +222,9 @@ UI intent
 Extension 构建/加载：
 
 ```text
-Editor/ or Package
+externally selected EngineGenerationId + generation root
+  -> exact, revocable Editor Image inventory lease
+Editor/ or Package + lease-bound managed build environment
   -> optional asmdef + package metadata
   -> fingerprint + dotnet build
   -> staged AssemblyLoadContext
@@ -260,7 +283,8 @@ git diff --check
 
 - 八项目边界尚未落地；
 - 现有 Code-first contract 仍在 `Core`，built-in Feature 仍可访问 Shell implementation；
-- 项目 `Editor/`、`.asmdef`、Package 和 ALC pipeline 未实现；
+- Project Code 当前只落地 exact Editor Image inventory lease；managed build environment、项目
+  `Editor/`、`.asmdef`、Package、artifact inspection 和 ALC pipeline 尚未实现；
 - App shutdown 仍有 sync-over-async；
 - Game View、PlaySession 和 standalone orchestration 未完成；
 - Linux/macOS GPU presentation 尚未验证；
