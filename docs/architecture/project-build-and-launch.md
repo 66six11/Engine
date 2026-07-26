@@ -88,8 +88,11 @@ package artifact generation。它不执行 Build/Stage、不替代最终 `Stage 
 `managed/dotnet` inventory projection，再通过完整 selected-file 复验、dotnet-root 文件/目录闭包、
 Windows x64 native PE、SDK/runtime metadata、CLR identity、reference-pack identity set 与 Host contract
 reference closure 签发 semantic build credential。该 credential 是后续项目 `Editor/` workspace/build controller
-可消费的执行选择证据；它本身不运行 `dotnet`、不生成 workspace、不加载 assembly，也不是 build result、
-artifact generation 或 project product pipeline 的 stage credential。
+可消费的执行选择证据；它本身不运行 `dotnet`、不加载 assembly，也不是 build result、artifact generation
+或 project product pipeline 的 stage credential。当前后继只实现 caller-bound 的零配置 implicit workspace：
+exact 项目根 `Editor/**/*.cs`、credential-bound Host contracts 与 canonical SDK/MSBuild/NuGet barrier files 被
+复制/渲染到全新 staging 后原子发布，identity 不含绝对 checkout/cache path，执行前可复验 source、credential
+与 workspace closure。`.asmdef`、Package graph、restore/build、artifact/candidate 仍未落地。
 [Windows Development Host Template v1](adr-windows-development-host-template-v1.md) 已实现第一个固定
 `windows-development-v1` native Host 闭环：immutable template、受控 final configure/build、CMake File API exact target/path
 binding 与 restricted registration verification。#297 已把 Template renderer 3 与 Composition renderer 6 的 normal mode 接到

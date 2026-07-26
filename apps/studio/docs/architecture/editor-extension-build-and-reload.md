@@ -122,6 +122,17 @@ Generated project 还必须：
 
 共享 API 引用在生成 project 中等价于 `Private=false`/不复制 runtime asset。Loader 不能仅依赖 build output 是否碰巧包含 DLL；它仍要主动拒绝 extension 私带的 shared contract。
 
+当前 production checkpoint 只落地项目根零配置 implicit code-first 子集：Application 接受 caller 已规范化的
+project root/projectId、current semantic build credential 与全新 cache path，只发现 exact `Editor/**/*.cs`，
+复制 source/Runtime+Editor contract exact bytes，并生成单一 `Microsoft.NET.Sdk` library workspace。
+`global.json` 固定 credential SDK 且 `rollForward=disable`；root `Directory.Build.props/targets/rsp`、
+`Directory.Packages.props` 与显式 `NuGet.Config` 封住父目录 build customization、用户 wildcard imports、
+ambient analyzer/editorconfig、workload resolver 与 package/audit sources。renderer 使用 explicit compile/reference
+items、deterministic/CI/portable-PDB/PathMap 和 stable relative output handoff；workspace identity 不包含 project/
+cache 绝对路径。builder 只原子发布 immutable input tree 并提供 source/credential/workspace current check，不执行
+restore/build。遇到任何 `.asmdef` 会稳定失败，等待下一个显式 graph Slice；Package、Avalonia resource、NuGet
+lock、aggregate host、module index 和 execution/artifact path 也尚未实现。
+
 外部自定义 `.csproj` 必须由 `asharia.package.json.editor` 显式声明，视为受信任 external build，默认 `restart-required`。Host 记录实际 project、SDK、binlog 和 artifact，但不把它伪装成标准可重复 `.asmdef` build。
 
 分发 Package 可以提供 Package-wide prebuilt artifact manifest，包含全部 logical assembly identity、TFM/RID、API/schema compatibility、module DLL/PDB/index/resource、aggregate host/统一 `.deps.json`、private/native asset table 和 content hash。`asharia.packages.lock.json` 为整个 Package generation 选择 `source-build` 或一个 prebuilt artifact ID；禁止逐 assembly 混合 source/prebuilt 后临时合成 closure，也不允许从目录中猜测散落 DLL。Manifest 同时提供 source 与 prebuilt variant 时，Project policy 决定可选集合，但实际选择必须被 lock 固定。

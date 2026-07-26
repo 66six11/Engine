@@ -318,7 +318,7 @@ public sealed class ProjectCodeBuildEnvironmentCredentialResolverTests
             result.Diagnostics.Select(diagnostic =>
                 $"{diagnostic.Code} {diagnostic.Location}: {diagnostic.Message}"));
 
-    private sealed class SemanticEnvironmentFixture : IDisposable
+    internal sealed class SemanticEnvironmentFixture : IDisposable
     {
         private static readonly Lazy<InstalledInputs> Installed = new(
             InstalledInputs.Load);

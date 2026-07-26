@@ -575,6 +575,49 @@ public sealed class ProjectReferenceGraphTests
     }
 
     [Fact]
+    public void Project_code_implicit_workspace_does_not_execute_or_load_candidates()
+    {
+        var sourceRoot = Path.Combine(
+            FindStudioRoot(),
+            "src",
+            "Asharia.Studio.Application",
+            "ProjectCode");
+        var forbiddenTokens = new[]
+        {
+            "ProcessStartInfo",
+            "Process.Start",
+            "Assembly.Load(",
+            "AssemblyLoadContext",
+            "DOTNET_ROOT",
+            "GetEnvironmentVariable",
+            "--restore",
+            "dotnet build",
+            "NuGet.Protocol",
+            "Avalonia",
+            "Runtime.InteropServices",
+        };
+        var offenders = Directory
+            .EnumerateFiles(
+                sourceRoot,
+                "ProjectCodeImplicitSdkWorkspace*.cs",
+                SearchOption.TopDirectoryOnly)
+            .Select(path => new
+            {
+                Path = Path.GetRelativePath(sourceRoot, path),
+                Text = File.ReadAllText(path),
+            })
+            .SelectMany(file => forbiddenTokens
+                .Where(token => file.Text.Contains(
+                    token,
+                    StringComparison.Ordinal))
+                .Select(token => $"{file.Path}: {token}"))
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.Empty(offenders);
+    }
+
+    [Fact]
     public void Public_editor_sources_do_not_reference_ui_native_or_studio_implementation()
     {
         var sourceRoot = Path.Combine(FindStudioRoot(), "src", "Asharia.Editor");

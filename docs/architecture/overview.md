@@ -89,7 +89,10 @@ Asharia Engine 当前目标仍是先做一个小而完整的 Vulkan renderer，�
   Image lease 可以继续投影发行版固定的 `managed/dotnet` host、SDK、hostfxr、runtime、reference pack 与
   Runtime/Editor contracts；Project Code 可从 current projection 进一步复验 exact dotnet-root closure、全部
   selected bytes、SDK/runtime metadata、CLR identities 和 contract/reference closure，签发 Windows x64 semantic
-  build credential。该 credential 不执行 dotnet、不生成 workspace、不加载 assembly，也不等同 build result。
+  build credential。Project Code 还能从 current credential 与 caller 已规范化的 project root/projectId 只快照
+  exact `Editor/**/*.cs`，复制 source/Host contract bytes 并原子发布 deterministic implicit SDK workspace；
+  workspace identity 不含 checkout/cache 绝对路径，source/credential/workspace 漂移时 build-input current
+  check 失败。该路径仍不执行 dotnet/MSBuild、不支持 `.asmdef`/Package、不加载 assembly，也不等同 build result。
   Studio 在 Windows 上必须优先配置 `Win32RenderingMode.Vulkan`，再回退到 `AngleEgl` / `Software`，否则 Avalonia
   composition GPU interop 可能只暴露 D3D/ANGLE 共享纹理路径，无法进入 Vulkan opaque NT image/semaphore spike。
 
