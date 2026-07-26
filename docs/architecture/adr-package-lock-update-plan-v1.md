@@ -236,8 +236,9 @@ Plan fingerprints 使用 domain-separated canonical logical bytes，而不是 mt
 
 Canonical preview 是 plan 的 deterministic projection，并携带 `planIntegrity`；它不是独立持久化对象，也不虚构第二个 preview identity。
 
-后继 apply 必须把这些 fingerprints 当成 optimistic preconditions，并重新读取/验证当前文件与外部 generation；本文不声称 fingerprint
-自身提供锁、事务、durability 或 crash recovery。
+后继 apply 必须把这些 fingerprints 当成 optimistic preconditions，并重新读取/验证当前文件与外部 generation；
+[Package Lock Apply Preconditions v1](adr-package-lock-apply-preconditions-v1.md) 已实现无 IO、无 resolver 的 reference revalidation
+boundary。Fingerprint 自身仍不提供锁、事务、durability 或 crash recovery。
 
 ### 8. Preview 是 canonical、path-redacted 的稳定投影
 
@@ -346,7 +347,8 @@ update 保留未受影响 locked candidates，并明确显示因 dependency cons
 
 后继工作继续独立：
 
-1. Project Manifest/Lock atomic apply、process/file locking、temp/flush/replace、journal、rollback 与 crash recovery；
+1. 在已实现 apply precondition revalidation 之后，补齐 Project Manifest/Lock process/file locking、
+   temp/flush/replace、journal、rollback 与 crash recovery；
 2. Package Manager/Bootstrap UI 对 canonical preview 的展示与确认；
 3. registry/acquisition/trust/license/security evidence；
 4. Build/Repair/Restart 对 applied exact graph 的后续归约；

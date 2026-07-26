@@ -251,7 +251,9 @@ recording → exact-table admission → ProcessScope start → borrow/run/releas
 same-index target/configured compiler、collector-owned staged executable bytes 与 exact owning snapshot 绑定并原子发布；receipt 不
 序列化 callback address，也不拥有 activation lifecycle 或 UI，不证明 `Ready`/current process state。artifact hash/receipt 留在
 build/publication/install/cache restore/repair 边界，normal startup 不自 hash executable，也不等待外部 launch receipt。Verified
-Distribution 与 Project/local candidate providers、no-write Lock update planning 已实现；atomic apply/journal/recovery、local mapping 产品配置、repair executor、production
+Distribution 与 Project/local candidate providers、no-write Lock update planning，以及 Core
+writer-exclusion/staged/replacement primitives 已实现；Project-scoped lock integration、atomic
+apply/journal/recovery、local mapping 产品配置、repair executor、production
 installable package/lock declarations 与 Editor Package Manager 尚未实现。Project Manifest / Lock v2 不保留
 v1 reader 或 migration adapter。
 

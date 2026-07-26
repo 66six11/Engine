@@ -40,8 +40,8 @@ Asharia Engine 当前目标仍是先做一个小而完整的 Vulkan renderer，�
 
 ## 模块边界
 
-- `engine/core`：日志、错误/result、版本和低层通用设施。不能依赖 Vulkan、GLFW、Slang、editor UI 或
-  asset importer。
+- `engine/core`：日志、错误/result、版本，以及 bounded/atomic/staged file IO 与 cooperative
+  exclusive-file-lock 等低层通用设施。不能依赖 Vulkan、GLFW、Slang、editor UI 或 asset importer。
 - `engine/platform`：当前是预留 platform abstraction boundary target，依赖 `engine/core`；尚未导出公共
   header 或拥有具体 OS 集成。
 - `packages/window-glfw`：GLFW window、输入轮询和 Vulkan surface 创建，依赖 `core` / `platform`，实际

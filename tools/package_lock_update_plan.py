@@ -1,10 +1,11 @@
-"""Deterministic, no-write Package Lock update planning.
+"""Deterministic, no-write Package Lock update planning and seal revalidation.
 
 The planner compares one validated base Project/Lock with proposed Project
 intent, resolves only from a caller-provided complete candidate snapshot, and
 returns either one immutable plan or stable diagnostics.  Filesystem discovery,
 acquisition, persistence, and apply/recovery are deliberately outside this
-module.
+module.  Apply-time callers can revalidate a plan's internal seal against
+newly captured logical facts without invoking IO or the resolver.
 """
 
 from __future__ import annotations
@@ -221,6 +222,18 @@ class PackageLockUpdatePlanResult:
     @property
     def succeeded(self) -> bool:
         return self.plan is not None and not self.diagnostics
+
+
+@dataclass(frozen=True)
+class PackageLockUpdatePlanRevalidationResult:
+    """Apply-time result for one plan checked against current logical facts."""
+
+    plan_integrity: IntegrityRecord | None
+    diagnostics: tuple[PackageLockUpdateDiagnostic, ...]
+
+    @property
+    def succeeded(self) -> bool:
+        return self.plan_integrity is not None and not self.diagnostics
 
 
 def _stable_json(value: Any) -> str:
@@ -1587,3 +1600,540 @@ def plan_package_lock_update(
         _selected_candidates=selected_candidates,
     )
     return PackageLockUpdatePlanResult(plan=plan, diagnostics=())
+
+
+def _revalidation_failure(
+    diagnostics: Iterable[PackageLockUpdateDiagnostic],
+) -> PackageLockUpdatePlanRevalidationResult:
+    return PackageLockUpdatePlanRevalidationResult(
+        plan_integrity=None,
+        diagnostics=_ordered_diagnostics(diagnostics),
+    )
+
+
+def _from_revalidation_contract_diagnostic(
+    value: contracts.Diagnostic,
+) -> PackageLockUpdateDiagnostic:
+    location = (
+        f"{value.manifest_path}{value.pointer}"
+        if value.pointer
+        else value.manifest_path
+    )
+    return PackageLockUpdateDiagnostic(
+        code=f"apply.precondition.{value.code}",
+        message=_redact(value.message),
+        location=_redact(location),
+    )
+
+
+def revalidate_package_lock_update_plan(
+    plan: object,
+    current_project: Any,
+    current_lock: Any,
+    distribution: Any,
+    candidates: Iterable[PackageCandidate],
+    validators: contracts.ContractValidators,
+) -> PackageLockUpdatePlanRevalidationResult:
+    """Revalidate one sealed plan against current logical facts without IO or resolution."""
+
+    if not isinstance(plan, PackageLockUpdatePlan):
+        return _revalidation_failure(
+            (
+                PackageLockUpdateDiagnostic(
+                    code="apply.precondition.plan-invalid",
+                    message="apply requires one PackageLockUpdatePlan",
+                    location="plan",
+                ),
+            )
+        )
+
+    try:
+        captured_project = copy.deepcopy(current_project)
+        captured_lock = copy.deepcopy(current_lock)
+        captured_distribution = copy.deepcopy(distribution)
+    except Exception:
+        return _revalidation_failure(
+            (
+                PackageLockUpdateDiagnostic(
+                    code="apply.precondition.input-capture-failed",
+                    message="current apply inputs could not be detached from caller-owned state",
+                    location="current",
+                ),
+            )
+        )
+
+    try:
+        raw_candidate_snapshot = tuple(candidates)
+    except Exception:
+        return _revalidation_failure(
+            (
+                PackageLockUpdateDiagnostic(
+                    code="apply.precondition.candidates-invalid",
+                    message="current package candidates must be a finite iterable",
+                    location="current/candidates",
+                ),
+            )
+        )
+    if any(
+        not isinstance(candidate, PackageCandidate)
+        for candidate in raw_candidate_snapshot
+    ):
+        return _revalidation_failure(
+            (
+                PackageLockUpdateDiagnostic(
+                    code="apply.precondition.candidates-invalid",
+                    message="every current candidate must use the shared PackageCandidate contract",
+                    location="current/candidates",
+                ),
+            )
+        )
+
+    current_diagnostics: list[PackageLockUpdateDiagnostic] = []
+    for value, path in (
+        (captured_project, "current/asharia.packages.json"),
+        (captured_lock, "current/asharia.packages.lock.json"),
+        (captured_distribution, contracts.ENGINE_DISTRIBUTION_MANIFEST_NAME),
+    ):
+        current_diagnostics.extend(
+            _from_revalidation_contract_diagnostic(item)
+            for item in contracts.validate_manifest_data(value, path, validators)
+        )
+    if current_diagnostics:
+        return _revalidation_failure(current_diagnostics)
+
+    assert isinstance(captured_project, dict)
+    assert isinstance(captured_lock, dict)
+    assert isinstance(captured_distribution, dict)
+    try:
+        normalized_project = contracts.normalize_project_manifest(captured_project)
+        normalized_lock = contracts.normalize_lock_manifest(captured_lock)
+        normalized_distribution = contracts.normalize_engine_distribution_manifest(
+            captured_distribution
+        )
+        current_project_bytes = _project_bytes(normalized_project)
+        current_lock_bytes = _lock_bytes(normalized_lock)
+        distribution_bytes = _distribution_bytes(normalized_distribution)
+        candidate_snapshot = tuple(
+            _capture_candidate(candidate) for candidate in raw_candidate_snapshot
+        )
+        candidate_set_bytes = _candidate_set_bytes(candidate_snapshot)
+    except Exception:
+        return _revalidation_failure(
+            (
+                PackageLockUpdateDiagnostic(
+                    code="apply.precondition.current-evidence-invalid",
+                    message="current apply evidence is not a canonical logical snapshot",
+                    location="current",
+                ),
+            )
+        )
+
+    diagnostics: list[PackageLockUpdateDiagnostic] = []
+
+    expected_current_project_integrity = contracts.compute_project_manifest_integrity(
+        normalized_project
+    )
+    if (
+        normalized_lock["inputs"]["projectManifestIntegrity"]
+        != expected_current_project_integrity
+    ):
+        diagnostics.append(
+            PackageLockUpdateDiagnostic(
+                code="apply.precondition.current-project-lock-mismatch",
+                message="current Lock does not bind the current Project Manifest",
+                location=(
+                    "current/asharia.packages.lock.json/inputs/"
+                    "projectManifestIntegrity"
+                ),
+            )
+        )
+
+    current_base_project_integrity = _domain_integrity(
+        "com.asharia.package-lock-update/base-project/v1",
+        current_project_bytes,
+    )
+    current_base_lock_integrity = _domain_integrity(
+        "com.asharia.package-lock-update/base-lock/v1",
+        current_lock_bytes,
+    )
+    current_distribution_integrity = _domain_integrity(
+        "com.asharia.package-lock-update/distribution/v1",
+        distribution_bytes,
+    )
+    current_candidate_set_integrity = _domain_integrity(
+        "com.asharia.package-lock-update/candidate-set/v1",
+        candidate_set_bytes,
+    )
+    for actual, expected, code, message, location in (
+        (
+            current_base_project_integrity,
+            plan.base_project_integrity,
+            "apply.precondition.current-project-stale",
+            "current Project Manifest no longer matches the planned base",
+            "current/asharia.packages.json",
+        ),
+        (
+            current_base_lock_integrity,
+            plan.base_lock_integrity,
+            "apply.precondition.current-lock-stale",
+            "current Package Lock no longer matches the planned base",
+            "current/asharia.packages.lock.json",
+        ),
+        (
+            current_distribution_integrity,
+            plan.distribution_integrity,
+            "apply.precondition.distribution-stale",
+            "current Engine Distribution no longer matches the plan",
+            contracts.ENGINE_DISTRIBUTION_MANIFEST_NAME,
+        ),
+        (
+            current_candidate_set_integrity,
+            plan.candidate_set_integrity,
+            "apply.precondition.candidates-stale",
+            "current complete candidate snapshot no longer matches the plan",
+            "current/candidates",
+        ),
+    ):
+        if actual != expected:
+            diagnostics.append(
+                PackageLockUpdateDiagnostic(
+                    code=code,
+                    message=message,
+                    location=location,
+                )
+            )
+
+    try:
+        base_project = _decode_object(plan._base_project_bytes)
+        base_lock = _decode_object(plan._base_lock_bytes)
+        proposed_project = _decode_object(plan._proposed_project_bytes)
+        proposed_lock = _decode_object(plan._proposed_lock_bytes)
+        selected_candidates = tuple(
+            _capture_candidate(candidate, portable_origin=True)
+            for candidate in tuple(plan._selected_candidates)
+        )
+    except Exception:
+        diagnostics.append(
+            PackageLockUpdateDiagnostic(
+                code="apply.precondition.plan-seal-invalid",
+                message="plan backing snapshots could not be decoded",
+                location="plan",
+            )
+        )
+        return _revalidation_failure(diagnostics)
+
+    plan_contract_diagnostics: list[PackageLockUpdateDiagnostic] = []
+    for value, path in (
+        (base_project, "plan/base/asharia.packages.json"),
+        (base_lock, "plan/base/asharia.packages.lock.json"),
+        (proposed_project, "plan/proposed/asharia.packages.json"),
+        (proposed_lock, "plan/proposed/asharia.packages.lock.json"),
+    ):
+        plan_contract_diagnostics.extend(
+            _from_revalidation_contract_diagnostic(item)
+            for item in contracts.validate_manifest_data(value, path, validators)
+        )
+    if plan_contract_diagnostics:
+        diagnostics.extend(plan_contract_diagnostics)
+        return _revalidation_failure(diagnostics)
+
+    normalized_base_project = contracts.normalize_project_manifest(base_project)
+    normalized_base_lock = contracts.normalize_lock_manifest(base_lock)
+    normalized_proposed_project = contracts.normalize_project_manifest(
+        proposed_project
+    )
+    normalized_proposed_lock = contracts.normalize_lock_manifest(proposed_lock)
+    canonical_base_project_bytes = _project_bytes(normalized_base_project)
+    canonical_base_lock_bytes = _lock_bytes(normalized_base_lock)
+    canonical_proposed_project_bytes = _project_bytes(normalized_proposed_project)
+    canonical_proposed_lock_bytes = _lock_bytes(normalized_proposed_lock)
+
+    request = LockUpdateRequest(
+        mode=plan.mode,
+        unlock_targets=plan.unlock_targets,
+        intent_only_targets=plan.intent_only_targets,
+    )
+    normalized_request, request_diagnostics = _validate_request(request)
+    if request_diagnostics:
+        diagnostics.append(
+            PackageLockUpdateDiagnostic(
+                code="apply.precondition.plan-policy-invalid",
+                message="plan contains an invalid update request",
+                location="plan/policy",
+            )
+        )
+        return _revalidation_failure(diagnostics)
+    assert normalized_request is not None
+    expected_resolver_policy_version = (
+        package_resolver.RESOLUTION_POLICY_VERSION
+        if normalized_request.mode == FULL_UPDATE_MODE
+        else package_resolver.LOCKED_PREFERENCE_POLICY_VERSION
+    )
+
+    def check_plan_value(
+        actual: object,
+        expected: object,
+        location: str,
+        message: str,
+    ) -> None:
+        if actual != expected:
+            diagnostics.append(
+                PackageLockUpdateDiagnostic(
+                    code="apply.precondition.plan-seal-invalid",
+                    message=message,
+                    location=location,
+                )
+            )
+
+    check_plan_value(
+        plan.policy_version,
+        UPDATE_POLICY_VERSION,
+        "plan/policy/policyVersion",
+        "plan policy version does not match the sealed contract",
+    )
+    check_plan_value(
+        plan.resolver_policy_version,
+        expected_resolver_policy_version,
+        "plan/policy/resolverPolicyVersion",
+        "plan resolver policy version does not match its update mode",
+    )
+    check_plan_value(
+        plan._base_project_bytes,
+        canonical_base_project_bytes,
+        "plan/base/asharia.packages.json",
+        "plan base Project bytes are not canonical",
+    )
+    check_plan_value(
+        plan._base_lock_bytes,
+        canonical_base_lock_bytes,
+        "plan/base/asharia.packages.lock.json",
+        "plan base Lock bytes are not canonical",
+    )
+    check_plan_value(
+        plan._proposed_project_bytes,
+        canonical_proposed_project_bytes,
+        "plan/proposed/asharia.packages.json",
+        "plan proposed Project bytes are not canonical",
+    )
+    check_plan_value(
+        plan._proposed_lock_bytes,
+        canonical_proposed_lock_bytes,
+        "plan/proposed/asharia.packages.lock.json",
+        "plan proposed Lock bytes are not canonical",
+    )
+
+    base_project_integrity = _domain_integrity(
+        "com.asharia.package-lock-update/base-project/v1",
+        canonical_base_project_bytes,
+    )
+    base_lock_integrity = _domain_integrity(
+        "com.asharia.package-lock-update/base-lock/v1",
+        canonical_base_lock_bytes,
+    )
+    proposed_project_integrity = _domain_integrity(
+        "com.asharia.package-lock-update/proposed-project/v1",
+        canonical_proposed_project_bytes,
+    )
+    request_integrity = _domain_integrity(
+        "com.asharia.package-lock-update/request/v1",
+        _request_bytes(normalized_request, expected_resolver_policy_version),
+    )
+    try:
+        selected_candidate_set_integrity = _domain_integrity(
+            "com.asharia.package-lock-update/selected-candidate-set/v1",
+            _candidate_set_bytes(selected_candidates),
+        )
+    except Exception:
+        diagnostics.append(
+            PackageLockUpdateDiagnostic(
+                code="apply.precondition.plan-seal-invalid",
+                message="plan selected candidates are not a canonical logical snapshot",
+                location="plan/selectedCandidates",
+            )
+        )
+        return _revalidation_failure(diagnostics)
+    proposed_lock_integrity = _domain_integrity(
+        "com.asharia.package-lock-update/proposed-lock/v1",
+        canonical_proposed_lock_bytes,
+    )
+    derived_impacts = _derive_impacts(
+        normalized_base_project,
+        normalized_proposed_project,
+        normalized_base_lock,
+        normalized_proposed_lock,
+        normalized_request,
+    )
+    impact_set_integrity = _domain_integrity(
+        "com.asharia.package-lock-update/impact-set/v1",
+        _impact_set_bytes(derived_impacts),
+    )
+    project_manifest_changed = (
+        canonical_base_project_bytes != canonical_proposed_project_bytes
+    )
+    engine_input_changed = (
+        normalized_base_lock["inputs"]["engine"]
+        != normalized_proposed_lock["inputs"]["engine"]
+    )
+    status = (
+        "no-changes"
+        if canonical_base_project_bytes == canonical_proposed_project_bytes
+        and canonical_base_lock_bytes == canonical_proposed_lock_bytes
+        else "planned-changes"
+    )
+    engine_generation_id = normalized_distribution["engineGenerationId"]
+
+    for actual, expected, location, message in (
+        (
+            plan.base_project_integrity,
+            base_project_integrity,
+            "plan/inputs/baseProjectManifestIntegrity",
+            "plan base Project integrity is not sealed to its bytes",
+        ),
+        (
+            plan.base_lock_integrity,
+            base_lock_integrity,
+            "plan/inputs/baseLockIntegrity",
+            "plan base Lock integrity is not sealed to its bytes",
+        ),
+        (
+            plan.proposed_project_integrity,
+            proposed_project_integrity,
+            "plan/inputs/proposedProjectManifestIntegrity",
+            "plan proposed Project integrity is not sealed to its bytes",
+        ),
+        (
+            plan.distribution_integrity,
+            current_distribution_integrity,
+            "plan/inputs/distributionIntegrity",
+            "plan Distribution integrity does not match current evidence",
+        ),
+        (
+            plan.candidate_set_integrity,
+            current_candidate_set_integrity,
+            "plan/inputs/candidateSetIntegrity",
+            "plan candidate-set integrity does not match current evidence",
+        ),
+        (
+            plan.request_integrity,
+            request_integrity,
+            "plan/policy/requestIntegrity",
+            "plan request integrity is not sealed to its policy",
+        ),
+        (
+            plan.selected_candidate_set_integrity,
+            selected_candidate_set_integrity,
+            "plan/outputs/selectedCandidateSetIntegrity",
+            "plan selected-candidate integrity is not sealed to its snapshot",
+        ),
+        (
+            plan.proposed_lock_integrity,
+            proposed_lock_integrity,
+            "plan/outputs/proposedLockIntegrity",
+            "plan proposed Lock integrity is not sealed to its bytes",
+        ),
+        (
+            plan.impact_set_integrity,
+            impact_set_integrity,
+            "plan/outputs/impactSetIntegrity",
+            "plan impact integrity is not sealed to its impacts",
+        ),
+        (
+            plan.impacts,
+            derived_impacts,
+            "plan/impacts",
+            "plan impacts do not match its base and proposed documents",
+        ),
+        (
+            plan.project_manifest_changed,
+            project_manifest_changed,
+            "plan/outputs/projectManifestChanged",
+            "plan Project-change flag does not match its documents",
+        ),
+        (
+            plan.engine_input_changed,
+            engine_input_changed,
+            "plan/outputs/engineInputChanged",
+            "plan Engine-change flag does not match its Locks",
+        ),
+        (
+            plan.status,
+            status,
+            "plan/status",
+            "plan status does not match its documents",
+        ),
+        (
+            plan.engine_generation_id,
+            engine_generation_id,
+            "plan/inputs/engineGenerationId",
+            "plan Engine generation does not match current Distribution evidence",
+        ),
+    ):
+        check_plan_value(actual, expected, location, message)
+
+    try:
+        output_diagnostics = _validate_resolution_output(
+            normalized_proposed_lock,
+            normalized_proposed_project,
+            normalized_distribution,
+            expected_resolver_policy_version,
+            selected_candidates,
+            candidate_snapshot,
+            validators,
+        )
+    except Exception:
+        diagnostics.append(
+            PackageLockUpdateDiagnostic(
+                code="apply.precondition.plan-output-invalid",
+                message="plan output could not be revalidated",
+                location="plan/outputs",
+            )
+        )
+        return _revalidation_failure(diagnostics)
+    diagnostics.extend(
+        PackageLockUpdateDiagnostic(
+            code="apply.precondition.plan-output-invalid",
+            message=item.message,
+            identity=item.identity,
+            location=item.location,
+            requirement_chains=item.requirement_chains,
+        )
+        for item in output_diagnostics
+    )
+
+    plan_payload = _plan_integrity_payload(
+        mode=normalized_request.mode,
+        resolver_policy_version=expected_resolver_policy_version,
+        unlock_targets=normalized_request.unlock_targets,
+        intent_only_targets=normalized_request.intent_only_targets,
+        status=status,
+        project_manifest_changed=project_manifest_changed,
+        engine_input_changed=engine_input_changed,
+        impacts=derived_impacts,
+        base_project_integrity=base_project_integrity,
+        base_lock_integrity=base_lock_integrity,
+        proposed_project_integrity=proposed_project_integrity,
+        distribution_integrity=current_distribution_integrity,
+        candidate_set_integrity=current_candidate_set_integrity,
+        request_integrity=request_integrity,
+        selected_candidate_set_integrity=selected_candidate_set_integrity,
+        proposed_lock_integrity=proposed_lock_integrity,
+        impact_set_integrity=impact_set_integrity,
+        engine_generation_id=engine_generation_id,
+    )
+    plan_integrity = _domain_integrity(
+        "com.asharia.package-lock-update/plan/v1",
+        plan_payload,
+    )
+    check_plan_value(
+        plan.plan_integrity,
+        plan_integrity,
+        "plan/planIntegrity",
+        "plan integrity does not seal its complete canonical payload",
+    )
+
+    if diagnostics:
+        return _revalidation_failure(diagnostics)
+    return PackageLockUpdatePlanRevalidationResult(
+        plan_integrity=plan_integrity,
+        diagnostics=(),
+    )

@@ -149,6 +149,36 @@ class PackageLockUpdatePlanTests(unittest.TestCase):
             request,
         )
 
+    def no_op_plan(
+        self,
+    ) -> tuple[
+        package_lock_update_plan.PackageLockUpdatePlan,
+        dict[str, object],
+        dict[str, object],
+        dict[str, object],
+        list[PackageCandidate],
+    ]:
+        identity = "com.asharia.system.apply-precondition"
+        project = self.project(packages=[requirement(identity, exact("1.0.0"))])
+        candidates = [self.candidate(self.installable(identity, "1.0.0"))]
+        base_lock, distribution = self.resolve_base(project, candidates)
+        result = self.plan(
+            project,
+            copy.deepcopy(project),
+            base_lock,
+            distribution,
+            candidates,
+            package_lock_update_plan.LockUpdateRequest(
+                package_lock_update_plan.FULL_UPDATE_MODE
+            ),
+        )
+        self.assertTrue(
+            result.succeeded,
+            [diagnostic.render() for diagnostic in result.diagnostics],
+        )
+        assert result.plan is not None
+        return result.plan, project, base_lock, distribution, candidates
+
     def assert_atomic_failure(
         self,
         result: package_lock_update_plan.PackageLockUpdatePlanResult,
@@ -1185,6 +1215,183 @@ class PackageLockUpdatePlanTests(unittest.TestCase):
         self.assertEqual(identity, result.plan.base_project["directPackages"][0]["id"])
         self.assertEqual(identity, result.plan.proposed_lock["nodes"][0]["id"])
         self.assertEqual(selected_before, result.plan.selected_candidates)
+
+    def test_apply_precondition_revalidation_is_no_write_and_no_resolve(self) -> None:
+        plan, project, base_lock, distribution, candidates = self.no_op_plan()
+
+        with (
+            mock.patch.object(
+                package_resolver,
+                "resolve_package_graph",
+                side_effect=AssertionError("revalidation must not resolve"),
+            ),
+            mock.patch(
+                "builtins.open",
+                side_effect=AssertionError("revalidation must not write"),
+            ),
+        ):
+            result = package_lock_update_plan.revalidate_package_lock_update_plan(
+                plan,
+                project,
+                base_lock,
+                distribution,
+                candidates,
+                self.validators,
+            )
+
+        self.assertTrue(
+            result.succeeded,
+            [diagnostic.render() for diagnostic in result.diagnostics],
+        )
+        self.assertEqual(plan.plan_integrity, result.plan_integrity)
+
+    def test_apply_precondition_revalidation_rejects_each_stale_input(self) -> None:
+        plan, project, base_lock, distribution, candidates = self.no_op_plan()
+
+        stale_project = self.project()
+        project_result = package_lock_update_plan.revalidate_package_lock_update_plan(
+            plan,
+            stale_project,
+            base_lock,
+            distribution,
+            candidates,
+            self.validators,
+        )
+        self.assertFalse(project_result.succeeded)
+        self.assertIsNone(project_result.plan_integrity)
+        self.assertIn(
+            "apply.precondition.current-project-stale",
+            {item.code for item in project_result.diagnostics},
+        )
+
+        stale_lock = copy.deepcopy(base_lock)
+        stale_lock["nodes"][0]["source"]["sourceId"] = (
+            "com.asharia.source.apply-stale"
+        )
+        lock_result = package_lock_update_plan.revalidate_package_lock_update_plan(
+            plan,
+            project,
+            stale_lock,
+            distribution,
+            candidates,
+            self.validators,
+        )
+        self.assertFalse(lock_result.succeeded)
+        self.assertIn(
+            "apply.precondition.current-lock-stale",
+            {item.code for item in lock_result.diagnostics},
+        )
+
+        stale_distribution = copy.deepcopy(distribution)
+        stale_distribution["context"]["configuration"] = "Release"
+        stale_distribution["engineGenerationId"] = (
+            contracts.compute_engine_generation_id(stale_distribution)
+        )
+        distribution_result = (
+            package_lock_update_plan.revalidate_package_lock_update_plan(
+                plan,
+                project,
+                base_lock,
+                stale_distribution,
+                candidates,
+                self.validators,
+            )
+        )
+        self.assertFalse(distribution_result.succeeded)
+        self.assertIn(
+            "apply.precondition.distribution-stale",
+            {item.code for item in distribution_result.diagnostics},
+        )
+
+        extra_candidate = self.candidate(
+            self.installable("com.asharia.system.apply-extra", "1.0.0")
+        )
+        candidate_result = package_lock_update_plan.revalidate_package_lock_update_plan(
+            plan,
+            project,
+            base_lock,
+            distribution,
+            [*candidates, extra_candidate],
+            self.validators,
+        )
+        self.assertFalse(candidate_result.succeeded)
+        self.assertIn(
+            "apply.precondition.candidates-stale",
+            {item.code for item in candidate_result.diagnostics},
+        )
+
+    def test_apply_precondition_revalidation_rejects_forged_plan_seals(self) -> None:
+        plan, project, base_lock, distribution, candidates = self.no_op_plan()
+        forged_policy = replace(plan, policy_version=99)
+        forged_selected = replace(plan, _selected_candidates=())
+        malformed_candidate = replace(
+            plan._selected_candidates[0],
+            source={"kind": "local", "sourceId": {"not-canonical"}},
+        )
+        forged_uncanonical_selected = replace(
+            plan,
+            _selected_candidates=(malformed_candidate,),
+        )
+
+        for forged in (
+            forged_policy,
+            forged_selected,
+            forged_uncanonical_selected,
+        ):
+            with self.subTest(forged=forged):
+                result = (
+                    package_lock_update_plan.revalidate_package_lock_update_plan(
+                        forged,
+                        project,
+                        base_lock,
+                        distribution,
+                        candidates,
+                        self.validators,
+                    )
+                )
+                self.assertFalse(result.succeeded)
+                self.assertIsNone(result.plan_integrity)
+                self.assertTrue(
+                    {
+                        "apply.precondition.plan-seal-invalid",
+                        "apply.precondition.plan-output-invalid",
+                    }
+                    & {item.code for item in result.diagnostics}
+                )
+
+    def test_apply_precondition_revalidation_is_candidate_order_invariant(self) -> None:
+        plan, project, base_lock, distribution, candidates = self.no_op_plan()
+        extra = self.candidate(
+            self.installable("com.asharia.system.apply-order-extra", "1.0.0")
+        )
+        planned = self.plan(
+            project,
+            copy.deepcopy(project),
+            base_lock,
+            distribution,
+            [*candidates, extra],
+            package_lock_update_plan.LockUpdateRequest(
+                package_lock_update_plan.FULL_UPDATE_MODE
+            ),
+        )
+        self.assertTrue(
+            planned.succeeded,
+            [diagnostic.render() for diagnostic in planned.diagnostics],
+        )
+        assert planned.plan is not None
+
+        result = package_lock_update_plan.revalidate_package_lock_update_plan(
+            planned.plan,
+            project,
+            base_lock,
+            distribution,
+            [extra, *candidates],
+            self.validators,
+        )
+        self.assertTrue(
+            result.succeeded,
+            [diagnostic.render() for diagnostic in result.diagnostics],
+        )
 
 
 if __name__ == "__main__":

@@ -1,7 +1,7 @@
 # 资料与依据
 
 初始研究日期：2026-04-19
-最近核对日期：2026-07-13
+最近核对日期：2026-07-26
 
 工程决策优先参考一手资料。社区文章可以辅助理解，但不能替代 Vulkan 规范、Khronos
 仓库、GPUOpen 文档、CMake/Conan/MSVC 官方文档。
@@ -12,6 +12,41 @@
 不表示实现状态。当前 target graph、模块边界和阶段顺序分别以
 `docs/architecture/flow.md`、`docs/architecture/overview.md`、
 `docs/planning/system-architecture-roadmap.md` 和 GitHub Issues / Project 为准。
+
+实现已有成熟引擎先例的功能时，优先检查 Unreal Engine 的公开源码/API 和实际 owner 分层，再用
+Godot、O3DE、Bevy 等开源引擎或 Unity 官方合同交叉验证。ADR 必须记录采用了哪些成熟模式、哪些
+行为因 Asharia 的 package-first、C++23/Vulkan、headless 或 Avalonia 边界而不同。只有没有相关
+引擎先例，或现有实现不能满足已证明的本地约束时，才定义 Asharia 特有合同；不得仅凭通用工程偏好
+发明第二套系统。
+
+## 文件 IO、跨进程 writer exclusion 与前端 storage
+
+本次核对日期：2026-07-26
+
+一手资料：
+
+- Unreal `FSystemWideCriticalSection`：https://dev.epicgames.com/documentation/unreal-engine/API/Runtime/Core/GenericPlatform/FSystemWideCriticalSectionNotImp-?application_version=5.5
+- Unreal `NewInterprocessSynchObject`：https://dev.epicgames.com/documentation/unreal-engine/API/Runtime/Core/FGenericPlatformProcess/NewInterprocessSynchObject
+- Git lockfile API：https://git-scm.com/docs/api-lockfile
+- O3DE `AZ::IO::SystemFile`：https://github.com/o3de/o3de/blob/development/Code/Framework/AzCore/AzCore/IO/SystemFile.h
+- Godot `FileAccess`：https://github.com/godotengine/godot/blob/master/core/io/file_access.cpp
+- Windows `LockFileEx`：https://learn.microsoft.com/windows/win32/api/fileapi/nf-fileapi-lockfileex
+- Windows byte-range lock guide：https://learn.microsoft.com/windows/win32/fileio/locking-and-unlocking-byte-ranges-in-files
+- Linux `flock(2)`：https://man7.org/linux/man-pages/man2/flock.2.html
+- Avalonia Storage Provider：https://docs.avaloniaui.net/docs/services/storage/storage-provider
+- Avalonia File Dialogs：https://docs.avaloniaui.net/docs/services/file-dialogs
+
+结论：
+
+- 引擎级跨进程同步应是 Core/platform primitive，高层 Project owner 决定 lock identity 与临界区；
+- 短事务的 exclusive-create lockfile 和长期稳定 sentinel + kernel lock 是不同模式；Project writer
+  exclusion 采用后者，避免 crash 后把残留文件误判为永久占锁；
+- Windows handle close/进程退出与 POSIX descriptor close 都能释放内核锁；sentinel 本身故意保留，
+  文件存在不是 ownership evidence；
+- `LockFileEx`/`flock` 只协调合作 writer；network/synced filesystem 与 hostile writer 需要独立策略和验证；
+- Avalonia `IStorageProvider` 负责 picker、capability、bookmark 与平台 storage grant，不拥有
+  Project/Lock transaction。真实应用通过 service/DI 隔离 picker；Editor、CLI 与恢复工具共同消费
+  persistence/IO contract。
 
 ## 引擎系统架构与线程设计
 

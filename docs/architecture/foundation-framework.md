@@ -20,8 +20,16 @@ Project Manifest/Lock、fresh Effective Session、C6 与已验证 published Host
 [Project / Local Package Source Catalog v1](adr-project-local-package-source-catalog-v1.md) 已以 portable
 `asharia.packages.sources.json` + process-local absolute mapping 派生 Project/local candidate snapshot。#303 的
 [Package Lock Update Plan 与 Impact Preview v1](adr-package-lock-update-plan-v1.md) 又增加 full/targeted-conservative no-write planner、
-explicit `CandidatePreference` / `candidatePreferences` 与 canonical graph-only preview。Atomic apply/journal/recovery、local mapping 产品配置与
-UI 仍是独立后继边界。
+explicit `CandidatePreference` / `candidatePreferences` 与 canonical graph-only preview。
+[Package Lock Apply Preconditions v1](adr-package-lock-apply-preconditions-v1.md) 已进一步增加无 IO、无 resolver 的 plan seal/current-facts
+revalidation；它必须在 writer exclusion 持有期间消费重新读取的 current facts。
+[Core Exclusive File Lock v1](adr-core-exclusive-file-lock-v1.md) 已增加 persistent sentinel + kernel lock 的非阻塞、move-only
+writer-exclusion primitive；sentinel 存在不代表占锁。Atomic apply/journal/recovery、local mapping 产品配置与 UI 仍是独立后继边界。
+Core 当前还提供
+[caller-owned staged preparation](adr-core-staged-file-preparation-v1.md) 与
+[recoverable single-file replacement](adr-core-staged-file-replacement-v1.md) primitives：前者 exclusive-create/write/flush/close
+staged bytes，后者保留旧 target backup；这些 Core primitives 不拥有 plan revalidation、Project/Lock path policy、目录 flush、
+journal 或跨文件 recovery。
 其他 concrete Host scopes、完整 system-instance/jobs/subscriptions lease、Memory & Budget、Settings、Runtime Storage、Tasks 等目标模块尚未实现。
 本文不能被用来宣称生产 Editor Bootstrap、Editor UI 或完整 Foundation Services 已经完成。
 
@@ -101,6 +109,10 @@ generated sealed current-image descriptor，不自 hash executable，也不等�
 - monotonic clock、线程/同步原语；
 - 启动所需的本地文件读取、atomic write、路径、进程和 dynamic library primitives；
 - 崩溃前仍可工作的最小 stderr/file log sink 与 fatal/crash capture hook。
+
+其中 caller-owned staged/backup 的单文件恢复替换遵循
+[Core Staged File Replacement v1](adr-core-staged-file-replacement-v1.md)：Core 只报告 commit 与
+artifact presence，不拥有多文件事务、journal、reader gate 或业务恢复策略。
 
 Kernel 不拥有 VFS、asset、job graph、CVar、World、script VM、Renderer、Editor transaction 或产品设置。
 package manifest/lock 的窄格式模型和解析由静态 bootstrap component `engine/package-runtime` 拥有；不能为了在启动期使用

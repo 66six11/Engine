@@ -1009,7 +1009,10 @@ sequenceDiagram
   #302 已实现 `asharia.packages.sources.json` 的 exact Project-embedded roots、logical local IDs 与 caller-provided process-local mapping
   provider；两个 providers 都不定义 source precedence；#303 已在它们之上增加 pure no-write full/targeted-conservative Lock update
   planner，以互斥 `unlockTargets` / `intentOnlyTargets` 区分主动解锁与 intent-only 授权，并用 explicit Resolver Policy v2
-  `CandidatePreference` / `candidatePreferences` 优先 non-unlock locked candidates；atomic apply/journal/recovery 仍为后继 Slice；
+  `CandidatePreference` / `candidatePreferences` 优先 non-unlock locked candidates；apply-precondition reference 已能在不重跑 resolver、
+  不写文件的前提下重建 plan seal 并复核 current Project/Lock/Distribution/candidates；Core 已提供 persistent sentinel +
+  kernel lock 的非阻塞 writer-exclusion primitive。Project-scoped path/diagnostics、把 revalidation 包入 lock lifetime、atomic apply 与
+  journal/recovery 仍为后继 Slice；
 - 先输出 canonical per-host logical composition，再由独立 adapters 输出 CMake build plan 和 artifact-neutral Host Activation Blueprint；构建后再绑定 verified executable registrations；不实现任意 native hot load；
 - 建立 `Minimal`、`Editor`、`Runtime`、`DedicatedServer`、`AssetWorker` Host Profiles，以及 versioned
   Standard3D/EditorAuthoring/DedicatedServer Feature Sets；五种 Host Profile 与从 composition 到 Blueprint/artifact/registration 的 contracts
