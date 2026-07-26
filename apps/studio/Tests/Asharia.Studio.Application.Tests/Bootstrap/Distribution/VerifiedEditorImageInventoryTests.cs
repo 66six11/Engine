@@ -122,6 +122,182 @@ public sealed class VerifiedEditorImageInventoryTests
     }
 
     [Fact]
+    public async Task VerifyAsync_rejects_malformed_manifest()
+    {
+        using var fixture = new DistributionFixture();
+        File.WriteAllText(fixture.ManifestPath, "{\n");
+
+        var result = await EngineDistributionEditorImageVerifier.VerifyAsync(
+            fixture.EngineGenerationId,
+            fixture.GenerationRoot);
+
+        Assert.False(result.Succeeded);
+        Assert.Null(result.Lease);
+        Assert.Contains(
+            result.Diagnostics,
+            diagnostic => diagnostic.Code
+                == "distribution.editor-image.manifest-invalid");
+    }
+
+    [Fact]
+    public async Task VerifyAsync_rejects_oversized_manifest_before_parsing()
+    {
+        using var fixture = new DistributionFixture();
+        using (var stream = new FileStream(
+                   fixture.ManifestPath,
+                   FileMode.Open,
+                   FileAccess.Write,
+                   FileShare.None))
+        {
+            stream.SetLength((64L * 1024 * 1024) + 1);
+        }
+
+        var result = await EngineDistributionEditorImageVerifier.VerifyAsync(
+            fixture.EngineGenerationId,
+            fixture.GenerationRoot);
+
+        Assert.False(result.Succeeded);
+        Assert.Null(result.Lease);
+        Assert.Contains(
+            result.Diagnostics,
+            diagnostic => diagnostic.Code
+                == "distribution.editor-image.manifest-read-failed");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task VerifyAsync_rejects_unknown_or_reordered_properties(
+        bool addUnknownProperty)
+    {
+        using var fixture = new DistributionFixture();
+        fixture.RewriteManifest(
+            root =>
+            {
+                if (addUnknownProperty)
+                {
+                    root["unexpected"] = true;
+                    return;
+                }
+
+                var schema = root["schema"]!.DeepClone();
+                Assert.True(root.Remove("schema"));
+                root["schema"] = schema;
+            });
+
+        var result = await EngineDistributionEditorImageVerifier.VerifyAsync(
+            fixture.EngineGenerationId,
+            fixture.GenerationRoot);
+
+        Assert.False(result.Succeeded);
+        Assert.Null(result.Lease);
+        Assert.Contains(
+            result.Diagnostics,
+            diagnostic => diagnostic.Code
+                == "distribution.editor-image.manifest-invalid");
+    }
+
+    [Fact]
+    public async Task VerifyAsync_rejects_unordered_editor_file_inventory()
+    {
+        using var fixture = new DistributionFixture();
+        fixture.RewriteManifest(
+            root =>
+            {
+                var files = root["editorImage"]!["files"]!.AsArray();
+                var first = files[0]!.DeepClone();
+                files[0] = files[1]!.DeepClone();
+                files[1] = first;
+            },
+            recomputeIdentity: true);
+
+        var result = await EngineDistributionEditorImageVerifier.VerifyAsync(
+            fixture.EngineGenerationId,
+            fixture.GenerationRoot);
+
+        Assert.False(result.Succeeded);
+        Assert.Null(result.Lease);
+        Assert.Contains(
+            result.Diagnostics,
+            diagnostic => diagnostic.Code
+                == "distribution.editor-image.manifest-invalid");
+    }
+
+    [Fact]
+    public async Task VerifyAsync_rejects_nonportable_editor_file_path()
+    {
+        using var fixture = new DistributionFixture();
+        fixture.RewriteManifest(root =>
+        {
+            var files = root["editorImage"]!["files"]!.AsArray();
+            files[1]!["path"] = "../outside-image.bin";
+        });
+
+        var result = await EngineDistributionEditorImageVerifier.VerifyAsync(
+            fixture.EngineGenerationId,
+            fixture.GenerationRoot);
+
+        Assert.False(result.Succeeded);
+        Assert.Null(result.Lease);
+        Assert.Contains(
+            result.Diagnostics,
+            diagnostic => diagnostic.Code
+                == "distribution.editor-image.manifest-invalid");
+    }
+
+    [Fact]
+    public async Task VerifyAsync_rejects_declared_editor_image_over_byte_budget()
+    {
+        using var fixture = new DistributionFixture();
+        fixture.RewriteManifest(
+            root =>
+            {
+                var files = root["editorImage"]!["files"]!.AsArray();
+                files[0]!["size"] = (4L * 1024 * 1024 * 1024) + 1;
+            },
+            recomputeIdentity: true);
+
+        var result = await EngineDistributionEditorImageVerifier.VerifyAsync(
+            fixture.EngineGenerationId,
+            fixture.GenerationRoot);
+
+        Assert.False(result.Succeeded);
+        Assert.Null(result.Lease);
+        Assert.Contains(
+            result.Diagnostics,
+            diagnostic => diagnostic.Code
+                == "distribution.editor-image.budget-exceeded");
+    }
+
+    [Fact]
+    public async Task VerifyAsync_rejects_nonexecutable_entry_point()
+    {
+        using var fixture = new DistributionFixture();
+        fixture.RewriteManifest(
+            root =>
+            {
+                var files = root["editorImage"]!["files"]!.AsArray();
+                var entry = Assert.Single(
+                    files,
+                    value => value!["path"]!.GetValue<string>()
+                        == "bin/editor.exe");
+                entry!["role"] = "resource";
+            },
+            recomputeIdentity: true);
+
+        var result = await EngineDistributionEditorImageVerifier.VerifyAsync(
+            fixture.EngineGenerationId,
+            fixture.GenerationRoot);
+
+        Assert.False(result.Succeeded);
+        Assert.Null(result.Lease);
+        Assert.Contains(
+            result.Diagnostics,
+            diagnostic => diagnostic.Code
+                == "distribution.editor-image.manifest-invalid");
+    }
+
+    [Fact]
     public async Task VerifyAsync_rejects_case_insensitive_duplicate_paths()
     {
         using var fixture = new DistributionFixture(
@@ -358,9 +534,41 @@ public sealed class VerifiedEditorImageInventoryTests
 
         public string Root { get; }
 
-        public string EngineGenerationId { get; }
+        public string EngineGenerationId { get; private set; }
 
-        public string GenerationRoot { get; }
+        public string GenerationRoot { get; private set; }
+
+        public string ManifestPath => Path.Combine(
+            GenerationRoot,
+            "asharia.engine-distribution.json");
+
+        public void RewriteManifest(
+            Action<JsonObject> rewrite,
+            bool recomputeIdentity = false)
+        {
+            ArgumentNullException.ThrowIfNull(rewrite);
+            var root = JsonNode.Parse(File.ReadAllBytes(ManifestPath))!
+                .AsObject();
+            rewrite(root);
+            if (recomputeIdentity)
+            {
+                var payload = root.DeepClone().AsObject();
+                Assert.True(payload.Remove("engineGenerationId"));
+                var nextGenerationId = "sha256-"
+                    + Convert.ToHexString(
+                        SHA256.HashData(RenderJson(payload)))
+                        .ToLowerInvariant();
+                root["engineGenerationId"] = nextGenerationId;
+                var nextGenerationRoot = Path.Combine(
+                    Root,
+                    nextGenerationId);
+                Directory.Move(GenerationRoot, nextGenerationRoot);
+                EngineGenerationId = nextGenerationId;
+                GenerationRoot = nextGenerationRoot;
+            }
+
+            File.WriteAllBytes(ManifestPath, RenderJson(root));
+        }
 
         public bool TryReplaceWithSymbolicLink(string relativePath)
         {
