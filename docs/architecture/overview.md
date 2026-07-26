@@ -95,7 +95,11 @@ Asharia Engine 当前目标仍是先做一个小而完整的 Vulkan renderer，�
   controller-owned 短路径，从 credential exact closure 物化 sealed dotnet execution mirror，以空白 allowlist 环境依次
   执行 SDK probe、explicit restore 和 `build --no-restore`，再只原子发布 implementation DLL、reference DLL、
   portable PDB 与 `.deps.json` 四类 raw output。source/credential/workspace/SDK mirror 漂移、超时、取消或
-  supersession 都 fail closed；该路径仍不支持 `.asmdef`/Package，不检查 CLR artifact，也不加载 assembly。
+  supersession 都 fail closed。artifact inspector 只消费 current raw-output lease，使用 BCL
+  `PEReader`/`MetadataReader` 无执行复验 implementation/reference identity、MVID/IL flags、credential
+  reference closure、exact reference marker、PE-associated portable PDB/canonical documents 与严格
+  single-project `.deps.json`，并签发不含绝对路径的 content-addressed metadata report；它不发布 candidate、
+  不创建 ALC，也不加载 assembly。该路径仍不支持 `.asmdef`/Package。
   Studio 在 Windows 上必须优先配置 `Win32RenderingMode.Vulkan`，再回退到 `AngleEgl` / `Software`，否则 Avalonia
   composition GPU interop 可能只暴露 D3D/ANGLE 共享纹理路径，无法进入 Vulkan opaque NT image/semaphore spike。
 

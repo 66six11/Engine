@@ -1267,7 +1267,7 @@ internal sealed class ProjectCodeSdkBuildController : IDisposable
             Array.AsReadOnly(finalFiles));
     }
 
-    private static string ComputeRawOutputId(
+    internal static string ComputeRawOutputId(
         ProjectCodeImplicitSdkWorkspace workspace,
         IReadOnlyList<ProjectCodeRawBuildOutputFile> files)
     {

@@ -26,7 +26,8 @@ built-in extension host、Code-first UI、Scene snapshot、panel scheduler 和 W
 verifier，并可从 current inventory lease 投影 Distribution-bound managed build environment inventory；
 Project Code 还能把该 projection 复验为 semantic build credential，并为 caller 已规范化的项目根
 `Editor/**/*.cs` 原子生成 implicit SDK workspace，再使用 credential-bound dotnet closure 执行隔离
-restore/build 并发布四类 raw build output；artifact inspection/load pipeline 尚未落地。
+restore/build 并发布四类 raw build output；current raw-output lease 现在还能经过无执行 artifact metadata
+inspection，load/candidate pipeline 尚未落地。
 
 当前仍为 Partial：
 
@@ -84,8 +85,16 @@ explicit restore 与 `build --no-restore`；进程不经过 shell，stdout/stder
 同一 project 的新调用 supersede 旧调用。每个外部步骤后重新验证 workspace 与 SDK mirror，最后只复制并 hash
 implementation DLL、reference DLL、portable PDB 和 `.deps.json`，在确认输入仍 current 后原子发布 immutable raw
 output lease。raw output identity 绑定 workspace identity 与四个文件 envelope，不绑定 checkout、cache 或临时路径。
-该 controller 不解析 CLR metadata、不生成 module index、不加载 candidate；`.asmdef`、Package/Avalonia resources、
-NuGet lock、aggregate host、artifact inspection 与 ALC generation 仍是后继边界。
+该 controller 不解析 CLR metadata、不生成 module index、不加载 candidate。
+
+`ProjectCodeArtifactInspector` 只接受 current raw-output lease。它在检查前后复验 source/credential/workspace 与
+四文件 envelope，只用 BCL `PEReader`/`MetadataReader` 读取 implementation/reference identity、module/MVID、
+IL-only flags、exact `ReferenceAssemblyAttribute` 和 credential reference closure；portable PDB 必须由 PE
+CodeView/content ID 关联且只含 canonical `PathMap` document，`.deps.json` 必须精确匹配当前 net10.0
+single-project shape。成功报告只含相对路径、hash 和 path-free metadata，report identity 跨等价 physical
+output root 稳定。该步骤不调用 `Assembly.Load`/`MetadataLoadContext`、不创建 ALC，也不发布 generation
+candidate；`.asmdef`、Package/Avalonia resources、NuGet lock、aggregate host、module index、candidate
+publication 与 ALC generation 仍是后继边界。
 
 这些是 Application 层的产品策略，直接使用 .NET BCL 文件 API。Avalonia `IStorageProvider` 只负责用户文件
 选择、bookmark 和平台权限 UI；native Core File IO 服务于 C++ engine/runtime 的低层 IO 与事务，不反向成为
@@ -325,8 +334,8 @@ git diff --check
 - 现有 Code-first contract 仍在 `Core`，built-in Feature 仍可访问 Shell implementation；
 - Project Code 当前已落地 exact Editor Image、managed build environment inventory lease 与 Windows x64
   semantic build credential、caller-bound 项目根 `Editor/**/*.cs` implicit SDK workspace，以及 credential-bound
-  isolated restore/build 和 immutable raw output；正式 ProjectSession/manifest handoff、`.asmdef`、Package、
-  artifact inspection 和 ALC pipeline 尚未实现；
+  isolated restore/build、immutable raw output 和 no-execute artifact metadata report；正式 ProjectSession/
+  manifest handoff、`.asmdef`、Package、module index/candidate publication 和 ALC pipeline 尚未实现；
 - App shutdown 仍有 sync-over-async；
 - Game View、PlaySession 和 standalone orchestration 未完成；
 - Linux/macOS GPU presentation 尚未验证；

@@ -685,7 +685,7 @@ internal static class ProjectCodeImplicitSdkWorkspaceBuilder
             <OutputPath>$(MSBuildThisFileDirectory)out/</OutputPath>
             <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
             <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
-            <PathMap>$(MSBuildThisFileDirectory)input/project=/_/Project,$(MSBuildThisFileDirectory)=/_/Build</PathMap>
+            <PathMap>$(MSBuildThisFileDirectory)input\project=/_/Project,$(MSBuildThisFileDirectory)=/_/Build</PathMap>
             <NuGetAudit>false</NuGetAudit>
           </PropertyGroup>
         </Project>

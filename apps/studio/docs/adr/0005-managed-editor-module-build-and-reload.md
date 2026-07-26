@@ -29,9 +29,16 @@
 - artifact path 以 Package generation、目标 RID 和完整 input fingerprint 分代；
 - fingerprint 包含 source、`.asmdef`、Package lock、Editor API、SDK、analyzer/source generator 和 RID；
 - generated project 使用 canonical source root、`PathMap` 和 deterministic/CI build setting，不把 checkout/cache 绝对路径写入 artifact；
+- raw build product 在 candidate publication 或任何 assembly load 前，必须通过不执行代码的 PE/reference/PDB/dependency metadata inspection；检查只接受 build credential 和 current raw-output lease 已声明的文件与 identity；
 - build diagnostic 结构化投影到 Problems/Console；
 - `FileSystemWatcher` 只触发 debounce，重新计算 fingerprint 才决定是否构建；
 - 构建期间输入再次变化时取消或丢弃旧结果。
+
+这里采用 Unreal `FBuildProduct` 的 typed build-product receipt 与后续 stage/validation 分界，并采用 Godot
+managed tooling 中 build orchestration 与 assembly reload 分离的 owner 边界。当前 Asharia implicit Slice
+只有一个 credential-bound assembly，不复制 Unreal 的 native product taxonomy，也不引入 Stride
+AssemblyProcessor/Mono.Cecil 式 IL scan/rewrite；后者属于 module-index 或代码变换阶段。当前身份、引用闭包、
+reference marker 和 PDB/deps 验证由 .NET BCL `PEReader`/`MetadataReader` 完成，保持无第三方依赖、无执行路径。
 
 ### Identity and reload unit
 

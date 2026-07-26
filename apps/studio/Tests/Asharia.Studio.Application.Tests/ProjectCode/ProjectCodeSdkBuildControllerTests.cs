@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection.PortableExecutable;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -74,17 +76,133 @@ public sealed class ProjectCodeSdkBuildControllerTests
         Assert.True(
             await ProjectCodeSdkBuildController
                 .IsRawOutputCurrentAsync(result.Lease));
+        var inspection =
+            await ProjectCodeArtifactInspector.InspectAsync(result.Lease);
+        Assert.True(inspection.Succeeded, Render(inspection));
+        var report = inspection.Report!;
+        Assert.Equal(output.OutputId, report.RawOutputId);
+        Assert.Equal(output.ProjectId, report.ProjectId);
+        Assert.Equal(output.WorkspaceId, report.WorkspaceId);
+        Assert.Equal(output.CredentialId, report.CredentialId);
+        Assert.Equal(output.SdkVersion, report.SdkVersion);
+        Assert.Equal(output.TargetFramework, report.TargetFramework);
+        Assert.Equal(output.AssemblyName, report.AssemblyName);
+        Assert.Equal(CorFlags.ILOnly, report.Implementation.ImageFlags);
+        Assert.Equal(CorFlags.ILOnly, report.ReferenceAssembly.ImageFlags);
+        Assert.False(report.Implementation.IsReferenceAssembly);
+        Assert.True(report.ReferenceAssembly.IsReferenceAssembly);
+        Assert.Equal(
+            report.Implementation.Identity.FullName,
+            report.ReferenceAssembly.Identity.FullName);
+        Assert.Contains(
+            "/_/Project/Editor/RealBuild.cs",
+            report.PortablePdb.Documents);
+        Assert.Equal(
+            ExpectedOutputPaths(workspace.Workspace).Order(),
+            new[]
+            {
+                report.Implementation.File.RelativePath,
+                report.ReferenceAssembly.File.RelativePath,
+                report.PortablePdb.File.RelativePath,
+                report.Dependencies.File.RelativePath,
+            }.Order());
         var equivalent = await controller.ExecuteLatestAsync(
             new ProjectCodeSdkBuildRequest(
                 workspace,
                 OutputRoot(project, "equivalent")));
         Assert.True(equivalent.Succeeded, Render(equivalent));
+        var equivalentLease = equivalent.Lease!;
         Assert.Equal(
             output.OutputId,
-            equivalent.Lease!.Output.OutputId);
+            equivalentLease.Output.OutputId);
         Assert.Equal(
             output.Files.Select(FileEnvelope),
-            equivalent.Lease.Output.Files.Select(FileEnvelope));
+            equivalentLease.Output.Files.Select(FileEnvelope));
+        var equivalentInspection =
+            await ProjectCodeArtifactInspector.InspectAsync(
+                equivalentLease);
+        Assert.True(
+            equivalentInspection.Succeeded,
+            Render(equivalentInspection));
+        Assert.Equal(
+            report.ReportId,
+            equivalentInspection.Report!.ReportId);
+
+        var mutableOutput = equivalentLease.Output;
+        var dependencyPath = mutableOutput.Files
+            .Single(file => file.RelativePath
+                == mutableOutput.DependencyFileRelativePath)
+            .AbsolutePath;
+        var dependencyContents = File.ReadAllBytes(dependencyPath);
+        try
+        {
+            File.WriteAllText(
+                dependencyPath,
+                "{}\n",
+                new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+            var malformedDependencies =
+                await ProjectCodeArtifactInspector.InspectAsync(
+                    RefreshRawOutputLease(workspace, mutableOutput));
+            Assert.Contains(
+                malformedDependencies.Diagnostics,
+                diagnostic => diagnostic.Code
+                    == "project-code.artifact.dependencies-invalid");
+        }
+        finally
+        {
+            File.WriteAllBytes(dependencyPath, dependencyContents);
+        }
+
+        var portablePdbPath = mutableOutput.Files
+            .Single(file => file.RelativePath
+                == mutableOutput.PortablePdbRelativePath)
+            .AbsolutePath;
+        var portablePdbContents = File.ReadAllBytes(portablePdbPath);
+        try
+        {
+            File.WriteAllBytes(portablePdbPath, [0x00, 0x01, 0x02]);
+            var mismatchedPdb =
+                await ProjectCodeArtifactInspector.InspectAsync(
+                    RefreshRawOutputLease(workspace, mutableOutput));
+            Assert.Contains(
+                mismatchedPdb.Diagnostics,
+                diagnostic => diagnostic.Code
+                    == "project-code.artifact.portable-pdb-invalid");
+        }
+        finally
+        {
+            File.WriteAllBytes(portablePdbPath, portablePdbContents);
+        }
+
+        var implementationPath = mutableOutput.Files
+            .Single(file => file.RelativePath
+                == mutableOutput.ImplementationAssemblyRelativePath)
+            .AbsolutePath;
+        var referencePath = mutableOutput.Files
+            .Single(file => file.RelativePath
+                == mutableOutput.ReferenceAssemblyRelativePath)
+            .AbsolutePath;
+        var referenceContents = File.ReadAllBytes(referencePath);
+        try
+        {
+            File.Copy(implementationPath, referencePath, overwrite: true);
+            var missingReferenceMarker =
+                await ProjectCodeArtifactInspector.InspectAsync(
+                    RefreshRawOutputLease(workspace, mutableOutput));
+            Assert.Contains(
+                missingReferenceMarker.Diagnostics,
+                diagnostic => diagnostic.Code
+                    == "project-code.artifact.reference-marker-missing");
+        }
+        finally
+        {
+            File.WriteAllBytes(referencePath, referenceContents);
+        }
+
+        Assert.DoesNotContain(
+            output.AbsoluteRoot,
+            report.ToString(),
+            StringComparison.OrdinalIgnoreCase);
         AssertNoAbsolutePathLeak(
             result,
             project.ProjectRoot,
@@ -93,6 +211,41 @@ public sealed class ProjectCodeSdkBuildControllerTests
             Path.GetDirectoryName(
                 credential.Credential.DotnetExecutable)!);
         AssertNoOwnedOutputCandidates(Path.GetDirectoryName(outputRoot)!);
+    }
+
+    [Fact]
+    public async Task Artifact_inspector_rejects_non_managed_raw_output()
+    {
+        using var environment = new SemanticEnvironmentFixture();
+        var credential = await CreateCredentialAsync(environment);
+        using var project = new ProjectFixture();
+        project.WriteEditorSource(
+            "Invalid.cs",
+            "public sealed class Invalid {}\n");
+        var workspace = await CreateWorkspaceAsync(project, credential);
+        using var controller = new ProjectCodeSdkBuildController(
+            SuccessfulRunner());
+        var build = await controller.ExecuteLatestAsync(
+            new ProjectCodeSdkBuildRequest(
+                workspace,
+                OutputRoot(project, "invalid-artifacts")));
+        Assert.True(build.Succeeded, Render(build));
+        var lease = build.Lease!;
+
+        var inspection =
+            await ProjectCodeArtifactInspector.InspectAsync(lease);
+
+        Assert.False(inspection.Succeeded);
+        Assert.Null(inspection.Report);
+        Assert.Contains(
+            inspection.Diagnostics,
+            diagnostic => diagnostic.Code
+                == "project-code.artifact.managed-image-invalid");
+        Assert.DoesNotContain(
+            inspection.Diagnostics,
+            diagnostic => diagnostic.Message.Contains(
+                lease.Output.AbsoluteRoot,
+                StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -583,6 +736,12 @@ public sealed class ProjectCodeSdkBuildControllerTests
         Assert.False(
             await ProjectCodeSdkBuildController
                 .IsRawOutputCurrentAsync(first.Lease));
+        var driftedInspection =
+            await ProjectCodeArtifactInspector.InspectAsync(first.Lease);
+        Assert.Contains(
+            driftedInspection.Diagnostics,
+            diagnostic => diagnostic.Code
+                == "project-code.artifact.raw-output-not-current");
 
         var second = await controller.ExecuteLatestAsync(
             new ProjectCodeSdkBuildRequest(
@@ -594,6 +753,12 @@ public sealed class ProjectCodeSdkBuildControllerTests
         Assert.False(
             await ProjectCodeSdkBuildController
                 .IsRawOutputCurrentAsync(second.Lease));
+        var revokedInspection =
+            await ProjectCodeArtifactInspector.InspectAsync(second.Lease);
+        Assert.Contains(
+            revokedInspection.Diagnostics,
+            diagnostic => diagnostic.Code
+                == "project-code.artifact.raw-output-not-current");
         Assert.True(workspace.IsCurrent);
     }
 
@@ -727,6 +892,41 @@ public sealed class ProjectCodeSdkBuildControllerTests
         ProjectCodeRawBuildOutputFile file) =>
         $"{file.RelativePath}|{file.Size}|{file.Sha256}";
 
+    private static ProjectCodeRawBuildOutputLease RefreshRawOutputLease(
+        ProjectCodeImplicitSdkWorkspaceLease workspaceLease,
+        ProjectCodeRawBuildOutput source)
+    {
+        var files = source.Files
+            .Select(file =>
+            {
+                var contents = File.ReadAllBytes(file.AbsolutePath);
+                return new ProjectCodeRawBuildOutputFile(
+                    file.RelativePath,
+                    file.AbsolutePath,
+                    contents.LongLength,
+                    Convert.ToHexString(SHA256.HashData(contents))
+                        .ToLowerInvariant());
+            })
+            .ToArray();
+        var output = new ProjectCodeRawBuildOutput(
+            ProjectCodeSdkBuildController.ComputeRawOutputId(
+                workspaceLease.Workspace,
+                files),
+            source.ProjectId,
+            source.WorkspaceId,
+            source.CredentialId,
+            source.SdkVersion,
+            source.TargetFramework,
+            source.AssemblyName,
+            source.AbsoluteRoot,
+            source.ImplementationAssemblyRelativePath,
+            source.ReferenceAssemblyRelativePath,
+            source.PortablePdbRelativePath,
+            source.DependencyFileRelativePath,
+            Array.AsReadOnly(files));
+        return new ProjectCodeRawBuildOutputLease(workspaceLease, output);
+    }
+
     private static void AssertNoOwnedOutputCandidates(string parent)
     {
         Assert.DoesNotContain(
@@ -763,6 +963,13 @@ public sealed class ProjectCodeSdkBuildControllerTests
                 $"{diagnostic.Code} {diagnostic.Step} {diagnostic.Location}: {diagnostic.Message}")
                 .Concat(result.Steps.Select(step =>
                     $"{step.Kind} exit={step.ExitCode}\n{step.StandardOutput}\n{step.StandardError}")));
+
+    private static string Render(
+        ProjectCodeArtifactInspectionResult result) =>
+        string.Join(
+            Environment.NewLine,
+            result.Diagnostics.Select(diagnostic =>
+                $"{diagnostic.Code} {diagnostic.Location}: {diagnostic.Message}"));
 
     private sealed class CallbackProcessRunner(
         Func<
