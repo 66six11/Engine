@@ -85,7 +85,9 @@ Asharia Engine 当前目标仍是先做一个小而完整的 Vulkan renderer，�
   native GPU resource，只通过 `editor_native` ABI 请求 native-owned present packet 并在 managed import/update 后释放。
   `Asharia.Studio.Application.Bootstrap.Distribution` 只从外部 owner 已选择的 exact
   `EngineGenerationId` 与 generation root 复验 Editor Image inventory，并签发进程内可撤销 lease；它不负责
-  generation selection、完整 Distribution health、repair/install/update 或项目 package graph。
+  generation selection、完整 Distribution health、repair/install/update 或项目 package graph。current Editor
+  Image lease 可以继续投影发行版固定的 `managed/dotnet` host、SDK、hostfxr、runtime、reference pack 与
+  Runtime/Editor contracts，但该 closed inventory projection 不执行 dotnet，也不等同 semantic build credential。
   Studio 在 Windows 上必须优先配置 `Win32RenderingMode.Vulkan`，再回退到 `AngleEgl` / `Software`，否则 Avalonia
   composition GPU interop 可能只暴露 D3D/ANGLE 共享纹理路径，无法进入 Vulkan opaque NT image/semaphore spike。
 

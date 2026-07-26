@@ -475,7 +475,7 @@ public sealed class VerifiedEditorImageInventoryTests
             "Could not locate repository root.");
     }
 
-    private sealed class DistributionFixture : IDisposable
+    internal sealed class DistributionFixture : IDisposable
     {
         public DistributionFixture(
             IReadOnlyList<string>? editorPaths = null,
@@ -562,12 +562,70 @@ public sealed class VerifiedEditorImageInventoryTests
                 var nextGenerationRoot = Path.Combine(
                     Root,
                     nextGenerationId);
-                Directory.Move(GenerationRoot, nextGenerationRoot);
+                if (!string.Equals(
+                        GenerationRoot,
+                        nextGenerationRoot,
+                        StringComparison.Ordinal))
+                {
+                    Directory.Move(GenerationRoot, nextGenerationRoot);
+                }
+
                 EngineGenerationId = nextGenerationId;
                 GenerationRoot = nextGenerationRoot;
             }
 
             File.WriteAllBytes(ManifestPath, RenderJson(root));
+        }
+
+        public void AddInventoryFiles(
+            IReadOnlyDictionary<string, byte[]> files)
+        {
+            ArgumentNullException.ThrowIfNull(files);
+            foreach (var (relativePath, contents) in files)
+            {
+                var absolutePath = Path.Combine(
+                    GenerationRoot,
+                    relativePath.Replace(
+                        '/',
+                        Path.DirectorySeparatorChar));
+                Directory.CreateDirectory(
+                    Path.GetDirectoryName(absolutePath)!);
+                File.WriteAllBytes(absolutePath, contents);
+            }
+
+            RewriteManifest(
+                root =>
+                {
+                    var editorFiles = root["editorImage"]!["files"]!
+                        .AsArray();
+                    var combined = editorFiles
+                        .Select(value => value!.DeepClone())
+                        .Concat(files.Select(item =>
+                            (JsonNode)new JsonObject
+                            {
+                                ["path"] = item.Key,
+                                ["role"] = ClassifyRole(item.Key),
+                                ["mediaType"] = ClassifyMediaType(item.Key),
+                                ["size"] = item.Value.LongLength,
+                                ["integrity"] = new JsonObject
+                                {
+                                    ["algorithm"] = "sha256",
+                                    ["digest"] = Convert.ToHexString(
+                                            SHA256.HashData(item.Value))
+                                        .ToLowerInvariant(),
+                                },
+                            }))
+                        .OrderBy(
+                            value => value["path"]!.GetValue<string>(),
+                            Utf8Comparer.Instance)
+                        .ToArray();
+                    editorFiles.Clear();
+                    foreach (var value in combined)
+                    {
+                        editorFiles.Add(value);
+                    }
+                },
+                recomputeIdentity: true);
         }
 
         public bool TryReplaceWithSymbolicLink(string relativePath)
@@ -718,7 +776,7 @@ public sealed class VerifiedEditorImageInventoryTests
                 : "application/octet-stream";
         }
 
-        private static byte[] RenderJson(JsonObject value)
+        internal static byte[] RenderJson(JsonObject value)
         {
             var text = JsonSerializer.Serialize(value, JsonOptions)
                 .Replace("\r\n", "\n", StringComparison.Ordinal);

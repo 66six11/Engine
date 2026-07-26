@@ -23,7 +23,8 @@ Studio 不拥有 Engine truth。World、simulation、renderer、Vulkan device、
 built-in extension host、Code-first UI、Scene snapshot、panel scheduler 和 Windows Scene View GPU interop 的 v0 路径。
 `Asharia.Studio.sln` 已包含独立 `Asharia.Editor`、`Asharia.Runtime.Contracts` 与
 `Asharia.Studio.Application`；Application 已拥有 static module host 基线和只读 Editor Image inventory
-verifier，但 Project Code workspace/build/artifact pipeline 尚未落地。
+verifier，并可从 current inventory lease 投影 Distribution-bound managed build environment inventory；
+Project Code semantic credential、workspace/build/artifact pipeline 尚未落地。
 
 当前仍为 Partial：
 
@@ -48,6 +49,14 @@ verifier，但 Project Code workspace/build/artifact pipeline 尚未落地。
 该 lease 不是完整 `VerifiedInstalledDistribution` 或 `DistributionHealthReport`：它不复验 bundled
 package、package artifact 或 Host Profile bytes，也不拥有 current selection、repair、install、update 或
 restart。后继 Project Code 服务只能从 current lease 查询声明文件，不能重新扫描任意目录。
+
+`EngineDistributionManagedBuildEnvironmentLoader` 进一步只读取 inventory 中固定的
+`metadata/managed-build-environment.json`，把 `managed/dotnet` 下的 host、exact SDK、hostfxr、host runtime、
+reference pack 和 `bin/` 下两份 Runtime/Editor contract 绑定成可撤销 projection lease。dotnet root 必须对
+这些选择保持 closed；loader 只把调用方提供的 process context 与 lease 交叉核对，projection identity 同时
+绑定 Engine generation、context、声明与 selected file evidence。该 projection 仍不是 build execution
+credential：它不解析 SDK XML/runtimeconfig 或 assembly identity，不运行 `dotnet`，也不扫描 PATH、global
+SDK 或 inventory 外目录。
 
 这是 Application 层的只读产品策略，直接使用 .NET BCL 文件 API。Avalonia `IStorageProvider` 只负责用户文件
 选择、bookmark 和平台权限 UI；native Core File IO 服务于 C++ engine/runtime 的低层 IO 与事务，不反向成为
@@ -224,7 +233,8 @@ Extension 构建/加载：
 ```text
 externally selected EngineGenerationId + generation root
   -> exact, revocable Editor Image inventory lease
-Editor/ or Package + lease-bound managed build environment
+  -> exact, revocable managed build environment inventory lease
+Editor/ or Package + future semantic execution credential
   -> optional asmdef + package metadata
   -> fingerprint + dotnet build
   -> staged AssemblyLoadContext
@@ -283,8 +293,9 @@ git diff --check
 
 - 八项目边界尚未落地；
 - 现有 Code-first contract 仍在 `Core`，built-in Feature 仍可访问 Shell implementation；
-- Project Code 当前只落地 exact Editor Image inventory lease；managed build environment、项目
-  `Editor/`、`.asmdef`、Package、artifact inspection 和 ALC pipeline 尚未实现；
+- Project Code 当前只落地 exact Editor Image 与 managed build environment inventory lease；SDK/contract
+  semantic execution credential、项目 `Editor/`、`.asmdef`、Package、artifact inspection 和 ALC pipeline
+  尚未实现；
 - App shutdown 仍有 sync-over-async；
 - Game View、PlaySession 和 standalone orchestration 未完成；
 - Linux/macOS GPU presentation 尚未验证；

@@ -93,6 +93,16 @@ internal sealed class VerifiedEditorImageInventoryLease
         }
     }
 
+    internal bool TryGetCurrentFiles(
+        out IReadOnlyList<VerifiedEditorImageFile>? files)
+    {
+        lock (stateGate_)
+        {
+            files = IsCurrent ? Files : null;
+            return files is not null;
+        }
+    }
+
     internal void Revoke()
     {
         lock (stateGate_)
