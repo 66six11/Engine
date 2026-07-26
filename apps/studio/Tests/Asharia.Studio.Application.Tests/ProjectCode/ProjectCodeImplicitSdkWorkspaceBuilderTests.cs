@@ -633,7 +633,7 @@ public sealed class ProjectCodeImplicitSdkWorkspaceBuilderTests
             result.Diagnostics.Select(diagnostic =>
                 $"{diagnostic.Code} {diagnostic.Location}: {diagnostic.Message}"));
 
-    private sealed class ProjectFixture : IDisposable
+    internal sealed class ProjectFixture : IDisposable
     {
         private readonly string root_;
 

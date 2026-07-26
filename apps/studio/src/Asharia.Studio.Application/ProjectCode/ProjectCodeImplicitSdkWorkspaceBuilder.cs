@@ -662,6 +662,14 @@ internal static class ProjectCodeImplicitSdkWorkspaceBuilder
             <EnableDefaultNoneItems>false</EnableDefaultNoneItems>
             <DiscoverEditorConfigFiles>false</DiscoverEditorConfigFiles>
             <DiscoverGlobalAnalyzerConfigFiles>false</DiscoverGlobalAnalyzerConfigFiles>
+            <EnableNETAnalyzers>false</EnableNETAnalyzers>
+            <RunAnalyzers>false</RunAnalyzers>
+            <SuppressImplicitGitSourceLink>true</SuppressImplicitGitSourceLink>
+            <UseAppHost>false</UseAppHost>
+            <EnableTargetingPackDownload>false</EnableTargetingPackDownload>
+            <EnableRuntimePackDownload>false</EnableRuntimePackDownload>
+            <EnableAppHostPackDownload>false</EnableAppHostPackDownload>
+            <DisableTransitiveFrameworkReferenceDownloads>true</DisableTransitiveFrameworkReferenceDownloads>
             <ImportDirectoryPackagesProps>false</ImportDirectoryPackagesProps>
             <MSBuildEnableWorkloadResolver>false</MSBuildEnableWorkloadResolver>
             <ImportUserLocationsByWildcardBeforeMicrosoftCommonProps>false</ImportUserLocationsByWildcardBeforeMicrosoftCommonProps>

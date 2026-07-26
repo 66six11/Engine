@@ -345,6 +345,41 @@ flowchart LR
 current selection、Project Open 或 Host activation。Editor Image 的资格检查不加载或执行候选输入，也不证明 ABI、
 launch behavior 或 runtime health。
 
+## Studio Project Code 隔离 SDK 构建流（#305–#310）
+
+这是 `Asharia.Studio.Application` 的 headless Project Code control plane，不经过 Avalonia storage API，也不加载
+项目 assembly：
+
+```mermaid
+flowchart LR
+    Image["current Editor Image inventory lease"]
+    Projection["managed build environment projection"]
+    Credential["Windows x64 semantic build credential"]
+    Source["canonical project root<br/>exact Editor/**/*.cs"]
+    Workspace["immutable implicit SDK workspace"]
+    Mirror["short-lived sealed dotnet mirror<br/>controller-owned temp root"]
+    Restore["exact SDK probe<br/>explicit restore"]
+    Build["build --no-restore<br/>bounded process"]
+    Raw["immutable raw output<br/>DLL + ref DLL + PDB + deps.json"]
+    Inspect["artifact inspection / module index<br/>next slice"]
+
+    Image --> Projection
+    Projection --> Credential
+    Credential --> Workspace
+    Source --> Workspace
+    Credential --> Mirror
+    Workspace --> Mirror
+    Mirror --> Restore
+    Restore --> Build
+    Build --> Raw
+    Raw -.not implemented.-> Inspect
+```
+
+workspace 和 dotnet closure 在每个外部步骤后复验；同 project 新调用会 supersede 旧调用。CLI 环境从空白
+allowlist 构造，工作根使用固定短前缀以保留 Windows legacy path budget；最终 candidate 留在 output 同级并以
+directory move 发布。失败、timeout、cancel、output overflow、输入/SDK drift 都不发布 raw output，也不修改
+active/LKG 状态；#310 尚未建立这两类状态。
+
 ## 当前架构总览
 
 这张图按“谁拥有抽象、谁拥有 Vulkan、谁负责组装运行”来读。横向是包边界，纵向是每帧数据从应用入口落到

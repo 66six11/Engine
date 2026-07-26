@@ -325,7 +325,9 @@ public sealed class ProjectCodeBuildEnvironmentCredentialResolverTests
         private readonly DistributionFixture distribution_;
         private readonly string targetPlatform_;
 
-        public SemanticEnvironmentFixture(string? mutation = null)
+        public SemanticEnvironmentFixture(
+            string? mutation = null,
+            bool executable = false)
         {
             var installed = Installed.Value;
             SdkVersion = installed.SdkVersion;
@@ -347,6 +349,12 @@ public sealed class ProjectCodeBuildEnvironmentCredentialResolverTests
 
             distribution_ = new DistributionFixture();
             distribution_.AddInventoryFiles(files);
+            if (executable)
+            {
+                distribution_.AddInventoryFilesFromSources(
+                    installed.CreateExecutableSources(files.Keys));
+            }
+
             if (mutation == "context-linux")
             {
                 distribution_.RewriteManifest(
@@ -595,6 +603,7 @@ public sealed class ProjectCodeBuildEnvironmentCredentialResolverTests
         string ReferenceSystemRuntimePath,
         string RuntimeContractPath,
         string EditorContractPath,
+        string DotnetSourceRoot,
         IReadOnlyDictionary<string, byte[]> Files)
     {
         public static InstalledInputs Load()
@@ -720,7 +729,87 @@ public sealed class ProjectCodeBuildEnvironmentCredentialResolverTests
                 referenceSystemRuntimePath,
                 runtimeContractPath,
                 editorContractPath,
+                dotnetRoot,
                 files);
+        }
+
+        public IReadOnlyDictionary<string, string> CreateExecutableSources(
+            IEnumerable<string> existingPaths)
+        {
+            var existing = existingPaths.ToHashSet(StringComparer.Ordinal);
+            var sources = new Dictionary<string, string>(
+                StringComparer.Ordinal);
+            var sdkRoot = Path.Combine(
+                DotnetSourceRoot,
+                "sdk",
+                SdkVersion);
+            AddDirectory(sdkRoot, SearchOption.TopDirectoryOnly);
+            foreach (var relativeRoot in new[]
+            {
+                "Current",
+                "Extensions",
+                "Microsoft",
+                "ref",
+                "Roslyn",
+                "runtimes",
+                "SdkResolvers",
+                "trustedroots",
+                "Sdks/Microsoft.NET.Sdk/analyzers/build",
+                "Sdks/Microsoft.NET.Sdk/codestyle/cs/build",
+                "Sdks/Microsoft.NET.Sdk/Sdk",
+                "Sdks/Microsoft.NET.Sdk/targets",
+                "Sdks/Microsoft.NET.Sdk/tools",
+            })
+            {
+                AddDirectory(
+                    Path.Combine(
+                        sdkRoot,
+                        relativeRoot.Replace(
+                            '/',
+                            Path.DirectorySeparatorChar)),
+                    SearchOption.AllDirectories);
+            }
+
+            foreach (var root in new[]
+            {
+                Path.Combine(
+                    DotnetSourceRoot,
+                    "host",
+                    "fxr",
+                    RuntimeVersion),
+                Path.Combine(
+                    DotnetSourceRoot,
+                    "shared",
+                    "Microsoft.NETCore.App",
+                    RuntimeVersion),
+                Path.Combine(
+                    DotnetSourceRoot,
+                    "packs",
+                    "Microsoft.NETCore.App.Ref",
+                    ReferencePackVersion),
+            })
+            {
+                AddDirectory(root, SearchOption.AllDirectories);
+            }
+
+            return sources;
+
+            void AddDirectory(string root, SearchOption searchOption)
+            {
+                foreach (var source in Directory.EnumerateFiles(
+                    root,
+                    "*",
+                    searchOption))
+                {
+                    var relativePath = "managed/dotnet/"
+                        + Path.GetRelativePath(DotnetSourceRoot, source)
+                            .Replace(Path.DirectorySeparatorChar, '/');
+                    if (!existing.Contains(relativePath))
+                    {
+                        sources.Add(relativePath, source);
+                    }
+                }
+            }
         }
 
         private static byte[] CreateMetadata(

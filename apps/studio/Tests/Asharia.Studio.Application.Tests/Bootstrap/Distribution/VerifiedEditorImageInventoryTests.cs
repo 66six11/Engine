@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Encodings.Web;
@@ -627,6 +628,99 @@ public sealed class VerifiedEditorImageInventoryTests
                 },
                 recomputeIdentity: true);
         }
+
+        public void AddInventoryFilesFromSources(
+            IReadOnlyDictionary<string, string> sources)
+        {
+            ArgumentNullException.ThrowIfNull(sources);
+            var root = JsonNode.Parse(File.ReadAllBytes(ManifestPath))!
+                .AsObject();
+            var editorFiles = root["editorImage"]!["files"]!.AsArray();
+            var existingPaths = editorFiles
+                .Select(value => value!["path"]!.GetValue<string>())
+                .ToHashSet(StringComparer.Ordinal);
+            if (sources.Keys.Any(path => !existingPaths.Add(path)))
+            {
+                throw new ArgumentException(
+                    "Inventory source paths must not duplicate existing paths.",
+                    nameof(sources));
+            }
+
+            var evidence = new List<JsonNode>(sources.Count);
+            foreach (var (relativePath, sourcePath) in sources)
+            {
+                var absoluteSourcePath = Path.GetFullPath(sourcePath);
+                if (!File.Exists(absoluteSourcePath))
+                {
+                    throw new FileNotFoundException(
+                        "Inventory source file is unavailable.",
+                        absoluteSourcePath);
+                }
+
+                var absolutePath = Path.Combine(
+                    GenerationRoot,
+                    relativePath.Replace(
+                        '/',
+                        Path.DirectorySeparatorChar));
+                Directory.CreateDirectory(
+                    Path.GetDirectoryName(absolutePath)!);
+                if (!OperatingSystem.IsWindows()
+                    || !CreateHardLinkWindows(
+                        absolutePath,
+                        absoluteSourcePath,
+                        IntPtr.Zero))
+                {
+                    File.Copy(absoluteSourcePath, absolutePath);
+                }
+
+                using var stream = File.OpenRead(absolutePath);
+                var digest = SHA256.HashData(stream);
+                evidence.Add(new JsonObject
+                {
+                    ["path"] = relativePath,
+                    ["role"] = ClassifyRole(relativePath),
+                    ["mediaType"] = ClassifyMediaType(relativePath),
+                    ["size"] = stream.Length,
+                    ["integrity"] = new JsonObject
+                    {
+                        ["algorithm"] = "sha256",
+                        ["digest"] = Convert.ToHexString(digest)
+                            .ToLowerInvariant(),
+                    },
+                });
+            }
+
+            RewriteManifest(
+                manifest =>
+                {
+                    var files = manifest["editorImage"]!["files"]!
+                        .AsArray();
+                    var combined = files
+                        .Select(value => value!.DeepClone())
+                        .Concat(evidence.Select(value => value.DeepClone()))
+                        .OrderBy(
+                            value => value["path"]!.GetValue<string>(),
+                            Utf8Comparer.Instance)
+                        .ToArray();
+                    files.Clear();
+                    foreach (var value in combined)
+                    {
+                        files.Add(value);
+                    }
+                },
+                recomputeIdentity: true);
+        }
+
+        [DllImport(
+            "kernel32.dll",
+            EntryPoint = "CreateHardLinkW",
+            CharSet = CharSet.Unicode,
+            SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool CreateHardLinkWindows(
+            string fileName,
+            string existingFileName,
+            IntPtr securityAttributes);
 
         public bool TryReplaceWithSymbolicLink(string relativePath)
         {

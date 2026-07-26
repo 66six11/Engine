@@ -1,8 +1,8 @@
 # Editor 扩展构建、装载与重载规范
 
-状态：Target（已批准，尚未实现）
+状态：Target（已批准，Project Code implicit build 子集已实现）
 
-更新日期：2026-07-11
+更新日期：2026-07-26
 
 ## 1. 目的与权威范围
 
@@ -129,9 +129,13 @@ project root/projectId、current semantic build credential 与全新 cache path�
 `Directory.Packages.props` 与显式 `NuGet.Config` 封住父目录 build customization、用户 wildcard imports、
 ambient analyzer/editorconfig、workload resolver 与 package/audit sources。renderer 使用 explicit compile/reference
 items、deterministic/CI/portable-PDB/PathMap 和 stable relative output handoff；workspace identity 不包含 project/
-cache 绝对路径。builder 只原子发布 immutable input tree 并提供 source/credential/workspace current check，不执行
-restore/build。遇到任何 `.asmdef` 会稳定失败，等待下一个显式 graph Slice；Package、Avalonia resource、NuGet
-lock、aggregate host、module index 和 execution/artifact path 也尚未实现。
+cache 绝对路径。builder 只原子发布 immutable input tree 并提供 source/credential/workspace current check。
+isolated build controller 随后复制 workspace，从 semantic credential exact closure 物化 sealed dotnet mirror，
+在空白 allowlist 环境中执行 exact SDK probe、explicit restore 与 `build --no-restore`，并原子发布 implementation
+DLL、reference DLL、portable PDB 与 `.deps.json` 的 content-addressed raw output。它提供 bounded output、
+timeout/process-tree cancellation、same-project supersession 与每步后的 input/mirror current check，但不解析或
+加载 CLR artifact。遇到任何 `.asmdef` 仍稳定失败，等待下一个显式 graph Slice；Package、Avalonia resource、
+NuGet lock、aggregate host、module index、artifact inspection 和 ALC generation 也尚未实现。
 
 外部自定义 `.csproj` 必须由 `asharia.package.json.editor` 显式声明，视为受信任 external build，默认 `restart-required`。Host 记录实际 project、SDK、binlog 和 artifact，但不把它伪装成标准可重复 `.asmdef` build。
 
@@ -159,6 +163,10 @@ resolve graph
 - published generation directory 永不原地修改；
 - Problems/Console 诊断包含 Package/Assembly、文件、范围、code、severity 和 fingerprint；
 - build failure 不修改 active 或 last-known-good pointer。
+
+当前 implicit 子集还没有 active/LKG 或 generation pointer。controller 只发布 current raw output lease；发布前再次
+验证 source、credential、workspace 与 sealed SDK mirror，失败、取消、超时或被更新调用替代时删除 controller-owned
+working/candidate tree，不覆盖任何既有 output。
 
 ## 6. Package lock 与安装
 
@@ -430,6 +438,11 @@ Collectible host 的 leak 将 reload unit 升级为 process-lifetime restart-req
 ## 14. 参考资料
 
 - [NuGet PackageReference lock files and locked mode](https://learn.microsoft.com/en-us/nuget/consume-packages/package-references-in-project-files)
+- [.NET `dotnet restore`](https://learn.microsoft.com/en-us/dotnet/core/tools/dotnet-restore)
+- [.NET `dotnet build`](https://learn.microsoft.com/en-us/dotnet/core/tools/dotnet-build)
+- [Unreal Build Tool](https://dev.epicgames.com/documentation/en-us/unreal-engine/unreal-build-tool-in-unreal-engine)
+- [Godot managed build orchestration](https://github.com/godotengine/godot/tree/master/modules/mono/editor/GodotTools/GodotTools/Build)
+- [Stride build engine](https://github.com/stride3d/stride/tree/master/sources/buildengine)
 - [.NET AssemblyLoadContext concepts](https://learn.microsoft.com/en-us/dotnet/core/dependency-loading/understanding-assemblyloadcontext)
 - [.NET plugin loading with AssemblyDependencyResolver](https://learn.microsoft.com/en-us/dotnet/core/tutorials/creating-app-with-plugin-support)
 - [.NET assembly unloadability](https://learn.microsoft.com/en-us/dotnet/standard/assembly/unloadability)
