@@ -24,7 +24,7 @@ built-in extension host、Code-first UI、Scene snapshot、panel scheduler 和 W
 `Asharia.Studio.sln` 已包含独立 `Asharia.Editor`、`Asharia.Runtime.Contracts` 与
 `Asharia.Studio.Application`；Application 已拥有 static module host 基线和只读 Editor Image inventory
 verifier，并可从 current inventory lease 投影 Distribution-bound managed build environment inventory；
-Project Code semantic credential、workspace/build/artifact pipeline 尚未落地。
+Project Code 还能把该 projection 复验为 semantic build credential；workspace/build/artifact pipeline 尚未落地。
 
 当前仍为 Partial：
 
@@ -57,6 +57,15 @@ reference pack 和 `bin/` 下两份 Runtime/Editor contract 绑定成可撤销 p
 绑定 Engine generation、context、声明与 selected file evidence。该 projection 仍不是 build execution
 credential：它不解析 SDK XML/runtimeconfig 或 assembly identity，不运行 `dotnet`，也不扫描 PATH、global
 SDK 或 inventory 外目录。
+
+`ProjectCodeBuildEnvironmentCredentialResolver` 只接受 current projection lease。它重新 hash 每个 selected
+file，枚举且只枚举 exact `managed/dotnet` root 以证明实际目录没有未登记增删，再用 `PEReader`/CLR metadata、
+禁用外部 import 的 SDK XML 和拒绝 duplicate/roll-forward drift 的 runtimeconfig 交叉验证 Windows x64
+dotnet/hostfxr、SDK entry、Host runtime、`Microsoft.NETCore.App.Ref/ref/net10.0` 全集与两份 Host contract。
+credential identity 绑定 Engine generation、projection 和 semantic identities；source/derived revoke、byte
+drift 或 dotnet-root closure drift 后都不能继续作为 execution selection。该 credential 仍不启动 `dotnet`、
+不生成 workspace、不加载 assembly，也不代表 build result 或 generation candidate。Linux/macOS semantic
+binary policy 等对应 producer 落地后另行扩展，当前不从 Windows PE 合同推测。
 
 这是 Application 层的只读产品策略，直接使用 .NET BCL 文件 API。Avalonia `IStorageProvider` 只负责用户文件
 选择、bookmark 和平台权限 UI；native Core File IO 服务于 C++ engine/runtime 的低层 IO 与事务，不反向成为
@@ -234,7 +243,8 @@ Extension 构建/加载：
 externally selected EngineGenerationId + generation root
   -> exact, revocable Editor Image inventory lease
   -> exact, revocable managed build environment inventory lease
-Editor/ or Package + future semantic execution credential
+  -> exact, revocable semantic build credential
+Editor/ or Package + credential
   -> optional asmdef + package metadata
   -> fingerprint + dotnet build
   -> staged AssemblyLoadContext
@@ -293,9 +303,9 @@ git diff --check
 
 - 八项目边界尚未落地；
 - 现有 Code-first contract 仍在 `Core`，built-in Feature 仍可访问 Shell implementation；
-- Project Code 当前只落地 exact Editor Image 与 managed build environment inventory lease；SDK/contract
-  semantic execution credential、项目 `Editor/`、`.asmdef`、Package、artifact inspection 和 ALC pipeline
-  尚未实现；
+- Project Code 当前已落地 exact Editor Image、managed build environment inventory lease 与 Windows x64
+  semantic build credential；项目 `Editor/`、`.asmdef`、Package、build controller、artifact inspection 和
+  ALC pipeline 尚未实现；
 - App shutdown 仍有 sync-over-async；
 - Game View、PlaySession 和 standalone orchestration 未完成；
 - Linux/macOS GPU presentation 尚未验证；

@@ -84,6 +84,12 @@ package artifact generation。它不执行 Build/Stage、不替代最终 `Stage 
 `EngineGenerationId`；它不执行 installer/repair，也不取代项目 package lock。
 [Engine Distribution Assembly v1](adr-engine-distribution-assembly-v1.md) 已实现 build/release 侧的新 generation 组装与原子发布；
 它不等于 installed Repair、Launcher 或项目 product build。
+当前 Studio Project Code 只从可撤销的 exact Editor Image inventory lease 派生发行版声明的
+`managed/dotnet` inventory projection，再通过完整 selected-file 复验、dotnet-root 文件/目录闭包、
+Windows x64 native PE、SDK/runtime metadata、CLR identity、reference-pack identity set 与 Host contract
+reference closure 签发 semantic build credential。该 credential 是后续项目 `Editor/` workspace/build controller
+可消费的执行选择证据；它本身不运行 `dotnet`、不生成 workspace、不加载 assembly，也不是 build result、
+artifact generation 或 project product pipeline 的 stage credential。
 [Windows Development Host Template v1](adr-windows-development-host-template-v1.md) 已实现第一个固定
 `windows-development-v1` native Host 闭环：immutable template、受控 final configure/build、CMake File API exact target/path
 binding 与 restricted registration verification。#297 已把 Template renderer 3 与 Composition renderer 6 的 normal mode 接到
