@@ -86,6 +86,7 @@ public sealed class VerifiedManagedBuildEnvironmentProjectionTests
     [InlineData("unknown")]
     [InlineData("reordered")]
     [InlineData("duplicate")]
+    [InlineData("environment-id")]
     [InlineData("target-framework")]
     [InlineData("version")]
     [InlineData("path")]
@@ -309,6 +310,34 @@ public sealed class VerifiedManagedBuildEnvironmentProjectionTests
             second.Lease.Projection.ProjectionId);
     }
 
+    [Fact]
+    public async Task Projection_identity_changes_with_engine_generation()
+    {
+        using var firstFixture = CreateFixture();
+        using var secondFixture = CreateFixture(
+            additionalFiles: new Dictionary<string, byte[]>
+            {
+                ["bin/unselected-resource.bin"] = Bytes("unselected"),
+            });
+        var firstEditor = await VerifyEditorImageAsync(firstFixture);
+        var secondEditor = await VerifyEditorImageAsync(secondFixture);
+
+        var first = await LoadManagedBuildEnvironmentAsync(firstEditor);
+        var second = await LoadManagedBuildEnvironmentAsync(secondEditor);
+
+        Assert.True(first.Succeeded, Render(first));
+        Assert.True(second.Succeeded, Render(second));
+        Assert.Equal(
+            first.Lease!.Projection.SelectedFiles.Select(SelectedEvidence),
+            second.Lease!.Projection.SelectedFiles.Select(SelectedEvidence));
+        Assert.NotEqual(
+            first.Lease.Projection.EngineGenerationId,
+            second.Lease.Projection.EngineGenerationId);
+        Assert.NotEqual(
+            first.Lease.Projection.ProjectionId,
+            second.Lease.Projection.ProjectionId);
+    }
+
     private static DistributionFixture CreateFixture(
         byte[]? metadata = null,
         string? omitPath = null,
@@ -501,6 +530,9 @@ public sealed class VerifiedManagedBuildEnvironmentProjectionTests
                 case "target-framework":
                     root["targetFramework"] = "net9.0";
                     break;
+                case "environment-id":
+                    root["environmentId"] = "Asharia Dotnet";
+                    break;
                 case "version":
                     root["sdk"]!["version"] = "010.0.302";
                     break;
@@ -561,6 +593,9 @@ public sealed class VerifiedManagedBuildEnvironmentProjectionTests
 
     private static byte[] Bytes(string value) =>
         Encoding.UTF8.GetBytes(value + "\n");
+
+    private static string SelectedEvidence(VerifiedEditorImageFile file) =>
+        $"{file.RelativePath}\n{file.Role}\n{file.MediaType}\n{file.Size}\n{file.Sha256}";
 
     private static string Render(
         VerifiedManagedBuildEnvironmentLoadResult result) =>
