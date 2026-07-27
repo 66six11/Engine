@@ -119,7 +119,9 @@ Asharia Engine 当前目标仍是先做一个小而完整的 Vulkan renderer，�
   已验证的 Default Host/framework closure，不做 path/private/native probing。pinned module type resolver
   再只按 host 内嵌 exact index 对 root Assembly 做 case-sensitive type lookup，复核 exact Assembly/full name/
   direct public-sealed-non-generic `EditorModule` shape 与 public parameterless constructor presence，并返回绑定
-  host/index 的 immutable Type receipt。当前仍不创建 current pointer，不实例化 attribute/module，不调用
+  host/index 的 immutable Type receipt。pinned module constructor 再以显式 per-project reservation 按 index
+  顺序调用这些 receipt 的 exact `ConstructorInfo.Invoke(null)`；same lineage 幂等复用同一 objects，failure
+  保留 partial objects、禁止重试并要求重启。当前仍不创建 current pointer，不实例化 attribute，不调用
   Configure/Activate，不推进 active/LKG，也不支持 `.asmdef`/Package；完整 generation host 尚未实现。
   Studio 在 Windows 上必须优先配置 `Win32RenderingMode.Vulkan`，再回退到 `AngleEgl` / `Software`，否则 Avalonia
   composition GPU interop 可能只暴露 D3D/ANGLE 共享纹理路径，无法进入 Vulkan opaque NT image/semaphore spike。

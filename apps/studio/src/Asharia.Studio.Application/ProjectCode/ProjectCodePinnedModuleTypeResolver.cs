@@ -3,6 +3,7 @@ using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -35,6 +36,9 @@ internal sealed class ProjectCodePinnedModuleType
             || type.ContainsGenericParameters
             || !ReferenceEquals(type.BaseType, typeof(EditorModule))
             || constructor is null
+            || !constructor.IsPublic
+            || constructor.IsStatic
+            || constructor.GetParameters().Length != 0
             || !ReferenceEquals(constructor.DeclaringType, type))
         {
             throw new ArgumentException(
@@ -44,11 +48,14 @@ internal sealed class ProjectCodePinnedModuleType
 
         Entry = entry;
         Type = type;
+        Constructor = constructor;
     }
 
     public ProjectCodeModuleIndexEntry Entry { get; }
 
     public Type Type { get; }
+
+    public ConstructorInfo Constructor { get; }
 }
 
 internal sealed class ProjectCodePinnedModuleTypeSet

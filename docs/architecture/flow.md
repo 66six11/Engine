@@ -345,10 +345,12 @@ flowchart LR
 current selection、Project Open 或 Host activation。Editor Image 的资格检查不加载或执行候选输入，也不证明 ABI、
 launch behavior 或 runtime health。
 
-## Studio Project Code 隔离 SDK 构建、发布与 pinned type-resolution 流（#305–#318）
+## Studio Project Code 隔离 SDK 构建、发布与 pinned construction 流（#305–#319）
 
 这是 `Asharia.Studio.Application` 的 headless Project Code control plane，不经过 Avalonia storage API；
-pinned loader 节点加载 exact 项目 assembly，后继 resolver 只解析已索引 Type；此前节点都不加载或执行：
+pinned loader 节点加载 exact 项目 assembly，resolver 只解析已索引 Type，constructor owner 才首次有意执行
+目标 module 用户代码。loader 之前的节点不加载候选，constructor 之前的节点都不调用 module
+constructor/Configure/Activate：
 
 ```mermaid
 flowchart LR
@@ -370,7 +372,8 @@ flowchart LR
     Snapshot["owned pinned load-image snapshot<br/>implementation DLL + portable PDB"]
     Loader["exact pinned binary host<br/>non-collectible ALC"]
     Modules["exact indexed module Type receipts"]
-    Factory["module construction / factory<br/>not implemented"]
+    Factory["exact pinned module objects<br/>at-most-once constructor owner"]
+    Configure["Configure + immutable declarations<br/>not implemented"]
 
     Image --> Projection
     Projection --> Credential
@@ -390,7 +393,8 @@ flowchart LR
     Policy --> Snapshot
     Snapshot --> Loader
     Loader --> Modules
-    Modules -.not implemented.-> Factory
+    Modules --> Factory
+    Factory -.not implemented.-> Configure
 ```
 
 workspace 和 dotnet closure 在每个外部步骤后复验；同 project 新调用会 supersede 旧调用。CLI 环境从空白
@@ -429,7 +433,12 @@ current/active/LKG。
 case-sensitive full-name lookup，复核 Type 仍属于 exact Assembly，且保持 public top-level sealed
 non-generic concrete direct `EditorModule` shape 与 public parameterless constructor presence。module-type set
 identity 只绑定 host/index；resolver 不枚举任意 type、不实例化 attribute/module、不调用 constructor/
-Configure/Activate，也不推进 registry/current/active/LKG。module construction/factory 仍未实现。
+Configure/Activate，也不推进 registry/current/active/LKG。
+#319 pinned module constructor 只消费该 type set，并由显式 owner 以 per-project reservation 串行 first
+execution。它按 index 顺序调用 exact constructor receipt；same lineage 重复/并发调用返回同一 objects，
+constructor failure 保留 partial objects、禁止重试并要求重启。该同步边界会执行目标 module static/instance
+constructor，但不读取 attribute、不 Configure/Activate、不做 I/O 或推进 registry/current/active/LKG。
+Configure/declaration staging 仍未实现。
 
 ## 当前架构总览
 

@@ -996,6 +996,93 @@ public sealed class ProjectReferenceGraphTests
     }
 
     [Fact]
+    public void Project_code_pinned_module_construction_stops_before_configuration()
+    {
+        var studioRoot = FindStudioRoot();
+        var source = File.ReadAllText(Path.Combine(
+            studioRoot,
+            "src",
+            "Asharia.Studio.Application",
+            "ProjectCode",
+            "ProjectCodePinnedModuleConstructor.cs"));
+        var typeSource = File.ReadAllText(Path.Combine(
+            studioRoot,
+            "src",
+            "Asharia.Studio.Application",
+            "ProjectCode",
+            "ProjectCodePinnedModuleTypeResolver.cs"));
+        var forbiddenTokens = new[]
+        {
+            "Assembly.GetType(",
+            "GetTypes(",
+            "DefinedTypes",
+            "Type.GetType(",
+            "GetConstructor(",
+            "GetCustomAttribute",
+            "CustomAttributeData",
+            "Activator.",
+            "CreateDelegate",
+            "RuntimeHelpers.RunClassConstructor",
+            "Configure(",
+            "ActivateAsync(",
+            "StaticEditorModuleRegistration",
+            "StaticPackageGenerationHost",
+            "EditorModuleDefinition",
+            "EditorModuleRegistry",
+            "EditorModuleHost",
+            "AssemblyLoadContext",
+            "LoadFrom",
+            "MetadataLoadContext",
+            "EnterContextualReflection",
+            "Func<",
+            "CancellationToken",
+            "Task<",
+            "File.",
+            "Directory.",
+        };
+
+        Assert.Contains(
+            "Construct(\n        ProjectCodePinnedModuleTypeSet moduleTypes)",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "moduleType.Constructor.Invoke(null)",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "value is not EditorModule module",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "retainedModules_.Add(",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "result_ is not null",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "ReferenceEquals(expected.Host, candidate.Host)",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "project-code.pinned-module-construction.constructor-failed-restart-required",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "public ConstructorInfo Constructor { get; }",
+            typeSource,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            ".Invoke(",
+            typeSource,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            forbiddenTokens,
+            token => source.Contains(token, StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Project_code_implicit_workspace_does_not_execute_or_load_candidates()
     {
         var sourceRoot = Path.Combine(

@@ -378,6 +378,12 @@ public sealed class ProjectCodeSdkBuildControllerTests
             "ASHARIA_TEST_PROJECT_CODE_MODULE_INSTANCE_CONSTRUCTOR";
         const string AttributeConstructorMarker =
             "ASHARIA_TEST_PROJECT_CODE_ATTRIBUTE_CONSTRUCTOR";
+        const string ModuleConfigureMarker =
+            "ASHARIA_TEST_PROJECT_CODE_MODULE_CONFIGURE";
+        const string ModuleActivateMarker =
+            "ASHARIA_TEST_PROJECT_CODE_MODULE_ACTIVATE";
+        const string ModuleConstructorFailureTrigger =
+            "ASHARIA_TEST_PROJECT_CODE_MODULE_CONSTRUCTOR_FAILURE";
         Environment.SetEnvironmentVariable(
             StaticConstructorMarker,
             null);
@@ -390,10 +396,21 @@ public sealed class ProjectCodeSdkBuildControllerTests
         Environment.SetEnvironmentVariable(
             AttributeConstructorMarker,
             null);
+        Environment.SetEnvironmentVariable(
+            ModuleConfigureMarker,
+            null);
+        Environment.SetEnvironmentVariable(
+            ModuleActivateMarker,
+            null);
+        Environment.SetEnvironmentVariable(
+            ModuleConstructorFailureTrigger,
+            null);
         moduleProject.WriteEditorSource(
             "RealModule.cs",
             """
             using System;
+            using System.Threading;
+            using System.Threading.Tasks;
             using Asharia.Editor.Extensions;
 
             namespace Fixture;
@@ -421,18 +438,45 @@ public sealed class ProjectCodeSdkBuildControllerTests
                 {
                     Environment.SetEnvironmentVariable(
                         "MODULE_STATIC_CONSTRUCTOR_MARKER",
-                        "executed");
+                        "1");
                 }
 
                 public RealModule()
                 {
+                    var current = Environment.GetEnvironmentVariable(
+                        "MODULE_INSTANCE_CONSTRUCTOR_MARKER");
+                    var count = int.TryParse(current, out var value)
+                        ? value
+                        : 0;
                     Environment.SetEnvironmentVariable(
                         "MODULE_INSTANCE_CONSTRUCTOR_MARKER",
-                        "executed");
+                        (count + 1).ToString());
+                    if (string.Equals(
+                            Environment.GetEnvironmentVariable(
+                                "MODULE_CONSTRUCTOR_FAILURE_TRIGGER"),
+                            "fail",
+                            StringComparison.Ordinal))
+                    {
+                        throw new InvalidOperationException(
+                            "Injected module constructor failure.");
+                    }
                 }
 
                 public override void Configure(EditorModuleBuilder editor)
                 {
+                    Environment.SetEnvironmentVariable(
+                        "MODULE_CONFIGURE_MARKER",
+                        "executed");
+                }
+
+                public override ValueTask<IEditorModuleActivation> ActivateAsync(
+                    EditorModuleContext context,
+                    CancellationToken cancellationToken)
+                {
+                    Environment.SetEnvironmentVariable(
+                        "MODULE_ACTIVATE_MARKER",
+                        "executed");
+                    return base.ActivateAsync(context, cancellationToken);
                 }
             }
 
@@ -495,6 +539,18 @@ public sealed class ProjectCodeSdkBuildControllerTests
             .Replace(
                 "MODULE_INSTANCE_CONSTRUCTOR_MARKER",
                 ModuleInstanceConstructorMarker,
+                StringComparison.Ordinal)
+            .Replace(
+                "MODULE_CONSTRUCTOR_FAILURE_TRIGGER",
+                ModuleConstructorFailureTrigger,
+                StringComparison.Ordinal)
+            .Replace(
+                "MODULE_CONFIGURE_MARKER",
+                ModuleConfigureMarker,
+                StringComparison.Ordinal)
+            .Replace(
+                "MODULE_ACTIVATE_MARKER",
+                ModuleActivateMarker,
                 StringComparison.Ordinal));
         moduleProject.WriteEditorSource(
             "LoadProbe.cs",
@@ -757,6 +813,10 @@ public sealed class ProjectCodeSdkBuildControllerTests
             ModuleInstanceConstructorMarker));
         Assert.Null(Environment.GetEnvironmentVariable(
             AttributeConstructorMarker));
+        Assert.Null(Environment.GetEnvironmentVariable(
+            ModuleConfigureMarker));
+        Assert.Null(Environment.GetEnvironmentVariable(
+            ModuleActivateMarker));
 
         var moduleTypeResolution =
             ProjectCodePinnedModuleTypeResolver.Resolve(
@@ -801,6 +861,12 @@ public sealed class ProjectCodeSdkBuildControllerTests
                 resolvedModule.Type.BaseType);
             Assert.NotNull(
                 resolvedModule.Type.GetConstructor(Type.EmptyTypes));
+            Assert.Same(
+                resolvedModule.Type,
+                resolvedModule.Constructor.DeclaringType);
+            Assert.True(resolvedModule.Constructor.IsPublic);
+            Assert.False(resolvedModule.Constructor.IsStatic);
+            Assert.Empty(resolvedModule.Constructor.GetParameters());
         }
 
         var repeatedModuleTypeResolution =
@@ -836,6 +902,118 @@ public sealed class ProjectCodeSdkBuildControllerTests
             ModuleInstanceConstructorMarker));
         Assert.Null(Environment.GetEnvironmentVariable(
             AttributeConstructorMarker));
+        Assert.Null(Environment.GetEnvironmentVariable(
+            ModuleConfigureMarker));
+        Assert.Null(Environment.GetEnvironmentVariable(
+            ModuleActivateMarker));
+
+        Environment.SetEnvironmentVariable(
+            ModuleConstructorFailureTrigger,
+            "fail");
+        var failingModuleConstructor =
+            new ProjectCodePinnedModuleConstructor();
+        var failedConstruction = failingModuleConstructor.Construct(
+            pinnedModuleTypes);
+        AssertDiagnostic(
+            failedConstruction,
+            "project-code.pinned-module-construction.constructor-failed-restart-required");
+        AssertNoAbsolutePathLeak(
+            Render(failedConstruction),
+            moduleProject.ProjectRoot,
+            modulePublicationReceipt.AbsoluteRoot);
+        Assert.Equal(
+            "1",
+            Environment.GetEnvironmentVariable(
+                ModuleStaticConstructorMarker));
+        Assert.Equal(
+            "1",
+            Environment.GetEnvironmentVariable(
+                ModuleInstanceConstructorMarker));
+        Assert.Null(Environment.GetEnvironmentVariable(
+            StaticConstructorMarker));
+        Assert.Null(Environment.GetEnvironmentVariable(
+            AttributeConstructorMarker));
+        Assert.Null(Environment.GetEnvironmentVariable(
+            ModuleConfigureMarker));
+        Assert.Null(Environment.GetEnvironmentVariable(
+            ModuleActivateMarker));
+
+        Environment.SetEnvironmentVariable(
+            ModuleConstructorFailureTrigger,
+            null);
+        var repeatedFailedConstruction =
+            failingModuleConstructor.Construct(pinnedModuleTypes);
+        Assert.Same(failedConstruction, repeatedFailedConstruction);
+        Assert.Equal(
+            "1",
+            Environment.GetEnvironmentVariable(
+                ModuleInstanceConstructorMarker));
+
+        var moduleConstructor =
+            new ProjectCodePinnedModuleConstructor();
+        var concurrentConstructions = await Task.WhenAll(
+            Task.Run(() => moduleConstructor.Construct(
+                pinnedModuleTypes)),
+            Task.Run(() => moduleConstructor.Construct(
+                pinnedModuleTypes)));
+        Assert.All(
+            concurrentConstructions,
+            result => Assert.True(result.Succeeded, Render(result)));
+        Assert.Same(
+            concurrentConstructions[0],
+            concurrentConstructions[1]);
+        var construction =
+            concurrentConstructions[0].Construction!;
+        Assert.Matches(
+            "^sha256-[0-9a-f]{64}$",
+            construction.ConstructionId);
+        Assert.Same(pinnedModuleTypes, construction.ModuleTypes);
+        Assert.Equal(
+            pinnedModuleTypes.Modules.Count,
+            construction.Modules.Count);
+        for (var index = 0;
+             index < pinnedModuleTypes.Modules.Count;
+             ++index)
+        {
+            var expectedModuleType = pinnedModuleTypes.Modules[index];
+            var constructedModule = construction.Modules[index];
+            Assert.Same(
+                expectedModuleType,
+                constructedModule.ModuleType);
+            Assert.Same(
+                expectedModuleType.Type,
+                constructedModule.Module.GetType());
+        }
+
+        var repeatedConstruction = moduleConstructor.Construct(
+            repeatedModuleTypeResolution.ModuleTypes);
+        Assert.Same(
+            concurrentConstructions[0],
+            repeatedConstruction);
+        Assert.Same(
+            construction,
+            repeatedConstruction.Construction);
+        Assert.Equal(
+            construction.Modules.Select(module => module.Module),
+            repeatedConstruction.Construction!.Modules
+                .Select(module => module.Module));
+        Assert.Equal(
+            "1",
+            Environment.GetEnvironmentVariable(
+                ModuleStaticConstructorMarker));
+        Assert.Equal(
+            "2",
+            Environment.GetEnvironmentVariable(
+                ModuleInstanceConstructorMarker));
+        Assert.Null(Environment.GetEnvironmentVariable(
+            StaticConstructorMarker));
+        Assert.Null(Environment.GetEnvironmentVariable(
+            AttributeConstructorMarker));
+        Assert.Null(Environment.GetEnvironmentVariable(
+            ModuleConfigureMarker));
+        Assert.Null(Environment.GetEnvironmentVariable(
+            ModuleActivateMarker));
+        Assert.Equal(1, pinnedAssemblyHost.AssemblyCount);
         var mutatedLoadImageImplementation =
             loadImageImplementation.ToArray();
         mutatedLoadImageImplementation[^1] ^= 0xff;
@@ -2248,6 +2426,16 @@ public sealed class ProjectCodeSdkBuildControllerTests
             diagnostic => diagnostic.Code == code);
     }
 
+    private static void AssertDiagnostic(
+        ProjectCodePinnedModuleConstructionResult result,
+        string code)
+    {
+        Assert.False(result.Succeeded);
+        Assert.Contains(
+            result.Diagnostics,
+            diagnostic => diagnostic.Code == code);
+    }
+
     private static byte[] ReplaceUtf8(
         byte[] source,
         string oldValue,
@@ -2498,6 +2686,13 @@ public sealed class ProjectCodeSdkBuildControllerTests
 
     private static string Render(
         ProjectCodePinnedModuleTypeResolutionResult result) =>
+        string.Join(
+            Environment.NewLine,
+            result.Diagnostics.Select(diagnostic =>
+                $"{diagnostic.Code} {diagnostic.Location}: {diagnostic.Message}"));
+
+    private static string Render(
+        ProjectCodePinnedModuleConstructionResult result) =>
         string.Join(
             Environment.NewLine,
             result.Diagnostics.Select(diagnostic =>
