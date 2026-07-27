@@ -27,8 +27,8 @@ verifier，并可从 current inventory lease 投影 Distribution-bound managed b
 Project Code 还能把该 projection 复验为 semantic build credential，并为 caller 已规范化的项目根
 `Editor/**/*.cs` 原子生成 implicit SDK workspace，再使用 credential-bound dotnet closure 执行隔离
 restore/build 并发布四类 raw build output；current raw-output lease 现在还能经过无执行 artifact metadata
-inspection，并原子复制成带 deterministic `artifact.json` 的 closed immutable publication；module-index/load
-candidate pipeline 尚未落地。
+inspection，并原子复制成带 deterministic `artifact.json` 的 closed immutable publication，再对
+implementation/reference metadata 建立 path-free module index；load candidate admission 尚未落地。
 
 当前仍为 Partial：
 
@@ -102,8 +102,18 @@ implementation DLL、reference DLL、portable PDB 和 `.deps.json` 复制到同�
 独立复验，生成 path-free deterministic `artifact.json`，确认 exact 五文件 closed tree 与 raw lease 仍 current
 后只用一次 directory rename 提交。失败、取消、source/staging drift 或 existing/overlap/reparse path 不覆盖 final
 root，并清理 publisher-owned staging。receipt 的 absolute root 只负责当前进程寻址；publication 本身不生成
-module index，不创建 `current`/`latest`、generation、active/LKG 或 ALC。`.asmdef`、Package/Avalonia resources、
-NuGet lock、aggregate host、module index、loadable candidate 与 ALC generation 仍是后继边界。
+module index，不创建 `current`/`latest`、generation、active/LKG 或 ALC。
+
+`ProjectCodeModuleIndexer` 只接受 `ProjectCodeArtifactPublicationReceipt`，扫描前后都通过 publisher 复验
+receipt、deterministic manifest 与 exact closed tree。inspector report 显式携带 credential 选定的 exact
+`Asharia.Editor` identity，因此 moduleless assembly 即使没有 Editor assembly reference 也能产生合法空索引。
+indexer 只使用 BCL `PEReader`/`MetadataReader`/`CustomAttribute.DecodeValue` 同时读取 implementation 与
+reference assembly；声明必须来自 exact contract 的 `EditorModuleAttribute`，type 必须是 public top-level sealed、
+non-abstract、non-generic、direct `EditorModule` subtype 并有 public parameterless constructor。双 assembly
+module surface、definition/type uniqueness 和 enum payload 必须完全一致。成功 index 只含 path-free declaration
+facts，identity 对等 publication root 稳定；空 index 不表示 load eligibility。它不写文件、不加载或执行 assembly，
+也不创建 ALC。`.asmdef`、Package/Avalonia resources、NuGet lock、aggregate host、loadable candidate admission
+与 ALC generation 仍是后继边界。
 
 这些是 Application 层的产品策略，直接使用 .NET BCL 文件 API。Avalonia `IStorageProvider` 只负责用户文件
 选择、bookmark 和平台权限 UI；native Core File IO 服务于 C++ engine/runtime 的低层 IO 与事务，不反向成为
@@ -344,8 +354,8 @@ git diff --check
 - Project Code 当前已落地 exact Editor Image、managed build environment inventory lease 与 Windows x64
   semantic build credential、caller-bound 项目根 `Editor/**/*.cs` implicit SDK workspace，以及 credential-bound
   isolated restore/build、immutable raw output、no-execute artifact metadata report 和 closed inspected artifact
-  publication；正式 ProjectSession/manifest handoff、`.asmdef`、Package、module index/loadable candidate 和
-  ALC pipeline 尚未实现；
+  publication、no-load dual-assembly module index；正式 ProjectSession/manifest handoff、`.asmdef`、Package、
+  loadable candidate admission 和 ALC pipeline 尚未实现；
 - App shutdown 仍有 sync-over-async；
 - Game View、PlaySession 和 standalone orchestration 未完成；
 - Linux/macOS GPU presentation 尚未验证；

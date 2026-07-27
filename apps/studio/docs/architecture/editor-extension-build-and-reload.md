@@ -142,8 +142,12 @@ portable PDB、canonical `PathMap` documents 和当前单-project `.deps.json` s
 publication root，并在内部重新执行该检查；它以 bounded BCL stream 复制和二次 hash 复验四个 product，生成
 deterministic `artifact.json`，复验 exact 五文件 closed tree 后以一次 directory rename 提交。publication identity
 和 manifest 不含 source/output 绝对路径；receipt 的 absolute root 只供当前进程寻址。遇到任何 `.asmdef` 仍稳定
-失败，等待下一个显式 graph Slice；Package、Avalonia resource、NuGet lock、aggregate host、module index、
-loadable candidate generation 和 ALC generation 也尚未实现。
+失败，等待下一个显式 graph Slice。module indexer 再只消费该 typed receipt，并在扫描前后复验 publication；
+它使用 BCL metadata 同时读取 implementation/reference assembly，只接受 exact `Asharia.Editor`
+`EditorModuleAttribute` 与 public top-level sealed non-generic direct `EditorModule` type shape，并要求两份
+assembly declaration surface 完全一致。结果是 path-free、content-addressed in-memory index；空 index 合法但
+不证明 load eligibility。该步骤不写 sidecar、不加载 assembly，也不创建 ALC。Package、Avalonia resource、
+NuGet lock、aggregate host、loadable candidate generation 和 ALC generation 尚未实现。
 
 外部自定义 `.csproj` 必须由 `asharia.package.json.editor` 显式声明，视为受信任 external build，默认 `restart-required`。Host 记录实际 project、SDK、binlog 和 artifact，但不把它伪装成标准可重复 `.asmdef` build。
 
@@ -176,7 +180,8 @@ resolve graph
 验证 source、credential、workspace 与 sealed SDK mirror，失败、取消、超时或被更新调用替代时删除 controller-owned
 working/candidate tree，不覆盖任何既有 output。raw output 只有通过 current lease、PE/reference/PDB/deps
 无执行检查后才能形成 metadata report。publisher 再把 exact 四文件与 deterministic manifest 原子复制到 immutable
-publication；report/publication 都不是可加载 candidate，不推进 generation、active 或 LKG。
+publication；module indexer 对 current closed publication 建立 implementation/reference 一致的声明索引。
+report/publication/index 都不是可加载 candidate，不推进 generation、active 或 LKG。
 
 ## 6. Package lock 与安装
 

@@ -202,6 +202,7 @@ internal sealed record ProjectCodeArtifactMetadataReport
         string sdkVersion,
         string targetFramework,
         string assemblyName,
+        ProjectCodeAssemblyIdentity editorContractIdentity,
         ProjectCodeInspectedAssembly implementation,
         ProjectCodeInspectedAssembly referenceAssembly,
         ProjectCodePortablePdbMetadata portablePdb,
@@ -214,6 +215,7 @@ internal sealed record ProjectCodeArtifactMetadataReport
         ArgumentException.ThrowIfNullOrWhiteSpace(sdkVersion);
         ArgumentException.ThrowIfNullOrWhiteSpace(targetFramework);
         ArgumentException.ThrowIfNullOrWhiteSpace(assemblyName);
+        ArgumentNullException.ThrowIfNull(editorContractIdentity);
         ArgumentNullException.ThrowIfNull(implementation);
         ArgumentNullException.ThrowIfNull(referenceAssembly);
         ArgumentNullException.ThrowIfNull(portablePdb);
@@ -230,6 +232,16 @@ internal sealed record ProjectCodeArtifactMetadataReport
         {
             throw new ArgumentException(
                 "Artifact report identities must be canonical SHA-256 identities.");
+        }
+
+        if (!string.Equals(
+                editorContractIdentity.SimpleName,
+                "Asharia.Editor",
+                StringComparison.Ordinal))
+        {
+            throw new ArgumentException(
+                "Artifact report requires the exact Asharia.Editor contract identity.",
+                nameof(editorContractIdentity));
         }
 
         var files = new[]
@@ -257,6 +269,7 @@ internal sealed record ProjectCodeArtifactMetadataReport
         SdkVersion = sdkVersion;
         TargetFramework = targetFramework;
         AssemblyName = assemblyName;
+        EditorContractIdentity = editorContractIdentity;
         Implementation = implementation;
         ReferenceAssembly = referenceAssembly;
         PortablePdb = portablePdb;
@@ -278,6 +291,8 @@ internal sealed record ProjectCodeArtifactMetadataReport
     public string TargetFramework { get; }
 
     public string AssemblyName { get; }
+
+    public ProjectCodeAssemblyIdentity EditorContractIdentity { get; }
 
     public ProjectCodeInspectedAssembly Implementation { get; }
 

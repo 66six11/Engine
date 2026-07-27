@@ -32,6 +32,7 @@
 - raw build product 在 candidate publication 或任何 assembly load 前，必须通过不执行代码的 PE/reference/PDB/dependency metadata inspection；检查只接受 build credential 和 current raw-output lease 已声明的文件与 identity；
 - 通过检查的四个 product 只能由 publisher 从 current raw-output lease 重新检查后，以 BCL bounded stream 复制并复验到全新、互不重叠的 staging root；`artifact.json` 与四个 product 构成 exact closed tree，完成后以一次 directory rename 发布；
 - 该 immutable publication 是 path-free、content-addressed build evidence，不是 loadable generation，不拥有 module index、`current`/`latest`、active/LKG 或 ALC；
+- 独立 module indexer 只消费 typed publication receipt，在扫描前后复验 exact closed tree，并用 BCL metadata 同时读取 implementation/reference assembly；它只接受 exact `Asharia.Editor` `EditorModuleAttribute` 与受限 direct `EditorModule` type shape，要求两份 declaration surface 一致，输出 path-free、content-addressed in-memory facts；空 index 合法但不代表 load eligibility；
 - build diagnostic 结构化投影到 Problems/Console；
 - `FileSystemWatcher` 只触发 debounce，重新计算 fingerprint 才决定是否构建；
 - 构建期间输入再次变化时取消或丢弃旧结果。
@@ -39,8 +40,8 @@
 这里采用 Unreal `FBuildProduct` 的 typed build-product receipt 与后续 stage/validation 分界，并采用 Godot
 managed tooling 中 build orchestration 与 assembly reload 分离的 owner 边界。当前 Asharia implicit Slice
 只有一个 credential-bound assembly，不复制 Unreal 的 native product taxonomy，也不引入 Stride
-AssemblyProcessor/Mono.Cecil 式 IL scan/rewrite；后者属于 module-index 或代码变换阶段。当前身份、引用闭包、
-reference marker 和 PDB/deps 验证由 .NET BCL `PEReader`/`MetadataReader` 完成，保持无第三方依赖、无执行路径。
+AssemblyProcessor/Mono.Cecil 式 IL scan/rewrite。当前身份、引用闭包、reference marker、PDB/deps 与 module
+declaration 验证都由 .NET BCL `PEReader`/`MetadataReader` 完成，保持无第三方依赖、无执行路径。
 
 ### Identity and reload unit
 

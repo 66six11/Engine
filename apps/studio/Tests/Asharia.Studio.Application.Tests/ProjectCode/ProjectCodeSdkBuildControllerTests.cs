@@ -9,6 +9,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Xml.Linq;
+using Asharia.Editor.Extensions;
 using Asharia.Studio.Application.ProjectCode;
 using Xunit;
 using ProjectFixture =
@@ -242,6 +243,18 @@ public sealed class ProjectCodeSdkBuildControllerTests
             File.ReadAllBytes(Path.Combine(
                 equivalentPublicationRoot,
                 equivalentPublication.Receipt.Manifest.RelativePath)));
+        var emptyIndex = await ProjectCodeModuleIndexer.IndexAsync(receipt);
+        Assert.True(emptyIndex.Succeeded, Render(emptyIndex));
+        Assert.Empty(emptyIndex.Report!.Entries);
+        var equivalentEmptyIndex =
+            await ProjectCodeModuleIndexer.IndexAsync(
+                equivalentPublication.Receipt);
+        Assert.True(
+            equivalentEmptyIndex.Succeeded,
+            Render(equivalentEmptyIndex));
+        Assert.Equal(
+            emptyIndex.Report.IndexId,
+            equivalentEmptyIndex.Report!.IndexId);
 
         var existingPublication =
             PublicationRoot(project, "existing-publication");
@@ -352,6 +365,240 @@ public sealed class ProjectCodeSdkBuildControllerTests
 
         AssertNoOwnedOutputCandidates(
             Path.GetDirectoryName(publicationRoot)!);
+
+        using var moduleProject = new ProjectFixture();
+        moduleProject.WriteEditorSource(
+            "RealModule.cs",
+            """
+            using Asharia.Editor.Extensions;
+
+            namespace Fixture;
+
+            [EditorModule(
+                "fixture.module",
+                Scope = EditorModuleScopeKind.Project,
+                Activation = EditorModuleActivationPolicy.OnDemand,
+                Handover = EditorModuleHandoverPolicy.RestartRequired)]
+            public sealed class RealModule : EditorModule
+            {
+                public override void Configure(EditorModuleBuilder editor)
+                {
+                }
+            }
+
+            """);
+        var moduleWorkspace = await CreateWorkspaceAsync(
+            moduleProject,
+            credential);
+        var moduleBuild = await controller.ExecuteLatestAsync(
+            new ProjectCodeSdkBuildRequest(
+                moduleWorkspace,
+                OutputRoot(moduleProject, "module")));
+        Assert.True(moduleBuild.Succeeded, Render(moduleBuild));
+        var moduleOutput = moduleBuild.Lease!.Output;
+        var modulePublication =
+            await ProjectCodeArtifactPublisher.PublishAsync(
+                moduleBuild.Lease,
+                PublicationRoot(moduleProject, "module"));
+        Assert.True(
+            modulePublication.Succeeded,
+            Render(modulePublication));
+        var moduleIndex = await ProjectCodeModuleIndexer.IndexAsync(
+            modulePublication.Receipt!);
+        Assert.True(moduleIndex.Succeeded, Render(moduleIndex));
+        var moduleEntry = Assert.Single(moduleIndex.Report!.Entries);
+        Assert.Equal(
+            $"project:{ProjectId:D}:editor",
+            moduleEntry.DefinitionId.Assembly.Package.Value);
+        Assert.Equal(
+            moduleOutput.AssemblyName,
+            moduleEntry.DefinitionId.Assembly.Assembly.Value);
+        Assert.Equal(
+            "fixture.module",
+            moduleEntry.DefinitionId.Module.Value);
+        Assert.Equal(
+            EditorModuleScopeKind.Project,
+            moduleEntry.DefinitionId.Scope);
+        Assert.Equal("Fixture.RealModule", moduleEntry.TypeName);
+        Assert.Equal(
+            EditorModuleActivationPolicy.OnDemand,
+            moduleEntry.Activation);
+        Assert.Equal(
+            EditorModuleHandoverPolicy.RestartRequired,
+            moduleEntry.Handover);
+
+        var moduleImplementation = moduleOutput.Files.Single(file =>
+            file.RelativePath
+                == moduleOutput.ImplementationAssemblyRelativePath);
+        var moduleReference = moduleOutput.Files.Single(file =>
+            file.RelativePath
+                == moduleOutput.ReferenceAssemblyRelativePath);
+        var moduleImplementationBytes =
+            File.ReadAllBytes(moduleImplementation.AbsolutePath);
+        var moduleReferenceBytes =
+            File.ReadAllBytes(moduleReference.AbsolutePath);
+        var mismatchedPublication = await PublishMutationAsync(
+            moduleWorkspace,
+            moduleOutput,
+            new Dictionary<string, byte[]>
+            {
+                [moduleImplementation.RelativePath] = ReplaceUtf8(
+                    moduleImplementationBytes,
+                    "fixture.module",
+                    "fixture.modulf"),
+            },
+            PublicationRoot(moduleProject, "module-mismatch"));
+        Assert.True(
+            mismatchedPublication.Succeeded,
+            Render(mismatchedPublication));
+        AssertDiagnostic(
+            await ProjectCodeModuleIndexer.IndexAsync(
+                mismatchedPublication.Receipt!),
+            "project-code.module-index.assembly-surface-mismatch");
+
+        var invalidAttributePublication = await PublishMutationAsync(
+            moduleWorkspace,
+            moduleOutput,
+            new Dictionary<string, byte[]>
+            {
+                [moduleImplementation.RelativePath] = ReplaceUtf8(
+                    moduleImplementationBytes,
+                    "fixture.module",
+                    "Fixture.module"),
+                [moduleReference.RelativePath] = ReplaceUtf8(
+                    moduleReferenceBytes,
+                    "fixture.module",
+                    "Fixture.module"),
+            },
+            PublicationRoot(moduleProject, "module-attribute-invalid"));
+        Assert.True(
+            invalidAttributePublication.Succeeded,
+            Render(invalidAttributePublication));
+        AssertDiagnostic(
+            await ProjectCodeModuleIndexer.IndexAsync(
+                invalidAttributePublication.Receipt!),
+            "project-code.module-index.attribute-invalid");
+
+        var unexpectedPublicationFile = Path.Combine(
+            modulePublication.Receipt!.AbsoluteRoot,
+            "unexpected.bin");
+        try
+        {
+            File.WriteAllText(unexpectedPublicationFile, "drift");
+            AssertDiagnostic(
+                await ProjectCodeModuleIndexer.IndexAsync(
+                    modulePublication.Receipt),
+                "project-code.module-index.publication-not-current");
+        }
+        finally
+        {
+            File.Delete(unexpectedPublicationFile);
+        }
+
+        using var invalidModuleProject = new ProjectFixture();
+        invalidModuleProject.WriteEditorSource(
+            "InvalidModules.cs",
+            """
+            using Asharia.Editor.Extensions;
+
+            namespace Fixture;
+
+            [EditorModule("fixture.wrong-base")]
+            public sealed class WrongBase
+            {
+            }
+
+            [EditorModule("fixture.abstract")]
+            public abstract class AbstractModule : EditorModule
+            {
+            }
+
+            [EditorModule("fixture.generic")]
+            public sealed class GenericModule<T> : EditorModule
+            {
+                public override void Configure(EditorModuleBuilder editor)
+                {
+                }
+            }
+
+            [EditorModule("fixture.unsealed")]
+            public class UnsealedModule : EditorModule
+            {
+                public override void Configure(EditorModuleBuilder editor)
+                {
+                }
+            }
+
+            [EditorModule("fixture.no-ctor")]
+            public sealed class NoDefaultConstructorModule : EditorModule
+            {
+                public NoDefaultConstructorModule(int value)
+                {
+                }
+
+                public override void Configure(EditorModuleBuilder editor)
+                {
+                }
+            }
+
+            public sealed class MissingAttributeModule : EditorModule
+            {
+                public override void Configure(EditorModuleBuilder editor)
+                {
+                }
+            }
+
+            [EditorModule("fixture.duplicate")]
+            public sealed class FirstDuplicateModule : EditorModule
+            {
+                public override void Configure(EditorModuleBuilder editor)
+                {
+                }
+            }
+
+            [EditorModule("fixture.duplicate")]
+            public sealed class SecondDuplicateModule : EditorModule
+            {
+                public override void Configure(EditorModuleBuilder editor)
+                {
+                }
+            }
+
+            """);
+        var invalidModuleWorkspace = await CreateWorkspaceAsync(
+            invalidModuleProject,
+            credential);
+        var invalidModuleBuild = await controller.ExecuteLatestAsync(
+            new ProjectCodeSdkBuildRequest(
+                invalidModuleWorkspace,
+                OutputRoot(invalidModuleProject, "invalid-modules")));
+        Assert.True(
+            invalidModuleBuild.Succeeded,
+            Render(invalidModuleBuild));
+        var invalidModulePublication =
+            await ProjectCodeArtifactPublisher.PublishAsync(
+                invalidModuleBuild.Lease!,
+                PublicationRoot(
+                    invalidModuleProject,
+                    "invalid-modules"));
+        Assert.True(
+            invalidModulePublication.Succeeded,
+            Render(invalidModulePublication));
+        var invalidModuleIndex = await ProjectCodeModuleIndexer.IndexAsync(
+            invalidModulePublication.Receipt!);
+        Assert.False(invalidModuleIndex.Succeeded);
+        Assert.Contains(
+            invalidModuleIndex.Diagnostics,
+            diagnostic => diagnostic.Code
+                == "project-code.module-index.type-shape-invalid");
+        Assert.Contains(
+            invalidModuleIndex.Diagnostics,
+            diagnostic => diagnostic.Code
+                == "project-code.module-index.attribute-missing");
+        Assert.Contains(
+            invalidModuleIndex.Diagnostics,
+            diagnostic => diagnostic.Code
+                == "project-code.module-index.entry-duplicate");
 
         var mutableOutput = equivalentLease.Output;
         var dependencyPath = mutableOutput.Files
@@ -1220,6 +1467,51 @@ public sealed class ProjectCodeSdkBuildControllerTests
         }
     }
 
+    private static async Task<ProjectCodeArtifactPublicationResult>
+        PublishMutationAsync(
+            ProjectCodeImplicitSdkWorkspaceLease workspaceLease,
+            ProjectCodeRawBuildOutput output,
+            IReadOnlyDictionary<string, byte[]> replacements,
+            string publicationRoot)
+    {
+        var originals = replacements.Keys.ToDictionary(
+            relativePath => relativePath,
+            relativePath => File.ReadAllBytes(
+                output.Files
+                    .Single(file =>
+                        file.RelativePath == relativePath)
+                    .AbsolutePath),
+            StringComparer.Ordinal);
+        try
+        {
+            foreach (var replacement in replacements)
+            {
+                File.WriteAllBytes(
+                    output.Files
+                        .Single(file =>
+                            file.RelativePath == replacement.Key)
+                        .AbsolutePath,
+                    replacement.Value);
+            }
+
+            return await ProjectCodeArtifactPublisher.PublishAsync(
+                RefreshRawOutputLease(workspaceLease, output),
+                publicationRoot);
+        }
+        finally
+        {
+            foreach (var original in originals)
+            {
+                File.WriteAllBytes(
+                    output.Files
+                        .Single(file =>
+                            file.RelativePath == original.Key)
+                        .AbsolutePath,
+                    original.Value);
+            }
+        }
+    }
+
     private static void AssertDiagnostic(
         ProjectCodeArtifactInspectionResult result,
         string code)
@@ -1232,6 +1524,16 @@ public sealed class ProjectCodeSdkBuildControllerTests
 
     private static void AssertDiagnostic(
         ProjectCodeArtifactPublicationResult result,
+        string code)
+    {
+        Assert.False(result.Succeeded);
+        Assert.Contains(
+            result.Diagnostics,
+            diagnostic => diagnostic.Code == code);
+    }
+
+    private static void AssertDiagnostic(
+        ProjectCodeModuleIndexResult result,
         string code)
     {
         Assert.False(result.Succeeded);
@@ -1448,6 +1750,13 @@ public sealed class ProjectCodeSdkBuildControllerTests
 
     private static string Render(
         ProjectCodeArtifactPublicationResult result) =>
+        string.Join(
+            Environment.NewLine,
+            result.Diagnostics.Select(diagnostic =>
+                $"{diagnostic.Code} {diagnostic.Location}: {diagnostic.Message}"));
+
+    private static string Render(
+        ProjectCodeModuleIndexResult result) =>
         string.Join(
             Environment.NewLine,
             result.Diagnostics.Select(diagnostic =>

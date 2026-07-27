@@ -646,6 +646,46 @@ public sealed class ProjectReferenceGraphTests
     }
 
     [Fact]
+    public void Project_code_module_indexer_reads_publication_metadata_without_loading()
+    {
+        var sourcePath = Path.Combine(
+            FindStudioRoot(),
+            "src",
+            "Asharia.Studio.Application",
+            "ProjectCode",
+            "ProjectCodeModuleIndexer.cs");
+        var source = File.ReadAllText(sourcePath);
+        var forbiddenTokens = new[]
+        {
+            "Assembly.Load(",
+            "AssemblyName.GetAssemblyName",
+            "AssemblyLoadContext",
+            "MetadataLoadContext",
+            "Activator.",
+            "Type.GetType",
+            ".GetTypes(",
+            "DllImport",
+            "LibraryImport",
+            "Mono.Cecil",
+            "Process.Start",
+            "Avalonia",
+            "File.Write",
+            "Directory.Create",
+            "Directory.Move",
+        };
+
+        Assert.Contains(
+            "ProjectCodeArtifactPublicationReceipt publication",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains("PEReader", source, StringComparison.Ordinal);
+        Assert.Contains("DecodeValue", source, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            forbiddenTokens,
+            token => source.Contains(token, StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Project_code_implicit_workspace_does_not_execute_or_load_candidates()
     {
         var sourceRoot = Path.Combine(

@@ -22,6 +22,75 @@ internal static class ProjectCodeArtifactPublisher
         encoderShouldEmitUTF8Identifier: false,
         throwOnInvalidBytes: true);
 
+    public static async Task<bool> IsPublicationCurrentAsync(
+        ProjectCodeArtifactPublicationReceipt receipt,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(receipt);
+        cancellationToken.ThrowIfCancellationRequested();
+        try
+        {
+            var publishedFiles = CreatePublishedFiles(receipt.Report);
+            if (!MatchesEvidence(
+                    receipt.Implementation,
+                    FindFile(publishedFiles, "implementation"))
+                || !MatchesEvidence(
+                    receipt.ReferenceAssembly,
+                    FindFile(publishedFiles, "reference-assembly"))
+                || !MatchesEvidence(
+                    receipt.PortablePdb,
+                    FindFile(publishedFiles, "portable-pdb"))
+                || !MatchesEvidence(
+                    receipt.Dependencies,
+                    FindFile(publishedFiles, "dependencies")))
+            {
+                return false;
+            }
+
+            var publicationId = ComputePublicationId(
+                receipt.Report,
+                publishedFiles);
+            var manifestBytes = RenderManifest(
+                publicationId,
+                receipt.Report,
+                publishedFiles);
+            var expectedManifest = new ProjectCodeArtifactFileEvidence(
+                ManifestPath,
+                manifestBytes.LongLength,
+                Hash(manifestBytes));
+            if (!string.Equals(
+                    receipt.PublicationId,
+                    publicationId,
+                    StringComparison.Ordinal)
+                || !MatchesEvidence(
+                    receipt.Manifest,
+                    expectedManifest))
+            {
+                return false;
+            }
+
+            return await VerifyClosedTreeAsync(
+                    receipt.AbsoluteRoot,
+                    publishedFiles
+                        .Select(file => file.Published)
+                        .Append(expectedManifest)
+                        .ToArray(),
+                    manifestBytes,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception error) when (
+            error is ArgumentException
+                or InvalidDataException
+                or IOException
+                or NotSupportedException
+                or OverflowException
+                or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
     public static async Task<ProjectCodeArtifactPublicationResult> PublishAsync(
         ProjectCodeRawBuildOutputLease lease,
         string outputRoot,
@@ -395,6 +464,10 @@ internal static class ProjectCodeArtifactPublisher
         writer.WriteString("sdkVersion", report.SdkVersion);
         writer.WriteString("targetFramework", report.TargetFramework);
         writer.WriteString("assemblyName", report.AssemblyName);
+        WriteIdentity(
+            writer,
+            "editorContractIdentity",
+            report.EditorContractIdentity);
         WriteAssembly(
             writer,
             "implementation",
@@ -509,6 +582,19 @@ internal static class ProjectCodeArtifactPublisher
         IEnumerable<PublishedFile> files,
         string location) =>
         files.Single(file => file.Location == location).Published;
+
+    private static bool MatchesEvidence(
+        ProjectCodeArtifactFileEvidence left,
+        ProjectCodeArtifactFileEvidence right) =>
+        string.Equals(
+            left.RelativePath,
+            right.RelativePath,
+            StringComparison.Ordinal)
+        && left.Size == right.Size
+        && string.Equals(
+            left.Sha256,
+            right.Sha256,
+            StringComparison.Ordinal);
 
     private static async Task<bool> CopyVerifiedFileAsync(
         string source,

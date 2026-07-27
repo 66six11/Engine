@@ -158,6 +158,7 @@ internal static class ProjectCodeArtifactInspector
 
         var reportId = ComputeReportId(
             output,
+            credential.EditorContract.Identity,
             implementation,
             referenceAssembly,
             portablePdb,
@@ -172,6 +173,7 @@ internal static class ProjectCodeArtifactInspector
                 output.SdkVersion,
                 output.TargetFramework,
                 output.AssemblyName,
+                credential.EditorContract.Identity,
                 implementation,
                 referenceAssembly,
                 portablePdb,
@@ -1115,6 +1117,7 @@ internal static class ProjectCodeArtifactInspector
 
     private static string ComputeReportId(
         ProjectCodeRawBuildOutput output,
+        ProjectCodeAssemblyIdentity editorContractIdentity,
         ProjectCodeInspectedAssembly implementation,
         ProjectCodeInspectedAssembly referenceAssembly,
         ProjectCodePortablePdbMetadata portablePdb,
@@ -1129,6 +1132,7 @@ internal static class ProjectCodeArtifactInspector
         Append(hash, output.SdkVersion);
         Append(hash, output.TargetFramework);
         Append(hash, output.AssemblyName);
+        Append(hash, editorContractIdentity.FullName);
         Append(hash, implementation);
         Append(hash, referenceAssembly);
         Append(hash, portablePdb.File);

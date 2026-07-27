@@ -345,7 +345,7 @@ flowchart LR
 current selection、Project Open 或 Host activation。Editor Image 的资格检查不加载或执行候选输入，也不证明 ABI、
 launch behavior 或 runtime health。
 
-## Studio Project Code 隔离 SDK 构建与产物发布流（#305–#312）
+## Studio Project Code 隔离 SDK 构建、发布与模块索引流（#305–#313）
 
 这是 `Asharia.Studio.Application` 的 headless Project Code control plane，不经过 Avalonia storage API，也不加载
 项目 assembly：
@@ -364,7 +364,8 @@ flowchart LR
     Inspect["no-execute artifact inspection<br/>PE + ref marker + PDB + deps"]
     Report["path-free metadata report<br/>content-addressed"]
     Publication["immutable inspected publication<br/>artifact.json + four evidence files"]
-    Candidate["module index / loadable candidate<br/>next slice"]
+    Index["no-load module index<br/>implementation + reference metadata"]
+    Candidate["load eligibility / candidate admission<br/>next slice"]
 
     Image --> Projection
     Projection --> Credential
@@ -378,7 +379,8 @@ flowchart LR
     Raw --> Inspect
     Inspect --> Report
     Report --> Publication
-    Publication -.not implemented.-> Candidate
+    Publication --> Index
+    Index -.not implemented.-> Candidate
 ```
 
 workspace 和 dotnet closure 在每个外部步骤后复验；同 project 新调用会 supersede 旧调用。CLI 环境从空白
@@ -389,7 +391,12 @@ active/LKG 状态。#311 的 inspector 只消费 current raw-output lease，在�
 publication root，内部重新检查后以 BCL bounded stream copy/hash、staged rehash、exact 五文件 closed-tree
 verification 和一次 directory rename 发布 path-free、content-addressed immutable evidence。失败、取消、
 source/staging drift 或 existing/overlap/reparse path 不覆盖 final root。report/publication 仍不是 loadable
-generation candidate；#312 尚未建立 module index、current pointer、active、LKG 或 ALC。
+generation candidate。#313 indexer 在扫描前后复验 exact closed publication，只用 BCL
+`PEReader`/`MetadataReader`/`CustomAttribute.DecodeValue` 对 implementation 与 reference assembly 建立相同的
+声明 surface：一个 entry 必须由 exact `Asharia.Editor` contract 的 `EditorModuleAttribute` 声明，并对应 public
+top-level sealed、non-abstract、non-generic、direct `EditorModule` subtype 与 public parameterless constructor。
+重复 definition/type、非法 attribute/type shape 或双 assembly surface drift 均 fail closed。空索引是合法事实，
+但不代表可加载资格；index/report 不创建 current pointer、active、LKG、ALC，也不加载 assembly。
 
 ## 当前架构总览
 
