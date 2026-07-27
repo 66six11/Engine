@@ -21,12 +21,13 @@ Studio 不拥有 Engine truth。World、simulation、renderer、Vulkan device、
 当前 production `apps/studio` 仍由 `Editor.csproj` Avalonia host 与迁移中的 managed projects 共同组成，目录分为
 `Core`、`Shell`、`UI`、`Features`、`src` 和 `Tests`。已有 Dock、command、diagnostics、selection、transaction、
 built-in extension host、Code-first UI、Scene snapshot、panel scheduler 和 Windows Scene View GPU interop 的 v0 路径。
-`Asharia.Studio.sln` 已包含独立 `Asharia.Editor`、`Asharia.Runtime.Contracts` 与
-`Asharia.Studio.Application`；Application 已拥有 static module host、UI-neutral scene provider runtime host 和只读 Editor Image inventory
+`Asharia.Studio.sln` 已包含独立 `Asharia.Editor`、`Asharia.Runtime.Contracts`、
+`Asharia.Studio.Application` 与 `Asharia.Studio.EngineBridge`；Application 已拥有 static module host、UI-neutral scene provider runtime host 和只读 Editor Image inventory
 verifier，并可从 current inventory lease 投影 Distribution-bound managed build environment inventory；
 `Asharia.Runtime.Contracts` 当前把 Scene `EntityId`、float3、quaternion 与 local Transform 固定为
 8/12/16/40-byte unmanaged values，并用显式 offsets 对齐 native C ABI；这些只是项目代码可引用的稳定
 value contracts，不包含 native function import、World handle、Scene provider、Avalonia dispatcher 或文件 IO。
+EngineBridge 当前只提供 Scene World ABI v1 create/destroy 与 owner-thread deterministic disposal；它不暴露 native pointer，不使用 finalizer thread 销毁 thread-affine World，也尚未提供 entity/Transform/name、snapshot projection、ProjectSession wiring 或 native library deployment。
 Project Code 还能把该 projection 复验为 semantic build credential，并为 caller 已规范化的项目根
 `Editor/**/*.cs` 原子生成 implicit SDK workspace，再使用 credential-bound dotnet closure 执行隔离
 restore/build 并发布四类 raw build output；current raw-output lease 现在还能经过无执行 artifact metadata

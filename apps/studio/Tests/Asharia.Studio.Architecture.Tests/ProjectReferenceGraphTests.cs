@@ -17,6 +17,7 @@ using Asharia.Studio.Application.Selection;
 using Asharia.Studio.Application.Tasks;
 using Asharia.Studio.Application.Transactions;
 using Asharia.Studio.Application.Viewports;
+using Asharia.Studio.EngineBridge.Scene;
 using System;
 using System.IO;
 using System.Linq;
@@ -29,6 +30,93 @@ namespace Asharia.Studio.Architecture.Tests;
 
 public sealed class ProjectReferenceGraphTests
 {
+    [Fact]
+    public void Scene_world_lifetime_bridge_is_owned_only_by_engine_bridge()
+    {
+        var studioRoot = FindStudioRoot();
+        var bridgeRoot = Path.Combine(
+            studioRoot,
+            "src",
+            "Asharia.Studio.EngineBridge");
+        var bridgeProjectPath = Path.Combine(
+            bridgeRoot,
+            "Asharia.Studio.EngineBridge.csproj");
+
+        Assert.True(
+            File.Exists(bridgeProjectPath),
+            $"Engine Bridge project is missing from {bridgeRoot}.");
+        Assert.Equal(
+            "Asharia.Studio.EngineBridge",
+            typeof(SceneWorld).Assembly.GetName().Name);
+        Assert.Equal(
+            "Asharia.Studio.EngineBridge",
+            typeof(SceneNativeCallException).Assembly.GetName().Name);
+        Assert.Equal(
+            "Asharia.Studio.EngineBridge",
+            typeof(SceneNativeStatus).Assembly.GetName().Name);
+
+        var bridgeProject = XDocument.Load(bridgeProjectPath);
+        Assert.Empty(bridgeProject.Descendants("ProjectReference"));
+
+        var applicationProject = XDocument.Load(Path.Combine(
+            studioRoot,
+            "src",
+            "Asharia.Studio.Application",
+            "Asharia.Studio.Application.csproj"));
+        Assert.DoesNotContain(
+            applicationProject.Descendants("ProjectReference"),
+            reference => reference.Attribute("Include")?.Value.Contains(
+                "EngineBridge",
+                StringComparison.Ordinal) == true);
+
+        var bridgeSources = Directory
+            .EnumerateFiles(bridgeRoot, "*.cs", SearchOption.AllDirectories)
+            .Where(path => !path.Contains(
+                $"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}",
+                StringComparison.Ordinal))
+            .Select(File.ReadAllText)
+            .ToArray();
+        var forbiddenTokens = new[]
+        {
+            "Avalonia",
+            "Editor.Shell",
+            "Editor.Features",
+            "Dispatcher",
+            "SafeHandle",
+            "~SceneWorld",
+        };
+
+        Assert.DoesNotContain(
+            forbiddenTokens,
+            token => bridgeSources.Any(source => source.Contains(
+                token,
+                StringComparison.Ordinal)));
+
+        var importSource = File.ReadAllText(Path.Combine(
+            bridgeRoot,
+            "Scene",
+            "Abi",
+            "SceneNativeLibraryApi.cs"));
+        Assert.Contains(
+            "LibraryName = \"asharia_scene_native\"",
+            importSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "EntryPoint = \"asharia_scene_world_create\"",
+            importSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "EntryPoint = \"asharia_scene_world_destroy\"",
+            importSource,
+            StringComparison.Ordinal);
+        Assert.Equal(
+            2,
+            Regex.Matches(importSource, @"\[LibraryImport\(").Count);
+        Assert.Equal(
+            2,
+            Regex.Matches(importSource, @"CallConvCdecl").Count);
+    }
+
     [Fact]
     public void Scene_provider_runtime_host_is_owned_only_by_application()
     {
@@ -557,10 +645,12 @@ public sealed class ProjectReferenceGraphTests
                 "Tests/Asharia.Editor.Tests/Asharia.Editor.Tests.csproj",
                 "Tests/Asharia.Studio.Application.Tests/Asharia.Studio.Application.Tests.csproj",
                 "Tests/Asharia.Studio.Architecture.Tests/Asharia.Studio.Architecture.Tests.csproj",
+                "Tests/Asharia.Studio.EngineBridge.Tests/Asharia.Studio.EngineBridge.Tests.csproj",
                 "Tests/Editor.Tests/Editor.Tests.csproj",
                 "src/Asharia.Editor/Asharia.Editor.csproj",
                 "src/Asharia.Runtime.Contracts/Asharia.Runtime.Contracts.csproj",
                 "src/Asharia.Studio.Application/Asharia.Studio.Application.csproj",
+                "src/Asharia.Studio.EngineBridge/Asharia.Studio.EngineBridge.csproj",
             ],
             projectPaths);
     }

@@ -30,6 +30,8 @@ legacy `Editor.csproj` 仍包含 Avalonia、Shell、Dock、Feature、尚未提�
 
 Task 4 的 service/state 迁移已完成：background task、diagnostic record/service、Frame Debug snapshot/provider、editing command、lifecycle event、selection、transaction、scene/world snapshot/provider interface、backend-neutral Viewport identity/clock/render/scheduler/state、status message，以及 Panel lifecycle/frame sink contracts 已由 `Asharia.Editor` 唯一拥有；legacy service、Feature、ViewModel 和 Avalonia View 只消费这些公共合同。UI-neutral provider registration/status/runtime host 已由 `Asharia.Studio.Application.Providers` 拥有；delegate-based `SceneProviderDescriptor` 与 fixture provider implementation 仍是 legacy compatibility seam，并只由 compatibility adapter 转换。native Frame Debug payload/bridge、Viewport composition capability/native present transport，以及 legacy `PanelDescriptor(Func<object>)`/`WorkbenchActionDescriptor` 仍不属于公共扩展 ABI。
 
+`Asharia.Studio.EngineBridge` 已建立第一段 managed Scene World lifetime boundary：ABI v1 create/destroy 使用 source-generated native import，成功后只发布不透明、不可外泄的 World owner；释放必须回到创建线程，错误线程与 native failure 都不丢失 ownership，成功后 exactly-once 清空。该边界没有 finalizer-driven cleanup，因为 native World 明确要求 owner-thread destroy；当前也没有 entity/Transform/name、snapshot provider、Application/ProjectSession wiring 或 native library deployment policy。
+
 Panel declaration 的 `ContentFactory` 是 `EditorFactoryLocalId`，不是 CLR factory 或 generation handle。未来 Host 必须在 staging 时把 Package generation、owner module definition 与 local ID 绑定为 generation-scoped runtime handle；当前仍没有 Panel registry、factory binding、Dock integration、Host resolver 或 runtime display。legacy `PanelDescriptor(Func<object>)` 只留在 `Editor` compatibility implementation，不是公共 ABI。
 
 legacy `Editor` 通过 `ProjectReference` 消费这些公共合同，并继续拥有 Avalonia adapter、Dock、Shell host 和 UI dispatcher implementation。纯 Code-first 行为测试由 `Tests/Asharia.Editor.Tests` 承载，架构门禁由 `Tests/Asharia.Studio.Architecture.Tests` 承载；迁移期继续沿用现有大写 `Tests/`。
@@ -356,6 +358,8 @@ Platforms/MacOS/
 - native resource lease 和错误映射。
 
 P/Invoke struct、pointer 和 platform handle 不越过 Bridge/Interop 边界。构造函数不加载 DLL、不创建设备。
+
+当前 Scene World baseline 只实现 ABI v1 create/destroy 与 owner-thread deterministic disposal。它有意不使用 `SafeHandle`/finalizer 作为 owner，因为 finalizer thread 不能满足 native create-thread destroy 合同；未来 Project/Edit/Play/Preview session 必须在自己的 owner execution context 上关闭 World。
 
 ## 10. Presentation 与 Built-in Extensions
 
