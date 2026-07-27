@@ -1,13 +1,11 @@
 using System;
 using System.Collections.Generic;
+using Asharia.Editor.Extensions;
 using Asharia.Editor.Worlds.Snapshots;
-using Editor.Core.Abstractions;
-using Editor.Core.Models.Extensions;
-using Editor.Core.Models.Scene;
 
-namespace Editor.Shell.Composition;
+namespace Asharia.Studio.Application.Providers;
 
-internal sealed class EditorProviderHost : IDisposable
+public sealed class EditorProviderHost : IDisposable
 {
     private readonly Dictionary<string, SceneProviderEntry> providersById_ =
         new(StringComparer.Ordinal);
@@ -17,45 +15,51 @@ internal sealed class EditorProviderHost : IDisposable
     private long nextRegistrationId_;
 
     public IDisposable RegisterOwned(
-        SceneProviderDescriptor descriptor,
-        EditorExtensionId ownerId)
+        EditorSceneProviderRegistration registration,
+        EditorModuleDefinitionId ownerId)
     {
-        ArgumentNullException.ThrowIfNull(descriptor);
-        ArgumentNullException.ThrowIfNull(ownerId);
-
-        if (providersById_.TryGetValue(descriptor.Id, out var existingById))
+        ArgumentNullException.ThrowIfNull(registration);
+        if (!ownerId.IsValid)
         {
-            throw new InvalidOperationException(
-                $"Scene provider id '{descriptor.Id}' is already registered by "
-                + $"'{existingById.OwnerId}'; new owner '{ownerId}' cannot register it.");
+            throw new ArgumentException("Module definition identity is invalid.", nameof(ownerId));
         }
 
-        if (providersByRole_.TryGetValue(descriptor.Role, out var existingByRole))
+        if (providersById_.TryGetValue(registration.Id, out var existingById))
         {
             throw new InvalidOperationException(
-                $"Scene provider role '{descriptor.Role}' is already registered by "
-                + $"'{existingByRole.OwnerId}'; new owner '{ownerId}' cannot register it.");
+                $"Scene provider id '{registration.Id}' is already registered by "
+                + $"'{ownerName(existingById.OwnerId)}'; new owner "
+                + $"'{ownerName(ownerId)}' cannot register it.");
+        }
+
+        if (providersByRole_.TryGetValue(registration.Role, out var existingByRole))
+        {
+            throw new InvalidOperationException(
+                $"Scene provider role '{registration.Role}' is already registered by "
+                + $"'{ownerName(existingByRole.OwnerId)}'; new owner "
+                + $"'{ownerName(ownerId)}' cannot register it.");
         }
 
         var entry = new SceneProviderEntry(
-            descriptor,
+            registration,
             ownerId,
             ++nextRegistrationId_);
-        providersById_.Add(descriptor.Id, entry);
-        providersByRole_.Add(descriptor.Role, entry);
+        providersById_.Add(registration.Id, entry);
+        providersByRole_.Add(registration.Role, entry);
         providersInRegistrationOrder_.Add(entry);
-        return new SceneProviderRegistrationLease(this, descriptor.Id, entry.RegistrationId);
+        return new SceneProviderRegistrationLease(this, registration.Id, entry.RegistrationId);
     }
 
-    public IReadOnlyList<SceneProviderDescriptor> GetSceneProviders()
+    public IReadOnlyList<EditorSceneProviderRegistration> GetSceneProviders()
     {
-        var descriptors = new SceneProviderDescriptor[providersInRegistrationOrder_.Count];
-        for (var index = 0; index < descriptors.Length; index++)
+        var registrations =
+            new EditorSceneProviderRegistration[providersInRegistrationOrder_.Count];
+        for (var index = 0; index < registrations.Length; index++)
         {
-            descriptors[index] = providersInRegistrationOrder_[index].Descriptor;
+            registrations[index] = providersInRegistrationOrder_[index].Registration;
         }
 
-        return descriptors;
+        return registrations;
     }
 
     public ISceneSnapshotProvider GetRequiredSceneSnapshotProvider(string role)
@@ -82,7 +86,7 @@ internal sealed class EditorProviderHost : IDisposable
         throw new KeyNotFoundException($"Scene provider id '{id}' is not registered.");
     }
 
-    public EditorExtensionId GetOwnerId(string id)
+    public EditorModuleDefinitionId GetOwnerId(string id)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(id);
 
@@ -96,14 +100,43 @@ internal sealed class EditorProviderHost : IDisposable
 
     public void Dispose()
     {
-        for (var index = providersInRegistrationOrder_.Count - 1; index >= 0; index--)
+        List<Exception>? failures = null;
+        try
         {
-            providersInRegistrationOrder_[index].DisposeProvider();
+            for (var index = providersInRegistrationOrder_.Count - 1; index >= 0; index--)
+            {
+                try
+                {
+                    providersInRegistrationOrder_[index].DisposeProvider();
+                }
+                catch (Exception exception)
+                {
+                    failures ??= [];
+                    failures.Add(exception);
+                }
+            }
+        }
+        finally
+        {
+            providersById_.Clear();
+            providersByRole_.Clear();
+            providersInRegistrationOrder_.Clear();
         }
 
-        providersById_.Clear();
-        providersByRole_.Clear();
-        providersInRegistrationOrder_.Clear();
+        if (failures?.Count == 1)
+        {
+            throw failures[0];
+        }
+
+        if (failures is not null)
+        {
+            throw new AggregateException(failures);
+        }
+    }
+
+    private static string ownerName(EditorModuleDefinitionId ownerId)
+    {
+        return ownerId.Module.Value;
     }
 
     private void RemoveRegistration(string id, long registrationId)
@@ -121,7 +154,7 @@ internal sealed class EditorProviderHost : IDisposable
         finally
         {
             providersById_.Remove(id);
-            providersByRole_.Remove(entry.Descriptor.Role);
+            providersByRole_.Remove(entry.Registration.Role);
             var index = providersInRegistrationOrder_.FindIndex(
                 item => item.RegistrationId == registrationId);
             if (index >= 0)
@@ -132,17 +165,17 @@ internal sealed class EditorProviderHost : IDisposable
     }
 
     private sealed class SceneProviderEntry(
-        SceneProviderDescriptor descriptor,
-        EditorExtensionId ownerId,
+        EditorSceneProviderRegistration registration,
+        EditorModuleDefinitionId ownerId,
         long registrationId)
     {
         private ISceneSnapshotProvider? provider_;
         private EditorProviderState state_ = EditorProviderState.Created;
         private string? message_;
 
-        public SceneProviderDescriptor Descriptor { get; } = descriptor;
+        public EditorSceneProviderRegistration Registration { get; } = registration;
 
-        public EditorExtensionId OwnerId { get; } = ownerId;
+        public EditorModuleDefinitionId OwnerId { get; } = ownerId;
 
         public long RegistrationId { get; } = registrationId;
 
@@ -155,7 +188,7 @@ internal sealed class EditorProviderHost : IDisposable
 
             try
             {
-                var provider = Descriptor.CreateProvider();
+                var provider = Registration.CreateProvider();
                 if (provider is null)
                 {
                     throw new InvalidOperationException("Scene provider factory returned null.");
@@ -171,7 +204,7 @@ internal sealed class EditorProviderHost : IDisposable
                 state_ = EditorProviderState.Faulted;
                 message_ = exception.Message;
                 throw new InvalidOperationException(
-                    $"Scene provider '{Descriptor.Id}' failed to create.",
+                    $"Scene provider '{Registration.Id}' failed to create.",
                     exception);
             }
         }
@@ -179,8 +212,8 @@ internal sealed class EditorProviderHost : IDisposable
         public EditorProviderStatusSnapshot GetStatus()
         {
             return new EditorProviderStatusSnapshot(
-                Descriptor.Id,
-                Descriptor.Role,
+                Registration.Id,
+                Registration.Role,
                 OwnerId,
                 state_,
                 message_);
@@ -211,8 +244,9 @@ internal sealed class EditorProviderHost : IDisposable
 
         public void Dispose()
         {
-            host_?.RemoveRegistration(id, registrationId);
+            var host = host_;
             host_ = null;
+            host?.RemoveRegistration(id, registrationId);
         }
     }
 }

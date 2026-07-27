@@ -7,10 +7,12 @@ using Asharia.Editor.Tasks;
 using Asharia.Editor.Transactions;
 using Asharia.Editor.UI.CodeFirst.Abstractions;
 using Asharia.Editor.Viewports;
+using Asharia.Editor.Worlds.Snapshots;
 using Asharia.Studio.Application.Commands;
+using Asharia.Studio.Application.Diagnostics;
 using Asharia.Studio.Application.Lifecycle;
 using Asharia.Studio.Application.Panels;
-using Asharia.Studio.Application.Diagnostics;
+using Asharia.Studio.Application.Providers;
 using Asharia.Studio.Application.Selection;
 using Asharia.Studio.Application.Tasks;
 using Asharia.Studio.Application.Transactions;
@@ -27,6 +29,73 @@ namespace Asharia.Studio.Architecture.Tests;
 
 public sealed class ProjectReferenceGraphTests
 {
+    [Fact]
+    public void Scene_provider_runtime_host_is_owned_only_by_application()
+    {
+        var studioRoot = FindStudioRoot();
+        var applicationProviderRoot = Path.Combine(
+            studioRoot,
+            "src",
+            "Asharia.Studio.Application",
+            "Providers");
+
+        Assert.True(
+            File.Exists(Path.Combine(applicationProviderRoot, "EditorProviderHost.cs")),
+            $"Application provider host is missing from {applicationProviderRoot}.");
+        Assert.Equal(
+            "Asharia.Studio.Application",
+            typeof(EditorProviderHost).Assembly.GetName().Name);
+        Assert.Equal(
+            "Asharia.Studio.Application",
+            typeof(EditorProviderStatusSnapshot).Assembly.GetName().Name);
+        Assert.Equal(
+            "Asharia.Studio.Application",
+            typeof(EditorProviderState).Assembly.GetName().Name);
+        Assert.Equal(
+            "Asharia.Editor",
+            typeof(ISceneSnapshotProvider).Assembly.GetName().Name);
+
+        Assert.False(File.Exists(Path.Combine(
+            studioRoot,
+            "Shell",
+            "Composition",
+            "EditorProviderHost.cs")));
+        Assert.False(File.Exists(Path.Combine(
+            studioRoot,
+            "Core",
+            "Models",
+            "Scene",
+            "EditorProviderStatusSnapshot.cs")));
+        Assert.False(File.Exists(Path.Combine(
+            studioRoot,
+            "Core",
+            "Models",
+            "Scene",
+            "EditorProviderState.cs")));
+
+        var registrationConsumers = Directory
+            .EnumerateFiles(studioRoot, "*.cs", SearchOption.AllDirectories)
+            .Select(path => new
+            {
+                Path = Path.GetRelativePath(studioRoot, path).Replace('\\', '/'),
+                Text = File.ReadAllText(path),
+            })
+            .Where(file => !file.Path.StartsWith("Tests/", StringComparison.Ordinal)
+                && !file.Path.StartsWith("src/", StringComparison.Ordinal)
+                && !file.Path.Contains("/bin/", StringComparison.Ordinal)
+                && !file.Path.Contains("/obj/", StringComparison.Ordinal))
+            .Where(file => file.Text.Contains(
+                nameof(EditorSceneProviderRegistration),
+                StringComparison.Ordinal))
+            .Select(file => file.Path)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.Equal(
+            ["Shell/Compatibility/LegacyEditorModuleCompatibilityAdapter.cs"],
+            registrationConsumers);
+    }
+
     [Fact]
     public void Command_status_router_uses_the_public_command_executor_contract()
     {

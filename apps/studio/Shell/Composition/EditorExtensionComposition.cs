@@ -1,3 +1,4 @@
+using Asharia.Studio.Application.Providers;
 using Editor.Core.Abstractions;
 
 namespace Editor.Shell.Composition;

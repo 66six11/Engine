@@ -2,7 +2,7 @@
 
 状态：Target（迁移中）
 
-更新日期：2026-07-27
+更新日期：2026-07-28
 
 ## 1. 目的
 
@@ -22,7 +22,7 @@ Studio 不拥有 Engine truth。World、simulation、renderer、Vulkan device、
 `Core`、`Shell`、`UI`、`Features`、`src` 和 `Tests`。已有 Dock、command、diagnostics、selection、transaction、
 built-in extension host、Code-first UI、Scene snapshot、panel scheduler 和 Windows Scene View GPU interop 的 v0 路径。
 `Asharia.Studio.sln` 已包含独立 `Asharia.Editor`、`Asharia.Runtime.Contracts` 与
-`Asharia.Studio.Application`；Application 已拥有 static module host 基线和只读 Editor Image inventory
+`Asharia.Studio.Application`；Application 已拥有 static module host、UI-neutral scene provider runtime host 和只读 Editor Image inventory
 verifier，并可从 current inventory lease 投影 Distribution-bound managed build environment inventory；
 `Asharia.Runtime.Contracts` 当前把 Scene `EntityId`、float3、quaternion 与 local Transform 固定为
 8/12/16/40-byte unmanaged values，并用显式 offsets 对齐 native C ABI；这些只是项目代码可引用的稳定
