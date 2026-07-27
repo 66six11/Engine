@@ -53,6 +53,8 @@ Play Mode 的边界。它不是完整 ECS 实现说明，而是约束后续 `sce
 | Godot `Node.name`: https://docs.godotengine.org/en/4.5/classes/class_node.html | Godot Node name 参与 sibling uniqueness 与 hierarchy path。 | 当前没有 hierarchy，不能提前导入 sibling uniqueness、路径字符过滤或自动重命名语义。 |
 | Unicode well-formed UTF-8: https://www.unicode.org/versions/Unicode17.0.0/core-spec/chapter-3/ | Unicode 用精确合法 byte ranges 定义 well-formed UTF-8，ill-formed 序列必须作为错误而非字符解释。 | native set-name 对 malformed/overlong/surrogate/out-of-range/truncated input fail closed，不静默 replacement。 |
 | SQLite C text lifetime: https://www.sqlite.org/c3ref/column_blob.html | SQLite 明确区分 UTF-8 byte length 与 terminator，并提醒 borrowed text pointer 会随后续 mutation 失效。 | native get-name 使用 caller-owned exact-byte copy-out，不跨 World mutation 暴露 borrowed `char*` 或 allocator。 |
+| .NET native interop: https://learn.microsoft.com/en-us/dotnet/standard/native-interop/best-practices | .NET 建议 managed signature 使用最接近 native 的 primitive，并让跨边界 value struct 使用 fixed layout 与 blittable fields。 | `Asharia.Runtime.Contracts` 的 Scene values 显式固定 size/offset，只包含 `uint`、`float` 或同样固定的嵌套 value。 |
+| Unity native plug-ins: https://docs.unity3d.com/2023.2/Documentation/Manual/NativePlugins.html | Unity 使用简单 C interface 作为 managed gameplay code 与 native plug-in 的边界。 | 后续 managed World bridge 应包裹当前 C ABI；不能让 Avalonia、ViewModel 或项目脚本直接持有 C++ object layout。 |
 | Unreal parallel rendering: https://dev.epicgames.com/documentation/en-us/unreal-engine/parallel-rendering-overview-for-unreal-engine | Unreal 把 game thread、render thread 和 RHI thread 分离，渲染侧通过 proxy/snapshot 消费游戏数据。 | Renderer 后续应消费 render snapshot/draw packet，不直接读 gameplay/editor object。 |
 | Unity Job System: https://docs.unity3d.com/Manual/JobSystemOverview.html | Unity Job System 强调可并行数据和 safety 规则。 | Asharia Engine worker job 应处理 plain data；mutable World 访问必须通过主线程或明确同步模型。 |
 | Unity SRP / RenderGraph: https://docs.unity3d.com/Manual/urp/render-graph-introduction.html | Editor 可有 Game View、Scene View、preview 等多个渲染视图。 | RenderGraph 和 profiling 不应假设一帧只有一个 view graph。 |
@@ -113,6 +115,10 @@ flowchart TD
 - native Transform 只表示 local position/quaternion/scale；get 失败先把 output 清零，set 拒绝任意 component
   的 NaN/Inf 与非单位 quaternion，且不静默 normalize/clamp。有限 zero/negative scale 可透传；hierarchy/world
   Transform、dirty propagation 与 change notification 尚不存在。
+- managed `Asharia.Runtime.Contracts` 只固定对应的 plain value layout：`EntityId` 为 8 bytes，
+  `Float3` 为 12 bytes，`Quaternion` 为 16 bytes，`TransformValue` 为 40 bytes；Transform 的
+  position/rotation/scale offsets 分别为 0/12/28。它们不包含 managed reference，保留 positional record
+  construction/value equality，但尚未声明 P/Invoke、World handle、thread dispatch 或 provider ownership。
 - native entity name 是 mutable、non-unique display/debug UTF-8 text，不是 identity、path、persistence ID 或
   lookup key。set 立即复制 well-formed UTF-8，empty 合法且不 normalize/trim/case-fold/自动唯一化；get 先查询
   byte length，再完整复制到 caller buffer，不加 NUL、不部分写入，也不暴露随 World mutation 失效的 borrowed

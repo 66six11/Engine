@@ -1,6 +1,11 @@
+using System.Runtime.InteropServices;
+
 namespace Asharia.Runtime;
 
-public readonly record struct EntityId(uint Index, uint Generation)
+[StructLayout(LayoutKind.Explicit, Size = 8)]
+public readonly record struct EntityId(
+    [field: FieldOffset(0)] uint Index,
+    [field: FieldOffset(4)] uint Generation)
 {
     public static EntityId Invalid { get; } = default;
 

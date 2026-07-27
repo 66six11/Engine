@@ -2,7 +2,7 @@
 
 状态：Target（迁移中）
 
-更新日期：2026-07-26
+更新日期：2026-07-27
 
 ## 1. 目的
 
@@ -24,6 +24,9 @@ built-in extension host、Code-first UI、Scene snapshot、panel scheduler 和 W
 `Asharia.Studio.sln` 已包含独立 `Asharia.Editor`、`Asharia.Runtime.Contracts` 与
 `Asharia.Studio.Application`；Application 已拥有 static module host 基线和只读 Editor Image inventory
 verifier，并可从 current inventory lease 投影 Distribution-bound managed build environment inventory；
+`Asharia.Runtime.Contracts` 当前把 Scene `EntityId`、float3、quaternion 与 local Transform 固定为
+8/12/16/40-byte unmanaged values，并用显式 offsets 对齐 native C ABI；这些只是项目代码可引用的稳定
+value contracts，不包含 native function import、World handle、Scene provider、Avalonia dispatcher 或文件 IO。
 Project Code 还能把该 projection 复验为 semantic build credential，并为 caller 已规范化的项目根
 `Editor/**/*.cs` 原子生成 implicit SDK workspace，再使用 credential-bound dotnet closure 执行隔离
 restore/build 并发布四类 raw build output；current raw-output lease 现在还能经过无执行 artifact metadata

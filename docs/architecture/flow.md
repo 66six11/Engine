@@ -158,6 +158,8 @@ flowchart TD
   version/struct-size 校验后的 opaque World、generation-safe entity 生命周期、validated local Transform 与
   UTF-8 display/debug name get/set，并强制所有操作由创建线程调用。它尚不公开 hierarchy/world Transform、
   change notification、managed binding 或 render extraction。
+  Studio 发行的 `Asharia.Runtime.Contracts` 只固定与该 C ABI 对应的 unmanaged `EntityId`、float3、quaternion
+  与 local Transform value layout；它没有 native function imports、World lifetime 或 Scene provider 行为。
   `.ameta` 文本 IO 位于可选 `asharia::asset_core_io` target，只额外依赖 `archive` strict JSON facade。
 - `project-core` 目前只拥有最小 project descriptor model；`asharia::project_core_io` 通过 `archive`
   strict JSON facade 读写 `asharia.project.json`，不保存 cook/package profiles、editor workspace 或 runtime
