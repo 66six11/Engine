@@ -153,7 +153,10 @@ package 用来承载可选能力：
 - `archive` 提供 `ArchiveValue` 和严格 JSON IO facade，不暴露第三方 JSON 类型。
 - `cpp-binding` 提供 C++ object/member 与 schema field 的读写绑定。
 - `persistence` 组合 schema、archive 和 binding，提供 save/load/default/migration。
-- `scene-core` 提供 headless World、runtime EntityId 和 local Transform baseline。
+- `scene-core` 的 `asharia::scene_core` 提供 headless World、runtime EntityId 和 local Transform baseline；
+  `asharia::scene_native` shared adapter 当前只提供 C11-compatible、versioned opaque World
+  create/destroy 生命周期。adapter 只私有依赖 runtime target，不公开 C++ STL/exception、entity/Transform、
+  managed bridge 或 render integration。
 - `project-core` 提供最小 Asharia project descriptor。当前只保存 project identity、asset source roots、
   asset cache root policy 和 discovery ignore policy；不保存 target profiles、asset profiles、
   package/export 设置、editor workspace 或 runtime/GPU state。

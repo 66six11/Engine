@@ -38,6 +38,9 @@ Play Mode 的边界。它不是完整 ECS 实现说明，而是约束后续 `sce
 | 资料 | 关键事实 | 对 Asharia Engine 的约束 |
 | --- | --- | --- |
 | Godot thread-safe APIs: https://docs.godotengine.org/en/stable/tutorials/performance/thread_safe_apis.html | Godot 文档明确 SceneTree 交互不是任意线程安全；跨线程更适合 server-style API 或 deferred call。 | Asharia Engine 第一版 World 默认主线程拥有；worker thread 只处理 immutable snapshot、job data 或消息。 |
+| Unreal `FWorldContext`: https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/Engine/FWorldContext | UE 用 engine-owned context 区分 Game、Editor 与 PIE World 轨道，并明确外部代码不应直接管理 `FWorldContext`。 | World 生命周期必须由显式 owner/context 持有；native caller 只拿受约束的 World handle，不获得 context 内部对象。 |
+| O3DE `EntityContext`: https://docs.o3de.org/docs/api/frameworks/azframework/class_az_framework_1_1_entity_context.html | O3DE 的 context 拥有一组 entity，edit/runtime 可使用独立 context，并提供显式 `InitContext` / `DestroyContext`。 | Asharia 的 ABI 先建立独立 World create/destroy 生命周期；Editor/Play World 的具体 context owner 留给后继 Host/WorldScope。 |
+| Godot GDExtension C interface: https://docs.godotengine.org/en/latest/engine_details/engine_api/gdextension/gdextension_interface_json_file.html | Godot 把原生扩展作为 shared library，C interface 用固定宽度值与 opaque struct pointer 表示 handles。 | 跨语言边界使用 C-compatible header、导出函数、版本/结构大小和 opaque handle，不暴露 C++ object layout。 |
 | Unreal parallel rendering: https://dev.epicgames.com/documentation/en-us/unreal-engine/parallel-rendering-overview-for-unreal-engine | Unreal 把 game thread、render thread 和 RHI thread 分离，渲染侧通过 proxy/snapshot 消费游戏数据。 | Renderer 后续应消费 render snapshot/draw packet，不直接读 gameplay/editor object。 |
 | Unity Job System: https://docs.unity3d.com/Manual/JobSystemOverview.html | Unity Job System 强调可并行数据和 safety 规则。 | Asharia Engine worker job 应处理 plain data；mutable World 访问必须通过主线程或明确同步模型。 |
 | Unity SRP / RenderGraph: https://docs.unity3d.com/Manual/urp/render-graph-introduction.html | Editor 可有 Game View、Scene View、preview 等多个渲染视图。 | RenderGraph 和 profiling 不应假设一帧只有一个 view graph。 |
@@ -87,6 +90,13 @@ flowchart TD
 约束：
 
 - `scene-core` 不依赖 ImGui、Vulkan、renderer implementation 或 scripting runtime。
+- `asharia::scene_native` shared adapter 只依赖 `asharia::scene_core`；公开 header 可由 C11 consumer
+  直接编译，只有 fixed-width status/header、opaque World handle 与 create/destroy。
+- 当前 native World handle 只记录并校验创建线程，不猜测哪个线程是进程主线程；Host/WorldScope 必须在其
+  control/main thread 创建它。wrong-thread destroy fail closed，成功 destroy 后 handle 立即失效；caller
+  必须先停止并 drain 依赖工作。
+- version 1 lifecycle ABI 尚不公开 entity、Transform、component、managed P/Invoke 或 render snapshot；
+  这些必须按独立 Slice 增加，不能通过泄漏 mutable `World*` 省略 owner/safe-point 设计。
 - Editor System 内部 `editor_domain` 不依赖 ImGui、Vulkan 或 renderer implementation。
 - renderer 可以依赖后端无关的 render packet 类型，不能依赖 mutable `World`。
 - `apps/editor` 负责 ImGui integration 和 editor viewport host，不把 ImGui 类型塞进 `editor_domain`。

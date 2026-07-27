@@ -81,6 +81,17 @@ cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake -S packa
 cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake -S packages\material-core -B build\cmake\package-material-core-tests-msvc-debug -G Ninja -DCMAKE_BUILD_TYPE=Debug -DASHARIA_BUILD_TESTS=ON -DCMAKE_TOOLCHAIN_FILE=%CD%/build/conan/msvc-debug/Debug/generators/conan_toolchain.cmake && cmake --build build\cmake\package-material-core-tests-msvc-debug && ctest --test-dir build\cmake\package-material-core-tests-msvc-debug --output-on-failure"
 ```
 
+`scene-core` also builds a real C11 consumer for its shared native adapter. Run both compiler paths when
+changing that ABI:
+
+```powershell
+cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake -S packages\scene-core -B build\cmake\package-scene-core-tests-msvc-debug -G Ninja -DCMAKE_BUILD_TYPE=Debug -DASHARIA_BUILD_TESTS=ON -DCMAKE_TOOLCHAIN_FILE=%CD%/build/conan/msvc-debug/Debug/generators/conan_toolchain.cmake && cmake --build build\cmake\package-scene-core-tests-msvc-debug && ctest --test-dir build\cmake\package-scene-core-tests-msvc-debug --output-on-failure"
+```
+
+```powershell
+cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake -S packages\scene-core -B build\cmake\package-scene-core-tests-clangcl-debug -G Ninja -DCMAKE_BUILD_TYPE=Debug -DASHARIA_BUILD_TESTS=ON -DASHARIA_ENABLE_CLANG_TIDY=ON -DCMAKE_TOOLCHAIN_FILE=%CD%/build/conan/clangcl-debug/Debug/generators/conan_toolchain.cmake && cmake --build build\cmake\package-scene-core-tests-clangcl-debug && ctest --test-dir build\cmake\package-scene-core-tests-clangcl-debug --output-on-failure"
+```
+
 ```powershell
 cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake -S packages\schema -B build\cmake\package-schema-tests-msvc-debug -G Ninja -DCMAKE_BUILD_TYPE=Debug -DASHARIA_BUILD_TESTS=ON -DCMAKE_TOOLCHAIN_FILE=%CD%/build/conan/msvc-debug/Debug/generators/conan_toolchain.cmake && cmake --build build\cmake\package-schema-tests-msvc-debug && ctest --test-dir build\cmake\package-schema-tests-msvc-debug --output-on-failure"
 ```
@@ -104,6 +115,7 @@ targets in `targets`.
 
 - This does not install or export CMake packages.
 - This does not create per-package Conan recipes.
-- This does not make a stable C++ ABI or DLL boundary.
+- This does not make a general binary SDK or stable C++ ABI. `asharia::scene_native` is one narrow,
+  explicitly versioned C ABI shared adapter; it does not make the package's C++ API binary-stable.
 - Vulkan/runtime smoke coverage is still routed through `apps/sample-viewer`
   flags until those packages grow their own focused test targets.

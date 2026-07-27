@@ -11,14 +11,24 @@
   "displayName": "Asharia Engine Scene Core",
   "description": "Headless scene world, entity identity, and transform baseline.",
   "dependencies": ["com.asharia.core"],
-  "targets": ["asharia-scene-core"],
-  "testTargets": ["asharia-scene-core-smoke-tests"],
+  "targets": ["asharia-scene-core", "asharia-scene-native"],
+  "testTargets": [
+    "asharia-scene-core-smoke-tests",
+    "asharia-scene-native-lifecycle-smoke-tests",
+    "asharia-scene-native-c-smoke-tests"
+  ],
   "targetRoles": {
     "asharia-scene-core": "runtime",
-    "asharia-scene-core-smoke-tests": "test"
+    "asharia-scene-native": "adapter",
+    "asharia-scene-core-smoke-tests": "test",
+    "asharia-scene-native-lifecycle-smoke-tests": "test",
+    "asharia-scene-native-c-smoke-tests": "test"
   },
   "targetDependencies": {
     "asharia-scene-core": ["asharia-core"],
-    "asharia-scene-core-smoke-tests": ["asharia-scene-core"]
+    "asharia-scene-native": ["asharia-scene-core"],
+    "asharia-scene-core-smoke-tests": ["asharia-scene-core"],
+    "asharia-scene-native-lifecycle-smoke-tests": ["asharia-scene-native"],
+    "asharia-scene-native-c-smoke-tests": ["asharia-scene-native"]
   }
 }
