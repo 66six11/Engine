@@ -23,4 +23,13 @@ internal interface ISceneNativeApi
         nint world,
         in SceneNativeEntityRequest request,
         out uint isAlive);
+
+    SceneNativeStatus GetLocalTransform(
+        nint world,
+        in SceneNativeEntityRequest request,
+        out TransformValue transform);
+
+    SceneNativeStatus SetLocalTransform(
+        nint world,
+        in SceneNativeSetLocalTransformRequest request);
 }

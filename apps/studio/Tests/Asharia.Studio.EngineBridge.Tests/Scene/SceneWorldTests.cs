@@ -52,6 +52,44 @@ public sealed class SceneWorldTests
         Assert.Equal(SceneNativeAbi.Version, entityRequest.Header.AbiVersion);
         Assert.Equal(SceneNativeEntityRequest.StructSize, entityRequest.Header.StructSize);
         Assert.Equal(entity, entityRequest.Entity);
+
+        var transform = new TransformValue(
+            new Float3(1.0f, 2.0f, 3.0f),
+            Quaternion.Identity,
+            new Float3(4.0f, 5.0f, 6.0f));
+        var setTransformRequest =
+            SceneNativeSetLocalTransformRequest.Current(entity, transform);
+        Assert.Equal(12, Marshal.SizeOf<Float3>());
+        Assert.Equal(16, Marshal.SizeOf<Quaternion>());
+        Assert.Equal(40, Marshal.SizeOf<TransformValue>());
+        Assert.Equal(
+            0,
+            Marshal.OffsetOf<TransformValue>("<Position>k__BackingField").ToInt32());
+        Assert.Equal(
+            12,
+            Marshal.OffsetOf<TransformValue>("<Rotation>k__BackingField").ToInt32());
+        Assert.Equal(
+            28,
+            Marshal.OffsetOf<TransformValue>("<Scale>k__BackingField").ToInt32());
+        Assert.Equal(56, Marshal.SizeOf<SceneNativeSetLocalTransformRequest>());
+        Assert.Equal(
+            0,
+            Marshal.OffsetOf<SceneNativeSetLocalTransformRequest>(
+                "<Header>k__BackingField").ToInt32());
+        Assert.Equal(
+            8,
+            Marshal.OffsetOf<SceneNativeSetLocalTransformRequest>(
+                "<Entity>k__BackingField").ToInt32());
+        Assert.Equal(
+            16,
+            Marshal.OffsetOf<SceneNativeSetLocalTransformRequest>(
+                "<Transform>k__BackingField").ToInt32());
+        Assert.Equal(SceneNativeAbi.Version, setTransformRequest.Header.AbiVersion);
+        Assert.Equal(
+            SceneNativeSetLocalTransformRequest.StructSize,
+            setTransformRequest.Header.StructSize);
+        Assert.Equal(entity, setTransformRequest.Entity);
+        Assert.Equal(transform, setTransformRequest.Transform);
         Assert.Equal(typeof(uint), Enum.GetUnderlyingType(typeof(SceneNativeStatus)));
         Assert.Equal(0U, (uint)SceneNativeStatus.Success);
         Assert.Equal(1U, (uint)SceneNativeStatus.InvalidArgument);
@@ -167,6 +205,104 @@ public sealed class SceneWorldTests
     }
 
     [Fact]
+    public void Local_transform_round_trip_forwards_world_entity_and_value()
+    {
+        var entity = new EntityId(7, 9);
+        var transform = new TransformValue(
+            new Float3(1.0f, 2.0f, 3.0f),
+            new Quaternion(0.0f, 0.0f, 0.0f, 1.0f),
+            new Float3(-1.0f, 0.0f, 2.0f));
+        var api = new StubSceneNativeApi
+        {
+            LocalTransform = transform,
+        };
+        using var world = SceneWorld.Create(api);
+
+        var returned = world.GetLocalTransform(entity);
+        world.SetLocalTransform(entity, transform);
+
+        Assert.Equal(transform, returned);
+        Assert.Equal(1, api.GetLocalTransformCalls);
+        Assert.Equal(1, api.SetLocalTransformCalls);
+        Assert.Equal(api.CreateHandle, api.LastGetLocalTransformWorld);
+        Assert.Equal(api.CreateHandle, api.LastSetLocalTransformWorld);
+        Assert.Equal(entity, api.LastGetLocalTransformRequest.Entity);
+        Assert.Equal(entity, api.LastSetLocalTransformRequest.Entity);
+        Assert.Equal(transform, api.LastSetLocalTransformRequest.Transform);
+        Assert.Equal(
+            SceneNativeAbi.Version,
+            api.LastGetLocalTransformRequest.Header.AbiVersion);
+        Assert.Equal(
+            SceneNativeSetLocalTransformRequest.StructSize,
+            api.LastSetLocalTransformRequest.Header.StructSize);
+    }
+
+    [Fact]
+    public void Get_local_transform_preserves_stale_entity_status()
+    {
+        var api = new StubSceneNativeApi
+        {
+            GetLocalTransformStatus = SceneNativeStatus.InvalidEntity,
+        };
+        using var world = SceneWorld.Create(api);
+        var entity = new EntityId(3, 4);
+
+        var exception = Assert.Throws<SceneNativeCallException>(() =>
+        {
+            _ = world.GetLocalTransform(entity);
+        });
+
+        Assert.Equal("scene.world.entity.local-transform.get", exception.Operation);
+        Assert.Equal(SceneNativeStatus.InvalidEntity, exception.Status);
+        Assert.Equal(entity, api.LastGetLocalTransformRequest.Entity);
+    }
+
+    [Fact]
+    public void Set_local_transform_preserves_native_validation_status()
+    {
+        var transform = new TransformValue(
+            Float3.Zero,
+            new Quaternion(float.NaN, 0.0f, 0.0f, 1.0f),
+            Float3.One);
+        var api = new StubSceneNativeApi
+        {
+            SetLocalTransformStatus = SceneNativeStatus.InvalidTransform,
+        };
+        using var world = SceneWorld.Create(api);
+
+        var exception = Assert.Throws<SceneNativeCallException>(() =>
+            world.SetLocalTransform(new EntityId(1, 1), transform));
+
+        Assert.Equal("scene.world.entity.local-transform.set", exception.Operation);
+        Assert.Equal(SceneNativeStatus.InvalidTransform, exception.Status);
+        Assert.Equal(transform, api.LastSetLocalTransformRequest.Transform);
+    }
+
+    [Fact]
+    public void Get_local_transform_preserves_native_binding_failure()
+    {
+        var expected = new EntryPointNotFoundException("missing get local transform");
+        var api = new StubSceneNativeApi
+        {
+            GetLocalTransformException = expected,
+        };
+        using var world = SceneWorld.Create(api);
+
+        var exception = Assert.Throws<SceneNativeCallException>(() =>
+        {
+            _ = world.GetLocalTransform(new EntityId(1, 1));
+        });
+
+        Assert.Equal("scene.world.entity.local-transform.get", exception.Operation);
+        Assert.Null(exception.Status);
+        Assert.Same(expected, exception.InnerException);
+        Assert.Contains(
+            "missing get local transform",
+            exception.Message,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Create_entity_preserves_native_rejection_status()
     {
         var api = new StubSceneNativeApi
@@ -257,6 +393,11 @@ public sealed class SceneWorldTests
                 },
                 () => world.DestroyEntity(entity),
                 () => world.IsAlive(entity),
+                () =>
+                {
+                    _ = world.GetLocalTransform(entity);
+                },
+                () => world.SetLocalTransform(entity, TransformValue.Identity),
             })
             {
                 try
@@ -273,11 +414,13 @@ public sealed class SceneWorldTests
         thread.Start();
         thread.Join();
 
-        Assert.Equal(3, failures.Count);
+        Assert.Equal(5, failures.Count);
         Assert.All(failures, failure => Assert.IsType<InvalidOperationException>(failure));
         Assert.Equal(0, api.CreateEntityCalls);
         Assert.Equal(0, api.DestroyEntityCalls);
         Assert.Equal(0, api.IsAliveCalls);
+        Assert.Equal(0, api.GetLocalTransformCalls);
+        Assert.Equal(0, api.SetLocalTransformCalls);
     }
 
     [Fact]
@@ -294,9 +437,17 @@ public sealed class SceneWorldTests
         });
         Assert.Throws<ObjectDisposedException>(() => world.DestroyEntity(entity));
         Assert.Throws<ObjectDisposedException>(() => world.IsAlive(entity));
+        Assert.Throws<ObjectDisposedException>(() =>
+        {
+            _ = world.GetLocalTransform(entity);
+        });
+        Assert.Throws<ObjectDisposedException>(() =>
+            world.SetLocalTransform(entity, TransformValue.Identity));
         Assert.Equal(0, api.CreateEntityCalls);
         Assert.Equal(0, api.DestroyEntityCalls);
         Assert.Equal(0, api.IsAliveCalls);
+        Assert.Equal(0, api.GetLocalTransformCalls);
+        Assert.Equal(0, api.SetLocalTransformCalls);
     }
 
     [Fact]
@@ -327,12 +478,22 @@ public sealed class SceneWorldTests
         using var world = SceneWorld.Create(api);
 
         Assert.False(world.IsAlive(EntityId.Invalid));
-        var exception = Assert.Throws<ArgumentException>(() =>
+        var destroyException = Assert.Throws<ArgumentException>(() =>
             world.DestroyEntity(EntityId.Invalid));
+        var getException = Assert.Throws<ArgumentException>(() =>
+        {
+            _ = world.GetLocalTransform(EntityId.Invalid);
+        });
+        var setException = Assert.Throws<ArgumentException>(() =>
+            world.SetLocalTransform(EntityId.Invalid, TransformValue.Identity));
 
-        Assert.Equal("entity", exception.ParamName);
+        Assert.Equal("entity", destroyException.ParamName);
+        Assert.Equal("entity", getException.ParamName);
+        Assert.Equal("entity", setException.ParamName);
         Assert.Equal(0, api.DestroyEntityCalls);
         Assert.Equal(0, api.IsAliveCalls);
+        Assert.Equal(0, api.GetLocalTransformCalls);
+        Assert.Equal(0, api.SetLocalTransformCalls);
     }
 
     [Fact]
@@ -435,6 +596,10 @@ public sealed class SceneWorldTests
 
         public int IsAliveCalls { get; private set; }
 
+        public int GetLocalTransformCalls { get; private set; }
+
+        public int SetLocalTransformCalls { get; private set; }
+
         public SceneNativeWorldCreateRequest LastCreateRequest { get; private set; }
 
         public SceneNativeCreateEntityRequest LastCreateEntityRequest { get; private set; }
@@ -443,6 +608,14 @@ public sealed class SceneWorldTests
 
         public SceneNativeEntityRequest LastIsAliveRequest { get; private set; }
 
+        public SceneNativeEntityRequest LastGetLocalTransformRequest { get; private set; }
+
+        public SceneNativeSetLocalTransformRequest LastSetLocalTransformRequest
+        {
+            get;
+            private set;
+        }
+
         public nint LastDestroyedHandle { get; private set; }
 
         public nint LastCreateEntityWorld { get; private set; }
@@ -450,6 +623,10 @@ public sealed class SceneWorldTests
         public nint LastDestroyEntityWorld { get; private set; }
 
         public nint LastIsAliveWorld { get; private set; }
+
+        public nint LastGetLocalTransformWorld { get; private set; }
+
+        public nint LastSetLocalTransformWorld { get; private set; }
 
         public SceneNativeStatus CreateStatus { get; init; } = SceneNativeStatus.Success;
 
@@ -464,9 +641,17 @@ public sealed class SceneWorldTests
         public SceneNativeStatus IsAliveStatus { get; init; } =
             SceneNativeStatus.Success;
 
+        public SceneNativeStatus GetLocalTransformStatus { get; init; } =
+            SceneNativeStatus.Success;
+
+        public SceneNativeStatus SetLocalTransformStatus { get; init; } =
+            SceneNativeStatus.Success;
+
         public EntityId CreatedEntity { get; init; } = new(1, 1);
 
         public uint IsAliveValue { get; init; }
+
+        public TransformValue LocalTransform { get; init; } = TransformValue.Identity;
 
         public Exception? CreateException { get; init; }
 
@@ -475,6 +660,10 @@ public sealed class SceneWorldTests
         public Exception? DestroyEntityException { get; init; }
 
         public Exception? IsAliveException { get; init; }
+
+        public Exception? GetLocalTransformException { get; init; }
+
+        public Exception? SetLocalTransformException { get; init; }
 
         public Exception? DestroyException { get; set; }
 
@@ -558,6 +747,39 @@ public sealed class SceneWorldTests
 
             isAlive = IsAliveValue;
             return IsAliveStatus;
+        }
+
+        public SceneNativeStatus GetLocalTransform(
+            nint world,
+            in SceneNativeEntityRequest request,
+            out TransformValue transform)
+        {
+            GetLocalTransformCalls++;
+            LastGetLocalTransformWorld = world;
+            LastGetLocalTransformRequest = request;
+            transform = default;
+            if (GetLocalTransformException is not null)
+            {
+                throw GetLocalTransformException;
+            }
+
+            transform = LocalTransform;
+            return GetLocalTransformStatus;
+        }
+
+        public SceneNativeStatus SetLocalTransform(
+            nint world,
+            in SceneNativeSetLocalTransformRequest request)
+        {
+            SetLocalTransformCalls++;
+            LastSetLocalTransformWorld = world;
+            LastSetLocalTransformRequest = request;
+            if (SetLocalTransformException is not null)
+            {
+                throw SetLocalTransformException;
+            }
+
+            return SetLocalTransformStatus;
         }
     }
 }

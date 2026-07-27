@@ -56,6 +56,26 @@ internal sealed class SceneNativeLibraryApi : ISceneNativeApi
             in request,
             out isAlive);
     }
+
+    public SceneNativeStatus GetLocalTransform(
+        nint world,
+        in SceneNativeEntityRequest request,
+        out TransformValue transform)
+    {
+        return (SceneNativeStatus)SceneNativeEntryPoints.GetLocalTransform(
+            world,
+            in request,
+            out transform);
+    }
+
+    public SceneNativeStatus SetLocalTransform(
+        nint world,
+        in SceneNativeSetLocalTransformRequest request)
+    {
+        return (SceneNativeStatus)SceneNativeEntryPoints.SetLocalTransform(
+            world,
+            in request);
+    }
 }
 
 internal static partial class SceneNativeEntryPoints
@@ -91,4 +111,17 @@ internal static partial class SceneNativeEntryPoints
         nint world,
         in SceneNativeEntityRequest request,
         out uint isAlive);
+
+    [LibraryImport(LibraryName, EntryPoint = "asharia_scene_world_get_local_transform")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    internal static partial uint GetLocalTransform(
+        nint world,
+        in SceneNativeEntityRequest request,
+        out TransformValue transform);
+
+    [LibraryImport(LibraryName, EntryPoint = "asharia_scene_world_set_local_transform")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    internal static partial uint SetLocalTransform(
+        nint world,
+        in SceneNativeSetLocalTransformRequest request);
 }

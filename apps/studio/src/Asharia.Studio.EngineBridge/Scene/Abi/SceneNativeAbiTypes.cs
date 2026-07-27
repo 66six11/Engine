@@ -47,3 +47,22 @@ internal readonly record struct SceneNativeEntityRequest(
             entity);
     }
 }
+
+[StructLayout(LayoutKind.Explicit, Size = 56)]
+internal readonly record struct SceneNativeSetLocalTransformRequest(
+    [field: FieldOffset(0)] SceneNativeAbiHeader Header,
+    [field: FieldOffset(8)] EntityId Entity,
+    [field: FieldOffset(16)] TransformValue Transform)
+{
+    public const uint StructSize = 56;
+
+    public static SceneNativeSetLocalTransformRequest Current(
+        EntityId entity,
+        TransformValue transform)
+    {
+        return new SceneNativeSetLocalTransformRequest(
+            new SceneNativeAbiHeader(SceneNativeAbi.Version, StructSize),
+            entity,
+            transform);
+    }
+}

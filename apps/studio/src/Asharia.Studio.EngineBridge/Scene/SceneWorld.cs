@@ -12,6 +12,8 @@ public sealed class SceneWorld : IDisposable
     private const string CreateEntityOperation = "scene.world.entity.create";
     private const string DestroyEntityOperation = "scene.world.entity.destroy";
     private const string IsAliveOperation = "scene.world.entity.is-alive";
+    private const string GetLocalTransformOperation = "scene.world.entity.local-transform.get";
+    private const string SetLocalTransformOperation = "scene.world.entity.local-transform.set";
 
     private readonly ISceneNativeApi nativeApi_;
     private readonly Thread ownerThread_;
@@ -101,12 +103,7 @@ public sealed class SceneWorld : IDisposable
     public void DestroyEntity(EntityId entity)
     {
         var handle = RequireOwnerHandle(DestroyEntityOperation);
-        if (!entity.IsValid)
-        {
-            throw new ArgumentException(
-                "Entity ID must have a non-zero index and generation.",
-                nameof(entity));
-        }
+        RequireValidEntity(entity);
 
         var request = SceneNativeEntityRequest.Current(entity);
         SceneNativeStatus status;
@@ -163,6 +160,60 @@ public sealed class SceneWorld : IDisposable
         return isAlive == 1;
     }
 
+    public TransformValue GetLocalTransform(EntityId entity)
+    {
+        var handle = RequireOwnerHandle(GetLocalTransformOperation);
+        RequireValidEntity(entity);
+
+        var request = SceneNativeEntityRequest.Current(entity);
+        TransformValue transform;
+        SceneNativeStatus status;
+        try
+        {
+            status = nativeApi_.GetLocalTransform(
+                handle,
+                in request,
+                out transform);
+        }
+        catch (Exception exception) when (IsNativeBindingFailure(exception))
+        {
+            throw BindingFailure(GetLocalTransformOperation, exception);
+        }
+
+        if (status != SceneNativeStatus.Success)
+        {
+            throw StatusFailure(GetLocalTransformOperation, status);
+        }
+
+        return transform;
+    }
+
+    public void SetLocalTransform(
+        EntityId entity,
+        TransformValue transform)
+    {
+        var handle = RequireOwnerHandle(SetLocalTransformOperation);
+        RequireValidEntity(entity);
+
+        var request = SceneNativeSetLocalTransformRequest.Current(
+            entity,
+            transform);
+        SceneNativeStatus status;
+        try
+        {
+            status = nativeApi_.SetLocalTransform(handle, in request);
+        }
+        catch (Exception exception) when (IsNativeBindingFailure(exception))
+        {
+            throw BindingFailure(SetLocalTransformOperation, exception);
+        }
+
+        if (status != SceneNativeStatus.Success)
+        {
+            throw StatusFailure(SetLocalTransformOperation, status);
+        }
+    }
+
     public void Dispose()
     {
         if (handle_ == 0)
@@ -215,6 +266,16 @@ public sealed class SceneWorld : IDisposable
         }
 
         return handle_;
+    }
+
+    private static void RequireValidEntity(EntityId entity)
+    {
+        if (!entity.IsValid)
+        {
+            throw new ArgumentException(
+                "Entity ID must have a non-zero index and generation.",
+                nameof(entity));
+        }
     }
 
     private static SceneNativeCallException BindingFailure(

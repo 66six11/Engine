@@ -143,11 +143,23 @@ public sealed class ProjectReferenceGraphTests
             "EntryPoint = \"asharia_scene_world_is_alive\"",
             importSource,
             StringComparison.Ordinal);
+        Assert.Contains(
+            "EntryPoint = \"asharia_scene_world_get_local_transform\"",
+            importSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "EntryPoint = \"asharia_scene_world_set_local_transform\"",
+            importSource,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "WorldTransform",
+            string.Join(Environment.NewLine, bridgeSources),
+            StringComparison.Ordinal);
         Assert.Equal(
-            5,
+            7,
             Regex.Matches(importSource, @"\[LibraryImport\(").Count);
         Assert.Equal(
-            5,
+            7,
             Regex.Matches(importSource, @"CallConvCdecl").Count);
     }
 
