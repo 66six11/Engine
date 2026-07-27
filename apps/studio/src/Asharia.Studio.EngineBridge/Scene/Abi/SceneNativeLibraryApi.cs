@@ -76,6 +76,30 @@ internal sealed class SceneNativeLibraryApi : ISceneNativeApi
             world,
             in request);
     }
+
+    public SceneNativeStatus GetEntityName(
+        nint world,
+        in SceneNativeEntityRequest request,
+        nint nameUtf8,
+        ulong nameCapacity,
+        out ulong nameByteLength)
+    {
+        return (SceneNativeStatus)SceneNativeEntryPoints.GetEntityName(
+            world,
+            in request,
+            nameUtf8,
+            nameCapacity,
+            out nameByteLength);
+    }
+
+    public SceneNativeStatus SetEntityName(
+        nint world,
+        in SceneNativeSetEntityNameRequest request)
+    {
+        return (SceneNativeStatus)SceneNativeEntryPoints.SetEntityName(
+            world,
+            in request);
+    }
 }
 
 internal static partial class SceneNativeEntryPoints
@@ -124,4 +148,19 @@ internal static partial class SceneNativeEntryPoints
     internal static partial uint SetLocalTransform(
         nint world,
         in SceneNativeSetLocalTransformRequest request);
+
+    [LibraryImport(LibraryName, EntryPoint = "asharia_scene_world_get_entity_name")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    internal static partial uint GetEntityName(
+        nint world,
+        in SceneNativeEntityRequest request,
+        nint nameUtf8,
+        ulong nameCapacity,
+        out ulong nameByteLength);
+
+    [LibraryImport(LibraryName, EntryPoint = "asharia_scene_world_set_entity_name")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    internal static partial uint SetEntityName(
+        nint world,
+        in SceneNativeSetEntityNameRequest request);
 }

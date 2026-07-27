@@ -32,4 +32,15 @@ internal interface ISceneNativeApi
     SceneNativeStatus SetLocalTransform(
         nint world,
         in SceneNativeSetLocalTransformRequest request);
+
+    SceneNativeStatus GetEntityName(
+        nint world,
+        in SceneNativeEntityRequest request,
+        nint nameUtf8,
+        ulong nameCapacity,
+        out ulong nameByteLength);
+
+    SceneNativeStatus SetEntityName(
+        nint world,
+        in SceneNativeSetEntityNameRequest request);
 }

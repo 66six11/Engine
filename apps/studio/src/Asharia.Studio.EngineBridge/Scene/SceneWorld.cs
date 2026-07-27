@@ -1,4 +1,5 @@
 using System;
+using System.Text;
 using System.Threading;
 using Asharia.Runtime;
 using Asharia.Studio.EngineBridge.Scene.Abi;
@@ -14,6 +15,13 @@ public sealed class SceneWorld : IDisposable
     private const string IsAliveOperation = "scene.world.entity.is-alive";
     private const string GetLocalTransformOperation = "scene.world.entity.local-transform.get";
     private const string SetLocalTransformOperation = "scene.world.entity.local-transform.set";
+    private const string GetEntityNameOperation = "scene.world.entity.name.get";
+    private const string SetEntityNameOperation = "scene.world.entity.name.set";
+    private const int MaxEntityNameByteLength = 4096;
+
+    private static readonly UTF8Encoding StrictUtf8Encoding = new(
+        encoderShouldEmitUTF8Identifier: false,
+        throwOnInvalidBytes: true);
 
     private readonly ISceneNativeApi nativeApi_;
     private readonly Thread ownerThread_;
@@ -214,6 +222,138 @@ public sealed class SceneWorld : IDisposable
         }
     }
 
+    public string GetEntityName(EntityId entity)
+    {
+        var handle = RequireOwnerHandle(GetEntityNameOperation);
+        RequireValidEntity(entity);
+
+        var request = SceneNativeEntityRequest.Current(entity);
+        var status = CallGetEntityName(
+            handle,
+            in request,
+            nameUtf8: 0,
+            nameCapacity: 0,
+            out var requiredByteLength);
+        if (status != SceneNativeStatus.Success)
+        {
+            throw StatusFailure(GetEntityNameOperation, status);
+        }
+
+        if (requiredByteLength > MaxEntityNameByteLength)
+        {
+            throw InvalidSuccessResult(
+                GetEntityNameOperation,
+                $"returned entity-name length {requiredByteLength}, "
+                + $"above the {MaxEntityNameByteLength}-byte limit.");
+        }
+
+        if (requiredByteLength == 0)
+        {
+            return string.Empty;
+        }
+
+        var nameUtf8 = new byte[(int)requiredByteLength];
+        ulong copiedByteLength;
+        unsafe
+        {
+            fixed (byte* nameData = nameUtf8)
+            {
+                status = CallGetEntityName(
+                    handle,
+                    in request,
+                    (nint)nameData,
+                    requiredByteLength,
+                    out copiedByteLength);
+            }
+        }
+
+        if (status != SceneNativeStatus.Success)
+        {
+            throw StatusFailure(GetEntityNameOperation, status);
+        }
+
+        if (copiedByteLength != requiredByteLength)
+        {
+            throw InvalidSuccessResult(
+                GetEntityNameOperation,
+                $"changed entity-name length from {requiredByteLength} "
+                + $"to {copiedByteLength} during query/copy.");
+        }
+
+        try
+        {
+            return StrictUtf8Encoding.GetString(nameUtf8);
+        }
+        catch (DecoderFallbackException exception)
+        {
+            throw InvalidSuccessResult(
+                GetEntityNameOperation,
+                "returned malformed UTF-8.",
+                exception);
+        }
+    }
+
+    public void SetEntityName(EntityId entity, string name)
+    {
+        var handle = RequireOwnerHandle(SetEntityNameOperation);
+        RequireValidEntity(entity);
+        ArgumentNullException.ThrowIfNull(name);
+
+        if (name.Length > MaxEntityNameByteLength)
+        {
+            throw EntityNameArgumentFailure(nameof(name));
+        }
+
+        int byteLength;
+        try
+        {
+            byteLength = StrictUtf8Encoding.GetByteCount(name);
+        }
+        catch (EncoderFallbackException exception)
+        {
+            throw new ArgumentException(
+                "Entity name must contain valid Unicode text.",
+                nameof(name),
+                exception);
+        }
+
+        if (byteLength > MaxEntityNameByteLength)
+        {
+            throw EntityNameArgumentFailure(nameof(name));
+        }
+
+        if (byteLength == 0)
+        {
+            CallSetEntityName(handle, entity, data: 0, byteLength: 0);
+            return;
+        }
+
+        var nameUtf8 = new byte[byteLength];
+        try
+        {
+            StrictUtf8Encoding.GetBytes(name.AsSpan(), nameUtf8);
+        }
+        catch (EncoderFallbackException exception)
+        {
+            throw new ArgumentException(
+                "Entity name must contain valid Unicode text.",
+                nameof(name),
+                exception);
+        }
+
+        unsafe
+        {
+            fixed (byte* nameData = nameUtf8)
+            {
+                CallSetEntityName(
+                    handle,
+                    entity,
+                    (nint)nameData,
+                    (ulong)byteLength);
+            }
+        }
+    }
+
     public void Dispose()
     {
         if (handle_ == 0)
@@ -268,6 +408,62 @@ public sealed class SceneWorld : IDisposable
         return handle_;
     }
 
+    private SceneNativeStatus CallGetEntityName(
+        nint handle,
+        in SceneNativeEntityRequest request,
+        nint nameUtf8,
+        ulong nameCapacity,
+        out ulong nameByteLength)
+    {
+        try
+        {
+            return nativeApi_.GetEntityName(
+                handle,
+                in request,
+                nameUtf8,
+                nameCapacity,
+                out nameByteLength);
+        }
+        catch (Exception exception) when (IsNativeBindingFailure(exception))
+        {
+            throw BindingFailure(GetEntityNameOperation, exception);
+        }
+    }
+
+    private void CallSetEntityName(
+        nint handle,
+        EntityId entity,
+        nint data,
+        ulong byteLength)
+    {
+        var request = SceneNativeSetEntityNameRequest.Current(
+            entity,
+            data,
+            byteLength);
+        SceneNativeStatus status;
+        try
+        {
+            status = nativeApi_.SetEntityName(handle, in request);
+        }
+        catch (Exception exception) when (IsNativeBindingFailure(exception))
+        {
+            throw BindingFailure(SetEntityNameOperation, exception);
+        }
+
+        if (status != SceneNativeStatus.Success)
+        {
+            throw StatusFailure(SetEntityNameOperation, status);
+        }
+    }
+
+    private static ArgumentException EntityNameArgumentFailure(
+        string parameterName)
+    {
+        return new ArgumentException(
+            $"Entity name must not exceed {MaxEntityNameByteLength} UTF-8 bytes.",
+            parameterName);
+    }
+
     private static void RequireValidEntity(EntityId entity)
     {
         if (!entity.IsValid)
@@ -309,11 +505,13 @@ public sealed class SceneWorld : IDisposable
 
     private static SceneNativeCallException InvalidSuccessResult(
         string operation,
-        string detail)
+        string detail,
+        Exception? innerException = null)
     {
         return new SceneNativeCallException(
             operation,
             SceneNativeStatus.Success,
-            $"Scene native operation '{operation}' reported success but {detail}");
+            $"Scene native operation '{operation}' reported success but {detail}",
+            innerException);
     }
 }

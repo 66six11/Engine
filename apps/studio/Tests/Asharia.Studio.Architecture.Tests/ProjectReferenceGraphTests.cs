@@ -104,7 +104,10 @@ public sealed class ProjectReferenceGraphTests
             "Editor.Shell",
             "Editor.Features",
             "Dispatcher",
+            "Marshal.Alloc",
+            "NativeMemory",
             "SafeHandle",
+            "StringBuilder",
             "~SceneWorld",
         };
 
@@ -151,15 +154,23 @@ public sealed class ProjectReferenceGraphTests
             "EntryPoint = \"asharia_scene_world_set_local_transform\"",
             importSource,
             StringComparison.Ordinal);
+        Assert.Contains(
+            "EntryPoint = \"asharia_scene_world_get_entity_name\"",
+            importSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "EntryPoint = \"asharia_scene_world_set_entity_name\"",
+            importSource,
+            StringComparison.Ordinal);
         Assert.DoesNotContain(
             "WorldTransform",
             string.Join(Environment.NewLine, bridgeSources),
             StringComparison.Ordinal);
         Assert.Equal(
-            7,
+            9,
             Regex.Matches(importSource, @"\[LibraryImport\(").Count);
         Assert.Equal(
-            7,
+            9,
             Regex.Matches(importSource, @"CallConvCdecl").Count);
     }
 

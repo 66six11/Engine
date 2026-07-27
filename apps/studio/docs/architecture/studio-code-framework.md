@@ -30,7 +30,7 @@ legacy `Editor.csproj` 仍包含 Avalonia、Shell、Dock、Feature、尚未提�
 
 Task 4 的 service/state 迁移已完成：background task、diagnostic record/service、Frame Debug snapshot/provider、editing command、lifecycle event、selection、transaction、scene/world snapshot/provider interface、backend-neutral Viewport identity/clock/render/scheduler/state、status message，以及 Panel lifecycle/frame sink contracts 已由 `Asharia.Editor` 唯一拥有；legacy service、Feature、ViewModel 和 Avalonia View 只消费这些公共合同。UI-neutral provider registration/status/runtime host 已由 `Asharia.Studio.Application.Providers` 拥有；delegate-based `SceneProviderDescriptor` 与 fixture provider implementation 仍是 legacy compatibility seam，并只由 compatibility adapter 转换。native Frame Debug payload/bridge、Viewport composition capability/native present transport，以及 legacy `PanelDescriptor(Func<object>)`/`WorkbenchActionDescriptor` 仍不属于公共扩展 ABI。
 
-`Asharia.Studio.EngineBridge` 已建立 managed Scene World、entity lifecycle 与 local Transform boundary：ABI v1 World create/destroy、entity create/destroy/is-alive 和 local Transform get/set 使用 source-generated native import，Bridge 关闭 runtime marshalling 并只传递显式 unmanaged value；成功后只发布不透明、不可外泄的 World owner、`Asharia.Runtime.EntityId` 与 `TransformValue`。全部调用必须回到创建线程，错误线程与 native failure 都不丢失 World ownership，成功销毁后 exactly-once 清空。local Transform 的 finite/unit-quaternion validation 由 native ABI 唯一拥有，managed Bridge 不复制容差算法或静默 normalize/clamp。该边界没有 finalizer-driven cleanup，因为 native World 明确要求 owner-thread destroy；当前仍没有 entity name、snapshot provider、Application/ProjectSession wiring 或 native library deployment policy。
+`Asharia.Studio.EngineBridge` 已建立 managed Scene World、entity lifecycle、local Transform 与 entity display-name boundary：ABI v1 World create/destroy、entity create/destroy/is-alive、local Transform get/set 和 entity-name get/set 使用 source-generated native import，Bridge 关闭 runtime marshalling 并只传递显式 unmanaged value 或调用期 pinned UTF-8 bytes；成功后只发布不透明、不可外泄的 World owner、`Asharia.Runtime.EntityId`、`TransformValue` 与 managed `string`。全部调用必须回到创建线程，错误线程与 native failure 都不丢失 World ownership，成功销毁后 exactly-once 清空。local Transform 的 finite/unit-quaternion validation 由 native ABI 唯一拥有，managed Bridge 不复制容差算法或静默 normalize/clamp；名称使用 strict UTF-8、最多 4096 bytes、caller-owned query/copy buffer，且始终只是 mutable/non-unique display/debug text。该边界没有 finalizer-driven cleanup，因为 native World 明确要求 owner-thread destroy；当前仍没有 snapshot provider、Application/ProjectSession wiring 或 native library deployment policy。
 
 Panel declaration 的 `ContentFactory` 是 `EditorFactoryLocalId`，不是 CLR factory 或 generation handle。未来 Host 必须在 staging 时把 Package generation、owner module definition 与 local ID 绑定为 generation-scoped runtime handle；当前仍没有 Panel registry、factory binding、Dock integration、Host resolver 或 runtime display。legacy `PanelDescriptor(Func<object>)` 只留在 `Editor` compatibility implementation，不是公共 ABI。
 
@@ -361,13 +361,15 @@ P/Invoke struct、pointer 和 platform handle 不越过 Bridge/Interop 边界。
 
 当前最小落地只引用 `Asharia.Runtime.Contracts`：`SceneWorld` 持有 owner-thread-affine native World，
 公开 `CreateEntity()`、`DestroyEntity(EntityId)`、`IsAlive(EntityId)`、
-`GetLocalTransform(EntityId)` 与 `SetLocalTransform(EntityId, TransformValue)`，但不公开 native handle。
+`GetLocalTransform(EntityId)`、`SetLocalTransform(EntityId, TransformValue)`、
+`GetEntityName(EntityId)` 与 `SetEntityName(EntityId, string)`，但不公开 native handle。
 非法零 ID 不进入 native destroy，stale generation 仍交给 native 判定；native success 若返回非法 ID 或
 非 0/1 liveness 值会被视为协议错误。local Transform 输入保持逐值透传，并由 native 返回
-`InvalidTransform`；名称、snapshot/query projection、Application composition 和 native library deployment
-继续由后续独立 Slice 负责。
+`InvalidTransform`。名称读取先查询长度，再复制到最多 4096 bytes 的 managed buffer；写入只在同步调用期间
+pin strict UTF-8 bytes，native 在返回前复制。名称不具备 identity/path/uniqueness 语义；snapshot/query
+projection、Application composition 和 native library deployment 继续由后续独立 Slice 负责。
 
-当前 Scene World lifetime 仍由 ABI v1 create/destroy 与 owner-thread deterministic disposal 定义，entity/local Transform 调用共享同一 owner check。它有意不使用 `SafeHandle`/finalizer 作为 owner，因为 finalizer thread 不能满足 native create-thread destroy 合同；未来 Project/Edit/Play/Preview session 必须在自己的 owner execution context 上关闭 World。
+当前 Scene World lifetime 仍由 ABI v1 create/destroy 与 owner-thread deterministic disposal 定义，entity/local Transform/name 调用共享同一 owner check。它有意不使用 `SafeHandle`/finalizer 作为 owner，因为 finalizer thread 不能满足 native create-thread destroy 合同；未来 Project/Edit/Play/Preview session 必须在自己的 owner execution context 上关闭 World。
 
 ## 10. Presentation 与 Built-in Extensions
 

@@ -121,17 +121,20 @@ flowchart TD
   construction/value equality；该合同 assembly 自身不声明 P/Invoke、World handle、thread dispatch 或
   provider ownership。
 - managed `Asharia.Studio.EngineBridge.SceneWorld` 是当前唯一窄绑定 owner：它使用 source-generated
-  World/entity/local Transform imports，持有并隐藏 native World handle，并在 native 调用前执行
+  World/entity/local Transform/name imports，持有并隐藏 native World handle，并在 native 调用前执行
   open/owner-thread 与结构化 entity ID 有效性检查。local Transform 直接复用 `TransformValue`，不复制
-  native 的 finite/unit-quaternion
-  容差算法；stale entity 与 invalid Transform status 保留为带 operation context 的 managed error。它尚未接入
-  Application、provider、ProjectSession、Avalonia 或 native library deployment。
+  native 的 finite/unit-quaternion 容差算法；stale entity 与 invalid Transform status 保留为带 operation
+  context 的 managed error。entity
+  name 使用 strict UTF-8：get 只分配 native length query 后确认不超过 4096 bytes 的 managed buffer，set 只在
+  同步调用期间 pin、由 native 返回前复制；empty 合法，malformed success bytes、超长 length 与 query/copy
+  drift 都 fail closed。它尚未接入 Application、provider、ProjectSession、Avalonia、文件 IO 或 native
+  library deployment。
 - native entity name 是 mutable、non-unique display/debug UTF-8 text，不是 identity、path、persistence ID 或
   lookup key。set 立即复制 well-formed UTF-8，empty 合法且不 normalize/trim/case-fold/自动唯一化；get 先查询
   byte length，再完整复制到 caller buffer，不加 NUL、不部分写入，也不暴露随 World mutation 失效的 borrowed
   pointer。native set 上限为 4096 UTF-8 bytes，避免不受限 allocation 与不可信超长 pointer/length；现有
   8-byte create-entity request 保持不变，避免破坏 v1 consumer。
-- version 1 ABI 尚不公开 component registry、hierarchy、change journal、managed entity-name API 或 render
+- version 1 ABI 尚不公开 component registry、hierarchy、change journal 或 render
   snapshot；这些必须按独立 Slice 增加，不能通过泄漏 mutable `World*` 省略 owner/safe-point 设计。
 - Editor System 内部 `editor_domain` 不依赖 ImGui、Vulkan 或 renderer implementation。
 - renderer 可以依赖后端无关的 render packet 类型，不能依赖 mutable `World`。

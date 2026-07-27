@@ -66,3 +66,28 @@ internal readonly record struct SceneNativeSetLocalTransformRequest(
             transform);
     }
 }
+
+[StructLayout(LayoutKind.Explicit, Size = 16)]
+internal readonly record struct SceneNativeStringView(
+    [field: FieldOffset(0)] nint Data,
+    [field: FieldOffset(8)] ulong ByteLength);
+
+[StructLayout(LayoutKind.Explicit, Size = 32)]
+internal readonly record struct SceneNativeSetEntityNameRequest(
+    [field: FieldOffset(0)] SceneNativeAbiHeader Header,
+    [field: FieldOffset(8)] EntityId Entity,
+    [field: FieldOffset(16)] SceneNativeStringView NameUtf8)
+{
+    public const uint StructSize = 32;
+
+    public static SceneNativeSetEntityNameRequest Current(
+        EntityId entity,
+        nint data,
+        ulong byteLength)
+    {
+        return new SceneNativeSetEntityNameRequest(
+            new SceneNativeAbiHeader(SceneNativeAbi.Version, StructSize),
+            entity,
+            new SceneNativeStringView(data, byteLength));
+    }
+}

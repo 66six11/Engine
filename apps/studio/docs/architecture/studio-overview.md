@@ -27,7 +27,7 @@ verifier，并可从 current inventory lease 投影 Distribution-bound managed b
 `Asharia.Runtime.Contracts` 当前把 Scene `EntityId`、float3、quaternion 与 local Transform 固定为
 8/12/16/40-byte unmanaged values，并用显式 offsets 对齐 native C ABI；这些只是项目代码可引用的稳定
 value contracts，不包含 native function import、World handle、Scene provider、Avalonia dispatcher 或文件 IO。
-EngineBridge 当前提供 Scene World ABI v1 create/destroy、owner-thread deterministic disposal、复用 `Asharia.Runtime.EntityId` 的 entity create/destroy/is-alive，以及逐值传递 `TransformValue` 的 local Transform get/set；它不暴露 native pointer，不使用 finalizer thread 销毁 thread-affine World，也尚未提供 entity name、snapshot/query projection、ProjectSession wiring 或 native library deployment。
+EngineBridge 当前提供 Scene World ABI v1 create/destroy、owner-thread deterministic disposal、复用 `Asharia.Runtime.EntityId` 的 entity create/destroy/is-alive、逐值传递 `TransformValue` 的 local Transform get/set，以及最多 4096-byte、caller-owned buffer 的 strict UTF-8 display-name get/set；它不暴露 native pointer，不使用 finalizer thread 销毁 thread-affine World，也不把名称当作 identity/path/unique key。snapshot/query projection、ProjectSession wiring 与 native library deployment 尚未提供。
 Project Code 还能把该 projection 复验为 semantic build credential，并为 caller 已规范化的项目根
 `Editor/**/*.cs` 原子生成 implicit SDK workspace，再使用 credential-bound dotnet closure 执行隔离
 restore/build 并发布四类 raw build output；current raw-output lease 现在还能经过无执行 artifact metadata
