@@ -345,7 +345,7 @@ flowchart LR
 current selection、Project Open 或 Host activation。Editor Image 的资格检查不加载或执行候选输入，也不证明 ABI、
 launch behavior 或 runtime health。
 
-## Studio Project Code 隔离 SDK 构建、发布与 pinned configuration 流（#305–#320）
+## Studio Project Code 隔离 SDK 构建、发布与 pinned definition 流（#305–#321）
 
 这是 `Asharia.Studio.Application` 的 headless Project Code control plane，不经过 Avalonia storage API；
 pinned loader 节点加载 exact 项目 assembly，resolver 只解析已索引 Type，constructor owner 才首次有意执行
@@ -374,7 +374,8 @@ flowchart LR
     Modules["exact indexed module Type receipts"]
     Factory["exact pinned module objects<br/>at-most-once constructor owner"]
     Configure["exact configured declarations<br/>at-most-once Configure owner"]
-    Registry["shared definitions + registry transaction<br/>not implemented"]
+    Definitions["shared module definitions<br/>exact pure projection"]
+    Registry["registry transaction<br/>not implemented"]
 
     Image --> Projection
     Projection --> Credential
@@ -396,7 +397,8 @@ flowchart LR
     Loader --> Modules
     Modules --> Factory
     Factory --> Configure
-    Configure -.not implemented.-> Registry
+    Configure --> Definitions
+    Definitions -.not implemented.-> Registry
 ```
 
 workspace 和 dotnet closure 在每个外部步骤后复验；同 project 新调用会 supersede 旧调用。CLI 环境从空白
@@ -444,7 +446,9 @@ constructor，但不读取 attribute、不 Configure/Activate、不做 I/O 或�
 `EditorModuleBuilder`、调用一次 Configure、Build immutable declaration；metadata 只投影 exact entry。
 same construction lineage 复用同一 declarations，Configure/Build failure 保留 objects/partial receipts、
 禁止重试并要求重启。该阶段不重构 object、不读取 attribute、不 Activate、不做 I/O 或推进
-registry/current/active/LKG。shared definition adapter 与 registry transaction 仍未实现。
+registry/current/active/LKG。#321 再将 exact metadata/object/declaration receipts 纯内存投影为
+static/dynamic 共用的 shared definitions，保留顺序与 keyed lookup，但不执行用户代码或进入 registry。
+registry transaction 仍未实现。
 
 ## 当前架构总览
 

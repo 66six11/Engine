@@ -33,8 +33,9 @@ candidate receipt，随后在任何 load 前固定选择 `Pinned + RestartRequir
 implementation DLL/portable PDB 固定成有界、无 module initializer 的 owned load-image 快照；最后由
 loader-owned project reservation 幂等装入 exact non-collectible ALC，并把 #313 index 对证为 exact runtime
 module Type receipt，再由独立 owner 按 exact constructor receipt 至多一次地构造 module objects。
-后继独立 owner 再逐 object 至多一次 Configure 并冻结 declaration/metadata receipt。shared definition、
-combined validation、Activate 与 registry/catalog 尚未落地。
+后继独立 owner 再逐 object 至多一次 Configure 并冻结 declaration/metadata receipt，随后纯内存投影为
+static/dynamic 共用的 shared definitions。combined validation、scope transaction、Activate 与
+registry/catalog 尚未落地。
 
 当前仍为 Partial：
 
@@ -175,6 +176,12 @@ Configure。它按 index 顺序创建绑定 entry definition id 的 `EditorModul
 same construction lineage 复用同一 result/set/declarations；different lineage 或 Configure/Build failure
 要求重启，失败 reservation 保留 objects/partial declarations 且不重试。该边界不重新构造、不读取 attribute、
 不 Activate、不做 I/O，也不创建 shared definition、registry transaction 或 active/LKG。
+
+`ProjectCodePinnedModuleDefinitionSet` 只消费 exact configuration，把逐 module metadata/object/declaration
+投影为共享 `EditorModuleDefinition`，同时保留 exact order 与 definition-id lookup。共享 definition 不再持有
+static registration/factory；built-in `StaticPackageGenerationHost` 仍负责自己的 factory/Configure，但将结果
+接到同一合同。该投影不执行用户代码，不需要 reservation/async/cancellation，也不进入 scope transaction、
+registry 或 activation。
 
 这些是 Application 层的产品策略，直接使用 .NET BCL 文件 API。Avalonia `IStorageProvider` 只负责用户文件
 选择、bookmark 和平台权限 UI；native Core File IO 服务于 C++ engine/runtime 的低层 IO 与事务，不反向成为
@@ -418,8 +425,9 @@ git diff --check
   publication、no-load dual-assembly module index、non-empty staging candidate admission 与 pre-load
   `Pinned + RestartRequired` policy selection，以及有界、无 module initializer 的 owned pinned load-image
   snapshot、loader-owned exact non-collectible binary host、exact indexed runtime Type receipt、at-most-once
-  constructed module objects 和 immutable configured declarations；正式 ProjectSession/manifest handoff、
-  `.asmdef`、Package、shared definition/registry/activation 与完整 ALC generation pipeline 尚未实现；
+  constructed module objects、immutable configured declarations 和 shared definition projection；正式
+  ProjectSession/manifest handoff、`.asmdef`、Package、registry/activation 与完整 ALC generation pipeline
+  尚未实现；
 - App shutdown 仍有 sync-over-async；
 - Game View、PlaySession 和 standalone orchestration 未完成；
 - Linux/macOS GPU presentation 尚未验证；

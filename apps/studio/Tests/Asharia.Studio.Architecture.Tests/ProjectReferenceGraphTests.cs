@@ -1169,6 +1169,97 @@ public sealed class ProjectReferenceGraphTests
     }
 
     [Fact]
+    public void Project_code_pinned_module_definitions_stop_before_registry()
+    {
+        var studioRoot = FindStudioRoot();
+        var source = File.ReadAllText(Path.Combine(
+            studioRoot,
+            "src",
+            "Asharia.Studio.Application",
+            "ProjectCode",
+            "ProjectCodePinnedModuleDefinitionSet.cs"));
+        var sharedDefinitionSource = File.ReadAllText(Path.Combine(
+            studioRoot,
+            "src",
+            "Asharia.Studio.Application",
+            "Extensions",
+            "EditorModuleDefinition.cs"));
+        var forbiddenTokens = new[]
+        {
+            "StaticEditorModuleRegistration",
+            "StaticPackageGenerationHost",
+            "Func<",
+            "CreateDefinition",
+            ".Configure(",
+            ".Build(",
+            "GetCustomAttribute",
+            "Constructor.Invoke(",
+            "Activator.",
+            "RuntimeHelpers.RunClassConstructor",
+            "ActivateAsync(",
+            "EditorScopeTransaction",
+            "EditorModuleRegistry",
+            "EditorModuleHost",
+            "ScopeInstanceId",
+            "Commit(",
+            "AssemblyLoadContext",
+            "LoadFrom",
+            "CancellationToken",
+            "Task<",
+            "File.",
+            "Directory.",
+        };
+
+        Assert.Contains(
+            "ProjectCodePinnedModuleConfiguration configuration",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            ".Select(module => new EditorModuleDefinition(",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "module.Metadata,",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "module.ModuleObject.Module,",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "module.Declaration))",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Configuration = configuration",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "DefinitionsById",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "definitionsById.TryAdd(definition.Id, definition)",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "EditorModuleMetadata metadata,",
+            sharedDefinitionSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Id => Metadata.DefinitionId",
+            sharedDefinitionSource,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "StaticEditorModuleRegistration",
+            sharedDefinitionSource,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            forbiddenTokens,
+            token => source.Contains(token, StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Project_code_implicit_workspace_does_not_execute_or_load_candidates()
     {
         var sourceRoot = Path.Combine(

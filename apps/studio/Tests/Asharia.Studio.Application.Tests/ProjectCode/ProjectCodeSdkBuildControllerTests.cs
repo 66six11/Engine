@@ -1127,6 +1127,49 @@ public sealed class ProjectCodeSdkBuildControllerTests
         Assert.Null(Environment.GetEnvironmentVariable(
             StaticConstructorMarker));
 
+        var definitionSet =
+            ProjectCodePinnedModuleDefinitionSet.Create(configuration);
+        Assert.Same(configuration, definitionSet.Configuration);
+        Assert.Equal(
+            configuration.Modules.Count,
+            definitionSet.Definitions.Count);
+        Assert.Equal(
+            configuration.Modules.Count,
+            definitionSet.DefinitionsById.Count);
+        for (var index = 0;
+             index < configuration.Modules.Count;
+             ++index)
+        {
+            var configuredModule = configuration.Modules[index];
+            var definition = definitionSet.Definitions[index];
+            Assert.Equal(
+                configuredModule.Metadata.DefinitionId,
+                definition.Id);
+            Assert.Same(
+                configuredModule.ModuleObject.Module,
+                definition.Module);
+            Assert.Same(
+                configuredModule.Metadata,
+                definition.Metadata);
+            Assert.Same(
+                configuredModule.Declaration,
+                definition.Declaration);
+            Assert.Same(
+                definition,
+                definitionSet.DefinitionsById[definition.Id]);
+        }
+
+        Assert.Equal(
+            "1",
+            Environment.GetEnvironmentVariable(
+                ModuleConfigureMarker));
+        Assert.Null(Environment.GetEnvironmentVariable(
+            ModuleActivateMarker));
+        Assert.Null(Environment.GetEnvironmentVariable(
+            AttributeConstructorMarker));
+        Assert.Null(Environment.GetEnvironmentVariable(
+            StaticConstructorMarker));
+
         var alternateConstructionResult =
             new ProjectCodePinnedModuleConstructor().Construct(
                 pinnedModuleTypes);
