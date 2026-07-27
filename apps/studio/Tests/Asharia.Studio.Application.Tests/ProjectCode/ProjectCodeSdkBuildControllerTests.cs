@@ -380,6 +380,8 @@ public sealed class ProjectCodeSdkBuildControllerTests
             "ASHARIA_TEST_PROJECT_CODE_ATTRIBUTE_CONSTRUCTOR";
         const string ModuleConfigureMarker =
             "ASHARIA_TEST_PROJECT_CODE_MODULE_CONFIGURE";
+        const string ModuleConfigureFailureTrigger =
+            "ASHARIA_TEST_PROJECT_CODE_MODULE_CONFIGURE_FAILURE";
         const string ModuleActivateMarker =
             "ASHARIA_TEST_PROJECT_CODE_MODULE_ACTIVATE";
         const string ModuleConstructorFailureTrigger =
@@ -398,6 +400,9 @@ public sealed class ProjectCodeSdkBuildControllerTests
             null);
         Environment.SetEnvironmentVariable(
             ModuleConfigureMarker,
+            null);
+        Environment.SetEnvironmentVariable(
+            ModuleConfigureFailureTrigger,
             null);
         Environment.SetEnvironmentVariable(
             ModuleActivateMarker,
@@ -464,9 +469,27 @@ public sealed class ProjectCodeSdkBuildControllerTests
 
                 public override void Configure(EditorModuleBuilder editor)
                 {
+                    var current = Environment.GetEnvironmentVariable(
+                        "MODULE_CONFIGURE_MARKER");
+                    var count = int.TryParse(current, out var value)
+                        ? value
+                        : 0;
                     Environment.SetEnvironmentVariable(
                         "MODULE_CONFIGURE_MARKER",
-                        "executed");
+                        (count + 1).ToString());
+                    if (string.Equals(
+                            Environment.GetEnvironmentVariable(
+                                "MODULE_CONFIGURE_FAILURE_TRIGGER"),
+                            "fail",
+                            StringComparison.Ordinal))
+                    {
+                        throw new InvalidOperationException(
+                            "Injected module configuration failure.");
+                    }
+
+                    editor.Capabilities.Provide(
+                        EditorCapabilityId.Create(
+                            "fixture.module.v1"));
                 }
 
                 public override ValueTask<IEditorModuleActivation> ActivateAsync(
@@ -547,6 +570,10 @@ public sealed class ProjectCodeSdkBuildControllerTests
             .Replace(
                 "MODULE_CONFIGURE_MARKER",
                 ModuleConfigureMarker,
+                StringComparison.Ordinal)
+            .Replace(
+                "MODULE_CONFIGURE_FAILURE_TRIGGER",
+                ModuleConfigureFailureTrigger,
                 StringComparison.Ordinal)
             .Replace(
                 "MODULE_ACTIVATE_MARKER",
@@ -1011,6 +1038,171 @@ public sealed class ProjectCodeSdkBuildControllerTests
             AttributeConstructorMarker));
         Assert.Null(Environment.GetEnvironmentVariable(
             ModuleConfigureMarker));
+        Assert.Null(Environment.GetEnvironmentVariable(
+            ModuleActivateMarker));
+        Assert.Equal(1, pinnedAssemblyHost.AssemblyCount);
+
+        var moduleConfigurator =
+            new ProjectCodePinnedModuleConfigurator();
+        var concurrentConfigurations = await Task.WhenAll(
+            Task.Run(() => moduleConfigurator.Configure(
+                construction)),
+            Task.Run(() => moduleConfigurator.Configure(
+                construction)));
+        Assert.All(
+            concurrentConfigurations,
+            result => Assert.True(result.Succeeded, Render(result)));
+        Assert.Same(
+            concurrentConfigurations[0],
+            concurrentConfigurations[1]);
+        var configuration =
+            concurrentConfigurations[0].Configuration!;
+        Assert.Matches(
+            "^sha256-[0-9a-f]{64}$",
+            configuration.ConfigurationId);
+        Assert.Same(construction, configuration.Construction);
+        Assert.Equal(
+            construction.Modules.Count,
+            configuration.Modules.Count);
+        for (var index = 0;
+             index < construction.Modules.Count;
+             ++index)
+        {
+            var moduleObject = construction.Modules[index];
+            var entry = moduleObject.ModuleType.Entry;
+            var configuredModule = configuration.Modules[index];
+            Assert.Same(
+                moduleObject,
+                configuredModule.ModuleObject);
+            Assert.Equal(
+                entry.DefinitionId,
+                configuredModule.Metadata.DefinitionId);
+            Assert.Equal(
+                entry.TypeName,
+                configuredModule.Metadata.EntryTypeName);
+            Assert.Equal(
+                entry.Activation,
+                configuredModule.Metadata.Activation);
+            Assert.Equal(
+                entry.Handover,
+                configuredModule.Metadata.Handover);
+            Assert.Equal(
+                entry.DefinitionId,
+                configuredModule.Declaration.DefinitionContext
+                    .DefinitionId);
+        }
+
+        var configuredRealModule = Assert.Single(
+            configuration.Modules,
+            module => module.Metadata.DefinitionId.Module.Value
+                == "fixture.module");
+        var providedCapability = Assert.Single(
+            configuredRealModule.Declaration.ProvidedCapabilities);
+        Assert.Equal("fixture.module.v1", providedCapability.Value);
+        var equivalentConstruction =
+            new ProjectCodePinnedModuleConstruction(
+                construction.ModuleTypes,
+                construction.Modules);
+        var repeatedConfiguration = moduleConfigurator.Configure(
+            equivalentConstruction);
+        Assert.Same(
+            concurrentConfigurations[0],
+            repeatedConfiguration);
+        Assert.Same(
+            configuration,
+            repeatedConfiguration.Configuration);
+        Assert.Equal(
+            configuration.Modules.Select(module =>
+                module.Declaration),
+            repeatedConfiguration.Configuration!.Modules.Select(
+                module => module.Declaration));
+        Assert.Equal(
+            "1",
+            Environment.GetEnvironmentVariable(
+                ModuleConfigureMarker));
+        Assert.Null(Environment.GetEnvironmentVariable(
+            ModuleActivateMarker));
+        Assert.Null(Environment.GetEnvironmentVariable(
+            AttributeConstructorMarker));
+        Assert.Null(Environment.GetEnvironmentVariable(
+            StaticConstructorMarker));
+
+        var alternateConstructionResult =
+            new ProjectCodePinnedModuleConstructor().Construct(
+                pinnedModuleTypes);
+        Assert.True(
+            alternateConstructionResult.Succeeded,
+            Render(alternateConstructionResult));
+        var alternateConstruction =
+            alternateConstructionResult.Construction!;
+        Assert.Equal(
+            construction.ConstructionId,
+            alternateConstruction.ConstructionId);
+        Assert.NotSame(construction, alternateConstruction);
+        Assert.NotSame(
+            construction.Modules[0].Module,
+            alternateConstruction.Modules[0].Module);
+        Assert.Equal(
+            "3",
+            Environment.GetEnvironmentVariable(
+                ModuleInstanceConstructorMarker));
+        AssertDiagnostic(
+            moduleConfigurator.Configure(alternateConstruction),
+            "project-code.pinned-module-configuration.restart-required");
+        Assert.Equal(
+            "1",
+            Environment.GetEnvironmentVariable(
+                ModuleConfigureMarker));
+
+        Environment.SetEnvironmentVariable(
+            ModuleConfigureFailureTrigger,
+            "fail");
+        var failingModuleConfigurator =
+            new ProjectCodePinnedModuleConfigurator();
+        var failedConfiguration =
+            failingModuleConfigurator.Configure(
+                alternateConstruction);
+        AssertDiagnostic(
+            failedConfiguration,
+            "project-code.pinned-module-configuration.configure-failed-restart-required");
+        AssertNoAbsolutePathLeak(
+            Render(failedConfiguration),
+            moduleProject.ProjectRoot,
+            modulePublicationReceipt.AbsoluteRoot);
+        Assert.Equal(
+            "2",
+            Environment.GetEnvironmentVariable(
+                ModuleConfigureMarker));
+        Assert.Null(Environment.GetEnvironmentVariable(
+            ModuleActivateMarker));
+        Assert.Null(Environment.GetEnvironmentVariable(
+            AttributeConstructorMarker));
+
+        Environment.SetEnvironmentVariable(
+            ModuleConfigureFailureTrigger,
+            null);
+        var repeatedFailedConfiguration =
+            failingModuleConfigurator.Configure(
+                alternateConstruction);
+        Assert.Same(
+            failedConfiguration,
+            repeatedFailedConfiguration);
+        Assert.Equal(
+            "2",
+            Environment.GetEnvironmentVariable(
+                ModuleConfigureMarker));
+        Assert.Equal(
+            "1",
+            Environment.GetEnvironmentVariable(
+                ModuleStaticConstructorMarker));
+        Assert.Equal(
+            "3",
+            Environment.GetEnvironmentVariable(
+                ModuleInstanceConstructorMarker));
+        Assert.Null(Environment.GetEnvironmentVariable(
+            StaticConstructorMarker));
+        Assert.Null(Environment.GetEnvironmentVariable(
+            AttributeConstructorMarker));
         Assert.Null(Environment.GetEnvironmentVariable(
             ModuleActivateMarker));
         Assert.Equal(1, pinnedAssemblyHost.AssemblyCount);
@@ -2436,6 +2628,16 @@ public sealed class ProjectCodeSdkBuildControllerTests
             diagnostic => diagnostic.Code == code);
     }
 
+    private static void AssertDiagnostic(
+        ProjectCodePinnedModuleConfigurationResult result,
+        string code)
+    {
+        Assert.False(result.Succeeded);
+        Assert.Contains(
+            result.Diagnostics,
+            diagnostic => diagnostic.Code == code);
+    }
+
     private static byte[] ReplaceUtf8(
         byte[] source,
         string oldValue,
@@ -2693,6 +2895,13 @@ public sealed class ProjectCodeSdkBuildControllerTests
 
     private static string Render(
         ProjectCodePinnedModuleConstructionResult result) =>
+        string.Join(
+            Environment.NewLine,
+            result.Diagnostics.Select(diagnostic =>
+                $"{diagnostic.Code} {diagnostic.Location}: {diagnostic.Message}"));
+
+    private static string Render(
+        ProjectCodePinnedModuleConfigurationResult result) =>
         string.Join(
             Environment.NewLine,
             result.Diagnostics.Select(diagnostic =>

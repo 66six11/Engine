@@ -345,7 +345,7 @@ flowchart LR
 current selection、Project Open 或 Host activation。Editor Image 的资格检查不加载或执行候选输入，也不证明 ABI、
 launch behavior 或 runtime health。
 
-## Studio Project Code 隔离 SDK 构建、发布与 pinned construction 流（#305–#319）
+## Studio Project Code 隔离 SDK 构建、发布与 pinned configuration 流（#305–#320）
 
 这是 `Asharia.Studio.Application` 的 headless Project Code control plane，不经过 Avalonia storage API；
 pinned loader 节点加载 exact 项目 assembly，resolver 只解析已索引 Type，constructor owner 才首次有意执行
@@ -373,7 +373,8 @@ flowchart LR
     Loader["exact pinned binary host<br/>non-collectible ALC"]
     Modules["exact indexed module Type receipts"]
     Factory["exact pinned module objects<br/>at-most-once constructor owner"]
-    Configure["Configure + immutable declarations<br/>not implemented"]
+    Configure["exact configured declarations<br/>at-most-once Configure owner"]
+    Registry["shared definitions + registry transaction<br/>not implemented"]
 
     Image --> Projection
     Projection --> Credential
@@ -394,7 +395,8 @@ flowchart LR
     Snapshot --> Loader
     Loader --> Modules
     Modules --> Factory
-    Factory -.not implemented.-> Configure
+    Factory --> Configure
+    Configure -.not implemented.-> Registry
 ```
 
 workspace 和 dotnet closure 在每个外部步骤后复验；同 project 新调用会 supersede 旧调用。CLI 环境从空白
@@ -438,7 +440,11 @@ Configure/Activate，也不推进 registry/current/active/LKG。
 execution。它按 index 顺序调用 exact constructor receipt；same lineage 重复/并发调用返回同一 objects，
 constructor failure 保留 partial objects、禁止重试并要求重启。该同步边界会执行目标 module static/instance
 constructor，但不读取 attribute、不 Configure/Activate、不做 I/O 或推进 registry/current/active/LKG。
-Configure/declaration staging 仍未实现。
+#320 pinned module configurator 再只消费 exact construction，并按 index 顺序为每个 object 建立
+`EditorModuleBuilder`、调用一次 Configure、Build immutable declaration；metadata 只投影 exact entry。
+same construction lineage 复用同一 declarations，Configure/Build failure 保留 objects/partial receipts、
+禁止重试并要求重启。该阶段不重构 object、不读取 attribute、不 Activate、不做 I/O 或推进
+registry/current/active/LKG。shared definition adapter 与 registry transaction 仍未实现。
 
 ## 当前架构总览
 

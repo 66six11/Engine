@@ -182,6 +182,14 @@ result/set/object references；different lineage、constructor exception 或反�
 type static/instance constructor，但不读取 attribute、不 Configure/Activate、不做 I/O 或 registry/catalog
 mutation；ALC 仍不是安全沙箱。
 
+pinned module configurator 只消费 exact constructed-module set，不接受 caller module/builder/metadata/declaration。
+独立 owner 以 per-project reservation 串行首次 Configure，并按 index 顺序创建绑定 entry definition id 的
+`EditorModuleBuilder`，调用 exact object 的 `Configure()` 后 `Build()` immutable declaration。metadata
+只从 entry 的 definition/type/activation/handover 投影。same construction lineage 重复/并发调用复用同一
+result/set/declarations；different lineage 或 Configure/Build failure 固定要求重启，失败 reservation 保留
+objects/partial declarations 且不重试。该阶段不重新构造、不读取 attribute、不 Activate、不做 I/O，也不创建
+shared `EditorModuleDefinition`、registry transaction 或 active/LKG。
+
 外部自定义 `.csproj` 必须由 `asharia.package.json.editor` 显式声明，视为受信任 external build，默认 `restart-required`。Host 记录实际 project、SDK、binlog 和 artifact，但不把它伪装成标准可重复 `.asmdef` build。
 
 分发 Package 可以提供 Package-wide prebuilt artifact manifest，包含全部 logical assembly identity、TFM/RID、API/schema compatibility、module DLL/PDB/index/resource、aggregate host/统一 `.deps.json`、private/native asset table 和 content hash。`asharia.packages.lock.json` 为整个 Package generation 选择 `source-build` 或一个 prebuilt artifact ID；禁止逐 assembly 混合 source/prebuilt 后临时合成 closure，也不允许从目录中猜测散落 DLL。Manifest 同时提供 source 与 prebuilt variant 时，Project policy 决定可选集合，但实际选择必须被 lock 固定。
@@ -219,7 +227,8 @@ candidate 固定分类为 `Pinned + RestartRequired`；load-image builder 再把
 implementation/PDB 固定成无 module initializer 的 owned byte snapshot。report/publication/index 不是
 candidate，staging/policy/load-image receipt 也不是 loaded binary。pinned assembly host 是 process-resident
 binary receipt，module-type set 是其 exact runtime type receipt，constructed-module set 再固定其至多一次
-创建的 objects；这些都还不是 configured/active module generation，也不推进 active 或 LKG。
+创建的 objects，configured-module set 再冻结逐 module declaration/metadata；这些都还不是
+registry-committed/active module generation，也不推进 active 或 LKG。
 
 ## 6. Package lock 与安装
 

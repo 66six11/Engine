@@ -1083,6 +1083,92 @@ public sealed class ProjectReferenceGraphTests
     }
 
     [Fact]
+    public void Project_code_pinned_module_configuration_stops_before_registry()
+    {
+        var source = File.ReadAllText(Path.Combine(
+            FindStudioRoot(),
+            "src",
+            "Asharia.Studio.Application",
+            "ProjectCode",
+            "ProjectCodePinnedModuleConfigurator.cs"));
+        var forbiddenTokens = new[]
+        {
+            "Assembly.GetType(",
+            "GetTypes(",
+            "DefinedTypes",
+            "Type.GetType(",
+            "GetConstructor(",
+            "GetCustomAttribute",
+            "CustomAttributeData",
+            "Constructor.Invoke(",
+            "Activator.",
+            "CreateDelegate",
+            "RuntimeHelpers.RunClassConstructor",
+            "ActivateAsync(",
+            "new ProjectCodePinnedModuleConstructor",
+            "StaticEditorModuleRegistration",
+            "StaticPackageGenerationHost",
+            "new EditorModuleDefinition(",
+            "EditorScopeTransaction",
+            "EditorModuleRegistry",
+            "EditorModuleHost",
+            "AssemblyLoadContext",
+            "LoadFrom",
+            "MetadataLoadContext",
+            "EnterContextualReflection",
+            "Func<",
+            "CancellationToken",
+            "Task<",
+            "File.",
+            "Directory.",
+        };
+
+        Assert.Contains(
+            "Configure(\n        ProjectCodePinnedModuleConstruction construction)",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "var builder = new EditorModuleBuilder(",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "new EditorModuleDefinitionContext(",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "moduleObject.Module.Configure(builder)",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "var declaration = builder.Build()",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "var metadata = new EditorModuleMetadata(",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "retainedModules_.Add(",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "result_ is not null",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "ReferenceEquals(\n                        expectedModule.Module,",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "project-code.pinned-module-configuration.configure-failed-restart-required",
+            source,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            forbiddenTokens,
+            token => source.Contains(token, StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Project_code_implicit_workspace_does_not_execute_or_load_candidates()
     {
         var sourceRoot = Path.Combine(

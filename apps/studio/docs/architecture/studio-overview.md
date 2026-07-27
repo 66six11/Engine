@@ -33,7 +33,8 @@ candidate receipt，随后在任何 load 前固定选择 `Pinned + RestartRequir
 implementation DLL/portable PDB 固定成有界、无 module initializer 的 owned load-image 快照；最后由
 loader-owned project reservation 幂等装入 exact non-collectible ALC，并把 #313 index 对证为 exact runtime
 module Type receipt，再由独立 owner 按 exact constructor receipt 至多一次地构造 module objects。
-Configure/Activate 与 registry/catalog 尚未落地。
+后继独立 owner 再逐 object 至多一次 Configure 并冻结 declaration/metadata receipt。shared definition、
+combined validation、Activate 与 registry/catalog 尚未落地。
 
 当前仍为 Partial：
 
@@ -167,6 +168,13 @@ Activator/Configure/Activate，也不写文件或推进 registry/active/LKG。
 或 constructor failure 固定要求重启，失败 reservation 保留 partial objects 且不重试。该边界会执行目标
 module static/instance constructor，但不实例化 attribute、不调用 Configure/Activate、不做 I/O 或推进
 registry/active/LKG。API 保持同步且无 cancellation token，因为 CLR constructor 不能安全中断。
+
+`ProjectCodePinnedModuleConfigurator` 只消费 exact construction，并以独立 per-project reservation 串行首次
+Configure。它按 index 顺序创建绑定 entry definition id 的 `EditorModuleBuilder`，只调用一次 exact object
+的 `Configure()`，再 `Build()` immutable declaration；metadata 只投影 entry 的 type/definition/policy。
+same construction lineage 复用同一 result/set/declarations；different lineage 或 Configure/Build failure
+要求重启，失败 reservation 保留 objects/partial declarations 且不重试。该边界不重新构造、不读取 attribute、
+不 Activate、不做 I/O，也不创建 shared definition、registry transaction 或 active/LKG。
 
 这些是 Application 层的产品策略，直接使用 .NET BCL 文件 API。Avalonia `IStorageProvider` 只负责用户文件
 选择、bookmark 和平台权限 UI；native Core File IO 服务于 C++ engine/runtime 的低层 IO 与事务，不反向成为
@@ -409,9 +417,9 @@ git diff --check
   isolated restore/build、immutable raw output、no-execute artifact metadata report 和 closed inspected artifact
   publication、no-load dual-assembly module index、non-empty staging candidate admission 与 pre-load
   `Pinned + RestartRequired` policy selection，以及有界、无 module initializer 的 owned pinned load-image
-  snapshot、loader-owned exact non-collectible binary host、exact indexed runtime Type receipt 和 at-most-once
-  constructed module objects；正式 ProjectSession/manifest handoff、`.asmdef`、Package、module
-  Configure/activation 与完整 ALC generation pipeline 尚未实现；
+  snapshot、loader-owned exact non-collectible binary host、exact indexed runtime Type receipt、at-most-once
+  constructed module objects 和 immutable configured declarations；正式 ProjectSession/manifest handoff、
+  `.asmdef`、Package、shared definition/registry/activation 与完整 ALC generation pipeline 尚未实现；
 - App shutdown 仍有 sync-over-async；
 - Game View、PlaySession 和 standalone orchestration 未完成；
 - Linux/macOS GPU presentation 尚未验证；
