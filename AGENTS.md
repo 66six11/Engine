@@ -59,6 +59,7 @@
 ## Naming & style
 
 - Types: `PascalCase`; functions/variables: `camelBack`; constants: `kPascalCase`; private members: `trailing_`.
+- Prefer domain-semantic, project-owned names. Do not embed third-party engine, framework, vendor, or product brands in project concepts, symbols, filenames, or abstractions unless the code is an explicit integration adapter or must preserve an external API/protocol name.
 - Constructors stay lightweight. Vulkan/OS/IO-failable work goes into explicit `create()` functions or factory methods.
 - No bare owning pointers, no bare `new`/`delete`. All GPU allocations go through VMA.
 - `VkResult` must never be ignored. Convert to project error types with context preserved.
