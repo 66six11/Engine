@@ -28,7 +28,8 @@ Project Code 还能把该 projection 复验为 semantic build credential，并�
 `Editor/**/*.cs` 原子生成 implicit SDK workspace，再使用 credential-bound dotnet closure 执行隔离
 restore/build 并发布四类 raw build output；current raw-output lease 现在还能经过无执行 artifact metadata
 inspection，并原子复制成带 deterministic `artifact.json` 的 closed immutable publication，再对
-implementation/reference metadata 建立 path-free module index；load candidate admission 尚未落地。
+implementation/reference metadata 建立 path-free module index，并把 non-empty current index 签发为 staging
+candidate receipt；pre-execution loader/ALC 尚未落地。
 
 当前仍为 Partial：
 
@@ -112,8 +113,15 @@ reference assembly；声明必须来自 exact contract 的 `EditorModuleAttribut
 non-abstract、non-generic、direct `EditorModule` subtype 并有 public parameterless constructor。双 assembly
 module surface、definition/type uniqueness 和 enum payload 必须完全一致。成功 index 只含 path-free declaration
 facts，identity 对等 publication root 稳定；空 index 不表示 load eligibility。它不写文件、不加载或执行 assembly，
-也不创建 ALC。`.asmdef`、Package/Avalonia resources、NuGet lock、aggregate host、loadable candidate admission
-与 ALC generation 仍是后继边界。
+也不创建 ALC。
+
+`ProjectCodeStagingCandidateAdmitter` 同样只接受 publication receipt，并在内部重新调用 indexer，不接受
+caller-supplied index/entry/type/host policy。empty index fail closed；non-empty index 与 publication identity
+形成 path-free、content-addressed candidate identity，签发前 publication 必须再次 current。receipt 持有的
+publication absolute root 仍只是当前进程 locator，不参与 candidate identity；后继 consumer 可通过
+`IsCandidateCurrentAsync` 重新索引并对证完整 surface。candidate 仅允许后继 loader 开始预执行验证，不证明
+Collectible/Pinned/Static host、managed reload eligibility 或 activation 安全性。`.asmdef`、Package/Avalonia
+resources、NuGet lock、aggregate host、pre-execution loader 与 ALC generation 仍是后继边界。
 
 这些是 Application 层的产品策略，直接使用 .NET BCL 文件 API。Avalonia `IStorageProvider` 只负责用户文件
 选择、bookmark 和平台权限 UI；native Core File IO 服务于 C++ engine/runtime 的低层 IO 与事务，不反向成为
@@ -354,8 +362,8 @@ git diff --check
 - Project Code 当前已落地 exact Editor Image、managed build environment inventory lease 与 Windows x64
   semantic build credential、caller-bound 项目根 `Editor/**/*.cs` implicit SDK workspace，以及 credential-bound
   isolated restore/build、immutable raw output、no-execute artifact metadata report 和 closed inspected artifact
-  publication、no-load dual-assembly module index；正式 ProjectSession/manifest handoff、`.asmdef`、Package、
-  loadable candidate admission 和 ALC pipeline 尚未实现；
+  publication、no-load dual-assembly module index 与 non-empty staging candidate admission；正式
+  ProjectSession/manifest handoff、`.asmdef`、Package、pre-execution loader 和 ALC pipeline 尚未实现；
 - App shutdown 仍有 sync-over-async；
 - Game View、PlaySession 和 standalone orchestration 未完成；
 - Linux/macOS GPU presentation 尚未验证；

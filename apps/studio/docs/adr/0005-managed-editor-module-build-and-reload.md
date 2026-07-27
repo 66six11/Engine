@@ -33,6 +33,7 @@
 - 通过检查的四个 product 只能由 publisher 从 current raw-output lease 重新检查后，以 BCL bounded stream 复制并复验到全新、互不重叠的 staging root；`artifact.json` 与四个 product 构成 exact closed tree，完成后以一次 directory rename 发布；
 - 该 immutable publication 是 path-free、content-addressed build evidence，不是 loadable generation，不拥有 module index、`current`/`latest`、active/LKG 或 ALC；
 - 独立 module indexer 只消费 typed publication receipt，在扫描前后复验 exact closed tree，并用 BCL metadata 同时读取 implementation/reference assembly；它只接受 exact `Asharia.Editor` `EditorModuleAttribute` 与受限 direct `EditorModule` type shape，要求两份 declaration surface 一致，输出 path-free、content-addressed in-memory facts；空 index 合法但不代表 load eligibility；
+- staging candidate admitter 不接受 caller-supplied index；它从 publication receipt 重建 index，只为 non-empty current surface 签发 content-addressed receipt，并提供重新索引的 current check。publication root 只作为进程内 locator，不参与 candidate identity；receipt 不选择 ALC host，也不证明 managed reload eligibility；
 - build diagnostic 结构化投影到 Problems/Console；
 - `FileSystemWatcher` 只触发 debounce，重新计算 fingerprint 才决定是否构建；
 - 构建期间输入再次变化时取消或丢弃旧结果。

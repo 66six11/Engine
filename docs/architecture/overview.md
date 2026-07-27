@@ -105,7 +105,10 @@ Asharia Engine 当前目标仍是先做一个小而完整的 Vulkan renderer，�
   assembly 仍保留 credential lineage。module indexer 在扫描前后复验 closed publication，并只用 BCL metadata
   对 implementation/reference assembly 的 exact `EditorModuleAttribute`、direct `EditorModule` type shape 与
   declaration surface 建立稳定、path-free、content-addressed in-memory index；空索引允许，但不证明 load
-  eligibility。该路径不创建 current pointer、ALC，也不加载 assembly，仍不支持 `.asmdef`/Package。
+  eligibility。staging candidate admitter 只接受 publication receipt，内部重建 index，要求 non-empty，并在
+  签发前再次复验 publication；candidate identity 仅绑定 publication/index identity，absolute root 只作为
+  进程内 locator。后继 current check 会重新索引并对证 surface。该 receipt 不证明 managed reload eligibility；
+  整条路径不创建 current pointer、ALC，也不加载 assembly，仍不支持 `.asmdef`/Package。
   Studio 在 Windows 上必须优先配置 `Win32RenderingMode.Vulkan`，再回退到 `AngleEgl` / `Software`，否则 Avalonia
   composition GPU interop 可能只暴露 D3D/ANGLE 共享纹理路径，无法进入 Vulkan opaque NT image/semaphore spike。
 

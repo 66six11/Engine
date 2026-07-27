@@ -255,6 +255,9 @@ public sealed class ProjectCodeSdkBuildControllerTests
         Assert.Equal(
             emptyIndex.Report.IndexId,
             equivalentEmptyIndex.Report!.IndexId);
+        AssertDiagnostic(
+            await ProjectCodeStagingCandidateAdmitter.AdmitAsync(receipt),
+            "project-code.staging-candidate.modules-empty");
 
         var existingPublication =
             PublicationRoot(project, "existing-publication");
@@ -403,8 +406,9 @@ public sealed class ProjectCodeSdkBuildControllerTests
         Assert.True(
             modulePublication.Succeeded,
             Render(modulePublication));
+        var modulePublicationReceipt = modulePublication.Receipt!;
         var moduleIndex = await ProjectCodeModuleIndexer.IndexAsync(
-            modulePublication.Receipt!);
+            modulePublicationReceipt);
         Assert.True(moduleIndex.Succeeded, Render(moduleIndex));
         var moduleEntry = Assert.Single(moduleIndex.Report!.Entries);
         Assert.Equal(
@@ -426,6 +430,46 @@ public sealed class ProjectCodeSdkBuildControllerTests
         Assert.Equal(
             EditorModuleHandoverPolicy.RestartRequired,
             moduleEntry.Handover);
+        var moduleCandidate =
+            await ProjectCodeStagingCandidateAdmitter.AdmitAsync(
+                modulePublicationReceipt);
+        Assert.True(moduleCandidate.Succeeded, Render(moduleCandidate));
+        var moduleCandidateReceipt = moduleCandidate.Receipt!;
+        Assert.Equal(
+            modulePublicationReceipt.PublicationId,
+            moduleCandidateReceipt.Publication.PublicationId);
+        Assert.Equal(
+            moduleIndex.Report.IndexId,
+            moduleCandidateReceipt.ModuleIndex.IndexId);
+        Assert.Equal(
+            ProjectId,
+            moduleCandidateReceipt.ModuleIndex.ProjectId);
+        Assert.Equal(
+            moduleOutput.AssemblyName,
+            moduleCandidateReceipt.ModuleIndex.AssemblyName);
+        Assert.True(
+            await ProjectCodeStagingCandidateAdmitter
+                .IsCandidateCurrentAsync(moduleCandidateReceipt));
+
+        var equivalentModulePublication =
+            await ProjectCodeArtifactPublisher.PublishAsync(
+                moduleBuild.Lease!,
+                PublicationRoot(moduleProject, "module-equivalent"));
+        Assert.True(
+            equivalentModulePublication.Succeeded,
+            Render(equivalentModulePublication));
+        var equivalentModuleCandidate =
+            await ProjectCodeStagingCandidateAdmitter.AdmitAsync(
+                equivalentModulePublication.Receipt!);
+        Assert.True(
+            equivalentModuleCandidate.Succeeded,
+            Render(equivalentModuleCandidate));
+        Assert.Equal(
+            moduleCandidateReceipt.CandidateId,
+            equivalentModuleCandidate.Receipt!.CandidateId);
+        Assert.Equal(
+            moduleCandidateReceipt.ModuleIndex.Entries.ToArray(),
+            equivalentModuleCandidate.Receipt.ModuleIndex.Entries.ToArray());
 
         var moduleImplementation = moduleOutput.Files.Single(file =>
             file.RelativePath
@@ -485,9 +529,16 @@ public sealed class ProjectCodeSdkBuildControllerTests
         try
         {
             File.WriteAllText(unexpectedPublicationFile, "drift");
+            Assert.False(
+                await ProjectCodeStagingCandidateAdmitter
+                    .IsCandidateCurrentAsync(moduleCandidateReceipt));
+            AssertDiagnostic(
+                await ProjectCodeStagingCandidateAdmitter.AdmitAsync(
+                    modulePublicationReceipt),
+                "project-code.module-index.publication-not-current");
             AssertDiagnostic(
                 await ProjectCodeModuleIndexer.IndexAsync(
-                    modulePublication.Receipt),
+                    modulePublicationReceipt),
                 "project-code.module-index.publication-not-current");
         }
         finally
@@ -1542,6 +1593,16 @@ public sealed class ProjectCodeSdkBuildControllerTests
             diagnostic => diagnostic.Code == code);
     }
 
+    private static void AssertDiagnostic(
+        ProjectCodeStagingCandidateAdmissionResult result,
+        string code)
+    {
+        Assert.False(result.Succeeded);
+        Assert.Contains(
+            result.Diagnostics,
+            diagnostic => diagnostic.Code == code);
+    }
+
     private static byte[] ReplaceUtf8(
         byte[] source,
         string oldValue,
@@ -1757,6 +1818,13 @@ public sealed class ProjectCodeSdkBuildControllerTests
 
     private static string Render(
         ProjectCodeModuleIndexResult result) =>
+        string.Join(
+            Environment.NewLine,
+            result.Diagnostics.Select(diagnostic =>
+                $"{diagnostic.Code} {diagnostic.Location}: {diagnostic.Message}"));
+
+    private static string Render(
+        ProjectCodeStagingCandidateAdmissionResult result) =>
         string.Join(
             Environment.NewLine,
             result.Diagnostics.Select(diagnostic =>

@@ -345,7 +345,7 @@ flowchart LR
 current selection、Project Open 或 Host activation。Editor Image 的资格检查不加载或执行候选输入，也不证明 ABI、
 launch behavior 或 runtime health。
 
-## Studio Project Code 隔离 SDK 构建、发布与模块索引流（#305–#313）
+## Studio Project Code 隔离 SDK 构建、发布与 staging admission 流（#305–#314）
 
 这是 `Asharia.Studio.Application` 的 headless Project Code control plane，不经过 Avalonia storage API，也不加载
 项目 assembly：
@@ -365,7 +365,8 @@ flowchart LR
     Report["path-free metadata report<br/>content-addressed"]
     Publication["immutable inspected publication<br/>artifact.json + four evidence files"]
     Index["no-load module index<br/>implementation + reference metadata"]
-    Candidate["load eligibility / candidate admission<br/>next slice"]
+    Candidate["staging candidate receipt<br/>non-empty rebuilt index"]
+    Loader["pre-execution loader / ALC<br/>not implemented"]
 
     Image --> Projection
     Projection --> Credential
@@ -380,7 +381,8 @@ flowchart LR
     Inspect --> Report
     Report --> Publication
     Publication --> Index
-    Index -.not implemented.-> Candidate
+    Index --> Candidate
+    Candidate -.not implemented.-> Loader
 ```
 
 workspace 和 dotnet closure 在每个外部步骤后复验；同 project 新调用会 supersede 旧调用。CLI 环境从空白
@@ -396,7 +398,11 @@ generation candidate。#313 indexer 在扫描前后复验 exact closed publicati
 声明 surface：一个 entry 必须由 exact `Asharia.Editor` contract 的 `EditorModuleAttribute` 声明，并对应 public
 top-level sealed、non-abstract、non-generic、direct `EditorModule` subtype 与 public parameterless constructor。
 重复 definition/type、非法 attribute/type shape 或双 assembly surface drift 均 fail closed。空索引是合法事实，
-但不代表可加载资格；index/report 不创建 current pointer、active、LKG、ALC，也不加载 assembly。
+但不代表可加载资格。#314 admitter 只消费 publication receipt，内部重建 index，要求至少一个 module entry，
+并在签发前再次复验 publication；candidate identity 只绑定 publication/index identity，不绑定 absolute locator。
+receipt 继承 #312 publication root 仅供当前进程后继寻址，`IsCandidateCurrentAsync` 会重新索引并对证完整 surface。
+candidate 只允许后继 loader 开始自己的预执行验证，不证明 managed reload eligibility；index/candidate 不创建
+current pointer、active、LKG、ALC，也不加载 assembly。
 
 ## 当前架构总览
 
