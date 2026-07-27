@@ -41,6 +41,7 @@
 - pinned module constructor 只消费 exact module-type set，并由显式 owner 以 per-project reservation 串行首次用户代码执行。它按 index 顺序调用 receipt 固定的 exact `ConstructorInfo.Invoke(null)`；same type-set 重复/并发调用复用同一 result/object，different type-set 或 constructor failure 要求重启。失败 reservation 保留已构造的 partial objects 且不重试；该阶段会执行目标 type/instance constructor，但仍不实例化 attribute、不 Configure/Activate、不写文件或推进 registry/active/LKG；
 - pinned module configurator 只消费 exact constructed-module set，并以独立 per-project reservation 按 index 顺序为每个 object 建立 `EditorModuleBuilder`、调用一次 `Configure()`、再 `Build()` immutable declaration。metadata 只投影 exact index entry；same construction lineage 幂等复用同一 declarations，different lineage 或 Configure/Build failure 要求重启。失败 reservation 保留原 objects 与 partial declarations 且不重试；该阶段不重构 object、不读取 attribute、不 Activate，也不创建 shared definition/registry/current/active/LKG；
 - pinned module definition set 是对 exact configured receipts 的纯内存投影。共享 `EditorModuleDefinition` 直接持有 metadata/module/declaration，不再反向持有 static registration/factory；set 保留 exact 顺序与 definition-id lookup。该阶段不执行用户代码，也不创建 scope transaction、registry partition 或 activation；
+- pinned module scope preparer 只接受未来 ProjectSession 显式提供的 Project `ScopeInstanceId` 与 host-capability value snapshot；它不把 persistent ProjectId 当 session identity。preparer 复用 `EditorScopeTransaction.Prepare` 对 exact definitions 构建不可见 candidate，并将 structural failure 转为 typed diagnostic；该阶段不 Commit registry、不 reservation，也不 Activate；
 - build diagnostic 结构化投影到 Problems/Console；
 - `FileSystemWatcher` 只触发 debounce，重新计算 fingerprint 才决定是否构建；
 - 构建期间输入再次变化时取消或丢弃旧结果。
@@ -95,8 +96,9 @@ module initializer 的 binary 当作无执行快照通过。#316 固定并复验
 non-collectible ALC 并保持引用；#318 再把 #313 exact index 对证为 runtime `Type` receipt，但不构造任何对象。
 #319 在显式不可逆边界按 exact constructor receipt 至多一次地构造 module object，并把 failure 固定为
 restart-required；#320 再按 exact object/index 至多一次地执行 Configure 并冻结 declaration/metadata receipt。
-#321 将这些 receipts 投影为 static/dynamic 共用的 module definitions，但不进入 registry。combined declaration
-validation、scope transaction、Activate 与 registry/catalog commit 仍是后继边界。
+#321 将这些 receipts 投影为 static/dynamic 共用的 module definitions，但不进入 registry。#322 再在
+caller-supplied ProjectSession scope 下完成 combined structural validation 与 invisible candidate；
+显式 registry commit/Activate 仍是后继边界。
 
 ### Generation replacement
 

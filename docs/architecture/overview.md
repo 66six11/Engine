@@ -124,9 +124,10 @@ Asharia Engine 当前目标仍是先做一个小而完整的 Vulkan renderer，�
   保留 partial objects、禁止重试并要求重启。pinned module configurator 再为 exact objects 建立 builder，
   至多一次 Configure 并冻结只由 index 投影 metadata 的 immutable declarations；failure 同样保留 partial
   receipts、禁止重试并要求重启。definition set 再把 exact metadata/object/declaration 纯内存投影为
-  static/dynamic 共用的 shared definitions，不反向持有 static factory registration。当前仍不创建 current
-  pointer，不实例化 attribute，不调用 Activate，不推进 registry/active/LKG，也不支持 `.asmdef`/Package；
-  完整 generation host 尚未实现。
+  static/dynamic 共用的 shared definitions，不反向持有 static factory registration。scope preparer 只在
+  caller 显式提供 ProjectSession scope/host capabilities 后构建不可见、combined-validated candidate，不把
+  persistent ProjectId 当 session identity。当前仍不创建 current pointer，不实例化 attribute，不调用
+  registry Commit/Activate，不推进 active/LKG，也不支持 `.asmdef`/Package；完整 generation host 尚未实现。
   Studio 在 Windows 上必须优先配置 `Win32RenderingMode.Vulkan`，再回退到 `AngleEgl` / `Software`，否则 Avalonia
   composition GPU interop 可能只暴露 D3D/ANGLE 共享纹理路径，无法进入 Vulkan opaque NT image/semaphore spike。
 

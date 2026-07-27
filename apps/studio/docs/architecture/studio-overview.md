@@ -34,8 +34,9 @@ implementation DLL/portable PDB 固定成有界、无 module initializer 的 own
 loader-owned project reservation 幂等装入 exact non-collectible ALC，并把 #313 index 对证为 exact runtime
 module Type receipt，再由独立 owner 按 exact constructor receipt 至多一次地构造 module objects。
 后继独立 owner 再逐 object 至多一次 Configure 并冻结 declaration/metadata receipt，随后纯内存投影为
-static/dynamic 共用的 shared definitions。combined validation、scope transaction、Activate 与
-registry/catalog 尚未落地。
+static/dynamic 共用的 shared definitions。未来 ProjectSession 显式提供 scope identity/host capabilities 后，
+现有 transaction 可准备不可见 combined structural candidate；registry commit、Activate 与 catalog
+尚未落地。
 
 当前仍为 Partial：
 
@@ -182,6 +183,11 @@ same construction lineage 复用同一 result/set/declarations；different linea
 static registration/factory；built-in `StaticPackageGenerationHost` 仍负责自己的 factory/Configure，但将结果
 接到同一合同。该投影不执行用户代码，不需要 reservation/async/cancellation，也不进入 scope transaction、
 registry 或 activation。
+
+`ProjectCodePinnedModuleScopePreparer` 只接受明确的 Project `ScopeInstanceId`、registry 与 host-capability
+values；它不从 artifact 的 persistent ProjectId 构造 ProjectSession identity。preparer 复制 capability
+snapshot，使用现有 `EditorScopeTransaction.Prepare` 构建并复核不可见 candidate，把 structural failure
+转为 typed diagnostic。该边界不 Commit registry、不增加 reservation/owner/revision，不 Activate 或做 I/O。
 
 这些是 Application 层的产品策略，直接使用 .NET BCL 文件 API。Avalonia `IStorageProvider` 只负责用户文件
 选择、bookmark 和平台权限 UI；native Core File IO 服务于 C++ engine/runtime 的低层 IO 与事务，不反向成为
@@ -426,8 +432,8 @@ git diff --check
   `Pinned + RestartRequired` policy selection，以及有界、无 module initializer 的 owned pinned load-image
   snapshot、loader-owned exact non-collectible binary host、exact indexed runtime Type receipt、at-most-once
   constructed module objects、immutable configured declarations 和 shared definition projection；正式
-  ProjectSession/manifest handoff、`.asmdef`、Package、registry/activation 与完整 ALC generation pipeline
-  尚未实现；
+  ProjectSession/manifest handoff、`.asmdef`、Package、registry commit/activation 与完整 ALC generation
+  pipeline 尚未实现；headless path 只支持 caller 显式给出 ProjectSession scope 后准备不可见 candidate；
 - App shutdown 仍有 sync-over-async；
 - Game View、PlaySession 和 standalone orchestration 未完成；
 - Linux/macOS GPU presentation 尚未验证；

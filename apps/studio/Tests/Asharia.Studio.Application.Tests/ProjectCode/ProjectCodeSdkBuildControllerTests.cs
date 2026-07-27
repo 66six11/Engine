@@ -10,6 +10,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Xml.Linq;
 using Asharia.Editor.Extensions;
+using Asharia.Studio.Application.Extensions;
 using Asharia.Studio.Application.ProjectCode;
 using Xunit;
 using ProjectFixture =
@@ -1159,6 +1160,121 @@ public sealed class ProjectCodeSdkBuildControllerTests
                 definitionSet.DefinitionsById[definition.Id]);
         }
 
+        Assert.Equal(
+            "1",
+            Environment.GetEnvironmentVariable(
+                ModuleConfigureMarker));
+        Assert.Null(Environment.GetEnvironmentVariable(
+            ModuleActivateMarker));
+        Assert.Null(Environment.GetEnvironmentVariable(
+            AttributeConstructorMarker));
+        Assert.Null(Environment.GetEnvironmentVariable(
+            StaticConstructorMarker));
+
+        var scopeRegistry = new EditorModuleRegistry();
+        Assert.Throws<ArgumentException>(() =>
+            ProjectCodePinnedModuleScopePreparer.Prepare(
+                definitionSet,
+                ScopeInstanceId.Application,
+                scopeRegistry));
+        Assert.False(scopeRegistry.TryGetPartition(
+            ScopeInstanceId.Application,
+            out _));
+        Assert.Throws<ArgumentException>(() =>
+            ProjectCodePinnedModuleScopePreparer.Prepare(
+                definitionSet,
+                default,
+                scopeRegistry));
+
+        var projectScope = ScopeInstanceId.ForProject(
+            Guid.Parse("80808080-8080-8080-8080-808080808080"));
+        var hostCapability = EditorCapabilityId.Create(
+            "fixture.host.v1");
+        var invalidScopePreparation =
+            ProjectCodePinnedModuleScopePreparer.Prepare(
+                definitionSet,
+                projectScope,
+                scopeRegistry,
+                [hostCapability, hostCapability]);
+        AssertDiagnostic(
+            invalidScopePreparation,
+            "project-code.pinned-module-scope-preparation.validation-failed");
+        AssertNoAbsolutePathLeak(
+            Render(invalidScopePreparation),
+            moduleProject.ProjectRoot,
+            modulePublicationReceipt.AbsoluteRoot);
+        Assert.False(scopeRegistry.TryGetPartition(
+            projectScope,
+            out _));
+
+        var hostCapabilities = new[]
+        {
+            hostCapability,
+        };
+        var scopePreparationResult =
+            ProjectCodePinnedModuleScopePreparer.Prepare(
+                definitionSet,
+                projectScope,
+                scopeRegistry,
+                hostCapabilities);
+        Assert.True(
+            scopePreparationResult.Succeeded,
+            Render(scopePreparationResult));
+        var scopePreparation =
+            scopePreparationResult.Preparation!;
+        hostCapabilities[0] = EditorCapabilityId.Create(
+            "fixture.changed.v1");
+        Assert.Same(
+            definitionSet,
+            scopePreparation.DefinitionSet);
+        Assert.Equal(
+            projectScope,
+            scopePreparation.ScopeInstanceId);
+        Assert.Equal(
+            [hostCapability],
+            scopePreparation.HostCapabilities);
+        Assert.Equal(
+            projectScope,
+            scopePreparation.Candidate.ScopeInstanceId);
+        Assert.Contains(
+            hostCapability,
+            scopePreparation.Candidate.HostCapabilities);
+        Assert.DoesNotContain(
+            hostCapabilities[0],
+            scopePreparation.Candidate.HostCapabilities);
+        Assert.Equal(
+            definitionSet.Definitions.Count,
+            scopePreparation.Candidate.RegistrationOrder.Count);
+        for (var index = 0;
+             index < definitionSet.Definitions.Count;
+             ++index)
+        {
+            var definition = definitionSet.Definitions[index];
+            var instance =
+                scopePreparation.Candidate.RegistrationOrder[index];
+            Assert.Same(definition, instance.Definition);
+            Assert.Same(
+                instance,
+                scopePreparation.Candidate.Instances[
+                    definition.Id]);
+            Assert.Equal(
+                EditorModuleInstanceId.Create(
+                    definition.Id,
+                    projectScope),
+                instance.Id);
+        }
+
+        var realDefinition = definitionSet.DefinitionsById[
+            configuredRealModule.Metadata.DefinitionId];
+        Assert.Equal(
+            EditorModuleInstanceId.Create(
+                realDefinition.Id,
+                projectScope),
+            scopePreparation.Candidate.CapabilityProviders[
+                providedCapability]);
+        Assert.False(scopeRegistry.TryGetPartition(
+            projectScope,
+            out _));
         Assert.Equal(
             "1",
             Environment.GetEnvironmentVariable(
@@ -2681,6 +2797,16 @@ public sealed class ProjectCodeSdkBuildControllerTests
             diagnostic => diagnostic.Code == code);
     }
 
+    private static void AssertDiagnostic(
+        ProjectCodePinnedModuleScopePreparationResult result,
+        string code)
+    {
+        Assert.False(result.Succeeded);
+        Assert.Contains(
+            result.Diagnostics,
+            diagnostic => diagnostic.Code == code);
+    }
+
     private static byte[] ReplaceUtf8(
         byte[] source,
         string oldValue,
@@ -2945,6 +3071,13 @@ public sealed class ProjectCodeSdkBuildControllerTests
 
     private static string Render(
         ProjectCodePinnedModuleConfigurationResult result) =>
+        string.Join(
+            Environment.NewLine,
+            result.Diagnostics.Select(diagnostic =>
+                $"{diagnostic.Code} {diagnostic.Location}: {diagnostic.Message}"));
+
+    private static string Render(
+        ProjectCodePinnedModuleScopePreparationResult result) =>
         string.Join(
             Environment.NewLine,
             result.Diagnostics.Select(diagnostic =>

@@ -1260,6 +1260,91 @@ public sealed class ProjectReferenceGraphTests
     }
 
     [Fact]
+    public void Project_code_pinned_module_scope_preparation_stops_before_commit()
+    {
+        var source = File.ReadAllText(Path.Combine(
+            FindStudioRoot(),
+            "src",
+            "Asharia.Studio.Application",
+            "ProjectCode",
+            "ProjectCodePinnedModuleScopePreparer.cs"));
+        var forbiddenTokens = new[]
+        {
+            "ProjectId",
+            "ScopeInstanceId.ForProject",
+            "ProjectSession(",
+            "ProjectCodePinnedModuleConstructor",
+            "ProjectCodePinnedModuleConfigurator",
+            "StaticEditorModuleRegistration",
+            "StaticPackageGenerationHost",
+            "Func<",
+            ".Configure(",
+            ".Build(",
+            "GetCustomAttribute",
+            "Constructor.Invoke(",
+            "Activator.",
+            "RuntimeHelpers.RunClassConstructor",
+            "ActivateAsync(",
+            ".Commit(",
+            "TryReserve",
+            "Reservation",
+            "OwnerToken",
+            "Revision",
+            "CommitObserver",
+            "AssemblyLoadContext",
+            "LoadFrom",
+            "CancellationToken",
+            "Task<",
+            "File.",
+            "Directory.",
+        };
+
+        Assert.Contains(
+            "ProjectCodePinnedModuleDefinitionSet definitionSet,",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "ScopeInstanceId scopeInstanceId,",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "EditorModuleRegistry registry,",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "hostCapabilities?.ToArray() ?? []",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "EditorScopeTransaction.Prepare(",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "definitionSet.Definitions,",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "new ProjectCodePinnedModuleScopePreparation(",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "candidate.RegistrationOrder[index]",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "catch (EditorScopeValidationException error)",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "project-code.pinned-module-scope-preparation.validation-failed",
+            source,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            forbiddenTokens,
+            token => source.Contains(token, StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Project_code_implicit_workspace_does_not_execute_or_load_candidates()
     {
         var sourceRoot = Path.Combine(

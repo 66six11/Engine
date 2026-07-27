@@ -196,6 +196,12 @@ pinned module definition set 只把 exact configured receipts 投影为 static/d
 configuration lineage。该转换不执行用户代码，不需要 reservation/async/cancellation，也不创建
 scope transaction、registry partition、contribution publication 或 activation。
 
+pinned module scope preparer 再接受未来 ProjectSession/Engine context 显式给出的 Project
+`ScopeInstanceId` 与 host-capability values；persistent ProjectId 不能替代 per-session identity。它先复制
+capability snapshot，再让现有 `EditorScopeTransaction.Prepare` 从 exact definitions 构建不可见 candidate，
+复核 registration order/definition references，并把 structural validation failure 投影为 path-free typed
+diagnostic。该阶段只读 registry snapshot；不 Commit、不增加 reservation/owner/revision，也不 Activate。
+
 外部自定义 `.csproj` 必须由 `asharia.package.json.editor` 显式声明，视为受信任 external build，默认 `restart-required`。Host 记录实际 project、SDK、binlog 和 artifact，但不把它伪装成标准可重复 `.asmdef` build。
 
 分发 Package 可以提供 Package-wide prebuilt artifact manifest，包含全部 logical assembly identity、TFM/RID、API/schema compatibility、module DLL/PDB/index/resource、aggregate host/统一 `.deps.json`、private/native asset table 和 content hash。`asharia.packages.lock.json` 为整个 Package generation 选择 `source-build` 或一个 prebuilt artifact ID；禁止逐 assembly 混合 source/prebuilt 后临时合成 closure，也不允许从目录中猜测散落 DLL。Manifest 同时提供 source 与 prebuilt variant 时，Project policy 决定可选集合，但实际选择必须被 lock 固定。
@@ -234,7 +240,8 @@ implementation/PDB 固定成无 module initializer 的 owned byte snapshot。rep
 candidate，staging/policy/load-image receipt 也不是 loaded binary。pinned assembly host 是 process-resident
 binary receipt，module-type set 是其 exact runtime type receipt，constructed-module set 再固定其至多一次
 创建的 objects，configured-module set 再冻结逐 module declaration/metadata，definition set 最后投影为
-static/dynamic 共用的 shared definitions；这些都还不是
+static/dynamic 共用的 shared definitions；在 caller-supplied ProjectSession scope 下还可以准备 combined
+structural candidate，但这些都还不是
 registry-committed/active module generation，也不推进 active 或 LKG。
 
 ## 6. Package lock 与安装
