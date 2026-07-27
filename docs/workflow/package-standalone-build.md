@@ -117,7 +117,8 @@ targets in `targets`.
 - This does not create per-package Conan recipes.
 - This does not make a general binary SDK or stable C++ ABI. `asharia::scene_native` is one narrow,
   explicitly versioned C ABI shared adapter for World, generation-safe entity lifecycle, and
-  validated local Transform values; it does not make the package's C++ API binary-stable or expose
-  names, hierarchy/world transforms, or general components.
+  validated local Transform and UTF-8 display/debug name values; it does not make the package's C++
+  API binary-stable or expose hierarchy/world transforms, change notifications, or general
+  components.
 - Vulkan/runtime smoke coverage is still routed through `apps/sample-viewer`
   flags until those packages grow their own focused test targets.

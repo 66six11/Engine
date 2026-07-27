@@ -48,6 +48,11 @@ Play Mode 的边界。它不是完整 ECS 实现说明，而是约束后续 `sce
 | Unreal `TQuat`: https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/Core/TQuat | UE quaternion API 提供 `ContainsNaN` / `IsNormalized`，多项旋转运算要求 normalized quaternion。 | ABI set-local-transform 拒绝非有限值与非单位 rotation，不静默归一化不可信边界输入。 |
 | O3DE `TransformInterface`: https://docs.o3de.org/docs/api/frameworks/azcore/class_a_z_1_1_transform_interface.html | O3DE 分别提供 `Get/SetLocalTM` 与 world-transform 操作，local 不含 parent transform。 | local 与 world operation 必须是独立合同；当前 Slice 只发布 local get/set。 |
 | Godot `Transform3D`: https://docs.godotengine.org/en/latest/classes/class_transform3d.html | Godot 提供逐 component 的 `is_finite()`，并为依赖正交/归一化的 transform math 写明前置条件。 | public mutation boundary 必须先拒绝 NaN/Inf，避免非法 float 进入未来 hierarchy/snapshot/renderer。 |
+| Unreal object name / Actor label: https://dev.epicgames.com/documentation/unreal-engine/API/Runtime/CoreUObject/UObjectBaseUtility/GetName 、https://dev.epicgames.com/documentation/en-us/unreal-engine/BlueprintAPI/EditorScripting/ActorEditing/SetActorLabel | UE 区分实际 object name 与 development-only Editor friendly label。 | 当前 World name 只承诺可变 display/debug text，不冒充稳定 identity、path 或未来 Editor label policy。 |
+| O3DE `AZ::Entity`: https://docs.o3de.org/docs/api/frameworks/azcore/class_a_z_1_1_entity.html 、https://www.docs.o3de.org/docs/api/frameworks/azcore/class_a_z_1_1_component_application_requests.html | O3DE entity 提供 mutable GetName/SetName，并明确 entity names 非唯一且用于诊断。 | name 不唯一、不提供 find-by-name；generation-safe ID 仍是唯一运行时寻址合同。 |
+| Godot `Node.name`: https://docs.godotengine.org/en/4.5/classes/class_node.html | Godot Node name 参与 sibling uniqueness 与 hierarchy path。 | 当前没有 hierarchy，不能提前导入 sibling uniqueness、路径字符过滤或自动重命名语义。 |
+| Unicode well-formed UTF-8: https://www.unicode.org/versions/Unicode17.0.0/core-spec/chapter-3/ | Unicode 用精确合法 byte ranges 定义 well-formed UTF-8，ill-formed 序列必须作为错误而非字符解释。 | native set-name 对 malformed/overlong/surrogate/out-of-range/truncated input fail closed，不静默 replacement。 |
+| SQLite C text lifetime: https://www.sqlite.org/c3ref/column_blob.html | SQLite 明确区分 UTF-8 byte length 与 terminator，并提醒 borrowed text pointer 会随后续 mutation 失效。 | native get-name 使用 caller-owned exact-byte copy-out，不跨 World mutation 暴露 borrowed `char*` 或 allocator。 |
 | Unreal parallel rendering: https://dev.epicgames.com/documentation/en-us/unreal-engine/parallel-rendering-overview-for-unreal-engine | Unreal 把 game thread、render thread 和 RHI thread 分离，渲染侧通过 proxy/snapshot 消费游戏数据。 | Renderer 后续应消费 render snapshot/draw packet，不直接读 gameplay/editor object。 |
 | Unity Job System: https://docs.unity3d.com/Manual/JobSystemOverview.html | Unity Job System 强调可并行数据和 safety 规则。 | Asharia Engine worker job 应处理 plain data；mutable World 访问必须通过主线程或明确同步模型。 |
 | Unity SRP / RenderGraph: https://docs.unity3d.com/Manual/urp/render-graph-introduction.html | Editor 可有 Game View、Scene View、preview 等多个渲染视图。 | RenderGraph 和 profiling 不应假设一帧只有一个 view graph。 |
@@ -98,8 +103,8 @@ flowchart TD
 
 - `scene-core` 不依赖 ImGui、Vulkan、renderer implementation 或 scripting runtime。
 - `asharia::scene_native` shared adapter 只依赖 `asharia::scene_core`；公开 header 可由 C11 consumer
-  直接编译，只有 fixed-width status/header/entity/Transform values、opaque World handle 与窄生命周期/本地
-  Transform functions。
+  直接编译，只有 fixed-width status/header/entity/Transform values、length-delimited UTF-8 view、opaque
+  World handle 与窄生命周期/本地 Transform/name functions。
 - 当前 native World handle 只记录并校验创建线程，不猜测哪个线程是进程主线程；Host/WorldScope 必须在其
   control/main thread 创建它。所有 World/entity/Transform 调用 wrong-thread 时 fail closed，成功 World
   destroy 后 handle 立即失效；caller 必须先停止并 drain 依赖工作。
@@ -108,8 +113,13 @@ flowchart TD
 - native Transform 只表示 local position/quaternion/scale；get 失败先把 output 清零，set 拒绝任意 component
   的 NaN/Inf 与非单位 quaternion，且不静默 normalize/clamp。有限 zero/negative scale 可透传；hierarchy/world
   Transform、dirty propagation 与 change notification 尚不存在。
-- version 1 ABI 尚不公开 entity name、component registry、managed P/Invoke 或 render snapshot；这些必须按
-  独立 Slice 增加，不能通过泄漏 mutable `World*` 省略 owner/safe-point 设计。
+- native entity name 是 mutable、non-unique display/debug UTF-8 text，不是 identity、path、persistence ID 或
+  lookup key。set 立即复制 well-formed UTF-8，empty 合法且不 normalize/trim/case-fold/自动唯一化；get 先查询
+  byte length，再完整复制到 caller buffer，不加 NUL、不部分写入，也不暴露随 World mutation 失效的 borrowed
+  pointer。native set 上限为 4096 UTF-8 bytes，避免不受限 allocation 与不可信超长 pointer/length；现有
+  8-byte create-entity request 保持不变，避免破坏 v1 consumer。
+- version 1 ABI 尚不公开 component registry、hierarchy、change journal、managed P/Invoke 或 render
+  snapshot；这些必须按独立 Slice 增加，不能通过泄漏 mutable `World*` 省略 owner/safe-point 设计。
 - Editor System 内部 `editor_domain` 不依赖 ImGui、Vulkan 或 renderer implementation。
 - renderer 可以依赖后端无关的 render packet 类型，不能依赖 mutable `World`。
 - `apps/editor` 负责 ImGui integration 和 editor viewport host，不把 ImGui 类型塞进 `editor_domain`。

@@ -3,8 +3,10 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <limits>
 #include <memory>
+#include <string_view>
 #include <thread>
 #include <type_traits>
 
@@ -16,6 +18,10 @@ struct AshariaSceneNativeWorld {
 };
 
 namespace {
+
+    [[nodiscard]] constexpr std::size_t alignUp(std::size_t value, std::size_t alignment) noexcept {
+        return ((value + alignment - 1U) / alignment) * alignment;
+    }
 
     [[nodiscard]] constexpr bool hasSupportedHeader(const AshariaSceneNativeAbiHeader& header,
                                                     std::size_t requiredSize) noexcept {
@@ -35,6 +41,95 @@ namespace {
     [[nodiscard]] constexpr AshariaSceneNativeEntityId
     fromEntityId(asharia::EntityId entity) noexcept {
         return AshariaSceneNativeEntityId{.index = entity.index, .generation = entity.generation};
+    }
+
+    [[nodiscard]] constexpr bool isContinuationByte(unsigned char value) noexcept {
+        return (value & 0xC0U) == 0x80U;
+    }
+
+    [[nodiscard]] bool isValidTwoByteSequence(std::string_view text, std::size_t index) noexcept {
+        const auto first = static_cast<unsigned char>(text[index]);
+        return first >= 0xC2U && first <= 0xDFU && index + 1U < text.size() &&
+               isContinuationByte(static_cast<unsigned char>(text[index + 1U]));
+    }
+
+    [[nodiscard]] bool isValidThreeByteSequence(std::string_view text, std::size_t index) noexcept {
+        if (index + 2U >= text.size()) {
+            return false;
+        }
+
+        const auto first = static_cast<unsigned char>(text[index]);
+        const auto second = static_cast<unsigned char>(text[index + 1U]);
+        const auto third = static_cast<unsigned char>(text[index + 2U]);
+        const bool validSecond =
+            (first == 0xE0U && second >= 0xA0U && second <= 0xBFU) ||
+            (first == 0xEDU && second >= 0x80U && second <= 0x9FU) ||
+            (((first >= 0xE1U && first <= 0xECU) || (first >= 0xEEU && first <= 0xEFU)) &&
+             isContinuationByte(second));
+        return validSecond && isContinuationByte(third);
+    }
+
+    [[nodiscard]] bool isValidFourByteSequence(std::string_view text, std::size_t index) noexcept {
+        if (index + 3U >= text.size()) {
+            return false;
+        }
+
+        const auto first = static_cast<unsigned char>(text[index]);
+        const auto second = static_cast<unsigned char>(text[index + 1U]);
+        const auto third = static_cast<unsigned char>(text[index + 2U]);
+        const auto fourth = static_cast<unsigned char>(text[index + 3U]);
+        const bool validSecond = (first == 0xF0U && second >= 0x90U && second <= 0xBFU) ||
+                                 (first == 0xF4U && second >= 0x80U && second <= 0x8FU) ||
+                                 (first >= 0xF1U && first <= 0xF3U && isContinuationByte(second));
+        return validSecond && isContinuationByte(third) && isContinuationByte(fourth);
+    }
+
+    [[nodiscard]] std::size_t validUtf8SequenceSize(std::string_view text,
+                                                    std::size_t index) noexcept {
+        const auto first = static_cast<unsigned char>(text[index]);
+        if (first <= 0x7FU) {
+            return 1U;
+        }
+        if (isValidTwoByteSequence(text, index)) {
+            return 2U;
+        }
+        if (first >= 0xE0U && first <= 0xEFU && isValidThreeByteSequence(text, index)) {
+            return 3U;
+        }
+        if (first >= 0xF0U && first <= 0xF4U && isValidFourByteSequence(text, index)) {
+            return 4U;
+        }
+        return 0U;
+    }
+
+    [[nodiscard]] bool isValidUtf8(std::string_view text) noexcept {
+        std::size_t index = 0U;
+        while (index < text.size()) {
+            const std::size_t sequenceSize = validUtf8SequenceSize(text, index);
+            if (sequenceSize == 0U) {
+                return false;
+            }
+            index += sequenceSize;
+        }
+        return true;
+    }
+
+    [[nodiscard]] AshariaSceneNativeStatus makeUtf8View(AshariaSceneNativeStringView value,
+                                                        std::string_view& result) noexcept {
+        if (value.byteLength > ASHARIA_SCENE_NATIVE_MAX_ENTITY_NAME_UTF8_BYTES ||
+            value.byteLength > std::numeric_limits<std::size_t>::max() ||
+            (value.data == nullptr && value.byteLength != 0U)) {
+            return AshariaSceneNativeStatus_InvalidArgument;
+        }
+
+        if (value.byteLength == 0U) {
+            result = {};
+            return AshariaSceneNativeStatus_Success;
+        }
+
+        result = std::string_view{value.data, static_cast<std::size_t>(value.byteLength)};
+        return isValidUtf8(result) ? AshariaSceneNativeStatus_Success
+                                   : AshariaSceneNativeStatus_InvalidUtf8;
     }
 
     [[nodiscard]] constexpr asharia::TransformComponent
@@ -130,6 +225,17 @@ namespace {
     static_assert(offsetof(AshariaSceneNativeEntityId, index) == 0U);
     static_assert(offsetof(AshariaSceneNativeEntityId, generation) == 4U);
 
+    static_assert(std::is_standard_layout_v<AshariaSceneNativeStringView>);
+    static_assert(std::is_trivially_copyable_v<AshariaSceneNativeStringView>);
+    static_assert(alignof(AshariaSceneNativeStringView) ==
+                  (alignof(const char*) > alignof(std::uint64_t) ? alignof(const char*)
+                                                                 : alignof(std::uint64_t)));
+    static_assert(offsetof(AshariaSceneNativeStringView, data) == 0U);
+    static_assert(offsetof(AshariaSceneNativeStringView, byteLength) ==
+                  alignUp(sizeof(const char*), alignof(std::uint64_t)));
+    static_assert(sizeof(AshariaSceneNativeStringView) ==
+                  offsetof(AshariaSceneNativeStringView, byteLength) + sizeof(std::uint64_t));
+
     static_assert(std::is_standard_layout_v<AshariaSceneNativeVec3>);
     static_assert(std::is_trivially_copyable_v<AshariaSceneNativeVec3>);
     static_assert(alignof(AshariaSceneNativeVec3) == alignof(float));
@@ -185,6 +291,19 @@ namespace {
     static_assert(offsetof(AshariaSceneNativeSetLocalTransformRequest, header) == 0U);
     static_assert(offsetof(AshariaSceneNativeSetLocalTransformRequest, entity) == 8U);
     static_assert(offsetof(AshariaSceneNativeSetLocalTransformRequest, transform) == 16U);
+
+    static_assert(std::is_standard_layout_v<AshariaSceneNativeSetEntityNameRequest>);
+    static_assert(std::is_trivially_copyable_v<AshariaSceneNativeSetEntityNameRequest>);
+    static_assert(alignof(AshariaSceneNativeSetEntityNameRequest) ==
+                  alignof(AshariaSceneNativeStringView));
+    static_assert(offsetof(AshariaSceneNativeSetEntityNameRequest, header) == 0U);
+    static_assert(offsetof(AshariaSceneNativeSetEntityNameRequest, entity) == 8U);
+    static_assert(offsetof(AshariaSceneNativeSetEntityNameRequest, nameUtf8) ==
+                  alignUp(sizeof(AshariaSceneNativeAbiHeader) + sizeof(AshariaSceneNativeEntityId),
+                          alignof(AshariaSceneNativeStringView)));
+    static_assert(sizeof(AshariaSceneNativeSetEntityNameRequest) ==
+                  offsetof(AshariaSceneNativeSetEntityNameRequest, nameUtf8) +
+                      sizeof(AshariaSceneNativeStringView));
     static_assert(std::is_nothrow_destructible_v<AshariaSceneNativeWorld>);
 
 } // namespace
@@ -352,6 +471,71 @@ AshariaSceneNativeStatus ASHARIA_SCENE_NATIVE_CALL asharia_scene_world_set_local
     try {
         return world->world.setTransform(toEntityId(request->entity),
                                          toLocalTransform(request->transform))
+                   ? AshariaSceneNativeStatus_Success
+                   : AshariaSceneNativeStatus_InvalidEntity;
+    } catch (...) {
+        return AshariaSceneNativeStatus_InternalError;
+    }
+}
+
+AshariaSceneNativeStatus ASHARIA_SCENE_NATIVE_CALL asharia_scene_world_get_entity_name(
+    AshariaSceneNativeWorld* world, const AshariaSceneNativeEntityRequest* request, char* nameUtf8,
+    std::uint64_t nameCapacity, std::uint64_t* nameByteLength) noexcept {
+    if (nameByteLength == nullptr) {
+        return AshariaSceneNativeStatus_InvalidArgument;
+    }
+    *nameByteLength = 0U;
+
+    if ((nameUtf8 == nullptr && nameCapacity != 0U) || world == nullptr || request == nullptr) {
+        return AshariaSceneNativeStatus_InvalidArgument;
+    }
+    if (!hasSupportedHeader(request->header, sizeof(AshariaSceneNativeEntityRequest))) {
+        return AshariaSceneNativeStatus_UnsupportedAbi;
+    }
+    if (!isOwnerThread(*world)) {
+        return AshariaSceneNativeStatus_WrongThread;
+    }
+
+    const asharia::EntityId entity = toEntityId(request->entity);
+    if (!world->world.isAlive(entity)) {
+        return AshariaSceneNativeStatus_InvalidEntity;
+    }
+
+    const std::string_view name = world->world.entityName(entity);
+    *nameByteLength = static_cast<std::uint64_t>(name.size());
+    if (nameUtf8 == nullptr) {
+        return AshariaSceneNativeStatus_Success;
+    }
+    if (nameCapacity < *nameByteLength) {
+        return AshariaSceneNativeStatus_BufferTooSmall;
+    }
+    if (!name.empty()) {
+        std::memcpy(nameUtf8, name.data(), name.size());
+    }
+    return AshariaSceneNativeStatus_Success;
+}
+
+AshariaSceneNativeStatus ASHARIA_SCENE_NATIVE_CALL asharia_scene_world_set_entity_name(
+    AshariaSceneNativeWorld* world,
+    const AshariaSceneNativeSetEntityNameRequest* request) noexcept {
+    if (world == nullptr || request == nullptr) {
+        return AshariaSceneNativeStatus_InvalidArgument;
+    }
+    if (!hasSupportedHeader(request->header, sizeof(AshariaSceneNativeSetEntityNameRequest))) {
+        return AshariaSceneNativeStatus_UnsupportedAbi;
+    }
+    if (!isOwnerThread(*world)) {
+        return AshariaSceneNativeStatus_WrongThread;
+    }
+
+    std::string_view name;
+    const AshariaSceneNativeStatus utf8Status = makeUtf8View(request->nameUtf8, name);
+    if (utf8Status != AshariaSceneNativeStatus_Success) {
+        return utf8Status;
+    }
+
+    try {
+        return world->world.setEntityName(toEntityId(request->entity), name)
                    ? AshariaSceneNativeStatus_Success
                    : AshariaSceneNativeStatus_InvalidEntity;
     } catch (...) {

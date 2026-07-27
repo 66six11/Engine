@@ -3,6 +3,7 @@
 #include <stdint.h>
 
 #define ASHARIA_SCENE_NATIVE_ABI_VERSION 1U
+#define ASHARIA_SCENE_NATIVE_MAX_ENTITY_NAME_UTF8_BYTES 4096U
 
 #if defined(_WIN32)
 #define ASHARIA_SCENE_NATIVE_CALL __cdecl
@@ -33,6 +34,8 @@ enum {
     AshariaSceneNativeStatus_InvalidEntity = 5U,
     AshariaSceneNativeStatus_EntityCapacityExceeded = 6U,
     AshariaSceneNativeStatus_InvalidTransform = 7U,
+    AshariaSceneNativeStatus_InvalidUtf8 = 8U,
+    AshariaSceneNativeStatus_BufferTooSmall = 9U,
 };
 
 typedef struct AshariaSceneNativeAbiHeader {
@@ -44,6 +47,16 @@ typedef struct AshariaSceneNativeEntityId {
     uint32_t index;
     uint32_t generation;
 } AshariaSceneNativeEntityId;
+
+/*
+ * Length-delimited UTF-8 input. data may be null only when byteLength is zero.
+ * The callee borrows the bytes for the duration of the call and copies retained
+ * values before returning.
+ */
+typedef struct AshariaSceneNativeStringView {
+    const char* data;
+    uint64_t byteLength;
+} AshariaSceneNativeStringView;
 
 typedef struct AshariaSceneNativeVec3 {
     float x;
@@ -82,6 +95,12 @@ typedef struct AshariaSceneNativeSetLocalTransformRequest {
     AshariaSceneNativeEntityId entity;
     AshariaSceneNativeTransform transform;
 } AshariaSceneNativeSetLocalTransformRequest;
+
+typedef struct AshariaSceneNativeSetEntityNameRequest {
+    AshariaSceneNativeAbiHeader header;
+    AshariaSceneNativeEntityId entity;
+    AshariaSceneNativeStringView nameUtf8;
+} AshariaSceneNativeSetEntityNameRequest;
 
 typedef struct AshariaSceneNativeWorld AshariaSceneNativeWorld;
 
@@ -130,6 +149,26 @@ asharia_scene_world_get_local_transform(
 ASHARIA_SCENE_NATIVE_API AshariaSceneNativeStatus ASHARIA_SCENE_NATIVE_CALL
 asharia_scene_world_set_local_transform(AshariaSceneNativeWorld* world,
                                         const AshariaSceneNativeSetLocalTransformRequest* request)
+    ASHARIA_SCENE_NATIVE_NOEXCEPT;
+
+/*
+ * Entity names are mutable, non-unique display/debug text. They are not entity
+ * identity, paths, or lookup keys. Set accepts at most
+ * ASHARIA_SCENE_NATIVE_MAX_ENTITY_NAME_UTF8_BYTES bytes.
+ *
+ * Get copies exact UTF-8 bytes without a trailing NUL. A null buffer with zero
+ * capacity queries the required byte length. An undersized non-null buffer is
+ * left untouched and returns BufferTooSmall with the required length.
+ */
+ASHARIA_SCENE_NATIVE_API AshariaSceneNativeStatus ASHARIA_SCENE_NATIVE_CALL
+asharia_scene_world_get_entity_name(AshariaSceneNativeWorld* world,
+                                    const AshariaSceneNativeEntityRequest* request, char* nameUtf8,
+                                    uint64_t nameCapacity,
+                                    uint64_t* nameByteLength) ASHARIA_SCENE_NATIVE_NOEXCEPT;
+
+ASHARIA_SCENE_NATIVE_API AshariaSceneNativeStatus ASHARIA_SCENE_NATIVE_CALL
+asharia_scene_world_set_entity_name(AshariaSceneNativeWorld* world,
+                                    const AshariaSceneNativeSetEntityNameRequest* request)
     ASHARIA_SCENE_NATIVE_NOEXCEPT;
 
 #if defined(__cplusplus)
