@@ -151,7 +151,7 @@ assembly declaration surface 完全一致。结果是 path-free、content-addres
 publication。candidate receipt 继承 publication absolute root 仅供进程内寻址，identity/module facts 不含路径；
 current check 会重新索引并对证 surface。该 receipt 只允许后继 loader 开始预执行验证，不证明 managed reload
 eligibility。上述步骤不写 sidecar、不加载 assembly，也不创建 ALC。Package、Avalonia resource、NuGet lock、
-aggregate host、module type resolution/activation 和完整 ALC generation 尚未实现。host policy selector 再只消费 current candidate；
+aggregate host、module construction/activation 和完整 ALC generation 尚未实现。host policy selector 再只消费 current candidate；
 当前 external-build v1 没有 resource/native/global-side-effect 与 cooperative-unload evidence，因此不按
 activation/handover 猜测能力，而是确定性签发 `Pinned + RestartRequired` receipt。policy identity 绑定
 candidate 与稳定 enum/reason，不含 absolute locator；后继 loader 在创建 non-collectible ALC 前仍须复验
@@ -166,6 +166,13 @@ streams 加载 exact root assembly；dependency hook 返回 `null`，让 #311 �
 Default context 共享，不探测目录、private/native assets 或 Resolving event。load 后只核对 context、binding
 identity、MVID、empty physical location 与 single root assembly。ALC 创建后的失败也保留 failed reservation，
 禁止当前进程重试。该 host 仍不解析 module type、不 Configure/Activate，也不推进 active/LKG。
+
+pinned module type resolver 只消费上述 host，不接受 caller-supplied assembly、type name、resolver 或 metadata。
+它按 host 内嵌 #313 index 顺序调用 root `Assembly.GetType` 做 case-sensitive exact lookup，并要求 runtime Type
+仍属于 exact root Assembly、full name 一致、public top-level sealed non-generic concrete direct
+`EditorModule` subtype，且声明 public parameterless constructor。module-type set identity 只绑定 host id 与
+index id，并强持有 host、entry 和 Type。resolver 不调用 `GetTypes`/`DefinedTypes`、不读取或实例化 attribute、
+不调用 constructor/Activator/Configure/Activate，也不写文件或推进 registry/active/LKG。
 
 外部自定义 `.csproj` 必须由 `asharia.package.json.editor` 显式声明，视为受信任 external build，默认 `restart-required`。Host 记录实际 project、SDK、binlog 和 artifact，但不把它伪装成标准可重复 `.asmdef` build。
 
@@ -203,7 +210,8 @@ admitter 再要求 non-empty rebuilt index 并签发 staging candidate receipt�
 candidate 固定分类为 `Pinned + RestartRequired`；load-image builder 再把 current policy 指向的 exact
 implementation/PDB 固定成无 module initializer 的 owned byte snapshot。report/publication/index 不是
 candidate，staging/policy/load-image receipt 也不是 loaded binary。pinned assembly host 是 process-resident
-binary receipt，但还不是 configured/active module generation；这些阶段都不推进 active 或 LKG。
+binary receipt，module-type set 是其 exact runtime type receipt；两者都还不是 constructed/configured/active
+module generation，也不推进 active 或 LKG。
 
 ## 6. Package lock 与安装
 

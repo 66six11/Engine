@@ -37,6 +37,7 @@
 - host policy selector 只消费 current staging candidate，并在任何 load/ALC 创建前签发 path-free policy receipt。当前 v1 是 external-build、缺少 resource/native/global-side-effect 与 cooperative-unload evidence，因此所有 activation/handover 组合都固定为 `Pinned + RestartRequired`；`Handover` 只表达替换时序，不能单独升级为 Collectible。selector 不加载或执行 assembly，后继 loader 仍须重新验证 policy/candidate currentness；
 - pinned load-image builder 只消费 current `Pinned + RestartRequired` policy，在读取前后复验 policy，并把 publication 中 exact implementation DLL 与 portable PDB 读入有界、快照自有的只读字节；image identity 只绑定 policy 与两文件 size/hash，不绑定 locator。builder 用 BCL PE metadata 拒绝 global `<Module>` `.cctor`，因为 CLR load 会执行 module initializer；该快照不创建 ALC、不加载/执行 assembly，也不等于 loaded generation；
 - pinned assembly loader 只消费 current load-image，并以 loader-owned project reservation 串行跨过首次不可逆 load。它创建 path-free、non-collectible custom ALC，以 implementation/PDB stream 只加载 exact root assembly；same project/same image 幂等复用，different image 或 ALC 创建后的失败均要求进程重启。ALC dependency hook 只返回 `null` 以共享已验证的 Default Host/framework closure，不探测目录/private/native assets；host receipt 只固定 Assembly/ALC/runtime identity，不解析 module type，也不 Configure/Activate 或推进 active/LKG；
+- pinned module type resolver 只消费 pinned assembly host 及其内嵌 exact module index。它按 index 顺序对 root Assembly 做 case-sensitive full-name lookup，并复核 exact Assembly、full name、public top-level sealed non-generic concrete direct `EditorModule` shape 与 public parameterless constructor presence；receipt identity 只绑定 host/index。resolver 不枚举 assembly、不读取或实例化 attribute、不调用 constructor/Configure/Activate，也不推进 registry/active/LKG；
 - build diagnostic 结构化投影到 Problems/Console；
 - `FileSystemWatcher` 只触发 debounce，重新计算 fingerprint 才决定是否构建；
 - 构建期间输入再次变化时取消或丢弃旧结果。
@@ -88,8 +89,8 @@ descriptor/current-configuration eligibility 与
 和是否 maintain reference；.NET 则在 ALC 创建时固定 collectible 属性。Asharia 因而不允许 binary loader 再按
 运行时猜测改变 #315 已签发的 residency/replacement policy，也不允许把会在 CLR load 时执行 global
 module initializer 的 binary 当作无执行快照通过。#316 固定并复验 exact bytes；#317 只将该 image 装入
-non-collectible ALC 并保持引用。exact module type resolution、Configure/Activate、registry/catalog commit
-仍是后继边界。
+non-collectible ALC 并保持引用；#318 再把 #313 exact index 对证为 runtime `Type` receipt，但不构造任何对象。
+module factory/constructor policy、Configure/Activate 与 registry/catalog commit 仍是后继边界。
 
 ### Generation replacement
 

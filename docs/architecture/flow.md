@@ -345,10 +345,10 @@ flowchart LR
 current selection、Project Open 或 Host activation。Editor Image 的资格检查不加载或执行候选输入，也不证明 ABI、
 launch behavior 或 runtime health。
 
-## Studio Project Code 隔离 SDK 构建、发布与 pinned binary-load 流（#305–#317）
+## Studio Project Code 隔离 SDK 构建、发布与 pinned type-resolution 流（#305–#318）
 
-这是 `Asharia.Studio.Application` 的 headless Project Code control plane，不经过 Avalonia storage API；只有
-最后一个 pinned loader 节点加载 exact 项目 assembly，前置节点都不加载或执行：
+这是 `Asharia.Studio.Application` 的 headless Project Code control plane，不经过 Avalonia storage API；
+pinned loader 节点加载 exact 项目 assembly，后继 resolver 只解析已索引 Type；此前节点都不加载或执行：
 
 ```mermaid
 flowchart LR
@@ -369,7 +369,8 @@ flowchart LR
     Policy["host policy receipt<br/>Pinned + RestartRequired"]
     Snapshot["owned pinned load-image snapshot<br/>implementation DLL + portable PDB"]
     Loader["exact pinned binary host<br/>non-collectible ALC"]
-    Modules["exact module type resolution<br/>not implemented"]
+    Modules["exact indexed module Type receipts"]
+    Factory["module construction / factory<br/>not implemented"]
 
     Image --> Projection
     Projection --> Credential
@@ -388,7 +389,8 @@ flowchart LR
     Candidate --> Policy
     Policy --> Snapshot
     Snapshot --> Loader
-    Loader -.not implemented.-> Modules
+    Loader --> Modules
+    Modules -.not implemented.-> Factory
 ```
 
 workspace 和 dotnet closure 在每个外部步骤后复验；同 project 新调用会 supersede 旧调用。CLI 环境从空白
@@ -421,8 +423,13 @@ policy，并用每文件 256 MiB 上限约束 owned bytes。它再次核对 size
 reservation 串行不可逆边界：same image 幂等复用；different image 或 ALC 创建后的失败均要求进程重启。首次
 load 创建 path-free、non-collectible custom ALC，只从 owned implementation/PDB streams 加载 exact root
 assembly；dependency hook 固定返回 `null`，不探测 path/private/native assets。host 只核对并持有 context、
-single Assembly、binding identity 与 MVID；它不解析 module type、不 Configure/Activate，也不推进
-current/active/LKG。exact module type resolution 仍未实现。
+single Assembly、binding identity 与 MVID；它本身不解析 module type、不 Configure/Activate，也不推进
+current/active/LKG。
+#318 pinned module type resolver 只消费 #317 host 与内嵌 #313 index。它按 index 顺序对 root Assembly 做
+case-sensitive full-name lookup，复核 Type 仍属于 exact Assembly，且保持 public top-level sealed
+non-generic concrete direct `EditorModule` shape 与 public parameterless constructor presence。module-type set
+identity 只绑定 host/index；resolver 不枚举任意 type、不实例化 attribute/module、不调用 constructor/
+Configure/Activate，也不推进 registry/current/active/LKG。module construction/factory 仍未实现。
 
 ## 当前架构总览
 

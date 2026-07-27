@@ -920,6 +920,82 @@ public sealed class ProjectReferenceGraphTests
     }
 
     [Fact]
+    public void Project_code_pinned_module_type_resolution_stops_before_construction()
+    {
+        var source = File.ReadAllText(Path.Combine(
+            FindStudioRoot(),
+            "src",
+            "Asharia.Studio.Application",
+            "ProjectCode",
+            "ProjectCodePinnedModuleTypeResolver.cs"));
+        var forbiddenTokens = new[]
+        {
+            "GetTypes(",
+            "DefinedTypes",
+            "Type.GetType(",
+            "GetCustomAttribute",
+            "CustomAttributeData",
+            "Activator.",
+            ".Invoke(",
+            "CreateDelegate",
+            "RuntimeHelpers.RunClassConstructor",
+            "Configure(",
+            "ActivateAsync(",
+            "StaticEditorModuleRegistration",
+            "EditorModuleRegistry",
+            "EditorModuleHost",
+            "AssemblyLoadContext",
+            "LoadFrom",
+            "MetadataLoadContext",
+            "EnterContextualReflection",
+            "Func<",
+            "CancellationToken",
+            "File.",
+            "Directory.",
+        };
+
+        Assert.Contains(
+            "Resolve(\n        ProjectCodePinnedAssemblyHost host)",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "host.Assembly.GetType(",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "throwOnError: false",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "ignoreCase: false",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "ReferenceEquals(type.Assembly, host.Assembly)",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "ReferenceEquals(type.BaseType, typeof(EditorModule))",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "type.GetConstructor(Type.EmptyTypes)",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "host.Image.Policy.Candidate.ModuleIndex.Entries",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "host.Image.Policy.Candidate.ModuleIndex.IndexId",
+            source,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            forbiddenTokens,
+            token => source.Contains(token, StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Project_code_implicit_workspace_does_not_execute_or_load_candidates()
     {
         var sourceRoot = Path.Combine(

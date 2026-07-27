@@ -370,13 +370,46 @@ public sealed class ProjectCodeSdkBuildControllerTests
             Path.GetDirectoryName(publicationRoot)!);
 
         using var moduleProject = new ProjectFixture();
+        const string StaticConstructorMarker =
+            "ASHARIA_TEST_PROJECT_CODE_PINNED_LOAD_STATIC_CONSTRUCTOR";
+        const string ModuleStaticConstructorMarker =
+            "ASHARIA_TEST_PROJECT_CODE_MODULE_STATIC_CONSTRUCTOR";
+        const string ModuleInstanceConstructorMarker =
+            "ASHARIA_TEST_PROJECT_CODE_MODULE_INSTANCE_CONSTRUCTOR";
+        const string AttributeConstructorMarker =
+            "ASHARIA_TEST_PROJECT_CODE_ATTRIBUTE_CONSTRUCTOR";
+        Environment.SetEnvironmentVariable(
+            StaticConstructorMarker,
+            null);
+        Environment.SetEnvironmentVariable(
+            ModuleStaticConstructorMarker,
+            null);
+        Environment.SetEnvironmentVariable(
+            ModuleInstanceConstructorMarker,
+            null);
+        Environment.SetEnvironmentVariable(
+            AttributeConstructorMarker,
+            null);
         moduleProject.WriteEditorSource(
             "RealModule.cs",
             """
+            using System;
             using Asharia.Editor.Extensions;
 
             namespace Fixture;
 
+            [AttributeUsage(AttributeTargets.Class, Inherited = false)]
+            internal sealed class ResolutionProbeAttribute : Attribute
+            {
+                public ResolutionProbeAttribute()
+                {
+                    Environment.SetEnvironmentVariable(
+                        "ATTRIBUTE_CONSTRUCTOR_MARKER",
+                        "executed");
+                }
+            }
+
+            [ResolutionProbe]
             [EditorModule(
                 "fixture.module",
                 Scope = EditorModuleScopeKind.Project,
@@ -384,6 +417,20 @@ public sealed class ProjectCodeSdkBuildControllerTests
                 Handover = EditorModuleHandoverPolicy.RestartRequired)]
             public sealed class RealModule : EditorModule
             {
+                static RealModule()
+                {
+                    Environment.SetEnvironmentVariable(
+                        "MODULE_STATIC_CONSTRUCTOR_MARKER",
+                        "executed");
+                }
+
+                public RealModule()
+                {
+                    Environment.SetEnvironmentVariable(
+                        "MODULE_INSTANCE_CONSTRUCTOR_MARKER",
+                        "executed");
+                }
+
                 public override void Configure(EditorModuleBuilder editor)
                 {
                 }
@@ -437,12 +484,18 @@ public sealed class ProjectCodeSdkBuildControllerTests
                 }
             }
 
-            """);
-        const string StaticConstructorMarker =
-            "ASHARIA_TEST_PROJECT_CODE_PINNED_LOAD_STATIC_CONSTRUCTOR";
-        Environment.SetEnvironmentVariable(
-            StaticConstructorMarker,
-            null);
+            """.Replace(
+                "ATTRIBUTE_CONSTRUCTOR_MARKER",
+                AttributeConstructorMarker,
+                StringComparison.Ordinal)
+            .Replace(
+                "MODULE_STATIC_CONSTRUCTOR_MARKER",
+                ModuleStaticConstructorMarker,
+                StringComparison.Ordinal)
+            .Replace(
+                "MODULE_INSTANCE_CONSTRUCTOR_MARKER",
+                ModuleInstanceConstructorMarker,
+                StringComparison.Ordinal));
         moduleProject.WriteEditorSource(
             "LoadProbe.cs",
             """
@@ -698,6 +751,91 @@ public sealed class ProjectCodeSdkBuildControllerTests
             pinnedAssemblyHost.Assembly.ManifestModule.ModuleVersionId);
         Assert.Null(Environment.GetEnvironmentVariable(
             StaticConstructorMarker));
+        Assert.Null(Environment.GetEnvironmentVariable(
+            ModuleStaticConstructorMarker));
+        Assert.Null(Environment.GetEnvironmentVariable(
+            ModuleInstanceConstructorMarker));
+        Assert.Null(Environment.GetEnvironmentVariable(
+            AttributeConstructorMarker));
+
+        var moduleTypeResolution =
+            ProjectCodePinnedModuleTypeResolver.Resolve(
+                pinnedAssemblyHost);
+        Assert.True(
+            moduleTypeResolution.Succeeded,
+            Render(moduleTypeResolution));
+        var pinnedModuleTypes = moduleTypeResolution.ModuleTypes!;
+        Assert.Matches(
+            "^sha256-[0-9a-f]{64}$",
+            pinnedModuleTypes.ModuleTypeSetId);
+        Assert.Same(pinnedAssemblyHost, pinnedModuleTypes.Host);
+        var expectedModuleEntries =
+            pinnedAssemblyHost.Image.Policy.Candidate
+                .ModuleIndex.Entries;
+        Assert.Equal(
+            expectedModuleEntries.Count,
+            pinnedModuleTypes.Modules.Count);
+        for (var index = 0;
+             index < expectedModuleEntries.Count;
+             ++index)
+        {
+            var expectedEntry = expectedModuleEntries[index];
+            var resolvedModule = pinnedModuleTypes.Modules[index];
+            Assert.Same(expectedEntry, resolvedModule.Entry);
+            Assert.Equal(
+                expectedEntry.TypeName,
+                resolvedModule.Type.FullName);
+            Assert.Same(
+                pinnedAssemblyHost.Assembly,
+                resolvedModule.Type.Assembly);
+            Assert.True(resolvedModule.Type.IsClass);
+            Assert.True(resolvedModule.Type.IsPublic);
+            Assert.True(resolvedModule.Type.IsSealed);
+            Assert.False(resolvedModule.Type.IsAbstract);
+            Assert.False(resolvedModule.Type.IsNested);
+            Assert.False(resolvedModule.Type.IsGenericType);
+            Assert.False(
+                resolvedModule.Type.ContainsGenericParameters);
+            Assert.Same(
+                typeof(EditorModule),
+                resolvedModule.Type.BaseType);
+            Assert.NotNull(
+                resolvedModule.Type.GetConstructor(Type.EmptyTypes));
+        }
+
+        var repeatedModuleTypeResolution =
+            ProjectCodePinnedModuleTypeResolver.Resolve(
+                pinnedAssemblyHost);
+        Assert.True(
+            repeatedModuleTypeResolution.Succeeded,
+            Render(repeatedModuleTypeResolution));
+        Assert.Equal(
+            pinnedModuleTypes.ModuleTypeSetId,
+            repeatedModuleTypeResolution.ModuleTypes!
+                .ModuleTypeSetId);
+        Assert.Equal(
+            pinnedModuleTypes.Modules.Select(module => module.Type),
+            repeatedModuleTypeResolution.ModuleTypes.Modules
+                .Select(module => module.Type));
+        var nonModuleType = pinnedAssemblyHost.Assembly.GetType(
+            "Fixture.LoadProbe",
+            throwOnError: false,
+            ignoreCase: false);
+        Assert.NotNull(nonModuleType);
+        Assert.Throws<ArgumentException>(() =>
+            new ProjectCodePinnedModuleType(
+                pinnedAssemblyHost,
+                expectedModuleEntries[0],
+                nonModuleType));
+        Assert.Equal(1, pinnedAssemblyHost.AssemblyCount);
+        Assert.Null(Environment.GetEnvironmentVariable(
+            StaticConstructorMarker));
+        Assert.Null(Environment.GetEnvironmentVariable(
+            ModuleStaticConstructorMarker));
+        Assert.Null(Environment.GetEnvironmentVariable(
+            ModuleInstanceConstructorMarker));
+        Assert.Null(Environment.GetEnvironmentVariable(
+            AttributeConstructorMarker));
         var mutatedLoadImageImplementation =
             loadImageImplementation.ToArray();
         mutatedLoadImageImplementation[^1] ^= 0xff;
@@ -2353,6 +2491,13 @@ public sealed class ProjectCodeSdkBuildControllerTests
 
     private static string Render(
         ProjectCodePinnedAssemblyLoadResult result) =>
+        string.Join(
+            Environment.NewLine,
+            result.Diagnostics.Select(diagnostic =>
+                $"{diagnostic.Code} {diagnostic.Location}: {diagnostic.Message}"));
+
+    private static string Render(
+        ProjectCodePinnedModuleTypeResolutionResult result) =>
         string.Join(
             Environment.NewLine,
             result.Diagnostics.Select(diagnostic =>

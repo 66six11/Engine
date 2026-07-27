@@ -31,8 +31,8 @@ inspection，并原子复制成带 deterministic `artifact.json` 的 closed immu
 implementation/reference metadata 建立 path-free module index，并把 non-empty current index 签发为 staging
 candidate receipt，随后在任何 load 前固定选择 `Pinned + RestartRequired` host policy，并把 exact
 implementation DLL/portable PDB 固定成有界、无 module initializer 的 owned load-image 快照；最后由
-loader-owned project reservation 幂等装入 exact non-collectible ALC。module type resolution、Configure/
-Activate 与 registry/catalog 尚未落地。
+loader-owned project reservation 幂等装入 exact non-collectible ALC，并把 #313 index 对证为 exact runtime
+module Type receipt。module construction、Configure/Activate 与 registry/catalog 尚未落地。
 
 当前仍为 Partial：
 
@@ -124,7 +124,7 @@ caller-supplied index/entry/type/host policy。empty index fail closed；non-emp
 publication absolute root 仍只是当前进程 locator，不参与 candidate identity；后继 consumer 可通过
 `IsCandidateCurrentAsync` 重新索引并对证完整 surface。candidate 仅允许后继 loader 开始预执行验证，不证明
 Collectible/Pinned/Static host、managed reload eligibility 或 activation 安全性。`.asmdef`、Package/Avalonia
-resources、NuGet lock、aggregate host、module type resolution/activation 与完整 ALC generation 仍是后继边界。
+resources、NuGet lock、aggregate host、module construction/activation 与完整 ALC generation 仍是后继边界。
 
 `ProjectCodeHostPolicySelector` 只接受 current staging candidate，不接受 caller-supplied host kind、
 replacement policy 或 reason。当前 v1 使用 external `dotnet build`，虽然 inspector 已把 closure 收紧为
@@ -152,6 +152,13 @@ dependency hook 固定返回 `null` 以共享 #311 已验证的 Default Host/fra
 physical location、binding identity 与 MVID。ALC 创建后的任何受控失败保留 failed reservation，当前进程不
 重试；cancellation 只在 ALC 创建前生效。loader 不枚举/解析 type，不实例化/Configure/Activate module，也不写
 文件或推进 active/LKG。
+
+`ProjectCodePinnedModuleTypeResolver` 只消费 `ProjectCodePinnedAssemblyHost`，并只使用 host snapshot 内嵌的
+exact module index。它按 index 顺序对 pinned root `Assembly.GetType` 做 case-sensitive full-name lookup，
+再复核 exact root Assembly、full name、public top-level sealed non-generic concrete direct `EditorModule`
+shape 与 public parameterless constructor presence。immutable module-type set identity 只绑定 host id 与 index
+id，并持有 exact host/entry/Type。resolver 不枚举任意 type、不读取或实例化 attribute、不调用 constructor/
+Activator/Configure/Activate，也不写文件或推进 registry/active/LKG。
 
 这些是 Application 层的产品策略，直接使用 .NET BCL 文件 API。Avalonia `IStorageProvider` 只负责用户文件
 选择、bookmark 和平台权限 UI；native Core File IO 服务于 C++ engine/runtime 的低层 IO 与事务，不反向成为
@@ -394,8 +401,9 @@ git diff --check
   isolated restore/build、immutable raw output、no-execute artifact metadata report 和 closed inspected artifact
   publication、no-load dual-assembly module index、non-empty staging candidate admission 与 pre-load
   `Pinned + RestartRequired` policy selection，以及有界、无 module initializer 的 owned pinned load-image
-  snapshot 和 loader-owned exact non-collectible binary host；正式 ProjectSession/manifest handoff、`.asmdef`、
-  Package、module type resolution/activation 与完整 ALC generation pipeline 尚未实现；
+  snapshot、loader-owned exact non-collectible binary host 和 exact indexed runtime Type receipt；正式
+  ProjectSession/manifest handoff、`.asmdef`、Package、module construction/activation 与完整 ALC generation
+  pipeline 尚未实现；
 - App shutdown 仍有 sync-over-async；
 - Game View、PlaySession 和 standalone orchestration 未完成；
 - Linux/macOS GPU presentation 尚未验证；
