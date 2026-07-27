@@ -155,8 +155,8 @@ flowchart TD
   `reflection` / `serialization` 仍作为过渡兼容路径由 sample-viewer smoke 覆盖。
 - `scene-core`、`asset-core` 和 `material-core` 目前是 CPU/headless 数据模型 package，不依赖 renderer、RHI 或 editor；
   同 package 的 `asharia::scene_native` 是只依赖 `asharia::scene_core` 的 shared adapter，当前 C ABI 只提供
-  version/struct-size 校验后的 opaque World create/destroy，并强制由创建线程销毁。它尚不公开 entity、
-  Transform、managed binding 或 render extraction。
+  version/struct-size 校验后的 opaque World 生命周期与 generation-safe entity create/destroy/is-alive，并强制
+  所有操作由创建线程调用。它尚不公开 entity name/Transform、managed binding 或 render extraction。
   `.ameta` 文本 IO 位于可选 `asharia::asset_core_io` target，只额外依赖 `archive` strict JSON facade。
 - `project-core` 目前只拥有最小 project descriptor model；`asharia::project_core_io` 通过 `archive`
   strict JSON facade 读写 `asharia.project.json`，不保存 cook/package profiles、editor workspace 或 runtime

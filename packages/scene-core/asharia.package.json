@@ -9,7 +9,7 @@
   "name": "com.asharia.scene-core",
   "version": "0.1.0",
   "displayName": "Asharia Engine Scene Core",
-  "description": "Headless scene world, entity identity, and transform baseline.",
+  "description": "Headless scene world, generation-safe entity identity, local transform baseline, and narrow native lifecycle adapter.",
   "dependencies": ["com.asharia.core"],
   "targets": ["asharia-scene-core", "asharia-scene-native"],
   "testTargets": [

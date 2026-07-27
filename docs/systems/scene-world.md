@@ -41,6 +41,9 @@ Play Mode 的边界。它不是完整 ECS 实现说明，而是约束后续 `sce
 | Unreal `FWorldContext`: https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/Engine/FWorldContext | UE 用 engine-owned context 区分 Game、Editor 与 PIE World 轨道，并明确外部代码不应直接管理 `FWorldContext`。 | World 生命周期必须由显式 owner/context 持有；native caller 只拿受约束的 World handle，不获得 context 内部对象。 |
 | O3DE `EntityContext`: https://docs.o3de.org/docs/api/frameworks/azframework/class_az_framework_1_1_entity_context.html | O3DE 的 context 拥有一组 entity，edit/runtime 可使用独立 context，并提供显式 `InitContext` / `DestroyContext`。 | Asharia 的 ABI 先建立独立 World create/destroy 生命周期；Editor/Play World 的具体 context owner 留给后继 Host/WorldScope。 |
 | Godot GDExtension C interface: https://docs.godotengine.org/en/latest/engine_details/engine_api/gdextension/gdextension_interface_json_file.html | Godot 把原生扩展作为 shared library，C interface 用固定宽度值与 opaque struct pointer 表示 handles。 | 跨语言边界使用 C-compatible header、导出函数、版本/结构大小和 opaque handle，不暴露 C++ object layout。 |
+| Unreal `FMassEntityHandle`: https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Plugins/MassEntity/FMassEntityHandle | UE Mass 的轻量 entity handle 明确包含 `Index` 与 `SerialNumber`；handle 是否已设置不等于 entity 仍被 manager 持有。 | ABI 保留 index + generation，并让存活性由拥有该 ID 的 World 查询，不能仅凭非零 ID 推断存活。 |
+| Bevy entity lifecycle: https://docs.rs/bevy/latest/bevy/ecs/entity/ | Bevy 释放 entity slot 时增加 generation，使旧 ID 失效；已 despawn 的 ID 仍可能留在调用方并需要 fallible 处理。 | destroy 后旧 ID 必须稳定失效，槽位复用不得让旧调用误命中新 entity。 |
+| Flecs entities/components: https://www.flecs.dev/flecs/md_docs_2EntitiesComponents.html | Flecs 的 C API 使用固定宽度 entity ID，保留零为 invalid，并在 ID 中携带 liveliness/version 信息。 | C ABI 使用 fixed-width index/generation，零值作为 invalid/failed output，不引入跨边界 C++ handle。 |
 | Unreal parallel rendering: https://dev.epicgames.com/documentation/en-us/unreal-engine/parallel-rendering-overview-for-unreal-engine | Unreal 把 game thread、render thread 和 RHI thread 分离，渲染侧通过 proxy/snapshot 消费游戏数据。 | Renderer 后续应消费 render snapshot/draw packet，不直接读 gameplay/editor object。 |
 | Unity Job System: https://docs.unity3d.com/Manual/JobSystemOverview.html | Unity Job System 强调可并行数据和 safety 规则。 | Asharia Engine worker job 应处理 plain data；mutable World 访问必须通过主线程或明确同步模型。 |
 | Unity SRP / RenderGraph: https://docs.unity3d.com/Manual/urp/render-graph-introduction.html | Editor 可有 Game View、Scene View、preview 等多个渲染视图。 | RenderGraph 和 profiling 不应假设一帧只有一个 view graph。 |
@@ -91,11 +94,13 @@ flowchart TD
 
 - `scene-core` 不依赖 ImGui、Vulkan、renderer implementation 或 scripting runtime。
 - `asharia::scene_native` shared adapter 只依赖 `asharia::scene_core`；公开 header 可由 C11 consumer
-  直接编译，只有 fixed-width status/header、opaque World handle 与 create/destroy。
+  直接编译，只有 fixed-width status/header/entity ID、opaque World handle 与 World/entity lifecycle functions。
 - 当前 native World handle 只记录并校验创建线程，不猜测哪个线程是进程主线程；Host/WorldScope 必须在其
-  control/main thread 创建它。wrong-thread destroy fail closed，成功 destroy 后 handle 立即失效；caller
-  必须先停止并 drain 依赖工作。
-- version 1 lifecycle ABI 尚不公开 entity、Transform、component、managed P/Invoke 或 render snapshot；
+  control/main thread 创建它。所有 World/entity 调用 wrong-thread 时 fail closed，成功 World destroy 后
+  handle 立即失效；caller 必须先停止并 drain 依赖工作。
+- native entity ID 仅在所属 World 内有效；index + generation 与 runtime `EntityId` 一一映射，零值无效。
+  destroy 增加 generation，因此旧 ID 在槽位复用后仍不能访问新 entity；is-alive 对 stale ID 成功返回 false。
+- version 1 lifecycle ABI 尚不公开 entity name、Transform、component、managed P/Invoke 或 render snapshot；
   这些必须按独立 Slice 增加，不能通过泄漏 mutable `World*` 省略 owner/safe-point 设计。
 - Editor System 内部 `editor_domain` 不依赖 ImGui、Vulkan 或 renderer implementation。
 - renderer 可以依赖后端无关的 render packet 类型，不能依赖 mutable `World`。

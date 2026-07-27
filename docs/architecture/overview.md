@@ -53,9 +53,9 @@ Asharia Engine 当前目标仍是先做一个小而完整的 Vulkan renderer，�
 - `packages/cpp-binding`：C++ object/member 与 schema field 的读写绑定。
 - `packages/persistence`：组合 schema、archive 和 binding，提供 save/load/default/migration。
 - `packages/scene-core`：`asharia::scene_core` 提供 headless World、runtime `EntityId` 和 local `Transform`
-  baseline；`asharia::scene_native` 是只依赖该 runtime target 的 shared C ABI adapter，当前只发布版本化的
-  opaque World create/destroy 生命周期，并要求 owner-thread destroy。它尚不提供 entity/Transform 调用、
-  managed interop 或 renderer/editor 集成。
+  baseline；`asharia::scene_native` 是只依赖该 runtime target 的 shared C ABI adapter，当前发布版本化的
+  opaque World create/destroy，以及 generation-safe entity create/destroy/is-alive 生命周期。所有操作要求
+  owner thread；adapter 尚不提供 entity name/Transform、managed interop 或 renderer/editor 集成。
 - `packages/project-core`：最小 Asharia project descriptor，当前只描述 project identity、asset source roots
   和 asset discovery ignore policy；不拥有 cook/package profiles、editor workspace 或 runtime state。
 - `packages/asset-core`：asset GUID、type、handle/reference、metadata、product/cache/dependency/catalog

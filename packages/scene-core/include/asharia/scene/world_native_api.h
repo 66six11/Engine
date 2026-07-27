@@ -30,6 +30,8 @@ enum {
     AshariaSceneNativeStatus_UnsupportedAbi = 2U,
     AshariaSceneNativeStatus_WrongThread = 3U,
     AshariaSceneNativeStatus_InternalError = 4U,
+    AshariaSceneNativeStatus_InvalidEntity = 5U,
+    AshariaSceneNativeStatus_EntityCapacityExceeded = 6U,
 };
 
 typedef struct AshariaSceneNativeAbiHeader {
@@ -37,9 +39,23 @@ typedef struct AshariaSceneNativeAbiHeader {
     uint32_t structSize;
 } AshariaSceneNativeAbiHeader;
 
+typedef struct AshariaSceneNativeEntityId {
+    uint32_t index;
+    uint32_t generation;
+} AshariaSceneNativeEntityId;
+
 typedef struct AshariaSceneNativeWorldCreateRequest {
     AshariaSceneNativeAbiHeader header;
 } AshariaSceneNativeWorldCreateRequest;
+
+typedef struct AshariaSceneNativeCreateEntityRequest {
+    AshariaSceneNativeAbiHeader header;
+} AshariaSceneNativeCreateEntityRequest;
+
+typedef struct AshariaSceneNativeEntityRequest {
+    AshariaSceneNativeAbiHeader header;
+    AshariaSceneNativeEntityId entity;
+} AshariaSceneNativeEntityRequest;
 
 typedef struct AshariaSceneNativeWorld AshariaSceneNativeWorld;
 
@@ -54,6 +70,26 @@ asharia_scene_world_create(const AshariaSceneNativeWorldCreateRequest* request,
 
 ASHARIA_SCENE_NATIVE_API AshariaSceneNativeStatus ASHARIA_SCENE_NATIVE_CALL
 asharia_scene_world_destroy(AshariaSceneNativeWorld* world) ASHARIA_SCENE_NATIVE_NOEXCEPT;
+
+/*
+ * Entity IDs are scoped to their World. Destroy invalidates the ID; a reused
+ * index receives a different generation, so stale IDs do not name the new
+ * entity. Zero is reserved for invalid or failed outputs.
+ */
+ASHARIA_SCENE_NATIVE_API AshariaSceneNativeStatus ASHARIA_SCENE_NATIVE_CALL
+asharia_scene_world_create_entity(AshariaSceneNativeWorld* world,
+                                  const AshariaSceneNativeCreateEntityRequest* request,
+                                  AshariaSceneNativeEntityId* entity) ASHARIA_SCENE_NATIVE_NOEXCEPT;
+
+ASHARIA_SCENE_NATIVE_API AshariaSceneNativeStatus ASHARIA_SCENE_NATIVE_CALL
+asharia_scene_world_destroy_entity(AshariaSceneNativeWorld* world,
+                                   const AshariaSceneNativeEntityRequest* request)
+    ASHARIA_SCENE_NATIVE_NOEXCEPT;
+
+ASHARIA_SCENE_NATIVE_API AshariaSceneNativeStatus ASHARIA_SCENE_NATIVE_CALL
+asharia_scene_world_is_alive(AshariaSceneNativeWorld* world,
+                             const AshariaSceneNativeEntityRequest* request,
+                             uint32_t* isAlive) ASHARIA_SCENE_NATIVE_NOEXCEPT;
 
 #if defined(__cplusplus)
 } // extern "C"
