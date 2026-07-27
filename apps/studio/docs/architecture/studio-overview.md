@@ -30,8 +30,9 @@ restore/build 并发布四类 raw build output；current raw-output lease 现在
 inspection，并原子复制成带 deterministic `artifact.json` 的 closed immutable publication，再对
 implementation/reference metadata 建立 path-free module index，并把 non-empty current index 签发为 staging
 candidate receipt，随后在任何 load 前固定选择 `Pinned + RestartRequired` host policy，并把 exact
-implementation DLL/portable PDB 固定成有界、无 module initializer 的 owned load-image 快照；actual
-loader/ALC 尚未落地。
+implementation DLL/portable PDB 固定成有界、无 module initializer 的 owned load-image 快照；最后由
+loader-owned project reservation 幂等装入 exact non-collectible ALC。module type resolution、Configure/
+Activate 与 registry/catalog 尚未落地。
 
 当前仍为 Partial：
 
@@ -123,7 +124,7 @@ caller-supplied index/entry/type/host policy。empty index fail closed；non-emp
 publication absolute root 仍只是当前进程 locator，不参与 candidate identity；后继 consumer 可通过
 `IsCandidateCurrentAsync` 重新索引并对证完整 surface。candidate 仅允许后继 loader 开始预执行验证，不证明
 Collectible/Pinned/Static host、managed reload eligibility 或 activation 安全性。`.asmdef`、Package/Avalonia
-resources、NuGet lock、aggregate host、actual loader 与 ALC generation 仍是后继边界。
+resources、NuGet lock、aggregate host、module type resolution/activation 与完整 ALC generation 仍是后继边界。
 
 `ProjectCodeHostPolicySelector` 只接受 current staging candidate，不接受 caller-supplied host kind、
 replacement policy 或 reason。当前 v1 使用 external `dotnet build`，虽然 inspector 已把 closure 收紧为
@@ -131,8 +132,8 @@ replacement policy 或 reason。当前 v1 使用 external `dotnet build`，虽�
 静态订阅或 cooperative-unload evidence；selector 因而对全部 activation/handover 组合 fail closed 到
 `Pinned + RestartRequired`。policy identity 只绑定 candidate id 与稳定 policy facts，继承的 publication root
 仍只是 locator。`IsPolicyCurrentAsync` 会重算 identity 并复验 candidate；该步骤不创建 ALC、不加载/实例化/
-Configure/Activate module，也不写文件。后继 exact pinned loader 必须消费并再次复验该 receipt，不能临时升级
-为 Collectible。
+Configure/Activate module，也不写文件。后继 load-image/loader 必须消费并复验该 receipt，不能临时升级为
+Collectible。
 
 `ProjectCodePinnedLoadImageBuilder` 只接受 current `ProjectCodeHostPolicyReceipt`。它在读取前后复验 policy，
 从 closed publication 只读 exact implementation DLL 与 portable PDB，每文件最多 256 MiB，并再次核对 size/hash。
@@ -140,7 +141,17 @@ Configure/Activate module，也不写文件。后继 exact pinned loader 必须�
 evidence。builder 用 BCL `PEReader`/`MetadataReader` 检查 global `<Module>`，任何 `.cctor` 都以 typed
 diagnostic 拒绝，因为 CLR 加载 assembly 时会执行 module initializer。`IsSnapshotCurrentAsync` 重算 identity、
 复验 owned bytes、module initializer absence 与 policy currentness。该步骤不创建 ALC、不调用 CLR assembly
-load、不实例化/Configure/Activate module，也不写文件；actual pinned loader 仍是下一边界。
+load、不实例化/Configure/Activate module，也不写文件。
+
+`ProjectCodePinnedAssemblyLoader` 只接受 load-image snapshot，并在首次不可逆 load 前复验 currentness 与进程
+Default `Asharia.Editor` binding identity。loader owner 用一个 gate 和 project reservation 保证 same image
+并发/重复请求返回同一 host/Assembly/ALC；same project 的 different image 直接要求重启。首次 load 创建
+path-free、`isCollectible: false` 的 custom ALC，只调用 `LoadFromStream(implementation, portablePdb)`；
+dependency hook 固定返回 `null` 以共享 #311 已验证的 Default Host/framework closure，不做 path/private/native
+解析。host receipt 强持有 snapshot、ALC 与 exact Assembly，并核对 context、single root assembly、empty
+physical location、binding identity 与 MVID。ALC 创建后的任何受控失败保留 failed reservation，当前进程不
+重试；cancellation 只在 ALC 创建前生效。loader 不枚举/解析 type，不实例化/Configure/Activate module，也不写
+文件或推进 active/LKG。
 
 这些是 Application 层的产品策略，直接使用 .NET BCL 文件 API。Avalonia `IStorageProvider` 只负责用户文件
 选择、bookmark 和平台权限 UI；native Core File IO 服务于 C++ engine/runtime 的低层 IO 与事务，不反向成为
@@ -383,7 +394,8 @@ git diff --check
   isolated restore/build、immutable raw output、no-execute artifact metadata report 和 closed inspected artifact
   publication、no-load dual-assembly module index、non-empty staging candidate admission 与 pre-load
   `Pinned + RestartRequired` policy selection，以及有界、无 module initializer 的 owned pinned load-image
-  snapshot；正式 ProjectSession/manifest handoff、`.asmdef`、Package、actual loader 和 ALC pipeline 尚未实现；
+  snapshot 和 loader-owned exact non-collectible binary host；正式 ProjectSession/manifest handoff、`.asmdef`、
+  Package、module type resolution/activation 与完整 ALC generation pipeline 尚未实现；
 - App shutdown 仍有 sync-over-async；
 - Game View、PlaySession 和 standalone orchestration 未完成；
 - Linux/macOS GPU presentation 尚未验证；

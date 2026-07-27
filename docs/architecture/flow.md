@@ -345,10 +345,10 @@ flowchart LR
 current selection、Project Open 或 Host activation。Editor Image 的资格检查不加载或执行候选输入，也不证明 ABI、
 launch behavior 或 runtime health。
 
-## Studio Project Code 隔离 SDK 构建、发布与 load-image 流（#305–#316）
+## Studio Project Code 隔离 SDK 构建、发布与 pinned binary-load 流（#305–#317）
 
-这是 `Asharia.Studio.Application` 的 headless Project Code control plane，不经过 Avalonia storage API，也不加载
-项目 assembly：
+这是 `Asharia.Studio.Application` 的 headless Project Code control plane，不经过 Avalonia storage API；只有
+最后一个 pinned loader 节点加载 exact 项目 assembly，前置节点都不加载或执行：
 
 ```mermaid
 flowchart LR
@@ -368,7 +368,8 @@ flowchart LR
     Candidate["staging candidate receipt<br/>non-empty rebuilt index"]
     Policy["host policy receipt<br/>Pinned + RestartRequired"]
     Snapshot["owned pinned load-image snapshot<br/>implementation DLL + portable PDB"]
-    Loader["exact pinned loader / ALC<br/>not implemented"]
+    Loader["exact pinned binary host<br/>non-collectible ALC"]
+    Modules["exact module type resolution<br/>not implemented"]
 
     Image --> Projection
     Projection --> Credential
@@ -386,7 +387,8 @@ flowchart LR
     Index --> Candidate
     Candidate --> Policy
     Policy --> Snapshot
-    Snapshot -.not implemented.-> Loader
+    Snapshot --> Loader
+    Loader -.not implemented.-> Modules
 ```
 
 workspace 和 dotnet closure 在每个外部步骤后复验；同 project 新调用会 supersede 旧调用。CLI 环境从空白
@@ -410,12 +412,17 @@ current pointer、active、LKG、ALC，也不加载 assembly。#315 selector 只
 external-build 且没有 resource/native/global-side-effect 或 cooperative-unload evidence，因此全部
 activation/handover 组合都确定性签发 `Pinned + RestartRequired` policy。policy id 只绑定 candidate id 与
 稳定 enum/reason，absolute root 仍只是继承 locator；`IsPolicyCurrentAsync` 重算 identity 并复验 candidate。
-selector 不加载/执行 assembly，也不创建 ALC；actual pinned loader 仍未实现。
+selector 不加载/执行 assembly，也不创建 ALC。
 #316 load-image builder 只消费 current policy，在读取 exact implementation DLL 与 portable PDB 前后复验
 policy，并用每文件 256 MiB 上限约束 owned bytes。它再次核对 size/hash，用 BCL PE metadata 拒绝 global
 `<Module>` `.cctor`，因为 CLR load 会执行 module initializer。image id 只绑定 policy 与两文件 evidence，
 快照只提供不暴露底层 buffer 的新只读流；它不创建 ALC、不加载/执行 assembly，也不推进 current/active/LKG。
-actual pinned loader 仍未实现。
+#317 pinned assembly loader 在首次 load 前复验 image 与进程 Default Editor contract。loader-owned project
+reservation 串行不可逆边界：same image 幂等复用；different image 或 ALC 创建后的失败均要求进程重启。首次
+load 创建 path-free、non-collectible custom ALC，只从 owned implementation/PDB streams 加载 exact root
+assembly；dependency hook 固定返回 `null`，不探测 path/private/native assets。host 只核对并持有 context、
+single Assembly、binding identity 与 MVID；它不解析 module type、不 Configure/Activate，也不推进
+current/active/LKG。exact module type resolution 仍未实现。
 
 ## 当前架构总览
 

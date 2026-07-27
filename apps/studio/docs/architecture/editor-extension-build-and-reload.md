@@ -151,7 +151,7 @@ assembly declaration surface 完全一致。结果是 path-free、content-addres
 publication。candidate receipt 继承 publication absolute root 仅供进程内寻址，identity/module facts 不含路径；
 current check 会重新索引并对证 surface。该 receipt 只允许后继 loader 开始预执行验证，不证明 managed reload
 eligibility。上述步骤不写 sidecar、不加载 assembly，也不创建 ALC。Package、Avalonia resource、NuGet lock、
-aggregate host、actual loader 和 ALC generation 尚未实现。host policy selector 再只消费 current candidate；
+aggregate host、module type resolution/activation 和完整 ALC generation 尚未实现。host policy selector 再只消费 current candidate；
 当前 external-build v1 没有 resource/native/global-side-effect 与 cooperative-unload evidence，因此不按
 activation/handover 猜测能力，而是确定性签发 `Pinned + RestartRequired` receipt。policy identity 绑定
 candidate 与稳定 enum/reason，不含 absolute locator；后继 loader 在创建 non-collectible ALC 前仍须复验
@@ -159,7 +159,13 @@ policy/candidate currentness。pinned load-image builder 随后只消费该 curr
 并从 closed publication 读取 exact implementation DLL 与 portable PDB。每文件固定 256 MiB 上限，快照拥有
 字节且只提供不暴露底层 buffer 的新只读流；image identity 绑定 policy id 与两文件 size/hash，不绑定 locator。
 builder 只用 BCL PE metadata 检查 global `<Module>`，存在 `.cctor` 时 fail closed，因为 CLR load 会执行
-module initializer。该步骤仍不创建 ALC、不加载或执行 assembly；actual pinned loader 尚未实现。
+module initializer。该步骤仍不创建 ALC、不加载或执行 assembly。pinned assembly loader 最后只消费 current
+load-image；一个 loader owner 用 project reservation 串行化首次 load，同 image 幂等复用，different image
+返回 restart-required。首次 load 创建 path-free、non-collectible custom ALC，并只从 owned implementation/PDB
+streams 加载 exact root assembly；dependency hook 返回 `null`，让 #311 已验证的 Host/framework closure 从
+Default context 共享，不探测目录、private/native assets 或 Resolving event。load 后只核对 context、binding
+identity、MVID、empty physical location 与 single root assembly。ALC 创建后的失败也保留 failed reservation，
+禁止当前进程重试。该 host 仍不解析 module type、不 Configure/Activate，也不推进 active/LKG。
 
 外部自定义 `.csproj` 必须由 `asharia.package.json.editor` 显式声明，视为受信任 external build，默认 `restart-required`。Host 记录实际 project、SDK、binlog 和 artifact，但不把它伪装成标准可重复 `.asmdef` build。
 
@@ -196,8 +202,8 @@ publication；module indexer 对 current closed publication 建立 implementatio
 admitter 再要求 non-empty rebuilt index 并签发 staging candidate receipt；policy selector 最后把 current
 candidate 固定分类为 `Pinned + RestartRequired`；load-image builder 再把 current policy 指向的 exact
 implementation/PDB 固定成无 module initializer 的 owned byte snapshot。report/publication/index 不是
-candidate，staging/policy/load-image receipt 也不是已加载 generation；它们都不推进 generation、active
-或 LKG。
+candidate，staging/policy/load-image receipt 也不是 loaded binary。pinned assembly host 是 process-resident
+binary receipt，但还不是 configured/active module generation；这些阶段都不推进 active 或 LKG。
 
 ## 6. Package lock 与安装
 

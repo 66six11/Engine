@@ -113,8 +113,12 @@ Asharia Engine 当前目标仍是先做一个小而完整的 Vulkan renderer，�
   自动升级为 Collectible。pinned load-image builder 再只消费 current policy，在读前/读后复验它，把 exact
   implementation DLL 与 portable PDB 读入每文件不超过 256 MiB 的 owned bytes，并用 BCL PE metadata 拒绝
   global `<Module>` `.cctor`；path-free image identity 绑定 policy 与两文件 evidence，快照只提供不暴露底层
-  buffer 的新只读流。整条路径不创建 current pointer、ALC，也不加载 assembly，仍不支持 `.asmdef`/Package；
-  actual pinned loader 尚未实现。
+  buffer 的新只读流。pinned assembly loader 再以 loader-owned project reservation 串行首次 load，创建
+  path-free、non-collectible custom ALC，并只从 implementation/PDB streams 加载 exact root assembly；
+  same image 幂等复用，different image 或 ALC 创建后的失败要求重启。dependency hook 返回 `null` 以共享
+  已验证的 Default Host/framework closure，不做 path/private/native probing。当前仍不创建 current pointer，
+  不解析/实例化/Configure/Activate module，不推进 active/LKG，也不支持 `.asmdef`/Package；完整 generation
+  host 尚未实现。
   Studio 在 Windows 上必须优先配置 `Win32RenderingMode.Vulkan`，再回退到 `AngleEgl` / `Software`，否则 Avalonia
   composition GPU interop 可能只暴露 D3D/ANGLE 共享纹理路径，无法进入 Vulkan opaque NT image/semaphore spike。
 

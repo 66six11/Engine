@@ -438,6 +438,32 @@ public sealed class ProjectCodeSdkBuildControllerTests
             }
 
             """);
+        const string StaticConstructorMarker =
+            "ASHARIA_TEST_PROJECT_CODE_PINNED_LOAD_STATIC_CONSTRUCTOR";
+        Environment.SetEnvironmentVariable(
+            StaticConstructorMarker,
+            null);
+        moduleProject.WriteEditorSource(
+            "LoadProbe.cs",
+            """
+            using System;
+
+            namespace Fixture;
+
+            internal static class LoadProbe
+            {
+                static LoadProbe()
+                {
+                    Environment.SetEnvironmentVariable(
+                        "STATIC_CONSTRUCTOR_MARKER",
+                        "executed");
+                }
+            }
+
+            """.Replace(
+                "STATIC_CONSTRUCTOR_MARKER",
+                StaticConstructorMarker,
+                StringComparison.Ordinal));
         var moduleWorkspace = await CreateWorkspaceAsync(
             moduleProject,
             credential);
@@ -623,6 +649,55 @@ public sealed class ProjectCodeSdkBuildControllerTests
         Assert.False(
             await ProjectCodePinnedLoadImageBuilder
                 .IsSnapshotCurrentAsync(forgedImage));
+        var pinnedAssemblyLoader =
+            new ProjectCodePinnedAssemblyLoader();
+        AssertDiagnostic(
+            await pinnedAssemblyLoader.LoadAsync(forgedImage),
+            "project-code.pinned-assembly-load.image-not-current");
+
+        var failedLoadCount = 0;
+        var failingPinnedAssemblyLoader =
+            new ProjectCodePinnedAssemblyLoader((_, _, _) =>
+            {
+                ++failedLoadCount;
+                throw new FileLoadException();
+            });
+        AssertDiagnostic(
+            await failingPinnedAssemblyLoader.LoadAsync(
+                loadImageSnapshot),
+            "project-code.pinned-assembly-load.failed-restart-required");
+        AssertDiagnostic(
+            await failingPinnedAssemblyLoader.LoadAsync(
+                loadImageSnapshot),
+            "project-code.pinned-assembly-load.previous-attempt-failed");
+        Assert.Equal(1, failedLoadCount);
+
+        var concurrentPinnedLoads = await Task.WhenAll(
+            pinnedAssemblyLoader.LoadAsync(loadImageSnapshot),
+            pinnedAssemblyLoader.LoadAsync(loadImageSnapshot));
+        Assert.All(
+            concurrentPinnedLoads,
+            result => Assert.True(result.Succeeded, Render(result)));
+        var pinnedAssemblyHost = concurrentPinnedLoads[0].Host!;
+        Assert.Same(
+            pinnedAssemblyHost,
+            concurrentPinnedLoads[1].Host);
+        Assert.Same(
+            pinnedAssemblyHost.Assembly,
+            concurrentPinnedLoads[1].Host!.Assembly);
+        Assert.Equal(
+            loadImageSnapshot.ImageId,
+            pinnedAssemblyHost.Image.ImageId);
+        Assert.False(pinnedAssemblyHost.IsCollectible);
+        Assert.Equal(1, pinnedAssemblyHost.AssemblyCount);
+        Assert.False(string.IsNullOrWhiteSpace(
+            pinnedAssemblyHost.LoadContextName));
+        Assert.Empty(pinnedAssemblyHost.Assembly.Location);
+        Assert.Equal(
+            modulePublicationReceipt.Report.Implementation.Mvid,
+            pinnedAssemblyHost.Assembly.ManifestModule.ModuleVersionId);
+        Assert.Null(Environment.GetEnvironmentVariable(
+            StaticConstructorMarker));
         var mutatedLoadImageImplementation =
             loadImageImplementation.ToArray();
         mutatedLoadImageImplementation[^1] ^= 0xff;
@@ -696,6 +771,86 @@ public sealed class ProjectCodeSdkBuildControllerTests
                 Assert.IsType<MemoryStream>(stream).ToArray());
         }
 
+        var equivalentPinnedAssemblyLoad =
+            await pinnedAssemblyLoader.LoadAsync(
+                equivalentPinnedLoadImage.Snapshot);
+        Assert.True(
+            equivalentPinnedAssemblyLoad.Succeeded,
+            Render(equivalentPinnedAssemblyLoad));
+        Assert.Same(
+            pinnedAssemblyHost,
+            equivalentPinnedAssemblyLoad.Host);
+        Assert.Same(
+            pinnedAssemblyHost.Assembly,
+            equivalentPinnedAssemblyLoad.Host!.Assembly);
+        Assert.Null(Environment.GetEnvironmentVariable(
+            StaticConstructorMarker));
+
+        using var replacementModuleProject = new ProjectFixture();
+        replacementModuleProject.WriteEditorSource(
+            "ReplacementModule.cs",
+            """
+            using Asharia.Editor.Extensions;
+
+            namespace Fixture;
+
+            [EditorModule("fixture.replacement")]
+            public sealed class ReplacementModule : EditorModule
+            {
+                public override void Configure(EditorModuleBuilder editor)
+                {
+                }
+            }
+
+            """);
+        var replacementModuleWorkspace = await CreateWorkspaceAsync(
+            replacementModuleProject,
+            credential);
+        var replacementModuleBuild =
+            await controller.ExecuteLatestAsync(
+                new ProjectCodeSdkBuildRequest(
+                    replacementModuleWorkspace,
+                    OutputRoot(
+                        replacementModuleProject,
+                        "replacement-module")));
+        Assert.True(
+            replacementModuleBuild.Succeeded,
+            Render(replacementModuleBuild));
+        var replacementModulePublication =
+            await ProjectCodeArtifactPublisher.PublishAsync(
+                replacementModuleBuild.Lease!,
+                PublicationRoot(
+                    replacementModuleProject,
+                    "replacement-module"));
+        Assert.True(
+            replacementModulePublication.Succeeded,
+            Render(replacementModulePublication));
+        var replacementModuleCandidate =
+            await ProjectCodeStagingCandidateAdmitter.AdmitAsync(
+                replacementModulePublication.Receipt!);
+        Assert.True(
+            replacementModuleCandidate.Succeeded,
+            Render(replacementModuleCandidate));
+        var replacementModulePolicy =
+            await ProjectCodeHostPolicySelector.SelectAsync(
+                replacementModuleCandidate.Receipt!);
+        Assert.True(
+            replacementModulePolicy.Succeeded,
+            Render(replacementModulePolicy));
+        var replacementLoadImage =
+            await ProjectCodePinnedLoadImageBuilder.BuildAsync(
+                replacementModulePolicy.Receipt!);
+        Assert.True(
+            replacementLoadImage.Succeeded,
+            Render(replacementLoadImage));
+        Assert.NotEqual(
+            loadImageSnapshot.ImageId,
+            replacementLoadImage.Snapshot!.ImageId);
+        AssertDiagnostic(
+            await pinnedAssemblyLoader.LoadAsync(
+                replacementLoadImage.Snapshot),
+            "project-code.pinned-assembly-load.restart-required");
+
         var moduleImplementation = moduleOutput.Files.Single(file =>
             file.RelativePath
                 == moduleOutput.ImplementationAssemblyRelativePath);
@@ -763,6 +918,10 @@ public sealed class ProjectCodeSdkBuildControllerTests
             Assert.False(
                 await ProjectCodePinnedLoadImageBuilder
                     .IsSnapshotCurrentAsync(loadImageSnapshot));
+            var residentLoad =
+                await pinnedAssemblyLoader.LoadAsync(loadImageSnapshot);
+            Assert.True(residentLoad.Succeeded, Render(residentLoad));
+            Assert.Same(pinnedAssemblyHost, residentLoad.Host);
             AssertDiagnostic(
                 await ProjectCodePinnedLoadImageBuilder.BuildAsync(
                     modulePolicyReceipt),
@@ -1941,6 +2100,16 @@ public sealed class ProjectCodeSdkBuildControllerTests
             diagnostic => diagnostic.Code == code);
     }
 
+    private static void AssertDiagnostic(
+        ProjectCodePinnedAssemblyLoadResult result,
+        string code)
+    {
+        Assert.False(result.Succeeded);
+        Assert.Contains(
+            result.Diagnostics,
+            diagnostic => diagnostic.Code == code);
+    }
+
     private static byte[] ReplaceUtf8(
         byte[] source,
         string oldValue,
@@ -2177,6 +2346,13 @@ public sealed class ProjectCodeSdkBuildControllerTests
 
     private static string Render(
         ProjectCodePinnedLoadImageResult result) =>
+        string.Join(
+            Environment.NewLine,
+            result.Diagnostics.Select(diagnostic =>
+                $"{diagnostic.Code} {diagnostic.Location}: {diagnostic.Message}"));
+
+    private static string Render(
+        ProjectCodePinnedAssemblyLoadResult result) =>
         string.Join(
             Environment.NewLine,
             result.Diagnostics.Select(diagnostic =>

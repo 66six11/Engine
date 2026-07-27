@@ -850,6 +850,76 @@ public sealed class ProjectReferenceGraphTests
     }
 
     [Fact]
+    public void Project_code_pinned_assembly_loader_stops_before_type_resolution()
+    {
+        var sourceRoot = Path.Combine(
+            FindStudioRoot(),
+            "src",
+            "Asharia.Studio.Application",
+            "ProjectCode");
+        var loaderSource = File.ReadAllText(Path.Combine(
+            sourceRoot,
+            "ProjectCodePinnedAssemblyLoader.cs"));
+        var hostSource = File.ReadAllText(Path.Combine(
+            sourceRoot,
+            "ProjectCodePinnedAssemblyHost.cs"));
+        var source = loaderSource + Environment.NewLine + hostSource;
+        var forbiddenTokens = new[]
+        {
+            "Assembly.Load(",
+            "LoadFromAssemblyPath",
+            "AssemblyDependencyResolver",
+            "MetadataLoadContext",
+            "EnterContextualReflection",
+            "Resolving +=",
+            "LoadUnmanagedDll",
+            ".GetTypes(",
+            ".GetType(",
+            "Activator.",
+            "Configure(",
+            "ActivateAsync(",
+            ".Unload(",
+            "Process.Start",
+            "Avalonia",
+            "File.Write",
+            "Directory.Create",
+            "Directory.Move",
+        };
+
+        Assert.Contains(
+            "ProjectCodePinnedLoadImageSnapshot image,",
+            loaderSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "IsSnapshotCurrentAsync",
+            loaderSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "AssemblyLoadContext(name, isCollectible: false)",
+            loaderSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "LoadFromStream(implementation, portablePdb)",
+            loaderSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Load(AssemblyName assemblyName) => null",
+            loaderSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Dictionary<Guid, Reservation>",
+            loaderSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "AssemblyLoadContext.GetLoadContext(assembly)",
+            hostSource,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            forbiddenTokens,
+            token => source.Contains(token, StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Project_code_implicit_workspace_does_not_execute_or_load_candidates()
     {
         var sourceRoot = Path.Combine(
