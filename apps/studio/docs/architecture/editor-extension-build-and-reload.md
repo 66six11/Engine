@@ -155,7 +155,11 @@ aggregate host、actual loader 和 ALC generation 尚未实现。host policy sel
 当前 external-build v1 没有 resource/native/global-side-effect 与 cooperative-unload evidence，因此不按
 activation/handover 猜测能力，而是确定性签发 `Pinned + RestartRequired` receipt。policy identity 绑定
 candidate 与稳定 enum/reason，不含 absolute locator；后继 loader 在创建 non-collectible ALC 前仍须复验
-policy/candidate currentness。
+policy/candidate currentness。pinned load-image builder 随后只消费该 current policy，在读前/读后复验它，
+并从 closed publication 读取 exact implementation DLL 与 portable PDB。每文件固定 256 MiB 上限，快照拥有
+字节且只提供不暴露底层 buffer 的新只读流；image identity 绑定 policy id 与两文件 size/hash，不绑定 locator。
+builder 只用 BCL PE metadata 检查 global `<Module>`，存在 `.cctor` 时 fail closed，因为 CLR load 会执行
+module initializer。该步骤仍不创建 ALC、不加载或执行 assembly；actual pinned loader 尚未实现。
 
 外部自定义 `.csproj` 必须由 `asharia.package.json.editor` 显式声明，视为受信任 external build，默认 `restart-required`。Host 记录实际 project、SDK、binlog 和 artifact，但不把它伪装成标准可重复 `.asmdef` build。
 
@@ -190,8 +194,10 @@ working/candidate tree，不覆盖任何既有 output。raw output 只有通过 
 无执行检查后才能形成 metadata report。publisher 再把 exact 四文件与 deterministic manifest 原子复制到 immutable
 publication；module indexer 对 current closed publication 建立 implementation/reference 一致的声明索引；
 admitter 再要求 non-empty rebuilt index 并签发 staging candidate receipt；policy selector 最后把 current
-candidate 固定分类为 `Pinned + RestartRequired`。report/publication/index 不是 candidate，staging/policy
-receipt 也不是已加载 generation；它们都不推进 generation、active 或 LKG。
+candidate 固定分类为 `Pinned + RestartRequired`；load-image builder 再把 current policy 指向的 exact
+implementation/PDB 固定成无 module initializer 的 owned byte snapshot。report/publication/index 不是
+candidate，staging/policy/load-image receipt 也不是已加载 generation；它们都不推进 generation、active
+或 LKG。
 
 ## 6. Package lock 与安装
 

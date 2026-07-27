@@ -345,7 +345,7 @@ flowchart LR
 current selection、Project Open 或 Host activation。Editor Image 的资格检查不加载或执行候选输入，也不证明 ABI、
 launch behavior 或 runtime health。
 
-## Studio Project Code 隔离 SDK 构建、发布与 host policy 流（#305–#315）
+## Studio Project Code 隔离 SDK 构建、发布与 load-image 流（#305–#316）
 
 这是 `Asharia.Studio.Application` 的 headless Project Code control plane，不经过 Avalonia storage API，也不加载
 项目 assembly：
@@ -367,6 +367,7 @@ flowchart LR
     Index["no-load module index<br/>implementation + reference metadata"]
     Candidate["staging candidate receipt<br/>non-empty rebuilt index"]
     Policy["host policy receipt<br/>Pinned + RestartRequired"]
+    Snapshot["owned pinned load-image snapshot<br/>implementation DLL + portable PDB"]
     Loader["exact pinned loader / ALC<br/>not implemented"]
 
     Image --> Projection
@@ -384,7 +385,8 @@ flowchart LR
     Publication --> Index
     Index --> Candidate
     Candidate --> Policy
-    Policy -.not implemented.-> Loader
+    Policy --> Snapshot
+    Snapshot -.not implemented.-> Loader
 ```
 
 workspace 和 dotnet closure 在每个外部步骤后复验；同 project 新调用会 supersede 旧调用。CLI 环境从空白
@@ -409,6 +411,11 @@ external-build 且没有 resource/native/global-side-effect 或 cooperative-unlo
 activation/handover 组合都确定性签发 `Pinned + RestartRequired` policy。policy id 只绑定 candidate id 与
 稳定 enum/reason，absolute root 仍只是继承 locator；`IsPolicyCurrentAsync` 重算 identity 并复验 candidate。
 selector 不加载/执行 assembly，也不创建 ALC；actual pinned loader 仍未实现。
+#316 load-image builder 只消费 current policy，在读取 exact implementation DLL 与 portable PDB 前后复验
+policy，并用每文件 256 MiB 上限约束 owned bytes。它再次核对 size/hash，用 BCL PE metadata 拒绝 global
+`<Module>` `.cctor`，因为 CLR load 会执行 module initializer。image id 只绑定 policy 与两文件 evidence，
+快照只提供不暴露底层 buffer 的新只读流；它不创建 ALC、不加载/执行 assembly，也不推进 current/active/LKG。
+actual pinned loader 仍未实现。
 
 ## 当前架构总览
 

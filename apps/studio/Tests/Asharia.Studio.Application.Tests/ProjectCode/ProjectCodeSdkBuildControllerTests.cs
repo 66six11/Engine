@@ -558,6 +558,80 @@ public sealed class ProjectCodeSdkBuildControllerTests
         Assert.False(
             await ProjectCodeHostPolicySelector
                 .IsPolicyCurrentAsync(forgedPolicy));
+        var pinnedLoadImage =
+            await ProjectCodePinnedLoadImageBuilder.BuildAsync(
+                modulePolicyReceipt);
+        Assert.True(
+            pinnedLoadImage.Succeeded,
+            Render(pinnedLoadImage));
+        var loadImageSnapshot = pinnedLoadImage.Snapshot!;
+        Assert.Equal(
+            modulePolicyReceipt.PolicyId,
+            loadImageSnapshot.Policy.PolicyId);
+        Assert.Equal(
+            modulePublicationReceipt.Implementation.Size,
+            loadImageSnapshot.ImplementationSize);
+        Assert.Equal(
+            modulePublicationReceipt.PortablePdb.Size,
+            loadImageSnapshot.PortablePdbSize);
+        byte[] loadImageImplementation;
+        using (var stream = loadImageSnapshot.OpenImplementationStream())
+        {
+            Assert.False(stream.CanWrite);
+            Assert.False(
+                Assert.IsType<MemoryStream>(stream)
+                    .TryGetBuffer(out _));
+            loadImageImplementation =
+                Assert.IsType<MemoryStream>(stream).ToArray();
+        }
+
+        byte[] loadImagePortablePdb;
+        using (var stream = loadImageSnapshot.OpenPortablePdbStream())
+        {
+            Assert.False(stream.CanWrite);
+            Assert.False(
+                Assert.IsType<MemoryStream>(stream)
+                    .TryGetBuffer(out _));
+            loadImagePortablePdb =
+                Assert.IsType<MemoryStream>(stream).ToArray();
+        }
+
+        Assert.Equal(
+            File.ReadAllBytes(Path.Combine(
+                modulePublicationReceipt.AbsoluteRoot,
+                modulePublicationReceipt.Implementation.RelativePath
+                    .Replace('/', Path.DirectorySeparatorChar))),
+            loadImageImplementation);
+        Assert.Equal(
+            File.ReadAllBytes(Path.Combine(
+                modulePublicationReceipt.AbsoluteRoot,
+                modulePublicationReceipt.PortablePdb.RelativePath
+                    .Replace('/', Path.DirectorySeparatorChar))),
+            loadImagePortablePdb);
+        Assert.True(
+            await ProjectCodePinnedLoadImageBuilder
+                .IsSnapshotCurrentAsync(loadImageSnapshot));
+        var forgedImageId = "sha256-"
+            + new string(
+                loadImageSnapshot.ImageId[7] == '0' ? '1' : '0',
+                64);
+        var forgedImage = new ProjectCodePinnedLoadImageSnapshot(
+            forgedImageId,
+            modulePolicyReceipt,
+            loadImageImplementation.ToArray(),
+            loadImagePortablePdb.ToArray());
+        Assert.False(
+            await ProjectCodePinnedLoadImageBuilder
+                .IsSnapshotCurrentAsync(forgedImage));
+        var mutatedLoadImageImplementation =
+            loadImageImplementation.ToArray();
+        mutatedLoadImageImplementation[^1] ^= 0xff;
+        Assert.Throws<ArgumentException>(() =>
+            new ProjectCodePinnedLoadImageSnapshot(
+                loadImageSnapshot.ImageId,
+                modulePolicyReceipt,
+                mutatedLoadImageImplementation,
+                loadImagePortablePdb.ToArray()));
 
         var equivalentModulePublication =
             await ProjectCodeArtifactPublisher.PublishAsync(
@@ -596,6 +670,31 @@ public sealed class ProjectCodeSdkBuildControllerTests
         Assert.Equal(
             modulePolicyReceipt.Reason,
             equivalentModulePolicy.Receipt.Reason);
+        var equivalentPinnedLoadImage =
+            await ProjectCodePinnedLoadImageBuilder.BuildAsync(
+                equivalentModulePolicy.Receipt);
+        Assert.True(
+            equivalentPinnedLoadImage.Succeeded,
+            Render(equivalentPinnedLoadImage));
+        Assert.Equal(
+            loadImageSnapshot.ImageId,
+            equivalentPinnedLoadImage.Snapshot!.ImageId);
+        using (var stream =
+               equivalentPinnedLoadImage.Snapshot
+                   .OpenImplementationStream())
+        {
+            Assert.Equal(
+                loadImageImplementation,
+                Assert.IsType<MemoryStream>(stream).ToArray());
+        }
+
+        using (var stream =
+               equivalentPinnedLoadImage.Snapshot.OpenPortablePdbStream())
+        {
+            Assert.Equal(
+                loadImagePortablePdb,
+                Assert.IsType<MemoryStream>(stream).ToArray());
+        }
 
         var moduleImplementation = moduleOutput.Files.Single(file =>
             file.RelativePath
@@ -661,6 +760,13 @@ public sealed class ProjectCodeSdkBuildControllerTests
             Assert.False(
                 await ProjectCodeHostPolicySelector
                     .IsPolicyCurrentAsync(modulePolicyReceipt));
+            Assert.False(
+                await ProjectCodePinnedLoadImageBuilder
+                    .IsSnapshotCurrentAsync(loadImageSnapshot));
+            AssertDiagnostic(
+                await ProjectCodePinnedLoadImageBuilder.BuildAsync(
+                    modulePolicyReceipt),
+                "project-code.pinned-load-image.policy-not-current");
             var stalePolicy =
                 await ProjectCodeHostPolicySelector.SelectAsync(
                     moduleCandidateReceipt);
@@ -685,6 +791,78 @@ public sealed class ProjectCodeSdkBuildControllerTests
         {
             File.Delete(unexpectedPublicationFile);
         }
+
+        using var moduleInitializerProject = new ProjectFixture();
+        moduleInitializerProject.WriteEditorSource(
+            "ModuleInitializer.cs",
+            """
+            using System.Runtime.CompilerServices;
+            using Asharia.Editor.Extensions;
+
+            namespace Fixture;
+
+            internal static class Bootstrap
+            {
+                [ModuleInitializer]
+                internal static void Initialize()
+                {
+                }
+            }
+
+            [EditorModule("fixture.module-initializer")]
+            public sealed class ModuleInitializerModule : EditorModule
+            {
+                public override void Configure(EditorModuleBuilder editor)
+                {
+                }
+            }
+
+            """);
+        var moduleInitializerWorkspace = await CreateWorkspaceAsync(
+            moduleInitializerProject,
+            credential);
+        var moduleInitializerBuild =
+            await controller.ExecuteLatestAsync(
+                new ProjectCodeSdkBuildRequest(
+                    moduleInitializerWorkspace,
+                    OutputRoot(
+                        moduleInitializerProject,
+                        "module-initializer")));
+        Assert.True(
+            moduleInitializerBuild.Succeeded,
+            Render(moduleInitializerBuild));
+        var moduleInitializerPublication =
+            await ProjectCodeArtifactPublisher.PublishAsync(
+                moduleInitializerBuild.Lease!,
+                PublicationRoot(
+                    moduleInitializerProject,
+                    "module-initializer"));
+        Assert.True(
+            moduleInitializerPublication.Succeeded,
+            Render(moduleInitializerPublication));
+        var moduleInitializerCandidate =
+            await ProjectCodeStagingCandidateAdmitter.AdmitAsync(
+                moduleInitializerPublication.Receipt!);
+        Assert.True(
+            moduleInitializerCandidate.Succeeded,
+            Render(moduleInitializerCandidate));
+        var moduleInitializerPolicy =
+            await ProjectCodeHostPolicySelector.SelectAsync(
+                moduleInitializerCandidate.Receipt!);
+        Assert.True(
+            moduleInitializerPolicy.Succeeded,
+            Render(moduleInitializerPolicy));
+        var rejectedModuleInitializer =
+            await ProjectCodePinnedLoadImageBuilder.BuildAsync(
+                moduleInitializerPolicy.Receipt!);
+        AssertDiagnostic(
+            rejectedModuleInitializer,
+            "project-code.pinned-load-image.module-initializer-unsupported");
+        AssertNoAbsolutePathLeak(
+            Render(rejectedModuleInitializer),
+            moduleInitializerProject.ProjectRoot,
+            moduleInitializerProject.WorkspaceRoot,
+            moduleInitializerPublication.Receipt!.AbsoluteRoot);
 
         using var invalidModuleProject = new ProjectFixture();
         invalidModuleProject.WriteEditorSource(
@@ -1753,6 +1931,16 @@ public sealed class ProjectCodeSdkBuildControllerTests
             diagnostic => diagnostic.Code == code);
     }
 
+    private static void AssertDiagnostic(
+        ProjectCodePinnedLoadImageResult result,
+        string code)
+    {
+        Assert.False(result.Succeeded);
+        Assert.Contains(
+            result.Diagnostics,
+            diagnostic => diagnostic.Code == code);
+    }
+
     private static byte[] ReplaceUtf8(
         byte[] source,
         string oldValue,
@@ -1982,6 +2170,13 @@ public sealed class ProjectCodeSdkBuildControllerTests
 
     private static string Render(
         ProjectCodeHostPolicySelectionResult result) =>
+        string.Join(
+            Environment.NewLine,
+            result.Diagnostics.Select(diagnostic =>
+                $"{diagnostic.Code} {diagnostic.Location}: {diagnostic.Message}"));
+
+    private static string Render(
+        ProjectCodePinnedLoadImageResult result) =>
         string.Join(
             Environment.NewLine,
             result.Diagnostics.Select(diagnostic =>

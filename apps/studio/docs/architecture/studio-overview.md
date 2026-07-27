@@ -29,8 +29,9 @@ Project Code 还能把该 projection 复验为 semantic build credential，并�
 restore/build 并发布四类 raw build output；current raw-output lease 现在还能经过无执行 artifact metadata
 inspection，并原子复制成带 deterministic `artifact.json` 的 closed immutable publication，再对
 implementation/reference metadata 建立 path-free module index，并把 non-empty current index 签发为 staging
-candidate receipt，随后在任何 load 前固定选择 `Pinned + RestartRequired` host policy；actual loader/ALC
-尚未落地。
+candidate receipt，随后在任何 load 前固定选择 `Pinned + RestartRequired` host policy，并把 exact
+implementation DLL/portable PDB 固定成有界、无 module initializer 的 owned load-image 快照；actual
+loader/ALC 尚未落地。
 
 当前仍为 Partial：
 
@@ -132,6 +133,14 @@ replacement policy 或 reason。当前 v1 使用 external `dotnet build`，虽�
 仍只是 locator。`IsPolicyCurrentAsync` 会重算 identity 并复验 candidate；该步骤不创建 ALC、不加载/实例化/
 Configure/Activate module，也不写文件。后继 exact pinned loader 必须消费并再次复验该 receipt，不能临时升级
 为 Collectible。
+
+`ProjectCodePinnedLoadImageBuilder` 只接受 current `ProjectCodeHostPolicyReceipt`。它在读取前后复验 policy，
+从 closed publication 只读 exact implementation DLL 与 portable PDB，每文件最多 256 MiB，并再次核对 size/hash。
+成功快照拥有两份字节，只返回不暴露底层 buffer 的新只读流；path-free image identity 绑定 policy id 与两文件
+evidence。builder 用 BCL `PEReader`/`MetadataReader` 检查 global `<Module>`，任何 `.cctor` 都以 typed
+diagnostic 拒绝，因为 CLR 加载 assembly 时会执行 module initializer。`IsSnapshotCurrentAsync` 重算 identity、
+复验 owned bytes、module initializer absence 与 policy currentness。该步骤不创建 ALC、不调用 CLR assembly
+load、不实例化/Configure/Activate module，也不写文件；actual pinned loader 仍是下一边界。
 
 这些是 Application 层的产品策略，直接使用 .NET BCL 文件 API。Avalonia `IStorageProvider` 只负责用户文件
 选择、bookmark 和平台权限 UI；native Core File IO 服务于 C++ engine/runtime 的低层 IO 与事务，不反向成为
@@ -373,8 +382,8 @@ git diff --check
   semantic build credential、caller-bound 项目根 `Editor/**/*.cs` implicit SDK workspace，以及 credential-bound
   isolated restore/build、immutable raw output、no-execute artifact metadata report 和 closed inspected artifact
   publication、no-load dual-assembly module index、non-empty staging candidate admission 与 pre-load
-  `Pinned + RestartRequired` policy selection；正式 ProjectSession/manifest handoff、`.asmdef`、Package、
-  actual loader 和 ALC pipeline 尚未实现；
+  `Pinned + RestartRequired` policy selection，以及有界、无 module initializer 的 owned pinned load-image
+  snapshot；正式 ProjectSession/manifest handoff、`.asmdef`、Package、actual loader 和 ALC pipeline 尚未实现；
 - App shutdown 仍有 sync-over-async；
 - Game View、PlaySession 和 standalone orchestration 未完成；
 - Linux/macOS GPU presentation 尚未验证；

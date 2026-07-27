@@ -792,6 +792,64 @@ public sealed class ProjectReferenceGraphTests
     }
 
     [Fact]
+    public void Project_code_pinned_load_image_is_snapshotted_without_loading()
+    {
+        var sourceRoot = Path.Combine(
+            FindStudioRoot(),
+            "src",
+            "Asharia.Studio.Application",
+            "ProjectCode");
+        var builderSource = File.ReadAllText(Path.Combine(
+            sourceRoot,
+            "ProjectCodePinnedLoadImageBuilder.cs"));
+        var snapshotSource = File.ReadAllText(Path.Combine(
+            sourceRoot,
+            "ProjectCodePinnedLoadImage.cs"));
+        var source = builderSource + Environment.NewLine + snapshotSource;
+        var forbiddenTokens = new[]
+        {
+            "Assembly.Load(",
+            "AssemblyName.GetAssemblyName",
+            "AssemblyLoadContext",
+            "MetadataLoadContext",
+            "LoadFromStream",
+            "Activator.",
+            "Type.GetType",
+            ".GetTypes(",
+            "DllImport",
+            "LibraryImport",
+            "Mono.Cecil",
+            "Process.Start",
+            "Avalonia",
+            "File.Write",
+            "Directory.Create",
+            "Directory.Move",
+        };
+
+        Assert.Contains(
+            "BuildAsync(\n        ProjectCodeHostPolicyReceipt policy,",
+            builderSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "IsPolicyCurrentAsync",
+            builderSource,
+            StringComparison.Ordinal);
+        Assert.Contains("PEReader", builderSource, StringComparison.Ordinal);
+        Assert.Contains("\".cctor\"", builderSource, StringComparison.Ordinal);
+        Assert.Contains(
+            "publiclyVisible: false",
+            snapshotSource,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "byte[] ImplementationBytes",
+            snapshotSource,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            forbiddenTokens,
+            token => source.Contains(token, StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Project_code_implicit_workspace_does_not_execute_or_load_candidates()
     {
         var sourceRoot = Path.Combine(
