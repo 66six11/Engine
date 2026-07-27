@@ -21,6 +21,7 @@ using Asharia.Studio.EngineBridge.Scene;
 using System;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Xml.Linq;
@@ -31,7 +32,7 @@ namespace Asharia.Studio.Architecture.Tests;
 public sealed class ProjectReferenceGraphTests
 {
     [Fact]
-    public void Scene_world_lifetime_bridge_is_owned_only_by_engine_bridge()
+    public void Scene_world_bridge_is_owned_only_by_engine_bridge()
     {
         var studioRoot = FindStudioRoot();
         var bridgeRoot = Path.Combine(
@@ -56,7 +57,28 @@ public sealed class ProjectReferenceGraphTests
             typeof(SceneNativeStatus).Assembly.GetName().Name);
 
         var bridgeProject = XDocument.Load(bridgeProjectPath);
-        Assert.Empty(bridgeProject.Descendants("ProjectReference"));
+        var bridgeReferences = bridgeProject
+            .Descendants("ProjectReference")
+            .Select(reference => reference.Attribute("Include")?.Value.Replace('\\', '/'))
+            .OfType<string>()
+            .ToArray();
+        Assert.Equal(
+            ["../Asharia.Runtime.Contracts/Asharia.Runtime.Contracts.csproj"],
+            bridgeReferences);
+        Assert.Equal(
+            "true",
+            RequiredProperty(bridgeProject, "DisableRuntimeMarshalling"));
+
+        var publicMethods = typeof(SceneWorld).GetMethods(
+            BindingFlags.Public
+            | BindingFlags.Instance
+            | BindingFlags.Static
+            | BindingFlags.DeclaredOnly);
+        Assert.DoesNotContain(
+            publicMethods,
+            method => method.ReturnType == typeof(IntPtr)
+                || method.GetParameters().Any(
+                    parameter => parameter.ParameterType == typeof(IntPtr)));
 
         var applicationProject = XDocument.Load(Path.Combine(
             studioRoot,
@@ -109,11 +131,23 @@ public sealed class ProjectReferenceGraphTests
             "EntryPoint = \"asharia_scene_world_destroy\"",
             importSource,
             StringComparison.Ordinal);
+        Assert.Contains(
+            "EntryPoint = \"asharia_scene_world_create_entity\"",
+            importSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "EntryPoint = \"asharia_scene_world_destroy_entity\"",
+            importSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "EntryPoint = \"asharia_scene_world_is_alive\"",
+            importSource,
+            StringComparison.Ordinal);
         Assert.Equal(
-            2,
+            5,
             Regex.Matches(importSource, @"\[LibraryImport\(").Count);
         Assert.Equal(
-            2,
+            5,
             Regex.Matches(importSource, @"CallConvCdecl").Count);
     }
 

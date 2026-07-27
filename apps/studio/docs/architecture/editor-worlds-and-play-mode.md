@@ -10,7 +10,7 @@
 
 ## 2. 当前实现事实
 
-当前 Studio 已有 fixture-backed scene snapshot、Hierarchy/Inspector 只读投影、Scene View composition spike，以及 EngineBridge 的 owner-thread Scene World create/destroy lifetime baseline。尚无正式 project/document/world session、entity/query/mutation bridge、Play state machine 或 Game View。
+当前 Studio 已有 fixture-backed scene snapshot、Hierarchy/Inspector 只读投影、Scene View composition spike，以及 EngineBridge 的 owner-thread Scene World lifetime 与 entity create/destroy/is-alive baseline。尚无正式 project/document/world session、entity query/snapshot projection、transactional document mutation bridge、Play state machine 或 Game View。
 
 因此本文描述 Target 合同。任何实现不得把 fixture provider 或 ViewModel 状态升级为 engine truth。
 

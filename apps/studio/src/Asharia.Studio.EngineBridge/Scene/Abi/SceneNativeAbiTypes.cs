@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using Asharia.Runtime;
 
 namespace Asharia.Studio.EngineBridge.Scene.Abi;
 
@@ -20,4 +21,29 @@ internal readonly record struct SceneNativeWorldCreateRequest(
 
     public static SceneNativeWorldCreateRequest Current { get; } =
         new(new SceneNativeAbiHeader(SceneNativeAbi.Version, StructSize));
+}
+
+[StructLayout(LayoutKind.Explicit, Size = 8)]
+internal readonly record struct SceneNativeCreateEntityRequest(
+    [field: FieldOffset(0)] SceneNativeAbiHeader Header)
+{
+    public const uint StructSize = 8;
+
+    public static SceneNativeCreateEntityRequest Current { get; } =
+        new(new SceneNativeAbiHeader(SceneNativeAbi.Version, StructSize));
+}
+
+[StructLayout(LayoutKind.Explicit, Size = 16)]
+internal readonly record struct SceneNativeEntityRequest(
+    [field: FieldOffset(0)] SceneNativeAbiHeader Header,
+    [field: FieldOffset(8)] EntityId Entity)
+{
+    public const uint StructSize = 16;
+
+    public static SceneNativeEntityRequest Current(EntityId entity)
+    {
+        return new SceneNativeEntityRequest(
+            new SceneNativeAbiHeader(SceneNativeAbi.Version, StructSize),
+            entity);
+    }
 }

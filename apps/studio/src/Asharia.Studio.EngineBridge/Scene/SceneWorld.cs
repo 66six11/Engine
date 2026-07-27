@@ -1,5 +1,6 @@
 using System;
 using System.Threading;
+using Asharia.Runtime;
 using Asharia.Studio.EngineBridge.Scene.Abi;
 
 namespace Asharia.Studio.EngineBridge.Scene;
@@ -8,6 +9,9 @@ public sealed class SceneWorld : IDisposable
 {
     private const string CreateOperation = "scene.world.create";
     private const string DestroyOperation = "scene.world.destroy";
+    private const string CreateEntityOperation = "scene.world.entity.create";
+    private const string DestroyEntityOperation = "scene.world.entity.destroy";
+    private const string IsAliveOperation = "scene.world.entity.is-alive";
 
     private readonly ISceneNativeApi nativeApi_;
     private readonly Thread ownerThread_;
@@ -53,14 +57,110 @@ public sealed class SceneWorld : IDisposable
 
         if (handle == 0)
         {
-            throw new SceneNativeCallException(
+            throw InvalidSuccessResult(
                 CreateOperation,
-                SceneNativeStatus.Success,
-                $"Scene native operation '{CreateOperation}' reported success "
-                + "but returned a null World handle.");
+                "returned a null World handle.");
         }
 
         return new SceneWorld(nativeApi, handle, Thread.CurrentThread);
+    }
+
+    public EntityId CreateEntity()
+    {
+        var handle = RequireOwnerHandle(CreateEntityOperation);
+        var request = SceneNativeCreateEntityRequest.Current;
+        EntityId entity;
+        SceneNativeStatus status;
+        try
+        {
+            status = nativeApi_.CreateEntity(
+                handle,
+                in request,
+                out entity);
+        }
+        catch (Exception exception) when (IsNativeBindingFailure(exception))
+        {
+            throw BindingFailure(CreateEntityOperation, exception);
+        }
+
+        if (status != SceneNativeStatus.Success)
+        {
+            throw StatusFailure(CreateEntityOperation, status);
+        }
+
+        if (!entity.IsValid)
+        {
+            throw InvalidSuccessResult(
+                CreateEntityOperation,
+                "returned an invalid Entity ID.");
+        }
+
+        return entity;
+    }
+
+    public void DestroyEntity(EntityId entity)
+    {
+        var handle = RequireOwnerHandle(DestroyEntityOperation);
+        if (!entity.IsValid)
+        {
+            throw new ArgumentException(
+                "Entity ID must have a non-zero index and generation.",
+                nameof(entity));
+        }
+
+        var request = SceneNativeEntityRequest.Current(entity);
+        SceneNativeStatus status;
+        try
+        {
+            status = nativeApi_.DestroyEntity(handle, in request);
+        }
+        catch (Exception exception) when (IsNativeBindingFailure(exception))
+        {
+            throw BindingFailure(DestroyEntityOperation, exception);
+        }
+
+        if (status != SceneNativeStatus.Success)
+        {
+            throw StatusFailure(DestroyEntityOperation, status);
+        }
+    }
+
+    public bool IsAlive(EntityId entity)
+    {
+        var handle = RequireOwnerHandle(IsAliveOperation);
+        if (!entity.IsValid)
+        {
+            return false;
+        }
+
+        var request = SceneNativeEntityRequest.Current(entity);
+        uint isAlive;
+        SceneNativeStatus status;
+        try
+        {
+            status = nativeApi_.IsAlive(
+                handle,
+                in request,
+                out isAlive);
+        }
+        catch (Exception exception) when (IsNativeBindingFailure(exception))
+        {
+            throw BindingFailure(IsAliveOperation, exception);
+        }
+
+        if (status != SceneNativeStatus.Success)
+        {
+            throw StatusFailure(IsAliveOperation, status);
+        }
+
+        if (isAlive > 1)
+        {
+            throw InvalidSuccessResult(
+                IsAliveOperation,
+                $"returned invalid liveness value {isAlive}.");
+        }
+
+        return isAlive == 1;
     }
 
     public void Dispose()
@@ -96,6 +196,27 @@ public sealed class SceneWorld : IDisposable
         handle_ = 0;
     }
 
+    private nint RequireOwnerHandle(string operation)
+    {
+        if (handle_ == 0)
+        {
+            throw new ObjectDisposedException(
+                nameof(SceneWorld),
+                $"Scene native operation '{operation}' requires an open World.");
+        }
+
+        if (!ReferenceEquals(Thread.CurrentThread, ownerThread_))
+        {
+            throw new InvalidOperationException(
+                $"Scene native operation '{operation}' must run on the thread "
+                + "that created its World. "
+                + $"Owner managed thread id is {ownerThread_.ManagedThreadId}; "
+                + $"current managed thread id is {Environment.CurrentManagedThreadId}.");
+        }
+
+        return handle_;
+    }
+
     private static SceneNativeCallException BindingFailure(
         string operation,
         Exception exception)
@@ -123,5 +244,15 @@ public sealed class SceneWorld : IDisposable
             status,
             $"Scene native operation '{operation}' failed with status "
             + $"{status} ({(uint)status}).");
+    }
+
+    private static SceneNativeCallException InvalidSuccessResult(
+        string operation,
+        string detail)
+    {
+        return new SceneNativeCallException(
+            operation,
+            SceneNativeStatus.Success,
+            $"Scene native operation '{operation}' reported success but {detail}");
     }
 }
