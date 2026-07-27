@@ -64,6 +64,23 @@ public sealed class EditorScopeTransaction
         isCommitted_ = true;
     }
 
+    internal bool TryCommitInitial(
+        out EditorScopeRegistration? registration)
+    {
+        if (isCommitted_
+            || !registry_.TryCommitInitial(
+                expectedSnapshot_,
+                Candidate,
+                out registration))
+        {
+            registration = null;
+            return false;
+        }
+
+        isCommitted_ = true;
+        return true;
+    }
+
     private static EditorScopePartition BuildCandidate(
         EditorModuleRegistrySnapshot snapshot,
         ScopeInstanceId scopeInstanceId,

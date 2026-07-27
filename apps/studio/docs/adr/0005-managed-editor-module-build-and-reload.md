@@ -42,6 +42,7 @@
 - pinned module configurator 只消费 exact constructed-module set，并以独立 per-project reservation 按 index 顺序为每个 object 建立 `EditorModuleBuilder`、调用一次 `Configure()`、再 `Build()` immutable declaration。metadata 只投影 exact index entry；same construction lineage 幂等复用同一 declarations，different lineage 或 Configure/Build failure 要求重启。失败 reservation 保留原 objects 与 partial declarations 且不重试；该阶段不重构 object、不读取 attribute、不 Activate，也不创建 shared definition/registry/current/active/LKG；
 - pinned module definition set 是对 exact configured receipts 的纯内存投影。共享 `EditorModuleDefinition` 直接持有 metadata/module/declaration，不再反向持有 static registration/factory；set 保留 exact 顺序与 definition-id lookup。该阶段不执行用户代码，也不创建 scope transaction、registry partition 或 activation；
 - pinned module scope preparer 只接受未来 ProjectSession 显式提供的 Project `ScopeInstanceId` 与 host-capability value snapshot；它不把 persistent ProjectId 当 session identity。preparer 复用 `EditorScopeTransaction.Prepare` 对 exact definitions 构建不可见 candidate，并将 structural failure 转为 typed diagnostic；该阶段不 Commit registry、不 reservation，也不 Activate；
+- initial Project scope committer 只消费 exact preparation，并在 captured registry snapshot 仍有效且目标 scope 为空时首次提交 candidate。成功 receipt 是绑定 exact partition reference 的 registration owner；关闭时幂等 compare-and-remove 自己的 partition，发现 successor replacement 时 fail closed。stale、已有 scope 或重复消费返回 path-free conflict 并要求重新 Prepare；该阶段不 Activate、不推进 current/active/LKG，也不实现 replacement/revision/rollback observer；
 - build diagnostic 结构化投影到 Problems/Console；
 - `FileSystemWatcher` 只触发 debounce，重新计算 fingerprint 才决定是否构建；
 - 构建期间输入再次变化时取消或丢弃旧结果。
@@ -98,7 +99,8 @@ non-collectible ALC 并保持引用；#318 再把 #313 exact index 对证为 run
 restart-required；#320 再按 exact object/index 至多一次地执行 Configure 并冻结 declaration/metadata receipt。
 #321 将这些 receipts 投影为 static/dynamic 共用的 module definitions，但不进入 registry。#322 再在
 caller-supplied ProjectSession scope 下完成 combined structural validation 与 invisible candidate；
-显式 registry commit/Activate 仍是后继边界。
+#332 完成 empty-scope initial registry commit 与 exact registration retirement ownership，但不 Activate；
+activation、replacement 与 catalog commit 仍是后继边界。
 
 ### Generation replacement
 

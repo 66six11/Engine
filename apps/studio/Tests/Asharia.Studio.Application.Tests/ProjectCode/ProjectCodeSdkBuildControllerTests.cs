@@ -1286,6 +1286,108 @@ public sealed class ProjectCodeSdkBuildControllerTests
         Assert.Null(Environment.GetEnvironmentVariable(
             StaticConstructorMarker));
 
+        EditorScopeTransaction.Prepare(
+            scopeRegistry,
+            ScopeInstanceId.Application,
+            []).Commit();
+        var staleScopeCommit =
+            ProjectCodePinnedModuleScopeCommitter.CommitInitial(
+                scopePreparation);
+        AssertDiagnostic(
+            staleScopeCommit,
+            "project-code.pinned-module-scope-registration.conflict");
+        AssertNoAbsolutePathLeak(
+            Render(staleScopeCommit),
+            moduleProject.ProjectRoot,
+            modulePublicationReceipt.AbsoluteRoot);
+        Assert.False(scopeRegistry.TryGetPartition(
+            projectScope,
+            out _));
+
+        var refreshedScopePreparationResult =
+            ProjectCodePinnedModuleScopePreparer.Prepare(
+                definitionSet,
+                projectScope,
+                scopeRegistry,
+                [hostCapability]);
+        Assert.True(
+            refreshedScopePreparationResult.Succeeded,
+            Render(refreshedScopePreparationResult));
+        var refreshedScopePreparation =
+            refreshedScopePreparationResult.Preparation!;
+        var scopeCommit =
+            ProjectCodePinnedModuleScopeCommitter.CommitInitial(
+                refreshedScopePreparation);
+        Assert.True(scopeCommit.Succeeded, Render(scopeCommit));
+        var scopeRegistration = scopeCommit.Registration!;
+        Assert.Same(
+            refreshedScopePreparation,
+            scopeRegistration.Preparation);
+        Assert.Equal(
+            projectScope,
+            scopeRegistration.ScopeInstanceId);
+        Assert.Same(
+            refreshedScopePreparation.Candidate,
+            scopeRegistration.Partition);
+        Assert.Same(
+            scopeRegistration.Partition,
+            scopeRegistry.GetRequiredPartition(projectScope));
+
+        var repeatedScopeCommit =
+            ProjectCodePinnedModuleScopeCommitter.CommitInitial(
+                refreshedScopePreparation);
+        AssertDiagnostic(
+            repeatedScopeCommit,
+            "project-code.pinned-module-scope-registration.conflict");
+        Assert.Same(
+            scopeRegistration.Partition,
+            scopeRegistry.GetRequiredPartition(projectScope));
+
+        scopeRegistration.Dispose();
+        scopeRegistration.Dispose();
+        Assert.False(scopeRegistry.TryGetPartition(
+            projectScope,
+            out _));
+        Assert.True(scopeRegistry.TryGetPartition(
+            ScopeInstanceId.Application,
+            out _));
+
+        var existingTransaction = EditorScopeTransaction.Prepare(
+            scopeRegistry,
+            projectScope,
+            definitionSet.Definitions,
+            [hostCapability]);
+        existingTransaction.Commit();
+        var existingScopePreparationResult =
+            ProjectCodePinnedModuleScopePreparer.Prepare(
+                definitionSet,
+                projectScope,
+                scopeRegistry,
+                [hostCapability]);
+        Assert.True(
+            existingScopePreparationResult.Succeeded,
+            Render(existingScopePreparationResult));
+        var existingScopeCommit =
+            ProjectCodePinnedModuleScopeCommitter.CommitInitial(
+                existingScopePreparationResult.Preparation!);
+        AssertDiagnostic(
+            existingScopeCommit,
+            "project-code.pinned-module-scope-registration.conflict");
+        Assert.Same(
+            existingTransaction.Candidate,
+            scopeRegistry.GetRequiredPartition(projectScope));
+
+        Assert.Equal(
+            "1",
+            Environment.GetEnvironmentVariable(
+                ModuleConfigureMarker));
+        Assert.Null(Environment.GetEnvironmentVariable(
+            ModuleActivateMarker));
+        Assert.Null(Environment.GetEnvironmentVariable(
+            AttributeConstructorMarker));
+        Assert.Null(Environment.GetEnvironmentVariable(
+            StaticConstructorMarker));
+
         var alternateConstructionResult =
             new ProjectCodePinnedModuleConstructor().Construct(
                 pinnedModuleTypes);
@@ -2807,6 +2909,16 @@ public sealed class ProjectCodeSdkBuildControllerTests
             diagnostic => diagnostic.Code == code);
     }
 
+    private static void AssertDiagnostic(
+        ProjectCodePinnedModuleScopeCommitResult result,
+        string code)
+    {
+        Assert.False(result.Succeeded);
+        Assert.Contains(
+            result.Diagnostics,
+            diagnostic => diagnostic.Code == code);
+    }
+
     private static byte[] ReplaceUtf8(
         byte[] source,
         string oldValue,
@@ -3078,6 +3190,13 @@ public sealed class ProjectCodeSdkBuildControllerTests
 
     private static string Render(
         ProjectCodePinnedModuleScopePreparationResult result) =>
+        string.Join(
+            Environment.NewLine,
+            result.Diagnostics.Select(diagnostic =>
+                $"{diagnostic.Code} {diagnostic.Location}: {diagnostic.Message}"));
+
+    private static string Render(
+        ProjectCodePinnedModuleScopeCommitResult result) =>
         string.Join(
             Environment.NewLine,
             result.Diagnostics.Select(diagnostic =>

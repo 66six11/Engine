@@ -202,6 +202,12 @@ capability snapshot，再让现有 `EditorScopeTransaction.Prepare` 从 exact de
 复核 registration order/definition references，并把 structural validation failure 投影为 path-free typed
 diagnostic。该阶段只读 registry snapshot；不 Commit、不增加 reservation/owner/revision，也不 Activate。
 
+initial Project scope committer 只消费上述 exact preparation，并复用 captured snapshot 完成空 scope 的
+首次结构提交；成功 receipt 同时成为 exact partition registration owner。关闭 owner 时只在当前 registry
+partition 仍是同一 reference 时移除它，重复关闭无副作用，successor 已替换时 fail closed 且不误删
+successor。stale、已有 scope 或重复消费返回 path-free conflict 并要求重新 Prepare。该边界不 Activate、
+不发布 contribution/current/active/LKG，也不实现 replacement、revision、rollback observer 或 I/O。
+
 外部自定义 `.csproj` 必须由 `asharia.package.json.editor` 显式声明，视为受信任 external build，默认 `restart-required`。Host 记录实际 project、SDK、binlog 和 artifact，但不把它伪装成标准可重复 `.asmdef` build。
 
 分发 Package 可以提供 Package-wide prebuilt artifact manifest，包含全部 logical assembly identity、TFM/RID、API/schema compatibility、module DLL/PDB/index/resource、aggregate host/统一 `.deps.json`、private/native asset table 和 content hash。`asharia.packages.lock.json` 为整个 Package generation 选择 `source-build` 或一个 prebuilt artifact ID；禁止逐 assembly 混合 source/prebuilt 后临时合成 closure，也不允许从目录中猜测散落 DLL。Manifest 同时提供 source 与 prebuilt variant 时，Project policy 决定可选集合，但实际选择必须被 lock 固定。

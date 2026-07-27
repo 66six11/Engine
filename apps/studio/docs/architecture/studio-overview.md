@@ -193,6 +193,12 @@ values；它不从 artifact 的 persistent ProjectId 构造 ProjectSession ident
 snapshot，使用现有 `EditorScopeTransaction.Prepare` 构建并复核不可见 candidate，把 structural failure
 转为 typed diagnostic。该边界不 Commit registry、不增加 reservation/owner/revision，不 Activate 或做 I/O。
 
+`ProjectCodePinnedModuleScopeCommitter` 只把上述 exact preparation 首次提交到空的 Project scope，并返回
+绑定 exact candidate partition reference 的显式 registration owner。owner 关闭时幂等退役自己的
+partition；如果 registry 已变化或同 scope 已有 partition，则返回 path-free conflict 并要求重新 Prepare；
+如果 successor 已替换当前 partition，retirement fail closed 且不会误删 successor。该边界仍不 Activate、
+不推进 current/active/LKG，也不实现 replacement、revision、catalog transaction 或前端接线。
+
 这些是 Application 层的产品策略，直接使用 .NET BCL 文件 API。Avalonia `IStorageProvider` 只负责用户文件
 选择、bookmark 和平台权限 UI；native Core File IO 服务于 C++ engine/runtime 的低层 IO 与事务，不反向成为
 Studio managed bootstrap 的依赖。
@@ -435,9 +441,10 @@ git diff --check
   publication、no-load dual-assembly module index、non-empty staging candidate admission 与 pre-load
   `Pinned + RestartRequired` policy selection，以及有界、无 module initializer 的 owned pinned load-image
   snapshot、loader-owned exact non-collectible binary host、exact indexed runtime Type receipt、at-most-once
-  constructed module objects、immutable configured declarations 和 shared definition projection；正式
-  ProjectSession/manifest handoff、`.asmdef`、Package、registry commit/activation 与完整 ALC generation
-  pipeline 尚未实现；headless path 只支持 caller 显式给出 ProjectSession scope 后准备不可见 candidate；
+  constructed module objects、immutable configured declarations、shared definition projection、caller-supplied
+  ProjectSession scope 下的 invisible candidate，以及 empty-scope initial registry registration/exact retirement
+  owner；正式 ProjectSession/manifest handoff、`.asmdef`、Package、activation/replacement/catalog commit 与完整
+  ALC generation pipeline 尚未实现；
 - App shutdown 仍有 sync-over-async；
 - Game View、PlaySession 和 standalone orchestration 未完成；
 - Linux/macOS GPU presentation 尚未验证；

@@ -353,7 +353,7 @@ flowchart LR
 current selection、Project Open 或 Host activation。Editor Image 的资格检查不加载或执行候选输入，也不证明 ABI、
 launch behavior 或 runtime health。
 
-## Studio Project Code 隔离 SDK 构建、发布与 pinned scope preparation 流（#305–#322）
+## Studio Project Code 隔离 SDK 构建、发布与 initial scope registration 流（#305–#322、#332）
 
 这是 `Asharia.Studio.Application` 的 headless Project Code control plane，不经过 Avalonia storage API；
 pinned loader 节点加载 exact 项目 assembly，resolver 只解析已索引 Type，constructor owner 才首次有意执行
@@ -375,7 +375,7 @@ flowchart LR
     Report["path-free metadata report<br/>content-addressed"]
     Publication["immutable inspected publication<br/>artifact.json + four evidence files"]
     Index["no-load module index<br/>implementation + reference metadata"]
-    Candidate["staging candidate receipt<br/>non-empty rebuilt index"]
+    StagingCandidate["staging candidate receipt<br/>non-empty rebuilt index"]
     Policy["host policy receipt<br/>Pinned + RestartRequired"]
     Snapshot["owned pinned load-image snapshot<br/>implementation DLL + portable PDB"]
     Loader["exact pinned binary host<br/>non-collectible ALC"]
@@ -383,8 +383,8 @@ flowchart LR
     Factory["exact pinned module objects<br/>at-most-once constructor owner"]
     Configure["exact configured declarations<br/>at-most-once Configure owner"]
     Definitions["shared module definitions<br/>exact pure projection"]
-    Candidate["invisible Project scope candidate<br/>caller ProjectSession identity"]
-    Registry["registry commit<br/>not implemented"]
+    ScopeCandidate["invisible Project scope candidate<br/>caller ProjectSession identity"]
+    Registration["initial registry registration<br/>exact partition owner"]
 
     Image --> Projection
     Projection --> Credential
@@ -399,16 +399,16 @@ flowchart LR
     Inspect --> Report
     Report --> Publication
     Publication --> Index
-    Index --> Candidate
-    Candidate --> Policy
+    Index --> StagingCandidate
+    StagingCandidate --> Policy
     Policy --> Snapshot
     Snapshot --> Loader
     Loader --> Modules
     Modules --> Factory
     Factory --> Configure
     Configure --> Definitions
-    Definitions --> Candidate
-    Candidate -.not implemented.-> Registry
+    Definitions --> ScopeCandidate
+    ScopeCandidate --> Registration
 ```
 
 workspace 和 dotnet closure 在每个外部步骤后复验；同 project 新调用会 supersede 旧调用。CLI 环境从空白
@@ -460,7 +460,10 @@ registry/current/active/LKG。#321 再将 exact metadata/object/declaration rece
 static/dynamic 共用的 shared definitions，保留顺序与 keyed lookup，但不执行用户代码或进入 registry。
 #322 只在 caller 显式提供的 ProjectSession `ScopeInstanceId` 与 host-capability snapshot 下调用现有
 transaction Prepare，生成不可见、combined-validated candidate；它不把 persistent ProjectId 当 session id，
-也不 Commit/reserve/Activate。registry commit 仍未实现。
+也不 Commit/reserve/Activate。#332 只在 captured snapshot 仍有效且目标 Project scope 为空时首次提交 exact
+candidate，并返回绑定 exact partition reference 的 registration owner；关闭 owner 时幂等 compare-and-remove，
+stale/已有 scope/重复消费返回 path-free conflict，successor replacement 永不被旧 owner 删除。该阶段仍不
+Activate，不推进 current/active/LKG，也不实现 replacement、revision、catalog transaction 或前端接线。
 
 ## 当前架构总览
 

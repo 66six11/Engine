@@ -1561,6 +1561,67 @@ public sealed class ProjectReferenceGraphTests
     }
 
     [Fact]
+    public void Project_code_initial_scope_commit_owns_only_exact_registration()
+    {
+        var source = File.ReadAllText(Path.Combine(
+            FindStudioRoot(),
+            "src",
+            "Asharia.Studio.Application",
+            "ProjectCode",
+            "ProjectCodePinnedModuleScopeCommitter.cs"));
+        var forbiddenTokens = new[]
+        {
+            "ProjectId",
+            "ScopeInstanceId.ForProject",
+            "ProjectSession(",
+            "EditorModuleHost",
+            "ActivateScopeAsync",
+            "ActivateAsync(",
+            ".Commit(",
+            "TryReserve",
+            "Reservation",
+            "OwnerToken",
+            "Revision",
+            "CommitObserver",
+            "AssemblyLoadContext",
+            "LoadFrom",
+            "CancellationToken",
+            "Task<",
+            "File.",
+            "Directory.",
+            "Avalonia",
+            "Unreal",
+            "Unity",
+            "Godot",
+            "O3DE",
+        };
+
+        Assert.Contains(
+            "ProjectCodePinnedModuleScopePreparation preparation",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "preparation.Transaction.TryCommitInitial(",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "ReferenceEquals(",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "registration_.Dispose()",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "project-code.pinned-module-scope-registration.conflict",
+            source,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            forbiddenTokens,
+            token => source.Contains(token, StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Project_code_implicit_workspace_does_not_execute_or_load_candidates()
     {
         var sourceRoot = Path.Combine(
