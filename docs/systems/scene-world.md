@@ -44,6 +44,10 @@ Play Mode 的边界。它不是完整 ECS 实现说明，而是约束后续 `sce
 | Unreal `FMassEntityHandle`: https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Plugins/MassEntity/FMassEntityHandle | UE Mass 的轻量 entity handle 明确包含 `Index` 与 `SerialNumber`；handle 是否已设置不等于 entity 仍被 manager 持有。 | ABI 保留 index + generation，并让存活性由拥有该 ID 的 World 查询，不能仅凭非零 ID 推断存活。 |
 | Bevy entity lifecycle: https://docs.rs/bevy/latest/bevy/ecs/entity/ | Bevy 释放 entity slot 时增加 generation，使旧 ID 失效；已 despawn 的 ID 仍可能留在调用方并需要 fallible 处理。 | destroy 后旧 ID 必须稳定失效，槽位复用不得让旧调用误命中新 entity。 |
 | Flecs entities/components: https://www.flecs.dev/flecs/md_docs_2EntitiesComponents.html | Flecs 的 C API 使用固定宽度 entity ID，保留零为 invalid，并在 ID 中携带 liveliness/version 信息。 | C ABI 使用 fixed-width index/generation，零值作为 invalid/failed output，不引入跨边界 C++ handle。 |
+| Unreal `USceneComponent`: https://dev.epicgames.com/documentation/unreal-engine/API/Runtime/Engine/USceneComponent | UE 明确区分 relative transform（相对 parent）与 component/world transform。 | 当前 `TransformComponent` 与 native ABI 明确命名为 local；没有 hierarchy 时不虚构 world-transform 语义。 |
+| Unreal `TQuat`: https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/Core/TQuat | UE quaternion API 提供 `ContainsNaN` / `IsNormalized`，多项旋转运算要求 normalized quaternion。 | ABI set-local-transform 拒绝非有限值与非单位 rotation，不静默归一化不可信边界输入。 |
+| O3DE `TransformInterface`: https://docs.o3de.org/docs/api/frameworks/azcore/class_a_z_1_1_transform_interface.html | O3DE 分别提供 `Get/SetLocalTM` 与 world-transform 操作，local 不含 parent transform。 | local 与 world operation 必须是独立合同；当前 Slice 只发布 local get/set。 |
+| Godot `Transform3D`: https://docs.godotengine.org/en/latest/classes/class_transform3d.html | Godot 提供逐 component 的 `is_finite()`，并为依赖正交/归一化的 transform math 写明前置条件。 | public mutation boundary 必须先拒绝 NaN/Inf，避免非法 float 进入未来 hierarchy/snapshot/renderer。 |
 | Unreal parallel rendering: https://dev.epicgames.com/documentation/en-us/unreal-engine/parallel-rendering-overview-for-unreal-engine | Unreal 把 game thread、render thread 和 RHI thread 分离，渲染侧通过 proxy/snapshot 消费游戏数据。 | Renderer 后续应消费 render snapshot/draw packet，不直接读 gameplay/editor object。 |
 | Unity Job System: https://docs.unity3d.com/Manual/JobSystemOverview.html | Unity Job System 强调可并行数据和 safety 规则。 | Asharia Engine worker job 应处理 plain data；mutable World 访问必须通过主线程或明确同步模型。 |
 | Unity SRP / RenderGraph: https://docs.unity3d.com/Manual/urp/render-graph-introduction.html | Editor 可有 Game View、Scene View、preview 等多个渲染视图。 | RenderGraph 和 profiling 不应假设一帧只有一个 view graph。 |
@@ -94,14 +98,18 @@ flowchart TD
 
 - `scene-core` 不依赖 ImGui、Vulkan、renderer implementation 或 scripting runtime。
 - `asharia::scene_native` shared adapter 只依赖 `asharia::scene_core`；公开 header 可由 C11 consumer
-  直接编译，只有 fixed-width status/header/entity ID、opaque World handle 与 World/entity lifecycle functions。
+  直接编译，只有 fixed-width status/header/entity/Transform values、opaque World handle 与窄生命周期/本地
+  Transform functions。
 - 当前 native World handle 只记录并校验创建线程，不猜测哪个线程是进程主线程；Host/WorldScope 必须在其
-  control/main thread 创建它。所有 World/entity 调用 wrong-thread 时 fail closed，成功 World destroy 后
-  handle 立即失效；caller 必须先停止并 drain 依赖工作。
+  control/main thread 创建它。所有 World/entity/Transform 调用 wrong-thread 时 fail closed，成功 World
+  destroy 后 handle 立即失效；caller 必须先停止并 drain 依赖工作。
 - native entity ID 仅在所属 World 内有效；index + generation 与 runtime `EntityId` 一一映射，零值无效。
   destroy 增加 generation，因此旧 ID 在槽位复用后仍不能访问新 entity；is-alive 对 stale ID 成功返回 false。
-- version 1 lifecycle ABI 尚不公开 entity name、Transform、component、managed P/Invoke 或 render snapshot；
-  这些必须按独立 Slice 增加，不能通过泄漏 mutable `World*` 省略 owner/safe-point 设计。
+- native Transform 只表示 local position/quaternion/scale；get 失败先把 output 清零，set 拒绝任意 component
+  的 NaN/Inf 与非单位 quaternion，且不静默 normalize/clamp。有限 zero/negative scale 可透传；hierarchy/world
+  Transform、dirty propagation 与 change notification 尚不存在。
+- version 1 ABI 尚不公开 entity name、component registry、managed P/Invoke 或 render snapshot；这些必须按
+  独立 Slice 增加，不能通过泄漏 mutable `World*` 省略 owner/safe-point 设计。
 - Editor System 内部 `editor_domain` 不依赖 ImGui、Vulkan 或 renderer implementation。
 - renderer 可以依赖后端无关的 render packet 类型，不能依赖 mutable `World`。
 - `apps/editor` 负责 ImGui integration 和 editor viewport host，不把 ImGui 类型塞进 `editor_domain`。

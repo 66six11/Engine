@@ -33,7 +33,38 @@ int main(void) {
     uint32_t isAlive = 0U;
     if (asharia_scene_world_is_alive(world, &entityRequest, &isAlive) !=
             AshariaSceneNativeStatus_Success ||
-        isAlive != 1U ||
+        isAlive != 1U) {
+        return EXIT_FAILURE;
+    }
+
+    AshariaSceneNativeSetLocalTransformRequest setTransformRequest;
+    setTransformRequest.header.abiVersion = ASHARIA_SCENE_NATIVE_ABI_VERSION;
+    setTransformRequest.header.structSize = (uint32_t)sizeof(setTransformRequest);
+    setTransformRequest.entity = entity;
+    setTransformRequest.transform.position.x = 1.0F;
+    setTransformRequest.transform.position.y = -2.0F;
+    setTransformRequest.transform.position.z = 3.0F;
+    setTransformRequest.transform.rotation.x = 0.0F;
+    setTransformRequest.transform.rotation.y = 0.0F;
+    setTransformRequest.transform.rotation.z = 0.0F;
+    setTransformRequest.transform.rotation.w = 1.0F;
+    setTransformRequest.transform.scale.x = 0.0F;
+    setTransformRequest.transform.scale.y = -1.0F;
+    setTransformRequest.transform.scale.z = 2.0F;
+
+    if (asharia_scene_world_set_local_transform(world, &setTransformRequest) !=
+        AshariaSceneNativeStatus_Success) {
+        return EXIT_FAILURE;
+    }
+
+    AshariaSceneNativeTransform transform = {0};
+    if (asharia_scene_world_get_local_transform(world, &entityRequest, &transform) !=
+            AshariaSceneNativeStatus_Success ||
+        transform.position.x != 1.0F || transform.position.y != -2.0F ||
+        transform.position.z != 3.0F || transform.rotation.x != 0.0F ||
+        transform.rotation.y != 0.0F || transform.rotation.z != 0.0F ||
+        transform.rotation.w != 1.0F || transform.scale.x != 0.0F || transform.scale.y != -1.0F ||
+        transform.scale.z != 2.0F ||
         asharia_scene_world_destroy_entity(world, &entityRequest) !=
             AshariaSceneNativeStatus_Success) {
         return EXIT_FAILURE;

@@ -9,12 +9,13 @@
   "name": "com.asharia.scene-core",
   "version": "0.1.0",
   "displayName": "Asharia Engine Scene Core",
-  "description": "Headless scene world, generation-safe entity identity, local transform baseline, and narrow native lifecycle adapter.",
+  "description": "Headless scene world, generation-safe entity identity, local transform baseline, and narrow native lifecycle/transform adapter.",
   "dependencies": ["com.asharia.core"],
   "targets": ["asharia-scene-core", "asharia-scene-native"],
   "testTargets": [
     "asharia-scene-core-smoke-tests",
     "asharia-scene-native-lifecycle-smoke-tests",
+    "asharia-scene-native-transform-smoke-tests",
     "asharia-scene-native-c-smoke-tests"
   ],
   "targetRoles": {
@@ -22,6 +23,7 @@
     "asharia-scene-native": "adapter",
     "asharia-scene-core-smoke-tests": "test",
     "asharia-scene-native-lifecycle-smoke-tests": "test",
+    "asharia-scene-native-transform-smoke-tests": "test",
     "asharia-scene-native-c-smoke-tests": "test"
   },
   "targetDependencies": {
@@ -29,6 +31,7 @@
     "asharia-scene-native": ["asharia-scene-core"],
     "asharia-scene-core-smoke-tests": ["asharia-scene-core"],
     "asharia-scene-native-lifecycle-smoke-tests": ["asharia-scene-native"],
+    "asharia-scene-native-transform-smoke-tests": ["asharia-scene-native"],
     "asharia-scene-native-c-smoke-tests": ["asharia-scene-native"]
   }
 }

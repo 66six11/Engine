@@ -32,6 +32,7 @@ enum {
     AshariaSceneNativeStatus_InternalError = 4U,
     AshariaSceneNativeStatus_InvalidEntity = 5U,
     AshariaSceneNativeStatus_EntityCapacityExceeded = 6U,
+    AshariaSceneNativeStatus_InvalidTransform = 7U,
 };
 
 typedef struct AshariaSceneNativeAbiHeader {
@@ -43,6 +44,25 @@ typedef struct AshariaSceneNativeEntityId {
     uint32_t index;
     uint32_t generation;
 } AshariaSceneNativeEntityId;
+
+typedef struct AshariaSceneNativeVec3 {
+    float x;
+    float y;
+    float z;
+} AshariaSceneNativeVec3;
+
+typedef struct AshariaSceneNativeQuat {
+    float x;
+    float y;
+    float z;
+    float w;
+} AshariaSceneNativeQuat;
+
+typedef struct AshariaSceneNativeTransform {
+    AshariaSceneNativeVec3 position;
+    AshariaSceneNativeQuat rotation;
+    AshariaSceneNativeVec3 scale;
+} AshariaSceneNativeTransform;
 
 typedef struct AshariaSceneNativeWorldCreateRequest {
     AshariaSceneNativeAbiHeader header;
@@ -56,6 +76,12 @@ typedef struct AshariaSceneNativeEntityRequest {
     AshariaSceneNativeAbiHeader header;
     AshariaSceneNativeEntityId entity;
 } AshariaSceneNativeEntityRequest;
+
+typedef struct AshariaSceneNativeSetLocalTransformRequest {
+    AshariaSceneNativeAbiHeader header;
+    AshariaSceneNativeEntityId entity;
+    AshariaSceneNativeTransform transform;
+} AshariaSceneNativeSetLocalTransformRequest;
 
 typedef struct AshariaSceneNativeWorld AshariaSceneNativeWorld;
 
@@ -90,6 +116,21 @@ ASHARIA_SCENE_NATIVE_API AshariaSceneNativeStatus ASHARIA_SCENE_NATIVE_CALL
 asharia_scene_world_is_alive(AshariaSceneNativeWorld* world,
                              const AshariaSceneNativeEntityRequest* request,
                              uint32_t* isAlive) ASHARIA_SCENE_NATIVE_NOEXCEPT;
+
+/*
+ * Local Transform is parent-relative. Version 1 has no hierarchy or world
+ * Transform operation. Set rejects non-finite values and non-unit rotations;
+ * it never silently normalizes or clamps caller data.
+ */
+ASHARIA_SCENE_NATIVE_API AshariaSceneNativeStatus ASHARIA_SCENE_NATIVE_CALL
+asharia_scene_world_get_local_transform(
+    AshariaSceneNativeWorld* world, const AshariaSceneNativeEntityRequest* request,
+    AshariaSceneNativeTransform* transform) ASHARIA_SCENE_NATIVE_NOEXCEPT;
+
+ASHARIA_SCENE_NATIVE_API AshariaSceneNativeStatus ASHARIA_SCENE_NATIVE_CALL
+asharia_scene_world_set_local_transform(AshariaSceneNativeWorld* world,
+                                        const AshariaSceneNativeSetLocalTransformRequest* request)
+    ASHARIA_SCENE_NATIVE_NOEXCEPT;
 
 #if defined(__cplusplus)
 } // extern "C"

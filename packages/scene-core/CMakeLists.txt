@@ -95,6 +95,22 @@ if(ASHARIA_BUILD_TESTS)
       COMMAND asharia-scene-native-lifecycle-smoke-tests
   )
 
+  add_executable(asharia-scene-native-transform-smoke-tests
+      tests/scene_native_transform_smoke_tests.cpp
+  )
+
+  target_link_libraries(asharia-scene-native-transform-smoke-tests
+      PRIVATE
+          asharia::scene_native
+  )
+
+  asharia_configure_target(asharia-scene-native-transform-smoke-tests)
+
+  add_test(
+      NAME asharia-scene-native-transform-smoke-tests
+      COMMAND asharia-scene-native-transform-smoke-tests
+  )
+
   add_executable(asharia-scene-native-c-smoke-tests
       tests/scene_native_c_smoke_tests.c
   )
