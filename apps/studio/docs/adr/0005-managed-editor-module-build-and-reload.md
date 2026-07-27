@@ -34,6 +34,7 @@
 - 该 immutable publication 是 path-free、content-addressed build evidence，不是 loadable generation，不拥有 module index、`current`/`latest`、active/LKG 或 ALC；
 - 独立 module indexer 只消费 typed publication receipt，在扫描前后复验 exact closed tree，并用 BCL metadata 同时读取 implementation/reference assembly；它只接受 exact `Asharia.Editor` `EditorModuleAttribute` 与受限 direct `EditorModule` type shape，要求两份 declaration surface 一致，输出 path-free、content-addressed in-memory facts；空 index 合法但不代表 load eligibility；
 - staging candidate admitter 不接受 caller-supplied index；它从 publication receipt 重建 index，只为 non-empty current surface 签发 content-addressed receipt，并提供重新索引的 current check。publication root 只作为进程内 locator，不参与 candidate identity；receipt 不选择 ALC host，也不证明 managed reload eligibility；
+- host policy selector 只消费 current staging candidate，并在任何 load/ALC 创建前签发 path-free policy receipt。当前 v1 是 external-build、缺少 resource/native/global-side-effect 与 cooperative-unload evidence，因此所有 activation/handover 组合都固定为 `Pinned + RestartRequired`；`Handover` 只表达替换时序，不能单独升级为 Collectible。selector 不加载或执行 assembly，后继 loader 仍须重新验证 policy/candidate currentness；
 - build diagnostic 结构化投影到 Problems/Console；
 - `FileSystemWatcher` 只触发 debounce，重新计算 fingerprint 才决定是否构建；
 - 构建期间输入再次变化时取消或丢弃旧结果。
@@ -78,6 +79,11 @@ declaration 验证都由 .NET BCL `PEReader`/`MetadataReader` 完成，保持无
 - `PackageGenerationHost` 是 ALC/module/assembly table 的 owner；Application/Project scope、registry/factory、Panel/UI、task 与 dependency lease 全部归零后才能 retire，只有 Collectible host 调用 unload；
 - host type 在执行 extension code 前按最严格 artifact/UI/native policy 选择；Pinned host 保留精确 transitive dependency generation lease 到进程退出，依赖更新同样要求 restart；
 - native library 或无法证明可卸载的模块标记 `restart-required`。
+
+当前 implicit Project Code 只实现该选择边界：UE 也把 module descriptor/current-configuration eligibility 与
+`FModuleManager` 的 binary load/initialization/unload 分开，O3DE 在 `ModuleManager` load 前显式选择初始化终点
+和是否 maintain reference；.NET 则在 ALC 创建时固定 collectible 属性。Asharia 因而不允许 actual loader 再按
+运行时猜测改变 #315 已签发的 residency/replacement policy。
 
 ### Generation replacement
 

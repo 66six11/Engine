@@ -108,7 +108,10 @@ Asharia Engine 当前目标仍是先做一个小而完整的 Vulkan renderer，�
   eligibility。staging candidate admitter 只接受 publication receipt，内部重建 index，要求 non-empty，并在
   签发前再次复验 publication；candidate identity 仅绑定 publication/index identity，absolute root 只作为
   进程内 locator。后继 current check 会重新索引并对证 surface。该 receipt 不证明 managed reload eligibility；
-  整条路径不创建 current pointer、ALC，也不加载 assembly，仍不支持 `.asmdef`/Package。
+  host policy selector 再只消费 current candidate，并把当前 external-build、缺少 unload evidence 的 v1
+  确定性签发为 path-free `Pinned + RestartRequired` policy receipt；所有 activation/handover 组合都不能
+  自动升级为 Collectible。整条路径不创建 current pointer、ALC，也不加载 assembly，仍不支持
+  `.asmdef`/Package；actual pinned loader 尚未实现。
   Studio 在 Windows 上必须优先配置 `Win32RenderingMode.Vulkan`，再回退到 `AngleEgl` / `Software`，否则 Avalonia
   composition GPU interop 可能只暴露 D3D/ANGLE 共享纹理路径，无法进入 Vulkan opaque NT image/semaphore spike。
 

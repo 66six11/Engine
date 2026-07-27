@@ -389,6 +389,54 @@ public sealed class ProjectCodeSdkBuildControllerTests
                 }
             }
 
+            [EditorModule(
+                "policy.on-demand.coexist",
+                Scope = EditorModuleScopeKind.Project,
+                Activation = EditorModuleActivationPolicy.OnDemand,
+                Handover = EditorModuleHandoverPolicy.Coexist)]
+            public sealed class OnDemandCoexistModule : EditorModule
+            {
+                public override void Configure(EditorModuleBuilder editor)
+                {
+                }
+            }
+
+            [EditorModule(
+                "policy.on-demand.quiesce",
+                Scope = EditorModuleScopeKind.Project,
+                Activation = EditorModuleActivationPolicy.OnDemand,
+                Handover = EditorModuleHandoverPolicy.QuiesceThenActivate)]
+            public sealed class OnDemandQuiesceModule : EditorModule
+            {
+                public override void Configure(EditorModuleBuilder editor)
+                {
+                }
+            }
+
+            [EditorModule(
+                "policy.on-ready.coexist",
+                Scope = EditorModuleScopeKind.Project,
+                Activation = EditorModuleActivationPolicy.OnScopeReady,
+                Handover = EditorModuleHandoverPolicy.Coexist)]
+            public sealed class OnReadyCoexistModule : EditorModule
+            {
+                public override void Configure(EditorModuleBuilder editor)
+                {
+                }
+            }
+
+            [EditorModule(
+                "policy.on-ready.quiesce",
+                Scope = EditorModuleScopeKind.Project,
+                Activation = EditorModuleActivationPolicy.OnScopeReady,
+                Handover = EditorModuleHandoverPolicy.QuiesceThenActivate)]
+            public sealed class OnReadyQuiesceModule : EditorModule
+            {
+                public override void Configure(EditorModuleBuilder editor)
+                {
+                }
+            }
+
             """);
         var moduleWorkspace = await CreateWorkspaceAsync(
             moduleProject,
@@ -410,7 +458,9 @@ public sealed class ProjectCodeSdkBuildControllerTests
         var moduleIndex = await ProjectCodeModuleIndexer.IndexAsync(
             modulePublicationReceipt);
         Assert.True(moduleIndex.Succeeded, Render(moduleIndex));
-        var moduleEntry = Assert.Single(moduleIndex.Report!.Entries);
+        Assert.Equal(5, moduleIndex.Report!.Entries.Count);
+        var moduleEntry = Assert.Single(moduleIndex.Report.Entries, entry =>
+                entry.DefinitionId.Module.Value == "fixture.module");
         Assert.Equal(
             $"project:{ProjectId:D}:editor",
             moduleEntry.DefinitionId.Assembly.Package.Value);
@@ -430,6 +480,29 @@ public sealed class ProjectCodeSdkBuildControllerTests
         Assert.Equal(
             EditorModuleHandoverPolicy.RestartRequired,
             moduleEntry.Handover);
+        var policyMetadata = moduleIndex.Report.Entries
+            .Where(entry => entry.DefinitionId.Module.Value.StartsWith(
+                "policy.",
+                StringComparison.Ordinal))
+            .Select(entry => (entry.Activation, entry.Handover))
+            .ToHashSet();
+        Assert.Equal(4, policyMetadata.Count);
+        Assert.Contains(
+            (EditorModuleActivationPolicy.OnDemand,
+                EditorModuleHandoverPolicy.Coexist),
+            policyMetadata);
+        Assert.Contains(
+            (EditorModuleActivationPolicy.OnDemand,
+                EditorModuleHandoverPolicy.QuiesceThenActivate),
+            policyMetadata);
+        Assert.Contains(
+            (EditorModuleActivationPolicy.OnScopeReady,
+                EditorModuleHandoverPolicy.Coexist),
+            policyMetadata);
+        Assert.Contains(
+            (EditorModuleActivationPolicy.OnScopeReady,
+                EditorModuleHandoverPolicy.QuiesceThenActivate),
+            policyMetadata);
         var moduleCandidate =
             await ProjectCodeStagingCandidateAdmitter.AdmitAsync(
                 modulePublicationReceipt);
@@ -450,6 +523,41 @@ public sealed class ProjectCodeSdkBuildControllerTests
         Assert.True(
             await ProjectCodeStagingCandidateAdmitter
                 .IsCandidateCurrentAsync(moduleCandidateReceipt));
+        var modulePolicy =
+            await ProjectCodeHostPolicySelector.SelectAsync(
+                moduleCandidateReceipt);
+        Assert.True(modulePolicy.Succeeded, Render(modulePolicy));
+        var modulePolicyReceipt = modulePolicy.Receipt!;
+        Assert.Equal(
+            moduleCandidateReceipt.CandidateId,
+            modulePolicyReceipt.Candidate.CandidateId);
+        Assert.Equal(
+            ProjectCodeHostKind.Pinned,
+            modulePolicyReceipt.HostKind);
+        Assert.Equal(
+            ProjectCodeReplacementPolicy.RestartRequired,
+            modulePolicyReceipt.ReplacementPolicy);
+        Assert.Equal(
+            ProjectCodeHostPolicyReason
+                .ExternalBuildReloadEvidenceUnavailable,
+            modulePolicyReceipt.Reason);
+        Assert.True(
+            await ProjectCodeHostPolicySelector
+                .IsPolicyCurrentAsync(modulePolicyReceipt));
+        var forgedPolicyId = "sha256-"
+            + new string(
+                modulePolicyReceipt.PolicyId[7] == '0' ? '1' : '0',
+                64);
+        var forgedPolicy = new ProjectCodeHostPolicyReceipt(
+            forgedPolicyId,
+            moduleCandidateReceipt,
+            ProjectCodeHostKind.Pinned,
+            ProjectCodeReplacementPolicy.RestartRequired,
+            ProjectCodeHostPolicyReason
+                .ExternalBuildReloadEvidenceUnavailable);
+        Assert.False(
+            await ProjectCodeHostPolicySelector
+                .IsPolicyCurrentAsync(forgedPolicy));
 
         var equivalentModulePublication =
             await ProjectCodeArtifactPublisher.PublishAsync(
@@ -470,6 +578,24 @@ public sealed class ProjectCodeSdkBuildControllerTests
         Assert.Equal(
             moduleCandidateReceipt.ModuleIndex.Entries.ToArray(),
             equivalentModuleCandidate.Receipt.ModuleIndex.Entries.ToArray());
+        var equivalentModulePolicy =
+            await ProjectCodeHostPolicySelector.SelectAsync(
+                equivalentModuleCandidate.Receipt);
+        Assert.True(
+            equivalentModulePolicy.Succeeded,
+            Render(equivalentModulePolicy));
+        Assert.Equal(
+            modulePolicyReceipt.PolicyId,
+            equivalentModulePolicy.Receipt!.PolicyId);
+        Assert.Equal(
+            modulePolicyReceipt.HostKind,
+            equivalentModulePolicy.Receipt.HostKind);
+        Assert.Equal(
+            modulePolicyReceipt.ReplacementPolicy,
+            equivalentModulePolicy.Receipt.ReplacementPolicy);
+        Assert.Equal(
+            modulePolicyReceipt.Reason,
+            equivalentModulePolicy.Receipt.Reason);
 
         var moduleImplementation = moduleOutput.Files.Single(file =>
             file.RelativePath
@@ -532,6 +658,20 @@ public sealed class ProjectCodeSdkBuildControllerTests
             Assert.False(
                 await ProjectCodeStagingCandidateAdmitter
                     .IsCandidateCurrentAsync(moduleCandidateReceipt));
+            Assert.False(
+                await ProjectCodeHostPolicySelector
+                    .IsPolicyCurrentAsync(modulePolicyReceipt));
+            var stalePolicy =
+                await ProjectCodeHostPolicySelector.SelectAsync(
+                    moduleCandidateReceipt);
+            AssertDiagnostic(
+                stalePolicy,
+                "project-code.host-policy.candidate-not-current");
+            AssertNoAbsolutePathLeak(
+                Render(stalePolicy),
+                moduleProject.ProjectRoot,
+                moduleProject.WorkspaceRoot,
+                modulePublicationReceipt.AbsoluteRoot);
             AssertDiagnostic(
                 await ProjectCodeStagingCandidateAdmitter.AdmitAsync(
                     modulePublicationReceipt),
@@ -1603,6 +1743,16 @@ public sealed class ProjectCodeSdkBuildControllerTests
             diagnostic => diagnostic.Code == code);
     }
 
+    private static void AssertDiagnostic(
+        ProjectCodeHostPolicySelectionResult result,
+        string code)
+    {
+        Assert.False(result.Succeeded);
+        Assert.Contains(
+            result.Diagnostics,
+            diagnostic => diagnostic.Code == code);
+    }
+
     private static byte[] ReplaceUtf8(
         byte[] source,
         string oldValue,
@@ -1825,6 +1975,13 @@ public sealed class ProjectCodeSdkBuildControllerTests
 
     private static string Render(
         ProjectCodeStagingCandidateAdmissionResult result) =>
+        string.Join(
+            Environment.NewLine,
+            result.Diagnostics.Select(diagnostic =>
+                $"{diagnostic.Code} {diagnostic.Location}: {diagnostic.Message}"));
+
+    private static string Render(
+        ProjectCodeHostPolicySelectionResult result) =>
         string.Join(
             Environment.NewLine,
             result.Diagnostics.Select(diagnostic =>

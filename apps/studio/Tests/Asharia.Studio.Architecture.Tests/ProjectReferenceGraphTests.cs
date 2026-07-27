@@ -732,6 +732,66 @@ public sealed class ProjectReferenceGraphTests
     }
 
     [Fact]
+    public void Project_code_host_policy_is_selected_before_any_load()
+    {
+        var sourceRoot = Path.Combine(
+            FindStudioRoot(),
+            "src",
+            "Asharia.Studio.Application",
+            "ProjectCode");
+        var source = string.Join(
+            Environment.NewLine,
+            new[]
+            {
+                "ProjectCodeHostPolicy.cs",
+                "ProjectCodeHostPolicySelector.cs",
+            }.Select(name => File.ReadAllText(Path.Combine(sourceRoot, name))));
+        var forbiddenTokens = new[]
+        {
+            "Assembly.Load(",
+            "AssemblyName.GetAssemblyName",
+            "AssemblyLoadContext",
+            "MetadataLoadContext",
+            "Activator.",
+            "Type.GetType",
+            ".GetTypes(",
+            "DllImport",
+            "LibraryImport",
+            "Mono.Cecil",
+            "Process.Start",
+            "Avalonia",
+            "File.",
+            "Directory.",
+        };
+
+        Assert.Contains(
+            "ProjectCodeStagingCandidateReceipt candidate",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "IsCandidateCurrentAsync",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "ProjectCodeHostKind.Pinned",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "ProjectCodeReplacementPolicy.RestartRequired",
+            source,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "ProjectCodeHostKind hostKind,",
+            File.ReadAllText(Path.Combine(
+                sourceRoot,
+                "ProjectCodeHostPolicySelector.cs")),
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            forbiddenTokens,
+            token => source.Contains(token, StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Project_code_implicit_workspace_does_not_execute_or_load_candidates()
     {
         var sourceRoot = Path.Combine(

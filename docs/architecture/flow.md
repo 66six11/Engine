@@ -345,7 +345,7 @@ flowchart LR
 current selection、Project Open 或 Host activation。Editor Image 的资格检查不加载或执行候选输入，也不证明 ABI、
 launch behavior 或 runtime health。
 
-## Studio Project Code 隔离 SDK 构建、发布与 staging admission 流（#305–#314）
+## Studio Project Code 隔离 SDK 构建、发布与 host policy 流（#305–#315）
 
 这是 `Asharia.Studio.Application` 的 headless Project Code control plane，不经过 Avalonia storage API，也不加载
 项目 assembly：
@@ -366,7 +366,8 @@ flowchart LR
     Publication["immutable inspected publication<br/>artifact.json + four evidence files"]
     Index["no-load module index<br/>implementation + reference metadata"]
     Candidate["staging candidate receipt<br/>non-empty rebuilt index"]
-    Loader["pre-execution loader / ALC<br/>not implemented"]
+    Policy["host policy receipt<br/>Pinned + RestartRequired"]
+    Loader["exact pinned loader / ALC<br/>not implemented"]
 
     Image --> Projection
     Projection --> Credential
@@ -382,7 +383,8 @@ flowchart LR
     Report --> Publication
     Publication --> Index
     Index --> Candidate
-    Candidate -.not implemented.-> Loader
+    Candidate --> Policy
+    Policy -.not implemented.-> Loader
 ```
 
 workspace 和 dotnet closure 在每个外部步骤后复验；同 project 新调用会 supersede 旧调用。CLI 环境从空白
@@ -402,7 +404,11 @@ top-level sealed、non-abstract、non-generic、direct `EditorModule` subtype �
 并在签发前再次复验 publication；candidate identity 只绑定 publication/index identity，不绑定 absolute locator。
 receipt 继承 #312 publication root 仅供当前进程后继寻址，`IsCandidateCurrentAsync` 会重新索引并对证完整 surface。
 candidate 只允许后继 loader 开始自己的预执行验证，不证明 managed reload eligibility；index/candidate 不创建
-current pointer、active、LKG、ALC，也不加载 assembly。
+current pointer、active、LKG、ALC，也不加载 assembly。#315 selector 只消费 current candidate；当前 v1 是
+external-build 且没有 resource/native/global-side-effect 或 cooperative-unload evidence，因此全部
+activation/handover 组合都确定性签发 `Pinned + RestartRequired` policy。policy id 只绑定 candidate id 与
+稳定 enum/reason，absolute root 仍只是继承 locator；`IsPolicyCurrentAsync` 重算 identity 并复验 candidate。
+selector 不加载/执行 assembly，也不创建 ALC；actual pinned loader 仍未实现。
 
 ## 当前架构总览
 
