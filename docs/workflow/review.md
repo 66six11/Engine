@@ -58,11 +58,16 @@ cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --pre
 ```
 
 ClangCL test gate 将 production/test translation units 的所有 clang-tidy diagnostics 作为 error。
-`.github/workflows/native-code-quality.yml` 固定在包含 Visual Studio 2022 的 `windows-2022` hosted runner 上运行 encoding、diff whitespace、
-package topology、package/factory/product/artifact contracts、asset boundary、Vulkan package boundary/safety heuristic review、两编译器 build 和 CTest。Package topology
-从 source-boundary manifests 生成 inventory 并对证直接 CMake target；Vulkan review
-脚本只产生需要人工确认的保守提示；CI 以 `--fail-on warning` 阻止 warning/error，info 不阻塞。ClangCL hosted build 使用 `--parallel 2`，避免并发 clang-tidy 超出 runner 内存。Hosted CI 不运行 GPU/window smokes；下方相关 smoke matrix
-仍是 local pre-commit gate，并且需要使用两个 standard debug presets 运行。
+`.github/workflows/native-code-quality.yml` 固定在包含 Visual Studio 2022 的 `windows-2022` hosted runner 上。所有变更先运行
+encoding、diff whitespace、package topology、package/factory/product/artifact contracts、asset boundary 和 Vulkan package
+boundary/safety heuristic review；只有改动命中原生源码或原生构建输入时，才安装 Conan/Vulkan SDK 并运行两编译器 build 和 CTest。
+原生构建输入包括 `engine/`、`packages/`、`apps/editor/`、`apps/sample-viewer/`、`tools/asset-processor/`、`shaders/`，
+CMake/Conan/profile/bootstrap 配置、`.clang-tidy` 和该 workflow 本身；这些目录下的 Markdown、reStructuredText 与嵌套
+`docs/` 仅视作文档，不触发编译。`workflow_dispatch` 始终执行完整原生构建。Package topology 从 source-boundary
+manifests 生成 inventory 并对证直接 CMake target；Vulkan review 脚本只产生需要人工确认的保守提示；CI 以
+`--fail-on warning` 阻止 warning/error，info 不阻塞。ClangCL hosted build 使用 `--parallel 2`，避免并发 clang-tidy
+超出 runner 内存。Hosted CI 不运行 GPU/window smokes；下方相关 smoke matrix 仍是 local pre-commit gate，并且需要使用
+两个 standard debug presets 运行。
 
 涉及 Project Manifest/Lock、Engine Distribution、Host Profile、Effective Session、Host Composition、Source Build 或 package artifact
 handoff 时，除全量 Python tests 外，开发中至少先运行以下 focused chain；提交前仍执行上面的完整门禁：

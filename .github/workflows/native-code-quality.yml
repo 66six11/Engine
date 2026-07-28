@@ -15,15 +15,105 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-and-test:
-    name: Build and test native code
+  quality_gates:
+    name: Check repository quality
     runs-on: windows-2022
+    outputs:
+      native_build_required: ${{ steps.classify_changes.outputs.native_build_required }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Classify native build inputs
+        id: classify_changes
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_EVENT_NAME -eq 'workflow_dispatch') {
+            $changedFiles = @()
+            $nativeBuildRequired = $true
+          } else {
+            if ($env:GITHUB_EVENT_NAME -eq 'pull_request') {
+              git fetch origin $env:GITHUB_BASE_REF --depth=1
+              if ($LASTEXITCODE -ne 0) {
+                exit $LASTEXITCODE
+              }
+              $changedFiles = @(git diff --name-only --diff-filter=ACDMRT "origin/$env:GITHUB_BASE_REF...HEAD")
+            } elseif ('${{ github.event.before }}' -and '${{ github.event.before }}' -notmatch '^0+$') {
+              $changedFiles = @(git diff --name-only --diff-filter=ACDMRT '${{ github.event.before }}..${{ github.sha }}')
+            } else {
+              git rev-parse --verify 'HEAD^' *> $null
+              if ($LASTEXITCODE -eq 0) {
+                $changedFiles = @(git diff --name-only --diff-filter=ACDMRT 'HEAD^..HEAD')
+              } else {
+                $changedFiles = @(git diff-tree --name-only --diff-filter=ACDMRT --root --no-commit-id -r HEAD)
+              }
+            }
+            if ($LASTEXITCODE -ne 0) {
+              exit $LASTEXITCODE
+            }
+
+            $exactBuildInputs = @(
+              '.github/workflows/native-code-quality.yml',
+              '.clang-tidy',
+              'CMakeLists.txt',
+              'CMakePresets.json',
+              'conan.lock',
+              'conanfile.py',
+              'scripts/bootstrap-conan.ps1'
+            )
+            $nativeBuildRoots = @(
+              'apps/editor/',
+              'apps/sample-viewer/',
+              'cmake/',
+              'engine/',
+              'packages/',
+              'profiles/',
+              'shaders/',
+              'tools/asset-processor/'
+            )
+
+            $nativeBuildFiles = @(
+              foreach ($changedFile in $changedFiles) {
+                $path = $changedFile.Replace('\', '/')
+                if ($exactBuildInputs -contains $path) {
+                  $path
+                  continue
+                }
+
+                $isNativeBuildRoot = $false
+                foreach ($root in $nativeBuildRoots) {
+                  if ($path.StartsWith($root, [System.StringComparison]::Ordinal)) {
+                    $isNativeBuildRoot = $true
+                    break
+                  }
+                }
+                $isDocumentation = $path -match '(^|/)docs/' -or $path -match '\.(md|rst)$'
+                if ($isNativeBuildRoot -and -not $isDocumentation) {
+                  $path
+                }
+              }
+            )
+            $nativeBuildRequired = $nativeBuildFiles.Count -gt 0
+          }
+
+          $outputValue = $nativeBuildRequired.ToString().ToLowerInvariant()
+          "native_build_required=$outputValue" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+          "### Native build classification" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          "- Required: ``$outputValue``" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          if ($env:GITHUB_EVENT_NAME -eq 'workflow_dispatch') {
+            "- Reason: manual dispatch always requests a full native build." | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          } elseif ($nativeBuildRequired) {
+            "- Matched inputs:" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+            foreach ($path in $nativeBuildFiles) {
+              "  - ``$path``" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+            }
+          } else {
+            "- Reason: the change contains no native source or native build input." | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          }
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -32,35 +122,7 @@ jobs:
 
       - name: Install Python tooling
         shell: pwsh
-        run: python -m pip install "conan==2.26.2" -r tools\requirements.txt
-
-      - name: Install Vulkan SDK
-        shell: pwsh
-        run: |
-          $installer = Join-Path $env:RUNNER_TEMP 'vulkan_sdk.exe'
-          Invoke-WebRequest 'https://sdk.lunarg.com/sdk/download/1.4.313.0/windows/vulkan_sdk.exe' -OutFile $installer
-
-          $expectedHash = 'B643CA8AB4AEA5C47B9C4E021A0B33B3A13871BF1D8131E162A9E48C257C4694'
-          $actualHash = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash
-          if ($actualHash -ne $expectedHash) {
-            throw "Vulkan SDK installer hash mismatch: expected $expectedHash, got $actualHash"
-          }
-
-          $install = Start-Process -FilePath $installer -Wait -PassThru -ArgumentList '--accept-licenses','--default-answer','--confirm-command','install'
-          if ($install.ExitCode -ne 0) {
-            throw "Vulkan SDK installer failed with exit code $($install.ExitCode)"
-          }
-
-          $sdkRoot = 'C:\VulkanSDK\1.4.313.0'
-          if (-not (Test-Path -LiteralPath (Join-Path $sdkRoot 'Bin\spirv-val.exe'))) {
-            throw "Vulkan SDK installation is incomplete at $sdkRoot"
-          }
-          "VULKAN_SDK=$sdkRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          (Join-Path $sdkRoot 'Bin') | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-
-      - name: Bootstrap Conan
-        shell: pwsh
-        run: powershell -ExecutionPolicy Bypass -File scripts\bootstrap-conan.ps1
+        run: python -m pip install -r tools\requirements.txt
 
       - name: Check text encoding
         shell: pwsh
@@ -104,6 +166,53 @@ jobs:
       - name: Review non-Studio native Vulkan boundaries and safety prompts
         shell: pwsh
         run: python tools\review-vulkan-cpp.py . --exclude apps/studio --exclude apps/editor/src/native_bridge --exclude-glob "apps/editor/src/editor_shared_viewport*" --fail-on warning
+
+  build_and_test:
+    name: Build and test native code
+    needs: quality_gates
+    if: needs.quality_gates.outputs.native_build_required == 'true'
+    runs-on: windows-2022
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Python tooling
+        shell: pwsh
+        run: python -m pip install "conan==2.26.2" -r tools\requirements.txt
+
+      - name: Install Vulkan SDK
+        shell: pwsh
+        run: |
+          $installer = Join-Path $env:RUNNER_TEMP 'vulkan_sdk.exe'
+          Invoke-WebRequest 'https://sdk.lunarg.com/sdk/download/1.4.313.0/windows/vulkan_sdk.exe' -OutFile $installer
+
+          $expectedHash = 'B643CA8AB4AEA5C47B9C4E021A0B33B3A13871BF1D8131E162A9E48C257C4694'
+          $actualHash = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash
+          if ($actualHash -ne $expectedHash) {
+            throw "Vulkan SDK installer hash mismatch: expected $expectedHash, got $actualHash"
+          }
+
+          $install = Start-Process -FilePath $installer -Wait -PassThru -ArgumentList '--accept-licenses','--default-answer','--confirm-command','install'
+          if ($install.ExitCode -ne 0) {
+            throw "Vulkan SDK installer failed with exit code $($install.ExitCode)"
+          }
+
+          $sdkRoot = 'C:\VulkanSDK\1.4.313.0'
+          if (-not (Test-Path -LiteralPath (Join-Path $sdkRoot 'Bin\spirv-val.exe'))) {
+            throw "Vulkan SDK installation is incomplete at $sdkRoot"
+          }
+          "VULKAN_SDK=$sdkRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          (Join-Path $sdkRoot 'Bin') | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Bootstrap Conan
+        shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File scripts\bootstrap-conan.ps1
 
       - name: Build and test with MSVC
         shell: cmd
