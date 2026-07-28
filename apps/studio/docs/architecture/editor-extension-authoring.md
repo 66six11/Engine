@@ -405,7 +405,7 @@ Contribution descriptor 是不可变声明；运行实例由对应 Host 创建�
 
 ### 8.1 Code-first
 
-Code-first 是默认且兼容性最稳定的方式：
+Code-first 是符合冻结 standard-tool schema 的低频、小规模工具的默认方式：
 
 ```csharp
 public sealed class TerrainPanel : CodeFirstEditorPanel
@@ -427,9 +427,11 @@ public sealed class TerrainPanel : CodeFirstEditorPanel
 }
 ```
 
-`OnGui` 产生 UI-neutral node tree，由 Studio 的 Avalonia reconciler 创建和复用控件。它不是 GPU immediate renderer，也不允许访问 Avalonia visual tree。
+`OnGui` 产生 UI-neutral node tree。当前 Studio 通过 `GuiAvaloniaControlFactory` 重建并替换 content subtree，
+尚无 keyed reconciler/control reuse 保证。它不是 GPU immediate renderer，也不允许访问 Avalonia visual tree；
+文本编辑密集、高频、大列表或需要 binding/template/custom control 的面板应改用 Avalonia content backend。
 
-### 8.2 Avalonia/XAML
+### 8.2 Avalonia content：XAML 或直接代码
 
 复杂长期 UI 可以引用可选的 `Asharia.Editor.Avalonia`：
 
@@ -439,7 +441,9 @@ editor.Panels.AddAvalonia<TerrainGraphView, TerrainGraphViewModel>(
     title: "Terrain Graph");
 ```
 
-允许扩展创建 panel content `Control`、`UserControl`、templated control 和 compiled XAML。Host 仍拥有顶层 Window、Dock container、focus scope、面板生命周期和错误占位。
+允许扩展用 compiled XAML 或直接代码创建 panel content `Control`、`UserControl`、templated/custom-drawn control。
+两种写法创建同一 Avalonia runtime object graph，共用同一个 backend 与 content lease。Host 仍拥有顶层 Window、
+Dock container、focus scope、面板生命周期和错误占位。
 
 Avalonia 扩展禁止：
 

@@ -297,14 +297,19 @@ flowchart LR
 ### Public Editor Framework
 
 - `Asharia.Editor`：stable ID、snapshot、command、transaction、selection、module/contribution、service port 和 Code-first UI-neutral API；
-- `Asharia.Editor.Avalonia`：可选复杂 UI bridge，允许 panel content Control/XAML，但不暴露 Window/Dock/native ownership。
+- `Asharia.Editor.Avalonia`：可选复杂 UI bridge，允许 panel content 使用 compiled XAML 或直接代码创建同一
+  Avalonia Control graph，但不暴露 Window/Dock/native ownership。
+
+Panel、Action、Tool、Code-first/Avalonia authoring 与 Host lifecycle 的详细合同见
+[Studio 前端框架](studio-frontend-framework.md)。
 
 ### Studio Host
 
 - `Asharia.Studio.Application`：session、document、extension build/load/host、command、transaction 和 scheduling；
 - `Asharia.Studio.EngineInterop`：GPU frame lease、external resource descriptor 与 ownership narrow waist；
 - `Asharia.Studio.EngineBridge`：native loading、ABI、Engine/World/Viewport adapter；
-- `Asharia.Studio.Presentation.Avalonia`：Window、Dock、Code-first reconciler、Avalonia extension host 和 GPU import；
+- `Asharia.Studio.Presentation.Avalonia`：Window、Dock、Code-first content builder、Avalonia extension host 和 GPU import；
+  keyed Code-first reconciler 尚未实现；
 - `Asharia.Studio.App`：唯一 composition root 和 platform startup。
 
 ### Built-in dogfooding
@@ -437,7 +442,10 @@ git diff --check
 ## 12. 已知缺口
 
 - 八项目边界尚未落地；
-- 现有 Code-first contract 仍在 `Core`，built-in Feature 仍可访问 Shell implementation；
+- Code-first public contract 已迁入 `Asharia.Editor`，但 legacy `PanelDescriptor(Func<object>)`、
+  app-local `WorkbenchActionDescriptor` 和 built-in Feature 对 Shell implementation 的访问尚未收敛；
+- `Asharia.Editor.Avalonia` public content backend、generation-scoped factory resolution 与 content lease
+  尚未形成 production 闭环；
 - Project Code 当前已落地 exact Editor Image、managed build environment inventory lease 与 Windows x64
   semantic build credential、caller-bound 项目根 `Editor/**/*.cs` implicit SDK workspace，以及 credential-bound
   isolated restore/build、immutable raw output、no-execute artifact metadata report 和 closed inspected artifact
@@ -458,6 +466,8 @@ git diff --check
 ## 13. 相关文档
 
 - [Studio 代码框架设计](studio-code-framework.md)
+- [Studio 前端框架](studio-frontend-framework.md)
+- [Studio 生产工作台体验规范](studio-workbench-experience.md)
 - [Editor 扩展开发模型](editor-extension-authoring.md)
 - [Editor 扩展构建、装载与重载](editor-extension-build-and-reload.md)
 - [Avalonia/XAML Editor 扩展规范](editor-extension-avalonia.md)

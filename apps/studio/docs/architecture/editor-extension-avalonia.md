@@ -2,13 +2,27 @@
 
 状态：Target（authoring 已批准；动态加载尚未实现）
 
-更新日期：2026-07-11
+更新日期：2026-07-28
 
 ## 1. 目的
 
 本文定义 `Asharia.Editor.Avalonia` 的公共 authoring 与 Studio Avalonia backend 边界。目标是在允许 Graph、Timeline、Asset Browser、Profiler、复杂 Inspector 等 compiled XAML/custom control 的同时，保持 Window、Dock、生命周期、主题、Engine 和 native rendering ownership 归 Host。
 
 Code-first 与 Avalonia/XAML 是同一 `EditorModule` 的两种 UI backend，不是内部/第三方两套 SDK。
+两者共同的 Panel/Action/Tool、state、invalidation 和 Host lifecycle 由
+[Studio 前端框架](studio-frontend-framework.md)定义；本文只细化 Avalonia content backend。
+
+“Avalonia/XAML backend”是历史简称，不表示 XAML 与直接代码是不同 backend。Avalonia 官方明确说明 XAML
+会编译为与 C#/F# code-only UI 相同的 runtime object graph；两种写法共用 Control、property、binding、style、
+event、layout 和 dispatcher。Studio 因而只注册一个 Avalonia content backend：
+
+```text
+compiled XAML + ViewModel ─┐
+                           ├─> Avalonia content lease -> Host container
+code-only Avalonia Control ┘
+```
+
+Code-first 则是另一个 UI-neutral、受限 standard-tool schema。它不等于“直接代码写 Avalonia”。
 
 ## 2. 分层
 
@@ -86,6 +100,7 @@ ViewModel 只依赖 `Asharia.Editor` service；View 可以依赖 `Asharia.Editor
 Avalonia extension content 可以使用：
 
 - `UserControl`、Control composition 和 compiled XAML；
+- code-only Control composition；需要 binding 时优先使用 `CompiledBinding.Create`，不退回字符串 reflection path；
 - binding、DataTemplate、ItemsControl/virtualized control；
 - extension-local Styles、ResourceDictionary、ControlTheme；
 - DrawingContext/custom rendering control；
@@ -95,6 +110,19 @@ Avalonia extension content 可以使用：
 - extension-local popup/tooltip，但必须登记到 content lease 并在 detach 时关闭。
 
 允许 authoring 不代表允许 managed hot reload；reload tier 见第 9 节。
+
+Authoring 选择：
+
+| 场景 | 首选 |
+| --- | --- |
+| 长期 panel、复杂模板、设计预览、深度 binding | compiled XAML + ViewModel |
+| algorithmic composition、局部动态结构、typed code binding | code-only Avalonia |
+| reusable lookless behavior/appearance | `TemplatedControl` + scoped `ControlTheme` |
+| graph、timeline、curve 等专用密集表面 | custom-drawn `Control` |
+| 低频、小规模、稳定标准工具 schema | Code-first backend |
+
+XAML 与 code-only 可以在一个 content 内混用，不产生嵌套 backend lifecycle。Code-first panel 仍禁止嵌 raw Control；
+需要 raw Control 时，整个 panel 选择 Avalonia content backend。
 
 ## 5. Host ownership
 
@@ -278,6 +306,9 @@ Extension 不创建或导入 native GPU resource。Viewport tool/overlay 使用 
 ## 13. 参考资料
 
 - [Avalonia XAML compilation](https://docs.avaloniaui.net/docs/xaml/compilation)
+- [Avalonia code-only UI](https://docs.avaloniaui.net/docs/fundamentals/coded-ui)
+- [Avalonia compiled bindings](https://docs.avaloniaui.net/docs/data-binding/compiled-bindings)
+- [Avalonia custom control choices](https://docs.avaloniaui.net/docs/custom-controls/choosing-a-custom-control-type)
 - [Avalonia assets and avares](https://docs.avaloniaui.net/docs/fundamentals/including-assets)
 - [Avalonia styles](https://docs.avaloniaui.net/docs/styling/styles)
 - [Avalonia control themes](https://docs.avaloniaui.net/docs/styling/control-themes)

@@ -1,12 +1,19 @@
 # Code-first UI 设计
 
-状态：Partial（当前 v1 已实现；公共 Editor API 迁移未完成）
+状态：Partial（公共 UI-neutral tree、state、event、validation 与整棵 Avalonia content subtree 重建已实现；
+keyed reconcile/control reuse 尚未实现；Avalonia content backend 与统一 extension contract 仍在迁移）
 
-更新日期：2026-07-11
+更新日期：2026-07-28
 
-> 本文定义统一 Editor Extension Framework 的 Code-first UI authoring。Studio 内置功能、项目 `Editor/`、Package 和已安装插件使用同一合同。目标是让工具作者获得类似 IMGUI 的开发体验，同时让 Host 继续掌握 Dock、生命周期、主题、命令、状态、诊断和 Avalonia 控件创建。
+> 本文定义统一 Editor Extension Framework 的受限 Code-first UI authoring。Studio 内置功能、项目 `Editor/`、
+> Package 和已安装插件使用同一合同。它是低频、小规模、标准工具 schema，不是 Avalonia code-only UI 的别名，
+> 也不追求成为第二套通用 UI toolkit。Host 继续掌握 Dock、生命周期、主题、命令、状态、诊断和 Avalonia 控件创建。
 
-扩展来源、`.asmdef`、Package 和 ALC 见 [Editor 扩展开发模型](architecture/editor-extension-authoring.md)；复杂 XAML 的 content lease、资源和 reload tier 见 [Avalonia/XAML Editor 扩展规范](architecture/editor-extension-avalonia.md)。本文只定义 Code-first backend。
+前端的 Panel/Action/Tool、state、invalidation 和 Host lifecycle 总合同见
+[Studio 前端框架](architecture/studio-frontend-framework.md)；扩展来源、`.asmdef`、Package 和 ALC 见
+[Editor 扩展开发模型](architecture/editor-extension-authoring.md)；复杂 XAML/code-only Avalonia content 的
+lease、资源和 reload tier 见 [Avalonia/XAML Editor 扩展规范](architecture/editor-extension-avalonia.md)。
+本文只定义 Code-first backend。
 
 ## 1. 目标
 
@@ -21,11 +28,12 @@ Code-first UI 解决的是工具面板、调试面板和自定义 Inspector 的�
 设计目标：
 
 - 写法接近 IMGUI：工具作者在 `OnGui(EditorGui gui)` 中顺序描述 UI。
-- 底层保持 retained UI：Shell 将 UI 描述树 diff/reconcile 到 Avalonia 控件。
+- 底层使用 retained UI：当前 Shell 把每次有效 UI 描述树构造成新的 Avalonia content subtree；
+  keyed diff/reconcile 是未实现 target，不是 v1 事实。
 - 扩展不能直接创建顶层窗口、Dock 控件或全局状态。
 - UI 状态、文档状态、Dock 布局状态严格分离。
 - 持久化修改必须走命令、事务、Undo/Redo、Dirty State 和验证。
-- 第一版只覆盖小工具需要的控件，不做完整 UI Toolkit。
+- 现有 primitive 集合冻结；不再以“补齐控件”为由扩成完整 UI Toolkit。
 
 ## 2. 非目标
 
@@ -44,43 +52,49 @@ Code-first UI 解决的是工具面板、调试面板和自定义 Inspector 的�
 
 Code-first UI 不是“每帧直接画 UI”。Studio 基于 Avalonia，Avalonia 是 retained UI。真正 IMGUI 的每帧绘制模型会绕开 Avalonia 控件树、焦点、虚拟化、样式、可访问性和绑定体系。
 
-正确模型是：
+当前模型是：
 
 ```text
 Code-first panel OnGui()
     -> GuiFrameBuilder records GuiNode tree
     -> GuiTreeValidator validates keys and shape
-    -> GuiAvaloniaReconciler diffs previous tree
-    -> Avalonia controls are created, reused, updated, or detached
+    -> GuiAvaloniaControlFactory builds a new Avalonia content subtree
+    -> host replaces the previous content subtree
 ```
 
-开发者体验像 IMGUI，但引擎内部是可验证、可测试、可恢复的 retained UI。
+开发者体验像 IMGUI，但运行时仍使用 Avalonia retained controls。`GuiStateStore` 可以保留显式建模的本地状态；
+它不能替代 control identity，也不能证明 focus、IME composition、scroll 或虚拟化容器在重建后保持。
 
 ```mermaid
 flowchart LR
     Panel["CodeFirstEditorPanel.OnGui"] --> Gui["EditorGui facade"]
     Gui --> Tree["GuiTreeSnapshot"]
     Tree --> Validator["GuiTreeValidator"]
-    Validator --> Reconciler["GuiAvaloniaReconciler"]
-    Reconciler --> Controls["Avalonia controls"]
+    Validator --> Factory["GuiAvaloniaControlFactory"]
+    Factory --> Controls["New Avalonia content subtree"]
     Controls --> Input["User input"]
     Input --> Events["GuiEventQueue / GuiStateStore"]
     Events --> Host["Host.RequestRebuild"]
     Host --> Panel
 ```
 
+只有真实 consumer 与 profile 证明整棵 subtree replacement 不可接受，并且窄 keyed update 能显著降低风险时，
+才单独设计 reconciler。不能把 target 算法写成当前保证。
+
 ### 3.1 资料对照审查
 
 | 资料来源 | 可借鉴点 | 对 Studio 的约束 |
 | --- | --- | --- |
 | Unity IMGUI `EditorWindow.OnGUI` | 代码式窗口开发很快，适合内部工具和调试面板；窗口仍接入 Unity 的菜单、Dock 和布局保存。 | 借鉴 `OnGui` 书写体验，但不能让扩展绕过 Shell 创建窗口或持有 Dock。 |
-| Unity UI Toolkit `CreateGUI` | 新版编辑器 UI 更推荐 retained visual tree，并强调列表控件复用、热重载后恢复状态。 | Studio 的 `OnGui` 不直接绘制，而是生成可 diff 的树；列表必须预留虚拟化和状态恢复。 |
+| Unity UI Toolkit `CreateGUI` | 新版编辑器 UI 使用 retained visual tree；UXML 与 C# 都创建同一 `VisualElement` tree。 | Studio 的 XAML 与 code-only Avalonia 归入同一 content backend；这不要求 Code-first 自建通用 virtual tree。 |
 | Dear ImGui | API 目标是减少 UI 状态同步，适合工具、调试器、Profiler 和短生命周期面板。 | 只借鉴“顺序写 UI、事件返回值简单”的 ergonomics，不采用它的渲染后端、Dock 或字体/输入体系。 |
 | Avalonia XAML / MVVM / compiled bindings | Avalonia 的强项是 retained 控件树、样式、绑定、模板和可测试 ViewModel。 | 复杂长期面板仍优先 XAML + ViewModel；Code-first 只产出 UI-neutral 节点，由 Shell adapter 创建 Avalonia 控件。 |
 | Godot `EditorPlugin` / `EditorInspectorPlugin` | 插件按显式贡献点加入 Dock、菜单、Inspector，并要求停用时移除注册。 | Studio 扩展必须有贡献登记、生命周期清理和失败隔离，不能留下隐式全局注册。 |
 | Unreal Slate commands / DetailsView | 命令集、Details/Property 视图和过滤/收藏/可访问性是编辑器 UI 基础设施。 | Code-first 按钮走 command router；持久属性编辑走 property handle/transaction，不直接写模型。 |
 
-审查结论：当前文档的大方向正确，但需要进一步补足 rebuild 触发、事件消费边界、布局管理、控件所有权、属性编辑事务和不可选方案，避免实现时滑向“另一个 UI 框架”。
+审查结论：Panel/command/lifecycle 方向正确，但 v1 已经覆盖较多 primitive，且当前没有 keyed reconcile。
+因此先冻结 surface、公开真实重建语义，并把文本编辑密集、高频、大列表、复杂 binding/template 与 custom control
+留给 Avalonia content backend；不能继续用 target 能力为新增 node kind 辩护。
 
 ### 3.2 补充设计决策
 
@@ -95,6 +109,8 @@ flowchart LR
 | CFUI-D-007 | 持久数据修改只能走 command 或后续 `EditorPropertyHandle`。 | 保证 Undo/Redo、Dirty State、验证、保存失败处理一致。 |
 | CFUI-D-008 | 样式、主题、字体、间距、错误颜色和 focus visual 全由 Host 样式层提供。 | 所有来源的工具都必须看起来像同一个编辑器，且可支持暗色/高 DPI/可访问性。 |
 | CFUI-D-009 | 后端数据只以 immutable snapshot 或查询服务进入面板；`OnGui` 不等待 GPU、IO 或编译。 | 避免 UI 线程和 render loop 互相阻塞。 |
+| CFUI-D-010 | 冻结现有 node kind；新增 primitive 需要两个真实 consumer，或证明 Avalonia content 更复杂。 | 阻止 Code-first 复制控件、布局、样式和 binding 系统。 |
+| CFUI-D-011 | 当前 full-subtree replacement 是公开限制；keyed reconcile 必须作为独立、可测 Slice。 | 保持文档与代码一致，避免虚假的 focus/IME/virtualization 保证。 |
 
 ## 4. 架构分层
 
@@ -117,8 +133,8 @@ Shell
     GuiTreeValidator
     GuiStateStore
     GuiEventQueue
-    GuiAvaloniaReconciler
-    GuiControlAdapter
+    GuiAvaloniaControlFactory
+    GuiAvaloniaReconciler (target only, not implemented)
 
 UI
   Reusable visual controls:
@@ -274,7 +290,7 @@ public sealed class FrameDebuggerPanel : CodeFirstEditorPanel
 - `OnGui` 不能阻塞 UI 线程。
 - `OnGui` 不能直接保存项目文件。
 - `OnGui` 不能直接创建 Avalonia 控件。
-- 大列表必须走 `List` / `VirtualList`，不能生成几千个普通子节点。
+- `List` 只表达单层、结构简单的集合；高频更新、复杂 item template 或超大数据集使用 Avalonia content backend。
 
 ## 7. 内部数据模型
 
@@ -285,64 +301,52 @@ public sealed record GuiNode(
     GuiNodeId Id,
     GuiNodeKind Kind,
     string? Label,
-    GuiValue Value,
-    GuiLayoutHints Layout,
+    GuiNodePayload Payload,
     IReadOnlyList<GuiNode> Children);
 ```
 
-`GuiNodeId` 应包含：
+当前 `GuiNodeId` 包含：
 
 ```text
 PanelId
-FullKeyPath
+KeyPath
 Kind
-Version
 ```
 
-`FullKeyPath` 示例：
+`FullKeyPath` 是由 `PanelId` 和 `KeyPath` 计算出的诊断/定位字符串。示例：
 
 ```text
 render.frameDebugger/main/pass-list/passes
 render.frameDebugger/main/details/name
 ```
 
-`GuiNodeKind` 第一版建议：
+当前 `GuiNodeKind` 是实现事实，按用途可分为：
 
 ```text
-Root
-Vertical
-Horizontal
-Toolbar
-Panel
-Split
-Scroll
-Foldout
-Label
-Button
-Toggle
-TextField
-List
-Property
-ValidationMessage
+structure: Root, Vertical, Horizontal, Toolbar, Panel, Split, NavigationView, Scroll, Foldout
+display: Label, Separator, ProgressBar, ValidationMessage
+command/input: Button, Toggle, ComboBox, RadioGroup, ColorField,
+               Vector2Field, Vector3Field, Vector4Field, Slider,
+               NumberInput, TextField
+data: List, Property
 ```
 
-### 7.2 GuiValue
+这不是下一轮扩展清单。现有集合冻结；新增 kind 受 CFUI-D-010 约束。
 
-`GuiValue` 是 UI-neutral 值容器。第一版只支持有限类型：
+### 7.2 GuiNodePayload
+
+`GuiNodePayload` 是受限的 UI-neutral record，只包含现有节点需要的 typed fields，例如：
 
 ```text
-None
-String
-Boolean
-Integer
-Double
-EnumName
-CommandId
-ListItems
-Severity
+TextValue / PropertyValue / IsChecked / IsExpanded
+NumericValue / NumericMinimum / NumericMaximum
+ColorValue / Vector2Value / Vector3Value / Vector4Value
+ListItems / SelectedItemId
+SplitDirection / SplitRatio
+DiagnosticSeverity
 ```
 
-不要第一版就放任意 `object`，否则验证、序列化、测试和诊断都会变弱。
+不要加入任意 `object`。新增 field 必须由现有 node kind 和真实 consumer 驱动，否则应选择 Avalonia content backend。
 
 ### 7.3 List item
 
@@ -369,8 +373,8 @@ public sealed record GuiListItem(
 3. Panel.OnGui(gui) records nodes.
 4. Builder returns GuiTreeSnapshot.
 5. Validator checks keys, nesting, values, and unsupported nodes.
-6. Reconciler diffs previous tree and current tree.
-7. Avalonia controls update.
+6. GuiAvaloniaControlFactory builds a new content subtree.
+7. Host replaces the previous content subtree.
 8. Consumed input events are cleared.
 9. Diagnostics are published if needed.
 ```
@@ -394,7 +398,8 @@ public void Rebuild()
             return;
         }
 
-        reconciler.Apply(previousTree, nextTree);
+        var nextContent = controlFactory.Build(nextTree);
+        host.ReplaceContent(nextContent);
         previousTree = nextTree;
         eventQueue.ConsumeFrameEvents();
     }
@@ -426,7 +431,7 @@ ExplicitRefresh
 
 - 同一 UI dispatcher tick 内的多次 `RequestRebuild` 合并为一次。
 - `InputEvent` 优先级高于 `FrameTick`，文本输入不能被帧刷新饿死。
-- `ThemeChanged` 和 `LifecycleChanged` 可以强制 full reconcile。
+- `ThemeChanged` 和 `LifecycleChanged` 触发 full rebuild。
 - `DataSnapshotChanged` 只携带 snapshot version，不在 UI 线程拉取后端数据。
 - `FrameTick` 只有 panel 声明需要帧更新时才触发；普通工具面板不随 viewport 每帧重建。
 
@@ -442,10 +447,10 @@ Phase A: build
   validate snapshot
 
 Phase B: apply
-  reconcile controls
+  build and replace content subtree
   publish diagnostics
   clear consumed one-shot events
-  keep unconsumed state such as text/focus/scroll
+  keep explicitly modeled state such as text/selection/split
 ```
 
 如果 Phase A 失败，Phase B 不应清空上一帧可用 UI。Shell 应显示错误 overlay 或 placeholder，同时保留可恢复路径。
@@ -540,7 +545,7 @@ state store value
     > default value
 ```
 
-这让输入框可以保持焦点和未提交文本。
+这让 state store 可以保留最新文本值；当前 subtree replacement 不保证保持原 control、focus 或 IME composition。
 
 ### 10.3 Toggle
 
@@ -612,12 +617,12 @@ Code-first UI 不写这些状态。
 filter text
 selected pass id
 foldout expanded
-scroll offset
 split ratio inside panel
 last selected detail tab
 ```
 
 这些是编辑器用户状态，不是项目数据。可选地保存到用户设置，不写入可发布资产。
+当前 `GuiStateStore` 不保存原生 control identity、focus、IME composition 或 scroll offset。
 
 ### 11.3 Persistent document state
 
@@ -638,7 +643,7 @@ project render setting
 | 状态 | Owner | 保存位置 | 何时清理 |
 | --- | --- | --- | --- |
 | Dock 布局、tab 顺序、浮动窗口尺寸 | Shell dock system | 用户布局设置 | 布局 reset 或面板贡献移除 |
-| TextField 未提交文本、split ratio、foldout、scroll offset | `GuiStateStore` | 可选用户设置 | panel 销毁或 key/kind 改变 |
+| TextField 文本、split ratio、foldout、list/navigation selection | `GuiStateStore` | 可选用户设置 | panel 销毁或 key/kind 改变 |
 | 面板业务选择，如 selected pass id | panel model 或 `GuiStateStore` | 通常不写项目 | snapshot 失效或面板关闭 |
 | 编辑器全局选择 | selection service | 编辑器会话状态 | 用户选择变化或项目关闭 |
 | 场景、材质、导入设置 | document / asset model | 项目文件或资产数据库 | command undo、revert 或关闭项目 |
@@ -709,11 +714,12 @@ using (gui.Scroll("details-scroll"))
 }
 ```
 
-大列表必须用 `List` / `VirtualList`。
+`Scroll` 不能承载大列表。当前 `List` 映射为使用 `VirtualizingStackPanel` 的 `ListBox`，
+但每次有效 tree 更新仍会重建整个 content subtree。
 
-### 12.5 List / VirtualList
+### 12.5 List
 
-第一版可以只有 `List`，但内部实现必须预留虚拟化：
+当前 `List` 用于单层、结构简单且更新频率受控的集合：
 
 ```csharp
 selectedPassId = gui.List(
@@ -722,7 +728,8 @@ selectedPassId = gui.List(
     selectedPassId);
 ```
 
-映射到 Avalonia 应优先使用支持虚拟化的 items control 策略。不能为几千个 pass 或资源创建几千个复杂控件。
+现有 adapter 已使用虚拟化 items panel。虚拟化不能抵消整棵 content subtree replacement：
+高频更新、复杂 item template、层级树或超大数据集直接使用 Avalonia content backend，不新增一个平行的 `VirtualList` kind。
 
 ### 12.6 布局管理原则
 
@@ -793,7 +800,7 @@ Shell adapter 负责：
 - 使用编辑器统一主题资源。
 - 为按钮、输入、列表和命令提供可见 focus state。
 - 保持 tab order 与代码声明顺序一致。
-- 在 rebuild 后按 key 恢复焦点、selection 和 scroll。
+- 当前恢复显式建模的 text、selection、split/foldout state；focus、IME 和原生 scroll identity 属于 target regression。
 - 为命令按钮提供 tooltip 和快捷键提示。
 - 避免 validation message 出现/消失导致主要控件跳动。
 
@@ -948,9 +955,16 @@ close tab -> OnDisable, OnDestroy
 reopen    -> new panel instance
 ```
 
-## 15. Reconcile 算法
+## 15. Target：keyed reconcile 算法（未实现）
 
-`GuiAvaloniaReconciler` 输入：
+本节只记录未来可能的优化方向，不是当前 contract 或验收保证。进入实现前必须先提供：
+
+- 一个真实 panel 的 rebuild/profile 数据；
+- focus、IME composition、scroll、selection 和 virtualization regression；
+- 证明直接使用 Avalonia content backend 不是更简单的选择；
+- 独立 Issue/PR 与可回退的最小 node subset。
+
+满足这些进入条件后，`GuiAvaloniaReconciler` 的输入才考虑为：
 
 ```text
 previous GuiTreeSnapshot
@@ -1000,9 +1014,10 @@ insert new nodes at requested index
 - 不丢失 scroll offset，除非节点 key 变化。
 - 不让异常破坏上一帧可用 UI。
 
-### 15.1 控件所有权和 adapter 边界
+### 15.1 Target 控件 adapter 边界
 
-`GuiControlAdapter` 是唯一能接触 Avalonia 控件的层。每种 node kind 对应一个 adapter：
+当前实现由单个 `GuiAvaloniaControlFactory` 创建 subtree。只有 reconciler Slice 获批后，才考虑把每种 node kind
+拆成能创建、更新和释放控件的 adapter：
 
 ```text
 LabelAdapter
@@ -1077,7 +1092,7 @@ renderer diagnostics thread
 
 Code-first UI 容易被误用为“每次生成大量节点”。必须约束：
 
-- 大列表必须走 `List` / `VirtualList`。
+- `List` 只用于单层、简单、更新频率受控的数据；更复杂或更大的集合使用 Avalonia content backend。
 - `OnGui` 不做搜索、排序、文件 IO、shader 编译、GPU 查询。
 - `OnGui` 只读取已经准备好的 snapshot。
 - 高频 rebuild 要 debounce 或 coalesce。
@@ -1089,7 +1104,7 @@ Code-first UI 容易被误用为“每次生成大量节点”。必须约束：
 
 ```text
 last build time
-last reconcile time
+last build/replace time
 node count
 control count
 event count
@@ -1120,63 +1135,47 @@ Code-first panel 禁止：
 - 持有本地 UI 状态。
 - 订阅受控事件，并在 `OnDestroy` 释放。
 
-## 20. API 版本和兼容
+## 20. API 兼容
 
-Code-first UI 应有 schema version：
+当前 Code-first panel 与 Host 同属 `Asharia.Editor` compatibility band，不另设 `GuiApiVersion`。
+Package/extension 兼容由现有 assembly/API/capability 检查负责；不为尚不存在的并行 schema 维护第二套版本系统。
 
-```csharp
-public readonly record struct GuiApiVersion(int Major, int Minor);
-```
+只有出现两个必须同时运行、且 node 语义不能由 capability 明确表达的 Host/API band 时，
+才为 version negotiation 建立独立 Slice、迁移规则和兼容 fixture。
 
-面板可声明最低版本：
+## 21. 当前文件布局
 
-```csharp
-public override GuiApiVersion RequiredGuiApiVersion => new(1, 0);
-```
-
-版本策略：
-
-- 新增控件：minor 增加。
-- 改变控件语义：major 增加。
-- 删除控件：只允许 major。
-- Shell 对不支持版本显示诊断，不加载面板内容。
-
-## 21. 文件和命名建议
-
-建议目录：
+UI-neutral contract：
 
 ```text
-Core/CodeFirstUI/Abstractions/CodeFirstEditorPanel.cs
-Core/CodeFirstUI/Abstractions/IEditorGui.cs
-Core/CodeFirstUI/Models/GuiNode.cs
-Core/CodeFirstUI/Models/GuiNodeKind.cs
-Core/CodeFirstUI/Models/GuiTreeSnapshot.cs
-Core/CodeFirstUI/Models/GuiListItem.cs
-Core/CodeFirstUI/Building/GuiFrameBuilder.cs
-Core/CodeFirstUI/Events/GuiEventQueue.cs
-Core/CodeFirstUI/State/GuiStateStore.cs
-Core/CodeFirstUI/Validation/GuiTreeValidator.cs
-Core/CodeFirstUI/Validation/GuiTreeValidation*.cs
-
-Shell/CodeFirstUI/Hosting/CodeFirstPanelHostViewModel.cs
-Shell/CodeFirstUI/Authoring/EditorGui.cs
-Shell/CodeFirstUI/Reconciliation/GuiAvaloniaReconciler.cs
-Shell/CodeFirstUI/Adapters/*.cs
-
-Shell/Views/CodeFirstPanelHostView.axaml
-Shell/Views/CodeFirstPanelHostView.axaml.cs
-
-Tests/Editor.Tests/Core/CodeFirstUI/Building/*.cs
-Tests/Editor.Tests/Core/CodeFirstUI/Events/*.cs
-Tests/Editor.Tests/Core/CodeFirstUI/State/*.cs
-Tests/Editor.Tests/Core/CodeFirstUI/Validation/*.cs
+apps/studio/src/Asharia.Editor/UI/CodeFirst/Abstractions/*.cs
+apps/studio/src/Asharia.Editor/UI/CodeFirst/Authoring/EditorGui.cs
+apps/studio/src/Asharia.Editor/UI/CodeFirst/Building/GuiFrameBuilder.cs
+apps/studio/src/Asharia.Editor/UI/CodeFirst/Events/GuiEventQueue.cs
+apps/studio/src/Asharia.Editor/UI/CodeFirst/Models/*.cs
+apps/studio/src/Asharia.Editor/UI/CodeFirst/State/GuiStateStore.cs
+apps/studio/src/Asharia.Editor/UI/CodeFirst/Validation/*.cs
 ```
 
-如果后续发现 `Core` 放 UI contract 太重，可以拆到独立 `Editor.Core.EditorUi` 命名空间，但仍不能引用 Avalonia。
+Avalonia host：
 
-## 22. MVP 切片
+```text
+apps/studio/Shell/CodeFirstUI/Hosting/CodeFirstPanelHostViewModel.cs
+apps/studio/Shell/CodeFirstUI/Adapters/*.cs
+apps/studio/Shell/CodeFirstUI/Views/CodeFirstPanelHostView.axaml
+apps/studio/Shell/CodeFirstUI/Views/CodeFirstPanelHostView.axaml.cs
+```
 
-### Slice 1: UI-neutral contract
+测试按 owner 分开：
+
+```text
+apps/studio/Tests/Asharia.Editor.Tests/UI/CodeFirst/**
+apps/studio/Tests/Editor.Tests/Shell/CodeFirstUI/**
+```
+
+## 22. 实现记录与后续切片
+
+### Slice 1: UI-neutral contract（Delivered）
 
 交付：
 
@@ -1191,9 +1190,10 @@ Tests/Editor.Tests/Core/CodeFirstUI/Validation/*.cs
 - 构建 Label/Button/TextField/List 节点。
 - 同级 duplicate key 报错。
 - 嵌套 path 正确。
-- unsupported value type 报错。
+- virtualized list 放进 `Scroll` 时验证失败。
+- duplicate navigation route 报错。
 
-### Slice 2: Host and lifecycle
+### Slice 2: Host and lifecycle（Delivered）
 
 交付：
 
@@ -1208,7 +1208,7 @@ Tests/Editor.Tests/Core/CodeFirstUI/Validation/*.cs
 - `RecreateOnOpen` close 后销毁。
 - active frame update 只在 active 时调用。
 
-### Slice 3: Avalonia renderer MVP
+### Slice 3: Avalonia control adapter（Delivered）
 
 交付：
 
@@ -1220,11 +1220,11 @@ Tests/Editor.Tests/Core/CodeFirstUI/Validation/*.cs
 测试：
 
 - button click 在下一次 `OnGui` 返回 true 一次。
-- TextField 输入不丢焦点。
-- 同 key 同 kind 复用控件。
-- 同 key 不同 kind 替换控件。
+- TextField committed value 可由 state store 恢复。
+- tree 更新会替换 content subtree；测试不宣称同 key control reuse。
+- key/kind 改变时清理不兼容的显式 state/event。
 
-### Slice 4: Frame Debugger sample panel
+### Slice 4: Frame Debugger sample panel（Delivered）
 
 交付：
 
@@ -1242,14 +1242,17 @@ Tests/Editor.Tests/Core/CodeFirstUI/Validation/*.cs
 - capture command 走 command router。
 - 后端 snapshot 缺失时显示 unavailable。
 
-### Slice 5: Diagnostics and performance guard
+### Slice 5: Diagnostics and performance guard（Partial）
 
 交付：
 
 - `OnGui` exception placeholder。
 - validation diagnostics。
-- node count / reconcile time debug record。
+- node count / build/replace time debug record。
 - large list warning。
+
+当前已有 validation failure 和 Host error placeholder；node/build-replace telemetry 与基于数据量的 warning
+尚未完成，不应视为 v1 已有保证。
 
 测试：
 
@@ -1257,17 +1260,15 @@ Tests/Editor.Tests/Core/CodeFirstUI/Validation/*.cs
 - duplicate key 显示诊断。
 - invalid nesting 显示诊断。
 
-### Slice 6: Contract tests and UI adapter tests
+### Slice 6: Target keyed update evidence（Deferred）
 
-交付：
+进入条件：
 
-- builder contract tests。
-- event queue one-shot tests。
-- state store clear/reuse tests。
-- reconciler control reuse tests。
-- focus and text editing preservation tests。
+- 一个真实 consumer 的 build/replace profile。
+- focus、IME、scroll、selection 和 virtualization regression fixture。
+- 证明迁移到 Avalonia content backend 更复杂。
 
-测试：
+若进入，最低测试：
 
 - 同 key 同 kind rebuild 后 adapter 不重建控件。
 - TextField 正在输入时，外部 snapshot 刷新不覆盖未提交文本。
@@ -1277,13 +1278,16 @@ Tests/Editor.Tests/Core/CodeFirstUI/Validation/*.cs
 
 ### v1 implementation status
 
-The current v1 implementation is still a built-in Studio-only vertical slice. It covers the UI-neutral node contract, state store, event queue, validation, Shell-owned Avalonia control creation, lifecycle host, and the `Features/UiStyle` sample panel. The target contract is no longer built-in-only: the same API moves to `Asharia.Editor` and is used by project and Package extensions.
+当前 v1 已迁移到公共 `Asharia.Editor` contract，覆盖 UI-neutral node、state store、event queue、validation、
+Shell-owned Avalonia control creation、lifecycle host 与示例 panel。它在 tree 更新时重建并替换整棵 content subtree，
+没有 `GuiAvaloniaReconciler`、keyed control reuse 或 focus/IME preservation 保证。
 
-Backend/native/runtime integration is intentionally outside v1. Runtime data must first enter Studio as Core snapshots, diagnostics, provider status, or command results before a Code-first panel consumes it.
+Backend/native/runtime integration 仍在 v1 范围外。Runtime data 必须先作为 snapshot、diagnostic、provider status
+或 command result 进入 Studio；Code-first panel 不能直接读取 native/runtime owner。
 
 ## 23. 验收标准
 
-当前 v1 和公共 API 迁移完成后的最低标准：
+当前 v1 的最低标准：
 
 - built-in、project 和 Package module 可通过同一 API 注册 Code-first panel。
 - 面板可停靠、关闭、重开、浮动。
@@ -1291,9 +1295,9 @@ Backend/native/runtime integration is intentionally outside v1. Runtime data mus
 - `OnGui` 可声明 Label、Button、TextField、Toggle、Toolbar、List。
 - 控件使用稳定 key。
 - Button 事件一次性消费。
-- TextField 输入保持焦点和文本。
+- TextField committed value 通过 state store 可恢复；跨 subtree replacement 的 focus/IME 保持不作当前保证。
 - List 选择使用 item id。
-- Split ratio、scroll、foldout 等局部状态按 key 保留。
+- TextField 文本、list selection、split ratio 和 foldout 等显式局部状态按 key 保留。
 - 多个 rebuild request 可以合并，普通面板不会随 viewport 每帧重建。
 - 命令执行走现有 command router。
 - `OnGui` 异常不会杀死主窗口。
@@ -1304,7 +1308,8 @@ Backend/native/runtime integration is intentionally outside v1. Runtime data mus
 
 ## 24. 与 XAML UI 的关系
 
-Code-first UI 和 Avalonia/XAML 是同一 Editor Extension Framework 的两种 authoring backend，不是两套 module、contribution 或 panel lifecycle。
+Code-first UI 与 Avalonia content 是同一 Editor Extension Framework 的两个 backend，不是两套 module、contribution
+或 panel lifecycle。Avalonia content 内部的 compiled XAML 与直接代码只是两种 authoring syntax，共用同一控件运行时。
 
 ```text
 XAML + ViewModel
@@ -1323,7 +1328,8 @@ Code-first UI
 建议分工：
 
 - 复杂长期面板：`Asharia.Editor.Avalonia` + compiled XAML/ViewModel。
-- 调试工具、小型 Inspector 和标准表单：Code-first UI。
+- 低频、小规模、标准调试工具：Code-first UI。
+- algorithmic composition 但需要 retained identity/typed binding：code-only Avalonia。
 - 同一 extension 可以贡献不同 backend 的不同 panel；单个 panel 选择一个 backend。
 
 选择准则：
@@ -1331,7 +1337,8 @@ Code-first UI
 | 场景 | 首选方式 |
 | --- | --- |
 | 需要复杂视觉层级、模板、动画、深度数据绑定 | XAML + ViewModel |
-| 需要快速调试/项目工具面板、过滤、列表、按钮、只读详情 | Code-first UI |
+| 需要 algorithmic composition、typed binding、稳定 control identity | code-only Avalonia |
+| 需要低频、小规模、标准过滤/按钮/只读详情 | Code-first UI |
 | 需要通用 Inspector 属性编辑 | 先实现 property handle，再由 XAML 或 Code-first 调用 |
 | 项目或 Package 需要标准工具 UI | Code-first，与 built-in 使用同一 API |
 | 项目或 Package 需要复杂 XAML/custom control | `Asharia.Editor.Avalonia`，受更严格 UI backend version band 约束 |
@@ -1341,7 +1348,8 @@ Code-first UI
 
 | Risk | Impact | Mitigation |
 | --- | --- | --- |
-| 变成完整 UI Toolkit | 范围失控，重复 Avalonia | MVP 只做调试面板需要的少量控件。 |
+| 变成完整 UI Toolkit | 范围失控，重复 Avalonia | 冻结现有 node kind；新增 primitive 需要两个 consumer 或明确反证。 |
+| 把 target reconcile 当作当前事实 | 焦点、IME、大列表和性能保证失真 | 明确 full-subtree replacement；独立 Slice 才能新增 keyed guarantee。 |
 | key 不稳定 | 焦点、滚动、选择丢失 | 强制交互控件显式 key，验证 duplicate key。 |
 | OnGui 做重活 | UI 卡顿 | 文档和测试要求 OnGui 只读 snapshot，不做 IO/GPU/query。 |
 | 持久数据绕过命令 | Undo/Dirty State 失效 | 第一版不提供直接文档写入 API，后续用 property handle。 |
@@ -1352,7 +1360,7 @@ Code-first UI
 
 | 方案 | 拒绝原因 |
 | --- | --- |
-| Code-first panel 直接返回 Avalonia `Control` | 会破坏 UI-neutral node/reconcile contract；复杂 UI 应显式使用 `Asharia.Editor.Avalonia` backend。 |
+| Code-first panel 直接返回 Avalonia `Control` | 会破坏 UI-neutral schema contract；需要 raw control 时应显式使用 Avalonia content backend。 |
 | Avalonia extension 自行创建顶层 `Window` 或修改 Dock | 会夺走 Host 的 layout、focus、lifecycle、restore 和 platform ownership。 |
 | 直接嵌入 Dear ImGui 作为编辑器 UI 层 | 会形成第二套输入、字体、Dock、主题、可访问性和渲染管线，不适合当前 Avalonia Shell。 |
 | 把 compiled XAML/ALC 当作安全沙箱 | 进程内 extension 仍是受信任代码；不可信扩展需要 OS process boundary。 |
@@ -1360,41 +1368,50 @@ Code-first UI
 | 让 `OnGui` 直接修改项目模型 | 会绕过命令、Undo/Redo、Dirty State 和验证。 |
 | 每帧无条件 rebuild 所有 Code-first 面板 | 简单但性能不可控，尤其会影响渲染调试和大列表。 |
 
-## 27. 仍需决策
+## 27. 决策记录与未决项
 
-| ID | 问题 | 建议默认值 |
-| --- | --- | --- |
-| CFUI-Q-001 | UI-neutral contract 放在哪里？ | 已决策：目标为公共 `Asharia.Editor/UI/CodeFirst`；当前 `Core` 只是迁移位置。 |
-| CFUI-Q-002 | panel local UI state 是否跨会话保存？ | MVP 只保存在实例生命周期内；split ratio 和 filter 可后续接用户设置。 |
-| CFUI-Q-003 | 第一个试点面板是谁？ | Frame Debugger，因为它最能验证后端 snapshot、列表、详情、命令和诊断。 |
-| CFUI-Q-004 | 是否第一版支持自定义 Inspector？ | 只支持只读/调试型 Inspector；可写属性等 property handle 成熟后再开。 |
-| CFUI-Q-005 | 是否暴露 icon、menu、shortcut API？ | command contribution 已有后再由 `CommandButton` 读取，不让 panel 自己定义全局快捷键。 |
-| CFUI-Q-006 | 是否允许扩展使用 XAML 和 Code-first 混合？ | 已决策：所有来源均允许；同一扩展可贡献不同 backend 的 panel，单个 panel 选择一种 backend。 |
+| ID | 状态 | 问题 | 结论或当前默认 |
+| --- | --- | --- | --- |
+| CFUI-Q-001 | Decided | UI-neutral contract 放在哪里？ | 当前已位于公共 `Asharia.Editor/UI/CodeFirst`。 |
+| CFUI-Q-002 | Deferred | panel local UI state 是否跨会话保存？ | 只保存在实例生命周期内；真实用户需求出现后再为选定字段建立 user-setting schema。 |
+| CFUI-Q-003 | Delivered | 第一个试点面板是谁？ | Frame Debugger 已验证 snapshot、列表、详情、命令和诊断路径。 |
+| CFUI-Q-004 | Deferred | 是否支持自定义 Inspector？ | 只支持只读/调试型 Inspector；可写属性等 property handle 成熟后再开。 |
+| CFUI-Q-005 | Deferred | 是否暴露 icon、menu、shortcut API？ | 统一 action contribution 完成后由 action placement 提供；panel 不定义全局快捷键。 |
+| CFUI-Q-006 | Decided | 是否允许扩展使用 XAML 和 Code-first？ | 同一扩展可贡献不同 backend 的 panel；单个 panel 选择一种 backend。XAML 与 code-only Avalonia 可在同一 Avalonia content 内混用。 |
 
 ## 28. 参考资料
 
 - Unity Editor Windows：`https://docs.unity3d.com/Manual/editor-EditorWindows.html`
 - Unity UI Toolkit custom Editor window：`https://docs.unity3d.com/Manual/UIE-HowTo-CreateEditorWindow.html`
+- Unity UI Toolkit retained-mode architecture：`https://docs.unity3d.com/6000.0/Documentation/Manual/ui-systems/introduction-ui-toolkit.html`
 - Dear ImGui README：`https://github.com/ocornut/imgui`
-- Avalonia compiled bindings：`https://docs.avaloniaui.net/docs/xaml/compilation`
+- Avalonia code-only UI：`https://docs.avaloniaui.net/docs/fundamentals/coded-ui`
+- Avalonia compiled bindings：`https://docs.avaloniaui.net/docs/data-binding/compiled-bindings`
 - Godot EditorPlugin：`https://docs.godotengine.org/en/stable/classes/class_editorplugin.html`
 - Godot EditorInspectorPlugin：`https://docs.godotengine.org/en/stable/classes/class_editorinspectorplugin.html`
 - Unreal Slate Overview：`https://dev.epicgames.com/documentation/unreal-engine/slate-overview-for-unreal-engine`
 - Unreal command framework：`https://dev.epicgames.com/documentation/unreal-engine/API/Runtime/Slate/Framework/Commands`
 - Unreal DetailsView：`https://dev.epicgames.com/documentation/unreal-engine/API/Editor/PropertyEditor/IDetailsView`
+- O3DE Action Manager source：`https://github.com/o3de/o3de/tree/development/Code/Framework/AzToolsFramework/AzToolsFramework/ActionManager`
+- Godot editor source：`https://github.com/godotengine/godot/tree/master/editor`
+- Avalonia 12.0.4 source：`https://github.com/AvaloniaUI/Avalonia/tree/12.0.4`
 
 ## 29. 设计结论
 
-Code-first UI 是统一 Editor Framework 的默认、UI-neutral authoring backend：
+Code-first UI 是统一 Editor Framework 中受限、UI-neutral 的标准工具 authoring backend：
 
 ```text
 IMGUI-like authoring API
-retained UI implementation
+Avalonia retained-control implementation
+current full-subtree replacement
 Host-owned lifecycle
 command-owned mutations
 public Asharia.Editor contract
 Avalonia Presentation adapter
-Frame Debugger first MVP
+small, low-frequency standard tools
 ```
 
-它不是 XAML 的替代品，也不再限定为内部工具。Built-in、项目 `Editor/` 和 Package extension 都可以使用。复杂产品级 UI 通过同一 module/contribution/lifecycle 使用 `Asharia.Editor.Avalonia` + compiled XAML/ViewModel。
+它不是 XAML 或 code-only Avalonia 的替代品，也不再限定为内部工具。Built-in、项目 `Editor/` 和 Package extension
+都可以使用，但只有符合稳定 primitive、低频 rebuild 和小规模 tree 的 panel 才应选择它。复杂、文本编辑密集、
+高频、大列表或需要 binding/template/custom control 的 UI，通过同一 module/contribution/lifecycle 使用
+Avalonia content backend；XAML 与直接代码只是该 backend 的两种 authoring syntax。

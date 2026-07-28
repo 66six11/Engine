@@ -2,7 +2,7 @@
 
 状态：Current
 
-更新日期：2026-07-13
+更新日期：2026-07-28
 
 本目录是 `apps/studio` 的正式框架技术文档入口。目标读者是修改 Studio 框架、编辑器功能、native bridge、Viewport、Play Mode 或扩展系统的开发者。
 
@@ -36,6 +36,8 @@ Studio 文档分为三类，不能混用：
 ## 架构文档
 
 - [Studio 架构总览](studio-overview.md)：目标分层、依赖方向、所有权和迁移边界。
+- [Studio 前端框架](studio-frontend-framework.md)：Panel/Action/Tool contribution、Code-first/Avalonia backend、state、invalidation 与 lifecycle。
+- [Studio 生产工作台体验规范](studio-workbench-experience.md)：默认信息架构、selection/focus/state、反馈层级和首批前端实现切片。
 - [Studio 代码框架设计](studio-code-framework.md)：solution/project、目录、命名空间、关键接口、测试和迁移映射。
 - [Editor 扩展开发模型](editor-extension-authoring.md)：项目 `Editor/`、`.asmdef`、Package、Code-first/Avalonia、构建和重载。
 - [Editor 扩展构建、装载与重载](editor-extension-build-and-reload.md)：generated project、Package lock、ALC、generation 与 last-known-good。

@@ -6,6 +6,11 @@
 
 构建、加载、generation replacement 和 last-known-good 的独立决策见 [ADR-0005](0005-managed-editor-module-build-and-reload.md)。
 
+2026-07-28 澄清：第 6 条的“Code-first 默认”只指符合冻结 standard-tool schema 的低频、小规模工具；
+它不表示 Code-first 要追求 Avalonia 能力对等。compiled XAML 与 code-only Avalonia 是同一 Avalonia content
+backend 的两种 authoring syntax，不是两个 backend。当前 Code-first v1 使用 full-subtree replacement；
+keyed reconcile/control reuse 尚未实现，也不构成 Accepted decision 的前提。
+
 取代：[ADR-0003：用六个项目建立 Studio 编译期边界](0003-studio-project-boundaries.md) 中的目标项目清单；ADR-0003 关于使用编译期边界而不是单项目目录约定的判断仍然成立。
 
 ## Context
@@ -32,7 +37,9 @@ Studio 已有 built-in `IEditorExtensionModule`、typed contribution registry �
 3. Module scope 与 source 正交，显式分为 Application/Project；BuiltIn module 不自动获得 application-global lifetime；
 4. Shell、Dock、platform Window、EngineHost 和 EngineBridge 是 host infrastructure，不属于普通 extension；
 5. built-in Feature 放入 `Asharia.Studio.BuiltInExtensions`，该项目只引用公共 `Asharia.Editor` 和可选 `Asharia.Editor.Avalonia`；
-6. Code-first 是默认 UI-neutral authoring；复杂 UI 可使用同一框架的可选 Avalonia/XAML bridge；
+6. Code-first 是低频、小规模 standard-tool 的默认 UI-neutral authoring；复杂、文本编辑密集、高频、大列表、
+   template/binding 或 custom-control UI 使用同一框架的 Avalonia content bridge。compiled XAML 与 code-only
+   Avalonia 共用该 bridge；
 7. Avalonia extension 只能提供 host-owned panel/window content，不能创建 Studio top-level Window、修改 Dock 或持有 native rendering resource；
 8. 项目根 `Editor/` 提供隐式 Editor assembly；可选 `*.asmdef` 定义显式 assembly；Package 复用仓库统一的 `asharia.package.json` identity，并增加可选 `editor` section；
 9. Studio 将 `.asmdef` 转换为缓存 SDK project 并通过跨平台 `dotnet build` 构建；
