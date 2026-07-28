@@ -40,7 +40,10 @@ public sealed class StaticPackageGenerationHost
             var declaration = builder.Build();
             definitions.Add(
                 registration.DefinitionId,
-                new EditorModuleDefinition(registration, module, declaration));
+                new EditorModuleDefinition(
+                    registration.Metadata,
+                    module,
+                    declaration));
         }
 
         return new StaticPackageGenerationHost(

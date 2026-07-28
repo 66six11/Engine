@@ -1,0 +1,341 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.asharia.dev/package-runtime/host-executable-binding-receipt-v1.schema.json",
+  "title": "Asharia Host Executable Binding Receipt v1",
+  "description": "Content-derived evidence binding generated Host inputs and CMake target semantics to exact executable and registration-snapshot bytes without claiming activation success.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "schemaVersion",
+    "bindingGenerationId",
+    "inputs",
+    "host",
+    "build",
+    "target",
+    "artifact",
+    "registrationSnapshot",
+    "integrity"
+  ],
+  "properties": {
+    "schema": {
+      "const": "com.asharia.host-executable-binding-receipt"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "bindingGenerationId": {
+      "$ref": "#/$defs/generationId"
+    },
+    "inputs": {
+      "$ref": "#/$defs/inputs"
+    },
+    "host": {
+      "$ref": "#/$defs/host"
+    },
+    "build": {
+      "$ref": "#/$defs/build"
+    },
+    "target": {
+      "$ref": "#/$defs/target"
+    },
+    "artifact": {
+      "$ref": "#/$defs/artifact"
+    },
+    "registrationSnapshot": {
+      "$ref": "#/$defs/registrationSnapshot"
+    },
+    "integrity": {
+      "$ref": "#/$defs/integrity"
+    }
+  },
+  "$defs": {
+    "integrity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "algorithm",
+        "digest"
+      ],
+      "properties": {
+        "algorithm": {
+          "const": "sha256"
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "generationId": {
+      "type": "string",
+      "pattern": "^sha256-[0-9a-f]{64}$"
+    },
+    "generatedInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "generationId",
+        "manifestIntegrity"
+      ],
+      "properties": {
+        "generationId": {
+          "$ref": "#/$defs/generationId"
+        },
+        "manifestIntegrity": {
+          "$ref": "#/$defs/integrity"
+        }
+      }
+    },
+    "inputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "staticComposition",
+        "hostTemplate",
+        "hostActivationBlueprintIntegrity"
+      ],
+      "properties": {
+        "staticComposition": {
+          "$ref": "#/$defs/generatedInput"
+        },
+        "hostTemplate": {
+          "$ref": "#/$defs/generatedInput"
+        },
+        "hostActivationBlueprintIntegrity": {
+          "$ref": "#/$defs/integrity"
+        }
+      }
+    },
+    "host": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "engineGenerationId",
+        "hostKind",
+        "targetPlatform"
+      ],
+      "properties": {
+        "engineGenerationId": {
+          "$ref": "#/$defs/generationId"
+        },
+        "hostKind": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/hostKind"
+        },
+        "targetPlatform": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/platformId"
+        }
+      }
+    },
+    "stableBuildString": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120,
+      "pattern": "^[^/\\\\:\\r\\n]+$"
+    },
+    "generator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "multiConfig"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/stableBuildString"
+        },
+        "multiConfig": {
+          "type": "boolean"
+        }
+      }
+    },
+    "configuredCompiler": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "language",
+        "compilerId",
+        "compilerVersion"
+      ],
+      "properties": {
+        "language": {
+          "const": "CXX"
+        },
+        "compilerId": {
+          "$ref": "#/$defs/stableBuildString"
+        },
+        "compilerVersion": {
+          "$ref": "#/$defs/stableBuildString"
+        },
+        "target": {
+          "$ref": "#/$defs/stableBuildString"
+        }
+      }
+    },
+    "build": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "configuration",
+        "generator",
+        "configuredCompiler"
+      ],
+      "properties": {
+        "configuration": {
+          "$ref": "#/$defs/stableBuildString"
+        },
+        "generator": {
+          "$ref": "#/$defs/generator"
+        },
+        "configuredCompiler": {
+          "$ref": "#/$defs/configuredCompiler"
+        }
+      }
+    },
+    "relativePath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^(?!/)(?!.*\\\\)(?!.*(^|/)\\.\\.?(/|$))(?!.*:).+$"
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "type",
+        "nameOnDisk",
+        "buildArtifactRelativePath",
+        "fileApi"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "pattern": "^[A-Za-z0-9_.+\\-]+$"
+        },
+        "type": {
+          "const": "EXECUTABLE"
+        },
+        "nameOnDisk": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240,
+          "pattern": "^[A-Za-z0-9_.+\\-]+$"
+        },
+        "buildArtifactRelativePath": {
+          "$ref": "#/$defs/relativePath"
+        },
+        "fileApi": {
+          "$ref": "#/$defs/fileApi"
+        }
+      }
+    },
+    "fileApi": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "codemodel",
+        "toolchains"
+      ],
+      "properties": {
+        "codemodel": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "major",
+            "minor"
+          ],
+          "properties": {
+            "major": {
+              "const": 2
+            },
+            "minor": {
+              "type": "integer",
+              "minimum": 6
+            }
+          }
+        },
+        "toolchains": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "major",
+            "minor"
+          ],
+          "properties": {
+            "major": {
+              "const": 1
+            },
+            "minor": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    },
+    "fileEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "mediaType",
+        "size",
+        "integrity"
+      ],
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/relativePath"
+        },
+        "mediaType": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "integrity": {
+          "$ref": "#/$defs/integrity"
+        }
+      }
+    },
+    "artifact": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/fileEvidence"
+        },
+        {
+          "properties": {
+            "path": {
+              "pattern": "^host/[A-Za-z0-9_.+\\-]+$"
+            },
+            "mediaType": {
+              "const": "application/vnd.microsoft.portable-executable"
+            }
+          }
+        }
+      ]
+    },
+    "registrationSnapshot": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/fileEvidence"
+        },
+        {
+          "properties": {
+            "path": {
+              "const": "evidence/asharia.static-factory-registration-snapshot.json"
+            },
+            "mediaType": {
+              "const": "application/json"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

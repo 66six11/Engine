@@ -41,7 +41,9 @@
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools\check-text-encoding.ps1
 powershell -ExecutionPolicy Bypass -File tools\check-doc-sync.ps1
+python -m unittest discover -s tools\tests -p "test_*.py"
 python tools\check_package_topology.py
+python tools\check_package_contracts.py
 git diff --check
 python tools\review-vulkan-cpp.py . --exclude apps/studio --exclude apps/editor/src/native_bridge --exclude-glob "apps/editor/src/editor_shared_viewport*" --fail-on warning
 cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --preset clangcl-debug && cmake --build --preset clangcl-debug"
@@ -57,10 +59,147 @@ cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --pre
 
 ClangCL test gate 将 production/test translation units 的所有 clang-tidy diagnostics 作为 error。
 `.github/workflows/native-code-quality.yml` 固定在包含 Visual Studio 2022 的 `windows-2022` hosted runner 上运行 encoding、diff whitespace、
-package topology、asset boundary、Vulkan package boundary/safety heuristic review、两编译器 build 和 CTest。Package topology
+package topology、package/factory/product/artifact contracts、asset boundary、Vulkan package boundary/safety heuristic review、两编译器 build 和 CTest。Package topology
 从 source-boundary manifests 生成 inventory 并对证直接 CMake target；Vulkan review
 脚本只产生需要人工确认的保守提示；CI 以 `--fail-on warning` 阻止 warning/error，info 不阻塞。ClangCL hosted build 使用 `--parallel 2`，避免并发 clang-tidy 超出 runner 内存。Hosted CI 不运行 GPU/window smokes；下方相关 smoke matrix
 仍是 local pre-commit gate，并且需要使用两个 standard debug presets 运行。
+
+涉及 Project Manifest/Lock、Engine Distribution、Host Profile、Effective Session、Host Composition、Source Build 或 package artifact
+handoff 时，除全量 Python tests 外，开发中至少先运行以下 focused chain；提交前仍执行上面的完整门禁：
+
+```powershell
+dotnet test tools\studio-distribution.Tests\Asharia.Studio.Distribution.Tests.csproj -c Release
+python -m unittest tools.tests.test_package_factory_contracts tools.tests.test_package_static_factory_bindings tools.tests.test_effective_session tools.tests.test_host_package_composition tools.tests.test_package_source_build_plan tools.tests.test_package_artifact_evidence tools.tests.test_engine_distribution_assembly tools.tests.test_engine_distribution_repair_verifier tools.tests.test_engine_distribution_package_catalog tools.tests.test_host_activation_blueprint tools.tests.test_static_composition_root
+python -m unittest tools.tests.test_host_build_request tools.tests.test_host_cmake_target tools.tests.test_host_build_adapter tools.tests.test_host_executable_template tools.tests.test_host_generation_compatibility tools.tests.test_host_registration_snapshot tools.tests.test_host_registration_cross_verifier tools.tests.test_host_registration_verification tools.tests.test_host_binding_inputs tools.tests.test_host_executable_binding tools.tests.test_host_binding_assembly tools.tests.test_host_binding_publication
+python -m unittest tools.tests.test_bootstrap_session tools.tests.test_bootstrap_project_inspection tools.tests.test_bootstrap_current_host tools.tests.test_bootstrap_project_host tools.tests.test_bootstrap_host_session
+```
+
+四个产品边界必须共同消费 `tools/tests/fixtures/product-boundaries/python-product-payload-v1.json`：Editor Image、Package
+Artifact、Distribution Assembly 与 Installed Repair 对每个 forbidden path 都 fail closed；合法 Studio/.NET/native/package
+control 的 policy match 数必须为零。旧的自洽 manifest/receipt 不是豁免，失败路径不得发布 partial generation、覆盖既有
+generation 或修改 installed tree。`tools/*.py` 在这些命令中只作为仓库验证/reference oracle，不得被正式产品启动或携带。
+
+Effective Session v1 只能产生 `Ready`、`UpgradeRequired`、`RepairRequired` 或 `SafeMode`；没有 artifact freshness 或
+current-process generation evidence 的改动不得让 composer 猜测 `PendingBuild` / `PendingRestart`。#298 的
+[Bootstrap Project-Open Session v1](../architecture/adr-bootstrap-project-open-session-v1.md) 在 composer 之外使用 verified
+published Host/C6 与 path/type/size evidence 产生 `PendingBuild`；它只从一个 canonical project root 读取 Manifest/Lock、按 Lock
+执行 fresh candidate discovery，不得 resolve、写 lock 或读取另一个 root。matching Host 必须由 binding 指向的 immutable publication
+执行，normal-open 不重算 executable hash；`PendingRestart` 仍不可产生。
+Package Factory Declaration v1 只声明 logical factory、owner scope、required factory 与 contribution ownership；不得加入
+CMake target、artifact path、DLL symbol、作者自定义 phase/lifetime，或把 module/JSON 顺序解释为 activation order。
+Host Activation Blueprint v1 只能从 Ready Session、匹配的 Host Composition 和 exact factory snapshots 派生固定的
+scope/factory/contribution 顺序；不得加入 artifact path、DLL symbol、build command 或进程加载状态。
+active Static Factory Provider Bindings/Binding Plan 已由 #295 硬切 schema/model v4，只能把 exact logical factory 映射到同 module Source
+Build Descriptor 已拥有的
+`STATIC_LIBRARY` target、`asharia/` public header 与受限 `asharia::...` provider function；不得使用全局注册发现、静态
+constructor、运行时字符串 symbol lookup、package `src/` include，或把这些字段写回 portable Factory Declaration。provider API
+必须为 v4；pre-v4 declaration/plan/adapter 不再接受。派生 Binding Plan 必须复验 Blueprint 与 Source Build Plan 的共同来源及
+selected target，且不得成为第三份 lock。
+Generated Static Composition Root v1 只能消费已经验证的 Source Build Plan、Host Activation Blueprint 与 Provider Binding
+Plan；current Composition renderer 6 生成薄 registration TU、sealed current-image source、私有声明 header、CMake attachment
+fragment 与 content-addressed manifest。fragment 为 Host 创建私有 OBJECT attachment target，但不创建 Host target、不运行 CMake、
+不把 provider call order 当作 activation order。修改该边界时，除 focused Python tests 外，还必须在
+两个编译器环境中运行 opt-in synthetic CMake positive/negative evidence：
+
+```powershell
+cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && set ""CXX=clang-cl"" && set ""ASHARIA_EXPECT_CMAKE_CXX_COMPILER=clang-cl.exe"" && set ""ASHARIA_RUN_CMAKE_INTEGRATION_TESTS=1"" && python -m unittest tools.tests.test_static_composition_root.StaticCompositionRootTests.test_generated_fragment_configures_compiles_and_links -v"
+cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && set ""CXX=cl"" && set ""ASHARIA_EXPECT_CMAKE_CXX_COMPILER=cl.exe"" && set ""ASHARIA_RUN_CMAKE_INTEGRATION_TESTS=1"" && python -m unittest tools.tests.test_static_composition_root.StaticCompositionRootTests.test_generated_fragment_configures_compiles_and_links -v"
+```
+
+该 fixture 必须证明 renderer 6/provider v4 valid root 可 configure/compile/link/execute，并得到 frozen callback table 的 exact owning
+RegistrationSnapshot v2；错误 provider
+signature 在 compile-time `static_assert` 失败，以及 missing/wrong provider target 和 duplicate attachment 在 final configure
+fail closed。
+
+Static Factory Callback Table v1 只允许 provider v4 调用
+`registerFactory(localFactoryId, completeDescriptor, availableTypedBindings)`。五个 typed `noexcept` callbacks 必须非空；selected
+`StaticContributionBindingV2` 必须由 `bindStaticContributionV2<Contract, &accessor>()` 创建，其中 accessor exact signature 为
+`Contract* (FactoryInstanceViewV1) noexcept`。generation、
+Blueprint digest、package/version/module/entry point 与 exact selected factory/contribution ID/kind 必须由 generated root 注入，不得让
+provider 自报完整 identity。public contract type 唯一声明 kind 与 `single|multiple`；type key 必须来自 writable inline storage，不能
+依赖会被 MSVC `/OPT:ICF` 合并的只读 data/function/accessor address。accessor address 只用于 future invocation，不参与 type identity、
+hash、snapshot 或 diagnostics。recorder 必须按 Capacity v2 预留 factory 与 selected contribution storage，
+callback window 中 recorder-owned storage 零动态分配；首次错误 sticky，失败不返回 partial table/snapshot。成功 table 私有持有
+process-local type/accessor evidence，并只向 Snapshot v2 投影 ID/kind/cardinality；pointer/type key/accessor/token 不进入 JSON、
+generation ID、receipt 或 diagnostics。
+registration-only path 不调用任何 lifecycle callback 或 payload accessor；`single` 在本门禁不执行 table-wide 数量限制。
+修改 `engine/host-runtime` registration target、snapshot JSON renderer 或 generated recording glue 时，两个 test presets 都必须运行
+registration 与 snapshot JSON tests，并继续运行上述 synthetic fixture：
+
+```powershell
+cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --preset clangcl-debug-tests && cmake --build --preset clangcl-debug-tests --target asharia-host-runtime-registration-tests asharia-host-runtime-registration-snapshot-json-tests && ctest --preset clangcl-debug-tests -R asharia-host-runtime --output-on-failure"
+cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake --preset msvc-debug-tests && cmake --build --preset msvc-debug-tests --target asharia-host-runtime-registration-tests asharia-host-runtime-registration-snapshot-json-tests && ctest --preset msvc-debug-tests -R asharia-host-runtime --output-on-failure"
+```
+
+该 gate 至少覆盖完整/缺失 descriptor、canonical table-owned Snapshot v2、zero-contribution factory、empty composition、
+unknown/missing/duplicate factory、contribution expectation canonicality、missing/duplicate/kind mismatch、same-kind type/cardinality
+conflict、typed accessor signature/null negatives、abstract-interface/multiple-inheritance pointer adjustment、unselected binding/accessor
+inert、canonical type/accessor index alignment、provider/binding observation-order determinism、mixed composition evidence、provider 外调用、
+provider/factory/contribution count mismatch、pre-copy expectation failure 的空 provider attribution、sticky first error、
+text/diagnostic capacity exhaustion、token ownership transfer 与 valid-token fail-fast。provider invocation window 中 recorder-owned
+no-allocation 边界由 create 阶段定长 storage、recording 路径索引写入，以及 ClangCL `noexcept`/exception-escape gate 共同约束。
+
+[Activation Eligibility v1](../architecture/adr-activation-eligibility-v1.md) 保留历史决策；current
+[Generated Current-Image Host 与 Project Bootstrap v1](../architecture/adr-generated-current-image-project-bootstrap-host-v1.md) 已把 normal
+路径硬切到 Eligibility V2。Stage 1 只能按值消费 generated `CurrentImageActivationDescriptorV2`，并在 provider invocation 前校验
+T3/C6/provider-v4/Snapshot-v2 tuple、ProcessScope projection、control thread、process epoch 与一次性 claim；recording 成功后，Stage 2
+只能把同一 pending table 按值对证为 `AdmittedStaticFactoryCallbackTableV2`。normal startup 不读取或 hash executable，也不要求外部
+launch receipt。
+[ProcessScope Lifecycle v1](../architecture/adr-process-scope-lifecycle-v1.md) 与
+[ProcessScope Contribution Registry and Activation Lease v1](../architecture/adr-process-scope-contribution-registry-and-activation-lease-v1.md)
+继续把 registration-only 取证与 lifecycle execution 分开。ProcessScope 只能消费 admitted table 及其 sealed Blueprint process projection，
+preflight 必须在首个 callback 前完成，并为 process-selected contributions 建立 fixed slots。`ProcessScopeExecutorV2` 的启动顺序只能来自
+Blueprint；factory 只有在 activate 后 selected accessors 全部成功且 contribution-only lease 原子提交后才 dependency-visible，整个 start
+成功后 registry 才开放。停止与失败回滚必须完成 reverse quiesce → registry `Revoking` → reverse lease revoke → reverse
+deactivate/destroy → registry `Revoked` gate。修改 eligibility、admitted descriptor access、Factory contexts、ProcessScope executor、typed
+registry/handle 或 lease/revoke 时，两个编译器都必须构建 ProcessScope focused tests，并运行全部 `asharia-host-runtime` CTest（其中包括
+Active owner 隐式析构的 fail-fast probe）：
+
+```powershell
+cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --preset clangcl-debug-tests && cmake --build --preset clangcl-debug-tests && ctest --preset clangcl-debug-tests -R asharia-host-runtime --output-on-failure && ctest --preset clangcl-debug-tests -R asharia-project-bootstrap --output-on-failure"
+cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake --preset msvc-debug-tests && cmake --build --preset msvc-debug-tests && ctest --preset msvc-debug-tests -R asharia-host-runtime --output-on-failure && ctest --preset msvc-debug-tests -R asharia-project-bootstrap --output-on-failure"
+```
+
+focused tests 至少覆盖 Eligibility V2 wrong tuple/thread/epoch/double-claim、recording header mismatch、Stage 2 table/storage affinity、
+empty/success、Blueprint/table order permutation、dependency views、全部 create/activate failure positions、cleanup
+failure continuation、token exactly-once destroy、wrong-thread/stale epoch、operation reentrancy、state misuse、结构性 preflight negatives、
+plan 外 descriptor 永不调用、single conflict 零 callback、typed `single/at/size` cardinality、canonical multiple order、accessor exactly once、
+null accessor atomic rollback、quiesce 可借用、deactivate/destroy 期间 `RegistryRevoking`、stop 后 `RegistryRevoked`、owner 销毁后
+`RegistryExpired` 与旧 generation fail-closed。`asharia-project-bootstrap-tests` 还必须覆盖真实 `asharia.project.json` 的 valid/invalid
+读取与 deterministic summary。registration-only generated Host 的五个 callbacks 与 payload accessors 仍必须是 abort/counter probes；
+该路径不得因 ProcessScope 实现而开始执行 lifecycle 或 accessor。
+
+Windows Development Host 的 build/publication adapter 只允许消费已发布的 exact template/composition generation。adapter 必须在 spawn
+前根据完整 generation 只读复验两棵 closed publication tree，拒绝 payload 漂移、额外 entry 与 link/reparse；随后使用 typed argv、
+caller-supplied environment 与 `shell=False`，Conan 必须先行；File API binding 必须锁定 latest client reply 中唯一
+configuration/`EXECUTABLE`/primary artifact，并在 build 后复验普通文件。restricted Host 只输出 canonical registration JSON，
+不得执行 activation/lifecycle、UI、artifact hash 或 receipt publication。#288 的 downstream publisher 必须另外读取同一 stable
+File API index 的 configured CXX compiler，把 exact executable 流式复制到 collector-owned staging，运行 staged bytes，交叉验证
+registration handoff，并发布/deep-verify Host Executable Binding Receipt；这份 receipt 只属于 build/publication evidence，不是 normal
+startup ticket。current T3 normal Host 直接消费 C6 sealed descriptor，执行 admission → recording → table admission → ProcessScope start →
+借用并运行 `ProcessApplicationV1` → release → explicit stop。Bootstrap project-open adapter 只接受 strict Summary v1
+schema/version/exact fields；exit `65` 是项目拒绝，spawn/timeout/overflow/其他 exit/stderr/protocol failure 是 fixed-Host failure。
+修改任一边界时，除 focused Python tests 外，运行双编译器 exact Host integration：
+
+```powershell
+cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && set ""CXX=clang-cl"" && set ""ASHARIA_HOST_TEST_ENABLE_CLANG_TIDY=1"" && set ""ASHARIA_EXPECT_CMAKE_CXX_COMPILER_ID=Clang"" && set ""ASHARIA_EXPECT_CMAKE_CXX_COMPILER_VERSION=19.1.5"" && set ""ASHARIA_RUN_HOST_TEMPLATE_INTEGRATION_TESTS=1"" && set ""ASHARIA_HOST_TEST_TOOLCHAIN_FILE=build\conan\clangcl-debug\Debug\generators\conan_toolchain.cmake"" && python -m unittest tools.tests.test_generated_host_executable.GeneratedHostExecutableIntegrationTests.test_exact_host_build_and_project_bootstrap -v"
+cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && set ""CXX=cl"" && set ""ASHARIA_EXPECT_CMAKE_CXX_COMPILER_ID=MSVC"" && set ""ASHARIA_EXPECT_CMAKE_CXX_COMPILER_VERSION=19.44.35215.0"" && set ""ASHARIA_RUN_HOST_TEMPLATE_INTEGRATION_TESTS=1"" && set ""ASHARIA_HOST_TEST_TOOLCHAIN_FILE=build\conan\msvc-debug\Debug\generators\conan_toolchain.cmake"" && python -m unittest tools.tests.test_generated_host_executable.GeneratedHostExecutableIntegrationTests.test_exact_host_build_and_project_bootstrap -v"
+```
+
+focused compatibility tests 必须证明 Template renderer 3 + Composition renderer 6/provider v4 + RegistrationSnapshot v2 是唯一接受
+组合，并拒绝旧 renderer/provider/snapshot。focused chain 必须分别覆盖 exact target/path binding、single-target build without clean-first、build 后 binding
+refresh、receipt atomic publication 与 closed-tree deep-verification negatives；双编译器 fixture 必须以当前组合端到端覆盖 restricted
+process stdout/stderr/exit contract、expected generation/Blueprint snapshot 对证、same-index configured compiler、collector-owned staged
+Host 执行、receipt publication/deep verification，以及 normal Host 的真实项目 success、坏 descriptor exit 65 + stable diagnostic、非法
+restricted/normal 参数混用 exit 64 与所有结果的 clean stop。#298 后 fixture 还必须将 descriptor、Manifest 与 Lock 放在同一 root，
+证明只执行 published artifact、Bootstrap `Ready`/`SafeMode`、同 native graph 下只改 `projectId` 可复用 C6，并保持每个编译器只构建一次。
+MSVC/ClangCL receipts 可以因 compiler identity/executable bytes 不同而不同。
+synthetic provider 的五个 callbacks 与全部 selected payload accessors 必须为 abort/counter probes，以证明 registration/receipt path
+零 lifecycle/accessor invocation。
+该 gate 不要求 clean-first 或默认 all-target build。restricted 半边不执行 lifecycle；normal 半边必须证明完整 start/run/stop，但不等于
+完整 Editor、ProjectScope、asset database 或项目 package 已被激活。
+Installed Distribution Repair Verifier v1 必须从调用方提供的 exact expected `EngineGenerationId` 开始；不能只信磁盘 manifest
+或目录名，不能在发现损坏后写回安装树，也不能把 `FatalDistributionError` 当作磁盘健康状态。
 
 开发中可先运行本地 pre-PR 提示脚本，让它按当前 diff 提示固定门禁、包级 CTest、smoke 范围和需要检查的文档：
 

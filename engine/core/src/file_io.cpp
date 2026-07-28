@@ -6,6 +6,7 @@
 #include <expected>
 #include <fstream>
 #include <limits>
+#include <memory>
 #include <span>
 #include <string>
 #include <string_view>
@@ -24,6 +25,38 @@ namespace asharia::core {
                              detail::filePathToUtf8(path) + "': " + std::string{reason} + "."};
         }
 
+        [[nodiscard]] Error stagedReplacementContractError(const std::filesystem::path& target,
+                                                           const std::filesystem::path& staged,
+                                                           const std::filesystem::path& backup,
+                                                           std::string_view reason) {
+            return Error{ErrorDomain::Core, 0,
+                         "Core staged file replacement rejected target='" +
+                             detail::filePathToUtf8(target) + "' staged='" +
+                             detail::filePathToUtf8(staged) + "' backup='" +
+                             detail::filePathToUtf8(backup) + "': " + std::string{reason} + "."};
+        }
+
+        [[nodiscard]] Error stagedPreparationContractError(const std::filesystem::path& target,
+                                                           const std::filesystem::path& staged,
+                                                           std::string_view reason) {
+            return Error{ErrorDomain::Core, 0,
+                         "Core staged file preparation rejected target='" +
+                             detail::filePathToUtf8(target) + "' staged='" +
+                             detail::filePathToUtf8(staged) + "': " + std::string{reason} + "."};
+        }
+
+        [[nodiscard]] StagedFilePreparationOutcome
+        stagedPreparationFailure(std::unique_ptr<detail::AtomicTemporaryFile>& stagedFile,
+                                 const std::filesystem::path& staged,
+                                 detail::AtomicFileBackend& backend, Error error) {
+            stagedFile->releaseCleanupOwnership();
+            stagedFile.reset();
+            return {
+                .stagedFileState = backend.inspectArtifactState(staged),
+                .error = std::move(error),
+            };
+        }
+
     } // namespace
 
     namespace detail {
@@ -36,6 +69,30 @@ namespace asharia::core {
                 text.push_back(static_cast<char>(character));
             }
             return text;
+        }
+
+        ExclusiveFileLock
+        ExclusiveFileLockFactory::create(std::unique_ptr<ExclusiveFileLockHandle> handle) noexcept {
+            return ExclusiveFileLock{std::move(handle)};
+        }
+
+        Result<std::optional<ExclusiveFileLock>>
+        tryAcquireExclusiveFileLockWithBackend(const std::filesystem::path& lockPath,
+                                               ExclusiveFileLockBackend& backend) {
+            if (lockPath.empty()) {
+                return std::unexpected{
+                    fileIoError("lock acquisition", lockPath, "lock path must be non-empty")};
+            }
+
+            auto handle = backend.tryAcquire(lockPath);
+            if (!handle) {
+                return std::unexpected{std::move(handle.error())};
+            }
+            if (*handle == nullptr) {
+                return std::optional<ExclusiveFileLock>{};
+            }
+            return std::optional<ExclusiveFileLock>{
+                ExclusiveFileLockFactory::create(std::move(*handle))};
         }
 
         Result<std::vector<std::byte>> readBoundedStream(std::istream& stream,
@@ -153,7 +210,152 @@ namespace asharia::core {
             return {};
         }
 
+        StagedFilePreparationOutcome prepareStagedFileBytesWithBackend(
+            const std::filesystem::path& target, const std::filesystem::path& staged,
+            std::span<const std::byte> bytes, AtomicFileBackend& backend) {
+            if (target.empty() || staged.empty()) {
+                return {
+                    .stagedFileState = StagedFileArtifactState::Indeterminate,
+                    .error = stagedPreparationContractError(
+                        target, staged, "target and staged paths must be non-empty"),
+                };
+            }
+
+            const auto normalizedTarget = target.lexically_normal();
+            const auto normalizedStaged = staged.lexically_normal();
+            if (normalizedTarget == normalizedStaged) {
+                return {
+                    .stagedFileState = StagedFileArtifactState::Indeterminate,
+                    .error = stagedPreparationContractError(
+                        target, staged, "target and staged paths must identify distinct files"),
+                };
+            }
+            if (normalizedTarget.parent_path() != normalizedStaged.parent_path()) {
+                return {
+                    .stagedFileState = StagedFileArtifactState::Indeterminate,
+                    .error = stagedPreparationContractError(
+                        target, staged, "target and staged files must share one directory"),
+                };
+            }
+
+            auto stagedFile = backend.createStaged(target, staged);
+            if (!stagedFile) {
+                return {
+                    .stagedFileState = backend.inspectArtifactState(staged),
+                    .error = std::move(stagedFile.error()),
+                };
+            }
+            (*stagedFile)->releaseCleanupOwnership();
+
+            std::size_t offset = 0U;
+            while (offset < bytes.size()) {
+                const std::size_t remainingBytes = bytes.size() - offset;
+                auto written = (*stagedFile)->write(bytes.subspan(offset, remainingBytes));
+                if (!written) {
+                    return stagedPreparationFailure(*stagedFile, staged, backend,
+                                                    std::move(written.error()));
+                }
+                if (*written == 0U) {
+                    return stagedPreparationFailure(
+                        *stagedFile, staged, backend,
+                        fileIoError("stage", staged, "staged write made no progress"));
+                }
+                if (*written > remainingBytes) {
+                    return stagedPreparationFailure(
+                        *stagedFile, staged, backend,
+                        fileIoError("stage", staged,
+                                    "backend returned invalid progress reportedBytes=" +
+                                        std::to_string(*written) +
+                                        " remainingBytes=" + std::to_string(remainingBytes)));
+                }
+                offset += *written;
+            }
+
+            auto flushed = (*stagedFile)->flush();
+            if (!flushed) {
+                return stagedPreparationFailure(*stagedFile, staged, backend,
+                                                std::move(flushed.error()));
+            }
+
+            auto closed = (*stagedFile)->close();
+            if (!closed) {
+                return stagedPreparationFailure(*stagedFile, staged, backend,
+                                                std::move(closed.error()));
+            }
+
+            const auto artifactState = backend.inspectArtifactState(staged);
+            if (artifactState != StagedFileArtifactState::Present) {
+                return {
+                    .stagedFileState = artifactState,
+                    .error =
+                        fileIoError("stage", staged, "staged artifact was not present after close"),
+                };
+            }
+            return {
+                .stagedFileState = StagedFileArtifactState::Present,
+                .error = std::nullopt,
+            };
+        }
+
+        StagedFileReplacementOutcome replaceFileFromStagedWithBackend(
+            const std::filesystem::path& target, const std::filesystem::path& staged,
+            const std::filesystem::path& backup, AtomicFileBackend& backend) {
+            if (target.empty() || staged.empty() || backup.empty()) {
+                return {
+                    .commitState = StagedFileCommitState::NotCommitted,
+                    .stagedFileState = StagedFileArtifactState::Indeterminate,
+                    .backupFileState = StagedFileArtifactState::Indeterminate,
+                    .error = stagedReplacementContractError(
+                        target, staged, backup,
+                        "target, staged, and backup paths must be non-empty"),
+                };
+            }
+
+            const auto normalizedTarget = target.lexically_normal();
+            const auto normalizedStaged = staged.lexically_normal();
+            const auto normalizedBackup = backup.lexically_normal();
+            if (normalizedTarget == normalizedStaged || normalizedTarget == normalizedBackup ||
+                normalizedStaged == normalizedBackup) {
+                return {
+                    .commitState = StagedFileCommitState::NotCommitted,
+                    .stagedFileState = StagedFileArtifactState::Indeterminate,
+                    .backupFileState = StagedFileArtifactState::Indeterminate,
+                    .error = stagedReplacementContractError(
+                        target, staged, backup,
+                        "target, staged, and backup paths must identify distinct files"),
+                };
+            }
+
+            return backend.replaceStaged(target, staged, backup);
+        }
+
     } // namespace detail
+
+    ExclusiveFileLock::ExclusiveFileLock(
+        std::unique_ptr<detail::ExclusiveFileLockHandle> handle) noexcept
+        : handle_(std::move(handle)) {}
+
+    ExclusiveFileLock::~ExclusiveFileLock() = default;
+
+    ExclusiveFileLock::ExclusiveFileLock(ExclusiveFileLock&& other) noexcept = default;
+
+    ExclusiveFileLock& ExclusiveFileLock::operator=(ExclusiveFileLock&& other) noexcept = default;
+
+    bool ExclusiveFileLock::ownsLock() const noexcept {
+        return handle_ != nullptr && handle_->ownsLock();
+    }
+
+    VoidResult ExclusiveFileLock::release() {
+        if (handle_ == nullptr) {
+            return {};
+        }
+
+        auto released = handle_->release();
+        if (released) {
+            handle_.reset();
+        }
+        return released;
+    }
 
     Result<std::vector<std::byte>> readFileBytes(const std::filesystem::path& path,
                                                  FileReadLimits limits) {
@@ -206,6 +408,33 @@ namespace asharia::core {
                                        AtomicFileWriteOptions options) {
         const auto characters = std::span<const char>{text.data(), text.size()};
         return writeFileBytesAtomically(path, std::as_bytes(characters), options);
+    }
+
+    Result<std::optional<ExclusiveFileLock>>
+    tryAcquireExclusiveFileLock(const std::filesystem::path& lockPath) {
+        return detail::tryAcquireExclusiveFileLockWithBackend(lockPath,
+                                                              detail::exclusiveFileLockBackend());
+    }
+
+    StagedFilePreparationOutcome prepareStagedFileBytes(const std::filesystem::path& target,
+                                                        const std::filesystem::path& staged,
+                                                        std::span<const std::byte> bytes) {
+        return detail::prepareStagedFileBytesWithBackend(target, staged, bytes,
+                                                         detail::atomicFileBackend());
+    }
+
+    StagedFilePreparationOutcome prepareStagedFileText(const std::filesystem::path& target,
+                                                       const std::filesystem::path& staged,
+                                                       std::string_view text) {
+        const auto characters = std::span<const char>{text.data(), text.size()};
+        return prepareStagedFileBytes(target, staged, std::as_bytes(characters));
+    }
+
+    StagedFileReplacementOutcome replaceFileFromStaged(const std::filesystem::path& target,
+                                                       const std::filesystem::path& staged,
+                                                       const std::filesystem::path& backup) {
+        return detail::replaceFileFromStagedWithBackend(target, staged, backup,
+                                                        detail::atomicFileBackend());
     }
 
 } // namespace asharia::core

@@ -35,13 +35,34 @@ public sealed class EditorModuleInstanceStatus
 public sealed class EditorModuleHost : IAsyncDisposable
 {
     private readonly object gate_ = new();
-    private readonly Dictionary<ScopeInstanceId, Task<EditorScopeActivation>> scopeTasks_ = [];
+    private readonly Dictionary<ScopeInstanceId, ScopeActivationEntry> scopeTasks_ = [];
     private bool isDisposed_;
 
     public ValueTask<EditorScopeActivation> ActivateScopeAsync(
         EditorScopePartition partition,
         IEnumerable<EditorCapabilitySnapshot> capabilities,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        ActivateScopeAsync(
+            partition,
+            capabilities,
+            requireNew: false,
+            cancellationToken);
+
+    internal ValueTask<EditorScopeActivation> ActivateNewScopeAsync(
+        EditorScopePartition partition,
+        IEnumerable<EditorCapabilitySnapshot> capabilities,
+        CancellationToken cancellationToken = default) =>
+        ActivateScopeAsync(
+            partition,
+            capabilities,
+            requireNew: true,
+            cancellationToken);
+
+    private ValueTask<EditorScopeActivation> ActivateScopeAsync(
+        EditorScopePartition partition,
+        IEnumerable<EditorCapabilitySnapshot> capabilities,
+        bool requireNew,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(partition);
         var capabilityArray = CopyCapabilities(capabilities);
@@ -51,15 +72,31 @@ public sealed class EditorModuleHost : IAsyncDisposable
         lock (gate_)
         {
             ObjectDisposedException.ThrowIf(isDisposed_, this);
-            if (scopeTasks_.TryGetValue(partition.ScopeInstanceId, out task!))
+            if (scopeTasks_.TryGetValue(
+                    partition.ScopeInstanceId,
+                    out var existing))
             {
-                return new ValueTask<EditorScopeActivation>(task);
+                if (!ReferenceEquals(existing.Partition, partition))
+                {
+                    throw new InvalidOperationException(
+                        "The editor module host scope is already bound to another partition.");
+                }
+
+                if (requireNew)
+                {
+                    throw new InvalidOperationException(
+                        "The editor module host scope already has an activation owner.");
+                }
+
+                return new ValueTask<EditorScopeActivation>(existing.Task);
             }
 
             completion = new TaskCompletionSource<EditorScopeActivation>(
                 TaskCreationOptions.RunContinuationsAsynchronously);
             task = completion.Task;
-            scopeTasks_.Add(partition.ScopeInstanceId, task);
+            scopeTasks_.Add(
+                partition.ScopeInstanceId,
+                new ScopeActivationEntry(partition, task));
         }
 
         _ = CompleteActivationAsync(
@@ -81,7 +118,10 @@ public sealed class EditorModuleHost : IAsyncDisposable
             }
 
             isDisposed_ = true;
-            tasks = scopeTasks_.Values.Reverse().ToArray();
+            tasks = scopeTasks_.Values
+                .Select(entry => entry.Task)
+                .Reverse()
+                .ToArray();
             scopeTasks_.Clear();
         }
 
@@ -169,6 +209,10 @@ public sealed class EditorModuleHost : IAsyncDisposable
 
         return Array.AsReadOnly(copy);
     }
+
+    private sealed record ScopeActivationEntry(
+        EditorScopePartition Partition,
+        Task<EditorScopeActivation> Task);
 }
 
 public sealed class EditorScopeActivation : IAsyncDisposable

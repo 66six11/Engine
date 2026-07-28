@@ -1,8 +1,8 @@
 # Editor 扩展构建、装载与重载规范
 
-状态：Target（已批准，尚未实现）
+状态：Target（已批准，Project Code implicit build 子集已实现）
 
-更新日期：2026-07-11
+更新日期：2026-07-26
 
 ## 1. 目的与权威范围
 
@@ -122,6 +122,103 @@ Generated project 还必须：
 
 共享 API 引用在生成 project 中等价于 `Private=false`/不复制 runtime asset。Loader 不能仅依赖 build output 是否碰巧包含 DLL；它仍要主动拒绝 extension 私带的 shared contract。
 
+当前 production checkpoint 只落地项目根零配置 implicit code-first 子集：Application 接受 caller 已规范化的
+project root/projectId、current semantic build credential 与全新 cache path，只发现 exact `Editor/**/*.cs`，
+复制 source/Runtime+Editor contract exact bytes，并生成单一 `Microsoft.NET.Sdk` library workspace。
+`global.json` 固定 credential SDK 且 `rollForward=disable`；root `Directory.Build.props/targets/rsp`、
+`Directory.Packages.props` 与显式 `NuGet.Config` 封住父目录 build customization、用户 wildcard imports、
+ambient analyzer/editorconfig、workload resolver 与 package/audit sources。renderer 使用 explicit compile/reference
+items、deterministic/CI/portable-PDB/PathMap 和 stable relative output handoff；workspace identity 不包含 project/
+cache 绝对路径。builder 只原子发布 immutable input tree 并提供 source/credential/workspace current check。
+isolated build controller 随后复制 workspace，从 semantic credential exact closure 物化 sealed dotnet mirror，
+在空白 allowlist 环境中执行 exact SDK probe、explicit restore 与 `build --no-restore`，并原子发布 implementation
+DLL、reference DLL、portable PDB 与 `.deps.json` 的 content-addressed raw output。它提供 bounded output、
+timeout/process-tree cancellation、same-project supersession 与每步后的 input/mirror current check。
+artifact inspector 只消费 current raw-output lease，并在检查前后复验完整四文件 evidence；它只使用 BCL
+`PEReader`/`MetadataReader`，不创建 ALC 或执行 assembly。检查器要求 implementation/reference identity、
+module/MVID、IL-only flags、exact `ReferenceAssemblyAttribute`、credential reference closure、PE-associated
+portable PDB、canonical `PathMap` documents 和当前单-project `.deps.json` shape 全部一致，然后生成不含绝对
+路径的 content-addressed metadata report。artifact publisher 只接受 current raw-output lease 与全新、互不重叠的
+publication root，并在内部重新执行该检查；它以 bounded BCL stream 复制和二次 hash 复验四个 product，生成
+deterministic `artifact.json`，复验 exact 五文件 closed tree 后以一次 directory rename 提交。publication identity
+和 manifest 不含 source/output 绝对路径；receipt 的 absolute root 只供当前进程寻址。遇到任何 `.asmdef` 仍稳定
+失败，等待下一个显式 graph Slice。module indexer 再只消费该 typed receipt，并在扫描前后复验 publication；
+它使用 BCL metadata 同时读取 implementation/reference assembly，只接受 exact `Asharia.Editor`
+`EditorModuleAttribute` 与 public top-level sealed non-generic direct `EditorModule` type shape，并要求两份
+assembly declaration surface 完全一致。结果是 path-free、content-addressed in-memory index；空 index 合法但
+不证明 load eligibility。staging candidate admitter 只消费 publication receipt 并内部重建 index；empty index
+拒绝 admission，non-empty index 与 publication identity 形成稳定 candidate identity，签发前再复验
+publication。candidate receipt 继承 publication absolute root 仅供进程内寻址，identity/module facts 不含路径；
+current check 会重新索引并对证 surface。该 receipt 只允许后继 loader 开始预执行验证，不证明 managed reload
+eligibility。上述步骤不写 sidecar、不加载 assembly，也不创建 ALC。Package、Avalonia resource、NuGet lock、
+aggregate host、正式 ProjectSession composition、replacement/catalog commit 和 collectible ALC generation 尚未实现。
+后续 pinned 路径已落地 exact Configure 与 initial scope activation，但不把它们宣称为上述完整 generation
+pipeline。host policy selector 再只消费 current candidate；
+当前 external-build v1 没有 resource/native/global-side-effect 与 cooperative-unload evidence，因此不按
+activation/handover 猜测能力，而是确定性签发 `Pinned + RestartRequired` receipt。policy identity 绑定
+candidate 与稳定 enum/reason，不含 absolute locator；后继 loader 在创建 non-collectible ALC 前仍须复验
+policy/candidate currentness。pinned load-image builder 随后只消费该 current policy，在读前/读后复验它，
+并从 closed publication 读取 exact implementation DLL 与 portable PDB。每文件固定 256 MiB 上限，快照拥有
+字节且只提供不暴露底层 buffer 的新只读流；image identity 绑定 policy id 与两文件 size/hash，不绑定 locator。
+builder 只用 BCL PE metadata 检查 global `<Module>`，存在 `.cctor` 时 fail closed，因为 CLR load 会执行
+module initializer。该步骤仍不创建 ALC、不加载或执行 assembly。pinned assembly loader 最后只消费 current
+load-image；一个 loader owner 用 project reservation 串行化首次 load，同 image 幂等复用，different image
+返回 restart-required。首次 load 创建 path-free、non-collectible custom ALC，并只从 owned implementation/PDB
+streams 加载 exact root assembly；dependency hook 返回 `null`，让 #311 已验证的 Host/framework closure 从
+Default context 共享，不探测目录、private/native assets 或 Resolving event。load 后只核对 context、binding
+identity、MVID、empty physical location 与 single root assembly。ALC 创建后的失败也保留 failed reservation，
+禁止当前进程重试。该 host 仍不解析 module type、不 Configure/Activate，也不推进 active/LKG。
+
+pinned module type resolver 只消费上述 host，不接受 caller-supplied assembly、type name、resolver 或 metadata。
+它按 host 内嵌 #313 index 顺序调用 root `Assembly.GetType` 做 case-sensitive exact lookup，并要求 runtime Type
+仍属于 exact root Assembly、full name 一致、public top-level sealed non-generic concrete direct
+`EditorModule` subtype，且声明 public parameterless constructor。module-type set identity 只绑定 host id 与
+index id，并强持有 host、entry 和 Type。resolver 不调用 `GetTypes`/`DefinedTypes`、不读取或实例化 attribute、
+不调用 constructor/Activator/Configure/Activate，也不写文件或推进 registry/active/LKG。
+
+pinned module constructor 只消费 exact module-type set，不接受 caller constructor/factory/arguments/service/path。
+显式 owner 以 per-project reservation 串行首次执行，按 index 顺序只调用 type receipt 固定的 public
+parameterless `ConstructorInfo.Invoke(null)`。same project/same lineage 的重复或并发调用返回同一
+result/set/object references；different lineage、constructor exception 或反射失败固定为 restart-required。
+失败 reservation 强持有已完成的 partial objects 并禁止同一 owner 重试。该同步边界有意执行受信任的目标
+type static/instance constructor，但不读取 attribute、不 Configure/Activate、不做 I/O 或 registry/catalog
+mutation；ALC 仍不是安全沙箱。
+
+pinned module configurator 只消费 exact constructed-module set，不接受 caller module/builder/metadata/declaration。
+独立 owner 以 per-project reservation 串行首次 Configure，并按 index 顺序创建绑定 entry definition id 的
+`EditorModuleBuilder`，调用 exact object 的 `Configure()` 后 `Build()` immutable declaration。metadata
+只从 entry 的 definition/type/activation/handover 投影。same construction lineage 重复/并发调用复用同一
+result/set/declarations；different lineage 或 Configure/Build failure 固定要求重启，失败 reservation 保留
+objects/partial declarations 且不重试。该阶段不重新构造、不读取 attribute、不 Activate、不做 I/O，也不创建
+shared `EditorModuleDefinition`、registry transaction 或 active/LKG。
+
+pinned module definition set 只把 exact configured receipts 投影为 static/dynamic 共用的
+`EditorModuleDefinition`。共享 definition 直接持有 exact metadata/module/declaration，不持有
+`StaticEditorModuleRegistration` 或 factory；set 保留 index 顺序与 definition-id lookup，并强持有
+configuration lineage。该转换不执行用户代码，不需要 reservation/async/cancellation，也不创建
+scope transaction、registry partition、contribution publication 或 activation。
+
+pinned module scope preparer 再接受未来 ProjectSession/Engine context 显式给出的 Project
+`ScopeInstanceId` 与 host-capability values；persistent ProjectId 不能替代 per-session identity。它先复制
+capability snapshot，再让现有 `EditorScopeTransaction.Prepare` 从 exact definitions 构建不可见 candidate，
+复核 registration order/definition references，并把 structural validation failure 投影为 path-free typed
+diagnostic。该阶段只读 registry snapshot；不 Commit、不增加 reservation/owner/revision，也不 Activate。
+
+initial Project scope committer 只消费上述 exact preparation，并复用 captured snapshot 完成空 scope 的
+首次结构提交；成功 receipt 同时成为 exact partition registration owner。关闭 owner 时只在当前 registry
+partition 仍是同一 reference 时移除它，重复关闭无副作用，successor 已替换时 fail closed 且不误删
+successor。stale、已有 scope 或重复消费返回 path-free conflict 并要求重新 Prepare。该边界不 Activate、
+不发布 contribution/current/active/LKG，也不实现 replacement、revision、rollback observer 或 I/O。
+
+initial Project scope activator 只消费仍持有 exact registration 的 owner，并要求 runtime capability snapshot
+与 Prepare 时的 host capability ID 集合完全一致。它把 registration 所有权一次性转交给独占异步 owner，
+再要求 `EditorModuleHost` 为同一 exact partition 建立新的 scope activation；已有 scope activation 即使引用
+同一 partition 也会拒绝，避免两个 owner 共享 disposal 责任。`Active`、`Dormant`、
+`WaitingForCapability` 与 `Blocked` 保留 owner，其中后两者是 soft outcome；任一 `Faulted`、取消或 Host
+异常都会先释放 activation，再退役 exact registration。成功 owner 的重复关闭幂等，并使用相同顺序释放。
+该边界仍不创建正式 ProjectSession，不执行 I/O，不推进 contribution/current/active/LKG，也不实现
+replacement、revision、catalog transaction 或前端接线。
+
 外部自定义 `.csproj` 必须由 `asharia.package.json.editor` 显式声明，视为受信任 external build，默认 `restart-required`。Host 记录实际 project、SDK、binlog 和 artifact，但不把它伪装成标准可重复 `.asmdef` build。
 
 分发 Package 可以提供 Package-wide prebuilt artifact manifest，包含全部 logical assembly identity、TFM/RID、API/schema compatibility、module DLL/PDB/index/resource、aggregate host/统一 `.deps.json`、private/native asset table 和 content hash。`asharia.packages.lock.json` 为整个 Package generation 选择 `source-build` 或一个 prebuilt artifact ID；禁止逐 assembly 混合 source/prebuilt 后临时合成 closure，也不允许从目录中猜测散落 DLL。Manifest 同时提供 source 与 prebuilt variant 时，Project policy 决定可选集合，但实际选择必须被 lock 固定。
@@ -148,6 +245,21 @@ resolve graph
 - published generation directory 永不原地修改；
 - Problems/Console 诊断包含 Package/Assembly、文件、范围、code、severity 和 fingerprint；
 - build failure 不修改 active 或 last-known-good pointer。
+
+当前 implicit 子集还没有 active/LKG 或 generation pointer。controller 只发布 current raw output lease；发布前再次
+验证 source、credential、workspace 与 sealed SDK mirror，失败、取消、超时或被更新调用替代时删除 controller-owned
+working/candidate tree，不覆盖任何既有 output。raw output 只有通过 current lease、PE/reference/PDB/deps
+无执行检查后才能形成 metadata report。publisher 再把 exact 四文件与 deterministic manifest 原子复制到 immutable
+publication；module indexer 对 current closed publication 建立 implementation/reference 一致的声明索引；
+admitter 再要求 non-empty rebuilt index 并签发 staging candidate receipt；policy selector 最后把 current
+candidate 固定分类为 `Pinned + RestartRequired`；load-image builder 再把 current policy 指向的 exact
+implementation/PDB 固定成无 module initializer 的 owned byte snapshot。report/publication/index 不是
+candidate，staging/policy/load-image receipt 也不是 loaded binary。pinned assembly host 是 process-resident
+binary receipt，module-type set 是其 exact runtime type receipt，constructed-module set 再固定其至多一次
+创建的 objects，configured-module set 再冻结逐 module declaration/metadata，definition set 最后投影为
+static/dynamic 共用的 shared definitions；在 caller-supplied ProjectSession scope 下还可以准备 combined
+structural candidate，但这些都还不是
+registry-committed/active module generation，也不推进 active 或 LKG。
 
 ## 6. Package lock 与安装
 
@@ -395,6 +507,10 @@ Collectible host 的 leak 将 reload unit 升级为 process-lifetime restart-req
 - cross-Package compile reference 不复制到 dependent closure，exact dependency ALC resolution 优先于 ADR/private table，imported/private identity ambiguity 被拒绝；
 - 私带 `Asharia.Editor`/Avalonia shared DLL 被拒绝；
 - build cancel/supersession、restore failure、immutable publish；
+- raw-output lease 漂移、implementation/reference identity 和 exact reference marker、unknown/wrong-identity
+  reference、PE/PDB content-id mismatch、non-canonical PDB document、strict single-project `.deps.json` shape，
+  metadata report 不泄露绝对路径且跨等价 output root 保持同一 identity，以及 publication 的五文件闭包、
+  跨物理根稳定 manifest/identity、source/staging drift、existing/overlap path 与 cancel cleanup；
 - Coexist/QuiesceThenActivate handover、mixed Coexist-dependent → QTA-dependency 的 delayed propagation、commit 前 dependencies-first resume、dependency partial-closure rejection；
 - rollback `ResumeAsync()` fault 进入 Degraded/restart-required，且不误报成功；
 - Dormant lazy module 不在 staging 强制激活，首次使用失败只隔离其 contribution；
@@ -419,6 +535,15 @@ Collectible host 的 leak 将 reload unit 升级为 process-lifetime restart-req
 ## 14. 参考资料
 
 - [NuGet PackageReference lock files and locked mode](https://learn.microsoft.com/en-us/nuget/consume-packages/package-references-in-project-files)
+- [.NET `dotnet restore`](https://learn.microsoft.com/en-us/dotnet/core/tools/dotnet-restore)
+- [.NET `dotnet build`](https://learn.microsoft.com/en-us/dotnet/core/tools/dotnet-build)
+- [.NET `PEReader.TryOpenAssociatedPortablePdb`](https://learn.microsoft.com/en-us/dotnet/api/system.reflection.portableexecutable.pereader.tryopenassociatedportablepdb?view=net-10.0)
+- [.NET reference assemblies](https://learn.microsoft.com/en-us/dotnet/standard/assembly/reference-assemblies)
+- [.NET `MetadataReader`](https://learn.microsoft.com/en-us/dotnet/api/system.reflection.metadata.metadatareader?view=net-10.0)
+- [Unreal Build Tool](https://dev.epicgames.com/documentation/en-us/unreal-engine/unreal-build-tool-in-unreal-engine)
+- [Unreal `FBuildProduct`](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Developer/DesktopPlatform/FBuildProduct)
+- [Godot managed build orchestration](https://github.com/godotengine/godot/tree/master/modules/mono/editor/GodotTools/GodotTools/Build)
+- [Stride build engine](https://github.com/stride3d/stride/tree/master/sources/buildengine)
 - [.NET AssemblyLoadContext concepts](https://learn.microsoft.com/en-us/dotnet/core/dependency-loading/understanding-assemblyloadcontext)
 - [.NET plugin loading with AssemblyDependencyResolver](https://learn.microsoft.com/en-us/dotnet/core/tutorials/creating-app-with-plugin-support)
 - [.NET assembly unloadability](https://learn.microsoft.com/en-us/dotnet/standard/assembly/unloadability)

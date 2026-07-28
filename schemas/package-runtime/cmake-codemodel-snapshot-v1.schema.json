@@ -1,0 +1,148 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.asharia.dev/package-runtime/cmake-codemodel-snapshot-v1.schema.json",
+  "title": "Asharia CMake Codemodel Snapshot v1",
+  "description": "Canonical machine-neutral evidence from one configured CMake File API codemodel v2 configuration.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "schemaVersion",
+    "configuration",
+    "generator",
+    "toolchain",
+    "targets"
+  ],
+  "properties": {
+    "schema": {
+      "const": "com.asharia.cmake-codemodel-snapshot"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "configuration": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "generator": {
+      "$ref": "#/$defs/generator"
+    },
+    "toolchain": {
+      "$ref": "#/$defs/toolchain"
+    },
+    "targets": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/target"
+      }
+    }
+  },
+  "$defs": {
+    "cmakeTargetName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "pattern": "^[A-Za-z0-9_.+\\-]+$"
+    },
+    "targetType": {
+      "enum": [
+        "EXECUTABLE",
+        "STATIC_LIBRARY",
+        "SHARED_LIBRARY",
+        "MODULE_LIBRARY",
+        "OBJECT_LIBRARY",
+        "INTERFACE_LIBRARY",
+        "UTILITY"
+      ]
+    },
+    "relativePath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*\\\\)(?!.*(^|/)\\.\\.?(/|$))(?!.*:).+$"
+    },
+    "generator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "multiConfig"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "multiConfig": {
+          "type": "boolean"
+        }
+      }
+    },
+    "toolchain": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "compilerId",
+        "compilerVersion",
+        "targetSystem",
+        "targetArchitecture"
+      ],
+      "properties": {
+        "compilerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "compilerVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "targetSystem": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "targetArchitecture": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        }
+      }
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "type",
+        "dependencies",
+        "artifacts"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/cmakeTargetName"
+        },
+        "type": {
+          "$ref": "#/$defs/targetType"
+        },
+        "dependencies": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/cmakeTargetName"
+          }
+        },
+        "artifacts": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/relativePath"
+          }
+        }
+      }
+    }
+  }
+}

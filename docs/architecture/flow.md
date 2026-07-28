@@ -16,6 +16,7 @@ flowchart TD
     EditorApp["apps/editor<br/>Dear ImGui host + editor smoke harness"]
     Core["engine/core"]
     Platform["engine/platform"]
+    HostRuntime["engine/host-runtime<br/>provider v4 + Eligibility V2<br/>callback table + ProcessScope V2"]
     Window["packages/window-glfw"]
     Profiling["packages/profiling"]
     Schema["packages/schema"]
@@ -25,8 +26,10 @@ flowchart TD
     Reflection["packages/reflection"]
     Serialization["packages/serialization"]
     SceneCore["packages/scene-core"]
+    SceneNative["packages/scene-core<br/>asharia::scene_native C ABI adapter"]
     ProjectCore["packages/project-core"]
     ProjectCoreIo["packages/project-core<br/>asharia::project_core_io"]
+    ProjectBootstrap["packages/project-bootstrap<br/>reader + ProcessApplicationV1 provider"]
     AssetCore["packages/asset-core"]
     AssetCoreIo["packages/asset-core<br/>asharia::asset_core_io"]
     AssetPipeline["packages/asset-pipeline"]
@@ -59,9 +62,12 @@ flowchart TD
     Serialization --> Core
     Serialization --> Reflection
     SceneCore --> Core
+    SceneNative --> SceneCore
     ProjectCore --> Core
     ProjectCoreIo --> ProjectCore
     ProjectCoreIo --> Archive
+    ProjectBootstrap --> HostRuntime
+    ProjectBootstrap --> ProjectCoreIo
     AssetCore --> Core
     AssetCoreIo --> AssetCore
     AssetCoreIo --> Archive
@@ -123,6 +129,23 @@ flowchart TD
   是 package-level 粗粒度边界，不能替代 target-level 依赖审查。
 - `engine/platform` 当前是预留 boundary target，只传递 `core` 依赖，不导出公共 header；真实
   GLFW/window/surface glue 仍在 `window-glfw`。
+- `engine/host-runtime` 的 `asharia::host_runtime_contract` 导出 callback/token V1、`ProcessApplicationV1`、public contribution helper 与
+  provider V4 registrar；provider implementation 仍只能经 PRIVATE `asharia::host_runtime_provider_bridge` 构造/消费 opaque token。
+  `asharia::host_runtime_registration` 实现 move-only recorder、预留 capacity、sticky first error、frozen callback table、table-owned
+  canonical RegistrationSnapshot v2、private process-local type/accessor evidence 与无 IO JSON renderer；registration 不调用 lifecycle
+  callback 或 payload accessor。
+  `asharia::host_runtime_activation_eligibility` 已硬切 Eligibility V2：T3/C6 private attachment 经
+  `asharia::host_runtime_current_image_provider_bridge` 封存 generated current-image descriptor，Stage 1 在 provider invocation 前校验
+  T3/C6/provider-v4/Snapshot-v2 tuple、ProcessScope projection、process/control-thread epoch 与一次性 claim；recording 完成后校验
+  composition generation/Blueprint digest，Stage 2 再把 authority 绑定到同一 exact table instance。
+  `asharia::host_runtime_process_scope` 只消费 admitted owner，preflight 按 sealed Blueprint process order 建立 fixed contribution slots。
+  `ProcessScopeExecutorV2::start()` 执行 create/activate、per-factory accessor staging/atomic lease commit，并在全部 factories 成功后开放
+  typed registry；weak view/handle 的 query/borrow 对错误 thread、stale epoch、revoking/revoked/expired generation fail closed。rollback/stop
+  顺序是 reverse quiesce → `Revoking` → reverse lease revoke → reverse deactivate/destroy → `Revoked`。targets 只按 contract →
+  registration → eligibility → process-scope 方向依赖；ProcessScope 不解析 package JSON、receipt 或 artifact bytes，也不提供其他 scopes、
+  jobs/subscriptions lease 或 Bootstrap 状态映射。
+  现有 sample/editor app 仍未直接链接 process-scope target；但 renderer 6 attachment 已为 generated Windows Development Host 私有链接
+  current-image bridge、exact static providers 与 ProcessScope，renderer 3 normal mode 已形成第一条真实 Host vertical path。
 - `asharia::rhi_vulkan` 是基础 Vulkan 后端，不公开依赖 RenderGraph。
 - `asharia::rhi_vulkan_rendergraph` 是 RenderGraph/Vulkan 适配层，负责把抽象 graph state 翻译为 Vulkan 类型。
 - `renderer-basic` 只描述后端无关的 basic renderer graph 片段。
@@ -131,10 +154,19 @@ flowchart TD
 - `schema`、`archive`、`cpp-binding` 和 `persistence` 是新的 schema-first persistence 路线；
   `reflection` / `serialization` 仍作为过渡兼容路径由 sample-viewer smoke 覆盖。
 - `scene-core`、`asset-core` 和 `material-core` 目前是 CPU/headless 数据模型 package，不依赖 renderer、RHI 或 editor；
+  同 package 的 `asharia::scene_native` 是只依赖 `asharia::scene_core` 的 shared adapter，当前 C ABI 只提供
+  version/struct-size 校验后的 opaque World、generation-safe entity 生命周期、validated local Transform 与
+  UTF-8 display/debug name get/set，并强制所有操作由创建线程调用。它尚不公开 hierarchy/world Transform、
+  change notification、managed binding 或 render extraction。
+  Studio 发行的 `Asharia.Runtime.Contracts` 只固定与该 C ABI 对应的 unmanaged `EntityId`、float3、quaternion
+  与 local Transform value layout；它没有 native function imports、World lifetime 或 Scene provider 行为。
   `.ameta` 文本 IO 位于可选 `asharia::asset_core_io` target，只额外依赖 `archive` strict JSON facade。
 - `project-core` 目前只拥有最小 project descriptor model；`asharia::project_core_io` 通过 `archive`
   strict JSON facade 读写 `asharia.project.json`，不保存 cook/package profiles、editor workspace 或 runtime
   resource state。
+- `packages/project-bootstrap` 是 Engine Distribution 固定选择、项目不可替换的 source boundary。reader/summary target 复用
+  `project_core_io`，provider target 发布单例 `ProcessApplicationV1`；factory create/activate 不做 IO，只有 ProcessScope Active 后的
+  `run()` 才读取真实 `asharia.project.json` 并返回确定性摘要。
 - `asset-pipeline` 当前做 CPU-only metadata discovery / product execution：显式 source/.ameta 条目进入
   discovery facade，输出 deterministic manifest、`AssetCatalog` 输入、product blob 和 diagnostics；它可以
   私有复用 importer-specific package，例如 texture importer、`material-instance` 和 `shader-authoring`，但不做
@@ -170,6 +202,274 @@ flowchart TD
 - Scene Tree 和 Inspector 现在是默认 workbench 中的 read-only shell panel。它们消费 app-local
   `EditorSelectionSet` 的稳定 `sceneId + EntityId` snapshot，但仍不消费 runtime scene hierarchy 或 inspector
   data model；当前 UI 只表达 selection contract 状态，避免伪造场景数据。
+
+## 当前 Windows Development Host 生成、验证与 normal 执行流
+
+这是 #290 构建、#291 callback-table registration、#294 typed contribution evidence、#295 payload accessor、#288 Host executable binding
+与 #297 generated current-image normal Host 已落地的 opt-in 工具路径，
+不替换现有 sample/editor 开发入口：
+
+```mermaid
+flowchart LR
+    Plans["Verified Session + Source Build + Blueprint + Binding Plan"] --> Composition["Static composition<br/>renderer 6 / provider v4"]
+    Composition --> Template["Windows development Host template<br/>renderer 3"]
+    Conan["Caller-provided Conan toolchain + compiler environment"] --> Configure["Controlled final CMake configure"]
+    Template --> Configure
+    Configure --> Bind["Latest CMake File API exact target binding"]
+    Bind --> Build["Build exact Host target"]
+    Build --> Rebind["Refresh target + regular-file check"]
+    Rebind --> Verify["Restricted Host<br/>build frozen callback table"]
+    Verify --> Handoff["#295 table-owned private accessor evidence<br/>RegistrationSnapshot v2 stable projection"]
+    Rebind --> SameIndex["#288 same-index target + configured CXX"]
+    SameIndex --> Stage["Stream exact executable into owned staging"]
+    Handoff --> Stage
+    Stage --> StagedVerify["Run staged Host restricted mode"]
+    StagedVerify --> Cross["Cross-check exact registrations + re-hash bytes"]
+    Cross --> Receipt["Canonical Host Executable Binding Receipt"]
+    Receipt --> Deep["Deep-verify closed generation"]
+    Deep --> Publish["Single directory rename"]
+```
+
+T3 Host template 固定拥有唯一 `main()`、console subsystem 和 build-root 内 runtime output layout；它把 CLI dispatch、restricted
+registration verification 与 normal ProcessApplication orchestration 分到小 TU。build adapter 使用参数数组、受控环境与 `shell=False`，
+且 Conan 仍由 caller 先行完成。#288 publisher 不信任 mutable build-tree executable 是最终对象：它流式复制到 collector-owned
+staging，运行并复验 staged bytes，再以 receipt、snapshot 和 `host/<nameOnDisk>` 形成 content-addressed closed generation。
+该 restricted 路径只观察 stable registration/typed-contract evidence 与 artifact bytes，不执行 factory activation/lifecycle，
+不启动 Editor UI，也不证明 normal lifecycle 已运行。C6 composition 仍是薄 generated attachment，构建只指定 exact Host target，
+且不使用 clean-first。restricted Host 会冻结 callback table，但 synthetic provider 使用 abort probes，验证 registration/receipt
+路径对五个 lifecycle callbacks 和全部 payload accessors 的调用次数为零。
+
+Host build、binding assembly 与 deep verifier 只接受 Template renderer 3 + Composition renderer 6/provider v4；pre-current
+bindings/Binding Plan 与 renderer/provider tuple 没有 reader 或 adapter。Receipt v1 保持 build/publication artifact binding envelope，
+RegistrationSnapshot v2 仍是 stable registration evidence schema。normal startup 走 generated current-image descriptor，不读取或 hash
+executable path，也不依赖外部 launch receipt。详见
+[Host Executable Binding Receipt v1](adr-host-executable-binding-receipt-v1.md) 与
+[Static Typed Contribution Contract Bindings v1](adr-static-typed-contribution-contract-bindings-v1.md)、
+[Static Contribution Payload Accessors v1](adr-static-contribution-payload-accessors-v1.md) 和
+[Generated Current-Image Host 与 Project Bootstrap v1](adr-generated-current-image-project-bootstrap-host-v1.md)。
+
+## Activation Eligibility V2 与 Project Bootstrap normal Host 流（#297）
+
+下面是 [Generated Current-Image Host 与 Project Bootstrap v1](adr-generated-current-image-project-bootstrap-host-v1.md) 的当前执行路径。
+它保留 V1 的 provider-before/after 两阶段与 exact-table affinity，但 active public API 已硬切 V2；四个外部 handoff、artifact identity
+和 launch receipt 不再是 normal startup 输入。restricted mode 仍是零 lifecycle/accessor 的 disposable 取证路径；normal mode 才执行：
+
+```mermaid
+flowchart LR
+    C6["C6 sealed current-image descriptor"] --> Pre["Stage 1 eligibility"]
+    Pre --> Admission["PreRegistrationAdmissionV2"]
+    Admission -->|"consume once"| Recording["recordAdmittedStaticFactoryProviders"]
+    Recording --> Pending["Pending table\nsame process/registration lineage"]
+    Pending --> Cross["Stage 2 exact-table affinity"]
+    Cross --> Admitted["AdmittedStaticFactoryCallbackTableV2"]
+    Admitted --> Prepare["prepareProcessScopeExecutorV2\nzero-callback preflight"]
+    Prepare --> Start["start\ncreate -> activate -> publish"]
+    Start -->|success| Active["ProcessScope Active"]
+    Start -->|failure| Rollback["reverse rollback\nStartFailed"]
+    Active --> Registry["registry.single<ProcessApplicationV1>()"]
+    Registry --> Borrow["borrow"]
+    Borrow --> Run["run(--asharia-project-root ...)"]
+    Run --> Project["read real asharia.project.json"]
+    Project --> Release["release borrow"]
+    Release --> Stop["explicit stop\nreverse quiesce / revoke / deactivate / destroy"]
+    Stop --> Stopped["Stopped"]
+```
+
+Stage 1 failure 必须发生在任何 provider invocation 前，并校验 T3/C6/provider-v4/Snapshot-v2 tuple、generated ProcessScope projection、
+process/control-thread epoch 与一次性 claim。recording 后必须对证 composition generation 和 Blueprint digest；Stage 2 failure 不暴露
+descriptor，snapshot byte-identical 的另一张 table 也会因 private lineage 不同而被拒绝。ProcessScope preparation exact-map sealed
+process projection，不把 callback table canonical order 当作 lifecycle order；表中不属于 process projection 的 descriptors 保持 inert。
+
+Host 在 Active registry 中同步借用 `ProcessApplicationV1`，固定 Project Bootstrap 只在 `run()` 读取项目描述并输出 project name、
+canonical project ID 与 asset source root count 的确定性 JSON；成功和失败路径均先 release borrow，再显式 stop。该 Slice 不发布
+`ProjectReady`，也不实现 Editor UI/状态机，但 normal admission 已不再依赖 PRIVATE test issuer 或外部 launch receipt。
+
+## Bootstrap Project-Open Session 流（#298）
+
+[Bootstrap Project-Open Session v1](adr-bootstrap-project-open-session-v1.md) 已在 #297 的 Host vertical 之外增加固定 Editor Image
+拥有的 headless 控制面。一个 request 只接受一个 canonical project root；package inspection 从该 root 读取并复验
+`asharia.packages.json` 与 `asharia.packages.lock.json` exact bytes，固定 Project Bootstrap Host 随后仍从同一 root 读取
+`asharia.project.json`。inspection 不 resolve、不写 lock，也不读取项目描述。
+
+```mermaid
+flowchart LR
+    Request["Project-open request<br/>one canonical root"]
+    Inspect["Read-only package inspection<br/>Manifest + Lock + fresh candidates"]
+    Session["Effective Session"]
+    State["Pure Bootstrap reducer"]
+    Image["C6 + verified published Host binding"]
+    Run["Bounded published Host run<br/>--asharia-project-root"]
+    Summary["Project Bootstrap Summary v1"]
+
+    Request --> Inspect
+    Inspect --> Session
+    Session --> State
+    Session --> Image
+    Image -->|"missing / stale / invalid"| Pending["PendingBuild"]
+    Image -->|"exact identity + path/type/size"| Run
+    Run --> Summary
+    Summary --> State
+```
+
+current image 对证覆盖 Effective Session fingerprint、`EngineGenerationId`、host kind、target platform、configuration、C6 generation
+与 binding receipt。normal-open 只检查已深度验证 publication 下 artifact 的路径、regular-file 类型与 size，不重新 hash bytes；深度
+验证仍属于 build/publication/install/repair 边界。执行入口只使用 binding 指向的 published artifact，不回退到 mutable build target，
+binding receipt 也不会作为 activation ticket 传给 Host。
+
+纯 reducer 在每个副作用前归约现有 evidence：非 Ready session 不启动 Host；current image 不可用时得到 `PendingBuild`；exit `65`
+得到 `SafeMode`；spawn/timeout/output/protocol/Host lifecycle 失败得到 `FatalDistributionError`；exit `0`、empty stderr 和 strict
+versioned summary 才得到 Bootstrap `Ready`。`PendingRestart` 与完整 `ProjectReady` 均不由该 v1 产生。
+
+## Studio Distribution 固定输入物化流（#299）
+
+这是 build/release flow，不是 Project Open 或 runtime activation：
+
+```mermaid
+flowchart LR
+    Native["msvc-release native outputs<br/>editor_native.dll + slang.dll"]
+    Publish["dotnet publish<br/>EditorImage / fresh Windows x64 root"]
+    DotNet["exact .NET selection<br/>host + SDK + hostfxr + runtime + reference pack"]
+    ImageProducer["stage-editor-image<br/>static identity qualification + copy/rehash<br/>+ closed-root verify"]
+    ImageInput["closed Editor Image input<br/>typed byte bindings"]
+    ProfileSource["repo-owned production Editor Host Profile<br/>canonical exact bytes"]
+    ProfileProducer["stage-editor-host-profile"]
+    ProfileInput["closed Host Profile input<br/>typed exact-byte binding"]
+    Packages["real installable package inputs<br/>downstream"]
+    Assembler["canonical Distribution Assembler<br/>not invoked by #299"]
+
+    Native --> Publish
+    Publish --> ImageProducer
+    DotNet --> ImageProducer
+    ImageProducer --> ImageInput
+    ProfileSource --> ProfileProducer
+    ProfileProducer --> ProfileInput
+    ImageInput -.assembler input only.-> Assembler
+    ProfileInput -.assembler input only.-> Assembler
+    Packages -.required downstream.-> Assembler
+```
+
+两个 producer 都要求 fresh output root；失败或 drift 不返回 successful receipt，也不覆盖已有 root。
+#299 不生成 `EngineGenerationId`，不执行 package selection、canonical assembly、#283 installed-generation byte health、
+current selection、Project Open 或 Host activation。Editor Image 的资格检查不加载或执行候选输入，也不证明 ABI、
+launch behavior 或 runtime health。
+
+## Studio Project Code 隔离 SDK 构建、发布与 initial scope activation 流（#305–#322、#332–#333）
+
+这是 `Asharia.Studio.Application` 的 headless Project Code control plane，不经过 Avalonia storage API；
+pinned loader 节点加载 exact 项目 assembly，resolver 只解析已索引 Type，constructor owner 才首次有意执行
+目标 module 用户代码。loader 之前的节点不加载候选，constructor 之前的节点都不调用 module
+constructor/Configure/Activate：
+
+```mermaid
+flowchart LR
+    Image["current Editor Image inventory lease"]
+    Projection["managed build environment projection"]
+    Credential["Windows x64 semantic build credential"]
+    Source["canonical project root<br/>exact Editor/**/*.cs"]
+    Workspace["immutable implicit SDK workspace"]
+    Mirror["short-lived sealed dotnet mirror<br/>controller-owned temp root"]
+    Restore["exact SDK probe<br/>explicit restore"]
+    Build["build --no-restore<br/>bounded process"]
+    Raw["immutable raw output<br/>DLL + ref DLL + PDB + deps.json"]
+    Inspect["no-execute artifact inspection<br/>PE + ref marker + PDB + deps"]
+    Report["path-free metadata report<br/>content-addressed"]
+    Publication["immutable inspected publication<br/>artifact.json + four evidence files"]
+    Index["no-load module index<br/>implementation + reference metadata"]
+    StagingCandidate["staging candidate receipt<br/>non-empty rebuilt index"]
+    Policy["host policy receipt<br/>Pinned + RestartRequired"]
+    Snapshot["owned pinned load-image snapshot<br/>implementation DLL + portable PDB"]
+    Loader["exact pinned binary host<br/>non-collectible ALC"]
+    Modules["exact indexed module Type receipts"]
+    Factory["exact pinned module objects<br/>at-most-once constructor owner"]
+    Configure["exact configured declarations<br/>at-most-once Configure owner"]
+    Definitions["shared module definitions<br/>exact pure projection"]
+    ScopeCandidate["invisible Project scope candidate<br/>caller ProjectSession identity"]
+    Registration["initial registry registration<br/>exact partition owner"]
+    Activation["exclusive initial scope activation<br/>single async owner"]
+
+    Image --> Projection
+    Projection --> Credential
+    Credential --> Workspace
+    Source --> Workspace
+    Credential --> Mirror
+    Workspace --> Mirror
+    Mirror --> Restore
+    Restore --> Build
+    Build --> Raw
+    Raw --> Inspect
+    Inspect --> Report
+    Report --> Publication
+    Publication --> Index
+    Index --> StagingCandidate
+    StagingCandidate --> Policy
+    Policy --> Snapshot
+    Snapshot --> Loader
+    Loader --> Modules
+    Modules --> Factory
+    Factory --> Configure
+    Configure --> Definitions
+    Definitions --> ScopeCandidate
+    ScopeCandidate --> Registration
+    Registration --> Activation
+```
+
+workspace 和 dotnet closure 在每个外部步骤后复验；同 project 新调用会 supersede 旧调用。CLI 环境从空白
+allowlist 构造，工作根使用固定短前缀以保留 Windows legacy path budget；最终 candidate 留在 output 同级并以
+directory move 发布。失败、timeout、cancel、output overflow、输入/SDK drift 都不发布 raw output，也不修改
+active/LKG 状态。#311 的 inspector 只消费 current raw-output lease，在检查前后复验完整输入与四文件 evidence；
+它只读 CLR/PDB/JSON metadata，不加载或执行 assembly。#312 publisher 只消费 current raw lease 与 fresh
+publication root，内部重新检查后以 BCL bounded stream copy/hash、staged rehash、exact 五文件 closed-tree
+verification 和一次 directory rename 发布 path-free、content-addressed immutable evidence。失败、取消、
+source/staging drift 或 existing/overlap/reparse path 不覆盖 final root。report/publication 仍不是 loadable
+generation candidate。#313 indexer 在扫描前后复验 exact closed publication，只用 BCL
+`PEReader`/`MetadataReader`/`CustomAttribute.DecodeValue` 对 implementation 与 reference assembly 建立相同的
+声明 surface：一个 entry 必须由 exact `Asharia.Editor` contract 的 `EditorModuleAttribute` 声明，并对应 public
+top-level sealed、non-abstract、non-generic、direct `EditorModule` subtype 与 public parameterless constructor。
+重复 definition/type、非法 attribute/type shape 或双 assembly surface drift 均 fail closed。空索引是合法事实，
+但不代表可加载资格。#314 admitter 只消费 publication receipt，内部重建 index，要求至少一个 module entry，
+并在签发前再次复验 publication；candidate identity 只绑定 publication/index identity，不绑定 absolute locator。
+receipt 继承 #312 publication root 仅供当前进程后继寻址，`IsCandidateCurrentAsync` 会重新索引并对证完整 surface。
+candidate 只允许后继 loader 开始自己的预执行验证，不证明 managed reload eligibility；index/candidate 不创建
+current pointer、active、LKG、ALC，也不加载 assembly。#315 selector 只消费 current candidate；当前 v1 是
+external-build 且没有 resource/native/global-side-effect 或 cooperative-unload evidence，因此全部
+activation/handover 组合都确定性签发 `Pinned + RestartRequired` policy。policy id 只绑定 candidate id 与
+稳定 enum/reason，absolute root 仍只是继承 locator；`IsPolicyCurrentAsync` 重算 identity 并复验 candidate。
+selector 不加载/执行 assembly，也不创建 ALC。
+#316 load-image builder 只消费 current policy，在读取 exact implementation DLL 与 portable PDB 前后复验
+policy，并用每文件 256 MiB 上限约束 owned bytes。它再次核对 size/hash，用 BCL PE metadata 拒绝 global
+`<Module>` `.cctor`，因为 CLR load 会执行 module initializer。image id 只绑定 policy 与两文件 evidence，
+快照只提供不暴露底层 buffer 的新只读流；它不创建 ALC、不加载/执行 assembly，也不推进 current/active/LKG。
+#317 pinned assembly loader 在首次 load 前复验 image 与进程 Default Editor contract。loader-owned project
+reservation 串行不可逆边界：same image 幂等复用；different image 或 ALC 创建后的失败均要求进程重启。首次
+load 创建 path-free、non-collectible custom ALC，只从 owned implementation/PDB streams 加载 exact root
+assembly；dependency hook 固定返回 `null`，不探测 path/private/native assets。host 只核对并持有 context、
+single Assembly、binding identity 与 MVID；它本身不解析 module type、不 Configure/Activate，也不推进
+current/active/LKG。
+#318 pinned module type resolver 只消费 #317 host 与内嵌 #313 index。它按 index 顺序对 root Assembly 做
+case-sensitive full-name lookup，复核 Type 仍属于 exact Assembly，且保持 public top-level sealed
+non-generic concrete direct `EditorModule` shape 与 public parameterless constructor presence。module-type set
+identity 只绑定 host/index；resolver 不枚举任意 type、不实例化 attribute/module、不调用 constructor/
+Configure/Activate，也不推进 registry/current/active/LKG。
+#319 pinned module constructor 只消费该 type set，并由显式 owner 以 per-project reservation 串行 first
+execution。它按 index 顺序调用 exact constructor receipt；same lineage 重复/并发调用返回同一 objects，
+constructor failure 保留 partial objects、禁止重试并要求重启。该同步边界会执行目标 module static/instance
+constructor，但不读取 attribute、不 Configure/Activate、不做 I/O 或推进 registry/current/active/LKG。
+#320 pinned module configurator 再只消费 exact construction，并按 index 顺序为每个 object 建立
+`EditorModuleBuilder`、调用一次 Configure、Build immutable declaration；metadata 只投影 exact entry。
+same construction lineage 复用同一 declarations，Configure/Build failure 保留 objects/partial receipts、
+禁止重试并要求重启。该阶段不重构 object、不读取 attribute、不 Activate、不做 I/O 或推进
+registry/current/active/LKG。#321 再将 exact metadata/object/declaration receipts 纯内存投影为
+static/dynamic 共用的 shared definitions，保留顺序与 keyed lookup，但不执行用户代码或进入 registry。
+#322 只在 caller 显式提供的 ProjectSession `ScopeInstanceId` 与 host-capability snapshot 下调用现有
+transaction Prepare，生成不可见、combined-validated candidate；它不把 persistent ProjectId 当 session id，
+也不 Commit/reserve/Activate。#332 只在 captured snapshot 仍有效且目标 Project scope 为空时首次提交 exact
+candidate，并返回绑定 exact partition reference 的 registration owner；关闭 owner 时幂等 compare-and-remove，
+stale/已有 scope/重复消费返回 path-free conflict，successor replacement 永不被旧 owner 删除。#333 要求
+runtime capability snapshot 与 Prepare 时的 capability ID 集合完全一致，再把 registration 一次性转交给
+独占异步 activation owner；同 scope 已有 activation 即使绑定同一 partition 也会拒绝。`Active`、`Dormant`、
+`WaitingForCapability` 与 `Blocked` 保留 owner，任一 `Faulted` 返回 path-free typed failure；取消、Host
+failure 与显式关闭都先释放 activation，再退役 exact registration。该阶段仍不创建正式 ProjectSession，
+不推进 contribution/current/active/LKG，也不实现 replacement、revision、catalog transaction 或前端接线。
 
 ## 当前架构总览
 

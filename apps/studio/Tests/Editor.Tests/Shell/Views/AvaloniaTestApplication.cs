@@ -7,6 +7,7 @@ internal sealed class AvaloniaTestApplication : Application;
 
 internal static class AvaloniaTestApplicationBootstrap
 {
+#pragma warning disable CA2255 // Test-wide Avalonia setup must run before any view fixture.
     [ModuleInitializer]
     internal static void Initialize()
     {
@@ -17,4 +18,5 @@ internal static class AvaloniaTestApplicationBootstrap
                 .SetupWithoutStarting();
         }
     }
+#pragma warning restore CA2255
 }

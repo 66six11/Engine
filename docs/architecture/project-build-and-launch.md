@@ -1,7 +1,7 @@
 # Project Build、Cook、Package 与 Launch 架构
 
 状态：Target Architecture Proposal，不表示当前仓库已经实现本文流水线。
-更新日期：2026-07-13
+更新日期：2026-07-16
 
 ## 1. 文档目标
 
@@ -34,6 +34,11 @@ Editor 的 Build、Build & Run、Cook、Package 和 Launch Profiles 只是这条
 - **Play In Editor 不等于 Standalone Launch。** Play Session 可在 Editor host 内运行隔离的 runtime world；Standalone 必须是独立子进程，使用与产品相同的 runtime bootstrap。
 - **Package Manager 不拥有构建执行。** 它以完整 System/Feature/Integration/Content Package 为导入单位并锁定 capability graph；Project Product Pipeline 根据 lockfile 选择各包内部 modules/contributions，生成 build/cook/stage plan。
 - **shipping runtime 不读取 source project。** 它只消费 stage manifest、runtime config、locked module facts 和 cooked content catalog。
+- **Editor Image 不由项目图组装。** Editor executable、最小 UI Shell、Package Manager、诊断、Build/Repair 入口和 Safe Mode
+  随 Engine/Editor 发行；项目 graph 失败只能影响项目会话，不能移除修复它的基础 Editor。
+- **Engine Distribution 与 Project Lock 分属不同 owner。** 只读 Engine Distribution Manifest 固定
+  `EngineGenerationId` 和 bundled inventory；项目 manifest/lock 只拥有项目依赖。两者与 Host Profile 只在启动时派生
+  Effective Session Plan，不保存第三份依赖真相。
 
 ## 3. 外部资料校准
 
@@ -44,25 +49,63 @@ Editor 的 Build、Build & Run、Cook、Package 和 Launch Profiles 只是这条
 - O3DE Project Export 同时支持 Project Manager 与 CLI，并分别处理 launcher build、asset processing/bundling、release layout 与 archive。这验证了 Editor 一键操作应覆盖同一 headless export API，而不是实现第二条流水线：<https://docs.o3de.org/docs/user-guide/packaging/project-export/project-export-pc/>
 - O3DE Asset Bundler 从实际使用的内容和依赖生成 release bundles，而不是复制整个 source tree。这与 Asharia 的 dependency closure、cook manifest 和 source-free runtime 原则一致：<https://docs.o3de.org/docs/user-guide/packaging/asset-bundler/>
 - CMake Presets 区分可提交的 `CMakePresets.json` 与用户本地 `CMakeUserPresets.json`，Workflow Presets 可以组合 configure/build/test/package steps。这支持“共享 profile 与 machine-local override 分离”，但 Asharia Build Profile 仍负责 CMake 之外的 package graph、cook、stage、deploy 和 launch：<https://cmake.org/cmake/help/latest/manual/cmake-presets.7.html>
+- Unity 将随 Editor 分发的 Core/Built-in packages 与项目 manifest/lock 分开，并在项目或 package code 失败时提供
+  Safe Mode；embedded packages 又保留了 source-first 开发态。这些可观察行为支持“基础 Editor 先启动，发行库存与项目图
+  分属不同 owner”的边界，但本文不据此断言 Unity 未公开的内部 bootstrap 实现：
+  <https://docs.unity3d.com/6000.0/Documentation/Manual/pack-core.html>、
+  <https://docs.unity3d.com/6000.0/Documentation/Manual/pack-build.html>、
+  <https://docs.unity3d.com/6000.0/Documentation/Manual/SafeMode.html>、
+  <https://docs.unity3d.com/ja/2023.2/Manual/upm-embed.html>。
+
+发行、项目与原生组合的完整决策见
+[Editor Image、Engine Distribution 与原生组合 ADR](adr-editor-engine-distribution-and-native-composition.md)。
 
 ## 4. 术语与产物层级
 
 | 名称 | 定义 | 是否可直接分发 |
 | --- | --- | --- |
+| Editor Image | 可先于项目激活启动的 Editor executable、最小 UI、diagnostics、Package Manager、Build/Repair 与 Safe Mode | 是，属于 Engine/Editor 发行 |
+| Engine Distribution Manifest | 一个 exact Engine/Editor generation 的只读 Editor Image、bundled package、package artifact 与 Host Profile inventory | 是，随 Engine/Editor 发行 |
 | Source Project | 项目描述、source assets、项目代码、embedded packages 和版本化配置 | 否 |
-| Resolved Project | `asharia.packages.lock.json` 与 Host Profile 过滤后的精确 package/module graph | 否 |
+| Project Package Lock | 项目拥有的 exact package graph、来源、依赖闭包与 artifact generation references；不复制 Engine inventory | 否 |
+| Effective Session Plan | Distribution、Project Lock 与 Host Profile 派生的状态及 Host/Build planning handoff；它是 generated current-image 输入，不是 runtime admission 或第三份 lock | 否，可丢弃重建 |
+| Resolved Project | Project Package Lock 与 Distribution references 对证后的精确项目 package/module graph | 否 |
 | Native Build Tree | CMake/Ninja/MSVC/ClangCL 的 object、library、tool 和 executable 输出 | 否 |
+| Package Artifact Manifest | exact package/module/product 对 package-relative files、size、SHA-256 与 Source Build Plan provenance 的中间证据 | 否，仍需 composition/stage |
 | Cook Cache | 由 source、settings、tool version 和 target profile 决定的可重建 artifact cache | 否 |
 | Stage Layout | executable、runtime libraries、runtime config、cooked content、license 与符号策略组成的可运行目录树 | 是，经过验证后 |
 | Distribution Artifact | 从 stage 生成的 archive、installer、platform bundle 或 store payload | 是 |
 | Launch Session | 对一次本地或远程运行的身份、进程、日志、ready、exit、crash 和停止状态的记录 | 否 |
 
+[Package Product & Artifact Evidence v1](adr-package-product-artifact-evidence-v1.md) 已实现 Package Artifact Manifest 的 closed schema
+与纯内存 verifier；artifact collector/publication 只在 build、publication、install、cache restore 与 repair 边界验证并发布不可变
+package artifact generation。它不执行 Build/Stage、不替代最终 `Stage Layout`，也不是 normal Host 每次启动的全量 hash gate。
+[Engine Distribution Manifest v1](adr-engine-distribution-manifest-v1.md) 已实现只读发行库存合同与内容派生
+`EngineGenerationId`；它不执行 installer/repair，也不取代项目 package lock。
+[Engine Distribution Assembly v1](adr-engine-distribution-assembly-v1.md) 已实现 build/release 侧的新 generation 组装与原子发布；
+它不等于 installed Repair、Launcher 或项目 product build。
+当前 Studio Project Code 只从可撤销的 exact Editor Image inventory lease 派生发行版声明的
+`managed/dotnet` inventory projection，再通过完整 selected-file 复验、dotnet-root 文件/目录闭包、
+Windows x64 native PE、SDK/runtime metadata、CLR identity、reference-pack identity set 与 Host contract
+reference closure 签发 semantic build credential。该 credential 是后续项目 `Editor/` workspace/build controller
+可消费的执行选择证据；它本身不运行 `dotnet`、不加载 assembly，也不是 build result、artifact generation
+或 project product pipeline 的 stage credential。当前后继只实现 caller-bound 的零配置 implicit workspace：
+exact 项目根 `Editor/**/*.cs`、credential-bound Host contracts 与 canonical SDK/MSBuild/NuGet barrier files 被
+复制/渲染到全新 staging 后原子发布，identity 不含绝对 checkout/cache path，执行前可复验 source、credential
+与 workspace closure。`.asmdef`、Package graph、restore/build、artifact/candidate 仍未落地。
+[Windows Development Host Template v1](adr-windows-development-host-template-v1.md) 已实现第一个固定
+`windows-development-v1` native Host 闭环：immutable template、受控 final configure/build、CMake File API exact target/path
+binding 与 restricted registration verification。#297 已把 Template renderer 3 与 Composition renderer 6 的 normal mode 接到
+Eligibility V2、ProcessScope V2 与固定 Project Bootstrap `ProcessApplicationV1`；该路径仍不等于完整 stage、tracked launch session、
+Editor Bootstrap UI 或 `ProjectReady`。#288 receipt 继续作为独立 build/publication artifact evidence，不是 normal startup ticket。
+
 ### 4.1 流水线阶段
 
 | 阶段 | 输入 | 输出 | 失败时保证 |
 | --- | --- | --- | --- |
-| Resolve | project/package manifests、package sources | exact lock graph、Host-filtered graph | 不修改现有可用 lock，或以原子方式提交新 lock |
-| Generate | lock graph、Build Profile、host template | generated composition root、CMake/build metadata | generated tree 可整体丢弃 |
+| Resolve | project/package manifests、package sources | project-owned exact lock graph | 不修改现有可用 lock，或以原子方式提交新 lock |
+| Compose | Engine Distribution Manifest、Project Lock、Host Profile | Effective Session/Host Composition 与状态 | 不修改三项输入，不把派生计划提交为 lock |
+| Generate | effective composition、Build Profile、host template | generated composition root、CMake/build metadata | generated tree 可整体丢弃 |
 | Build | `conan.lock`、toolchain、generated targets | tools、runtime executable、libraries、symbols | 不污染已验证 stage |
 | Cook | asset roots、dependency graph、cook profile、tools | immutable target artifacts、content catalog | publication 原子；旧 artifact 保持可用 |
 | Stage | native outputs、cooked closure、runtime metadata | deterministic relative directory tree、stage manifest | 写入临时目录，验证成功后发布 |
@@ -79,6 +122,7 @@ Editor 的 Build、Build & Run、Cook、Package 和 Launch Profiles 只是这条
 
 | 文件或目录 | Owner | 提交策略 | 内容 |
 | --- | --- | --- | --- |
+| `<engine-root>/asharia.engine-distribution.json` | Engine/Editor build 与 installer | 随发行版本只读安装，不由项目提交或重写 | `EngineGenerationId`、Editor Image evidence、bundled inventory、package artifact 与 Host Profile references |
 | `asharia.project.json` | `project-core` | 提交 | project id/name、asset source roots、cache/discovery 等项目核心事实 |
 | `asharia.packages.json` | `package-runtime` | 提交 | direct complete System/Feature/Integration/Content Packages、Feature Sets、version ranges、package-level options；不列内部 targets/modules |
 | `asharia.packages.lock.json` | package resolver | 提交 | exact versions、sources、integrity、resolved dependency graph |
@@ -88,6 +132,9 @@ Editor 的 Build、Build & Run、Cook、Package 和 Launch Profiles 只是这条
 | `build/` 与 project cache | build/cook services | 忽略 | generated、incremental、stage、dist 和 session outputs |
 
 `asharia.build.json` 不复制 package 依赖图，只引用 profile、Host 和构建策略。package selection 发生变化时，Build Profile 自动消费新的 lock graph。
+
+`packages/project-bootstrap` 是 Engine Distribution 固定选择、项目不可替换的 source boundary；它使用 `project-core` IO 读取
+`asharia.project.json`，但不取得项目文件格式或 package graph 的所有权。
 
 ### 5.1 Build Profile 最小模型
 
@@ -190,7 +237,7 @@ Build 和 Cook 在工具可用后可以并行；Stage 必须等待目标 runtime
 
 1. 验证 `conan.lock`、目标 profile 和 package third-party requirements 一致；
 2. 运行或复用已验证的 Conan bootstrap output；
-3. 由 locked package graph 生成 composition targets；
+3. 由 Engine Distribution、Project Lock 与 Host Profile 派生 composition，再生成 targets；
 4. 使用明确的 CMake configure/build preset；
 5. 记录 compiler、SDK、Conan/CMake 版本和实际 preset 到 Build Report。
 
@@ -200,13 +247,71 @@ CMake Workflow Preset 可以作为 native 子流程实现，但不能替代 Asha
 
 第一版优先采用**生成的薄组合根 + 静态/启动期注册 modules**：
 
-- generator 根据 Host Profile 和 lock graph 选择 runtime-compatible modules；
-- 生成只包含注册表、entry point glue 和 build metadata 的 source/CMake；
+- generator 只接受已经对证的 Source Build Plan、Host Activation Blueprint 与 verified Static Factory Provider Binding Plan，
+  不重新解释 Host Profile 或 lock graph；
+- Blueprint 固定 logical factory、scope、依赖顺序与 contribution bindings，但不假装 artifact 或 native symbol 已存在；
+- provider binding 把每个 selected logical factory 对证到同 module 的静态 target、public header 与类型安全 function；
+  function token 只用于生成直接 C++ 引用，不用于运行时字符串 symbol lookup；
+- Binding Plan 是从上述 verified inputs 派生、可丢弃重建的生成 handoff，不是第三份 lock 或 artifact receipt；
+- renderer revision 6 生成 exact registration capacity、composition/provider context、expected local factory/contribution ID/kind、
+  显式 provider calls 与 build metadata；provider 只能
+  `registerFactory(localFactoryId, completeDescriptor, availableTypedBindings)`，不能自报
+  package/module/entry point；
+- C6 manifest 另外保存 Effective Session digest 与 exact ProcessScope lifecycle/factory/requirement projection，并生成私有
+  `current_image_activation.cpp`；`${target_name}-asharia-static-composition` OBJECT target 才能链接 current-image constructor bridge；
+- `engine/host-runtime` recorder 在 provider 调用前预留 owning storage，调用期间不扩容，并把完整成功结果冻结为
+  `StaticFactoryCallbackTableV1`；table 私有持有 process-local C++ type evidence，并自有 canonical
+  `StaticFactoryRegistrationSnapshotV2` projection（stable contribution ID/kind/cardinality），并在 private table storage 保存
+  type/accessor evidence；registration 不调用 callback、payload accessor 或执行 factory lifecycle；
+- Template renderer 3 保留唯一 console `main()`，并把 restricted registration verification 与 normal ProcessApplication Host
+  分到独立小 TU；受控 configure/build 仍只构建 exact Host target、不使用 clean-first；
+- restricted mode 只形成 RegistrationSnapshot v2，不执行 lifecycle/accessor；normal mode 则执行 generated admission → recording →
+  exact-table admission → ProcessScope start → borrow/run/release `ProcessApplicationV1` → explicit stop；
+- [Host Executable Binding Receipt v1](adr-host-executable-binding-receipt-v1.md) 仍由 #288 读取同一 stable File API index 的
+  target/configured compiler，把 build-tree executable 流式复制到 collector-owned staging，运行 staged bytes，并将 composition
+  generation、registration snapshot 与 exact published Host bytes 绑定；
+- 每个 C++ module 默认保持独立静态库或工具 target；用户安装完整 package，而不是内部 target；
 - 用户项目不手工复制 engine main loop，也不维护一份容易漂移的 module list；
 - 平台 adapter 可以重命名 executable、嵌入 icon/version metadata 或包裹为平台 application bundle；
-- dynamic modules 仅在明确 ABI、trust、lifetime 与 platform policy 后作为可选 linking mode 引入。
+- dynamic modules 仅在明确 ABI、trust、lifetime 与 platform policy 后作为可选 linking mode 引入；若未来采用
+  `ProjectEditorModules`，它必须绑定精确 `EngineGenerationId`/toolchain/configuration，启动时加载且修改后重启，
+  不承诺通用 ABI 或任意 hot unload。
 
 这允许每个项目得到精确链接闭包，同时保持 `apps/*` 只是组合根、系统逻辑仍位于 packages。
+
+[Generated Static Composition Root v1](adr-generated-static-composition-root-v1.md) 进一步冻结为两阶段 CMake handoff：先用
+preflight configure/File API codemodel 对证 package targets，再生成 content-addressed registration/header/current-image sources 与 CMake
+attach fragment，最后由 Host Template 创建 target 并执行 final configure/build。generator 不创建 executable，也不在 CMake 内重新
+resolve package graph；C6 manifest 自身足以按 exact Session/Blueprint/ProcessScope/provider facts 重渲染 generated bytes。
+[Static Factory Registration v1](adr-static-factory-registration-v1.md) 曾为 #289 冻结 generated root 到 owning identity snapshot
+的窄 runtime observation 边界；#291 用 v2 descriptor registration 取代 historical single-argument/identity-only registrar，#294
+曾把 registrar 硬切为 v3 typed-contract binding；#295 已再硬切为 provider v4/`StaticContributionBindingV2` payload-accessor
+surface。recorder 形成 callback table 并投影 Snapshot v2；snapshot 的记录顺序
+不是 Blueprint activation order，也不是 artifact receipt。
+#290 的具体 downstream 边界见 [Windows Development Host Template v1](adr-windows-development-host-template-v1.md)：caller 先完成
+Conan，adapter 只使用 typed argv/受控环境并绑定、构建 exact Host。restricted mode 仍只负责 registration evidence；#288 在独立
+publisher 中补齐 artifact hash 与 immutable receipt，用于 build/publication/install/cache restore/repair 边界。
+[Generated Current-Image Host 与 Project Bootstrap v1](adr-generated-current-image-project-bootstrap-host-v1.md) 则为 #297 定义 normal
+mode；它不自 hash executable path，也不等待外部 launcher receipt。两条路径均不实现 UI 或发布 `ProjectReady`。
+
+[Static Factory Callback Table v1](adr-static-factory-callback-table-v1.md) 已为 #291 实现 lifecycle descriptors；
+[Static Typed Contribution Contract Bindings v1](adr-static-typed-contribution-contract-bindings-v1.md) 又为 #294 将 provider API 硬切到 v3，
+同一次 registration 把每个 local factory ID 绑定到完整 direct callback descriptor，并从 frozen current-process table 投影既有
+factory/contribution stable snapshot；[Static Contribution Payload Accessors v1](adr-static-contribution-payload-accessors-v1.md) 为 #295
+再把 provider API 硬切到 v4，并让 selected binding/table private storage 保存 future payload accessor。private type key/accessor 不进入
+JSON，也不在 registration/verification 中调用。public table 不暴露 raw callback lookup，本 Slice 也完全不提供
+contribution payload 或 lookup；#292 的 Activation Eligibility V1 四-handoff 方案现只作为历史决策记录。
+#297 已将 active public eligibility API 硬切到 V2：generated descriptor 在任何 provider invocation 前校验
+T3/C6/provider-v4/Snapshot-v2 tuple、ProcessScope projection、process/control-thread epoch 与一次性 claim；recording 完成后校验
+composition generation/Blueprint digest，Stage 2 再绑定同一 table instance。
+[ProcessScope Lifecycle v1](adr-process-scope-lifecycle-v1.md) 已为 #293 增加按值消费 admitted table 的 headless executor、factory contexts、
+exact Blueprint order、token ownership、startup rollback 与 explicit reverse stop；#296 又将 public ProcessScope surface 硬切到 V2，
+并实现 fixed-slot typed registry、weak generation view/handle、contribution-only lease 与 publication/revocation gate。
+
+T3 normal Host 现已启动 ProcessScope，从 Active registry 借用 `ProcessApplicationV1`，运行固定 `packages/project-bootstrap` reader，
+读取真实 `asharia.project.json`，release borrow 后显式 stop。current generation 只接受 Template renderer 3 + Composition renderer 6 +
+provider v4 + RegistrationSnapshot v2；旧 bindings/renderer/provider generation 不保留兼容路径。Editor Bootstrap/Session UI、其他
+scopes 与 `ProjectReady` 仍未实现。
 
 ## 7. Cook 与内容闭包
 
@@ -302,7 +407,7 @@ Packager 只读取 validated stage，不回到 source project 临时补文件。
 2. 初始化最小 logging、crash capture 和 platform error presentation；
 3. 读取并验证 `asharia.stage.json`、runtime config 和 target compatibility；
 4. 验证静态 module registry 或受信 dynamic modules 与 stage manifest 一致；
-5. 按 activation plan 注册 Bootstrap/Runtime contributions；
+5. 按构建后验证的 bound activation input 注册 Bootstrap/Runtime contributions；
 6. 打开 cooked content catalog，验证 startup roots；
 7. 创建 application/runtime services、World 和 startup scene/state；
 8. 按 Host Profile 创建 window/input/render/audio/network 等系统；
@@ -319,18 +424,34 @@ Dedicated Server Profile 跳过 window/render/audio；Tool Profile 可以跳过 
 
 “启动项目”还包括启动 Editor 并打开 source project。目标入口应是明确的参数协议，例如 `asharia-editor --project <project-root-or-descriptor>`；当前 `ASHARIA_EDITOR_PROJECT` 环境变量只属于现状集成方式，不应成为长期唯一公共入口。
 
-Editor project-open bootstrap：
+Editor project-open bootstrap 分为固定 Image 启动和项目会话派生：
 
-1. Project Manager 或 CLI 用 argument vector 启动 Editor，并创建 open-session/crash metadata；
-2. Editor 初始化最小 platform、logging 和 recovery；
-3. 定位并验证 `asharia.project.json`，再读取 package manifest/lock；
-4. 使用 Editor Host Profile 验证 locked modules、engine compatibility、integrity 与本机可用 toolchain；
-5. 缺失 bundled/local package、lock mismatch 或 native module 未构建时进入明确的 Repair/PendingBuild/PendingRestart 流程；不得静默改 lock；
-6. 激活 Editor-compatible modules/contributions，打开 catalog/cache/watchers；
-7. 恢复 workspace 和 documents；用户本地 workspace failure 不得破坏项目事实；
-8. 发布 `ProjectReady`，此后 Package Manager、Build Profiles 和 authoring commands 才进入可用状态。
+当前已实现的 headless project-open contract 见
+[Bootstrap Project-Open Session v1](adr-bootstrap-project-open-session-v1.md)；以下 UI、workspace 与完整 profile 步骤仍包含目标态。
 
-v0 允许切换含 native module graph 的项目时重启 Editor。只有 package/module lifetime、thread join、ABI 与 document teardown 均可证明安全后，才支持同进程任意切换或 hot unload。`--safe-mode` 应只加载 Kernel、package diagnostics 和最小修复 UI，使损坏 package/editor contribution 不会阻止用户修复项目。
+1. Project Manager 或 CLI 用 argument vector 启动固定 Editor Image，并创建 open-session/crash metadata；
+2. Editor Image 初始化 L0 Kernel、固定 Package/Host Runtime、最小 platform、logging、UI Shell、package diagnostics、
+   Package Manager、Build/Repair 与 Safe Mode；这些能力不等待项目 graph，UI backend 失败时降级到 OS-native dialog/console/log；
+3. 读取只读 `asharia.engine-distribution.json`，绑定 exact `EngineGenerationId`；边界信号异常或显式 Verify/Repair 时完整复验发行 bytes，Image 本身损坏由外部 launcher/installer 修复；
+4. #298 的 project-open request 先规范化一个 canonical root。只读 Package Runtime 从该 root 读取 Project Manifest/Lock exact bytes，
+   只按 Lock 与显式 local source mapping 执行 fresh candidate discovery；它不读取 `asharia.project.json`、不调用 resolver、也不写回；
+   项目不得替换固定 Project Bootstrap provider，也不得覆盖核心 distribution nodes；
+5. 分别验证 Engine Distribution、Project Lock 与 Editor Host Profile，并派生 Effective Session Plan；Effective Session v1 自身得到
+   `Ready`、`RepairRequired`、`UpgradeRequired` 或 `SafeMode`，不重新求解、保存第三个 lock 或静默覆盖 bundled inventory；
+6. Ready session 与 C6、verified published Host binding 的 session/Engine/Host/platform/configuration identity 对证。missing、stale 或
+   invalid current project Host 由 Bootstrap adapter 产生 `PendingBuild`，且不启动旧 Host；`PendingRestart` 仍等待 current-process
+   generation evidence，v1 不产生；
+7. matching published Host 内由 C6 封存 generated current-image descriptor；Eligibility V2 一次性产生
+   `PreRegistrationAdmissionV2`，record providers 后再把同一 table 对证为 admitted V2 owner。`ProcessScopeExecutorV2::start()`
+   提交 contribution-only leases 并开放 Active registry，Host 借用 `ProcessApplicationV1`、运行、release borrow，再显式 stop；
+   #298 只用参数数组将同一 canonical root 传给 binding 指向的 published artifact，normal-open 只复验 path/type/size，不重新 hash
+   executable，也不等待 launcher receipt；strict Summary v1 成功后得到 Bootstrap `Ready`。现有 `apps/editor` 尚未采用该入口，
+   其他 scope owners、完整 Editor Profile activation 与 `ProjectReady` 发布仍未实现；
+8. 恢复 workspace 和 documents；用户本地 workspace failure 不得破坏项目事实；
+9. 发布结构化 session state；完整项目会话发布 `ProjectReady`，其他状态仍保留基础 UI、diagnostics、Package Manager 与
+   Build/Repair/Restart commands。
+
+v0 允许切换含 native module graph 的项目时重启 Editor。只有 package/module lifetime、thread join、ABI 与 document teardown 均可证明安全后，才支持同进程任意切换或 hot unload。`--safe-mode` 不执行项目及其 packages 的 native contributions，但继续运行固定 Editor Image 的最小 Shell、diagnostics、Package Manager 与修复入口，使损坏 package/editor contribution 不会阻止用户修复项目；项目 lock 不负责证明 Editor Bootstrap 存在。
 
 ### 11.2 三种运行语义
 
@@ -497,6 +618,24 @@ asharia-launch --project <path> --profile standalone-game
 
 ### Stage A：Profile 与计划模型
 
+- Engine Distribution Manifest v1、`EngineGenerationId`、Project Manifest / Lock v2 硬切、Effective Session v1、
+  Distribution Assembler v1、Installed Distribution Repair Verifier v1、Package Factory Declaration v1 与
+  Host Activation Blueprint v1 已经完成；#286 的 Static Factory Provider Bindings v1 与 #289 的 identity-only
+  Static Factory Registration v1 是历史合同，#294 v3 也是已被 #295 当前 generation 取代的中间 generation；active bindings/Binding Plan、provider
+  API 硬切为 v4，不保留 pre-current reader/adapter；#297 已把 generated root 硬切到 renderer 6/provider v4，输出 registration、
+  current-image source 与受控 private OBJECT attachment；Windows Development Host template 已硬切 renderer 3，提供受控 exact-target build、
+  File API binding、restricted verification 与 normal ProcessApplication path；#288 已提供
+  [Host Executable Binding Receipt v1](adr-host-executable-binding-receipt-v1.md) 的 staged-byte collection、same-index compiler
+  evidence、canonical receipt、atomic publication 与 read-only deep verification；#291 已实现
+  [Static Factory Callback Table v1](adr-static-factory-callback-table-v1.md)、#294
+  [Static Typed Contribution Contract Bindings v1](adr-static-typed-contribution-contract-bindings-v1.md) 与 #295
+  [Static Contribution Payload Accessors v1](adr-static-contribution-payload-accessors-v1.md)。当前 Host build/assembly/deep verification 只接受
+  Template renderer 3 + Composition renderer 6/provider v4 + RegistrationSnapshot v2；#297 已用 generated descriptor 取代 V1 四个
+  handoff/external launch receipt，完成 Eligibility V2 两阶段 admission。#293 [ProcessScope Lifecycle v1](adr-process-scope-lifecycle-v1.md)
+  与 #296 ProcessScope V2 registry/lease gate 被 normal Host 实际执行；Host 借用并运行固定 `packages/project-bootstrap` 发布的
+  `ProcessApplicationV1`，读取真实 `asharia.project.json`，release 后显式 stop。production Editor Bootstrap/Session UI、其他 scopes 与
+  `ProjectReady` 仍继续后置；
+- Effective Editor Session v1 已建立 Ready/Upgrade/Repair/SafeMode 与 exact Profile binding；轻量启动检查和实际 UI/进程状态仍待实现；
 - 冻结 `asharia.build.json` v1 的 owner、Build/Launch Profile 与 local override 规则；
 - 建立 CPU-only parser/validator、BuildPlan/BuildReport、LaunchPlan/SessionReport；
 - 先以当前仓库 preset 和 sample/runtime host 作为 adapter，不改现有开发者 build 入口。
@@ -545,12 +684,28 @@ asharia-launch --project <path> --profile standalone-game
 
 在创建实现 Epic/Slice 前，先完成以下 ADR/设计决策：
 
-1. `asharia.build.json` v1 schema、inheritance 与 local override；
-2. generated composition root 的 target/module registration 方式；
-3. `asharia.stage.json` v1 与 Build/Stage fingerprint；
-4. development stage 的目录布局和原子发布；
-5. local ready/log/stop protocol；
-6. Build UI、CLI、CI 共用 service 的进程内/进程外边界。
+1. Engine Distribution Manifest v1、`EngineGenerationId`、Project Manifest / Lock v2、Effective Session v1、
+   Distribution Assembler v1、Installed Distribution Repair Verifier v1、Package Factory Declaration v1 与
+   Host Activation Blueprint v1 已完成；#286 的 provider bindings v1 仅保留为历史决策记录，active bindings/Binding Plan 与
+   provider API 已由 #295 硬切为 v4；
+2. generated composition root 的 target/module registration 与两阶段 CMake handoff 已由 #287 实现，#289 的 single-argument /
+   identity-only registrar contract 是历史表面；#295 的 Composition renderer 5/provider v4 曾把 exact factory identity、完整
+   callback descriptor、typed contribution contract 与 payload-accessor evidence 冻结到 private callback table，并由 table 拥有 canonical
+   Snapshot v2。#297 已将 active Composition renderer 硬切到 6，加入 Effective Session/ProcessScope/current-image descriptor facts；
+   固定 Windows Development Host target、受控构建、File API binding 与 restricted verification 由 #290 建立，#297 又将 active Template
+   renderer 硬切到 3，并增加 normal ProcessApplication path；#288 的
+   [Host Executable Binding Receipt v1](adr-host-executable-binding-receipt-v1.md) 继续把 exact staged executable、same-index
+   target/compiler 与 owning snapshot 交叉绑定；Host build、assembly 与 deep verifier 只接受当前
+   T3/C6/provider-v4/Snapshot-v2 组合。
+   Eligibility V2 由 generated sealed descriptor 驱动，不再消费 V1 四个 handoff、artifact hash 或外部 launch receipt；normal Host 已执行
+   admission → recording → table admit → ProcessScope start → borrow/run/release `ProcessApplicationV1` → explicit stop，并由固定
+   `packages/project-bootstrap` 读取真实 `asharia.project.json`。后续仍需 Editor Bootstrap/Session UI、其他 scopes 与
+   `ProjectReady` 发布；
+3. `asharia.build.json` v1 schema、inheritance 与 local override；
+4. `asharia.stage.json` v1 与 Build/Stage fingerprint；
+5. development stage 的目录布局和原子发布；
+6. local ready/log/stop protocol；
+7. Build UI、CLI、CI 共用 service 的进程内/进程外边界。
 
 首个 vertical slice 应严格限制为：
 

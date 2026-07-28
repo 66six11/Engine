@@ -58,6 +58,61 @@ public sealed class EditorModuleHostTests
     }
 
     [Fact]
+    public async Task Scope_activation_reuses_only_the_exact_partition()
+    {
+        var firstDefinition = CreateDefinition(
+            "studio.first",
+            new TestModule());
+        var secondDefinition = CreateDefinition(
+            "studio.second",
+            new TestModule());
+        const string scopeId =
+            "29292929-2929-2929-2929-292929292929";
+        var firstPartition = CreateProjectPartition(
+            firstDefinition,
+            scopeId);
+        var secondPartition = CreateProjectPartition(
+            secondDefinition,
+            scopeId);
+        await using var host = new EditorModuleHost();
+
+        var first = await host.ActivateScopeAsync(
+            firstPartition,
+            []);
+        var duplicate = await host.ActivateScopeAsync(
+            firstPartition,
+            []);
+
+        Assert.Same(first, duplicate);
+        var differentPartitionError =
+            Assert.Throws<InvalidOperationException>(() =>
+                host.ActivateScopeAsync(
+                    secondPartition,
+                    []));
+        Assert.Contains(
+            "another partition",
+            differentPartitionError.Message,
+            StringComparison.Ordinal);
+        var exclusiveError =
+            Assert.Throws<InvalidOperationException>(() =>
+                host.ActivateNewScopeAsync(
+                    firstPartition,
+                    []));
+        Assert.Contains(
+            "activation owner",
+            exclusiveError.Message,
+            StringComparison.Ordinal);
+
+        await first.DisposeAsync();
+        var exclusive = await host.ActivateNewScopeAsync(
+            secondPartition,
+            []);
+        Assert.Equal(
+            secondPartition.ScopeInstanceId,
+            exclusive.ScopeInstanceId);
+    }
+
+    [Fact]
     public async Task Unavailable_required_host_capability_waits_without_failing_scope()
     {
         var capability = EditorCapabilityId.Create("asharia.engine.renderer.v1");

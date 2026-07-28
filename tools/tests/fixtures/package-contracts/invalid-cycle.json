@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 2,
+  "packageKind": "installable-capability",
+  "id": "com.asharia.system.invalid-cycle",
+  "version": "0.1.0",
+  "displayName": "Invalid Cycle",
+  "description": "Contains a cycle in the package-local module graph.",
+  "catalogType": "system",
+  "engineApi": {
+    "kind": "exact",
+    "version": "0.1.0"
+  },
+  "dependencies": [],
+  "options": [],
+  "modules": [
+    {
+      "id": "runtime",
+      "role": "runtime",
+      "dependsOn": [
+        "diagnostics"
+      ],
+      "hostKinds": [
+        "runtime"
+      ],
+      "platforms": [
+        "com.asharia.platform.any"
+      ],
+      "shippingClass": "runtime",
+      "requiredCapabilities": []
+    },
+    {
+      "id": "diagnostics",
+      "role": "diagnostics",
+      "dependsOn": [
+        "runtime"
+      ],
+      "hostKinds": [
+        "runtime"
+      ],
+      "platforms": [
+        "com.asharia.platform.any"
+      ],
+      "shippingClass": "runtime",
+      "requiredCapabilities": []
+    }
+  ],
+  "entryModules": {
+    "runtime": [
+      "runtime"
+    ],
+    "diagnostics": [
+      "diagnostics"
+    ]
+  },
+  "contentRoots": [],
+  "contributions": []
+}

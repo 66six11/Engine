@@ -1,0 +1,229 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.asharia.dev/package-runtime/host-activation-blueprint-v1.schema.json",
+  "title": "Asharia Host Activation Blueprint v1",
+  "description": "Canonical pre-build factory and scope-template blueprint for one Ready Effective Session and matching Host Composition Plan.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "schemaVersion",
+    "inputs",
+    "host",
+    "lifecycleModel",
+    "scopeTemplates",
+    "integrity"
+  ],
+  "properties": {
+    "schema": {
+      "const": "com.asharia.host-activation-blueprint"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "inputs": {
+      "$ref": "#/$defs/inputs"
+    },
+    "host": {
+      "$ref": "#/$defs/host"
+    },
+    "lifecycleModel": {
+      "const": "create-activate-quiesce-deactivate-destroy-v1"
+    },
+    "scopeTemplates": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/scopeTemplate"
+      }
+    },
+    "integrity": {
+      "$ref": "#/$defs/integrity"
+    }
+  },
+  "$defs": {
+    "integrity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "algorithm",
+        "digest"
+      ],
+      "properties": {
+        "algorithm": {
+          "const": "sha256"
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "inputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "effectiveSessionIntegrity",
+        "hostCompositionIntegrity",
+        "factoryDeclarationSetIntegrity"
+      ],
+      "properties": {
+        "effectiveSessionIntegrity": {
+          "$ref": "#/$defs/integrity"
+        },
+        "hostCompositionIntegrity": {
+          "$ref": "#/$defs/integrity"
+        },
+        "factoryDeclarationSetIntegrity": {
+          "$ref": "#/$defs/integrity"
+        }
+      }
+    },
+    "host": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "engineGenerationId",
+        "hostKind",
+        "targetPlatform"
+      ],
+      "properties": {
+        "engineGenerationId": {
+          "type": "string",
+          "pattern": "^sha256-[0-9a-f]{64}$"
+        },
+        "hostKind": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/hostKind"
+        },
+        "targetPlatform": {
+          "allOf": [
+            {
+              "$ref": "package-contract-common-v1.schema.json#/$defs/platformId"
+            },
+            {
+              "not": {
+                "const": "com.asharia.platform.any"
+              }
+            }
+          ]
+        }
+      }
+    },
+    "scope": {
+      "enum": [
+        "process",
+        "project",
+        "editor",
+        "tool-job",
+        "game-session",
+        "world",
+        "local-user",
+        "editor-document",
+        "preview"
+      ]
+    },
+    "parentScope": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/scope"
+        }
+      ]
+    },
+    "exactFactoryReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "packageId",
+        "packageVersion",
+        "moduleId",
+        "factoryId"
+      ],
+      "properties": {
+        "packageId": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/packageId"
+        },
+        "packageVersion": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/semanticVersion"
+        },
+        "moduleId": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/localId"
+        },
+        "factoryId": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/localId"
+        }
+      }
+    },
+    "contribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/packageId"
+        },
+        "kind": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/packageId"
+        }
+      }
+    },
+    "factory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reference",
+        "requires",
+        "contributions"
+      ],
+      "properties": {
+        "reference": {
+          "$ref": "#/$defs/exactFactoryReference"
+        },
+        "requires": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/exactFactoryReference"
+          }
+        },
+        "contributions": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/contribution"
+          }
+        }
+      }
+    },
+    "scopeTemplate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scope",
+        "parentScope",
+        "factories"
+      ],
+      "properties": {
+        "scope": {
+          "$ref": "#/$defs/scope"
+        },
+        "parentScope": {
+          "$ref": "#/$defs/parentScope"
+        },
+        "factories": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/factory"
+          }
+        }
+      }
+    }
+  }
+}

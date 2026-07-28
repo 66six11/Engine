@@ -1,0 +1,34 @@
+{
+  "schema": "com.asharia.host-profile",
+  "schemaVersion": 1,
+  "hostKind": "editor",
+  "targetPlatform": "com.asharia.platform.windows",
+  "requiredRoles": [
+    "contract",
+    "runtime",
+    "implementation",
+    "editor",
+    "diagnostics",
+    "content"
+  ],
+  "allowedRoles": [
+    "contract",
+    "runtime",
+    "implementation",
+    "editor",
+    "tool",
+    "cook",
+    "diagnostics",
+    "content"
+  ],
+  "allowedShippingClasses": [
+    "runtime",
+    "editor",
+    "tool",
+    "development-only"
+  ],
+  "contributionFilter": {
+    "mode": "allow-compatible"
+  },
+  "grantedCapabilities": []
+}

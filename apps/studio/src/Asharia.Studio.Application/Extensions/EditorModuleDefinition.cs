@@ -6,26 +6,31 @@ namespace Asharia.Studio.Application.Extensions;
 public sealed class EditorModuleDefinition
 {
     internal EditorModuleDefinition(
-        StaticEditorModuleRegistration registration,
+        EditorModuleMetadata metadata,
         EditorModule module,
         EditorModuleDeclaration declaration)
     {
-        ArgumentNullException.ThrowIfNull(registration);
+        ArgumentNullException.ThrowIfNull(metadata);
         ArgumentNullException.ThrowIfNull(module);
         ArgumentNullException.ThrowIfNull(declaration);
+        if (metadata.DefinitionId
+            != declaration.DefinitionContext.DefinitionId)
+        {
+            throw new ArgumentException(
+                "Module metadata and declaration identities must match.",
+                nameof(declaration));
+        }
 
-        Registration = registration;
+        Metadata = metadata;
         Module = module;
         Declaration = declaration;
     }
 
-    public EditorModuleDefinitionId Id => Registration.DefinitionId;
+    public EditorModuleDefinitionId Id => Metadata.DefinitionId;
 
-    public EditorModuleMetadata Metadata => Registration.Metadata;
+    public EditorModuleMetadata Metadata { get; }
 
     public EditorModule Module { get; }
 
     public EditorModuleDeclaration Declaration { get; }
-
-    private StaticEditorModuleRegistration Registration { get; }
 }

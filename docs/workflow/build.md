@@ -2,6 +2,12 @@
 
 本项目使用 Conan 2 + CMake Presets。日常开发以 MSVC 预设为主，代码检查以 ClangCL 预设为主；四个入口全部使用 Ninja 生成器。
 
+仓库 Python 工具依赖单独安装：
+
+```powershell
+python -m pip install -r tools\requirements.txt
+```
+
 ## 预设约定
 
 - `msvc-debug`：日常 Debug 构建。
@@ -105,6 +111,70 @@ build\cmake\msvc-debug\tools\asset-processor\asharia-asset-processor.exe dry-run
 build\cmake\msvc-debug\tools\asset-processor\asharia-asset-processor.exe execute --source-root Content --source-path-prefix Content --target-profile windows-msvc-debug --output-root build\asset-cache
 ```
 
+### Studio Distribution 输入物化
+
+固定 Studio 的发行输入不再由测试手写 metadata，也不由 Python 构建路径生成。当前 v1 是 Windows x64
+release contract。先完成 `msvc-release` native build，再使用标准 `dotnet publish` 与 `EditorImage.pubxml`
+生成 release-orchestrator-owned、全新且不复用的 Studio publish 目录；`dotnet publish` 不负责清理旧 `PublishDir`。
+完整可复制命令、required file set、参数、输出布局、receipt 与失败恢复见
+`tools/studio-distribution/README.md`。
+
+```powershell
+$releaseRoot = 'D:\Build\Asharia'
+New-Item -ItemType Directory -Force -Path $releaseRoot | Out-Null
+$publishRoot = Join-Path $releaseRoot ("studio-publish-" + [guid]::NewGuid().ToString('N'))
+$sdkVersion = '10.0.302'
+$hostFxrVersion = '10.0.10'
+$hostRuntimeVersion = '10.0.10'
+$referencePackVersion = '10.0.10'
+
+if ((dotnet --version).Trim() -ne $sdkVersion) {
+  throw "Repository global.json did not select the required .NET SDK $sdkVersion."
+}
+
+dotnet publish apps\studio\Editor.csproj `
+  -c Release `
+  -p:PublishProfile=EditorImage `
+  -p:PublishDir="$publishRoot\"
+
+dotnet run --project tools\studio-distribution\Asharia.Studio.Distribution.csproj `
+  -c Release -- `
+  stage-editor-image `
+  --publish-root $publishRoot `
+  --entry-point Editor.exe `
+  --dotnet-root "C:\Program Files\dotnet" `
+  --sdk-version $sdkVersion `
+  --hostfxr-version $hostFxrVersion `
+  --host-runtime-version $hostRuntimeVersion `
+  --reference-pack-version $referencePackVersion `
+  --runtime-contract (Join-Path $publishRoot 'Asharia.Runtime.Contracts.dll') `
+  --editor-contract (Join-Path $publishRoot 'Asharia.Editor.dll') `
+  --output-root D:\Build\Asharia\editor-image
+
+dotnet run --project tools\studio-distribution\Asharia.Studio.Distribution.csproj `
+  -c Release -- `
+  stage-editor-host-profile `
+  --output-root D:\Build\Asharia\editor-host-profile
+```
+
+focused functional tests 为：
+
+```powershell
+dotnet test tools\studio-distribution.Tests\Asharia.Studio.Distribution.Tests.csproj -c Release
+python -m unittest tools.tests.test_host_profile_contracts
+```
+
+Editor Image receipt 与 Host Profile receipt 都只是 canonical Distribution assembler 的 typed inputs。
+Editor Image producer 要求 release orchestration 显式钉住四个版本目录；它静态核对 apphost binding、managed identity/runtime
+evidence、required native direct exports 和关键 .NET component version evidence；apphost 的 `.rsrc` 必须是 fixed `Editor.dll`
+资源经 .NET 10 HostModel 规则重建出的 exact canonical bytes，SDK bundled-version XML 也不得通过大小写变体或 Import 覆盖证据值。
+通过资格检查后再复制并逐字节绑定所选树。该过程不执行
+候选 EXE、不加载 DLL、不调用 hostfxr，也不证明 loadability、ABI 或 runtime health。
+Python 只属于仓库内开发、验证与 CI 工具层；正式 Studio、Editor Image、Host Profile、package artifact、Engine Distribution、Launcher、Installer、Repair 与用户运行时均不得依赖或携带 Python。Editor Image producer 会拒绝所选 publish/.NET 树中的常规 Python 源码、字节码、wheel/extension、虚拟环境/package 目录与解释器/runtime artifact；Package Artifact、canonical assembly 与 installed health/repair 三个下游边界会独立重复同一逻辑路径政策。旧 manifest/receipt 的 schema、hash 与 generation ID 即使自洽也不能取得产品资格。这里运行的 Python 命令只是仓库 reference-oracle/CI 门禁，不是正式发行流程的运行依赖。
+两份 receipt 都不选择 installable packages，不生成或暗示 `EngineGenerationId`，也不证明完整 Distribution health。
+真实 installable package artifacts、canonical assembly invocation、installed-generation byte-health handoff 与
+launcher-owned current selection 仍是 downstream work。
+
 ## 仓库维护工具
 
 这些脚本不替代构建门禁，但用于本地自检和变更审查：
@@ -114,7 +184,8 @@ powershell -ExecutionPolicy Bypass -File tools\check-text-encoding.ps1
 powershell -ExecutionPolicy Bypass -File tools\check-doc-sync.ps1
 powershell -ExecutionPolicy Bypass -File tools\check-asset-boundaries.ps1
 python tools\check_package_topology.py
-python -m unittest discover -s tools\tests -p "test_package_topology.py"
+python tools\check_package_contracts.py
+python -m unittest discover -s tools\tests -p "test_*.py"
 powershell -ExecutionPolicy Bypass -File tools\count-code-lines.ps1
 ```
 
@@ -125,6 +196,44 @@ powershell -ExecutionPolicy Bypass -File tools\count-code-lines.ps1
 - `check_package_topology.py` 验证全部 source-boundary manifests 的 identity、dependency DAG、target owner/role、
   target dependency keys 和直接 CMake target 声明；需要机器快照时使用
   `--output build/package-topology.json`，不要提交该生成文件。
+- `check_package_contracts.py` 使用 Draft 2020-12 schema、显式 discriminator dispatcher 和跨字段 semantic rules 验证
+  installable v2、Feature Set v2、Project Manifest v2、Package Lockfile v2、Host Profile v1、Package Source Build v1、
+  Package Product Declaration v1、Package Artifact Manifest v1、Engine Distribution Manifest v1、Source Topology Snapshot v1、
+  CMake Codemodel Snapshot v1 与 Source Build Plan v1 contracts；也可以显式传入一个或多个 fixture/manifest 路径。
 - `tools/tests/test_package_topology.py` 覆盖正常 inventory、missing dependency、cycle、duplicate identity、
   catalog 泄漏和未声明 CMake target 等负向路径。
+- `tools/tests/test_package_contracts.py` 覆盖 portable v2 system/integration、封闭 schema、引用、module cycle、
+  catalog policy 和 deterministic diagnostics。
+- `tools/tests/test_package_project_contracts.py` 覆盖 Project Manifest、Feature Set、dispatcher isolation、selected graph cycle
+  与 normalized writer determinism/encoding。
+- `tools/tests/test_engine_distribution_contracts.py` 覆盖 closed Engine Distribution schema、内容派生
+  `EngineGenerationId`、Editor/package/artifact/profile invariants、portable paths、discovery 与 canonical writer。
+- `tools/tests/test_engine_distribution_assembly.py` 覆盖 #282 assembler 的显式隔离输入、staged-byte inventory、
+  receipt 深度复验、大文件流式复制、source/staging drift、single-rename publication、确定性复用、失败清理与 corrupt existing
+  generation no-overwrite。assembler 不执行 CMake/Conan，不实现 installed Repair/Launcher/Activation。
+- `tools/tests/test_engine_distribution_repair_verifier.py` 覆盖 #283 的外部 expected generation trust anchor、
+  canonical Distribution Manifest bootstrap、disk-only artifact generation reconstruction、Editor/package/artifact/profile/closed-tree
+  故障注入、稳定多 finding、bounded streaming，以及成功/失败路径只读保证。verifier 不执行 repair、active selection、
+  Bootstrap/Session integration 或 Activation。
+- `tools/tests/test_engine_distribution_package_catalog.py` 覆盖 #301 verified handoff 捕获、bundled inventory 排列确定性、
+  duplicate identity/root、strict-loader source failure/mutation、exact candidate evidence mismatch、snapshot 隔离，以及
+  `catalog -> resolver -> canonical Lock v2 -> locked verify/reuse` 的无 existing Lock headless 链。catalog 不持久化第二份 inventory，
+  不实现 Project/local index、Lock update/apply 或 UI。
+- `tools/tests/test_package_lock_contracts.py` 覆盖 exact graph closure、source/integrity、cross-document selected-result validation、
+  package tree digest 与 normalized lock writer determinism。
+- `tools/tests/test_package_resolver.py` 覆盖纯内存 candidate validation、最高兼容版本、稳定回溯、嵌套 Feature Set、
+  prerelease/engine API、requirement chain、source ambiguity、cycle、输入不变性与 canonical lock byte determinism。
+- `tools/tests/test_package_candidate_discovery.py` 覆盖三类显式来源、containment、source/physical alias、原子失败、
+  payload tree 限制、TOCTOU 与 resolver/lock validator 合成交接。
+- `tools/tests/test_package_lock_verification.py` 覆盖 existing lock 成功复用、stale inputs、exact source binding、
+  cross-document drift、selected payload 重哈希、原子失败、排列确定性以及 no-resolver/no-write 边界。
+- `tools/tests/test_host_profile_contracts.py` 覆盖五个固定 Host policies、normalized writer、module/contribution filtering、
+  capability grants 与 platform/role/shipping closure rejection。
+- `tools/tests/test_package_product_contracts.py` 覆盖 Product Declaration exact binding、closed fields、module/product uniqueness、
+  canonical normalization、Artifact Manifest portable paths 与 candidate/locked snapshot drift。
+- `tools/tests/test_package_artifact_evidence.py` 覆盖 pure per-package verifier 的 coverage、portable path/size/SHA-256、
+  stale provenance、determinism、immutability、no-IO 与 Discovery → Source Build Plan synthetic handoff；同时覆盖 #278
+  collector 的大文件分块 copy/rehash、closed roots、link/reparse、source drift、single-rename publication、失败清理、
+  content-addressed generation 复用与 corrupt existing generation 拒绝。collector 是 build/install/cache evidence 边界，
+  不执行 CMake/Conan，也不参与 Editor Bootstrap 或每次源码编辑。
 - `count-code-lines.ps1` 只统计 Git tracked 文本文件，默认排除 Markdown；需要把文档纳入统计时加 `-IncludeDocs`。

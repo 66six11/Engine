@@ -69,6 +69,60 @@ public sealed class EditorModuleRegistry
                 new ReadOnlyDictionary<ScopeInstanceId, EditorScopePartition>(partitions));
         }
     }
+
+    internal bool TryCommitInitial(
+        EditorModuleRegistrySnapshot expectedSnapshot,
+        EditorScopePartition candidate,
+        out EditorScopeRegistration? registration)
+    {
+        ArgumentNullException.ThrowIfNull(expectedSnapshot);
+        ArgumentNullException.ThrowIfNull(candidate);
+        var candidateRegistration =
+            new EditorScopeRegistration(this, candidate);
+
+        lock (gate_)
+        {
+            if (!ReferenceEquals(snapshot_, expectedSnapshot)
+                || snapshot_.Partitions.ContainsKey(candidate.ScopeInstanceId))
+            {
+                registration = null;
+                return false;
+            }
+
+            var partitions = new Dictionary<ScopeInstanceId, EditorScopePartition>(
+                snapshot_.Partitions)
+            {
+                [candidate.ScopeInstanceId] = candidate,
+            };
+            snapshot_ = new EditorModuleRegistrySnapshot(
+                new ReadOnlyDictionary<ScopeInstanceId, EditorScopePartition>(partitions));
+            registration = candidateRegistration;
+            return true;
+        }
+    }
+
+    internal bool TryRemove(EditorScopePartition expectedPartition)
+    {
+        ArgumentNullException.ThrowIfNull(expectedPartition);
+
+        lock (gate_)
+        {
+            if (!snapshot_.Partitions.TryGetValue(
+                    expectedPartition.ScopeInstanceId,
+                    out var current)
+                || !ReferenceEquals(current, expectedPartition))
+            {
+                return false;
+            }
+
+            var partitions = new Dictionary<ScopeInstanceId, EditorScopePartition>(
+                snapshot_.Partitions);
+            partitions.Remove(expectedPartition.ScopeInstanceId);
+            snapshot_ = new EditorModuleRegistrySnapshot(
+                new ReadOnlyDictionary<ScopeInstanceId, EditorScopePartition>(partitions));
+            return true;
+        }
+    }
 }
 
 internal sealed class EditorModuleRegistrySnapshot

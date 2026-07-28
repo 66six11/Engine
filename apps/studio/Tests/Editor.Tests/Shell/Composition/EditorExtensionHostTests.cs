@@ -145,7 +145,9 @@ public sealed class EditorExtensionHostTests
         var composition = host.Compose();
 
         Assert.Same(provider, composition.ProviderHost.GetRequiredSceneSnapshotProvider(EditorProviderRoles.ActiveScene));
-        Assert.Equal(module.Id, composition.ProviderHost.GetOwnerId("test.scene"));
+        Assert.Equal(
+            module.Id.Value,
+            composition.ProviderHost.GetOwnerId("test.scene").Module.Value);
     }
 
     [Fact]

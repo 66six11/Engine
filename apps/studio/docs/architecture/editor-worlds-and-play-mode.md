@@ -2,7 +2,7 @@
 
 状态：Target（迁移中）
 
-更新日期：2026-07-11
+更新日期：2026-07-28
 
 ## 1. 目的
 
@@ -10,7 +10,7 @@
 
 ## 2. 当前实现事实
 
-当前 Studio 只有 fixture-backed scene snapshot、Hierarchy/Inspector 只读投影和 Scene View composition spike。尚无正式 project/document/world session、写入 bridge、Play state machine 或 Game View。
+当前 Studio 已有 fixture-backed scene snapshot、Hierarchy/Inspector 只读投影、Scene View composition spike，以及 EngineBridge 的 owner-thread Scene World lifetime、entity create/destroy/is-alive、local Transform get/set 与 bounded UTF-8 display-name get/set baseline。名称不承担 identity、path 或 uniqueness。尚无正式 project/document/world session、entity query/snapshot projection、transactional document mutation bridge、Play state machine 或 Game View。
 
 因此本文描述 Target 合同。任何实现不得把 fixture provider 或 ViewModel 状态升级为 engine truth。
 

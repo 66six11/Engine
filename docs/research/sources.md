@@ -1,7 +1,7 @@
 # 资料与依据
 
 初始研究日期：2026-04-19
-最近核对日期：2026-07-13
+最近核对日期：2026-07-26
 
 工程决策优先参考一手资料。社区文章可以辅助理解，但不能替代 Vulkan 规范、Khronos
 仓库、GPUOpen 文档、CMake/Conan/MSVC 官方文档。
@@ -12,6 +12,41 @@
 不表示实现状态。当前 target graph、模块边界和阶段顺序分别以
 `docs/architecture/flow.md`、`docs/architecture/overview.md`、
 `docs/planning/system-architecture-roadmap.md` 和 GitHub Issues / Project 为准。
+
+实现已有成熟引擎先例的功能时，优先检查 Unreal Engine 的公开源码/API 和实际 owner 分层，再用
+Godot、O3DE、Bevy 等开源引擎或 Unity 官方合同交叉验证。ADR 必须记录采用了哪些成熟模式、哪些
+行为因 Asharia 的 package-first、C++23/Vulkan、headless 或 Avalonia 边界而不同。只有没有相关
+引擎先例，或现有实现不能满足已证明的本地约束时，才定义 Asharia 特有合同；不得仅凭通用工程偏好
+发明第二套系统。
+
+## 文件 IO、跨进程 writer exclusion 与前端 storage
+
+本次核对日期：2026-07-26
+
+一手资料：
+
+- Unreal `FSystemWideCriticalSection`：https://dev.epicgames.com/documentation/unreal-engine/API/Runtime/Core/GenericPlatform/FSystemWideCriticalSectionNotImp-?application_version=5.5
+- Unreal `NewInterprocessSynchObject`：https://dev.epicgames.com/documentation/unreal-engine/API/Runtime/Core/FGenericPlatformProcess/NewInterprocessSynchObject
+- Git lockfile API：https://git-scm.com/docs/api-lockfile
+- O3DE `AZ::IO::SystemFile`：https://github.com/o3de/o3de/blob/development/Code/Framework/AzCore/AzCore/IO/SystemFile.h
+- Godot `FileAccess`：https://github.com/godotengine/godot/blob/master/core/io/file_access.cpp
+- Windows `LockFileEx`：https://learn.microsoft.com/windows/win32/api/fileapi/nf-fileapi-lockfileex
+- Windows byte-range lock guide：https://learn.microsoft.com/windows/win32/fileio/locking-and-unlocking-byte-ranges-in-files
+- Linux `flock(2)`：https://man7.org/linux/man-pages/man2/flock.2.html
+- Avalonia Storage Provider：https://docs.avaloniaui.net/docs/services/storage/storage-provider
+- Avalonia File Dialogs：https://docs.avaloniaui.net/docs/services/file-dialogs
+
+结论：
+
+- 引擎级跨进程同步应是 Core/platform primitive，高层 Project owner 决定 lock identity 与临界区；
+- 短事务的 exclusive-create lockfile 和长期稳定 sentinel + kernel lock 是不同模式；Project writer
+  exclusion 采用后者，避免 crash 后把残留文件误判为永久占锁；
+- Windows handle close/进程退出与 POSIX descriptor close 都能释放内核锁；sentinel 本身故意保留，
+  文件存在不是 ownership evidence；
+- `LockFileEx`/`flock` 只协调合作 writer；network/synced filesystem 与 hostile writer 需要独立策略和验证；
+- Avalonia `IStorageProvider` 负责 picker、capability、bookmark 与平台 storage grant，不拥有
+  Project/Lock transaction。真实应用通过 service/DI 隔离 picker；Editor、CLI 与恢复工具共同消费
+  persistence/IO contract。
 
 ## 引擎系统架构与线程设计
 
@@ -358,6 +393,59 @@
 - GitHub 原生 Parent issue、Sub-issues progress 和 dependencies 已足够表达 finite Epic、PR-sized Slice 与真实 blocker；当前不需要增加 Initiative 或自建平行关系字段。
 - Project 字段与 Issue labels 应各自只有一个事实 owner：Status/Priority/Size 放 Project，primary system area 放 labels，不重复创建 `System` 字段。
 - Project 自动化适合 auto-add、状态同步和完成后归档，但不应替代验收标准、Done evidence 或人工确认真实 blocker。
+
+## Package graph、build graph 与 runtime lifecycle 分层
+
+本次核对日期：2026-07-14
+
+一手资料：
+
+- Cargo `metadata`：https://doc.rust-lang.org/cargo/commands/cargo-metadata.html
+- CMake File API codemodel：https://cmake.org/cmake/help/latest/manual/cmake-file-api.7.html
+- CMake 3.28 File API：https://cmake.org/cmake/help/v3.28/manual/cmake-file-api.7.html
+- CMake 3.28 build CLI：https://cmake.org/cmake/help/v3.28/manual/cmake.1.html#build-a-project
+- Unreal Engine Modules：https://dev.epicgames.com/documentation/en-us/unreal-engine/unreal-engine-modules
+- O3DE Gem Module System：https://docs.o3de.org/docs/user-guide/programming/gems/overview/
+- O3DE System Components：https://docs.o3de.org/docs/user-guide/programming/components/system-components/
+
+结论：
+
+- exact resolved package graph、CMake target/build graph 与 runtime factory/lifecycle graph 是三种不同权威，不能由同一组依赖边推导。
+- Host Profile 过滤后的 module identities 可以先形成 backend-neutral canonical Host Composition Plan，供 build 与 activation adapters 共用。
+- Build Plan 需要独立 build descriptor 与 CMake codemodel 对证；author package manifest 不应复制 target graph。
+- CMake File API client 必须跟随 reply index 的 `jsonFile` references；target ID 与 reply filename 不是可持久化 identity。
+- codemodel dependency closure 是 configured build graph evidence，可能包含传递或生成 edges；它不等于 package、direct-link 或 activation graph。
+- 当前 CMake 3.28.0-rc5/Ninja/MSVC Debug codemodel v2.6 实测有 42 个 buildsystem targets（23 STATIC_LIBRARY、14 UTILITY、
+  4 EXECUTABLE、1 SHARED_LIBRARY）；alias/INTERFACE identities 不在该 reply 中，因此 build roots 使用真实非 alias target name，
+  contract-only module 显式 `no-build`。
+- 可执行 Activation Plan 需要 artifact、entry point/factory、scope、phase、service dependency、rollback 等显式合同；module DAG 或
+  `entryModules` 数组不能直接当作启动顺序。
+- package-level dependency-first order 只适合确定性 IR、diff 与 handoff，不代表跨 package system activation order。
+
+## Package product 与 artifact evidence 分层
+
+本次核对日期：2026-07-14
+
+一手资料：
+
+- CMake 3.28 `install()`：https://cmake.org/cmake/help/v3.28/command/install.html
+- OCI Image Descriptor：https://github.com/opencontainers/image-spec/blob/main/descriptor.md
+- in-toto Statement v1：https://in-toto.io/Statement/v1
+- SLSA Build Provenance v1.2：https://slsa.dev/spec/v1.2/build-provenance
+
+结论：
+
+- CMake build-tree output 与 install product 是两层权威；`RUNTIME`、`LIBRARY`、`ARCHIVE`、component 和 relative
+  destination 等 install facts 不能由 codemodel artifact path 或扩展名稳定推导。
+- package 作者应声明 backend-neutral logical product intent；platform/configuration-specific filename、path、size 和 digest 属于一次
+  build/acquisition 后生成的 Artifact Manifest。
+- content evidence 至少需要 independently verified byte size 与 digest；Asharia v1 固定 SHA-256 和 portable relative path，并在同一
+  package root 内拒绝 exact/Unicode case-fold collision。
+- Source Build Plan 属于 build definition evidence，Package Artifact Manifest 属于 output subject evidence；两者以 fingerprint 显式关联，
+  但不因此声明 SLSA、OCI 或 in-toto compliance。
+- Package Artifact Manifest、Content pipeline 的 Asset Product Manifest 和 Project Product Pipeline 的 `asharia.stage.json` 是三种不同
+  identity/invalidation/publication authority，不能复用一个 schema。
+- verified runtime binary 不自动等于可 dynamic load；ABI、factory、scope、lifecycle、trust 和 rollback 必须由独立 contract/plan 决定。
 
 ## 项目 Build、Cook、Package 与 Launch
 

@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Asharia.Editor.Extensions;
 using Asharia.Studio.Application.Extensions;
+using Asharia.Studio.Application.Providers;
 using Editor.Core.Abstractions;
 using Editor.Core.Models.Contributions;
 using Editor.Core.Models.Extensions;
@@ -81,8 +82,11 @@ internal sealed class LegacyEditorModuleCompatibilityAdapter : IAsyncDisposable
                 foreach (var sceneProvider in contribution.SceneProviders)
                 {
                     committedContributions.Add(providerHost.RegisterOwned(
-                        sceneProvider,
-                        contribution.OwnerId));
+                        new EditorSceneProviderRegistration(
+                            sceneProvider.Id,
+                            sceneProvider.Role,
+                            sceneProvider.CreateProvider),
+                        CreateDefinitionId(contribution.OwnerId)));
                 }
             }
         }

@@ -3,15 +3,43 @@
 状态：目标架构。本文定义后续实现顺序和硬边界，不表示计划中的 targets/API 已经存在。
 
 当前仓库事实是：`engine/core` 已提供 error/result、log 和严格 file IO baseline；`engine/platform` 仍是只传递
-`asharia::core` 的 `INTERFACE` target；root CMake 仍静态加入当前 source packages；`engine/package-runtime`、
-通用 Host scope、Memory & Budget、Settings、Runtime Storage、Tasks 等目标模块尚未实现。本文不能被用来宣称这些能力已经完成。
+`asharia::core` 的 `INTERFACE` target；root CMake 仍静态加入当前 source packages；`engine/package-runtime` 已建立 package control
+plane 的 headless v1 contracts；`engine/host-runtime` 已建立 registration、eligibility 与 root ProcessScope 的 headless C++ boundary。
+#295 的 [Static Contribution Payload Accessors v1](adr-static-contribution-payload-accessors-v1.md) 冻结 selected contribution 的 payload
+projection authority；#296 的
+[ProcessScope Contribution Registry and Activation Lease v1](adr-process-scope-contribution-registry-and-activation-lease-v1.md) 已在
+ProcessScope V2 内调用 accessor、建立 fixed-slot typed registry、weak generation view/handle 与 contribution-only lease。
+
+#297 已把 generated normal Host 接到上述 ProcessScope：T3/C6 生成的 sealed current-image descriptor 经过 Eligibility V2
+两阶段 admission，启动固定 `project-bootstrap` provider，借用 `ProcessApplicationV1` 读取真实 `asharia.project.json`，随后显式停止。
+#298 的 [Bootstrap Project-Open Session v1](adr-bootstrap-project-open-session-v1.md) 进一步把同一 canonical project root 下的
+Project Manifest/Lock、fresh Effective Session、C6 与已验证 published Host binding 对证，并通过纯 reducer 产出 headless Bootstrap
+状态；匹配时才以同一 root 有界运行 Project Bootstrap Host。
+#301 的 [Engine Distribution Package Catalog Snapshot v1](adr-engine-distribution-package-catalog-snapshot-v1.md) 已从
+`VerifiedInstalledDistribution` 派生完整、确定、只读且无需 existing Lock 的 bundled candidate snapshot；#302 的
+[Project / Local Package Source Catalog v1](adr-project-local-package-source-catalog-v1.md) 已以 portable
+`asharia.packages.sources.json` + process-local absolute mapping 派生 Project/local candidate snapshot。#303 的
+[Package Lock Update Plan 与 Impact Preview v1](adr-package-lock-update-plan-v1.md) 又增加 full/targeted-conservative no-write planner、
+explicit `CandidatePreference` / `candidatePreferences` 与 canonical graph-only preview。
+[Package Lock Apply Preconditions v1](adr-package-lock-apply-preconditions-v1.md) 已进一步增加无 IO、无 resolver 的 plan seal/current-facts
+revalidation；它必须在 writer exclusion 持有期间消费重新读取的 current facts。
+[Core Exclusive File Lock v1](adr-core-exclusive-file-lock-v1.md) 已增加 persistent sentinel + kernel lock 的非阻塞、move-only
+writer-exclusion primitive；sentinel 存在不代表占锁。Atomic apply/journal/recovery、local mapping 产品配置与 UI 仍是独立后继边界。
+Core 当前还提供
+[caller-owned staged preparation](adr-core-staged-file-preparation-v1.md) 与
+[recoverable single-file replacement](adr-core-staged-file-replacement-v1.md) primitives：前者 exclusive-create/write/flush/close
+staged bytes，后者保留旧 target backup；这些 Core primitives 不拥有 plan revalidation、Project/Lock path policy、目录 flush、
+journal 或跨文件 recovery。
+其他 concrete Host scopes、完整 system-instance/jobs/subscriptions lease、Memory & Budget、Settings、Runtime Storage、Tasks 等目标模块尚未实现。
+本文不能被用来宣称生产 Editor Bootstrap、Editor UI 或完整 Foundation Services 已经完成。
 
 ## 目的
 
 Asharia 当前最优先目标不是继续增加 Physics、Audio、AI 等纵向功能，而是建立一套后续完整 System/Feature
 Packages 都能复用的基础框架：
 
-- package graph 可解析、锁定、验证并生成 Host-specific activation plan；
+- Engine Distribution 与项目 package graph 可分别验证，并派生 Host-specific composition/activation plan；
+- Editor Image 的最小 Shell、diagnostics、Package Manager、Build/Repair 与 Safe Mode 不依赖项目 graph 成功激活；
 - Editor、Runtime、Dedicated Server 和 Tool Host 共享相同的系统创建、停止和失败回滚语义；
 - 系统通过显式作用域和 typed contributions 扩展，不使用全局 service locator；
 - 配置、IO、任务、时间、内存压力和诊断有统一的底层契约；
@@ -25,16 +53,32 @@ Packages 都能复用的基础框架：
 
 ```mermaid
 flowchart TB
-    Apps["Host executables\nEditor / Runtime / Server / Tool"]
-    Host["engine/host-runtime planned\nscopes / activation / lifecycle / safe points"]
-    Package["engine/package-runtime planned\nmanifest / solve / lock / activation plan"]
+    EditorImage["Editor Image\nbootstrap shell / diagnostics / repair / Safe Mode"]
+    Apps["Other Host executables\nRuntime / Server / Tool"]
+    Distribution["Engine Distribution Manifest\nfixed EngineGenerationId + bundled inventory"]
+    Project["Project Manifest + Sources + Lock\nproject-owned portable facts"]
+    LocalSources["Machine-local source mapping\nprocess-local"]
+    Profile["Host Profile"]
+    Session["Effective Session Plan\nderived state + subplan handoff"]
+    CurrentImage["Generated current-image descriptor\nT3 / C6 / provider v4 / Snapshot v2"]
+    Eligibility["Activation Eligibility V2\ntwo-stage current-image admission"]
+    Host["engine/host-runtime\nregistration + eligibility + ProcessScope V2\nfixed-slot registry + contribution lease; other scopes planned"]
+    Package["engine/package-runtime\nmanifest / solve / lock / session planning"]
     Kernel["Bootstrap Kernel\ncore + minimal platform primitives"]
     Foundation["Default Foundation System Packages\nMemory / Observability / Storage / Settings / Tasks / Data"]
     Domain["Domain System Packages\nContent / World / Input / Scripting / Rendering / Physics ..."]
     Features["Feature and Integration Packages"]
 
-    Apps -->|creates| Host
-    Host -->|consumes plan| Package
+    EditorImage -->|boots before project activation| Session
+    Apps -->|provides fixed composition root| Session
+    Distribution -->|binds engine generation| Session
+    Project -->|adds project graph| Package
+    LocalSources -->|resolves selected local IDs| Package
+    Profile -->|selects modules| Package
+    Package -->|derives composition| Session
+    Session -->|generates sealed composition facts| CurrentImage
+    CurrentImage -->|consumed once| Eligibility
+    Eligibility -->|admits recording and exact table| Host
     Host -->|uses primitives| Kernel
     Host -->|activates| Foundation
     Host -->|activates| Domain
@@ -44,8 +88,15 @@ flowchart TB
     Features -->|depends on public system APIs| Domain
 ```
 
-依赖只允许向下。`package-runtime` 不创建 World/Renderer/Script VM；`host-runtime` 不实现任何领域系统；
+依赖只允许向下。Editor Image 可以静态链接 bootstrap/foundation 实现，但不能等待项目 packages 才提供基础修复 UI。
+`package-runtime` 不创建 World/Renderer/Script VM；`host-runtime` 不实现任何领域系统；
 Foundation Systems 不依赖 Editor、Vulkan backend 或游戏规则。
+
+artifact path/size/hash 是 build、publication、install、cache restore 与 repair 边界的 generation 证据。normal startup 只消费
+generated sealed current-image descriptor，不自 hash executable，也不等待外部 launcher 签发 launch receipt。
+
+发行/项目所有权、`EngineGenerationId`、Safe Mode 与静态原生组合的完整决策见
+[Editor Image、Engine Distribution 与原生组合 ADR](adr-editor-engine-distribution-and-native-composition.md)。
 
 ## 三层基础
 
@@ -59,6 +110,10 @@ Foundation Systems 不依赖 Editor、Vulkan backend 或游戏规则。
 - 启动所需的本地文件读取、atomic write、路径、进程和 dynamic library primitives；
 - 崩溃前仍可工作的最小 stderr/file log sink 与 fatal/crash capture hook。
 
+其中 caller-owned staged/backup 的单文件恢复替换遵循
+[Core Staged File Replacement v1](adr-core-staged-file-replacement-v1.md)：Core 只报告 commit 与
+artifact presence，不拥有多文件事务、journal、reader gate 或业务恢复策略。
+
 Kernel 不拥有 VFS、asset、job graph、CVar、World、script VM、Renderer、Editor transaction 或产品设置。
 package manifest/lock 的窄格式模型和解析由静态 bootstrap component `engine/package-runtime` 拥有；不能为了在启动期使用
 它们而把 package schema 反向塞入 `engine/core`。
@@ -70,7 +125,9 @@ Core 只保存通用错误载体和上下文链，不枚举全部未来系统。
 
 ### L1：Host Foundation
 
-计划新增 `engine/host-runtime`，只拥有：
+`engine/host-runtime` 已建立
+`host_runtime_contract -> host_runtime_registration -> host_runtime_activation_eligibility -> host_runtime_process_scope` 的向下 target
+链，并应作为固定 Host 执行骨架静态进入 Editor Image closure；它属于 L1，不进入 L0 Kernel。完整 L1 最终只拥有：
 
 - Host role 与 scope tree；
 - ordered activation/deactivation；
@@ -81,6 +138,64 @@ Core 只保存通用错误载体和上下文链，不枚举全部未来系统。
 - activation failure rollback、quiesce、shutdown drain 和结构化诊断。
 
 它不得返回任意全局 service pointer，也不得成为 World、Renderer、Storage 或 Settings 的实现所在地。
+
+当前 #296 implementation 只覆盖 root `ProcessScope`：它按值消费 admitted callback table，在 preflight exact-map sealed Blueprint process
+projection 与 contribution runtime bindings，并建立 owner-ordered fixed slots。start 按 dependencies-first `create -> activate -> publish`
+执行；只有 per-factory contribution lease 原子提交后，该 factory 才成为 dependency-visible，全部 factories 成功后 public registry 才开放。
+它通过窄 factory contexts 暴露声明过且已 dependency-visible 的 dependencies，并由 Host 唯一拥有 instance token 与 contribution lease。
+
+rollback/stop 的 gate 固定为 reverse quiesce → registry `Revoking` → reverse lease revoke → reverse deactivate/destroy → registry
+`Revoked`。registry view/typed handle 只 weak-reference scope generation，所有 query/borrow 都复验 control thread、process epoch、phase、
+cardinality、type 与 payload。#297 已用 generated sealed current-image descriptor 取代 normal startup 的外部 launch issuer，
+并把 T3/C6 normal Host 接到这条 ProcessScope 路径；#298 已实现首个 headless Bootstrap project-open state mapping，UI 与其他
+scopes 仍未实现。完整合同见
+[Bootstrap Project-Open Session v1](adr-bootstrap-project-open-session-v1.md)、
+[Generated Current-Image Host 与 Project Bootstrap v1](adr-generated-current-image-project-bootstrap-host-v1.md)、
+[ProcessScope Lifecycle v1](adr-process-scope-lifecycle-v1.md)、
+[Static Typed Contribution Contract Bindings v1](adr-static-typed-contribution-contract-bindings-v1.md)、
+[Static Contribution Payload Accessors v1](adr-static-contribution-payload-accessors-v1.md) 与
+[ProcessScope Contribution Registry and Activation Lease v1](adr-process-scope-contribution-registry-and-activation-lease-v1.md)。
+
+### Editor Image 的固定 Bootstrap Closure
+
+Editor Bootstrap 的定位是：即使项目未能成功加载，也能诊断、构建、修复并重新启动项目的固定控制面。它不是完整 Editor，
+也不是完整 Engine。除 L0 Kernel 外，Editor Image 固定包含：
+
+- headless `package-runtime`：读取/验证 Distribution、Project Manifest/Lock 与 Host Profile，派生 Effective Session 和后继
+  handoff；不依赖 Editor UI、Data Model、VFS、Renderer，不执行 CMake 或加载项目 DLL；
+- L1 `host-runtime` 骨架：只管理固定 Image components 和 scope/lifecycle/rollback；Safe Mode 不激活项目 contributions；
+- 固定 `packages/project-bootstrap`：reader/summary target 通过 `project-core` IO 读取真实 `asharia.project.json`，provider target
+  发布单例 `ProcessApplicationV1`；文件 IO 只在 ProcessScope 已 Active 后的 `run()` 发生，不在 factory create/activate 中发生，
+  且不打开 asset database、World 或项目插件。它是 Engine Distribution 固定选择、项目不可替换的 source boundary，
+  不得塞入 `package-runtime`；
+- 最小 platform/window/event loop、UI Shell、内嵌基础资源、bootstrap/package/build diagnostics 与 Build/Repair/Restart 控制；
+- UI 图形 backend 失败时仍可工作的 OS-native fatal dialog 或 console/log 降级路径。
+
+Editor Image 的项目打开状态词汇为：
+
+```text
+NoProject -> Opening -> Ready | PendingBuild | PendingRestart |
+                         RepairRequired | UpgradeRequired | SafeMode |
+                         FatalDistributionError
+```
+
+Effective Session v1 自身仍只产生 `Ready`、`RepairRequired`、`UpgradeRequired` 与 `SafeMode`。#298 的后继 Bootstrap adapter
+现在可以用 verified published Host binding、C6/session/Engine/Host/platform/configuration identity 与 artifact path/type/size
+轻量观察证明 `PendingBuild`；它不会让 session composer 猜测该状态，也不会在 normal open 重算 executable hash。
+`PendingRestart` 仍需要 current-process generation evidence，v1 只保留词汇而不产生。
+
+这里的 Bootstrap `Ready` 只表示 package/session 输入、published Host/C6 与固定 Project Bootstrap run/clean stop 一致；它不等于
+完整 Editor Profile 已激活，也不发布 `ProjectReady`。项目描述被固定 Host 以 exit `65` 拒绝时进入 `SafeMode`；spawn、timeout、
+output/protocol、admission 或 Host lifecycle 失败进入 `FatalDistributionError`。详细 gate 顺序见
+[Bootstrap Project-Open Session v1](adr-bootstrap-project-open-session-v1.md)。
+
+World/Scene、Viewport/game Renderer、Vulkan/RenderGraph/material、asset database/import/cook、完整 VFS/job graph、scripting、
+physics/audio/networking、Inspector/transaction/document workspace、package 自定义 UI、PIE 与 native hot reload 全部在 Ready 后由
+完整 Editor Profile 激活，不属于固定 Bootstrap Closure。最小 UI 能查看 package 文件和错误，不表示 Project/Editor Domain
+已经启动。
+
+未来可以先用 ImGui 快速实现固定 Bootstrap UI，稳定后迁移到 Avalonia；这只是前端演进方向，不属于 #298 的 headless
+project-open Slice。
 
 ### L2：Default Foundation System Packages
 
@@ -101,7 +216,8 @@ Editor 工具属于一个完整 Foundation System Package。Observability 只消
 
 ## Host Scope 模型
 
-计划中的作用域是 lifetime owner，不是命名空间或依赖注入容器标签。
+作用域是 lifetime owner，不是命名空间或依赖注入容器标签。当前只有 root `ProcessScope` 的 headless lifecycle executor 已有 C++
+implementation；下图其余 scope tree 仍是目标合同，不能据此宣称 Project/Editor/World 等 owner 已存在。
 
 ```mermaid
 flowchart TB
@@ -171,29 +287,39 @@ generation snapshot 在 Host safe point 发布，Settings/Device Profile 只消�
 
 ## Package Plan 与系统激活
 
+下图描述 F2 planning、#297 normal Host 与 #298 headless project-open 状态链。verified Engine Distribution + Project Lock v2、Host Profile projection 与
+[Effective Session v1](adr-effective-session-v1.md) 已实现；session 以 exact Profile bytes 和 graph fingerprints 产出
+Ready/Upgrade/Repair/SafeMode，并把 verified graph 交给 [Host Composition Plan v1](adr-host-composition-plan-v1.md)。后者生成
+canonical logical IR；[Host Activation Blueprint v1](adr-host-activation-blueprint-v1.md) 已在其上生成构建前 scope templates 与
+factory order，但仍不是绑定 executable bytes 的可执行 plan。Effective Session 只派生状态和子计划 handoff，
+不成为第三份 lock。#298 的 [Bootstrap Project-Open Session v1](adr-bootstrap-project-open-session-v1.md) 已用 matching C6/verified
+published binding 与 artifact path/type/size evidence 产生 `PendingBuild` 或继续执行 Host；`PendingRestart` 仍无 current-process
+generation evidence。
+
 ```mermaid
 sequenceDiagram
-    participant App as Host executable
-    participant Package as package-runtime
+    participant Plans as verified session / blueprint / bindings
+    participant Generated as generated T3/C6 current image
     participant Host as host-runtime
     participant Registry as typed registries
-    participant System as system factory/instance
+    participant App as ProcessApplicationV1
+    participant Project as project-bootstrap reader
 
-    App->>Package: verify lock + select Host Profile
-    Package-->>App: ordered activation plan
-    App->>Host: create Process/Project scopes
-    Host->>System: create with explicit factory context
-    System-->>Host: instance + activation lease
-    Host->>Registry: publish owned contributions
-    Registry-->>Host: contribution handles
-    alt activation failure
-        Host->>Registry: revoke handles in reverse order
-        Host->>System: stop/dispose activated instances
-        Host-->>App: structured failure and safe-mode eligibility
-    else normal shutdown
-        Host->>Registry: close scope to new work
-        Host->>System: cancel, drain, stop, dispose
-    end
+    Plans->>Generated: render exact T3/C6 image
+    Note over Plans,Generated: artifact hashes are verified at build/publication/install/repair, not normal startup
+    Generated->>Host: admit sealed current-image descriptor
+    Host->>Generated: record exact providers
+    Generated-->>Host: pending callback table
+    Host->>Host: Stage 2 exact-table admission
+    Host->>Host: prepare and start ProcessScope
+    Host->>Registry: open after all leases commit
+    Registry-->>Host: borrow single<ProcessApplicationV1>()
+    Host->>App: run(project-root arguments)
+    App->>Project: read asharia.project.json
+    Project-->>App: deterministic project summary
+    App-->>Host: status / exit / diagnostic
+    Host->>Registry: release borrow
+    Host->>Host: explicit reverse stop
 ```
 
 ### Factory Context
@@ -386,7 +512,7 @@ Package/version/schema 已可演进后，Editor 必须通过统一 upgrade plan 
 | Foundation Gate | 交付 | 退出证据 |
 | --- | --- | --- |
 | F0 Current Facts | source-boundary manifest schema、target/package/module-role inventory、planned ownership roots、Kernel allowlist、Host roles | topology gate 能检测 identity/dependency/target/CMake 漂移；current 与 installable 不混淆 |
-| F1 Package Plan | manifest vNext、resolver、lockfile、Host Profiles、generated build/activation plan | Editor/CLI/CI 对同一输入得到字节等价 graph |
+| F1 Package Plan | manifest vNext、resolver、lockfile、update plan/preview、Host Profiles、logical composition、generated build/activation plan | Editor/CLI/CI 对同一输入得到字节等价 graph/preview |
 | F2 Host Runtime | scope tree、typed factory/contribution registry、activation lease、rollback、lifecycle | synthetic systems 验证 order/failure/cancel/drain/stale generation |
 | F3 Foundation Services | Platform lifecycle/capability snapshot、Memory & Budget、Runtime Storage、Settings/Device Profile、Tasks baseline、Host time/update contract、Observability/local crash、capability grant/deny | Minimal/Runtime/Server/Tool Host headless smokes；pressure/phase/crash/capability negative evidence |
 | F4 Data & Content | canonical schema/persistence、artifact/cache/resource runtime | source-free runtime 与 corrupt/migration/reload tests |
@@ -400,6 +526,54 @@ F0 的第一项已由 `asharia.package.json` schema v1 与 `tools/check_package_
 `packageKind: source-boundary`、不可选择且不进入 catalog；每个 target/test target 有单一 role，多个边界可通过
 `plannedOwnershipRoot` 聚合到未来完整系统。F0 尚未因为这项落地而整体完成：Kernel allowlist、public consumers、optional dependency
 和完整 Host role 标注仍需后续 Slice；它们不得被猜测后一次性写入空字段。
+
+F1 的数据合同基线已经覆盖 installable/Feature Set/Project Manifest/Package Lockfile 与五种 Host Profile v1，并提供
+explicit-source Candidate Discovery v1、deterministic in-memory resolver、fail-closed locked graph verification/reuse 和 logical
+module/contribution projection。Host Composition Plan v1 的 schema、pure planner、dependency ordering、entry/provenance 与 canonical IR
+已经实现。[Source Build Plan v1](adr-source-build-plan-v1.md) 的 independent source descriptor、normalized CMake codemodel
+snapshot 与 pure build-root planner 也已实现。
+[Engine Distribution Package Catalog Snapshot v1](adr-engine-distribution-package-catalog-snapshot-v1.md) 已将 verified Distribution
+inventory 转换为无 existing Lock 前置的 bundled candidate snapshot；
+[Project / Local Package Source Catalog v1](adr-project-local-package-source-catalog-v1.md) 已将 committed relative roots/logical IDs 与
+process-local mappings 转换为严格、原子的 Project/local snapshot。
+[Package Lock Update Plan 与 Impact Preview v1](adr-package-lock-update-plan-v1.md) 已消费这些 complete fresh candidates，保持 default
+Policy v1 不变；targeted-conservative plan 只对 `unlockTargets` 解除 preference，`intentOnlyTargets` 与其他 non-unlock identities 由
+explicit Policy v2 `CandidatePreference` / `candidatePreferences` 优先保留 locked candidates；成功结果只包含 immutable proposed
+Project/Lock、selected candidates、graph-only impacts、domain-separated fingerprints 与脱敏 preview。它们仍不代表 F1 完成：atomic apply/
+journal/recovery、local mapping 产品 owner 与 production Project Lock 尚未实现。#299 只为固定 Windows x64 Studio 提供 production Editor Host Profile exact-byte input 和 statically-qualified、
+byte-bound closed Editor Image input；真实 installable package inputs、canonical assembly invocation、#283 installed byte-health handoff 与 launcher-owned
+current selection 仍未闭环。[Package Product & Artifact Evidence v1](adr-package-product-artifact-evidence-v1.md) 的作者声明、候选
+快照和 pure verifier 已落地；[Package Artifact Collection & Publication v1](adr-package-artifact-collection-publication-v1.md)
+也已为 #278 实现显式 root、流式 staged verification 与不可变 artifact generation publication。
+[Engine Distribution Manifest v1](adr-engine-distribution-manifest-v1.md) 进一步建立只读 Editor/Engine 发行库存、内容派生
+`EngineGenerationId`、semantic validator 与 canonical writer；Project Manifest / Package Lock v2 已完成硬切并以
+`engine-distribution` reference 绑定 exact generation。[Effective Session v1](adr-effective-session-v1.md) 已实现
+Distribution/Project/Profile 对证、状态归类与 Host Composition handoff。
+[Engine Distribution Assembly v1](adr-engine-distribution-assembly-v1.md) 已实现显式隔离输入、staged-byte inventory、深度复验和
+不可变 generation publication；[Installed Distribution Repair Verifier v1](adr-installed-distribution-repair-verifier-v1.md) 已实现
+外部 expected ID、disk-only artifact evidence、read-only installed-tree 深度复验与 `Healthy/RepairRequired` report。
+[Package Factory / Scope / Lifecycle Declaration v1](adr-package-factory-scope-lifecycle-v1.md) 已实现 logical factory、owner scope、
+required factory、contribution ownership、exact candidate snapshot 与 locked revalidation；它仍不创建 instance 或执行 lifecycle。
+Host Activation Blueprint v1、generated static composition root 与
+[Host Executable Binding Receipt v1](adr-host-executable-binding-receipt-v1.md) 已实现；
+[Static Factory Callback Table v1](adr-static-factory-callback-table-v1.md) 已为 #291 实现 current-process typed callback binding。
+[Static Typed Contribution Contract Bindings v1](adr-static-typed-contribution-contract-bindings-v1.md) 已为 #294 实现 Binding Plan v3、
+provider v3、Composition renderer 4、private C++ type evidence 与 RegistrationSnapshot v2；它不提供 payload lookup 或 lease。
+[Static Contribution Payload Accessors v1](adr-static-contribution-payload-accessors-v1.md) 已由 #295 实现 Binding Plan v4、provider v4、
+Composition renderer 5 与 `StaticContributionBindingV2` 的后继硬切；该 ADR 自身只增加 private accessor evidence。
+[Activation Eligibility v1](adr-activation-eligibility-v1.md) 已实现 sealed handoffs、按值线性消费、admitted recording wrapper 与
+exact-table affinity，并完成 #292 Done evidence。[ProcessScope Lifecycle v1](adr-process-scope-lifecycle-v1.md) 已由 #293 建立 sealed process
+projection、factory contexts、token ownership、startup rollback 与 explicit reverse stop；#296 又将 public surface 硬切到 V2，并实现
+fixed-slot typed registry、weak handles、contribution-only lease、publication rollback 与 cleanup revocation gate。
+
+#297 的 [Generated Current-Image Host 与 Project Bootstrap v1](adr-generated-current-image-project-bootstrap-host-v1.md) 已把 active
+generation 硬切到 Template renderer 3 / Composition renderer 6 / provider v4 / RegistrationSnapshot v2，删除 normal startup 对四个 V1
+handoff、executable artifact hash 与外部 launch receipt 的依赖，并以 generated descriptor 驱动 Eligibility V2 两阶段 admission。
+normal Host 现已执行 admission → recording → exact-table admit → ProcessScope start → borrow/run/release
+`ProcessApplicationV1` → explicit stop；固定 `packages/project-bootstrap` 在 `run()` 中读取真实 `asharia.project.json`。
+
+其他 scope owners、完整 instance/jobs/subscriptions lease、Editor Bootstrap state adapter、repair executor 与 UI 仍未实现；构建/发布和
+installed repair 路径继续使用 artifact/receipt evidence，normal startup 不重复承担 bytes verification。
 
 ## 拒绝的替代方案
 

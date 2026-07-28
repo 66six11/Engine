@@ -2,7 +2,7 @@
 
 状态：Partial（迁移期 UI 实现规范）
 
-更新日期：2026-07-13
+更新日期：2026-07-28
 
 > 本文仍可用于当前 Dialog、Command、Shortcut、Background Task、样式和部分 Shell 行为，但其中关于 native viewport、Play Mode、provider/extension 延后以及长期分层的结论不再是目标架构。正式框架合同以 [architecture/README.md](architecture/README.md) 为入口。
 
@@ -69,7 +69,7 @@ Status debug message surface -> Background Tasks panel -> Diagnostics/Problems r
 | 状态栏反馈 | `ActivityIndicator`, `EditorStatusMessageSnapshot`, `MainWindowViewModel` summary/status properties | Current / status-debug message v0 |
 | UI 线程切回 | `IEditorUiDispatcher`, `AvaloniaEditorUiDispatcher` | Current |
 | 只读 Scene snapshot | `ISceneSnapshotProvider`, `InMemorySceneSnapshotProvider` | Current / read-only |
-| Provider contribution v0 | `SceneProviderDescriptor`, `EditorProviderHost`, `EditorProviderRoles.ActiveScene` | Current / fixture-backed active scene provider registration |
+| Provider contribution v0 | Application `EditorProviderHost`, legacy `SceneProviderDescriptor` adapter, `EditorProviderRoles.ActiveScene` | Current / UI-neutral runtime host with fixture-backed legacy input |
 | Diagnostic projection v0 | `IEditorDiagnosticService`, `EditorDiagnosticService`, `ConsolePanelViewModel`, `ProblemsPanelViewModel` | Current / UI-neutral latest-status, console and problems projection only |
 
 当前仍不稳定或未实现：
@@ -94,7 +94,7 @@ Status debug message surface -> Background Tasks panel -> Diagnostics/Problems r
 
 `EditorPanelFrameScheduler v0` 只调度已 attached panel content 暴露的 `IEditorPanelFrameUpdateSink`，支持 manual、visible、active-only mode 和可选 target FPS throttle。测试和未来 UI timer 通过显式 `Tick(now)` 驱动；`EditorPanelFrameContext.RequestRepaint()` 只记录 repaint request，不触发 Avalonia `Render`、native viewport presentation、renderer FPS 控制、swapchain present 或 engine simulation。
 
-`EditorProviderHost v0` 只接管 fixture-backed active scene provider contribution 的 role 唯一性、lazy materialization、Ready/Faulted status 和注册释放；`ISceneSnapshotProvider` 仍然只有 `GetCurrentSnapshot()` / `SnapshotChanged` / `TryGetObject()`，不加入 `Connect()`、`Disconnect()`、native handle 或写回语义。
+`EditorProviderHost v0` 及其 registration/status 已由 UI-neutral `Asharia.Studio.Application.Providers` 拥有；legacy `SceneProviderDescriptor` 只由 compatibility adapter 转换。Host 仍只接管 fixture-backed active scene provider contribution 的 role 唯一性、lazy materialization、Ready/Faulted status 和注册释放；`ISceneSnapshotProvider` 仍然只有 `GetCurrentSnapshot()` / `SnapshotChanged` / `TryGetObject()`，不加入 `Connect()`、`Disconnect()`、native handle 或写回语义。
 `EditorDiagnosticService v0` owns bounded UI-neutral diagnostic records and exposes latest, recent and problem-filtered snapshots. `MainWindowViewModel` publishes command feedback into this stream and uses the latest diagnostic as status text; Console consumes all recent diagnostics and Problems consumes only `EditorDiagnosticChannel.Problem`. This is not native engine log ingestion, shell command input, persisted log storage, provider reload diagnostics, plugin diagnostics or a final Console/Problems data grid.
 
 ## 3. 分层规则

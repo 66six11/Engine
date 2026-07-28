@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 2,
+  "packageKind": "feature-set",
+  "id": "com.asharia.features.standard3d",
+  "version": "0.1.0",
+  "displayName": "Asharia Standard 3D",
+  "description": "A maintained set of complete packages for a standard 3D project.",
+  "engineApi": {
+    "kind": "range",
+    "minimumInclusive": "0.1.0",
+    "maximumExclusive": "0.2.0",
+    "allowPrerelease": false
+  },
+  "packages": [
+    {
+      "id": "com.asharia.system.rendering-vulkan",
+      "version": {
+        "kind": "range",
+        "minimumInclusive": "0.1.0",
+        "maximumExclusive": "0.2.0",
+        "allowPrerelease": false
+      }
+    },
+    {
+      "id": "com.asharia.system.input",
+      "version": {
+        "kind": "range",
+        "minimumInclusive": "0.1.0",
+        "maximumExclusive": "0.2.0",
+        "allowPrerelease": false
+      }
+    }
+  ],
+  "featureSets": []
+}

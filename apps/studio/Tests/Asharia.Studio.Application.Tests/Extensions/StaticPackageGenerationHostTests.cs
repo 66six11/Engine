@@ -74,6 +74,24 @@ public sealed class StaticPackageGenerationHostTests
     }
 
     [Fact]
+    public void Shared_definition_rejects_mismatched_metadata_and_declaration()
+    {
+        var definitionId = CreateDefinitionId(
+            "studio.workbench",
+            EditorModuleScopeKind.Application);
+        var otherId = CreateDefinitionId(
+            "studio.scene",
+            EditorModuleScopeKind.Project);
+        var declaration = new EditorModuleBuilder(
+            new EditorModuleDefinitionContext(otherId)).Build();
+
+        Assert.Throws<ArgumentException>(() => new EditorModuleDefinition(
+            CreateMetadata(definitionId),
+            new CountingModule(),
+            declaration));
+    }
+
+    [Fact]
     public void Create_rejects_a_factory_that_returns_null()
     {
         var definitionId = CreateDefinitionId("studio.workbench", EditorModuleScopeKind.Application);

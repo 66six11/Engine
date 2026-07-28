@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 2,
+  "packageKind": "installable-capability",
+  "id": "com.asharia.integration.invalid-policy",
+  "version": "0.1.0",
+  "displayName": "Invalid Integration",
+  "description": "Does not connect two complete packages or expose a contribution.",
+  "catalogType": "integration",
+  "engineApi": {
+    "kind": "exact",
+    "version": "0.1.0"
+  },
+  "dependencies": [
+    {
+      "id": "com.asharia.system.rendering",
+      "version": {
+        "kind": "exact",
+        "version": "0.1.0"
+      }
+    }
+  ],
+  "options": [],
+  "modules": [
+    {
+      "id": "bridge",
+      "role": "implementation",
+      "dependsOn": [],
+      "hostKinds": [
+        "runtime"
+      ],
+      "platforms": [
+        "com.asharia.platform.any"
+      ],
+      "shippingClass": "runtime",
+      "requiredCapabilities": []
+    }
+  ],
+  "entryModules": {},
+  "contentRoots": [],
+  "contributions": []
+}

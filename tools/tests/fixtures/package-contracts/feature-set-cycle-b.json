@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 2,
+  "packageKind": "feature-set",
+  "id": "com.asharia.features.cycle-b",
+  "version": "0.1.0",
+  "displayName": "Cycle B",
+  "description": "Synthetic Feature Set cycle endpoint B.",
+  "engineApi": {
+    "kind": "exact",
+    "version": "0.1.0"
+  },
+  "packages": [],
+  "featureSets": [
+    {
+      "id": "com.asharia.features.cycle-a",
+      "version": {
+        "kind": "exact",
+        "version": "0.1.0"
+      }
+    }
+  ]
+}

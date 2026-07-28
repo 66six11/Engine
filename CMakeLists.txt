@@ -18,6 +18,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 include(AshariaCompilerOptions)
+include(AshariaGeneratedHost)
 
 if(ASHARIA_BUILD_TESTS)
     enable_testing()
@@ -25,6 +26,7 @@ endif()
 
 add_subdirectory(engine/core)
 add_subdirectory(engine/platform)
+add_subdirectory(engine/host-runtime)
 
 add_subdirectory(packages/window-glfw)
 add_subdirectory(packages/profiling)
@@ -38,6 +40,7 @@ add_subdirectory(packages/reflection)
 add_subdirectory(packages/serialization)
 add_subdirectory(packages/asset-core)
 add_subdirectory(packages/project-core)
+add_subdirectory(packages/project-bootstrap)
 add_subdirectory(packages/resource-runtime)
 add_subdirectory(packages/material-core)
 add_subdirectory(packages/rhi-vulkan)
@@ -47,6 +50,8 @@ add_subdirectory(packages/material-instance)
 add_subdirectory(packages/asset-pipeline)
 add_subdirectory(packages/shader-material-adapter)
 add_subdirectory(packages/renderer-basic)
+
+asharia_include_generated_host_template()
 
 add_subdirectory(tools/asset-processor)
 

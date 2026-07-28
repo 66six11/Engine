@@ -1,0 +1,82 @@
+{
+  "schemaVersion": 1,
+  "packageKind": "source-boundary",
+  "sourceRole": "engine-component",
+  "ownerDomain": "foundation",
+  "plannedOwnershipRoot": "engine/host-runtime",
+  "selectable": false,
+  "catalogVisible": false,
+  "name": "com.asharia.host-runtime",
+  "version": "0.1.0",
+  "displayName": "Asharia Host Runtime",
+  "description": "Fixed Host Image contracts, activation admission and ProcessScope lifecycle execution.",
+  "dependencies": [],
+  "targets": [
+    "asharia-host-runtime-contract",
+    "asharia-host-runtime-provider-bridge",
+    "asharia-host-runtime-registration",
+    "asharia-host-runtime-activation-eligibility",
+    "asharia-host-runtime-current-image-provider-bridge",
+    "asharia-host-runtime-process-scope"
+  ],
+  "testTargets": [
+    "asharia-host-runtime-registration-tests",
+    "asharia-host-runtime-registration-snapshot-json-tests",
+    "asharia-host-runtime-current-image-test-provider",
+    "asharia-host-runtime-activation-eligibility-tests",
+    "asharia-host-runtime-process-scope-test-provider",
+    "asharia-host-runtime-process-scope-tests"
+  ],
+  "targetRoles": {
+    "asharia-host-runtime-contract": "contract",
+    "asharia-host-runtime-provider-bridge": "contract",
+    "asharia-host-runtime-registration": "bootstrap",
+    "asharia-host-runtime-activation-eligibility": "bootstrap",
+    "asharia-host-runtime-current-image-provider-bridge": "bootstrap",
+    "asharia-host-runtime-process-scope": "bootstrap",
+    "asharia-host-runtime-registration-tests": "test",
+    "asharia-host-runtime-registration-snapshot-json-tests": "test",
+    "asharia-host-runtime-current-image-test-provider": "test",
+    "asharia-host-runtime-activation-eligibility-tests": "test",
+    "asharia-host-runtime-process-scope-test-provider": "test",
+    "asharia-host-runtime-process-scope-tests": "test"
+  },
+  "targetDependencies": {
+    "asharia-host-runtime-contract": [],
+    "asharia-host-runtime-provider-bridge": [
+      "asharia-host-runtime-contract"
+    ],
+    "asharia-host-runtime-registration": ["asharia-host-runtime-contract"],
+    "asharia-host-runtime-activation-eligibility": [
+      "asharia-host-runtime-registration"
+    ],
+    "asharia-host-runtime-current-image-provider-bridge": [
+      "asharia-host-runtime-activation-eligibility"
+    ],
+    "asharia-host-runtime-process-scope": [
+      "asharia-host-runtime-activation-eligibility"
+    ],
+    "asharia-host-runtime-registration-tests": [
+      "asharia-host-runtime-provider-bridge",
+      "asharia-host-runtime-registration"
+    ],
+    "asharia-host-runtime-registration-snapshot-json-tests": [
+      "asharia-host-runtime-registration"
+    ],
+    "asharia-host-runtime-current-image-test-provider": [
+      "asharia-host-runtime-current-image-provider-bridge"
+    ],
+    "asharia-host-runtime-activation-eligibility-tests": [
+      "asharia-host-runtime-activation-eligibility",
+      "asharia-host-runtime-current-image-test-provider"
+    ],
+    "asharia-host-runtime-process-scope-test-provider": [
+      "asharia-host-runtime-provider-bridge",
+      "asharia-host-runtime-registration"
+    ],
+    "asharia-host-runtime-process-scope-tests": [
+      "asharia-host-runtime-process-scope",
+      "asharia-host-runtime-process-scope-test-provider"
+    ]
+  }
+}

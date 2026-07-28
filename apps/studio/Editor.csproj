@@ -24,6 +24,7 @@
     </ItemGroup>
 
     <ItemGroup>
+      <ProjectReference Include="src\Asharia.Runtime.Contracts\Asharia.Runtime.Contracts.csproj" />
       <ProjectReference Include="src\Asharia.Editor\Asharia.Editor.csproj" />
       <ProjectReference Include="src\Asharia.Studio.Application\Asharia.Studio.Application.csproj" />
     </ItemGroup>
@@ -43,6 +44,15 @@
       <AdditionalFiles Include="Shell\Views\Windowing\MainWindow.axaml" />
     </ItemGroup>
 
+    <ItemGroup Condition="'$(OS)' == 'Windows_NT'">
+      <StudioNativeRuntimeDependency Include="$(StudioNativeBuildOutputRoot)\apps\editor\editor_native.dll">
+        <PublishPath>editor_native.dll</PublishPath>
+      </StudioNativeRuntimeDependency>
+      <StudioNativeRuntimeDependency Include="$(StudioNativeBuildOutputRoot)\packages\shader-slang\slang.dll">
+        <PublishPath>slang.dll</PublishPath>
+      </StudioNativeRuntimeDependency>
+    </ItemGroup>
+
     <ItemGroup>
       <Compile Update="UI\Controls\Base\IconButton.axaml.cs">
         <DependentUpon>IconButton.axaml</DependentUpon>
@@ -54,19 +64,33 @@
       </Compile>
     </ItemGroup>
 
-    <Target Name="CopyStudioNativeRuntimeDependencies" AfterTargets="Build" Condition="'$(OS)' == 'Windows_NT'">
+    <Target Name="ValidateStudioNativeRuntimeDependencies"
+            BeforeTargets="Build;ComputeFilesToPublish"
+            Condition="'$(OS)' == 'Windows_NT'">
       <Error Condition="!Exists('$(StudioNativeBuildOutputRoot)\apps\editor\editor_native.dll')"
              Text="Missing editor_native.dll under $(StudioNativeBuildOutputRoot). Run the native CMake build for preset $(StudioNativeBuildPreset) before building Studio, or pass /p:StudioNativeBuildPreset=&lt;preset&gt;." />
       <Error Condition="!Exists('$(StudioNativeBuildOutputRoot)\packages\shader-slang\slang.dll')"
              Text="Missing slang.dll under $(StudioNativeBuildOutputRoot). Run the native CMake build for preset $(StudioNativeBuildPreset) before building Studio, or pass /p:StudioNativeBuildPreset=&lt;preset&gt;." />
+    </Target>
 
-      <ItemGroup>
-        <StudioNativeRuntimeDependency Include="$(StudioNativeBuildOutputRoot)\apps\editor\editor_native.dll" />
-        <StudioNativeRuntimeDependency Include="$(StudioNativeBuildOutputRoot)\packages\shader-slang\slang.dll" />
-      </ItemGroup>
-
+    <Target Name="CopyStudioNativeRuntimeDependencies"
+            AfterTargets="Build"
+            DependsOnTargets="ValidateStudioNativeRuntimeDependencies"
+            Condition="'$(OS)' == 'Windows_NT'">
       <Copy SourceFiles="@(StudioNativeRuntimeDependency)"
             DestinationFolder="$(TargetDir)"
             SkipUnchangedFiles="true" />
+    </Target>
+
+    <Target Name="CollectStudioNativeRuntimeDependenciesForPublish"
+            BeforeTargets="ComputeFilesToPublish"
+            DependsOnTargets="ValidateStudioNativeRuntimeDependencies"
+            Condition="'$(OS)' == 'Windows_NT'">
+      <ItemGroup>
+        <ResolvedFileToPublish Include="@(StudioNativeRuntimeDependency)">
+          <RelativePath>%(StudioNativeRuntimeDependency.PublishPath)</RelativePath>
+          <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+        </ResolvedFileToPublish>
+      </ItemGroup>
     </Target>
 </Project>

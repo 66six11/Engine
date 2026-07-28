@@ -40,8 +40,8 @@ Asharia Engine 当前目标仍是先做一个小而完整的 Vulkan renderer，�
 
 ## 模块边界
 
-- `engine/core`：日志、错误/result、版本和低层通用设施。不能依赖 Vulkan、GLFW、Slang、editor UI 或
-  asset importer。
+- `engine/core`：日志、错误/result、版本，以及 bounded/atomic/staged file IO 与 cooperative
+  exclusive-file-lock 等低层通用设施。不能依赖 Vulkan、GLFW、Slang、editor UI 或 asset importer。
 - `engine/platform`：当前是预留 platform abstraction boundary target，依赖 `engine/core`；尚未导出公共
   header 或拥有具体 OS 集成。
 - `packages/window-glfw`：GLFW window、输入轮询和 Vulkan surface 创建，依赖 `core` / `platform`，实际
@@ -52,7 +52,11 @@ Asharia Engine 当前目标仍是先做一个小而完整的 Vulkan renderer，�
 - `packages/archive`：`ArchiveValue` 和 JSON IO facade；不把第三方 JSON 类型扩散到上层 API。
 - `packages/cpp-binding`：C++ object/member 与 schema field 的读写绑定。
 - `packages/persistence`：组合 schema、archive 和 binding，提供 save/load/default/migration。
-- `packages/scene-core`：headless World、runtime `EntityId` 和 local `Transform` baseline。
+- `packages/scene-core`：`asharia::scene_core` 提供 headless World、runtime `EntityId` 和 local `Transform`
+  baseline；`asharia::scene_native` 是只依赖该 runtime target 的 shared C ABI adapter，当前发布版本化的
+  opaque World create/destroy、generation-safe entity 生命周期、finite/unit-quaternion local Transform 与
+  UTF-8 display/debug name get/set。所有操作要求 owner thread；adapter 尚不提供 hierarchy/world Transform、
+  change notification、managed interop 或 renderer/editor 集成。
 - `packages/project-core`：最小 Asharia project descriptor，当前只描述 project identity、asset source roots
   和 asset discovery ignore policy；不拥有 cook/package profiles、editor workspace 或 runtime state。
 - `packages/asset-core`：asset GUID、type、handle/reference、metadata、product/cache/dependency/catalog
@@ -83,6 +87,64 @@ Asharia Engine 当前目标仍是先做一个小而完整的 Vulkan renderer，�
   P/Invoke entry points 和 native packet release bridge；`Features/SceneView` 拥有 Avalonia composition
   probing、drawing surface host 和 external image/semaphore import。Studio 不录制 Vulkan commands，不拥有
   native GPU resource，只通过 `editor_native` ABI 请求 native-owned present packet 并在 managed import/update 后释放。
+  `Asharia.Studio.Application.Bootstrap.Distribution` 只从外部 owner 已选择的 exact
+  `EngineGenerationId` 与 generation root 复验 Editor Image inventory，并签发进程内可撤销 lease；它不负责
+  generation selection、完整 Distribution health、repair/install/update 或项目 package graph。current Editor
+  Image lease 可以继续投影发行版固定的 `managed/dotnet` host、SDK、hostfxr、runtime、reference pack 与
+  Runtime/Editor contracts；Project Code 可从 current projection 进一步复验 exact dotnet-root closure、全部
+  selected bytes、SDK/runtime metadata、CLR identities 和 contract/reference closure，签发 Windows x64 semantic
+  build credential。Project Code 还能从 current credential 与 caller 已规范化的 project root/projectId 只快照
+  exact `Editor/**/*.cs`，复制 source/Host contract bytes 并原子发布 deterministic implicit SDK workspace；
+  workspace identity 不含 checkout/cache 绝对路径。isolated SDK build controller 把该 immutable workspace 复制到
+  controller-owned 短路径，从 credential exact closure 物化 sealed dotnet execution mirror，以空白 allowlist 环境依次
+  执行 SDK probe、explicit restore 和 `build --no-restore`，再只原子发布 implementation DLL、reference DLL、
+  portable PDB 与 `.deps.json` 四类 raw output。source/credential/workspace/SDK mirror 漂移、超时、取消或
+  supersession 都 fail closed。artifact inspector 只消费 current raw-output lease，使用 BCL
+  `PEReader`/`MetadataReader` 无执行复验 implementation/reference identity、MVID/IL flags、credential
+  reference closure、exact reference marker、PE-associated portable PDB/canonical documents 与严格
+  single-project `.deps.json`，并签发不含绝对路径的 content-addressed metadata report。artifact publisher
+  内部重新执行检查，再用 bounded BCL stream copy/hash、staged rehash、exact closed-tree verification 与一次
+  directory rename，把四文件及 deterministic `artifact.json` 发布成跨物理根 identity/manifest 稳定的 immutable
+  evidence。metadata report 显式绑定 exact Editor contract identity，使没有 Editor reference 的 moduleless
+  assembly 仍保留 credential lineage。module indexer 在扫描前后复验 closed publication，并只用 BCL metadata
+  对 implementation/reference assembly 的 exact `EditorModuleAttribute`、direct `EditorModule` type shape 与
+  declaration surface 建立稳定、path-free、content-addressed in-memory index；空索引允许，但不证明 load
+  eligibility。staging candidate admitter 只接受 publication receipt，内部重建 index，要求 non-empty，并在
+  签发前再次复验 publication；candidate identity 仅绑定 publication/index identity，absolute root 只作为
+  进程内 locator。后继 current check 会重新索引并对证 surface。该 receipt 不证明 managed reload eligibility；
+  host policy selector 再只消费 current candidate，并把当前 external-build、缺少 unload evidence 的 v1
+  确定性签发为 path-free `Pinned + RestartRequired` policy receipt；所有 activation/handover 组合都不能
+  自动升级为 Collectible。pinned load-image builder 再只消费 current policy，在读前/读后复验它，把 exact
+  implementation DLL 与 portable PDB 读入每文件不超过 256 MiB 的 owned bytes，并用 BCL PE metadata 拒绝
+  global `<Module>` `.cctor`；path-free image identity 绑定 policy 与两文件 evidence，快照只提供不暴露底层
+  buffer 的新只读流。pinned assembly loader 再以 loader-owned project reservation 串行首次 load，创建
+  path-free、non-collectible custom ALC，并只从 implementation/PDB streams 加载 exact root assembly；
+  same image 幂等复用，different image 或 ALC 创建后的失败要求重启。dependency hook 返回 `null` 以共享
+  已验证的 Default Host/framework closure，不做 path/private/native probing。pinned module type resolver
+  再只按 host 内嵌 exact index 对 root Assembly 做 case-sensitive type lookup，复核 exact Assembly/full name/
+  direct public-sealed-non-generic `EditorModule` shape 与 public parameterless constructor presence，并返回绑定
+  host/index 的 immutable Type receipt。pinned module constructor 再以显式 per-project reservation 按 index
+  顺序调用这些 receipt 的 exact `ConstructorInfo.Invoke(null)`；same lineage 幂等复用同一 objects，failure
+  保留 partial objects、禁止重试并要求重启。pinned module configurator 再为 exact objects 建立 builder，
+  至多一次 Configure 并冻结只由 index 投影 metadata 的 immutable declarations；failure 同样保留 partial
+  receipts、禁止重试并要求重启。definition set 再把 exact metadata/object/declaration 纯内存投影为
+  static/dynamic 共用的 shared definitions，不反向持有 static factory registration。scope preparer 只在
+  caller 显式提供 ProjectSession scope/host capabilities 后构建不可见、combined-validated candidate，不把
+  persistent ProjectId 当 session identity。initial scope committer 只在 captured snapshot 仍有效且目标 scope
+  为空时提交 exact candidate，并返回 compare-and-remove registration owner；stale、已有 scope、重复消费与
+  successor replacement 均 fail closed。initial scope activator 再复核 runtime capability snapshot 与 Prepare
+  时的 capability ID 集合完全一致，把 registration 一次性转交给独占异步 owner；`WaitingForCapability`/
+  `Blocked` 是可持有 soft outcome，任一 `Faulted`、取消或 Host failure 都先释放 activation，再退役 exact
+  registration。当前仍不创建正式 ProjectSession composition，不推进 contribution/current/active/LKG，
+  也不支持 `.asmdef`/Package、replacement、catalog transaction 或前端接线。
+
+  归档 `331824a3` 中剩余独有的一体化 Authoring host、catalog 与旧 generation publisher/contracts 不再是待恢复
+  实现：其 build/publication/load/Configure/registry/activation 职责已由上述窄阶段替代，而 replacement、
+  revision、catalog commit 与 collectible unload 仍需未来独立合同，所以这些文件只保留为历史设计参考。归档
+  中旧 build-environment/workspace/build/artifact contract 变体及配套测试、独立设计稿也已由当前 typed receipts、
+  real-chain tests 与 canonical architecture 文档替代。
+  归档中的 provider/runtime/Scene 草案也不回灌；当前 Application provider host、Runtime Scene value ABI、
+  native Scene Core 与 managed Scene Bridge 已由独立实现和测试拥有。
   Studio 在 Windows 上必须优先配置 `Win32RenderingMode.Vulkan`，再回退到 `AngleEgl` / `Software`，否则 Avalonia
   composition GPU interop 可能只暴露 D3D/ANGLE 共享纹理路径，无法进入 Vulkan opaque NT image/semaphore spike。
 
@@ -106,6 +168,9 @@ Asharia Engine 当前目标仍是先做一个小而完整的 Vulkan renderer，�
   `Core/Interop/Viewports` 负责把 Avalonia compositor device id/handle capability 转成 native ABI request，并负责释放
   native present packet；`Features/SceneView` 持有 `SceneViewCompositionHost`、`CompositionDrawingSurface` 和
   `SceneViewCompositionPresenter`，只导入 native opaque NT image/semaphore handle 到 Avalonia composition。
+- `Asharia.Studio.Application` 的 Editor Image inventory lease 是只读 Application 层产品策略：实现使用 .NET BCL
+  文件 API；Avalonia `IStorageProvider` 只拥有用户文件选择、bookmark 与平台权限 UI，native Core File IO 继续只服务
+  C++ engine/runtime 的低层 IO 与事务。
 - native shared viewport runtime 仍由 C++ `apps/editor` / `rhi-vulkan` / `renderer_basic_vulkan` 侧拥有 Vulkan
   image、semaphore、RenderView recording 和 deferred GPU lifetime。managed Studio 只能观察 packet metadata，
   不能关闭、重用或延迟销毁 Vulkan resource。

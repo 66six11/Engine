@@ -1,0 +1,19 @@
+{
+  "schema": "com.asharia.host-profile",
+  "schemaVersion": 1,
+  "hostKind": "minimal",
+  "targetPlatform": "com.asharia.platform.windows",
+  "requiredRoles": [
+    "contract"
+  ],
+  "allowedRoles": [
+    "contract"
+  ],
+  "allowedShippingClasses": [
+    "runtime"
+  ],
+  "contributionFilter": {
+    "mode": "deny-all"
+  },
+  "grantedCapabilities": []
+}

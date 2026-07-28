@@ -1,7 +1,7 @@
 # Asharia Engine 系统架构 Roadmap
 
 状态：提案，作为架构收敛与系统边界重构的主文档
-更新日期：2026-07-13
+更新日期：2026-07-16
 
 ## 1. 文档定位
 
@@ -34,7 +34,7 @@
 
 ## 2. 总体结论
 
-Asharia 不应被定义成七个固定链接进所有进程的系统。目标执行栈收敛为四层，并由 Host Profiles 正交选择：
+Asharia 不应被定义成七个固定链接进所有进程的系统。可激活系统栈收敛为四层，并由 Host Profiles 正交选择：
 
 1. **Bootstrap Kernel**：启动 package 系统所必需、不可由 package manager 卸载的最小基础；
 2. **Host Foundation**：作用域、激活/撤销、typed contributions、应用生命周期和 safe point；
@@ -44,6 +44,12 @@ Asharia 不应被定义成七个固定链接进所有进程的系统。目标执
 **Host Profiles** 不是第五套实现层，而是 Editor、Standard Runtime、Dedicated Server、Asset Processor 等进程对
 完整 packages 的要求，以及对包内 modules/contributions 的激活过滤规则。基础框架详细边界见
 `docs/architecture/foundation-framework.md`。
+
+系统栈的四层不能与 Editor 启动所有权混为一谈。Editor/项目组合另采用“三层所有权 + 一层派生计划”：固定
+Editor Image、只读 Engine Distribution Manifest、项目拥有的 Manifest/Lock，以及由三者和 Host Profile 派生且可丢弃的
+Effective Session Plan。基础 Editor 先于项目 graph 激活；项目失败进入 `PendingBuild`、`PendingRestart`、
+`UpgradeRequired` 或 `SafeMode`，不能移除 Package Manager、diagnostics 与修复入口。完整决策见
+`docs/architecture/adr-editor-engine-distribution-and-native-composition.md`。
 
 面向用户的理想工作流是：
 
@@ -143,7 +149,8 @@ Unreal Subsystems 以 Engine、Editor、GameInstance、World、LocalPlayer 等 o
 统一应用/工具配置、命令行和 Console；Unreal Device Profiles 与 Scalability 把 platform/device/user quality 分层。
 Godot 和 Unity 的应用生命周期/low-memory 文档还说明移动或受限平台不能只依赖正常 shutdown。
 
-对 Asharia 的直接结论是：Package Runtime 只产出 activation plan，独立 Host Runtime 负责 scope、factory、lease、
+对 Asharia 的直接结论是：Package Runtime 只产出 Host Activation Blueprint，并由构建后 adapter 绑定可执行证据；
+独立 Host Runtime 负责 scope、factory、lease、
 rollback 和 lifecycle；Memory、Storage、Settings、Tasks、Data、Observability 是完整 Foundation System Packages，而不是继续扩大
 `engine/core`。allocator/tag/fatal hook 留在 Kernel，Host phases、World simulation clock 与 Tasks timer 分别拥有时间语义。
 参考：<https://dev.epicgames.com/documentation/unreal-engine/programming-subsystems-in-unreal-engine>、
@@ -189,10 +196,24 @@ rollback 和 lifecycle；Memory、Storage、Settings、Tasks、Data、Observabil
 5. renderer、scene、editor 之间已有契约雏形，但仍可能由 host 进行临时拼接；
 6. editor executable 承担过多领域规则，难以做 headless 测试；
 7. 当前单线程基线尚未完全显式化 owner thread、snapshot 和销毁时序；
-8. `asharia.package.json` schema v1 已把当前目录分类为不可选择的 source boundaries，并可校验 package/target/CMake topology；尚无 `asharia.packages.json`、package resolver/lockfile、Host Profile 和 Editor Package Manager 闭环；
+8. package control plane、Engine Distribution/Project Lock 分层、Effective Session、Host Composition/Source Build/Blueprint、artifact
+   publication/repair、factory declaration/bindings、callback table 与 RegistrationSnapshot v2 基线已落地；Project/Lock v1 与 pre-current
+   provider/bindings/renderer/snapshot reader、adapter、双写、`bundled` lock evidence 和 Host Composition raw Project/Profile 入口已删除。
+   #295 的 provider/binding v4 与 payload accessor、#293/#296 的 ProcessScope V2 registry/lease/rollback 均已完成；#297 又把 active
+   generation 硬切到 Template renderer 3 + Composition renderer 6 + provider v4 + Snapshot v2，以 generated sealed current-image descriptor
+   驱动 Eligibility V2，并接通 normal Host → ProcessScope → `ProcessApplicationV1` → 固定 `project-bootstrap` → real
+   `asharia.project.json` → explicit stop。#298 又用 canonical project root、fresh locked discovery、Effective Session 与 verified
+   published Host/C6 evidence 建立 headless Bootstrap project-open reducer/adapter；normal-open 只检查 artifact path/type/size，missing/stale/
+   invalid Host 可证明 `PendingBuild`，而不自 hash executable 或依赖外部 launch receipt。#301 又从
+   `VerifiedInstalledDistribution` 派生无需 existing Lock 的完整 bundled candidate snapshot，并以 fresh manifest/payload evidence 对证
+   Distribution inventory。#302 又以 portable `asharia.packages.sources.json` 和 process-local local-source mapping 派生严格、原子且
+   脱敏的 Project/local candidate snapshot。当前仍无 lock update/apply、local mapping 产品配置、production installable
+   package/lock/profile declarations、repair executor、`PendingRestart` process tracker、其他 Host scope owners、完整 instance/jobs/subscriptions
+   lease 和 Editor Package Manager 闭环；
 9. scripting、input、tasks、physics、animation、audio 等已进入目标 first-party system catalog，但尚未形成可由同一 package activation 模型创建和停止的完整实现；
 10. `engine/platform` 仍是空 `INTERFACE` target，应用 lifecycle 与 immutable platform capability generation 没有 runtime owner；
-11. 尚无复用的 Host scope、system factory、activation lease、typed contribution registry 和 failure rollback；
+11. root ProcessScope 已具有 V2 typed registry、weak handles、contribution-only lease 与 publication/revoke rollback，并被首个 generated
+    normal Host/Project Bootstrap vertical feature 实际启动和显式停止；尚无其他复用 Host scope owner 或完整 instance/jobs/subscriptions lease；
 12. Memory & Budget、Runtime Storage、Settings/Device Profile、Tasks/time baseline、local crash evidence、capability grant/deny 与 early/late diagnostics 尚未形成 Foundation Gate；
 13. World 尚无 entity bounds、spatial identity、region query 和 immutable spatial snapshot；
 14. project/package/schema 已计划版本化，但尚无 Editor-owned project upgrade preflight/copy/migrate/validate/commit 闭环；
@@ -238,7 +259,7 @@ rollback 和 lifecycle；Memory、Storage、Settings、Tasks、Data、Observabil
 | Host Runtime | 复用的 scope、activation、lifecycle、safe point 和 typed registry 宿主；计划位于 `engine/host-runtime` | Package Manager、领域系统实现或全局 service locator |
 | Foundation System Package | Standard Profiles 默认/要求的完整基础系统，例如 Memory、Storage、Settings、Tasks、Data、Observability | 不可卸载 Kernel 或只有 interface 的占位包 |
 | Host Scope | Process/Project/Session/World/LocalUser/Editor/ToolJob 等真实 lifetime owner | 命名空间、线程名或任意 DI 容器标签 |
-| Activation Lease | 追踪 system instance、contributions、jobs、subscriptions 和撤销/销毁责任的 owner handle | 只调用一次的 startup callback |
+| Activation Lease | 目标完整形态追踪 instance/contributions/jobs/subscriptions；#296 当前只实现 ProcessScope contribution-only lease | 只调用一次的 startup callback，或已完成的通用 owner handle |
 | System | 对一类长期状态和规则负最终所有权的业务域 | 目录名或 UI panel |
 | Installable Capability Package | Package Manager 可直接安装、版本化、锁定和原子回滚的完整能力单元 | 任意 source package、target 或 module |
 | System Package | Package Manager 可直接导入的完整系统发行单元；共同版本化 runtime、editor、tool/cook、diagnostics 和当前 implementation modules | 单个 target、adapter 或只有 contract 的占位包 |
@@ -251,13 +272,27 @@ rollback 和 lifecycle；Memory、Storage、Settings、Tasks、Data、Observabil
 | Feature Set | 持续存在于项目依赖图中的版本化 meta-package，例如 Standard 3D；其成员是间接依赖 | 一次性展开后消失的模板 |
 | Project Template | 创建项目时一次性写入 direct dependencies、设置和样例内容的初始化方案 | 持续约束成员版本的 Feature Set |
 | Host Profile | 某类进程允许和要求的 module/contribution 集合 | 用户机器上的临时 UI 状态 |
+| Editor Image | 随 Engine/Editor 固定发行且可在项目 graph 激活前启动的 executable、最小 UI Shell、Package Manager diagnostics、Build/Repair 与 Safe Mode | 由项目 lock 从零组装的可选 package 集合 |
+| Engine Distribution Manifest | `asharia.engine-distribution.json`；build/installer 生成的只读 Editor Image、bundled package、package artifact 与 Host Profile inventory | resolver 维护的第二个 lock、项目可覆盖的 package graph |
+| [Engine Distribution Package Catalog Snapshot](../architecture/adr-engine-distribution-package-catalog-snapshot-v1.md) | 从 `VerifiedInstalledDistribution` 的完整 bundled inventory 与 fresh strict-loader evidence 派生的、确定且 process-local 的候选集 | 第二份持久 catalog、Project/local index、resolver 选择、Lock update/apply |
+| [Project / Local Package Source Catalog](../architecture/adr-project-local-package-source-catalog-v1.md) | `asharia.packages.sources.json` 中的 explicit Project-relative roots / logical local IDs，与调用进程提供的 selected local absolute mapping，经 strict loader 派生的原子 candidate snapshot | 目录扫描、机器路径持久化、source precedence、existing Lock 替代品、Lock update/apply |
+| [Package Lock Update Plan](../architecture/adr-package-lock-update-plan-v1.md) | base/proposed Project、existing Lock、verified Distribution、complete fresh candidates 与 full 或 split-targeted request 派生的 immutable proposed Project/Lock、graph-only impacts、domain-separated stable fingerprints 与 canonical path-redacted preview | Project/Lock 文件写入、journal/recovery、UI、acquisition、build/restart 推断 |
+| EngineGenerationId | 省略自身后的 canonical Engine Distribution payload 的 `sha256-<digest>` content identity | 单 package `artifact_generation_id`、随机 build UUID、跨版本 C++ ABI 承诺 |
 | Source Boundary Manifest | schema v1 的 `asharia.package.json`；记录当前 source role、owner、planned ownership root、target role 和构建依赖，且不可选择/不可见 | Installable Capability Package 或 Package Manager catalog entry |
-| Package Manifest | 每个 Installable Capability Package 的 `asharia.package.json`，描述 catalog type、完整能力 identity、内部 targets/modules/contributions 和 package dependencies | 每个 target 各自的安装清单 |
-| Project Package Manifest | `asharia.packages.json`；团队提交的 direct installable packages、Feature Sets、version ranges 和 package options | 内部 module 选择表、`asharia.project.json` 的同义词或 Build Profile |
-| Package Lockfile | `asharia.packages.lock.json`；团队提交的精确版本、来源、完整性和依赖图 | 可由 Editor 私有缓存替代的文件 |
+| Package Manifest | 每个 Installable Capability Package 的 `asharia.package.json`，描述 catalog type、完整能力 identity、logical modules/contributions 和 package dependencies；source/target 映射属于独立 build descriptor | 每个 target 各自的安装清单 |
+| Project Package Manifest | `asharia.packages.json`；团队提交的 direct installable packages、Feature Sets、version ranges 和独立 package option overrides | 内部 module 选择表、`asharia.project.json` 的同义词、exact graph 或 Build Profile |
+| Package Lockfile | `asharia.packages.lock.json` v2；保存精确 project graph、精确 Engine generation 输入和对发行 package 的 `engine-distribution` 引用；project/local nodes 自带 source integrity | Editor Image、Engine Distribution path/hash inventory、可由 Editor 私有缓存替代的文件 |
+| Effective Session Plan | Engine Distribution + Project Lock + Host Profile 派生的会话组合状态；可重建，不提交为第三个 lock | 新的 dependency truth、resolver output 或 Activation Plan |
+| Host Composition Plan | Effective Session 派生过程中的 backend-neutral canonical logical IR；保留 package/module order、entries 和 contributions，但不含可执行生命周期 | Activation Plan、CMake target list 或第二份 lockfile |
+| Source Build Plan | Host Composition selected modules 经 source descriptor/topology/CMake codemodel 对证后的 build roots、closure 与 fingerprints | build command、artifact path、install layout 或 Activation Plan |
+| Host Activation Blueprint | Ready Session + Host Composition + exact factory snapshots 派生的固定 scope topology、logical factory order 与 selected contribution bindings | artifact path、native symbol、DLL loading receipt 或运行时 instance |
+| [Host Executable Binding Receipt](../architecture/adr-host-executable-binding-receipt-v1.md) | 构建/链接后把 Blueprint/composition、same-index configured target/compiler、observed registration snapshot 与 exact staged executable bytes 绑定成 content-addressed generation 的证据 | normal startup admission ticket、lifecycle activation、`Ready`/current process state、新的依赖图、builder trust、签名或跨 generation ABI 承诺 |
+| [Activation Eligibility V2](../architecture/adr-generated-current-image-project-bootstrap-host-v1.md) | generated sealed current-image descriptor 派生的一次性 pre-registration authority，以及绑定同一次 table instance 的 activation authority | executable path/hash、外部 launch receipt、Effective Session `Ready`、detached boolean、lifecycle success 或 hostile-native sandbox |
+| Package Product Declaration | `asharia.package.products.json`；exact package 每个 logical module 的 product intent，显式 `artifact-set` / `no-artifacts` | CMake target、platform filename、hash、factory 或 stage layout |
+| Package Artifact Manifest | 一次 source build 对一个 exact package 的 selected module/product files、size、SHA-256 与 plan provenance | Asset Product Manifest、最终 `asharia.stage.json`、EngineGenerationId、ABI 或 dynamic loading 承诺 |
 | Bundled Package | 随引擎/编辑器发行、无需下载的 first-party package | 必须启用的 package |
 | Project-embedded Package | 位于项目目录、由项目版本控制并可编辑的 package | 随引擎发行的 built-in package |
-| Package Manager | 操作 manifest/lock、acquire、validate、build plan 和 activation plan 的 control plane | 系统状态 owner 或 service locator |
+| Package Manager | 操作 manifest/lock、acquire、validate、build plan 和 activation blueprint 的 control plane | 系统状态 owner 或 service locator |
 | Contract | 跨 target/system 传递的稳定数据或协议 | 共享可变对象指针 |
 | Adapter | 把一个稳定 contract 翻译到平台、backend 或第三方 API | 新的业务所有者 |
 | Host | 选择实现并构造系统生命周期的进程组合根 | 可复用领域逻辑所在处 |
@@ -269,40 +304,89 @@ rollback 和 lifecycle；Memory、Storage、Settings、Tasks、Data、Observabil
 
 ### 6.1 Package-managed 组合模型
 
-下图是目标架构，不表示当前仓库已经实现 resolver、lockfile 或 activation registry。
+下图是目标组合架构。resolver/lock/composition、Engine Distribution、Effective Session 与首个 generated normal Host activation
+已有基线；production build/apply、Editor Bootstrap UI 和其他 scopes 仍是 planned。
 
 ```mermaid
 flowchart LR
     EditorUI["Editor Package Manager UI"]
     CLI["Package CLI / CI"]
-    Manifest["asharia.packages.json<br/>direct packages + Feature Sets + package options"]
-    Sources["Embedded / Local / Registry Sources"]
+    Image["Editor Image<br/>bootstrap + Safe Mode + repair"]
+    Distribution["Engine Distribution Manifest<br/>fixed generation + bundled inventory"]
+    Manifest["Project asharia.packages.json<br/>direct packages + Feature Sets + package options"]
+    SourceIndex["asharia.packages.sources.json<br/>embedded roots + local IDs"]
+    LocalMappings["Machine-local mappings<br/>sourceId -> absolute root"]
+    Catalogs["Distribution + Project/local catalogs<br/>strict fresh evidence"]
     Service["Package Service<br/>discover + resolve + validate"]
-    Lock["asharia.packages.lock.json<br/>exact graph + integrity"]
+    Lock["Project asharia.packages.lock.json<br/>exact graph + integrity"]
+    Profile["Host Profile<br/>host policy"]
+    Session["Effective Session Plan<br/>derived state + handoff"]
+    Composition["Host Composition Plan<br/>logical packages + modules + entries"]
     BuildPlan["Build Plan<br/>targets + tools + generated config"]
-    Activation["Activation Plan<br/>modules + contributions + order"]
+    Blueprint["Host Activation Blueprint<br/>scopes + logical factories + order"]
+    Binding["Host Executable Binding Receipt<br/>staged bytes + verified registrations"]
+    CurrentImage["Generated current image<br/>T3 / C6 sealed descriptor"]
+    Eligibility["Activation Eligibility V2<br/>two-stage admission"]
+    ProcessScope["ProcessScope V2<br/>fixed registry + contribution lease"]
+    ProjectBootstrap["Project Bootstrap<br/>ProcessApplicationV1"]
     Build["Conan / CMake / Cook"]
     Host["Editor / Runtime / Server / Tool Host"]
 
     EditorUI -->|"edit desired set"| Manifest
     CLI -->|"edit or restore"| Manifest
     Manifest --> Service
-    Sources --> Service
+    Distribution --> Catalogs
+    SourceIndex --> Catalogs
+    LocalMappings --> Catalogs
+    Catalogs --> Service
     Service --> Lock
-    Lock --> BuildPlan
-    Lock --> Activation
+    Image --> Session
+    Distribution --> Session
+    Lock --> Session
+    Profile --> Session
+    Session --> Composition
+    Composition --> BuildPlan
+    Composition --> Blueprint
     BuildPlan --> Build
-    Activation --> Host
+    Blueprint --> Build
+    Build --> Binding
+    Blueprint --> Binding
+    Build --> CurrentImage
+    Session --> CurrentImage
+    Blueprint --> CurrentImage
+    CurrentImage --> Eligibility
+    Eligibility -->|"admitted process projection"| ProcessScope
+    ProcessScope -->|"borrow / run / release"| ProjectBootstrap
+    ProjectBootstrap -->|"explicit stop"| Host
 ```
 
 规则：
 
-- `asharia.packages.json` 和 `asharia.packages.lock.json` 是团队可提交的 package graph 事实；Editor UI 只是前端。
+- `asharia.packages.json` 和 `asharia.packages.lock.json` 是团队可提交的项目 package graph 事实；只读
+  `asharia.engine-distribution.json` 独立拥有 Engine/Editor 发行库存，Editor UI 不是任一事实源。
+- `asharia.packages.sources.json` 是团队可提交的 portable source-location selection，只保存 Project-relative roots 与 logical local
+  IDs；machine-local absolute mapping 不提交。它为首次求解提供 candidates，但 existing Lock 仍拥有已选 exact graph/source。
+- 固定 Editor Image 在项目 graph 之前启动。Distribution + Project Lock + Host Profile 只派生 Effective Session，不写回第三个 lock；
+  项目同 identity package 不能覆盖 bundled inventory。
 - resolver 必须是 headless library/CLI，不能依赖 ImGui、Avalonia、Vulkan 或 editor document state。
-- build plan 决定编译哪些 targets；activation plan 决定某个 Host 注册哪些 modules/contributions。Module 可以是静态或动态实现，activation 不承诺 hot unload。
-- native code package 的 add/remove/update 可以进入 `PendingBuild` / `PendingRestart`，不能伪装成安全热加载。
-- 系统实例仍由对应 system owner 创建和销毁；Package Service 只提供 descriptor、factory reference 和有序 activation plan。
-- 当前 Editor Profile 自身要求的 Package Runtime、Editor Domain 和 Package Manager UI 在界面中标记为 `Required by Profile`，不能由正在运行的 UI 卸载；引擎/编辑器发行版更新与项目 package 选择是不同工作流。
+- Effective Session 先将 Distribution、Project Lock 与 Host Profile 对证并报告状态；Host Composition Plan 再固定逻辑
+  packages/modules/entries/contributions；build plan 决定编译哪些 targets；Host Activation Blueprint 在构建前固定 scopes、
+  logical factories、lifecycle order 与 contribution bindings；构建后 Host Executable Binding Receipt 绑定 exact staged artifact bytes 和
+  registration identity，但只用于 generation evidence。C6 另外封存 Effective Session/Blueprint/ProcessScope facts；Eligibility V2 在
+  provider recording 前校验 T3/C6/provider-v4/Snapshot-v2 tuple、process/control-thread epoch 与一次性 claim，recording 后再校验
+  generation/Blueprint digest，并把 Stage 2 authority 绑定到同一 table instance。#293/#296 ProcessScope V2 依 Blueprint order
+  create/activate，在 accessors 成功后原子提交 per-factory contribution lease，并只在整个 start 成功后开放 typed registry。cleanup 顺序为
+  reverse quiesce → `Revoking` → reverse lease revoke → reverse deactivate/destroy → `Revoked`；weak view/handle 不延长 generation
+  lifetime。#297 T3 normal Host 已借用/运行/release 固定 Project Bootstrap `ProcessApplicationV1` 并显式 stop；#298 已在启动前把 fresh
+  Effective Session 与 C6/verified published binding 对证，并以同一 canonical root 执行该 Host。Module 默认通过独立静态 CMake target
+  和薄 composition root 进入 v1 Host，activation 不承诺 DLL 或 hot unload。
+- native code package 的 add/remove/update 现在可因 fresh session 与 current published Host identity 不匹配而进入 `PendingBuild`；实际
+  build/publish controller 与可证明的 `PendingRestart` 仍属后续。Effective Session v1 自身不猜测这两个状态，也不能伪装成安全热加载。
+- 系统实例仍由对应 system owner 创建和销毁；Package Service 只提供 descriptor、logical factory reference 和有序 Blueprint。
+- Package Runtime、Host Runtime 执行骨架、固定 `packages/project-bootstrap`、最小 Editor Shell、Package Manager、diagnostics 与
+  修复入口属于 Editor Image/Distribution，不能由项目 lock 或正在运行的 UI 卸载；Host Runtime 是 L1 而非 Kernel，
+  Project Bootstrap reader/provider 已由独立 source boundary 拥有；引擎/编辑器 generation 更新与项目 package 选择是不同工作流。
+  固定 Bootstrap UI 未来可以先用 ImGui 快速实现、稳定后迁移到 Avalonia；该前端方向不改变 headless ownership，也不属于 #298。
 
 ### 6.2 核心 package 依赖方向
 
@@ -364,7 +448,8 @@ flowchart TB
 ### 6.3 Bootstrap Kernel / Foundation & Platform
 
 - **Kernel 拥有：** 错误类型、基础 ID/hash、assert/log bootstrap、最小 allocator contract、路径/文件/进程/dynamic-library primitives、单调时钟、线程原语和启动诊断。
-- **`engine/package-runtime` 拥有：** package manifest 的窄格式模型与解析、resolver、lockfile、Host Profile 过滤和 activation plan；它是静态 bootstrap component，但不进入 `engine/core`。
+- **`engine/package-runtime` 拥有：** package manifest 的窄格式模型与解析、resolver、lockfile、Host Profile 过滤和
+  Host Activation Blueprint；它是静态 bootstrap component，但不进入 `engine/core`。
 - **不拥有：** asset identity、world state、logical input、job graph、script VM、render policy、editor command。
 - **当前映射：** `core`、`platform`；`package-runtime` 尚未实现。
 - **目标：** 保持不可卸载部分最小而稳定；GLFW、Vulkan、脚本 VM、物理/音频 backend 等都属于 bundled adapter/system packages。
@@ -571,10 +656,13 @@ flowchart LR
 | 名称 | 类型 | 用途 | 典型 package 集合 |
 | --- | --- | --- | --- |
 | `Asharia.Minimal` | Host Profile | 单元测试、headless tools、定制 Host | Kernel + 已导入 System Packages 的 contract modules；不隐式带 rendering/editor |
+| `Asharia.Editor` | Host Profile | 完整作者工作流与 runtime preview | 激活适用的 contract/runtime/implementation/editor/diagnostics/content roots；tool/cook 只通过依赖或 compatible contribution 进入 |
+| `Asharia.Runtime` | Host Profile | shipping client/runtime | 只允许 runtime shipping closure，排除 editor/tool/development-only modules |
+| `Asharia.DedicatedServer` | Host Profile | 无窗口 shipping server | 使用 dedicated-server applicability 与 runtime shipping closure；rendering/audio/editor modules 由 manifest host policy 过滤 |
+| `Asharia.AssetWorker` | Host Profile | 导入/cook worker | 激活已导入 Data、Content、Rendering 等系统的 contract/tool/cook/diagnostics/content roots；runtime support 只通过依赖进入，排除 editor role/class |
 | `com.asharia.features.standard3d` | versioned Feature Set | 常规 3D runtime 的完整系统组合 | Data、Memory & Budget、Runtime Storage & IO、Settings & Console、Content、World、Tasks、Input、Desktop Platform Support、Scripting (.NET)、Rendering (Vulkan)、Physics、Animation、Audio、Observability System Packages |
 | `com.asharia.features.editor-authoring` | versioned Feature Set | 完整编辑能力 | Standard3D + Editor & Authoring + Project Product Pipeline System Packages；工具 modules 已随所属系统交付 |
 | `com.asharia.features.dedicated-server` | versioned Feature Set | 无窗口服务器 | Data、Memory & Budget、Runtime Storage & IO、Settings & Console、Content、World、Tasks、Scripting、Physics、Networking、Observability；Host 过滤 rendering/audio/editor modules |
-| `Asharia.AssetWorker` | Host Profile | 导入/cook worker | 激活已导入 Data、Content、Rendering 等系统的 tool/cook modules；排除 world/frame runtime modules |
 
 Feature Set 是持续存在于 `asharia.packages.json` 中的 meta-package。其成员是间接依赖，并在 UI 中显示 `Required by Feature Set`；移除成员前必须先移除依赖它的 Feature Set。项目可以在兼容范围内覆盖成员版本，lockfile 同时记录 Feature Set 和展开后的完整依赖图。
 
@@ -586,7 +674,8 @@ Project Template 是另一种概念：它在创建项目时一次性写入 direc
 
 | 契约 | 生产者 | 消费者 | 核心性质 |
 | --- | --- | --- | --- |
-| locked package graph / activation plan | Package Runtime | Build、Host | exact version/source/integrity、host-filtered、有序 |
+| locked package graph / Host Activation Blueprint | Package Runtime | Build、binding adapter | exact version/source/integrity、host-filtered、有序、artifact-neutral |
+| bound activation input | build/link verifier | Host Runtime | exact generation、verified registrations、Blueprint-linked |
 | Host scope / activation lease | Host Runtime | system factories、diagnostics | owner-scoped、dependencies-first start、reverse stop、可撤销、generation-safe |
 | application lifecycle snapshot/event | Platform -> Host Runtime | Storage、Content、World、Audio、Renderer、Scripts | ordered facts、safe-point delivery、bounded suspend work |
 | `PlatformCapabilitiesSnapshot` | Platform Support -> Host Runtime | Settings/Device Profile、Host、diagnostics | immutable、generation-safe；不混入 RHI feature 或 Input device state |
@@ -657,17 +746,20 @@ Feature Package 不需要拥有新的基础系统，只需完整拥有自己的�
 | Shipping | runtime/editor/tool/content classification、cook inclusion policy |
 | Validation | package-local tests、smokes、license/security metadata |
 
-项目配置明确分成五份事实：
+项目与 Engine 发行配置明确分成六份事实：
 
-- `asharia.project.json`：由 `project-core` 拥有，保存项目身份、资产源和缓存等项目领域配置；
+- `asharia.project.json`：由 `project-core` 拥有，保存项目身份、资产源和缓存等项目领域配置；固定 `packages/project-bootstrap`
+  通过 `project_core_io` 在 ProcessScope Active 后读取它，`package-runtime` 不解析该文件；
 - `asharia.packages.json`：由 `package-runtime` 拥有，保存 direct System/Feature/Integration/Content Packages、version ranges、Feature Sets 和 package-level options；不得列出内部 target/module/provider；Host/target 选择由调用 resolver 的 Build/Launch Profile 提供；
 - `asharia.packages.lock.json`：由 resolver 生成并由团队提交，保存 exact versions、source、integrity、完整 resolved graph 和 resolver version；
+- `<engine-root>/asharia.engine-distribution.json`：由 Engine/Editor build 与 installer 生成并只读安装，保存 exact
+  `EngineGenerationId`、Editor Image evidence、bundled inventory、package artifact 与 Host Profile references；项目 Package Manager 不得重写；
 - `conan.lock`：继续保存第三方 C/C++ dependency graph。
 - `asharia.build.json`：由 Project Product Pipeline System Package 内的 `project_build` target 拥有，保存可提交的 Build Profiles 与共享 Launch Profiles；不复制 package graph，也不保存 secret 或 machine-local path。
 
 `asharia.packages.json` 与 `asharia.packages.lock.json` 使用 package-runtime 自己拥有的窄 schema，不依赖 `project-core` 或可选 Data Model/Persistence package；否则解析这些 package 之前就必须先加载它们，形成 bootstrap cycle。
 
-Package Manager 必须提供同一套 headless API 给 Editor、CLI 和 CI：`discover -> solve -> plan -> apply -> verify`。`apply` 只能修改 `asharia.packages.json` / `asharia.packages.lock.json`、acquire cache 和生成配置；真实系统实例由 Host 在启动/安全点按 activation plan 创建。
+Package Manager 必须提供同一套 headless API 给 Editor、CLI 和 CI：`discover -> solve/reuse -> compose -> plan -> apply -> verify`。`apply` 只能修改 `asharia.packages.json` / `asharia.packages.lock.json`、acquire cache 和生成配置；不能修改 Engine Distribution。真实系统实例由 Host 在启动/安全点按可执行 activation plan 创建。
 
 导入事务以 Installable Capability Package 为原子单位：acquire、integrity、license、build requirement、lock update 和 rollback 要么覆盖整个能力，要么保持旧版本。Host role filtering 发生在 build/activation plan，不得通过“只下载 runtime、不下载 editor/cook”制造项目间不可复现的部分安装。未来若为了发行体积支持按 artifact 分块下载，也必须由同一 package manifest/lock 统一描述，语义上仍是一个已安装能力。
 
@@ -701,7 +793,7 @@ modules/targets，不再与完整系统共享同一级目录语义。源码大�
 | --- | --- | --- | --- |
 | `engine/core` | `core`、轻量 diagnostics contracts | `core` | 保持 |
 | `engine/platform` | `platform`、dynamic library/process/filesystem primitives | `platform` | 保持 Kernel 级最小能力 |
-| `engine/package-runtime` | manifest model、resolver、lockfile、activation plan | 新增 | Kernel bootstrap；headless、无 Editor/UI 依赖 |
+| `engine/package-runtime` | manifest model、resolver、lockfile、Host Activation Blueprint | 新增 | Kernel bootstrap；headless、无 Editor/UI 依赖 |
 | `engine/host-runtime` | Host roles/scopes、system factory context、activation lease、typed registries、lifecycle/safe points | 新增 | 不解析 package graph、不实现领域系统、不提供 service locator |
 | `packages/systems/memory` | `memory_contract`、domain/budget/pressure runtime、platform/RHI adapters、Editor inspector、test support | 新增；Kernel 只保留 allocator/tag/fatal hook | 完整 required-by-profile Foundation System；不拥有领域 allocator/cache/trim |
 | `packages/systems/runtime-storage` | VFS/mount、bundle/archive reader、async IO、user/cache/log storage、diagnostics | 新增；`core` 只保留 bootstrap file primitives | 完整默认 Foundation System |
@@ -791,9 +883,12 @@ flowchart LR
 必须固定以下边界：
 
 - `asharia.build.json` 保存可提交的 Build/Launch Profiles；个人输出路径、设备、调试器和敏感值位于 ignored local override 或外部 credential store；
-- Project Manager/CLI 应以明确 `--project` 参数启动 Editor；当前环境变量入口只视为过渡实现。Editor 先验证 project/package lock 与 Editor Host Profile，再激活 contributions；损坏 package 可用最小 safe mode 修复；
-- package resolver 决定精确 system/module graph，Conan 锁定第三方依赖，Project Build 只消费二者，不建立第二张依赖图；
-- v0 根据 lock graph 与 Host Profile 生成薄 composition root，使项目得到精确 native link/activation closure；
+- Project Manager/CLI 应以明确 `--project` 参数启动 Editor；当前环境变量入口只视为过渡实现。Editor Image 先启动最小
+  Shell/diagnostics/Package Manager/repair，再验证 Engine Distribution、Project Lock 与 Editor Host Profile；损坏项目进入
+  Safe Mode，不卸载修复入口；
+- project package resolver 决定项目 exact graph，Engine Distribution Manifest 固定 bundled inventory，Conan 锁定第三方
+  C/C++ 依赖；Project Build 只消费派生 composition 与这些既有事实，不建立第二张依赖图；
+- v0 根据 Distribution、Project Lock 与 Host Profile 生成薄 composition root，使项目得到精确 native link/activation closure；
 - Build 产生 executable/library/tool，Cook 产生 target runtime products，Stage 把两者组成可直接运行且可验证的相对目录树，Package 从 validated stage 生成发行物；
 - shipping runtime 只读取 `asharia.stage.json`、runtime config、module registry 和 cooked catalog，不读取 source project 或 Editor cache；
 - Play In Editor 是 Editor 内隔离 world session；Build & Run 默认创建独立 Standalone process，走产品 runtime bootstrap；
@@ -826,8 +921,8 @@ sequenceDiagram
     participant GPU as Vulkan Backend
 
     App->>Package: verify lockfile and host profile
-    Package-->>App: ordered activation plan
-    App->>Host: create process/project scopes with plan
+    Package-->>App: validated bound activation input
+    App->>Host: create process/project scopes from Blueprint-linked input
     Host->>Platform: create platform services
     Host->>Memory: start domains, budgets and pressure routing
     Host->>Observe: start runtime diagnostics
@@ -909,9 +1004,25 @@ sequenceDiagram
 
 - 冻结 Installable Capability Package manifest vNext 的 identity、catalog type、completeness roles、package dependencies、internal modules/contributions 和 shipping 字段；
 - 定义 `asharia.packages.json` 与 committed `asharia.packages.lock.json`；
-- 实现 headless `discover -> solve -> plan -> verify` library/CLI，第一阶段只支持 bundled/project-embedded/local sources；
-- 输出 CMake build plan 和 per-host activation plan，不实现任意 native hot load；
-- 建立 `Minimal`、`Editor`、`Runtime`、`DedicatedServer`、`AssetWorker` Host Profiles，以及 versioned Standard3D/EditorAuthoring/DedicatedServer Feature Sets；
+- 实现 headless `discover -> solve/reuse -> compose -> verify` library/CLI，第一阶段只支持 bundled/project-embedded/local sources；
+- #301 已实现 verified Distribution bundled provider：无需 existing Lock，把每个 inventory entry 恰好一次投影为 fresh candidate；
+  #302 已实现 `asharia.packages.sources.json` 的 exact Project-embedded roots、logical local IDs 与 caller-provided process-local mapping
+  provider；两个 providers 都不定义 source precedence；#303 已在它们之上增加 pure no-write full/targeted-conservative Lock update
+  planner，以互斥 `unlockTargets` / `intentOnlyTargets` 区分主动解锁与 intent-only 授权，并用 explicit Resolver Policy v2
+  `CandidatePreference` / `candidatePreferences` 优先 non-unlock locked candidates；apply-precondition reference 已能在不重跑 resolver、
+  不写文件的前提下重建 plan seal 并复核 current Project/Lock/Distribution/candidates；Core 已提供 persistent sentinel +
+  kernel lock 的非阻塞 writer-exclusion primitive。Project-scoped path/diagnostics、把 revalidation 包入 lock lifetime、atomic apply 与
+  journal/recovery 仍为后继 Slice；
+- 先输出 canonical per-host logical composition，再由独立 adapters 输出 CMake build plan 和 artifact-neutral Host Activation Blueprint；构建后再绑定 verified executable registrations；不实现任意 native hot load；
+- 建立 `Minimal`、`Editor`、`Runtime`、`DedicatedServer`、`AssetWorker` Host Profiles，以及 versioned
+  Standard3D/EditorAuthoring/DedicatedServer Feature Sets；五种 Host Profile 与从 composition 到 Blueprint/artifact/registration 的 contracts
+  已有 v1 基线。#295 的 provider/binding v4 与 payload accessor、#293/#296 的 ProcessScope V2 registry/lease/revocation 已落地；
+  #297 将 active generation 硬切到 T3/C6/provider-v4/Snapshot-v2，并用 generated sealed current-image descriptor 驱动 Eligibility V2，
+  不再让 normal startup 消费 V1 四 handoff、artifact hash 或外部 launch receipt。generated Host 已借用/运行/release
+  `ProcessApplicationV1`，由固定 `packages/project-bootstrap` 读取真实 `asharia.project.json`，再显式 stop。#298 已将同根
+  Project Manifest/Lock inspection、fresh Effective Session、published Host/C6 current evidence 与这条 run/stop 链归约为 headless
+  Bootstrap Session；production profiles、repair executor/Editor Bootstrap UI、`PendingRestart` tracker、其他 scope owners 与完整
+  instance/jobs/subscriptions lease 仍待后续 vertical features；
 - 检查全部 `PUBLIC` / `PRIVATE` / `INTERFACE` 依赖；
 - 使 optional target 的 package config 依赖保持 optional；
 - 增加禁止 include 其他 package `src/`、禁止 Vulkan 类型越层、禁止 RHI base 依赖 RG 的检查；
@@ -927,18 +1038,26 @@ sequenceDiagram
 - `asharia.packages.json` 只接受完整 System/Feature/Integration/Content Package 或 Feature Set identity；直接写入 contract、backend、provider、editor 或 cook 内部 module 会被 schema/validator 拒绝；
 - package 缺少其 catalog type 声明适用的 runtime/current implementation/authoring/cook/diagnostics root module/content root 时不能进入 catalog；
 - 版本冲突、cycle、missing named dependency、platform mismatch 和 integrity mismatch 有确定性 diagnostics；
-- 添加 native code package 会明确进入 `PendingBuild` / `PendingRestart`；
+- 相同 base/proposed Project、existing Lock、verified Distribution、complete fresh candidates 与 update request 在 Editor/CLI/CI
+  得到字节等价的 proposed graph、impact preview 与 diagnostics；direct package/Feature Set add/remove/constraint changes 必须由
+  `unlockTargets` 覆盖，option changes 可由两个 target sets 的 union 覆盖；option-only intent 不得解锁版本，non-unlock same-version
+  source/evidence drift fail closed；
+- 添加 native code package 会在 current Host identity 不匹配时明确进入 `PendingBuild`；只有 current-process generation tracker
+  落地后才允许产生 `PendingRestart`；
 - clangcl-debug 与 msvc-debug 全量构建通过。
 
 ### Phase 1.5：Host Runtime 与 Foundation Services
 
-**目标：** 在继续构建领域系统前，先让所有 Host 共享可验证的 scope、activation、lifecycle/platform capability、
-memory、IO、配置、任务、time/update、capability grant 和诊断基础。
+**目标：** #297 已用固定 Project Bootstrap contribution 完成首个 generated normal Host vertical feature，#298 已将其接入同根
+package/session inspection 与 headless Bootstrap 状态。下一步先补固定 Editor 控制面的 build/repair/restart 与最小 UI 消费，再由可观察
+功能需求拉动 platform capability、memory、IO、配置、任务、time/update、capability grant 与诊断，不继续预建通用 scope/registry 抽象。
 
 工作：
 
-- 新增计划中的 `engine/host-runtime`，实现 Process/Project/Editor/ToolJob/GameSession/World/LocalUser scope baseline；
-- 建立显式 factory context、activation lease、typed contribution registry、dependencies-first start、reverse stop 和 failure rollback；
+- 保持 #297 的 T3/C6 normal Host、Eligibility V2、`ProcessApplicationV1`、真实 project descriptor 与 explicit stop，以及 #298 的
+  canonical-root/published-binding Bootstrap state chain 作为端到端回归；
+- 保持五个 lifecycle callbacks/model V1，复用 #296 的 fixed registry、weak handle、contribution-only lease 与 revocation gate；只有真实功能
+  需要时才增加 Project/Editor/ToolJob/GameSession/World/LocalUser scope、instance/jobs/subscriptions lease 或跨 scope stale-generation contract；
 - 建立 Platform application lifecycle facts、immutable `PlatformCapabilitiesSnapshot` 与 Host safe-point delivery，覆盖 focus/quit/suspend/resume/low-memory/device/display change，并保持 GPU capabilities 归 RHI、input device state 归 Input；
 - 建立完整 Memory & Budget System：domain/tag registry、budget/pressure snapshot、trim protocol、Platform/RHI projection 和 owner result；Kernel 只保留 activation 前 allocator/tag/fatal hook；
 - 建立 Runtime Storage & IO 的 mount/VFS、bundle reader、async request、priority/cancel、user/cache/log mounts；
@@ -948,7 +1067,8 @@ memory、IO、配置、任务、time/update、capability grant 和诊断基础�
 - 把 bootstrap log/fatal evidence 连续迁移到 bounded runtime diagnostics router，并生成包含 build/lock、callstack、log tail、scope/package generation 和 memory pressure 的本地 crash report；
 - 冻结基础 capability vocabulary、manifest declaration、Host Profile grant/deny 和 owner-facade enforcement；远程来源 trust/signature/sandbox 后置；
 - 设计 stable diagnostic domain/package/component identity，并为当前 `ErrorDomain` 提供兼容映射，停止新增上层枚举值；
-- 用 synthetic systems 和 generated activation plan 形成 Minimal/Runtime/Server/Tool headless Host smokes。
+- 用 synthetic systems、Host Activation Blueprint、generated current-image descriptor 和独立构建后 binding evidence 形成
+  Minimal/Runtime/Server/Tool headless Host smokes。
 
 门禁：
 
@@ -963,7 +1083,7 @@ memory、IO、配置、任务、time/update、capability grant 和诊断基础�
 - fatal probe 能在 Observability 激活前后分别落盘 bounded crash evidence，且远程上传不是 Foundation smoke 前置条件；
 - shutdown 后 worker、IO request、subscription、contribution handle 和 scope-owned instance 均清零或有明确 external owner；
 - synthetic external package 可以发布新 diagnostic domain，而不修改 `engine/core` enum/source；
-- Editor/Runtime/Server/Tool Host 对同一 activation plan 使用同一 Host Runtime，不各自维护生命周期实现。
+- Editor/Runtime/Server/Tool Host 对同一 Blueprint/binding contract 使用同一 Host Runtime，不各自维护生命周期实现。
 
 ### Phase 2：Data Model & Persistence 收敛
 

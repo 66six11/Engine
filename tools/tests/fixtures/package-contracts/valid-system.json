@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 2,
+  "packageKind": "installable-capability",
+  "id": "com.asharia.system.synthetic-example",
+  "version": "0.1.0",
+  "displayName": "Synthetic Example System",
+  "description": "Validates the portable installable package contract.",
+  "catalogType": "system",
+  "engineApi": {
+    "kind": "range",
+    "minimumInclusive": "0.1.0",
+    "maximumExclusive": "0.2.0",
+    "allowPrerelease": false
+  },
+  "dependencies": [],
+  "options": [
+    {
+      "id": "validation",
+      "type": "boolean",
+      "default": true,
+      "affects": [
+        "build",
+        "activation"
+      ]
+    }
+  ],
+  "modules": [
+    {
+      "id": "runtime",
+      "role": "runtime",
+      "dependsOn": [],
+      "hostKinds": [
+        "editor",
+        "runtime",
+        "dedicated-server"
+      ],
+      "platforms": [
+        "com.asharia.platform.any"
+      ],
+      "shippingClass": "runtime",
+      "requiredCapabilities": []
+    },
+    {
+      "id": "diagnostics",
+      "role": "diagnostics",
+      "dependsOn": [
+        "runtime"
+      ],
+      "hostKinds": [
+        "editor",
+        "runtime",
+        "dedicated-server"
+      ],
+      "platforms": [
+        "com.asharia.platform.any"
+      ],
+      "shippingClass": "development-only",
+      "requiredCapabilities": []
+    }
+  ],
+  "entryModules": {
+    "runtime": [
+      "runtime"
+    ],
+    "diagnostics": [
+      "diagnostics"
+    ]
+  },
+  "contentRoots": [],
+  "contributions": []
+}

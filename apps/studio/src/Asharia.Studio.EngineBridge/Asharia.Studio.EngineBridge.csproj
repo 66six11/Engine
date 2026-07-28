@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>Asharia.Studio.EngineBridge</AssemblyName>
+    <RootNamespace>Asharia.Studio.EngineBridge</RootNamespace>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <DisableRuntimeMarshalling>true</DisableRuntimeMarshalling>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Asharia.Studio.EngineBridge.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Asharia.Runtime.Contracts\Asharia.Runtime.Contracts.csproj" />
+  </ItemGroup>
+</Project>

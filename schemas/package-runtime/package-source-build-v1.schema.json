@@ -1,0 +1,146 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.asharia.dev/package-runtime/package-source-build-v1.schema.json",
+  "title": "Asharia Package Source Build Descriptor v1",
+  "description": "Source-distribution mapping from exact logical package modules to source boundaries and canonical CMake build roots.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "schemaVersion",
+    "package",
+    "modules"
+  ],
+  "properties": {
+    "schema": {
+      "const": "com.asharia.package-source-build"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "package": {
+      "$ref": "#/$defs/package"
+    },
+    "modules": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/module"
+      }
+    }
+  },
+  "$defs": {
+    "package": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/packageId"
+        },
+        "version": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/semanticVersion"
+        }
+      }
+    },
+    "cmakeTargetName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "pattern": "^[A-Za-z0-9_.+\\-]+$"
+    },
+    "buildableTargetType": {
+      "enum": [
+        "EXECUTABLE",
+        "STATIC_LIBRARY",
+        "SHARED_LIBRARY",
+        "MODULE_LIBRARY",
+        "OBJECT_LIBRARY",
+        "UTILITY"
+      ]
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "type"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/cmakeTargetName"
+        },
+        "type": {
+          "$ref": "#/$defs/buildableTargetType"
+        }
+      }
+    },
+    "noBuild": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "const": "no-build"
+        }
+      }
+    },
+    "targetRoots": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "targets"
+      ],
+      "properties": {
+        "kind": {
+          "const": "target-roots"
+        },
+        "targets": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/target"
+          }
+        }
+      }
+    },
+    "module": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "moduleId",
+        "sourceBoundaries",
+        "build"
+      ],
+      "properties": {
+        "moduleId": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/localId"
+        },
+        "sourceBoundaries": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "package-contract-common-v1.schema.json#/$defs/packageId"
+          }
+        },
+        "build": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/noBuild"
+            },
+            {
+              "$ref": "#/$defs/targetRoots"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

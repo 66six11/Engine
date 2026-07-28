@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 2,
+  "packageKind": "installable-capability",
+  "id": "com.asharia.feature.invalid-values",
+  "version": "0.1.0",
+  "displayName": "Invalid Values",
+  "description": "Contains invalid cross-field values and a non-normalized content path.",
+  "catalogType": "feature",
+  "engineApi": {
+    "kind": "range",
+    "minimumInclusive": "0.2.0",
+    "maximumExclusive": "0.1.0",
+    "allowPrerelease": false
+  },
+  "dependencies": [],
+  "options": [
+    {
+      "id": "quality",
+      "type": "enum",
+      "default": "unsupported",
+      "values": [
+        "balanced",
+        "quality"
+      ],
+      "affects": [
+        "cook"
+      ]
+    }
+  ],
+  "modules": [],
+  "entryModules": {},
+  "contentRoots": [
+    {
+      "id": "source",
+      "path": "Content/../Source",
+      "role": "source",
+      "platforms": [
+        "com.asharia.platform.any"
+      ],
+      "shippingClass": "tool"
+    }
+  ],
+  "contributions": []
+}

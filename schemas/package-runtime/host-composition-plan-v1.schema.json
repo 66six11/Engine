@@ -1,0 +1,506 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.asharia.dev/package-runtime/host-composition-plan-v1.schema.json",
+  "title": "Asharia Host Composition Plan v1",
+  "description": "Canonical backend-neutral logical package composition for one verified graph, Project Manifest, and Host Profile.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "schemaVersion",
+    "inputs",
+    "host",
+    "resolvedGraph",
+    "packages",
+    "entries",
+    "contributions"
+  ],
+  "properties": {
+    "schema": {
+      "const": "com.asharia.host-composition-plan"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "inputs": {
+      "$ref": "#/$defs/inputs"
+    },
+    "host": {
+      "$ref": "#/$defs/host"
+    },
+    "resolvedGraph": {
+      "$ref": "#/$defs/resolvedGraph"
+    },
+    "packages": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/hostPackage"
+      }
+    },
+    "entries": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/entry"
+      }
+    },
+    "contributions": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/contribution"
+      }
+    }
+  },
+  "$defs": {
+    "integrity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "algorithm",
+        "digest"
+      ],
+      "properties": {
+        "algorithm": {
+          "const": "sha256"
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "packageKind": {
+      "enum": [
+        "installable-capability",
+        "feature-set"
+      ]
+    },
+    "exactPackageReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "packageKind"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/packageId"
+        },
+        "version": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/semanticVersion"
+        },
+        "packageKind": {
+          "$ref": "#/$defs/packageKind"
+        }
+      }
+    },
+    "installableReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "packageKind"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/packageId"
+        },
+        "version": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/semanticVersion"
+        },
+        "packageKind": {
+          "const": "installable-capability"
+        }
+      }
+    },
+    "featureSetReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "packageKind"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/packageId"
+        },
+        "version": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/semanticVersion"
+        },
+        "packageKind": {
+          "const": "feature-set"
+        }
+      }
+    },
+    "inputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "engineApiVersion",
+        "projectManifestIntegrity",
+        "lockedGraphIntegrity",
+        "hostProfileIntegrity"
+      ],
+      "properties": {
+        "engineApiVersion": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/semanticVersion"
+        },
+        "projectManifestIntegrity": {
+          "$ref": "#/$defs/integrity"
+        },
+        "lockedGraphIntegrity": {
+          "$ref": "#/$defs/integrity"
+        },
+        "hostProfileIntegrity": {
+          "$ref": "#/$defs/integrity"
+        }
+      }
+    },
+    "host": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "hostKind",
+        "targetPlatform",
+        "grantedCapabilities"
+      ],
+      "properties": {
+        "hostKind": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/hostKind"
+        },
+        "targetPlatform": {
+          "allOf": [
+            {
+              "$ref": "package-contract-common-v1.schema.json#/$defs/platformId"
+            },
+            {
+              "not": {
+                "const": "com.asharia.platform.any"
+              }
+            }
+          ]
+        },
+        "grantedCapabilities": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "package-contract-common-v1.schema.json#/$defs/packageId"
+          }
+        }
+      }
+    },
+    "resolvedGraph": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "directPackages",
+        "directFeatureSets",
+        "packages"
+      ],
+      "properties": {
+        "directPackages": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/installableReference"
+          }
+        },
+        "directFeatureSets": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/featureSetReference"
+          }
+        },
+        "packages": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/resolvedPackage"
+          }
+        }
+      }
+    },
+    "resolvedPackage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "packageKind",
+        "dependencies"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/packageId"
+        },
+        "version": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/semanticVersion"
+        },
+        "packageKind": {
+          "$ref": "#/$defs/packageKind"
+        },
+        "dependencies": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/exactPackageReference"
+          }
+        }
+      }
+    },
+    "hostPackage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "packageKind",
+        "dependencies",
+        "options",
+        "modules"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/packageId"
+        },
+        "version": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/semanticVersion"
+        },
+        "packageKind": {
+          "const": "installable-capability"
+        },
+        "dependencies": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/installableReference"
+          }
+        },
+        "options": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/effectiveOption"
+          }
+        },
+        "modules": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/module"
+          }
+        }
+      }
+    },
+    "effectiveOptionBase": {
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "affects",
+        "value"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/localId"
+        },
+        "affects": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "build",
+              "activation",
+              "cook"
+            ]
+          }
+        }
+      }
+    },
+    "booleanOption": {
+      "type": "object",
+      "required": [
+        "type",
+        "value"
+      ],
+      "properties": {
+        "type": {
+          "const": "boolean"
+        },
+        "value": {
+          "type": "boolean"
+        }
+      }
+    },
+    "integerOption": {
+      "type": "object",
+      "required": [
+        "type",
+        "value"
+      ],
+      "properties": {
+        "type": {
+          "const": "integer"
+        },
+        "value": {
+          "type": "integer"
+        }
+      }
+    },
+    "stringOption": {
+      "type": "object",
+      "required": [
+        "type",
+        "value"
+      ],
+      "properties": {
+        "type": {
+          "const": "string"
+        },
+        "value": {
+          "type": "string"
+        }
+      }
+    },
+    "enumOption": {
+      "type": "object",
+      "required": [
+        "type",
+        "value"
+      ],
+      "properties": {
+        "type": {
+          "const": "enum"
+        },
+        "value": {
+          "type": "string"
+        }
+      }
+    },
+    "effectiveOption": {
+      "type": "object",
+      "unevaluatedProperties": false,
+      "allOf": [
+        {
+          "$ref": "#/$defs/effectiveOptionBase"
+        },
+        {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/booleanOption"
+            },
+            {
+              "$ref": "#/$defs/integerOption"
+            },
+            {
+              "$ref": "#/$defs/stringOption"
+            },
+            {
+              "$ref": "#/$defs/enumOption"
+            }
+          ]
+        }
+      ]
+    },
+    "module": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "role",
+        "shippingClass",
+        "requiredCapabilities",
+        "dependsOn"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/localId"
+        },
+        "role": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/moduleRole"
+        },
+        "shippingClass": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/shippingClass"
+        },
+        "requiredCapabilities": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "package-contract-common-v1.schema.json#/$defs/packageId"
+          }
+        },
+        "dependsOn": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "package-contract-common-v1.schema.json#/$defs/localId"
+          }
+        }
+      }
+    },
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "dimension",
+        "packageId",
+        "packageVersion",
+        "moduleId"
+      ],
+      "properties": {
+        "dimension": {
+          "enum": [
+            "runtime",
+            "authoring",
+            "cook",
+            "diagnostics"
+          ]
+        },
+        "packageId": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/packageId"
+        },
+        "packageVersion": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/semanticVersion"
+        },
+        "moduleId": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/localId"
+        }
+      }
+    },
+    "contribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "packageId",
+        "packageVersion",
+        "id",
+        "kind",
+        "ownerModuleId"
+      ],
+      "properties": {
+        "packageId": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/packageId"
+        },
+        "packageVersion": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/semanticVersion"
+        },
+        "id": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/packageId"
+        },
+        "kind": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/packageId"
+        },
+        "ownerModuleId": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/localId"
+        }
+      }
+    }
+  }
+}

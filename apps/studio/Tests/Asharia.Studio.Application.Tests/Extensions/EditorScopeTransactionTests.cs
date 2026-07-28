@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using Asharia.Editor.Contributions;
 using Asharia.Editor.Extensions;
 using Asharia.Editor.Panels;
@@ -194,6 +195,135 @@ public sealed class EditorScopeTransactionTests
         var partition = registry.GetRequiredPartition(ScopeInstanceId.Application);
         Assert.True(partition.Instances.ContainsKey(first.Id));
         Assert.False(partition.Instances.ContainsKey(second.Id));
+    }
+
+    [Fact]
+    public void Initial_commit_registration_retires_only_its_exact_partition()
+    {
+        var applicationDefinition = CreateDefinition(
+            "studio.shell",
+            EditorModuleScopeKind.Application);
+        var firstProjectDefinition = CreateDefinition(
+            "studio.first",
+            EditorModuleScopeKind.Project);
+        var secondProjectDefinition = CreateDefinition(
+            "studio.second",
+            EditorModuleScopeKind.Project);
+        var registry = new EditorModuleRegistry();
+        EditorScopeTransaction.Prepare(
+            registry,
+            ScopeInstanceId.Application,
+            [applicationDefinition]).Commit();
+        var firstScope = ScopeInstanceId.ForProject(
+            Guid.Parse("55555555-5555-5555-5555-555555555555"));
+        var secondScope = ScopeInstanceId.ForProject(
+            Guid.Parse("66666666-6666-6666-6666-666666666666"));
+        var transaction = EditorScopeTransaction.Prepare(
+            registry,
+            firstScope,
+            [firstProjectDefinition]);
+
+        Assert.True(transaction.TryCommitInitial(out var registration));
+        Assert.NotNull(registration);
+        Assert.Same(
+            transaction.Candidate,
+            registry.GetRequiredPartition(firstScope));
+        EditorScopeTransaction.Prepare(
+            registry,
+            secondScope,
+            [secondProjectDefinition]).Commit();
+
+        registration.Dispose();
+        registration.Dispose();
+
+        Assert.False(registry.TryGetPartition(firstScope, out _));
+        Assert.Same(
+            applicationDefinition,
+            registry.GetRequiredPartition(ScopeInstanceId.Application)
+                .RegistrationOrder.Single().Definition);
+        Assert.Same(
+            secondProjectDefinition,
+            registry.GetRequiredPartition(secondScope)
+                .RegistrationOrder.Single().Definition);
+    }
+
+    [Fact]
+    public void Initial_commit_rejects_existing_scope_and_stale_snapshot()
+    {
+        var first = CreateDefinition(
+            "studio.first",
+            EditorModuleScopeKind.Project);
+        var second = CreateDefinition(
+            "studio.second",
+            EditorModuleScopeKind.Project);
+        var registry = new EditorModuleRegistry();
+        var scope = ScopeInstanceId.ForProject(
+            Guid.Parse("77777777-7777-7777-7777-777777777777"));
+        EditorScopeTransaction.Prepare(
+            registry,
+            scope,
+            [first]).Commit();
+        var existingScopeTransaction = EditorScopeTransaction.Prepare(
+            registry,
+            scope,
+            [second]);
+
+        Assert.False(
+            existingScopeTransaction.TryCommitInitial(out var existingRegistration));
+        Assert.Null(existingRegistration);
+        Assert.Same(
+            first,
+            registry.GetRequiredPartition(scope)
+                .RegistrationOrder.Single().Definition);
+
+        var staleRegistry = new EditorModuleRegistry();
+        var staleScope = ScopeInstanceId.ForProject(
+            Guid.Parse("88888888-8888-8888-8888-888888888888"));
+        var staleTransaction = EditorScopeTransaction.Prepare(
+            staleRegistry,
+            staleScope,
+            [first]);
+        EditorScopeTransaction.Prepare(
+            staleRegistry,
+            ScopeInstanceId.Application,
+            []).Commit();
+
+        Assert.False(
+            staleTransaction.TryCommitInitial(out var staleRegistration));
+        Assert.Null(staleRegistration);
+        Assert.False(staleRegistry.TryGetPartition(staleScope, out _));
+    }
+
+    [Fact]
+    public void Registration_retirement_does_not_remove_a_replacement()
+    {
+        var first = CreateDefinition(
+            "studio.first",
+            EditorModuleScopeKind.Project);
+        var second = CreateDefinition(
+            "studio.second",
+            EditorModuleScopeKind.Project);
+        var registry = new EditorModuleRegistry();
+        var scope = ScopeInstanceId.ForProject(
+            Guid.Parse("99999999-9999-9999-9999-999999999999"));
+        var firstTransaction = EditorScopeTransaction.Prepare(
+            registry,
+            scope,
+            [first]);
+        Assert.True(firstTransaction.TryCommitInitial(out var registration));
+        var replacementTransaction = EditorScopeTransaction.Prepare(
+            registry,
+            scope,
+            [second]);
+        replacementTransaction.Commit();
+
+        var error = Assert.Throws<InvalidOperationException>(
+            registration!.Dispose);
+
+        Assert.Contains("no longer owns", error.Message, StringComparison.Ordinal);
+        Assert.Same(
+            replacementTransaction.Candidate,
+            registry.GetRequiredPartition(scope));
     }
 
     private static EditorModuleDefinition CreateDefinition(

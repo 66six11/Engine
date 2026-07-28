@@ -2,7 +2,7 @@
 
 状态：Target（迁移中）
 
-更新日期：2026-07-11
+更新日期：2026-07-28
 
 ## 1. 目的
 
@@ -18,19 +18,193 @@ Studio 不拥有 Engine truth。World、simulation、renderer、Vulkan device、
 
 ## 2. 当前实现
 
-当前 production `apps/studio` 仍是一个 `Editor.csproj` Avalonia 应用，目录分为 `Core`、`Shell`、`UI`、`Features` 和 `Tests`。已有 Dock、command、diagnostics、selection、transaction、built-in extension host、Code-first UI、Scene snapshot、panel scheduler 和 Windows Scene View GPU interop 的 v0 路径。迁移用 `Asharia.Studio.sln` 已加入独立 `Asharia.Editor` public assembly；目前只落地 module identity/policy/lifecycle 与 capability Epoch snapshot，还没有 production consumer。
+当前 production `apps/studio` 仍由 `Editor.csproj` Avalonia host 与迁移中的 managed projects 共同组成，目录分为
+`Core`、`Shell`、`UI`、`Features`、`src` 和 `Tests`。已有 Dock、command、diagnostics、selection、transaction、
+built-in extension host、Code-first UI、Scene snapshot、panel scheduler 和 Windows Scene View GPU interop 的 v0 路径。
+`Asharia.Studio.sln` 已包含独立 `Asharia.Editor`、`Asharia.Runtime.Contracts`、
+`Asharia.Studio.Application` 与 `Asharia.Studio.EngineBridge`；Application 已拥有 static module host、UI-neutral scene provider runtime host 和只读 Editor Image inventory
+verifier，并可从 current inventory lease 投影 Distribution-bound managed build environment inventory；
+`Asharia.Runtime.Contracts` 当前把 Scene `EntityId`、float3、quaternion 与 local Transform 固定为
+8/12/16/40-byte unmanaged values，并用显式 offsets 对齐 native C ABI；这些只是项目代码可引用的稳定
+value contracts，不包含 native function import、World handle、Scene provider、Avalonia dispatcher 或文件 IO。
+EngineBridge 当前提供 Scene World ABI v1 create/destroy、owner-thread deterministic disposal、复用 `Asharia.Runtime.EntityId` 的 entity create/destroy/is-alive、逐值传递 `TransformValue` 的 local Transform get/set，以及最多 4096-byte、caller-owned buffer 的 strict UTF-8 display-name get/set；它不暴露 native pointer，不使用 finalizer thread 销毁 thread-affine World，也不把名称当作 identity/path/unique key。snapshot/query projection、ProjectSession wiring 与 native library deployment 尚未提供。
+Project Code 还能把该 projection 复验为 semantic build credential，并为 caller 已规范化的项目根
+`Editor/**/*.cs` 原子生成 implicit SDK workspace，再使用 credential-bound dotnet closure 执行隔离
+restore/build 并发布四类 raw build output；current raw-output lease 现在还能经过无执行 artifact metadata
+inspection，并原子复制成带 deterministic `artifact.json` 的 closed immutable publication，再对
+implementation/reference metadata 建立 path-free module index，并把 non-empty current index 签发为 staging
+candidate receipt，随后在任何 load 前固定选择 `Pinned + RestartRequired` host policy，并把 exact
+implementation DLL/portable PDB 固定成有界、无 module initializer 的 owned load-image 快照；最后由
+loader-owned project reservation 幂等装入 exact non-collectible ALC，并把 #313 index 对证为 exact runtime
+module Type receipt，再由独立 owner 按 exact constructor receipt 至多一次地构造 module objects。
+后继独立 owner 再逐 object 至多一次 Configure 并冻结 declaration/metadata receipt，随后纯内存投影为
+static/dynamic 共用的 shared definitions。未来 ProjectSession 显式提供 scope identity/host capabilities 后，
+现有 transaction 可准备不可见 combined structural candidate，并完成 empty-scope initial registry
+registration。registration 所有权可一次性转交给独占异步 activation owner；runtime capability snapshot
+必须与 Prepare 时的 capability ID 集合完全一致，`WaitingForCapability`/`Blocked` 保留为 soft outcome，
+`Faulted`、取消或 Host 异常按 activation-first 顺序清理。正式 ProjectSession composition、replacement、
+revision、contribution publication 与 catalog commit 尚未落地。
 
 当前仍为 Partial：
 
 - `Core` 混合 UI-neutral model、service、P/Invoke、native adapter 和部分 Avalonia vocabulary；
 - App、View、Shell 和静态 native API 分散拥有启动与关闭；
 - `WorkbenchFeatureModule` 聚合大多数 Feature 和 fixture provider；
-- `Asharia.Editor` 尚无 contribution/service/Code-first API、项目 `Editor/` build 或 Package loader，legacy app 也尚未引用它；
+- `Asharia.Editor` 与 `Asharia.Studio.Application` 已有独立合同和 static host 基线，但项目 `Editor/` build、
+  Package loader 与 dynamic generation 尚未形成闭环；
 - `ViewportScheduler` 未接入 production frame loop；
 - Scene View bridge 固定使用 Windows NT handle；
 - 尚无正式 Project/Edit/Play/Preview session、Game View 和 Linux/macOS backend。
 
 这些事实只约束迁移顺序，不是目标边界。
+
+### 2.1 当前 Editor Image inventory handoff
+
+`Asharia.Studio.Application.Bootstrap.Distribution` 当前接受外部 owner 已选择的 canonical
+`EngineGenerationId` 和对应 generation root。它严格复验 Distribution manifest identity、Editor Image
+清单与每个声明文件的 size/SHA-256，拒绝 reparse escape 和产品 Python payload，成功后只签发进程内、
+可撤销的 exact Editor Image lease。
+
+该 lease 不是完整 `VerifiedInstalledDistribution` 或 `DistributionHealthReport`：它不复验 bundled
+package、package artifact 或 Host Profile bytes，也不拥有 current selection、repair、install、update 或
+restart。后继 Project Code 服务只能从 current lease 查询声明文件，不能重新扫描任意目录。
+
+`EngineDistributionManagedBuildEnvironmentLoader` 进一步只读取 inventory 中固定的
+`metadata/managed-build-environment.json`，把 `managed/dotnet` 下的 host、exact SDK、hostfxr、host runtime、
+reference pack 和 `bin/` 下两份 Runtime/Editor contract 绑定成可撤销 projection lease。dotnet root 必须对
+这些选择保持 closed；loader 只把调用方提供的 process context 与 lease 交叉核对，projection identity 同时
+绑定 Engine generation、context、声明与 selected file evidence。该 projection 仍不是 build execution
+credential：它不解析 SDK XML/runtimeconfig 或 assembly identity，不运行 `dotnet`，也不扫描 PATH、global
+SDK 或 inventory 外目录。
+
+`ProjectCodeBuildEnvironmentCredentialResolver` 只接受 current projection lease。它重新 hash 每个 selected
+file，枚举且只枚举 exact `managed/dotnet` root 以证明实际目录没有未登记增删，再用 `PEReader`/CLR metadata、
+禁用外部 import 的 SDK XML 和拒绝 duplicate/roll-forward drift 的 runtimeconfig 交叉验证 Windows x64
+dotnet/hostfxr、SDK entry、Host runtime、`Microsoft.NETCore.App.Ref/ref/net10.0` 全集与两份 Host contract。
+credential identity 绑定 Engine generation、projection 和 semantic identities；source/derived revoke、byte
+drift 或 dotnet-root closure drift 后都不能继续作为 execution selection。该 credential 仍不启动 `dotnet`、
+不生成 workspace、不加载 assembly，也不代表 build result 或 generation candidate。Linux/macOS semantic
+binary policy 等对应 producer 落地后另行扩展，当前不从 Windows PE 合同推测。
+
+`ProjectCodeImplicitSdkWorkspaceBuilder` 再只接受 current credential lease、caller 已规范化的 project root/
+`projectId` 和全新 cache output path。它只快照 exact project-root `Editor/**/*.cs`，拒绝 `.asmdef`、reparse、
+非 canonical/MSBuild-unrepresentable source path 与预算越界，把 source 和两份 Host contract 的 exact bytes
+复制到 builder-owned staging，并生成固定 `global.json`、NuGet/MSBuild barrier、SDK-style library project 和
+stable output handoff 后以 directory move 原子发布。assembly identity 只由 canonical UUID 派生；workspace
+identity 绑定 credential、source/contract/generated bytes，不包含 checkout/cache 绝对路径。source、credential
+或 workspace closure 漂移后 build-input current check 失败。
+
+`ProjectCodeSdkBuildController` 只接受 current immutable workspace lease 与全新 raw-output path。每次调用把
+workspace 复制到 controller-owned 短临时根，从 semantic credential 的 exact dotnet closure 物化并封住 execution
+mirror，清空 ambient environment 后只放入受控的 CLI/NuGet/MSBuild/TEMP 路径。它依次执行 exact SDK probe、
+explicit restore 与 `build --no-restore`；进程不经过 shell，stdout/stderr 有界，timeout/cancel 会终止整个进程树，
+同一 project 的新调用 supersede 旧调用。每个外部步骤后重新验证 workspace 与 SDK mirror，最后只复制并 hash
+implementation DLL、reference DLL、portable PDB 和 `.deps.json`，在确认输入仍 current 后原子发布 immutable raw
+output lease。raw output identity 绑定 workspace identity 与四个文件 envelope，不绑定 checkout、cache 或临时路径。
+该 controller 不解析 CLR metadata、不生成 module index、不加载 candidate。
+
+`ProjectCodeArtifactInspector` 只接受 current raw-output lease。它在检查前后复验 source/credential/workspace 与
+四文件 envelope，只用 BCL `PEReader`/`MetadataReader` 读取 implementation/reference identity、module/MVID、
+IL-only flags、exact `ReferenceAssemblyAttribute` 和 credential reference closure；portable PDB 必须由 PE
+CodeView/content ID 关联且只含 canonical `PathMap` document，`.deps.json` 必须精确匹配当前 net10.0
+single-project shape。成功报告只含相对路径、hash 和 path-free metadata，report identity 跨等价 physical
+output root 稳定。该步骤不调用 `Assembly.Load`/`MetadataLoadContext`、不创建 ALC，也不发布 generation
+candidate。
+
+`ProjectCodeArtifactPublisher` 只接受 current raw-output lease 与 caller 提供的全新 publication root，并在内部
+重新运行 inspector，不接受 caller 拼装 report 或任意 artifact root。它使用 bounded BCL async stream 把
+implementation DLL、reference DLL、portable PDB 和 `.deps.json` 复制到同父 staging，复制时 hash、复制后再
+独立复验，生成 path-free deterministic `artifact.json`，确认 exact 五文件 closed tree 与 raw lease 仍 current
+后只用一次 directory rename 提交。失败、取消、source/staging drift 或 existing/overlap/reparse path 不覆盖 final
+root，并清理 publisher-owned staging。receipt 的 absolute root 只负责当前进程寻址；publication 本身不生成
+module index，不创建 `current`/`latest`、generation、active/LKG 或 ALC。
+
+`ProjectCodeModuleIndexer` 只接受 `ProjectCodeArtifactPublicationReceipt`，扫描前后都通过 publisher 复验
+receipt、deterministic manifest 与 exact closed tree。inspector report 显式携带 credential 选定的 exact
+`Asharia.Editor` identity，因此 moduleless assembly 即使没有 Editor assembly reference 也能产生合法空索引。
+indexer 只使用 BCL `PEReader`/`MetadataReader`/`CustomAttribute.DecodeValue` 同时读取 implementation 与
+reference assembly；声明必须来自 exact contract 的 `EditorModuleAttribute`，type 必须是 public top-level sealed、
+non-abstract、non-generic、direct `EditorModule` subtype 并有 public parameterless constructor。双 assembly
+module surface、definition/type uniqueness 和 enum payload 必须完全一致。成功 index 只含 path-free declaration
+facts，identity 对等 publication root 稳定；空 index 不表示 load eligibility。它不写文件、不加载或执行 assembly，
+也不创建 ALC。
+
+`ProjectCodeStagingCandidateAdmitter` 同样只接受 publication receipt，并在内部重新调用 indexer，不接受
+caller-supplied index/entry/type/host policy。empty index fail closed；non-empty index 与 publication identity
+形成 path-free、content-addressed candidate identity，签发前 publication 必须再次 current。receipt 持有的
+publication absolute root 仍只是当前进程 locator，不参与 candidate identity；后继 consumer 可通过
+`IsCandidateCurrentAsync` 重新索引并对证完整 surface。candidate 仅允许后继 loader 开始预执行验证，不证明
+Collectible/Pinned/Static host、managed reload eligibility 或 activation 安全性。`.asmdef`、Package/Avalonia
+resources、NuGet lock、aggregate host、module Configure/activation 与完整 ALC generation 仍是后继边界。
+
+`ProjectCodeHostPolicySelector` 只接受 current staging candidate，不接受 caller-supplied host kind、
+replacement policy 或 reason。当前 v1 使用 external `dotnet build`，虽然 inspector 已把 closure 收紧为
+单 project assembly 与固定 Host/Framework references，但没有 resource/native/global-side-effect、线程/
+静态订阅或 cooperative-unload evidence；selector 因而对全部 activation/handover 组合 fail closed 到
+`Pinned + RestartRequired`。policy identity 只绑定 candidate id 与稳定 policy facts，继承的 publication root
+仍只是 locator。`IsPolicyCurrentAsync` 会重算 identity 并复验 candidate；该步骤不创建 ALC、不加载/实例化/
+Configure/Activate module，也不写文件。后继 load-image/loader 必须消费并复验该 receipt，不能临时升级为
+Collectible。
+
+`ProjectCodePinnedLoadImageBuilder` 只接受 current `ProjectCodeHostPolicyReceipt`。它在读取前后复验 policy，
+从 closed publication 只读 exact implementation DLL 与 portable PDB，每文件最多 256 MiB，并再次核对 size/hash。
+成功快照拥有两份字节，只返回不暴露底层 buffer 的新只读流；path-free image identity 绑定 policy id 与两文件
+evidence。builder 用 BCL `PEReader`/`MetadataReader` 检查 global `<Module>`，任何 `.cctor` 都以 typed
+diagnostic 拒绝，因为 CLR 加载 assembly 时会执行 module initializer。`IsSnapshotCurrentAsync` 重算 identity、
+复验 owned bytes、module initializer absence 与 policy currentness。该步骤不创建 ALC、不调用 CLR assembly
+load、不实例化/Configure/Activate module，也不写文件。
+
+`ProjectCodePinnedAssemblyLoader` 只接受 load-image snapshot，并在首次不可逆 load 前复验 currentness 与进程
+Default `Asharia.Editor` binding identity。loader owner 用一个 gate 和 project reservation 保证 same image
+并发/重复请求返回同一 host/Assembly/ALC；same project 的 different image 直接要求重启。首次 load 创建
+path-free、`isCollectible: false` 的 custom ALC，只调用 `LoadFromStream(implementation, portablePdb)`；
+dependency hook 固定返回 `null` 以共享 #311 已验证的 Default Host/framework closure，不做 path/private/native
+解析。host receipt 强持有 snapshot、ALC 与 exact Assembly，并核对 context、single root assembly、empty
+physical location、binding identity 与 MVID。ALC 创建后的任何受控失败保留 failed reservation，当前进程不
+重试；cancellation 只在 ALC 创建前生效。loader 不枚举/解析 type，不实例化/Configure/Activate module，也不写
+文件或推进 active/LKG。
+
+`ProjectCodePinnedModuleTypeResolver` 只消费 `ProjectCodePinnedAssemblyHost`，并只使用 host snapshot 内嵌的
+exact module index。它按 index 顺序对 pinned root `Assembly.GetType` 做 case-sensitive full-name lookup，
+再复核 exact root Assembly、full name、public top-level sealed non-generic concrete direct `EditorModule`
+shape 与 public parameterless constructor presence。immutable module-type set identity 只绑定 host id 与 index
+id，并持有 exact host/entry/Type。resolver 不枚举任意 type、不读取或实例化 attribute、不调用 constructor/
+Activator/Configure/Activate，也不写文件或推进 registry/active/LKG。
+
+`ProjectCodePinnedModuleConstructor` 只消费该 exact type set。它由显式 owner 以 per-project reservation
+串行第一次用户代码执行，并按 index 顺序调用 receipt 固定的 public parameterless
+`ConstructorInfo.Invoke(null)`。same lineage 重复/并发调用复用同一 result/set/objects；different lineage
+或 constructor failure 固定要求重启，失败 reservation 保留 partial objects 且不重试。该边界会执行目标
+module static/instance constructor，但不实例化 attribute、不调用 Configure/Activate、不做 I/O 或推进
+registry/active/LKG。API 保持同步且无 cancellation token，因为 CLR constructor 不能安全中断。
+
+`ProjectCodePinnedModuleConfigurator` 只消费 exact construction，并以独立 per-project reservation 串行首次
+Configure。它按 index 顺序创建绑定 entry definition id 的 `EditorModuleBuilder`，只调用一次 exact object
+的 `Configure()`，再 `Build()` immutable declaration；metadata 只投影 entry 的 type/definition/policy。
+same construction lineage 复用同一 result/set/declarations；different lineage 或 Configure/Build failure
+要求重启，失败 reservation 保留 objects/partial declarations 且不重试。该边界不重新构造、不读取 attribute、
+不 Activate、不做 I/O，也不创建 shared definition、registry transaction 或 active/LKG。
+
+`ProjectCodePinnedModuleDefinitionSet` 只消费 exact configuration，把逐 module metadata/object/declaration
+投影为共享 `EditorModuleDefinition`，同时保留 exact order 与 definition-id lookup。共享 definition 不再持有
+static registration/factory；built-in `StaticPackageGenerationHost` 仍负责自己的 factory/Configure，但将结果
+接到同一合同。该投影不执行用户代码，不需要 reservation/async/cancellation，也不进入 scope transaction、
+registry 或 activation。
+
+`ProjectCodePinnedModuleScopePreparer` 只接受明确的 Project `ScopeInstanceId`、registry 与 host-capability
+values；它不从 artifact 的 persistent ProjectId 构造 ProjectSession identity。preparer 复制 capability
+snapshot，使用现有 `EditorScopeTransaction.Prepare` 构建并复核不可见 candidate，把 structural failure
+转为 typed diagnostic。该边界不 Commit registry、不增加 reservation/owner/revision，不 Activate 或做 I/O。
+
+`ProjectCodePinnedModuleScopeCommitter` 只把上述 exact preparation 首次提交到空的 Project scope，并返回
+绑定 exact candidate partition reference 的显式 registration owner。owner 关闭时幂等退役自己的
+partition；如果 registry 已变化或同 scope 已有 partition，则返回 path-free conflict 并要求重新 Prepare；
+如果 successor 已替换当前 partition，retirement fail closed 且不会误删 successor。该边界仍不 Activate、
+不推进 current/active/LKG，也不实现 replacement、revision、catalog transaction 或前端接线。
+
+这些是 Application 层的产品策略，直接使用 .NET BCL 文件 API。Avalonia `IStorageProvider` 只负责用户文件
+选择、bookmark 和平台权限 UI；native Core File IO 服务于 C++ engine/runtime 的低层 IO 与事务，不反向成为
+Studio managed bootstrap 的依赖。
 
 ## 3. 核心原则
 
@@ -201,7 +375,11 @@ UI intent
 Extension 构建/加载：
 
 ```text
-Editor/ or Package
+externally selected EngineGenerationId + generation root
+  -> exact, revocable Editor Image inventory lease
+  -> exact, revocable managed build environment inventory lease
+  -> exact, revocable semantic build credential
+Editor/ or Package + credential
   -> optional asmdef + package metadata
   -> fingerprint + dotnet build
   -> staged AssemblyLoadContext
@@ -260,7 +438,16 @@ git diff --check
 
 - 八项目边界尚未落地；
 - 现有 Code-first contract 仍在 `Core`，built-in Feature 仍可访问 Shell implementation；
-- 项目 `Editor/`、`.asmdef`、Package 和 ALC pipeline 未实现；
+- Project Code 当前已落地 exact Editor Image、managed build environment inventory lease 与 Windows x64
+  semantic build credential、caller-bound 项目根 `Editor/**/*.cs` implicit SDK workspace，以及 credential-bound
+  isolated restore/build、immutable raw output、no-execute artifact metadata report 和 closed inspected artifact
+  publication、no-load dual-assembly module index、non-empty staging candidate admission 与 pre-load
+  `Pinned + RestartRequired` policy selection，以及有界、无 module initializer 的 owned pinned load-image
+  snapshot、loader-owned exact non-collectible binary host、exact indexed runtime Type receipt、at-most-once
+  constructed module objects、immutable configured declarations、shared definition projection、caller-supplied
+  ProjectSession scope 下的 invisible candidate，以及 empty-scope initial registry registration/exact retirement
+  owner，以及 exact-capability initial activation owner；正式 ProjectSession/manifest handoff、`.asmdef`、Package、
+  replacement/catalog commit 与完整 collectible ALC generation pipeline 尚未实现；
 - App shutdown 仍有 sync-over-async；
 - Game View、PlaySession 和 standalone orchestration 未完成；
 - Linux/macOS GPU presentation 尚未验证；

@@ -28,7 +28,9 @@ legacy `Editor.csproj` 仍包含 Avalonia、Shell、Dock、Feature、尚未提�
 
 完整的 Code-first authoring、tree、state、events 和 validation 现已编译进 dependency-free `Asharia.Editor`；其所需的 Diagnostics、Commands 和 Panels UI-neutral 前置合同也已成为公共 API。`Asharia.Editor` 还提供 declaration-only Panel contribution contract：稳定的 contribution/backend/factory-local ID、不可变 `EditorPanelDescriptor`、`EditorModuleBuilder.Panels`、module-local duplicate validation，以及随 `Build()` 一起冻结的有序只读快照。Panel scope 只来自 `EditorModuleDefinitionContext.DefinitionId.Scope`，descriptor 不重复保存 scope。
 
-Task 4 的 service/state 迁移已完成：background task、diagnostic record/service、Frame Debug snapshot/provider、editing command、lifecycle event、selection、transaction、scene/world snapshot/provider interface、backend-neutral Viewport identity/clock/render/scheduler/state、status message，以及 Panel lifecycle/frame sink contracts 已由 `Asharia.Editor` 唯一拥有；legacy service、Feature、ViewModel 和 Avalonia View 只消费这些公共合同。native Frame Debug payload/bridge、Viewport composition capability/native present transport、delegate-based `SceneProviderDescriptor`、provider registration/status、fixture provider implementation，以及 legacy `PanelDescriptor(Func<object>)`/`WorkbenchActionDescriptor` 仍在 compatibility Host，不是公共扩展 ABI。
+Task 4 的 service/state 迁移已完成：background task、diagnostic record/service、Frame Debug snapshot/provider、editing command、lifecycle event、selection、transaction、scene/world snapshot/provider interface、backend-neutral Viewport identity/clock/render/scheduler/state、status message，以及 Panel lifecycle/frame sink contracts 已由 `Asharia.Editor` 唯一拥有；legacy service、Feature、ViewModel 和 Avalonia View 只消费这些公共合同。UI-neutral provider registration/status/runtime host 已由 `Asharia.Studio.Application.Providers` 拥有；delegate-based `SceneProviderDescriptor` 与 fixture provider implementation 仍是 legacy compatibility seam，并只由 compatibility adapter 转换。native Frame Debug payload/bridge、Viewport composition capability/native present transport，以及 legacy `PanelDescriptor(Func<object>)`/`WorkbenchActionDescriptor` 仍不属于公共扩展 ABI。
+
+`Asharia.Studio.EngineBridge` 已建立 managed Scene World、entity lifecycle、local Transform 与 entity display-name boundary：ABI v1 World create/destroy、entity create/destroy/is-alive、local Transform get/set 和 entity-name get/set 使用 source-generated native import，Bridge 关闭 runtime marshalling 并只传递显式 unmanaged value 或调用期 pinned UTF-8 bytes；成功后只发布不透明、不可外泄的 World owner、`Asharia.Runtime.EntityId`、`TransformValue` 与 managed `string`。全部调用必须回到创建线程，错误线程与 native failure 都不丢失 World ownership，成功销毁后 exactly-once 清空。local Transform 的 finite/unit-quaternion validation 由 native ABI 唯一拥有，managed Bridge 不复制容差算法或静默 normalize/clamp；名称使用 strict UTF-8、最多 4096 bytes、caller-owned query/copy buffer，且始终只是 mutable/non-unique display/debug text。该边界没有 finalizer-driven cleanup，因为 native World 明确要求 owner-thread destroy；当前仍没有 snapshot provider、Application/ProjectSession wiring 或 native library deployment policy。
 
 Panel declaration 的 `ContentFactory` 是 `EditorFactoryLocalId`，不是 CLR factory 或 generation handle。未来 Host 必须在 staging 时把 Package generation、owner module definition 与 local ID 绑定为 generation-scoped runtime handle；当前仍没有 Panel registry、factory binding、Dock integration、Host resolver 或 runtime display。legacy `PanelDescriptor(Func<object>)` 只留在 `Editor` compatibility implementation，不是公共 ABI。
 
@@ -36,9 +38,9 @@ legacy `Editor` 通过 `ProjectReference` 消费这些公共合同，并继续�
 
 `Asharia.Studio.Application` 已建立只依赖 `Asharia.Editor` 的 kernel project boundary。首个 static generation Host 接收显式 registration，先拒绝 duplicate definition，再一次性创建 module definition object、执行一次 `Configure` 并冻结 declaration；只有全部成功时才返回可见 Host。它不做 reflection scan、file/assembly load、ALC、service resolution 或 Presentation/native ownership。matching Application tests 与 architecture gates 执行 configure-once、metadata identity、null factory、failure atomicity 和 dependency/source vocabulary 边界。
 
-`EditorModuleRegistry` 现拥有 committed scope partition map；`EditorScopeTransaction.Prepare` 捕获当前 registry snapshot，在不可见 candidate 中绑定 `EditorModuleInstanceId`，校验 definition/scope、required module、mixed module-capability cycle、Panel contribution ID、capability provider ambiguity 和 required capability provider。Project candidate 可以解析已提交的 Application definition/capability，但不能看到其他 Project scope。`Commit` 在锁内比较 snapshot identity 并一次替换完整 map；stale transaction 失败且不能覆盖较新的 commit。结构提交与 capability runtime availability 保持分离。
+`EditorModuleRegistry` 现拥有 committed scope partition map；`EditorScopeTransaction.Prepare` 捕获当前 registry snapshot，在不可见 candidate 中绑定 `EditorModuleInstanceId`，校验 definition/scope、required module、mixed module-capability cycle、Panel contribution ID、capability provider ambiguity 和 required capability provider。Project candidate 可以解析已提交的 Application definition/capability，但不能看到其他 Project scope。普通 `Commit` 在锁内比较 snapshot identity 并一次替换完整 map；stale transaction 失败且不能覆盖较新的 commit。Project Code 的 initial-registration 路径还要求目标 Project scope 在 captured snapshot 中不存在，并返回绑定 exact partition reference 的显式 registration owner；owner 关闭时用同一 registry lock compare-and-remove，幂等退役自己的 partition，并在发现 successor replacement 时 fail closed。首次激活会把 registration 所有权一次性转交给异步 activation owner；owner 先释放 module activation，再退役 exact partition。结构提交、activation lifetime、registration retirement 与 capability runtime availability 保持分离。
 
-`EditorModuleHost` 按 `ScopeInstanceId` single-flight activation，不同 Project scope 可以并发；每个 instance 记录 `Active`、`WaitingForCapability`、`Faulted` 或 `Blocked` outcome。required failure 只传播到 dependent chain，关闭按 dependents-first、reverse registration order 释放 activation lease。legacy executable 现在同时 ProjectReference `Asharia.Editor` 与 `Asharia.Studio.Application`，并且只有 `Shell/Compatibility/LegacyEditorModuleCompatibilityAdapter` 消费旧 `IEditorExtensionModule`：adapter 把 legacy built-in 映射为有序 Application definitions，activation/disposal 交给 Application Host，Panel/Action/Provider 的旧 registry 提交暂留 adapter，等待后续 service-owner 迁移。该 adapter 在 Task 8 built-in 全面采用公共 module API 后删除。
+`EditorModuleHost` 按 `ScopeInstanceId` single-flight activation，不同 Project scope 可以并发；同一 scope 只复用同一个 exact partition，Project Code 的首次激活入口还要求不存在已有 activation owner。Project Code 在转交 registration 前复核 runtime capability snapshot 与 Prepare 时的 capability ID 集合完全一致。每个 instance 记录 `Active`、`WaitingForCapability`、`Faulted` 或 `Blocked` outcome；`WaitingForCapability`/`Blocked` 是保留 owner 的 soft outcome，任何 `Faulted` 都返回 path-free typed failure，并按 activation-first 顺序清理。required failure 只传播到 dependent chain，关闭按 dependents-first、reverse registration order 释放 activation lease。legacy executable 现在同时 ProjectReference `Asharia.Editor` 与 `Asharia.Studio.Application`，并且只有 `Shell/Compatibility/LegacyEditorModuleCompatibilityAdapter` 消费旧 `IEditorExtensionModule`：adapter 把 legacy built-in 映射为有序 Application definitions，activation/disposal 交给 Application Host；Panel/Action 的旧 registry 提交暂留 adapter，legacy provider descriptor 则在此转换后提交给 Application provider host。该 adapter 在 Task 8 built-in 全面采用公共 module API 后删除。
 
 Selection 的合同与状态所有权已经分离：`IEditorSelectionService`、snapshot、item 和 event args 继续由 `Asharia.Editor.Selection` 作为公共 UI-neutral API 拥有；唯一 production `EditorSelectionService` 实现及其 focused behavior tests 已迁入 `Asharia.Studio.Application.Selection`。legacy Shell、Feature 和 ViewModel 通过 Application project reference 消费该实现，架构门禁禁止恢复 `Shell/Selection` owner。其余 UI-neutral service implementation 仍按 Task 5 Step 6 逐族迁移。
 
@@ -165,7 +167,7 @@ flowchart LR
 | `Asharia.Editor.Analyzers` | pinned Roslyn API、schema parser | Studio runtime implementation、Avalonia runtime、EngineBridge |
 | `Studio.Application` | Editor | Avalonia、P/Invoke、Presentation、BuiltIn Feature |
 | `Studio.EngineInterop` | Editor | Avalonia、P/Invoke implementation、Application policy |
-| `Studio.EngineBridge` | Editor、Application、EngineInterop | Avalonia、Dock、Feature View |
+| `Studio.EngineBridge` | Runtime.Contracts、Editor、Application、EngineInterop | Avalonia、Dock、Feature View |
 | `Studio.Presentation.Avalonia` | Editor、Editor.Avalonia、Application、EngineInterop | EngineBridge implementation、Feature 业务、P/Invoke |
 | `Studio.BuiltInExtensions` | Editor、Editor.Avalonia | Application、EngineBridge、Presentation implementation、App |
 | `Studio.App` | composition 所需项目 | Feature 业务实现、renderer command recording |
@@ -356,6 +358,18 @@ Platforms/MacOS/
 - native resource lease 和错误映射。
 
 P/Invoke struct、pointer 和 platform handle 不越过 Bridge/Interop 边界。构造函数不加载 DLL、不创建设备。
+
+当前最小落地只引用 `Asharia.Runtime.Contracts`：`SceneWorld` 持有 owner-thread-affine native World，
+公开 `CreateEntity()`、`DestroyEntity(EntityId)`、`IsAlive(EntityId)`、
+`GetLocalTransform(EntityId)`、`SetLocalTransform(EntityId, TransformValue)`、
+`GetEntityName(EntityId)` 与 `SetEntityName(EntityId, string)`，但不公开 native handle。
+非法零 ID 不进入 native destroy，stale generation 仍交给 native 判定；native success 若返回非法 ID 或
+非 0/1 liveness 值会被视为协议错误。local Transform 输入保持逐值透传，并由 native 返回
+`InvalidTransform`。名称读取先查询长度，再复制到最多 4096 bytes 的 managed buffer；写入只在同步调用期间
+pin strict UTF-8 bytes，native 在返回前复制。名称不具备 identity/path/uniqueness 语义；snapshot/query
+projection、Application composition 和 native library deployment 继续由后续独立 Slice 负责。
+
+当前 Scene World lifetime 仍由 ABI v1 create/destroy 与 owner-thread deterministic disposal 定义，entity/local Transform/name 调用共享同一 owner check。它有意不使用 `SafeHandle`/finalizer 作为 owner，因为 finalizer thread 不能满足 native create-thread destroy 合同；未来 Project/Edit/Play/Preview session 必须在自己的 owner execution context 上关闭 World。
 
 ## 10. Presentation 与 Built-in Extensions
 

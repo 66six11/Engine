@@ -29,9 +29,30 @@
 - artifact path 以 Package generation、目标 RID 和完整 input fingerprint 分代；
 - fingerprint 包含 source、`.asmdef`、Package lock、Editor API、SDK、analyzer/source generator 和 RID；
 - generated project 使用 canonical source root、`PathMap` 和 deterministic/CI build setting，不把 checkout/cache 绝对路径写入 artifact；
+- raw build product 在 candidate publication 或任何 assembly load 前，必须通过不执行代码的 PE/reference/PDB/dependency metadata inspection；检查只接受 build credential 和 current raw-output lease 已声明的文件与 identity；
+- 通过检查的四个 product 只能由 publisher 从 current raw-output lease 重新检查后，以 BCL bounded stream 复制并复验到全新、互不重叠的 staging root；`artifact.json` 与四个 product 构成 exact closed tree，完成后以一次 directory rename 发布；
+- 该 immutable publication 是 path-free、content-addressed build evidence，不是 loadable generation，不拥有 module index、`current`/`latest`、active/LKG 或 ALC；
+- 独立 module indexer 只消费 typed publication receipt，在扫描前后复验 exact closed tree，并用 BCL metadata 同时读取 implementation/reference assembly；它只接受 exact `Asharia.Editor` `EditorModuleAttribute` 与受限 direct `EditorModule` type shape，要求两份 declaration surface 一致，输出 path-free、content-addressed in-memory facts；空 index 合法但不代表 load eligibility；
+- staging candidate admitter 不接受 caller-supplied index；它从 publication receipt 重建 index，只为 non-empty current surface 签发 content-addressed receipt，并提供重新索引的 current check。publication root 只作为进程内 locator，不参与 candidate identity；receipt 不选择 ALC host，也不证明 managed reload eligibility；
+- host policy selector 只消费 current staging candidate，并在任何 load/ALC 创建前签发 path-free policy receipt。当前 v1 是 external-build、缺少 resource/native/global-side-effect 与 cooperative-unload evidence，因此所有 activation/handover 组合都固定为 `Pinned + RestartRequired`；`Handover` 只表达替换时序，不能单独升级为 Collectible。selector 不加载或执行 assembly，后继 loader 仍须重新验证 policy/candidate currentness；
+- pinned load-image builder 只消费 current `Pinned + RestartRequired` policy，在读取前后复验 policy，并把 publication 中 exact implementation DLL 与 portable PDB 读入有界、快照自有的只读字节；image identity 只绑定 policy 与两文件 size/hash，不绑定 locator。builder 用 BCL PE metadata 拒绝 global `<Module>` `.cctor`，因为 CLR load 会执行 module initializer；该快照不创建 ALC、不加载/执行 assembly，也不等于 loaded generation；
+- pinned assembly loader 只消费 current load-image，并以 loader-owned project reservation 串行跨过首次不可逆 load。它创建 path-free、non-collectible custom ALC，以 implementation/PDB stream 只加载 exact root assembly；same project/same image 幂等复用，different image 或 ALC 创建后的失败均要求进程重启。ALC dependency hook 只返回 `null` 以共享已验证的 Default Host/framework closure，不探测目录/private/native assets；host receipt 只固定 Assembly/ALC/runtime identity，不解析 module type，也不 Configure/Activate 或推进 active/LKG；
+- pinned module type resolver 只消费 pinned assembly host 及其内嵌 exact module index。它按 index 顺序对 root Assembly 做 case-sensitive full-name lookup，并复核 exact Assembly、full name、public top-level sealed non-generic concrete direct `EditorModule` shape 与 public parameterless constructor presence；receipt identity 只绑定 host/index。resolver 不枚举 assembly、不读取或实例化 attribute、不调用 constructor/Configure/Activate，也不推进 registry/active/LKG；
+- pinned module constructor 只消费 exact module-type set，并由显式 owner 以 per-project reservation 串行首次用户代码执行。它按 index 顺序调用 receipt 固定的 exact `ConstructorInfo.Invoke(null)`；same type-set 重复/并发调用复用同一 result/object，different type-set 或 constructor failure 要求重启。失败 reservation 保留已构造的 partial objects 且不重试；该阶段会执行目标 type/instance constructor，但仍不实例化 attribute、不 Configure/Activate、不写文件或推进 registry/active/LKG；
+- pinned module configurator 只消费 exact constructed-module set，并以独立 per-project reservation 按 index 顺序为每个 object 建立 `EditorModuleBuilder`、调用一次 `Configure()`、再 `Build()` immutable declaration。metadata 只投影 exact index entry；same construction lineage 幂等复用同一 declarations，different lineage 或 Configure/Build failure 要求重启。失败 reservation 保留原 objects 与 partial declarations 且不重试；该阶段不重构 object、不读取 attribute、不 Activate，也不创建 shared definition/registry/current/active/LKG；
+- pinned module definition set 是对 exact configured receipts 的纯内存投影。共享 `EditorModuleDefinition` 直接持有 metadata/module/declaration，不再反向持有 static registration/factory；set 保留 exact 顺序与 definition-id lookup。该阶段不执行用户代码，也不创建 scope transaction、registry partition 或 activation；
+- pinned module scope preparer 只接受未来 ProjectSession 显式提供的 Project `ScopeInstanceId` 与 host-capability value snapshot；它不把 persistent ProjectId 当 session identity。preparer 复用 `EditorScopeTransaction.Prepare` 对 exact definitions 构建不可见 candidate，并将 structural failure 转为 typed diagnostic；该阶段不 Commit registry、不 reservation，也不 Activate；
+- initial Project scope committer 只消费 exact preparation，并在 captured registry snapshot 仍有效且目标 scope 为空时首次提交 candidate。成功 receipt 是绑定 exact partition reference 的 registration owner；关闭时幂等 compare-and-remove 自己的 partition，发现 successor replacement 时 fail closed。stale、已有 scope 或重复消费返回 path-free conflict 并要求重新 Prepare；该阶段不 Activate、不推进 current/active/LKG，也不实现 replacement/revision/rollback observer；
+- initial Project scope activator 只消费仍持有 exact registration 的 owner，并要求 runtime capability snapshot 与 Prepare 时的 capability ID 集合完全一致。registration ownership 一次性转交给独占 `IAsyncDisposable` owner；`WaitingForCapability`/`Blocked` 是可持有 soft outcome，`Faulted`、取消或 Host failure 都按 activation-first、registration-retirement-second 清理。该阶段不创建正式 ProjectSession，不发布 contribution，也不推进 current/active/LKG 或实现 replacement/catalog；
 - build diagnostic 结构化投影到 Problems/Console；
 - `FileSystemWatcher` 只触发 debounce，重新计算 fingerprint 才决定是否构建；
 - 构建期间输入再次变化时取消或丢弃旧结果。
+
+这里采用 Unreal `FBuildProduct` 的 typed build-product receipt 与后续 stage/validation 分界，并采用 Godot
+managed tooling 中 build orchestration 与 assembly reload 分离的 owner 边界。当前 Asharia implicit Slice
+只有一个 credential-bound assembly，不复制 Unreal 的 native product taxonomy，也不引入 Stride
+AssemblyProcessor/Mono.Cecil 式 IL scan/rewrite。当前身份、引用闭包、reference marker、PDB/deps 与 module
+declaration 验证都由 .NET BCL `PEReader`/`MetadataReader` 完成，保持无第三方依赖、无执行路径。
 
 ### Identity and reload unit
 
@@ -67,6 +88,22 @@
 - `PackageGenerationHost` 是 ALC/module/assembly table 的 owner；Application/Project scope、registry/factory、Panel/UI、task 与 dependency lease 全部归零后才能 retire，只有 Collectible host 调用 unload；
 - host type 在执行 extension code 前按最严格 artifact/UI/native policy 选择；Pinned host 保留精确 transitive dependency generation lease 到进程退出，依赖更新同样要求 restart；
 - native library 或无法证明可卸载的模块标记 `restart-required`。
+
+当前 implicit Project Code 实现了该选择、load-image preflight 与 exact pinned binary residency 边界：UE 也把 module
+descriptor/current-configuration eligibility 与
+`FModuleManager` 的 binary load/initialization/unload 分开，O3DE 在 `ModuleManager` load 前显式选择初始化终点
+和是否 maintain reference；.NET 则在 ALC 创建时固定 collectible 属性。Asharia 因而不允许 binary loader 再按
+运行时猜测改变 #315 已签发的 residency/replacement policy，也不允许把会在 CLR load 时执行 global
+module initializer 的 binary 当作无执行快照通过。#316 固定并复验 exact bytes；#317 只将该 image 装入
+non-collectible ALC 并保持引用；#318 再把 #313 exact index 对证为 runtime `Type` receipt，但不构造任何对象。
+#319 在显式不可逆边界按 exact constructor receipt 至多一次地构造 module object，并把 failure 固定为
+restart-required；#320 再按 exact object/index 至多一次地执行 Configure 并冻结 declaration/metadata receipt。
+#321 将这些 receipts 投影为 static/dynamic 共用的 module definitions，但不进入 registry。#322 再在
+caller-supplied ProjectSession scope 下完成 combined structural validation 与 invisible candidate；
+#332 完成 empty-scope initial registry commit 与 exact registration retirement ownership；#333 再把该
+registration 一次性转交给独占异步 activation owner，复核 exact host-capability ID 集合，并在 `Faulted`、
+取消或 Host failure 时按 activation-first 顺序清理。正式 ProjectSession composition、replacement 与
+catalog commit 仍是后继边界。
 
 ### Generation replacement
 

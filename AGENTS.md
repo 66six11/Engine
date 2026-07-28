@@ -41,9 +41,25 @@
 - Include order: `<vulkan/...>` → `<...>` → `"asharia/..."` → other project headers (enforced by `.clang-format`).
 - No `vkDeviceWaitIdle` in render loops — only in shutdown, early MVP simplify paths, or debug probes (must be commented).
 
+## Engine-reference-first design
+
+- Before designing or implementing an engine, editor, runtime, rendering, asset, platform, or tooling feature, search for the corresponding Unreal Engine behavior and owner boundary first. Prefer Epic's public source/API documentation over secondary descriptions.
+- Cross-check the result against relevant open-source engines such as Godot, O3DE, or Bevy when they expose the same capability. Use Unity and other engines through authoritative public contracts when source is unavailable.
+- Record the adopted pattern, rejected behavior, and Asharia-specific reason in the governing ADR or architecture document. Do not copy another engine's API mechanically when it conflicts with package-first ownership, headless operation, C++23/Vulkan constraints, or the Avalonia Studio boundary.
+- Define a new Asharia-specific contract only when no relevant engine precedent exists or the checked precedents cannot satisfy a documented local requirement. State that evidence explicitly.
+
+## Implementation discipline
+
+- Keep code and implementation paths simple and reliable. Prefer the standard library and existing package boundaries before adding dependencies, frameworks, services, or custom infrastructure.
+- Minimize layers, mutable states, configuration branches, and implicit behavior. Make ownership, lifetime, data flow, and failure paths explicit.
+- Add an abstraction only when a current requirement demonstrates reuse, substitution, isolation, or testability that the abstraction materially improves. Do not design speculative extension points.
+- Prefer a small complete vertical slice over a broad framework. Validate the slice at its real boundary, then commit and synchronize it before accumulating the next independent change.
+- Preserve typed errors with actionable context, deterministic outputs, bounded resource use, and tests for both success and failure behavior. Reliability takes priority over cleverness or terseness.
+
 ## Naming & style
 
 - Types: `PascalCase`; functions/variables: `camelBack`; constants: `kPascalCase`; private members: `trailing_`.
+- Prefer domain-semantic, project-owned names. Do not embed third-party engine, framework, vendor, or product brands in project concepts, symbols, filenames, or abstractions unless the code is an explicit integration adapter or must preserve an external API/protocol name.
 - Constructors stay lightweight. Vulkan/OS/IO-failable work goes into explicit `create()` functions or factory methods.
 - No bare owning pointers, no bare `new`/`delete`. All GPU allocations go through VMA.
 - `VkResult` must never be ignored. Convert to project error types with context preserved.

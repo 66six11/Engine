@@ -1,0 +1,296 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.asharia.dev/package-runtime/package-lock-v2.schema.json",
+  "title": "Asharia Package Lockfile v2",
+  "description": "Canonical exact project package graph bound to one immutable Engine Distribution generation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "schemaVersion",
+    "resolver",
+    "inputs",
+    "roots",
+    "nodes"
+  ],
+  "properties": {
+    "schema": {
+      "const": "com.asharia.package-lock"
+    },
+    "schemaVersion": {
+      "const": 2
+    },
+    "resolver": {
+      "$ref": "#/$defs/resolver"
+    },
+    "inputs": {
+      "$ref": "#/$defs/inputs"
+    },
+    "roots": {
+      "$ref": "#/$defs/roots"
+    },
+    "nodes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/node"
+      }
+    }
+  },
+  "$defs": {
+    "integrity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "algorithm",
+        "digest"
+      ],
+      "properties": {
+        "algorithm": {
+          "const": "sha256"
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "resolver": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "policyVersion"
+      ],
+      "properties": {
+        "version": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/semanticVersion"
+        },
+        "policyVersion": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "engineInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "distributionId",
+        "engineApiVersion",
+        "engineGenerationId"
+      ],
+      "properties": {
+        "distributionId": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/packageId"
+        },
+        "engineApiVersion": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/semanticVersion"
+        },
+        "engineGenerationId": {
+          "type": "string",
+          "pattern": "^sha256-[0-9a-f]{64}$"
+        }
+      }
+    },
+    "inputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "engine",
+        "projectManifestIntegrity"
+      ],
+      "properties": {
+        "engine": {
+          "$ref": "#/$defs/engineInput"
+        },
+        "projectManifestIntegrity": {
+          "$ref": "#/$defs/integrity"
+        }
+      }
+    },
+    "packageKind": {
+      "enum": [
+        "installable-capability",
+        "feature-set"
+      ]
+    },
+    "exactNodeReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "packageKind"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/packageId"
+        },
+        "version": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/semanticVersion"
+        },
+        "packageKind": {
+          "$ref": "#/$defs/packageKind"
+        }
+      }
+    },
+    "roots": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "directPackages",
+        "directFeatureSets"
+      ],
+      "properties": {
+        "directPackages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/exactNodeReference"
+          }
+        },
+        "directFeatureSets": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/exactNodeReference"
+          }
+        }
+      }
+    },
+    "relativePath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?![A-Za-z]:)(?!.*\\\\).+$"
+    },
+    "engineDistributionSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "const": "engine-distribution"
+        }
+      }
+    },
+    "projectEmbeddedSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "relativePath"
+      ],
+      "properties": {
+        "kind": {
+          "const": "project-embedded"
+        },
+        "relativePath": {
+          "$ref": "#/$defs/relativePath"
+        }
+      }
+    },
+    "localSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "sourceId"
+      ],
+      "properties": {
+        "kind": {
+          "const": "local"
+        },
+        "sourceId": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/packageId"
+        }
+      }
+    },
+    "engineDistributedNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "packageKind",
+        "source",
+        "dependencies"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/packageId"
+        },
+        "version": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/semanticVersion"
+        },
+        "packageKind": {
+          "$ref": "#/$defs/packageKind"
+        },
+        "source": {
+          "$ref": "#/$defs/engineDistributionSource"
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/exactNodeReference"
+          }
+        }
+      }
+    },
+    "projectOwnedNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "packageKind",
+        "source",
+        "manifestIntegrity",
+        "payloadIntegrity",
+        "dependencies"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/packageId"
+        },
+        "version": {
+          "$ref": "package-contract-common-v1.schema.json#/$defs/semanticVersion"
+        },
+        "packageKind": {
+          "$ref": "#/$defs/packageKind"
+        },
+        "source": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/projectEmbeddedSource"
+            },
+            {
+              "$ref": "#/$defs/localSource"
+            }
+          ]
+        },
+        "manifestIntegrity": {
+          "$ref": "#/$defs/integrity"
+        },
+        "payloadIntegrity": {
+          "$ref": "#/$defs/integrity"
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/exactNodeReference"
+          }
+        }
+      }
+    },
+    "node": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/engineDistributedNode"
+        },
+        {
+          "$ref": "#/$defs/projectOwnedNode"
+        }
+      ]
+    }
+  }
+}

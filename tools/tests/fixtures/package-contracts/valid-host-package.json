@@ -1,0 +1,194 @@
+{
+  "schemaVersion": 2,
+  "packageKind": "installable-capability",
+  "id": "com.asharia.system.synthetic-hosted",
+  "version": "0.1.0",
+  "displayName": "Synthetic Hosted System",
+  "description": "Exercises deterministic Host Profile role and contribution filtering.",
+  "catalogType": "system",
+  "engineApi": {
+    "kind": "exact",
+    "version": "0.1.0"
+  },
+  "dependencies": [],
+  "options": [],
+  "modules": [
+    {
+      "id": "contract",
+      "role": "contract",
+      "dependsOn": [],
+      "hostKinds": [
+        "minimal",
+        "editor",
+        "runtime",
+        "dedicated-server",
+        "asset-worker"
+      ],
+      "platforms": [
+        "com.asharia.platform.any"
+      ],
+      "shippingClass": "runtime",
+      "requiredCapabilities": []
+    },
+    {
+      "id": "runtime",
+      "role": "runtime",
+      "dependsOn": [
+        "contract"
+      ],
+      "hostKinds": [
+        "editor",
+        "runtime",
+        "dedicated-server"
+      ],
+      "platforms": [
+        "com.asharia.platform.any"
+      ],
+      "shippingClass": "runtime",
+      "requiredCapabilities": []
+    },
+    {
+      "id": "implementation",
+      "role": "implementation",
+      "dependsOn": [
+        "contract"
+      ],
+      "hostKinds": [
+        "editor",
+        "runtime",
+        "dedicated-server"
+      ],
+      "platforms": [
+        "com.asharia.platform.any"
+      ],
+      "shippingClass": "runtime",
+      "requiredCapabilities": []
+    },
+    {
+      "id": "editor",
+      "role": "editor",
+      "dependsOn": [
+        "runtime"
+      ],
+      "hostKinds": [
+        "editor"
+      ],
+      "platforms": [
+        "com.asharia.platform.any"
+      ],
+      "shippingClass": "editor",
+      "requiredCapabilities": []
+    },
+    {
+      "id": "tool",
+      "role": "tool",
+      "dependsOn": [
+        "contract"
+      ],
+      "hostKinds": [
+        "editor",
+        "asset-worker"
+      ],
+      "platforms": [
+        "com.asharia.platform.any"
+      ],
+      "shippingClass": "tool",
+      "requiredCapabilities": []
+    },
+    {
+      "id": "cook",
+      "role": "cook",
+      "dependsOn": [
+        "tool"
+      ],
+      "hostKinds": [
+        "asset-worker"
+      ],
+      "platforms": [
+        "com.asharia.platform.any"
+      ],
+      "shippingClass": "tool",
+      "requiredCapabilities": []
+    },
+    {
+      "id": "diagnostics",
+      "role": "diagnostics",
+      "dependsOn": [
+        "contract"
+      ],
+      "hostKinds": [
+        "editor",
+        "asset-worker"
+      ],
+      "platforms": [
+        "com.asharia.platform.any"
+      ],
+      "shippingClass": "development-only",
+      "requiredCapabilities": []
+    },
+    {
+      "id": "content",
+      "role": "content",
+      "dependsOn": [
+        "contract"
+      ],
+      "hostKinds": [
+        "editor",
+        "runtime",
+        "dedicated-server",
+        "asset-worker"
+      ],
+      "platforms": [
+        "com.asharia.platform.any"
+      ],
+      "shippingClass": "runtime",
+      "requiredCapabilities": []
+    }
+  ],
+  "entryModules": {
+    "runtime": [
+      "runtime"
+    ],
+    "authoring": [
+      "editor"
+    ],
+    "cook": [
+      "cook"
+    ],
+    "diagnostics": [
+      "diagnostics"
+    ]
+  },
+  "contentRoots": [],
+  "contributions": [
+    {
+      "id": "com.asharia.contribution.synthetic-runtime",
+      "kind": "com.asharia.contribution.synthetic-service",
+      "module": "implementation",
+      "hostKinds": [
+        "editor",
+        "runtime",
+        "dedicated-server"
+      ],
+      "shippingClass": "runtime"
+    },
+    {
+      "id": "com.asharia.contribution.synthetic-editor",
+      "kind": "com.asharia.contribution.synthetic-panel",
+      "module": "editor",
+      "hostKinds": [
+        "editor"
+      ],
+      "shippingClass": "editor"
+    },
+    {
+      "id": "com.asharia.contribution.synthetic-asset",
+      "kind": "com.asharia.contribution.synthetic-importer",
+      "module": "tool",
+      "hostKinds": [
+        "asset-worker"
+      ],
+      "shippingClass": "tool"
+    }
+  ]
+}
