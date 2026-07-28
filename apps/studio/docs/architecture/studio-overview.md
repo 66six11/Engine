@@ -28,6 +28,10 @@ verifier，并可从 current inventory lease 投影 Distribution-bound managed b
 8/12/16/40-byte unmanaged values，并用显式 offsets 对齐 native C ABI；这些只是项目代码可引用的稳定
 value contracts，不包含 native function import、World handle、Scene provider、Avalonia dispatcher 或文件 IO。
 EngineBridge 当前提供 Scene World ABI v1 create/destroy、owner-thread deterministic disposal、复用 `Asharia.Runtime.EntityId` 的 entity create/destroy/is-alive、逐值传递 `TransformValue` 的 local Transform get/set，以及最多 4096-byte、caller-owned buffer 的 strict UTF-8 display-name get/set；它不暴露 native pointer，不使用 finalizer thread 销毁 thread-affine World，也不把名称当作 identity/path/unique key。snapshot/query projection、ProjectSession wiring 与 native library deployment 尚未提供。
+`Asharia.Editor.Projects` 已公开 UI-neutral 的 project-open session snapshot；`Asharia.Studio.Application`
+已严格解析 canonical bootstrap session v1 report，并以 typed failure 拒绝非法或非规范输入。该 parser
+不执行文件 IO、进程启动或状态归约；正式 report source、ProjectSession composition 和 Presentation wiring
+仍未提供。
 Project Code 还能把该 projection 复验为 semantic build credential，并为 caller 已规范化的项目根
 `Editor/**/*.cs` 原子生成 implicit SDK workspace，再使用 credential-bound dotnet closure 执行隔离
 restore/build 并发布四类 raw build output；current raw-output lease 现在还能经过无执行 artifact metadata
@@ -446,6 +450,8 @@ git diff --check
   app-local `WorkbenchActionDescriptor` 和 built-in Feature 对 Shell implementation 的访问尚未收敛；
 - `Asharia.Editor.Avalonia` public content backend、generation-scoped factory resolution 与 content lease
   尚未形成 production 闭环；
+- project-open session snapshot 与 canonical report parser 已落地，但正式 report source、Application
+  session owner、Shell/Project panel projection、Safe Mode 和修复动作尚未实现；
 - Project Code 当前已落地 exact Editor Image、managed build environment inventory lease 与 Windows x64
   semantic build credential、caller-bound 项目根 `Editor/**/*.cs` implicit SDK workspace，以及 credential-bound
   isolated restore/build、immutable raw output、no-execute artifact metadata report 和 closed inspected artifact

@@ -1,0 +1,20 @@
+{
+  "schema": "com.asharia.bootstrap-session",
+  "schemaVersion": 1,
+  "state": "Ready",
+  "nextAction": "ActivateProjectProfile",
+  "desiredSessionIntegrity": {
+    "algorithm": "sha256",
+    "digest": "3333333333333333333333333333333333333333333333333333333333333333"
+  },
+  "currentSessionIntegrity": {
+    "algorithm": "sha256",
+    "digest": "3333333333333333333333333333333333333333333333333333333333333333"
+  },
+  "project": {
+    "projectName": "Example",
+    "projectId": "6ad468bb-e099-46d4-a91b-911e86cf7188",
+    "assetSourceRootCount": 1
+  },
+  "diagnostics": []
+}

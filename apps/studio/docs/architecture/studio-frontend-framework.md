@@ -172,6 +172,8 @@ UI 不直接“同步写模型再等待系统追认”。新 revision 是 mutati
   尚无 keyed control reconcile，也不保证重建时保留 control identity、focus、IME composition 或 scroll；
 - `WorkbenchActionDescriptor`、menu、shortcut、Command Palette 与 command result 路径存在，但仍是 legacy app-local contract；
 - selection、transaction、dirty、diagnostic、background task、panel scheduler 和 lifecycle snapshot 已有公共或迁移中合同；
+- `Asharia.Editor.Projects` 已有 UI-neutral project-open session snapshot，`Asharia.Studio.Application` 已有
+  canonical bootstrap report 的严格 parser；两者都不拥有文件 IO、进程启动或 UI；
 - built-in XAML View 已使用 Avalonia + MVVM，但公开 `Asharia.Editor.Avalonia` content backend 尚未落地。
 
 ### 5.2 迁移目标
@@ -574,6 +576,9 @@ open project
 - 把 legacy `WorkbenchActionDescriptor` 收敛为 UI-neutral action + placement；
 - menu、toolbar、palette、shortcut 共享执行和 state；
 - event-driven updater 和 focus context smoke。
+
+Project-open session contract（#341）已作为 F1 与后续真实 Project UI 之间的独立前置 Slice 完成：
+Presentation 只消费 Application 提供的 snapshot，不读取报告文件、不运行 bootstrap，也不自行归约状态。
 
 ### F3：第一个 writable property
 
