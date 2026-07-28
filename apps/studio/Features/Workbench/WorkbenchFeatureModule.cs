@@ -16,6 +16,7 @@ using Editor.Features.FrameDebugger;
 using Editor.Features.Hierarchy.ViewModels;
 using Editor.Features.Inspector.ViewModels;
 using Editor.Features.Problems.ViewModels;
+using Editor.Features.Project.ViewModels;
 using Editor.Features.SceneView.ViewModels;
 using Editor.Features.UiStyle;
 using Editor.Shell.CodeFirstUI.Hosting;
@@ -170,6 +171,19 @@ public sealed class WorkbenchFeatureModule : IEditorFeatureModule
                 StatusText: "tool"),
 
             new PanelDescriptor(
+                "project",
+                "Project",
+                PanelKind.Tool,
+                EditorDockArea.Left,
+                "Window/Panels/Project",
+                DockContentCachePolicy.KeepAlive,
+                () => new ProjectPanelViewModel(),
+                IconKey: EditorIconKey.PanelProject,
+                Tag: "LEFT",
+                TitleDetail: "project content",
+                StatusText: "no project"),
+
+            new PanelDescriptor(
                 "inspector",
                 "Inspector",
                 PanelKind.Tool,
@@ -243,6 +257,7 @@ public sealed class WorkbenchFeatureModule : IEditorFeatureModule
         {
             "scene-view" => "viewport document",
             "hierarchy" => "scene tree outliner",
+            "project" => "project assets content browser",
             "inspector" => "properties selection",
             "console" => "log output diagnostics",
             "problems" => "validation diagnostics",

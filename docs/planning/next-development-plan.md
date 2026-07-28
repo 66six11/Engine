@@ -10,7 +10,7 @@
 
 - 已有 package-first 基线：`rendergraph` 后端无关，`rhi-vulkan` 不依赖 RenderGraph，Vulkan/RG 翻译在 `rhi_vulkan_rendergraph`，`renderer_basic` 不暴露 Vulkan。
 - Vulkan 主路径已覆盖 dynamic rendering、synchronization2 barrier、descriptor/pipeline wrapper、transient image pool、buffer upload、compute dispatch、offscreen RenderView、Frame Debug replay 和 editor viewport sampled texture。
-- Editor 已具备 production workbench shell、Scene View camera/grid/debug-line、Live RG View、Frame Debugger、Asset Browser snapshot-backed catalog 和多项 smoke。
+- Editor 已具备 production workbench shell、Scene View camera/grid/debug-line、Live RG View、Frame Debugger、Asset Browser snapshot-backed catalog 和多项 smoke；Avalonia Studio 已有 Shell-owned Workbench Bar、Default/Compact layout preset、Project 明确空状态以及 Hierarchy -> Inspector/Workbench Bar selection 联动，但尚未连接真实 project/asset service。
 - `asset-core` / `asset-pipeline` / `project-core` / `material-core` / `scene-core` 已是 CPU/headless 数据模型或 baseline package，但尚未形成“真实 scene object -> material/mesh/texture product -> GPU resource -> editor authoring”的完整闭环。
 - 当前风险不是缺少大系统名词，而是 route 太多：渲染、资产、scene、editor、material、play/session 必须按可验证切片合流。
 

@@ -40,6 +40,25 @@ public sealed class MainWindowXamlTests
         Assert.DoesNotContain("<vm:MainWindowViewModel/>", xaml);
     }
 
+    [Fact]
+    public void Workbench_bar_uses_compiled_context_bindings_and_explains_unavailable_controls()
+    {
+        var xaml = LoadMainWindowXaml();
+
+        Assert.Contains("x:DataType=\"vm:MainWindowViewModel\"", xaml);
+        Assert.Contains("Title=\"{Binding WindowTitle}\"", xaml);
+        Assert.Contains("Classes=\"workbench-bar\"", xaml);
+        Assert.Contains("Text=\"{Binding ProjectDisplayName}\"", xaml);
+        Assert.Contains("Text=\"{Binding DocumentDisplayName}\"", xaml);
+        Assert.Contains("Text=\"{Binding SelectionSummary}\"", xaml);
+        Assert.Contains("Text=\"{Binding EditorModeText}\"", xaml);
+        Assert.Contains("Text=\"{Binding BackgroundTaskSummary}\"", xaml);
+        Assert.Contains("Text=\"{Binding DiagnosticSummary}\"", xaml);
+        Assert.Contains("ToolTip.Tip=\"{Binding ToolUnavailableReason}\"", xaml);
+        Assert.Contains("ToolTip.Tip=\"{Binding SessionUnavailableReason}\"", xaml);
+        Assert.Contains("Command=\"{Binding ApplyCompactLayoutCommand}\"", xaml);
+    }
+
     private static string LoadMainWindowXaml()
     {
         return LoadSource("Shell", "Views", "Windowing", "MainWindow.axaml");

@@ -13,6 +13,7 @@ using Editor.Features.Console.ViewModels;
 using Editor.Features.Hierarchy.ViewModels;
 using Editor.Features.Inspector.ViewModels;
 using Editor.Features.Problems.ViewModels;
+using Editor.Features.Project.ViewModels;
 using Editor.Features.SceneView.ViewModels;
 using Editor.Features.Workbench;
 using Editor.Shell.CodeFirstUI.Hosting;
@@ -57,6 +58,17 @@ public sealed class WorkbenchFeatureModuleTests
                     "LEFT",
                     "selection source",
                     "tool"),
+                new PanelDescriptorSnapshot(
+                    "project",
+                    "Project",
+                    PanelKind.Tool,
+                    EditorDockArea.Left,
+                    "Window/Panels/Project",
+                    DockContentCachePolicy.KeepAlive,
+                    EditorIconKey.PanelProject,
+                    "LEFT",
+                    "project content",
+                    "no project"),
                 new PanelDescriptorSnapshot(
                     "inspector",
                     "Inspector",
@@ -117,11 +129,12 @@ public sealed class WorkbenchFeatureModuleTests
 
         Assert.IsType<SceneViewPanelViewModel>(descriptors[0].CreateContent());
         Assert.IsType<HierarchyPanelViewModel>(descriptors[1].CreateContent());
-        Assert.IsType<InspectorPanelViewModel>(descriptors[2].CreateContent());
-        Assert.IsType<ConsolePanelViewModel>(descriptors[3].CreateContent());
-        Assert.IsType<ProblemsPanelViewModel>(descriptors[4].CreateContent());
-        Assert.IsType<CodeFirstPanelHostViewModel>(descriptors[5].CreateContent());
+        Assert.IsType<ProjectPanelViewModel>(descriptors[2].CreateContent());
+        Assert.IsType<InspectorPanelViewModel>(descriptors[3].CreateContent());
+        Assert.IsType<ConsolePanelViewModel>(descriptors[4].CreateContent());
+        Assert.IsType<ProblemsPanelViewModel>(descriptors[5].CreateContent());
         Assert.IsType<CodeFirstPanelHostViewModel>(descriptors[6].CreateContent());
+        Assert.IsType<CodeFirstPanelHostViewModel>(descriptors[7].CreateContent());
     }
 
     [Fact]
@@ -166,6 +179,15 @@ public sealed class WorkbenchFeatureModuleTests
                     IconKey: EditorIconKey.PanelHierarchy,
                     Category: "Window",
                     SearchText: "scene tree outliner"),
+                new WorkbenchActionDescriptor(
+                    "workbench.panel.project",
+                    "Project",
+                    WorkbenchActionKind.OpenPanel,
+                    "Window/Panels/Project",
+                    TargetId: "project",
+                    IconKey: EditorIconKey.PanelProject,
+                    Category: "Window",
+                    SearchText: "project assets content browser"),
                 new WorkbenchActionDescriptor(
                     "workbench.panel.inspector",
                     "Inspector",

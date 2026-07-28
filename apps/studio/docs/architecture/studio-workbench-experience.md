@@ -1,6 +1,6 @@
 # Studio 生产工作台体验规范
 
-状态：Target（首批实现尚未完成）
+状态：Implemented baseline（Slice A / #338；后续 writable Inspector、tool/session 与 asset workflow 仍是 Target）
 
 更新日期：2026-07-28
 
@@ -50,19 +50,20 @@ find -> inspect -> select -> edit -> preview -> validate -> commit/undo
 - Shell 已有 Main Menu、Dock、Status Bar、Command Palette 和 Dialog；
 - Dock 已支持 tabs、splits、floating、drop guide 和布局持久化；
 - Application/Core 已有 selection、transaction、dirty、diagnostics 和 scene snapshot 基础；
-- 默认工作台已有 Hierarchy、Scene View、Inspector、Console、Problems、Frame Debugger 和 UI Style；
-- Hierarchy 到 Inspector 的 selection 同步和 Command Palette 已可工作。
+- Shell-owned Workbench Bar 与窗口标题已投影明确的 project/document 占位、Edit mode、selection、task 和 diagnostic 摘要；
+- 默认工作台使用 Shell-owned `Default` preset：Hierarchy 与 Project 左侧垂直分割、Scene View 居中、Inspector 右置，Diagnostics 默认折叠；
+- `Compact` preset 把 Hierarchy 与 Project 合并为 tab group，仍保留 Scene View 与 Inspector；
+- UI Style、Frame Debugger、Console 和 Problems 继续注册并可恢复，但不再由新默认布局创建；
+- Project 当前是 compiled XAML 空状态面板；尚未连接 project/asset service；
+- Hierarchy 到 Inspector 与 Workbench Bar 的 selection 同步和 Command Palette 已可工作。
 
 当前缺口：
 
-1. 顶部没有持续呈现 project/document、mode、tool、snap 和运行状态的工作台栏。
-2. Project/Asset 工作面没有进入默认组合，`find asset -> inspect/use` 路径中断。
-3. Inspector 主要是只读属性表，read-only、empty、dirty、invalid、locked 等状态不够明确。
-4. Scene View 缺少面板内工具栏和轻量 overlay；backend 失败会抢占主要视区。
-5. 同一诊断可同时以 Scene View 大消息、Console 行和 Status 文本出现，缺少 primary feedback 规则。
-6. 窗口标题没有 project、scene/document 与 dirty 上下文。
-7. UI Style 和 Frame Debugger 属于工具/诊断表面，不应默认与 Scene View 争夺生产主工作区。
-8. 小字号状态文本和空面板提示的对比度、可操作性不足。
+1. Project 仍只有显式空状态，`find asset -> inspect/use` 要等待真实 project/asset snapshot service。
+2. Inspector 主要是只读属性表，read-only、dirty、invalid、locked 等状态仍需随 writable property Slice 完成。
+3. Scene View 缺少面板内工具栏和轻量 overlay；backend 失败仍会占用主要视区。
+4. 同一诊断可同时以 Scene View 消息、Console 行和 Status 文本出现，仍需收敛 primary feedback 与重复聚合。
+5. Workbench Bar 的 Play、viewport tool 与 project action 仍按现有能力保持 disabled；只有相应 service/command 落地后才能启用。
 
 这些缺口优先通过现有系统的组合、状态投影和少量 Shell surface 解决；不以抽象通用 UI 框架作为前置条件。
 
@@ -332,6 +333,8 @@ Scene View 不直接执行 engine mutation。picking 产生 selection intent；g
 
 目标：只建立生产默认组合和可观察的全局 context，不触碰 scene mutation。
 
+状态：#338 已实现。布局 preset 由 Shell 持有，panel descriptor 继续只描述注册信息；保存布局优先于 preset，Reset 返回 `Default`。
+
 范围：
 
 - 新增 Shell-owned Workbench Bar；
@@ -340,6 +343,13 @@ Scene View 不直接执行 engine mutation。picking 产生 selection intent；g
 - 窗口标题投影 project/document/dirty 占位；
 - Workbench Bar 只显示已有状态；未实现 tool/mode command 明确 disabled；
 - 增加 design preview、ViewModel tests 和 shell smoke 断言。
+
+已运行验证：
+
+- Debug / Release `dotnet test apps\studio\Editor.sln`：各 508 tests passed；
+- compiled XAML build 覆盖 MainWindow 与 Project panel；
+- 人工 smoke：默认尺寸、Hierarchy -> Workbench Bar/Inspector selection、Compact preset、disabled reason 的 accessibility projection；
+- native editor smoke 不适用于本 Slice：改动只涉及 Avalonia Studio 托管前端，没有修改 C++、native bridge 或 native editor shell。
 
 不做：
 

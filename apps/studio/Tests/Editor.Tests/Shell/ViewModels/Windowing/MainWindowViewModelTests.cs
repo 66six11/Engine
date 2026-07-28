@@ -51,7 +51,8 @@ public sealed class MainWindowViewModelTests
             composition.PanelRegistry,
             composition.ActionRegistry,
             savedLayout: null,
-            selectionService);
+            selectionService,
+            uiDispatcher: new CapturingUiDispatcher(hasAccess: true));
         var hierarchy = Assert.IsType<HierarchyPanelViewModel>(
             viewModel.DockWorkspace.LeftWindow.Tabs.Single(tab => tab.Id == "hierarchy").Content);
         var inspector = Assert.IsType<InspectorPanelViewModel>(
@@ -63,6 +64,61 @@ public sealed class MainWindowViewModelTests
         Assert.Same(selectionService, viewModel.SelectionService);
         Assert.Equal("hierarchy", inspector.CurrentSelection.ActiveContextId);
         Assert.Equal("Demo Cube", inspector.Document?.Title);
+        Assert.Equal("Demo Cube", viewModel.SelectionSummary);
+    }
+
+    [Fact]
+    public void Workbench_context_uses_explicit_placeholders_and_tracks_shared_selection()
+    {
+        var selectionService = new EditorSelectionService();
+        var composition = CreateDefaultComposition(selectionService);
+        var viewModel = new MainWindowViewModel(
+            composition.PanelRegistry,
+            composition.ActionRegistry,
+            savedLayout: null,
+            selectionService,
+            uiDispatcher: new CapturingUiDispatcher(hasAccess: true),
+            defaultLayoutFactory: EditorWorkbenchLayoutPreset.CreateDefault);
+
+        Assert.Equal("No project", viewModel.ProjectDisplayName);
+        Assert.Equal("No document", viewModel.DocumentDisplayName);
+        Assert.False(viewModel.IsDocumentDirty);
+        Assert.Equal(
+            "No document — No project — Asharia Studio",
+            viewModel.WindowTitle);
+        Assert.Equal("Edit", viewModel.EditorModeText);
+        Assert.Equal("Nothing selected", viewModel.SelectionSummary);
+        Assert.Equal("No active tasks", viewModel.BackgroundTaskSummary);
+        Assert.Equal("No diagnostics", viewModel.DiagnosticSummary);
+
+        selectionService.ReplaceSelection(
+            "hierarchy",
+            [new EditorSelectionItem("scene:cube", "mesh", "Demo Cube")]);
+
+        Assert.Equal("Demo Cube", viewModel.SelectionSummary);
+    }
+
+    [Fact]
+    public void Workbench_context_selection_updates_on_ui_dispatcher()
+    {
+        var dispatcher = new CapturingUiDispatcher(hasAccess: false);
+        var selectionService = new EditorSelectionService();
+        var composition = CreateDefaultComposition(selectionService);
+        var viewModel = new MainWindowViewModel(
+            composition.PanelRegistry,
+            composition.ActionRegistry,
+            savedLayout: null,
+            selectionService,
+            uiDispatcher: dispatcher,
+            defaultLayoutFactory: EditorWorkbenchLayoutPreset.CreateDefault);
+
+        selectionService.ReplaceSelection(
+            "hierarchy",
+            [new EditorSelectionItem("scene:cube", "mesh", "Demo Cube")]);
+
+        Assert.Equal("Nothing selected", viewModel.SelectionSummary);
+        dispatcher.RunPostedActions();
+        Assert.Equal("Demo Cube", viewModel.SelectionSummary);
     }
 
     [Fact]
@@ -176,10 +232,10 @@ public sealed class MainWindowViewModelTests
         var viewModel = CreateMainWindowViewModel();
 
         Assert.Equal(
-            ["scene-view", "hierarchy", "inspector", "console", "problems", "frame-debugger", "ui-style"],
+            ["scene-view", "hierarchy", "project", "inspector", "console", "problems", "frame-debugger", "ui-style"],
             viewModel.PanelMenuItems.Select(item => item.PanelId));
         Assert.Equal(
-            ["Scene View", "Hierarchy", "Inspector", "Console", "Problems", "Frame Debugger", "UI Style"],
+            ["Scene View", "Hierarchy", "Project", "Inspector", "Console", "Problems", "Frame Debugger", "UI Style"],
             viewModel.PanelMenuItems.Select(item => item.Header));
     }
 
@@ -256,6 +312,25 @@ public sealed class MainWindowViewModelTests
         Assert.True(viewModel.IsStatusMessageError);
         Assert.Null(viewModel.LastStatusMessage);
         Assert.Equal(record.Message, viewModel.StatusMessageText);
+        Assert.Equal("1 error", viewModel.DiagnosticSummary);
+
+        diagnostics.Publish(
+            EditorDiagnosticSeverity.Warning,
+            EditorDiagnosticChannel.Problem,
+            "validation",
+            "scene",
+            "Fallback material used.");
+
+        Assert.Equal("1 error, 1 warning", viewModel.DiagnosticSummary);
+
+        diagnostics.Publish(
+            EditorDiagnosticSeverity.Warning,
+            EditorDiagnosticChannel.Problem,
+            "validation",
+            "scene",
+            "Fallback texture used.");
+
+        Assert.Equal("1 error, 2 warnings", viewModel.DiagnosticSummary);
     }
 
     [Fact]
@@ -475,6 +550,27 @@ public sealed class MainWindowViewModelTests
         Assert.Equal("Recent", viewModel.CommandPalette.FilteredItems[0].Title);
         Assert.Equal("Hierarchy", viewModel.CommandPalette.FilteredItems[1].Title);
         Assert.True(viewModel.DockWorkspace.ContainsPanel("hierarchy"));
+    }
+
+    [Theory]
+    [InlineData("frame-debugger")]
+    [InlineData("ui-style")]
+    public void Panel_menu_command_reopens_optional_tools_excluded_from_default_layout(
+        string panelId)
+    {
+        var composition = CreateDefaultComposition();
+        var viewModel = new MainWindowViewModel(
+            composition.PanelRegistry,
+            composition.ActionRegistry,
+            savedLayout: null,
+            uiDispatcher: new CapturingUiDispatcher(hasAccess: true),
+            defaultLayoutFactory: EditorWorkbenchLayoutPreset.CreateDefault);
+        var menuItem = viewModel.PanelMenuItems.Single(item => item.PanelId == panelId);
+        Assert.False(viewModel.DockWorkspace.ContainsPanel(panelId));
+
+        menuItem.OpenCommand.Execute(null);
+
+        Assert.True(viewModel.DockWorkspace.ContainsPanel(panelId));
     }
 
     [Fact]

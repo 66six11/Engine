@@ -560,12 +560,14 @@ open project
 - 新 panel 先按“低频标准 schema / XAML / code-only Avalonia”决策表选择 authoring；
 - 只有真实 consumer 与 profile 证明 full rebuild 不可接受时，才建立窄 keyed update Slice。
 
-### F1：Shell context（#338）
+### F1：Shell context（#338，已实现）
 
-- Workbench Bar 与 title 投影现有 snapshot；
-- 默认 panel composition；
-- disabled action/tool state 可解释；
-- 不新增 public registry。
+- Workbench Bar 与 title 投影现有 selection/task/diagnostic snapshot 和明确的 project/document 占位；
+- Shell-owned `Default` / `Compact` preset 编排默认 panel composition，保存布局继续优先；
+- UI Style、Frame Debugger 与折叠 Diagnostics 保持注册和可恢复，但不默认实例化；
+- disabled action/tool state 通过 tooltip/accessibility reason 可解释；
+- Project 使用 compiled XAML 显示真实空状态，不伪造 asset IO；
+- 未新增 public registry，也未把 layout/open state 放进 panel descriptor。
 
 ### F2：Action public contract
 

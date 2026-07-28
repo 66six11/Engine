@@ -18,6 +18,7 @@ namespace Editor.Shell.Views.Windowing;
 
 public partial class MainWindow : Window
 {
+    private const double CompactWorkbenchWidth = 1040;
     private const string MainWindowLifecycleSource = "main-window";
     private readonly List<MenuItem> generatedToolsMenuItems_ = [];
     private readonly List<MenuItem> generatedHelpMenuItems_ = [];
@@ -38,6 +39,7 @@ public partial class MainWindow : Window
         Deactivated += OnWindowDeactivated;
         Closing += OnWindowClosing;
         KeyDown += OnMainWindowKeyDown;
+        SizeChanged += OnMainWindowSizeChanged;
         DataContextChanged += OnMainWindowDataContextChanged;
         PanelsMenu.SubmenuOpened += OnPanelsMenuSubmenuOpened;
         EditorDockFloatingWindowRegistry.DockContentChanged += OnFloatingDockContentChanged;
@@ -56,6 +58,7 @@ public partial class MainWindow : Window
     protected override void OnClosed(EventArgs e)
     {
         KeyDown -= OnMainWindowKeyDown;
+        SizeChanged -= OnMainWindowSizeChanged;
         StopPanelFrameTimer();
         panelFrameTimer_.Tick -= OnPanelFrameTimerTick;
         Closing -= OnWindowClosing;
@@ -75,6 +78,11 @@ public partial class MainWindow : Window
         {
             viewModel.DockWorkspace.PanelFrameScheduler.Tick(DateTimeOffset.UtcNow);
         }
+    }
+
+    private void OnMainWindowSizeChanged(object? sender, SizeChangedEventArgs e)
+    {
+        PseudoClasses.Set(":compact", e.NewSize.Width < CompactWorkbenchWidth);
     }
 
     private async void OnWindowClosing(object? sender, WindowClosingEventArgs e)
