@@ -58,6 +58,8 @@ Panel frame scheduling 的 lifecycle context、update request、frame context �
 
 Command status projection 已开始从 legacy Shell 拆分：`EditorCommandStatusMessageRouter` 由 `Asharia.Studio.Application.Commands` 拥有，只包装公共 `IEditorGuiCommandExecutor` 并在 inner execution 返回后发布同一个 `EditorCommandExecutionResult`。legacy `WorkbenchCommandRouter` 继续拥有 descriptor registry/executor compatibility translation，但不再定义重复的 `IWorkbenchCommandRouter`；menu 与 shortcut consumers 也只依赖公共 executor。Avalonia `KeyGesture` parsing、Dock panel callback 和 legacy `WorkbenchActionDescriptor` 仍不得进入 Application。
 
+UI dispatcher 的最小跨层合同现由 `Asharia.Editor.Threading.IEditorUiDispatcher` 拥有：`CheckAccess` 只报告当前调用线程是否拥有目标 UI dispatcher，`Post` 只表达无需等待结果的异步投递。Avalonia adapter 继续由 Presentation/legacy Shell 拥有；`ImmediateEditorUiDispatcher` 也仍是 legacy 同步兼容默认值，不得被解释为 Application 的真实 UI 线程策略或跨线程调度保证。
+
 `Asharia.Editor.Dialogs` 现拥有七个 UI-neutral public type：severity、action role、稳定 action ID、action descriptor、request、completion kind 和 result。Action ID、role、default、destructive 与 completion 是相互独立的语义；request 构造会验证全部结构 invariant，并冻结输入 action 的防御性只读快照。公开的 action 声明顺序是确定的 diagnostics/test 顺序，不承诺 Windows、Linux 或 macOS 上的屏幕排列。
 
 现有 compatibility Dialog Host 已改为消费该公共合同；Presentation 仍拥有 overlay、focus、action projection 和 single-active-modal policy，第二个 active request 会被拒绝。用户触发的 system dismiss 结果仍与未来 operation cancellation 分离。`Editor.Core.Models.Dialogs` 已删除，且没有 wrapper、type forwarding 或重复 model。当前仍没有 dialog service、owner-window routing、custom content、platform ordering、localization、file picker、progress、notification 或 modal queue。

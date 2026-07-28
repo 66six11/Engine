@@ -31,16 +31,21 @@ public sealed class StudioLayeringTests
     }
 
     [Fact]
-    public void Editor_ui_dispatcher_contract_lives_in_core_abstractions()
+    public void Editor_ui_dispatcher_contract_lives_in_public_editor_api()
     {
         var root = FindRepositoryRoot();
 
         Assert.True(
-            File.Exists(Path.Combine(root, "Core", "Abstractions", "IEditorUiDispatcher.cs")),
-            "IEditorUiDispatcher is a cross-layer contract and should live in Core/Abstractions.");
+            File.Exists(Path.Combine(
+                root,
+                "src",
+                "Asharia.Editor",
+                "Threading",
+                "IEditorUiDispatcher.cs")),
+            "IEditorUiDispatcher is a public cross-layer contract and should live in Asharia.Editor.");
         Assert.False(
-            File.Exists(Path.Combine(root, "Shell", "Services", "IEditorUiDispatcher.cs")),
-            "Shell should keep AvaloniaEditorUiDispatcher as the implementation, not the dispatcher contract.");
+            File.Exists(Path.Combine(root, "Core", "Abstractions", "IEditorUiDispatcher.cs")),
+            "Legacy Core should consume the public dispatcher contract, not retain a duplicate.");
     }
 
     [Fact]

@@ -4,6 +4,7 @@ using Asharia.Studio.Application.Diagnostics;
 using Asharia.Editor.Diagnostics.FrameDebug;
 using Asharia.Editor.Panels;
 using Asharia.Editor.Selection;
+using Asharia.Editor.Threading;
 using Asharia.Editor.Worlds.Snapshots;
 using Editor.Core.Abstractions;
 using Editor.Core.Models.Extensions;

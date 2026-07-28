@@ -7,6 +7,7 @@ using Asharia.Studio.Application.Diagnostics;
 using Asharia.Editor.Lifecycle;
 using Asharia.Editor.Selection;
 using Asharia.Editor.Tasks;
+using Asharia.Editor.Threading;
 using Asharia.Editor.UI.CodeFirst.Abstractions;
 using Asharia.Studio.Application.Commands;
 using Avalonia;

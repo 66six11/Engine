@@ -71,6 +71,7 @@ try {
 
     $docPatterns = @(
         "^docs/",
+        "^apps/studio/docs/",
         "^README\.md$",
         "^AGENTS\.md$",
         "^\.github/pull_request_template\.md$",

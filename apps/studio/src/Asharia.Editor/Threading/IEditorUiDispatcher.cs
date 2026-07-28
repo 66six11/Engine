@@ -1,8 +1,8 @@
 using System;
 
-namespace Editor.Core.Abstractions;
+namespace Asharia.Editor.Threading;
 
-internal interface IEditorUiDispatcher
+public interface IEditorUiDispatcher
 {
     bool CheckAccess();
 
