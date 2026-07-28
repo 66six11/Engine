@@ -839,6 +839,32 @@ public sealed class GuiAvaloniaControlFactoryTests
         Assert.Equal("albedo roughness", commit.Text);
     }
 
+    [Fact]
+    public void Text_field_disposal_cancels_pending_debounced_commit()
+    {
+        var builder = new GuiFrameBuilder("ui-style");
+        builder.TextField(
+            "filter",
+            "Filter",
+            "gbuffer",
+            GuiTextInputCommitMode.Debounced,
+            TimeSpan.FromMilliseconds(150));
+        var host = new RecordingCodeFirstPanelHost();
+        var scheduler = new RecordingTextCommitScheduler();
+        var factory = new GuiAvaloniaControlFactory(host, scheduler);
+        var textBox = FindDescendant<TextBox>(factory.Build(builder.Build()));
+        Assert.NotNull(textBox);
+
+        textBox.Text = "albedo";
+        var trackingLease = Assert.IsAssignableFrom<IDisposable>(textBox.Tag);
+
+        trackingLease.Dispose();
+        scheduler.RunPending();
+
+        Assert.Single(host.TextChanges);
+        Assert.Empty(host.TextCommits);
+    }
+
     private static T? FindDescendant<T>(Control control, Predicate<T>? predicate = null)
         where T : Control
     {

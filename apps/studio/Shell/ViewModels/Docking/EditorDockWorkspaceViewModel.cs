@@ -18,7 +18,6 @@ namespace Editor.Shell.ViewModels.Docking;
 public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
 {
     private const string DynamicWindowIdPrefix = "owned-dock-window-";
-    private const string DynamicSplitIdPrefix = "split-user-";
     private const string LayoutNodeKindSplit = "Split";
     private const string LayoutNodeKindWindow = "Window";
     private readonly IPanelRegistry? panelRegistry_;
@@ -1473,29 +1472,7 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
 
     private static int GetNextDynamicSplitIndex(EditorDockNodeViewModel? node)
     {
-        var nextIndex = 1;
-        CollectNextDynamicSplitIndex(node, ref nextIndex);
-        return nextIndex;
-    }
-
-    private static void CollectNextDynamicSplitIndex(EditorDockNodeViewModel? node, ref int nextIndex)
-    {
-        if (node is not EditorDockSplitNodeViewModel split)
-        {
-            return;
-        }
-
-        if (split.Id.StartsWith(DynamicSplitIdPrefix, StringComparison.Ordinal))
-        {
-            var suffix = split.Id[DynamicSplitIdPrefix.Length..];
-            if (int.TryParse(suffix, out var index) && index >= nextIndex)
-            {
-                nextIndex = index + 1;
-            }
-        }
-
-        CollectNextDynamicSplitIndex(split.First, ref nextIndex);
-        CollectNextDynamicSplitIndex(split.Second, ref nextIndex);
+        return EditorDockLayoutGraph.GetNextDynamicSplitIndex(node);
     }
 
     private void InsertWindowNodeAtSplitter(
@@ -1503,429 +1480,35 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
         EditorDockWindowNodeViewModel insertedNode,
         EditorDockDropTarget target)
     {
-        if (!HasWeightedSplitLengths(targetSplit))
-        {
-            InsertWindowNodeAtSplitterLocally(targetSplit, insertedNode, target);
-            return;
-        }
-
-        var entries = CreateSplitterInsertEntries(targetSplit, out var insertIndex);
-        if (!TryInsertWeightedNode(entries, insertIndex, insertedNode))
-        {
-            return;
-        }
-
-        var rebuilt = BuildWeightedSplit(targetSplit.Orientation, entries, 0, entries.Count, out _);
-        if (rebuilt is not EditorDockSplitNodeViewModel rebuiltSplit)
-        {
-            return;
-        }
-
-        targetSplit.First = rebuiltSplit.First;
-        targetSplit.Second = rebuiltSplit.Second;
-        targetSplit.FirstLength = rebuiltSplit.FirstLength;
-        targetSplit.SecondLength = rebuiltSplit.SecondLength;
-    }
-
-    private void InsertWindowNodeAtSplitterLocally(
-        EditorDockSplitNodeViewModel targetSplit,
-        EditorDockWindowNodeViewModel insertedNode,
-        EditorDockDropTarget target)
-    {
-        var replacement = CreateLocalSplitterInsertionSplit(targetSplit, insertedNode, target);
-        ReplaceNode(targetSplit, replacement);
+        RootNode = EditorDockLayoutGraph.InsertWindowNodeAtSplitter(
+            RootNode,
+            targetSplit,
+            insertedNode,
+            target,
+            CreateDynamicSplitId);
     }
 
     private void InsertWindowNodeAtWorkspaceEdge(
         EditorDockDropOperation operation,
         EditorDockWindowNodeViewModel insertedNode)
     {
-        if (RootNode is null)
-        {
-            RootNode = insertedNode;
-            return;
-        }
-
-        var currentRoot = RootNode;
-        RootNode = operation switch
-        {
-            EditorDockDropOperation.InsertWorkspaceLeft => new EditorDockSplitNodeViewModel(
-                CreateDynamicSplitId(),
-                Orientation.Horizontal,
-                insertedNode,
-                currentRoot,
-                GetInsertedWorkspaceSideEdgeLength(),
-                GetRetainedWorkspaceSideEdgeLength()),
-            EditorDockDropOperation.InsertWorkspaceRight => new EditorDockSplitNodeViewModel(
-                CreateDynamicSplitId(),
-                Orientation.Horizontal,
-                currentRoot,
-                insertedNode,
-                GetRetainedWorkspaceSideEdgeLength(),
-                GetInsertedWorkspaceSideEdgeLength()),
-            EditorDockDropOperation.InsertWorkspaceTop => new EditorDockSplitNodeViewModel(
-                CreateDynamicSplitId(),
-                Orientation.Vertical,
-                insertedNode,
-                currentRoot,
-                GetInsertedEdgeLength(),
-                GetRetainedEdgeLength()),
-            EditorDockDropOperation.InsertWorkspaceBottom => new EditorDockSplitNodeViewModel(
-                CreateDynamicSplitId(),
-                Orientation.Vertical,
-                currentRoot,
-                insertedNode,
-                GetRetainedEdgeLength(),
-                GetInsertedEdgeLength()),
-            _ => currentRoot,
-        };
+        RootNode = EditorDockLayoutGraph.InsertWindowNodeAtWorkspaceEdge(
+            RootNode,
+            operation,
+            insertedNode,
+            CreateDynamicSplitId);
     }
 
     private string CreateDynamicSplitId()
     {
-        return $"{DynamicSplitIdPrefix}{nextDynamicSplitIndex_++}";
-    }
-
-    private static GridLength GetInsertedEdgeLength()
-    {
-        return new GridLength(1, GridUnitType.Star);
-    }
-
-    private static GridLength GetInsertedWorkspaceSideEdgeLength()
-    {
-        return new GridLength(1, GridUnitType.Star);
-    }
-
-    private static GridLength GetRetainedWorkspaceSideEdgeLength()
-    {
-        return new GridLength(4, GridUnitType.Star);
-    }
-
-    private static GridLength GetInsertedWindowSplitLength()
-    {
-        return new GridLength(1, GridUnitType.Star);
-    }
-
-    private static GridLength GetRetainedWindowSplitLength()
-    {
-        return new GridLength(1, GridUnitType.Star);
-    }
-
-    private static GridLength GetRetainedEdgeLength()
-    {
-        return new GridLength(2, GridUnitType.Star);
-    }
-
-    private static double GetSplitWeight(GridLength length)
-    {
-        if (!length.IsStar || double.IsNaN(length.Value) || double.IsInfinity(length.Value) || length.Value <= 0)
-        {
-            return 1d;
-        }
-
-        return Math.Clamp(length.Value, 0.05d, 16d);
-    }
-
-    private static bool HasWeightedSplitLengths(EditorDockSplitNodeViewModel split)
-    {
-        return HasWeightedSplitLength(split.FirstLength)
-            && HasWeightedSplitLength(split.SecondLength);
-    }
-
-    private static bool HasWeightedSplitLength(GridLength length)
-    {
-        return length.IsStar
-            && !double.IsNaN(length.Value)
-            && !double.IsInfinity(length.Value)
-            && length.Value > 0;
-    }
-
-    private EditorDockSplitNodeViewModel CreateLocalSplitterInsertionSplit(
-        EditorDockSplitNodeViewModel targetSplit,
-        EditorDockWindowNodeViewModel insertedNode,
-        EditorDockDropTarget target)
-    {
-        if (TryCreateSymmetricLocalSplitterInsertion(targetSplit, insertedNode, out var symmetricSplit))
-        {
-            return symmetricSplit;
-        }
-
-        if (TryCreateMeasuredLocalSplitterInsertion(targetSplit, insertedNode, target, out var measuredSplit))
-        {
-            return measuredSplit;
-        }
-
-        return HasWeightedSplitLength(targetSplit.SecondLength) || !HasWeightedSplitLength(targetSplit.FirstLength)
-            ? CreateTrailingLocalSplitterInsertion(targetSplit, insertedNode)
-            : CreateLeadingLocalSplitterInsertion(targetSplit, insertedNode);
-    }
-
-    private bool TryCreateMeasuredLocalSplitterInsertion(
-        EditorDockSplitNodeViewModel targetSplit,
-        EditorDockWindowNodeViewModel insertedNode,
-        EditorDockDropTarget target,
-        out EditorDockSplitNodeViewModel replacement)
-    {
-        replacement = null!;
-        if (target.SplitterFirstExtent is not { } firstExtent
-            || target.SplitterSecondExtent is not { } secondExtent
-            || firstExtent <= 0
-            || secondExtent <= 0)
-        {
-            return false;
-        }
-
-        var retainedFirstLength = new GridLength(firstExtent / 2d, GridUnitType.Star);
-        var insertedLength = new GridLength((firstExtent + secondExtent) / 2d, GridUnitType.Star);
-        var retainedSecondLength = new GridLength(secondExtent / 2d, GridUnitType.Star);
-        var trailingGroupLength = AddSplitLengths(insertedLength, retainedSecondLength);
-        var trailingGroup = new EditorDockSplitNodeViewModel(
-            CreateDynamicSplitId(),
-            targetSplit.Orientation,
-            insertedNode,
-            targetSplit.Second,
-            insertedLength,
-            retainedSecondLength);
-
-        replacement = new EditorDockSplitNodeViewModel(
-            targetSplit.Id,
-            targetSplit.Orientation,
-            targetSplit.First,
-            trailingGroup,
-            retainedFirstLength,
-            trailingGroupLength);
-        return true;
-    }
-
-    private bool TryCreateSymmetricLocalSplitterInsertion(
-        EditorDockSplitNodeViewModel targetSplit,
-        EditorDockWindowNodeViewModel insertedNode,
-        out EditorDockSplitNodeViewModel replacement)
-    {
-        replacement = null!;
-        if (!CanScaleSplitLength(targetSplit.FirstLength)
-            || !CanScaleSplitLength(targetSplit.SecondLength)
-            || targetSplit.FirstLength.GridUnitType != targetSplit.SecondLength.GridUnitType)
-        {
-            return false;
-        }
-
-        var retainedFirstLength = ScaleSplitLength(targetSplit.FirstLength, 0.5d);
-        var insertedFromFirstLength = ScaleSplitLength(targetSplit.FirstLength, 0.5d);
-        var insertedFromSecondLength = ScaleSplitLength(targetSplit.SecondLength, 0.5d);
-        var retainedSecondLength = ScaleSplitLength(targetSplit.SecondLength, 0.5d);
-        var insertedLength = AddSplitLengths(insertedFromFirstLength, insertedFromSecondLength);
-        var trailingGroupLength = AddSplitLengths(insertedLength, retainedSecondLength);
-        var trailingGroup = new EditorDockSplitNodeViewModel(
-            CreateDynamicSplitId(),
-            targetSplit.Orientation,
-            insertedNode,
-            targetSplit.Second,
-            insertedLength,
-            retainedSecondLength);
-
-        replacement = new EditorDockSplitNodeViewModel(
-            targetSplit.Id,
-            targetSplit.Orientation,
-            targetSplit.First,
-            trailingGroup,
-            retainedFirstLength,
-            trailingGroupLength);
-        return true;
-    }
-
-    private EditorDockSplitNodeViewModel CreateTrailingLocalSplitterInsertion(
-        EditorDockSplitNodeViewModel targetSplit,
-        EditorDockWindowNodeViewModel insertedNode)
-    {
-        var trailingGroup = new EditorDockSplitNodeViewModel(
-            CreateDynamicSplitId(),
-            targetSplit.Orientation,
-            insertedNode,
-            targetSplit.Second,
-            new GridLength(1, GridUnitType.Star),
-            new GridLength(1, GridUnitType.Star));
-
-        return new EditorDockSplitNodeViewModel(
-            targetSplit.Id,
-            targetSplit.Orientation,
-            targetSplit.First,
-            trailingGroup,
-            targetSplit.FirstLength,
-            targetSplit.SecondLength);
-    }
-
-    private EditorDockSplitNodeViewModel CreateLeadingLocalSplitterInsertion(
-        EditorDockSplitNodeViewModel targetSplit,
-        EditorDockWindowNodeViewModel insertedNode)
-    {
-        var leadingGroup = new EditorDockSplitNodeViewModel(
-            CreateDynamicSplitId(),
-            targetSplit.Orientation,
-            targetSplit.First,
-            insertedNode,
-            new GridLength(1, GridUnitType.Star),
-            new GridLength(1, GridUnitType.Star));
-
-        return new EditorDockSplitNodeViewModel(
-            targetSplit.Id,
-            targetSplit.Orientation,
-            leadingGroup,
-            targetSplit.Second,
-            targetSplit.FirstLength,
-            targetSplit.SecondLength);
-    }
-
-    private static bool CanScaleSplitLength(GridLength length)
-    {
-        return !double.IsNaN(length.Value)
-            && !double.IsInfinity(length.Value)
-            && length.Value > 0
-            && length.GridUnitType is GridUnitType.Star or GridUnitType.Pixel;
-    }
-
-    private static GridLength ScaleSplitLength(GridLength length, double factor)
-    {
-        var scaledValue = length.Value * factor;
-        var minValue = length.GridUnitType == GridUnitType.Star ? 0.05d : 1d;
-        return new GridLength(Math.Max(minValue, scaledValue), length.GridUnitType);
-    }
-
-    private static GridLength AddSplitLengths(GridLength first, GridLength second)
-    {
-        return new GridLength(first.Value + second.Value, first.GridUnitType);
-    }
-
-    private static List<WeightedDockNode> CreateSplitterInsertEntries(
-        EditorDockSplitNodeViewModel targetSplit,
-        out int insertIndex)
-    {
-        var entries = new List<WeightedDockNode>();
-        var firstWeight = GetSplitWeight(targetSplit.FirstLength);
-        var secondWeight = GetSplitWeight(targetSplit.SecondLength);
-        CollectWeightedSplitChildren(targetSplit.First, targetSplit.Orientation, firstWeight, entries);
-        insertIndex = entries.Count;
-        CollectWeightedSplitChildren(targetSplit.Second, targetSplit.Orientation, secondWeight, entries);
-        return entries;
-    }
-
-    private static bool TryInsertWeightedNode(
-        List<WeightedDockNode> entries,
-        int insertIndex,
-        EditorDockWindowNodeViewModel insertedNode)
-    {
-        if (insertIndex <= 0 || insertIndex >= entries.Count)
-        {
-            return false;
-        }
-
-        var left = entries[insertIndex - 1];
-        var right = entries[insertIndex];
-        entries[insertIndex - 1] = left with { Weight = left.Weight * 0.5d };
-        entries.Insert(insertIndex, new WeightedDockNode(insertedNode, (left.Weight + right.Weight) * 0.5d));
-        entries[insertIndex + 1] = right with { Weight = right.Weight * 0.5d };
-        return true;
+        return $"{EditorDockLayoutGraph.DynamicSplitIdPrefix}{nextDynamicSplitIndex_++}";
     }
 
     private static bool IsSplitterInsertNoOp(
         EditorDockSplitNodeViewModel targetSplit,
         EditorDockWindowViewModel sourceWindow)
     {
-        if (sourceWindow.Tabs.Count != 1)
-        {
-            return false;
-        }
-
-        var entries = CreateSplitterInsertEntries(targetSplit, out var insertIndex);
-        return insertIndex > 0
-            && insertIndex < entries.Count
-            && (IsWindowEntry(entries[insertIndex - 1], sourceWindow)
-                || IsWindowEntry(entries[insertIndex], sourceWindow));
-    }
-
-    private static bool IsWindowEntry(
-        WeightedDockNode entry,
-        EditorDockWindowViewModel window)
-    {
-        return entry.Node is EditorDockWindowNodeViewModel windowNode
-            && ReferenceEquals(windowNode.Window, window);
-    }
-
-    private static void CollectWeightedSplitChildren(
-        EditorDockNodeViewModel node,
-        Orientation orientation,
-        double weight,
-        List<WeightedDockNode> children)
-    {
-        if (node is not EditorDockSplitNodeViewModel split
-            || split.Orientation != orientation
-            || !HasWeightedSplitLengths(split))
-        {
-            children.Add(new WeightedDockNode(node, weight));
-            return;
-        }
-
-        var firstWeight = GetSplitWeight(split.FirstLength);
-        var secondWeight = GetSplitWeight(split.SecondLength);
-        var totalWeight = firstWeight + secondWeight;
-        CollectWeightedSplitChildren(split.First, orientation, weight * firstWeight / totalWeight, children);
-        CollectWeightedSplitChildren(split.Second, orientation, weight * secondWeight / totalWeight, children);
-    }
-
-    private EditorDockNodeViewModel BuildWeightedSplit(
-        Orientation orientation,
-        IReadOnlyList<WeightedDockNode> children,
-        int start,
-        int count,
-        out double weight)
-    {
-        if (count == 1)
-        {
-            weight = children[start].Weight;
-            return children[start].Node;
-        }
-
-        var splitCount = GetWeightedSplitCount(children, start, count);
-        var first = BuildWeightedSplit(orientation, children, start, splitCount, out var firstWeight);
-        var second = BuildWeightedSplit(orientation, children, start + splitCount, count - splitCount, out var secondWeight);
-        weight = firstWeight + secondWeight;
-        return new EditorDockSplitNodeViewModel(
-            CreateDynamicSplitId(),
-            orientation,
-            first,
-            second,
-            new GridLength(firstWeight, GridUnitType.Star),
-            new GridLength(secondWeight, GridUnitType.Star));
-    }
-
-    private static int GetWeightedSplitCount(
-        IReadOnlyList<WeightedDockNode> children,
-        int start,
-        int count)
-    {
-        var totalWeight = 0d;
-        for (var index = start; index < start + count; index++)
-        {
-            totalWeight += children[index].Weight;
-        }
-
-        var bestCount = 1;
-        var bestDistance = double.PositiveInfinity;
-        var runningWeight = 0d;
-        for (var splitCount = 1; splitCount < count; splitCount++)
-        {
-            runningWeight += children[start + splitCount - 1].Weight;
-            var distance = Math.Abs((totalWeight / 2d) - runningWeight);
-            if (distance >= bestDistance)
-            {
-                continue;
-            }
-
-            bestDistance = distance;
-            bestCount = splitCount;
-        }
-
-        return bestCount;
+        return EditorDockLayoutGraph.IsSplitterInsertNoOp(targetSplit, sourceWindow);
     }
 
     private EditorDockSplitNodeViewModel CreateWindowInsertionSplit(
@@ -1933,76 +1516,28 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
         EditorDockWindowNodeViewModel targetNode,
         EditorDockWindowNodeViewModel insertedNode)
     {
-        return operation switch
-        {
-            EditorDockDropOperation.InsertLeft => new EditorDockSplitNodeViewModel(
-                CreateDynamicSplitId(),
-                Orientation.Horizontal,
-                insertedNode,
-                targetNode,
-                GetInsertedWindowSplitLength(),
-                GetRetainedWindowSplitLength()),
-            EditorDockDropOperation.InsertRight => new EditorDockSplitNodeViewModel(
-                CreateDynamicSplitId(),
-                Orientation.Horizontal,
-                targetNode,
-                insertedNode,
-                GetRetainedWindowSplitLength(),
-                GetInsertedWindowSplitLength()),
-            EditorDockDropOperation.InsertTop => new EditorDockSplitNodeViewModel(
-                CreateDynamicSplitId(),
-                Orientation.Vertical,
-                insertedNode,
-                targetNode,
-                GetInsertedWindowSplitLength(),
-                GetRetainedWindowSplitLength()),
-            EditorDockDropOperation.InsertBottom => new EditorDockSplitNodeViewModel(
-                CreateDynamicSplitId(),
-                Orientation.Vertical,
-                targetNode,
-                insertedNode,
-                GetRetainedWindowSplitLength(),
-                GetInsertedWindowSplitLength()),
-            _ => new EditorDockSplitNodeViewModel(
-                CreateDynamicSplitId(),
-                Orientation.Horizontal,
-                targetNode,
-                insertedNode,
-                GetRetainedWindowSplitLength(),
-                GetInsertedWindowSplitLength()),
-        };
+        return EditorDockLayoutGraph.CreateWindowInsertionSplit(
+            operation,
+            targetNode,
+            insertedNode,
+            CreateDynamicSplitId);
     }
 
     private static bool IsWindowInsertOperation(EditorDockDropOperation operation)
     {
-        return operation is EditorDockDropOperation.InsertLeft
-            or EditorDockDropOperation.InsertRight
-            or EditorDockDropOperation.InsertTop
-            or EditorDockDropOperation.InsertBottom;
+        return EditorDockLayoutGraph.IsWindowInsertOperation(operation);
     }
 
     private static bool IsWorkspaceEdgeInsertOperation(EditorDockDropOperation operation)
     {
-        return operation is EditorDockDropOperation.InsertWorkspaceLeft
-            or EditorDockDropOperation.InsertWorkspaceRight
-            or EditorDockDropOperation.InsertWorkspaceTop
-            or EditorDockDropOperation.InsertWorkspaceBottom;
+        return EditorDockLayoutGraph.IsWorkspaceEdgeInsertOperation(operation);
     }
 
-    private EditorDockSplitNodeViewModel? FindSplitNode(EditorDockNodeViewModel? node, string splitId)
+    private static EditorDockSplitNodeViewModel? FindSplitNode(
+        EditorDockNodeViewModel? node,
+        string splitId)
     {
-        if (node is not EditorDockSplitNodeViewModel split)
-        {
-            return null;
-        }
-
-        if (split.Id == splitId)
-        {
-            return split;
-        }
-
-        return FindSplitNode(split.First, splitId)
-            ?? FindSplitNode(split.Second, splitId);
+        return EditorDockLayoutGraph.FindSplitNode(node, splitId);
     }
 
     private void RemoveWindowIfEmpty(EditorDockWindowViewModel window)
@@ -2052,144 +1587,29 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
         out bool isFirstChild,
         out EditorDockWindowNodeViewModel? windowNode)
     {
-        if (node is EditorDockWindowNodeViewModel window && window.Window.Id == windowId)
-        {
-            parentSplit = parent;
-            isFirstChild = parent is not null && ReferenceEquals(parent.First, node);
-            windowNode = window;
-            return true;
-        }
-
-        if (node is EditorDockSplitNodeViewModel split)
-        {
-            if (TryFindWindowNode(split.First, windowId, split, out parentSplit, out isFirstChild, out windowNode))
-            {
-                return true;
-            }
-
-            if (TryFindWindowNode(split.Second, windowId, split, out parentSplit, out isFirstChild, out windowNode))
-            {
-                return true;
-            }
-        }
-
-        parentSplit = null;
-        isFirstChild = false;
-        windowNode = null;
-        return false;
+        return EditorDockLayoutGraph.TryFindWindowNode(
+            node,
+            windowId,
+            parent,
+            out parentSplit,
+            out isFirstChild,
+            out windowNode);
     }
 
     private bool ReplaceNode(EditorDockNodeViewModel target, EditorDockNodeViewModel replacement)
     {
-        if (RootNode is null)
-        {
-            return false;
-        }
-
-        if (ReferenceEquals(RootNode, target))
-        {
-            RootNode = replacement;
-            return true;
-        }
-
-        return ReplaceNode(RootNode, target, replacement);
-    }
-
-    private bool ReplaceNode(
-        EditorDockNodeViewModel? current,
-        EditorDockNodeViewModel target,
-        EditorDockNodeViewModel replacement)
-    {
-        if (current is not EditorDockSplitNodeViewModel split)
-        {
-            return false;
-        }
-
-        if (ReferenceEquals(split.First, target))
-        {
-            split.First = replacement;
-            return true;
-        }
-
-        if (ReferenceEquals(split.Second, target))
-        {
-            split.Second = replacement;
-            return true;
-        }
-
-        return ReplaceNode(split.First, target, replacement)
-            || ReplaceNode(split.Second, target, replacement);
+        RootNode = EditorDockLayoutGraph.ReplaceNode(
+            RootNode,
+            target,
+            replacement,
+            out var replaced);
+        return replaced;
     }
 
     private void NormalizeLayoutGraph()
     {
-        if (RootNode is not null)
-        {
-            RootNode = NormalizeNode(RootNode);
-        }
+        RootNode = EditorDockLayoutGraph.Normalize(RootNode, CreateDynamicSplitId);
     }
-
-    private EditorDockNodeViewModel NormalizeNode(EditorDockNodeViewModel node)
-    {
-        if (node is not EditorDockSplitNodeViewModel split)
-        {
-            return node;
-        }
-
-        split.First = NormalizeNode(split.First);
-        split.Second = NormalizeNode(split.Second);
-
-        if (!IsUserSplit(split))
-        {
-            return split;
-        }
-
-        var children = new List<WeightedDockNode>();
-        CollectWeightedUserSplitChildren(split, split.Orientation, 1d, children);
-
-        if (children.Count == 0)
-        {
-            return split;
-        }
-
-        if (children.Count == 1)
-        {
-            return children[0].Node;
-        }
-
-        return BuildWeightedSplit(split.Orientation, children, 0, children.Count, out _);
-    }
-
-    private static void CollectWeightedUserSplitChildren(
-        EditorDockNodeViewModel node,
-        Orientation orientation,
-        double weight,
-        List<WeightedDockNode> children)
-    {
-        if (node is EditorDockSplitNodeViewModel split
-            && split.Orientation == orientation
-            && IsUserSplit(split)
-            && HasWeightedSplitLengths(split))
-        {
-            var firstWeight = GetSplitWeight(split.FirstLength);
-            var secondWeight = GetSplitWeight(split.SecondLength);
-            var totalWeight = firstWeight + secondWeight;
-            CollectWeightedUserSplitChildren(split.First, orientation, weight * firstWeight / totalWeight, children);
-            CollectWeightedUserSplitChildren(split.Second, orientation, weight * secondWeight / totalWeight, children);
-            return;
-        }
-
-        children.Add(new WeightedDockNode(node, weight));
-    }
-
-    private static bool IsUserSplit(EditorDockSplitNodeViewModel split)
-    {
-        return split.Id.StartsWith(DynamicSplitIdPrefix, StringComparison.Ordinal);
-    }
-
-    private readonly record struct WeightedDockNode(
-        EditorDockNodeViewModel Node,
-        double Weight);
 
     private EditorDockTabViewModel CreateTab(
         PanelDescriptor descriptor,

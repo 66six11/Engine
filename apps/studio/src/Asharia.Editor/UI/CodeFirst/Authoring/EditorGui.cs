@@ -196,13 +196,13 @@ public sealed class EditorGui
         double increment = 0.1d,
         string formatString = "0.###")
     {
-        ValidateNumericBounds(minimum, maximum);
+        GuiNumericRules.ValidateBounds(minimum, maximum);
 
         var nodeId = builder_.GetNodeId(key, GuiNodeKind.Vector3Field);
         var resolvedValue = StateStore.TryGetVector3Value(nodeId, out var storedValue)
             ? storedValue
             : value;
-        resolvedValue = ClampVector3ToBounds(resolvedValue, minimum, maximum, nameof(value));
+        resolvedValue = GuiNumericRules.ClampVector3ToBounds(resolvedValue, minimum, maximum, nameof(value));
         StateStore.SetVector3Value(nodeId, resolvedValue);
         builder_.Vector3Field(
             key,
@@ -224,13 +224,13 @@ public sealed class EditorGui
         double increment = 0.1d,
         string formatString = "0.###")
     {
-        ValidateNumericBounds(minimum, maximum);
+        GuiNumericRules.ValidateBounds(minimum, maximum);
 
         var nodeId = builder_.GetNodeId(key, GuiNodeKind.Vector2Field);
         var resolvedValue = StateStore.TryGetVector2Value(nodeId, out var storedValue)
             ? storedValue
             : value;
-        resolvedValue = ClampVector2ToBounds(resolvedValue, minimum, maximum, nameof(value));
+        resolvedValue = GuiNumericRules.ClampVector2ToBounds(resolvedValue, minimum, maximum, nameof(value));
         StateStore.SetVector2Value(nodeId, resolvedValue);
         builder_.Vector2Field(
             key,
@@ -252,13 +252,13 @@ public sealed class EditorGui
         double increment = 0.1d,
         string formatString = "0.###")
     {
-        ValidateNumericBounds(minimum, maximum);
+        GuiNumericRules.ValidateBounds(minimum, maximum);
 
         var nodeId = builder_.GetNodeId(key, GuiNodeKind.Vector4Field);
         var resolvedValue = StateStore.TryGetVector4Value(nodeId, out var storedValue)
             ? storedValue
             : value;
-        resolvedValue = ClampVector4ToBounds(resolvedValue, minimum, maximum, nameof(value));
+        resolvedValue = GuiNumericRules.ClampVector4ToBounds(resolvedValue, minimum, maximum, nameof(value));
         StateStore.SetVector4Value(nodeId, resolvedValue);
         builder_.Vector4Field(
             key,
@@ -280,13 +280,13 @@ public sealed class EditorGui
         double? smallChange = null,
         double? largeChange = null)
     {
-        ValidateNumericRange(minimum, maximum);
+        GuiNumericRules.ValidateRange(minimum, maximum);
 
         var nodeId = builder_.GetNodeId(key, GuiNodeKind.Slider);
         var resolvedValue = StateStore.TryGetNumericValue(nodeId, out var storedValue)
             ? storedValue
             : value;
-        resolvedValue = ClampFinite(resolvedValue, minimum, maximum, nameof(value));
+        resolvedValue = GuiNumericRules.Clamp(resolvedValue, minimum, maximum, nameof(value));
         StateStore.SetNumericValue(nodeId, resolvedValue);
         builder_.Slider(
             key,
@@ -308,13 +308,13 @@ public sealed class EditorGui
         double increment = 1d,
         string formatString = "0.###")
     {
-        ValidateNumericBounds(minimum, maximum);
+        GuiNumericRules.ValidateBounds(minimum, maximum);
 
         var nodeId = builder_.GetNodeId(key, GuiNodeKind.NumberInput);
         var resolvedValue = StateStore.TryGetNumericValue(nodeId, out var storedValue)
             ? storedValue
             : value;
-        resolvedValue = ClampFiniteToBounds(resolvedValue, minimum, maximum, nameof(value));
+        resolvedValue = GuiNumericRules.ClampToBounds(resolvedValue, minimum, maximum, nameof(value));
         StateStore.SetNumericValue(nodeId, resolvedValue);
         builder_.NumberInput(
             key,
@@ -625,132 +625,6 @@ public sealed class EditorGui
         }
 
         return builder.ToString();
-    }
-
-    private static void ValidateNumericRange(double minimum, double maximum)
-    {
-        if (double.IsNaN(minimum) || double.IsInfinity(minimum))
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(minimum),
-                minimum,
-                "Minimum must be finite.");
-        }
-
-        if (double.IsNaN(maximum) || double.IsInfinity(maximum) || maximum <= minimum)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(maximum),
-                maximum,
-                "Maximum must be finite and greater than minimum.");
-        }
-    }
-
-    private static double ClampFinite(
-        double value,
-        double minimum,
-        double maximum,
-        string parameterName)
-    {
-        if (double.IsNaN(value) || double.IsInfinity(value))
-        {
-            throw new ArgumentOutOfRangeException(
-                parameterName,
-                value,
-                "Value must be finite.");
-        }
-
-        return Math.Clamp(value, minimum, maximum);
-    }
-
-    private static void ValidateNumericBounds(double? minimum, double? maximum)
-    {
-        if (minimum is { } min && (double.IsNaN(min) || double.IsInfinity(min)))
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(minimum),
-                minimum,
-                "Minimum must be finite.");
-        }
-
-        if (maximum is { } max && (double.IsNaN(max) || double.IsInfinity(max)))
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(maximum),
-                maximum,
-                "Maximum must be finite.");
-        }
-
-        if (minimum is { } finiteMin && maximum is { } finiteMax && finiteMax <= finiteMin)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(maximum),
-                maximum,
-                "Maximum must be greater than minimum.");
-        }
-    }
-
-    private static double ClampFiniteToBounds(
-        double value,
-        double? minimum,
-        double? maximum,
-        string parameterName)
-    {
-        if (double.IsNaN(value) || double.IsInfinity(value))
-        {
-            throw new ArgumentOutOfRangeException(
-                parameterName,
-                value,
-                "Value must be finite.");
-        }
-
-        if (minimum is { } min && value < min)
-        {
-            return min;
-        }
-
-        if (maximum is { } max && value > max)
-        {
-            return max;
-        }
-
-        return value;
-    }
-
-    private static GuiVector3Value ClampVector3ToBounds(
-        GuiVector3Value value,
-        double? minimum,
-        double? maximum,
-        string parameterName)
-    {
-        return new GuiVector3Value(
-            ClampFiniteToBounds(value.X, minimum, maximum, parameterName),
-            ClampFiniteToBounds(value.Y, minimum, maximum, parameterName),
-            ClampFiniteToBounds(value.Z, minimum, maximum, parameterName));
-    }
-
-    private static GuiVector2Value ClampVector2ToBounds(
-        GuiVector2Value value,
-        double? minimum,
-        double? maximum,
-        string parameterName)
-    {
-        return new GuiVector2Value(
-            ClampFiniteToBounds(value.X, minimum, maximum, parameterName),
-            ClampFiniteToBounds(value.Y, minimum, maximum, parameterName));
-    }
-
-    private static GuiVector4Value ClampVector4ToBounds(
-        GuiVector4Value value,
-        double? minimum,
-        double? maximum,
-        string parameterName)
-    {
-        return new GuiVector4Value(
-            ClampFiniteToBounds(value.X, minimum, maximum, parameterName),
-            ClampFiniteToBounds(value.Y, minimum, maximum, parameterName),
-            ClampFiniteToBounds(value.Z, minimum, maximum, parameterName),
-            ClampFiniteToBounds(value.W, minimum, maximum, parameterName));
     }
 
     // ReSharper disable once StaticMemberInGenericType

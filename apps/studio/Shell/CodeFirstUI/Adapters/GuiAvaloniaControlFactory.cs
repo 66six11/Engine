@@ -756,8 +756,8 @@ internal sealed class GuiAvaloniaControlFactory
         TimeSpan? commitDelay)
     {
         var hasObservedInitialValue = false;
-        IDisposable? pendingCommit = null;
-        textBox.Tag = textBox
+        var trackingLease = new TextInputTrackingLease();
+        trackingLease.SetTextSubscription(textBox
             .GetObservable(TextBox.TextProperty)
             .Subscribe(new ActionObserver<string?>(text =>
             {
@@ -774,16 +774,17 @@ internal sealed class GuiAvaloniaControlFactory
                 else if (commitMode == GuiTextInputCommitMode.Debounced)
                 {
                     host_.SetText(nodeId, text ?? string.Empty);
-                    pendingCommit?.Dispose();
-                    pendingCommit = textCommitScheduler_.Schedule(
+                    trackingLease.ReplacePendingCommit(textCommitScheduler_.Schedule(
                         commitDelay ?? DefaultDebounceDelay,
-                        () => host_.CommitText(nodeId, textBox.Text ?? string.Empty));
+                        () => host_.CommitText(nodeId, textBox.Text ?? string.Empty)));
                 }
                 else
                 {
                     host_.SetText(nodeId, text ?? string.Empty);
                 }
-            }));
+            })));
+        textBox.Tag = trackingLease;
+        textBox.DetachedFromVisualTree += (_, _) => trackingLease.Dispose();
 
         if (commitMode == GuiTextInputCommitMode.OnLostFocus)
         {
@@ -1411,6 +1412,52 @@ internal sealed class GuiAvaloniaControlFactory
         {
             FirstSubscription.Dispose();
             SecondSubscription.Dispose();
+        }
+    }
+
+    private sealed class TextInputTrackingLease : IDisposable
+    {
+        private IDisposable? textSubscription_;
+        private IDisposable? pendingCommit_;
+        private bool isDisposed_;
+
+        public void SetTextSubscription(IDisposable subscription)
+        {
+            ArgumentNullException.ThrowIfNull(subscription);
+            if (isDisposed_)
+            {
+                subscription.Dispose();
+                return;
+            }
+
+            textSubscription_ = subscription;
+        }
+
+        public void ReplacePendingCommit(IDisposable pendingCommit)
+        {
+            ArgumentNullException.ThrowIfNull(pendingCommit);
+            if (isDisposed_)
+            {
+                pendingCommit.Dispose();
+                return;
+            }
+
+            pendingCommit_?.Dispose();
+            pendingCommit_ = pendingCommit;
+        }
+
+        public void Dispose()
+        {
+            if (isDisposed_)
+            {
+                return;
+            }
+
+            textSubscription_?.Dispose();
+            pendingCommit_?.Dispose();
+            textSubscription_ = null;
+            pendingCommit_ = null;
+            isDisposed_ = true;
         }
     }
 

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Asharia.Editor.Panels;
 using Avalonia;
+using Avalonia.Layout;
 using Editor.Core.Abstractions;
 using Editor.Core.Models.Panels;
 using Asharia.Editor.Worlds.Snapshots;
@@ -486,6 +487,246 @@ public sealed class EditorDockWorkspaceViewModelTests
         var activeWindow = Assert.IsType<EditorDockWindowViewModel>(workspace.ActiveWindow);
         Assert.Single(activeWindow.Tabs);
         Assert.Equal("included", activeWindow.Tabs[0].Id);
+    }
+
+    [Fact]
+    public void CompleteDrag_at_splitter_preserves_local_order_and_measured_weights()
+    {
+        var workspace = new EditorDockWorkspaceViewModel(CreateLayoutRegistry());
+        var tab = workspace.CenterWindow.Tabs.Single(candidate => candidate.Id == "center-secondary");
+        var target = new EditorDockDropTarget(
+            EditorDockDropOperation.SplitBetween,
+            EditorDockDropGuideKind.Insert,
+            TargetArea: null,
+            TargetId: "split-center-bottom",
+            PreviewBounds: default,
+            Label: "Center-bottom splitter",
+            SplitterFirstExtent: 600,
+            SplitterSecondExtent: 300);
+
+        workspace.BeginDrag(tab);
+        workspace.CompleteDrag(target);
+
+        var snapshot = workspace.CaptureLayoutSnapshot();
+        var targetSplit = FindSnapshotById(snapshot.Root, "split-center-bottom");
+        var insertedGroup = Assert.IsType<EditorDockLayoutNodeSnapshot>(targetSplit.Second);
+
+        Assert.Equal(Orientation.Vertical, targetSplit.Orientation);
+        Assert.Equal(300, targetSplit.FirstLength?.Value);
+        Assert.Equal(600, targetSplit.SecondLength?.Value);
+        Assert.Equal(["center-primary", "center-tertiary"], targetSplit.First?.TabIds);
+        Assert.Equal(["center-secondary"], insertedGroup.First?.TabIds);
+        Assert.Equal(["bottom"], insertedGroup.Second?.TabIds);
+        Assert.Equal(450, insertedGroup.FirstLength?.Value);
+        Assert.Equal(150, insertedGroup.SecondLength?.Value);
+    }
+
+    [Fact]
+    public void CompleteDrag_at_workspace_edge_wraps_entire_layout()
+    {
+        var workspace = new EditorDockWorkspaceViewModel(CreateLayoutRegistry());
+        var tab = workspace.CenterWindow.Tabs.Single(candidate => candidate.Id == "center-secondary");
+        var target = new EditorDockDropTarget(
+            EditorDockDropOperation.InsertWorkspaceLeft,
+            EditorDockDropGuideKind.Insert,
+            TargetArea: null,
+            TargetId: null,
+            PreviewBounds: default,
+            Label: "Workspace left");
+
+        workspace.BeginDrag(tab);
+        workspace.CompleteDrag(target);
+
+        var snapshot = workspace.CaptureLayoutSnapshot();
+        var root = Assert.IsType<EditorDockLayoutNodeSnapshot>(snapshot.Root);
+
+        Assert.Equal(Orientation.Horizontal, root.Orientation);
+        Assert.Equal(["center-secondary"], root.First?.TabIds);
+        Assert.Equal("split-left-work", root.Second?.Id);
+        Assert.Equal(0.2, root.FirstLength!.Value, precision: 10);
+        Assert.Equal(0.8, root.SecondLength!.Value, precision: 10);
+        Assert.Equal(root.First?.WindowId, snapshot.ActiveWindowId);
+    }
+
+    [Fact]
+    public void Sequential_adjacent_inserts_normalize_nested_user_splits_without_reordering()
+    {
+        var workspace = new EditorDockWorkspaceViewModel(CreateLayoutRegistry());
+
+        InsertCenterTabBesideCenter(workspace, "center-secondary");
+        InsertCenterTabBesideCenter(workspace, "center-tertiary");
+
+        var snapshot = workspace.CaptureLayoutSnapshot();
+
+        Assert.Equal(
+            ["left", "center-primary", "center-tertiary", "center-secondary", "bottom", "right"],
+            CaptureWindowTabOrder(snapshot.Root));
+    }
+
+    [Fact]
+    public void Capture_and_restore_round_trip_mutated_layout()
+    {
+        var workspace = new EditorDockWorkspaceViewModel(CreateLayoutRegistry());
+        InsertCenterTabBesideCenter(workspace, "center-secondary");
+        InsertCenterTabBesideCenter(workspace, "center-tertiary");
+        var expected = workspace.CaptureLayoutSnapshot();
+        var restoredWorkspace = new EditorDockWorkspaceViewModel(CreateLayoutRegistry());
+
+        var restored = restoredWorkspace.RestoreLayoutSnapshot(expected);
+        var actual = restoredWorkspace.CaptureLayoutSnapshot();
+
+        Assert.True(restored);
+        Assert.Equal(expected.ActiveWindowId, actual.ActiveWindowId);
+        AssertLayoutEqual(expected.Root, actual.Root);
+    }
+
+    private static void InsertCenterTabBesideCenter(
+        EditorDockWorkspaceViewModel workspace,
+        string tabId)
+    {
+        var tab = workspace.CenterWindow.Tabs.Single(candidate => candidate.Id == tabId);
+        var target = new EditorDockDropTarget(
+            EditorDockDropOperation.InsertRight,
+            EditorDockDropGuideKind.Insert,
+            EditorDockArea.Center,
+            workspace.CenterWindow.Id,
+            PreviewBounds: default,
+            Label: "Insert right");
+
+        workspace.BeginDrag(tab);
+        workspace.CompleteDrag(target);
+    }
+
+    private static EditorDockLayoutNodeSnapshot FindSnapshotById(
+        EditorDockLayoutNodeSnapshot? node,
+        string id)
+    {
+        Assert.NotNull(node);
+        if (node.Id == id)
+        {
+            return node;
+        }
+
+        if (node.First is not null)
+        {
+            var firstMatch = TryFindSnapshotById(node.First, id);
+            if (firstMatch is not null)
+            {
+                return firstMatch;
+            }
+        }
+
+        if (node.Second is not null)
+        {
+            var secondMatch = TryFindSnapshotById(node.Second, id);
+            if (secondMatch is not null)
+            {
+                return secondMatch;
+            }
+        }
+
+        throw new InvalidOperationException($"Layout node '{id}' was not found.");
+    }
+
+    private static EditorDockLayoutNodeSnapshot? TryFindSnapshotById(
+        EditorDockLayoutNodeSnapshot node,
+        string id)
+    {
+        if (node.Id == id)
+        {
+            return node;
+        }
+
+        return node.First is null
+            ? node.Second is null ? null : TryFindSnapshotById(node.Second, id)
+            : TryFindSnapshotById(node.First, id)
+                ?? (node.Second is null ? null : TryFindSnapshotById(node.Second, id));
+    }
+
+    private static List<string> CaptureWindowTabOrder(EditorDockLayoutNodeSnapshot? node)
+    {
+        var tabIds = new List<string>();
+        CollectWindowTabOrder(node, tabIds);
+        return tabIds;
+    }
+
+    private static void CollectWindowTabOrder(
+        EditorDockLayoutNodeSnapshot? node,
+        List<string> tabIds)
+    {
+        if (node is null)
+        {
+            return;
+        }
+
+        if (node.Kind == "Window")
+        {
+            tabIds.AddRange(node.TabIds);
+            return;
+        }
+
+        CollectWindowTabOrder(node.First, tabIds);
+        CollectWindowTabOrder(node.Second, tabIds);
+    }
+
+    private static void AssertLayoutEqual(
+        EditorDockLayoutNodeSnapshot? expected,
+        EditorDockLayoutNodeSnapshot? actual)
+    {
+        if (expected is null || actual is null)
+        {
+            Assert.Equal(expected, actual);
+            return;
+        }
+
+        Assert.Equal(expected.Kind, actual.Kind);
+        Assert.Equal(expected.Id, actual.Id);
+        Assert.Equal(expected.WindowId, actual.WindowId);
+        Assert.Equal(expected.WindowTitle, actual.WindowTitle);
+        Assert.Equal(expected.WindowArea, actual.WindowArea);
+        Assert.Equal(expected.WindowRole, actual.WindowRole);
+        Assert.Equal(expected.TabIds, actual.TabIds);
+        Assert.Equal(expected.ActiveTabId, actual.ActiveTabId);
+        Assert.Equal(expected.Orientation, actual.Orientation);
+        Assert.Equal(expected.FirstLength?.Value, actual.FirstLength?.Value);
+        Assert.Equal(expected.FirstLength?.Unit, actual.FirstLength?.Unit);
+        Assert.Equal(expected.SecondLength?.Value, actual.SecondLength?.Value);
+        Assert.Equal(expected.SecondLength?.Unit, actual.SecondLength?.Unit);
+        AssertLayoutEqual(expected.First, actual.First);
+        AssertLayoutEqual(expected.Second, actual.Second);
+    }
+
+    private static PanelRegistry CreateLayoutRegistry()
+    {
+        var registry = new PanelRegistry();
+        registry.Register(CreateDescriptor(
+            "left",
+            DockContentCachePolicy.KeepAlive,
+            () => new object(),
+            EditorDockArea.Left));
+        registry.Register(CreateDescriptor(
+            "center-primary",
+            DockContentCachePolicy.KeepAlive,
+            () => new object()));
+        registry.Register(CreateDescriptor(
+            "center-secondary",
+            DockContentCachePolicy.KeepAlive,
+            () => new object()));
+        registry.Register(CreateDescriptor(
+            "center-tertiary",
+            DockContentCachePolicy.KeepAlive,
+            () => new object()));
+        registry.Register(CreateDescriptor(
+            "bottom",
+            DockContentCachePolicy.KeepAlive,
+            () => new object(),
+            EditorDockArea.Bottom));
+        registry.Register(CreateDescriptor(
+            "right",
+            DockContentCachePolicy.KeepAlive,
+            () => new object(),
+            EditorDockArea.Right));
+        return registry;
     }
 
     private static PanelRegistry CreateRegistry(

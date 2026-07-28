@@ -178,7 +178,7 @@ public sealed class GuiFrameBuilder
         double increment = 0.1d,
         string formatString = "0.###")
     {
-        ValidateNumericBounds(minimum, maximum);
+        GuiNumericRules.ValidateBounds(minimum, maximum);
         var resolvedIncrement = ResolveNumericChange(
             increment,
             fallback: 0.1d,
@@ -194,7 +194,7 @@ public sealed class GuiFrameBuilder
             label,
             new GuiNodePayload
             {
-                Vector3Value = ClampVector3ToBounds(value, minimum, maximum, nameof(value)),
+                Vector3Value = GuiNumericRules.ClampVector3ToBounds(value, minimum, maximum, nameof(value)),
                 NumericMinimum = minimum,
                 NumericMaximum = maximum,
                 NumericSmallChange = resolvedIncrement,
@@ -211,7 +211,7 @@ public sealed class GuiFrameBuilder
         double increment = 0.1d,
         string formatString = "0.###")
     {
-        ValidateNumericBounds(minimum, maximum);
+        GuiNumericRules.ValidateBounds(minimum, maximum);
         var resolvedIncrement = ResolveNumericChange(
             increment,
             fallback: 0.1d,
@@ -227,7 +227,7 @@ public sealed class GuiFrameBuilder
             label,
             new GuiNodePayload
             {
-                Vector2Value = ClampVector2ToBounds(value, minimum, maximum, nameof(value)),
+                Vector2Value = GuiNumericRules.ClampVector2ToBounds(value, minimum, maximum, nameof(value)),
                 NumericMinimum = minimum,
                 NumericMaximum = maximum,
                 NumericSmallChange = resolvedIncrement,
@@ -244,7 +244,7 @@ public sealed class GuiFrameBuilder
         double increment = 0.1d,
         string formatString = "0.###")
     {
-        ValidateNumericBounds(minimum, maximum);
+        GuiNumericRules.ValidateBounds(minimum, maximum);
         var resolvedIncrement = ResolveNumericChange(
             increment,
             fallback: 0.1d,
@@ -260,7 +260,7 @@ public sealed class GuiFrameBuilder
             label,
             new GuiNodePayload
             {
-                Vector4Value = ClampVector4ToBounds(value, minimum, maximum, nameof(value)),
+                Vector4Value = GuiNumericRules.ClampVector4ToBounds(value, minimum, maximum, nameof(value)),
                 NumericMinimum = minimum,
                 NumericMaximum = maximum,
                 NumericSmallChange = resolvedIncrement,
@@ -277,8 +277,8 @@ public sealed class GuiFrameBuilder
         double? smallChange = null,
         double? largeChange = null)
     {
-        ValidateNumericRange(minimum, maximum);
-        var clampedValue = ClampFinite(value, minimum, maximum, nameof(value));
+        GuiNumericRules.ValidateRange(minimum, maximum);
+        var clampedValue = GuiNumericRules.Clamp(value, minimum, maximum, nameof(value));
         var range = maximum - minimum;
 
         return AddLeaf(
@@ -310,8 +310,8 @@ public sealed class GuiFrameBuilder
         double increment = 1d,
         string formatString = "0.###")
     {
-        ValidateNumericBounds(minimum, maximum);
-        var resolvedValue = ClampFiniteToBounds(value, minimum, maximum, nameof(value));
+        GuiNumericRules.ValidateBounds(minimum, maximum);
+        var resolvedValue = GuiNumericRules.ClampToBounds(value, minimum, maximum, nameof(value));
         var resolvedIncrement = ResolveNumericChange(
             increment,
             fallback: 1d,
@@ -345,8 +345,8 @@ public sealed class GuiFrameBuilder
         bool showProgressText = false,
         string? progressTextFormat = null)
     {
-        ValidateNumericRange(minimum, maximum);
-        var clampedValue = ClampFinite(value, minimum, maximum, nameof(value));
+        GuiNumericRules.ValidateRange(minimum, maximum);
+        var clampedValue = GuiNumericRules.Clamp(value, minimum, maximum, nameof(value));
         if (progressTextFormat is not null && string.IsNullOrWhiteSpace(progressTextFormat))
         {
             throw new ArgumentException(
@@ -553,42 +553,6 @@ public sealed class GuiFrameBuilder
         return new GuiNodeId(panelId_, keyPath, kind);
     }
 
-    private static void ValidateNumericRange(double minimum, double maximum)
-    {
-        if (double.IsNaN(minimum) || double.IsInfinity(minimum))
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(minimum),
-                minimum,
-                "Minimum must be finite.");
-        }
-
-        if (double.IsNaN(maximum) || double.IsInfinity(maximum) || maximum <= minimum)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(maximum),
-                maximum,
-                "Maximum must be finite and greater than minimum.");
-        }
-    }
-
-    private static double ClampFinite(
-        double value,
-        double minimum,
-        double maximum,
-        string parameterName)
-    {
-        if (double.IsNaN(value) || double.IsInfinity(value))
-        {
-            throw new ArgumentOutOfRangeException(
-                parameterName,
-                value,
-                "Value must be finite.");
-        }
-
-        return Math.Clamp(value, minimum, maximum);
-    }
-
     private static double ResolveNumericChange(
         double? change,
         double fallback,
@@ -604,96 +568,6 @@ public sealed class GuiFrameBuilder
         }
 
         return resolved;
-    }
-
-    private static void ValidateNumericBounds(double? minimum, double? maximum)
-    {
-        if (minimum is { } min && (double.IsNaN(min) || double.IsInfinity(min)))
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(minimum),
-                minimum,
-                "Minimum must be finite.");
-        }
-
-        if (maximum is { } max && (double.IsNaN(max) || double.IsInfinity(max)))
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(maximum),
-                maximum,
-                "Maximum must be finite.");
-        }
-
-        if (minimum is { } finiteMin && maximum is { } finiteMax && finiteMax <= finiteMin)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(maximum),
-                maximum,
-                "Maximum must be greater than minimum.");
-        }
-    }
-
-    private static double ClampFiniteToBounds(
-        double value,
-        double? minimum,
-        double? maximum,
-        string parameterName)
-    {
-        if (double.IsNaN(value) || double.IsInfinity(value))
-        {
-            throw new ArgumentOutOfRangeException(
-                parameterName,
-                value,
-                "Value must be finite.");
-        }
-
-        if (minimum is { } min && value < min)
-        {
-            return min;
-        }
-
-        if (maximum is { } max && value > max)
-        {
-            return max;
-        }
-
-        return value;
-    }
-
-    private static GuiVector3Value ClampVector3ToBounds(
-        GuiVector3Value value,
-        double? minimum,
-        double? maximum,
-        string parameterName)
-    {
-        return new GuiVector3Value(
-            ClampFiniteToBounds(value.X, minimum, maximum, parameterName),
-            ClampFiniteToBounds(value.Y, minimum, maximum, parameterName),
-            ClampFiniteToBounds(value.Z, minimum, maximum, parameterName));
-    }
-
-    private static GuiVector2Value ClampVector2ToBounds(
-        GuiVector2Value value,
-        double? minimum,
-        double? maximum,
-        string parameterName)
-    {
-        return new GuiVector2Value(
-            ClampFiniteToBounds(value.X, minimum, maximum, parameterName),
-            ClampFiniteToBounds(value.Y, minimum, maximum, parameterName));
-    }
-
-    private static GuiVector4Value ClampVector4ToBounds(
-        GuiVector4Value value,
-        double? minimum,
-        double? maximum,
-        string parameterName)
-    {
-        return new GuiVector4Value(
-            ClampFiniteToBounds(value.X, minimum, maximum, parameterName),
-            ClampFiniteToBounds(value.Y, minimum, maximum, parameterName),
-            ClampFiniteToBounds(value.Z, minimum, maximum, parameterName),
-            ClampFiniteToBounds(value.W, minimum, maximum, parameterName));
     }
 
     private void PopScope(MutableGuiNode expectedNode)
