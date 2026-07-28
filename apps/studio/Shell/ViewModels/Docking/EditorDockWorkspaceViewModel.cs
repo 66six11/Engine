@@ -24,6 +24,7 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
     private readonly PanelInstanceManager panelInstanceManager_;
     private readonly Dictionary<EditorDockArea, EditorDockWindowViewModel> windowsByArea_;
     private readonly Dictionary<string, EditorDockWindowViewModel> windowsById_;
+    private readonly Func<EditorDockLayoutSnapshot>? defaultLayoutFactory_;
     private EditorDockNodeViewModel? rootNode_;
     private EditorDockWindowViewModel? activeWindow_;
     private EditorDockTabViewModel? activeLifecycleTab_;
@@ -42,8 +43,22 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
         IPanelRegistry panelRegistry,
         IEditorLifecycleEventService? lifecycleEvents = null,
         EditorPanelFrameScheduler? panelFrameScheduler = null)
+        : this(
+            panelRegistry,
+            lifecycleEvents,
+            panelFrameScheduler,
+            defaultLayoutFactory: null)
+    {
+    }
+
+    internal EditorDockWorkspaceViewModel(
+        IPanelRegistry panelRegistry,
+        IEditorLifecycleEventService? lifecycleEvents,
+        EditorPanelFrameScheduler? panelFrameScheduler,
+        Func<EditorDockLayoutSnapshot>? defaultLayoutFactory)
     {
         panelRegistry_ = panelRegistry;
+        defaultLayoutFactory_ = defaultLayoutFactory;
         LifecycleEvents = lifecycleEvents ?? new EditorLifecycleEventService();
         PanelFrameScheduler = panelFrameScheduler ?? new EditorPanelFrameScheduler();
         panelInstanceManager_ = new PanelInstanceManager(PanelFrameScheduler);
@@ -52,7 +67,6 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
         CenterWindow = new EditorDockWindowViewModel("owned-dock-center", "Viewport", EditorDockArea.Center, "Primary work area");
         BottomWindow = new EditorDockWindowViewModel("owned-dock-bottom", "Diagnostics", EditorDockArea.Bottom, "Output and validation");
         RightWindow = new EditorDockWindowViewModel("owned-dock-right", "Inspector", EditorDockArea.Right, "Selection context");
-        rootNode_ = CreateDefaultLayout();
 
         windowsByArea_ = new Dictionary<EditorDockArea, EditorDockWindowViewModel>
         {
@@ -69,13 +83,7 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
             [RightWindow.Id] = RightWindow,
         };
 
-        foreach (var descriptor in panelRegistry.GetAll())
-        {
-            var window = windowsByArea_[descriptor.DefaultArea];
-            window.Add(CreateTab(descriptor, window.Area));
-        }
-
-        SetActiveWindow(CenterWindow.Tabs.Count > 0 ? CenterWindow : FindFirstWindowWithContent());
+        ApplyDefaultLayout();
     }
 
     private EditorDockWorkspaceViewModel(
@@ -84,6 +92,7 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
         EditorPanelFrameScheduler panelFrameScheduler)
     {
         panelRegistry_ = null;
+        defaultLayoutFactory_ = null;
         LifecycleEvents = lifecycleEvents;
         PanelFrameScheduler = panelFrameScheduler;
         panelInstanceManager_ = new PanelInstanceManager(PanelFrameScheduler);
@@ -110,6 +119,7 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
         EditorPanelFrameScheduler? panelFrameScheduler = null)
     {
         panelRegistry_ = panelRegistry;
+        defaultLayoutFactory_ = null;
         LifecycleEvents = lifecycleEvents;
         PanelFrameScheduler = panelFrameScheduler ?? new EditorPanelFrameScheduler();
         panelInstanceManager_ = new PanelInstanceManager(PanelFrameScheduler);
@@ -234,23 +244,14 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
         ClearTransientDockState();
         ResetWorkspaceWindows();
 
-        var descriptorsById = CreatePanelDescriptorsById();
-        var usedTabIds = new HashSet<string>(StringComparer.Ordinal);
-        var restoredRoot = RestoreLayoutNode(snapshot.Root, descriptorsById, usedTabIds);
-        if (restoredRoot is null)
+        if (!TryApplyLayoutSnapshot(snapshot))
         {
-            ResetLayout();
+            ResetWorkspaceWindows();
+            ApplyDefaultLayout();
+            NotifyDockContentChanged();
             return false;
         }
 
-        RootNode = restoredRoot;
-        nextDynamicWindowIndex_ = GetNextDynamicWindowIndex(windowsById_.Values);
-        nextDynamicSplitIndex_ = GetNextDynamicSplitIndex(RootNode);
-        SetActiveWindow(
-            snapshot.ActiveWindowId is not null
-                && windowsById_.TryGetValue(snapshot.ActiveWindowId, out var activeWindow)
-                    ? activeWindow
-                    : FindFirstWindowWithContent());
         NotifyDockContentChanged();
         return true;
     }
@@ -266,15 +267,7 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
         ResetWorkspaceWindows();
         nextDynamicWindowIndex_ = 1;
         nextDynamicSplitIndex_ = 1;
-        RootNode = CreateDefaultLayout();
-
-        foreach (var descriptor in panelRegistry_.GetAll())
-        {
-            var window = windowsByArea_[descriptor.DefaultArea];
-            window.Add(CreateTab(descriptor, window.Area));
-        }
-
-        SetActiveWindow(CenterWindow.Tabs.Count > 0 ? CenterWindow : FindFirstWindowWithContent());
+        ApplyDefaultLayout();
         NotifyDockContentChanged();
     }
 
@@ -862,6 +855,52 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
         }
 
         return descriptors;
+    }
+
+    private void ApplyDefaultLayout()
+    {
+        if (defaultLayoutFactory_ is not null
+            && TryApplyLayoutSnapshot(defaultLayoutFactory_()))
+        {
+            return;
+        }
+
+        RootNode = CreateDefaultLayout();
+        foreach (var descriptor in panelRegistry_?.GetAll() ?? [])
+        {
+            var window = windowsByArea_[descriptor.DefaultArea];
+            window.Add(CreateTab(descriptor, window.Area));
+        }
+
+        SetActiveWindow(CenterWindow.Tabs.Count > 0 ? CenterWindow : FindFirstWindowWithContent());
+    }
+
+    private bool TryApplyLayoutSnapshot(EditorDockLayoutSnapshot? snapshot)
+    {
+        if (panelRegistry_ is null
+            || snapshot?.Root is null
+            || snapshot.Version != 1)
+        {
+            return false;
+        }
+
+        var descriptorsById = CreatePanelDescriptorsById();
+        var usedTabIds = new HashSet<string>(StringComparer.Ordinal);
+        var restoredRoot = RestoreLayoutNode(snapshot.Root, descriptorsById, usedTabIds);
+        if (restoredRoot is null)
+        {
+            return false;
+        }
+
+        RootNode = restoredRoot;
+        nextDynamicWindowIndex_ = GetNextDynamicWindowIndex(windowsById_.Values);
+        nextDynamicSplitIndex_ = GetNextDynamicSplitIndex(RootNode);
+        SetActiveWindow(
+            snapshot.ActiveWindowId is not null
+                && windowsById_.TryGetValue(snapshot.ActiveWindowId, out var activeWindow)
+                    ? activeWindow
+                    : FindFirstWindowWithContent());
+        return true;
     }
 
     private void ResetWorkspaceWindows()

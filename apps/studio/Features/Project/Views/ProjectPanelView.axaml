@@ -1,0 +1,62 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="using:Editor.UI.Controls.Base"
+             xmlns:vm="using:Editor.Features.Project.ViewModels"
+             x:Class="Editor.Features.Project.Views.ProjectPanelView"
+             x:DataType="vm:ProjectPanelViewModel">
+    <UserControl.Styles>
+        <Style Selector="Border.project-toolbar">
+            <Setter Property="Padding" Value="6,5" />
+            <Setter Property="Background" Value="{DynamicResource EditorBrushSurface01}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource EditorBrushDivider}" />
+            <Setter Property="BorderThickness" Value="0,0,0,1" />
+        </Style>
+        <Style Selector="TextBlock.project-name">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextMuted}" />
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeSmall}" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+        </Style>
+        <Style Selector="TextBlock.project-empty-title">
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="HorizontalAlignment" Value="Center" />
+        </Style>
+        <Style Selector="TextBlock.project-empty-message">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextMuted}" />
+            <Setter Property="MaxWidth" Value="240" />
+            <Setter Property="TextAlignment" Value="Center" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+    </UserControl.Styles>
+
+    <Border Background="{DynamicResource EditorBrushBase00}">
+        <Grid RowDefinitions="Auto,*">
+            <Border Grid.Row="0"
+                    Classes="project-toolbar">
+                <Grid RowDefinitions="Auto,Auto"
+                      RowSpacing="5">
+                    <TextBlock Classes="project-name"
+                               Text="{Binding ProjectDisplayName}" />
+                    <controls:SearchBox Grid.Row="1"
+                                        IsEnabled="{Binding CanSearch}"
+                                        PlaceholderText="Search project"
+                                        ToolTip.Tip="{Binding UnavailableReason}" />
+                </Grid>
+            </Border>
+
+            <StackPanel Grid.Row="1"
+                        Margin="20"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Spacing="8">
+                <TextBlock Classes="project-empty-title"
+                           Text="{Binding EmptyStateTitle}" />
+                <TextBlock Classes="project-empty-message"
+                           Text="{Binding EmptyStateMessage}" />
+                <Button HorizontalAlignment="Center"
+                        Content="Open Project"
+                        IsEnabled="{Binding CanOpenProject}"
+                        ToolTip.Tip="{Binding UnavailableReason}" />
+            </StackPanel>
+        </Grid>
+    </Border>
+</UserControl>

@@ -45,6 +45,16 @@ public sealed class MainWindowSourceTests
         Assert.Contains("Close();", source, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Main_window_uses_one_deterministic_compact_workbench_threshold()
+    {
+        var source = LoadSource("Shell", "Views", "Windowing", "MainWindow.axaml.cs");
+
+        Assert.Contains("CompactWorkbenchWidth", source, StringComparison.Ordinal);
+        Assert.Contains("SizeChanged += OnMainWindowSizeChanged", source, StringComparison.Ordinal);
+        Assert.Contains("PseudoClasses.Set(\":compact\"", source, StringComparison.Ordinal);
+    }
+
     private static string LoadSource(params string[] pathParts)
     {
         var root = FindRepositoryRoot();

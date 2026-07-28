@@ -8,6 +8,8 @@ using Editor.Features.Inspector.ViewModels;
 using Editor.Features.Inspector.Views;
 using Editor.Features.Problems.ViewModels;
 using Editor.Features.Problems.Views;
+using Editor.Features.Project.ViewModels;
+using Editor.Features.Project.Views;
 using Editor.Features.SceneView.ViewModels;
 using Editor.Features.SceneView.Views;
 using Editor.Shell.CodeFirstUI.Hosting;
@@ -34,6 +36,7 @@ public class ViewLocator : IDataTemplate
             InspectorPanelViewModel => new InspectorPanelView(),
             ConsolePanelViewModel => new ConsolePanelView(),
             ProblemsPanelViewModel => new ProblemsPanelView(),
+            ProjectPanelViewModel => new ProjectPanelView(),
             CodeFirstPanelHostViewModel => new CodeFirstPanelHostView(),
             PanelPlaceholderViewModel => new PanelPlaceholderView(),
             _ => new TextBlock { Text = "Not Found: " + param.GetType().Name },

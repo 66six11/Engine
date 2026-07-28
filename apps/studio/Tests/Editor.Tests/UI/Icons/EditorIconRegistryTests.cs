@@ -37,6 +37,7 @@ public sealed class EditorIconRegistryTests
         Assert.True(EditorIconRegistry.Default.ContainsIcon(EditorIconKey.UiSearch));
         Assert.True(EditorIconRegistry.Default.ContainsIcon(EditorIconKey.PanelSceneView));
         Assert.True(EditorIconRegistry.Default.ContainsIcon(EditorIconKey.PanelHierarchy));
+        Assert.True(EditorIconRegistry.Default.ContainsIcon(EditorIconKey.PanelProject));
         Assert.True(EditorIconRegistry.Default.ContainsIcon(EditorIconKey.PanelInspector));
         Assert.True(EditorIconRegistry.Default.ContainsIcon(EditorIconKey.PanelConsole));
         Assert.True(EditorIconRegistry.Default.ContainsIcon(EditorIconKey.PanelProblems));

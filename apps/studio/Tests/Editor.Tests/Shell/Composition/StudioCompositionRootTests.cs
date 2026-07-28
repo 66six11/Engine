@@ -3,14 +3,16 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Editor.Core.Abstractions;
 using Asharia.Editor.Diagnostics;
+using Asharia.Editor.Panels;
+using Editor.Core.Abstractions;
 using Editor.Core.Models.Extensions;
 using Editor.Features.Console.ViewModels;
 using Editor.Features.Hierarchy.ViewModels;
 using Editor.Features.Inspector.ViewModels;
 using Editor.Shell.Compatibility;
 using Editor.Shell.Composition;
+using Editor.Shell.Docking.Layout;
 using Xunit;
 
 namespace Editor.Tests.Shell.Composition;
@@ -18,12 +20,61 @@ namespace Editor.Tests.Shell.Composition;
 public sealed class StudioCompositionRootTests
 {
     [Fact]
+    public async Task CreateMainWindowSession_uses_shell_owned_default_layout_when_no_layout_is_saved()
+    {
+        var session = new StudioCompositionRoot().CreateMainWindowSession(savedLayout: null);
+        try
+        {
+            var workspace = session.MainWindowViewModel.DockWorkspace;
+
+            Assert.True(workspace.ContainsPanel("hierarchy"));
+            Assert.True(workspace.ContainsPanel("project"));
+            Assert.True(workspace.ContainsPanel("scene-view"));
+            Assert.True(workspace.ContainsPanel("inspector"));
+            Assert.False(workspace.ContainsPanel("console"));
+            Assert.False(workspace.ContainsPanel("problems"));
+            Assert.False(workspace.ContainsPanel("frame-debugger"));
+            Assert.False(workspace.ContainsPanel("ui-style"));
+        }
+        finally
+        {
+            await session.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task CreateMainWindowSession_preserves_a_valid_saved_layout_over_the_default_preset()
+    {
+        var savedLayout = new EditorDockLayoutSnapshot
+        {
+            ActiveWindowId = "saved-tools",
+            Root = new EditorDockLayoutNodeSnapshot
+            {
+                Kind = "Window",
+                Id = "node-saved-tools",
+                WindowId = "saved-tools",
+                WindowTitle = "Saved Tools",
+                WindowArea = EditorDockArea.Center,
+                WindowRole = "Saved user layout",
+                TabIds = ["ui-style"],
+                ActiveTabId = "ui-style",
+            },
+        };
+
+        await using var session = new StudioCompositionRoot()
+            .CreateMainWindowSession(savedLayout);
+
+        Assert.True(session.MainWindowViewModel.DockWorkspace.ContainsPanel("ui-style"));
+        Assert.False(session.MainWindowViewModel.DockWorkspace.ContainsPanel("scene-view"));
+    }
+
+    [Fact]
     public void CreateDefaultComposition_declares_modules_once_for_panel_and_action_registries()
     {
         var composition = StudioCompositionRoot.CreateDefaultComposition();
 
         Assert.Equal(
-            ["scene-view", "hierarchy", "inspector", "console", "problems", "frame-debugger", "ui-style"],
+            ["scene-view", "hierarchy", "project", "inspector", "console", "problems", "frame-debugger", "ui-style"],
             composition.PanelRegistry.GetAll().Select(panel => panel.Id));
         Assert.Equal(
             [
@@ -31,6 +82,7 @@ public sealed class StudioCompositionRootTests
                 "workbench.about.open",
                 "workbench.panel.scene-view",
                 "workbench.panel.hierarchy",
+                "workbench.panel.project",
                 "workbench.panel.inspector",
                 "workbench.panel.console",
                 "workbench.panel.problems",

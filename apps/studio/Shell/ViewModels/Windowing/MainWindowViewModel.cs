@@ -44,6 +44,8 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     private bool hasActiveBackgroundTasks_;
     private string activeBackgroundTaskTitle_ = string.Empty;
     private string activeBackgroundTaskMessage_ = string.Empty;
+    private string selectionSummary_ = "Nothing selected";
+    private string diagnosticSummary_ = "No diagnostics";
     private EditorStatusMessageSnapshot? lastStatusMessage_;
     private EditorDiagnosticRecord? latestStatusDiagnostic_;
     private EditorStatusMessageSeverity? statusMessageSeverity_;
@@ -65,7 +67,8 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             arguments.Composition.ActionRegistry,
             arguments.SavedLayout,
             arguments.SelectionService,
-            diagnostics: arguments.Diagnostics)
+            diagnostics: arguments.Diagnostics,
+            defaultLayoutFactory: arguments.DefaultLayoutFactory)
     {
     }
 
@@ -77,9 +80,11 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         IEditorBackgroundTaskService? backgroundTasks = null,
         IEditorUiDispatcher? uiDispatcher = null,
         IEditorLifecycleEventService? lifecycleEvents = null,
-        IEditorDiagnosticService? diagnostics = null)
+        IEditorDiagnosticService? diagnostics = null,
+        Func<EditorDockLayoutSnapshot>? defaultLayoutFactory = null)
     {
         SelectionService = selectionService ?? new EditorSelectionService();
+        SelectionService.SelectionChanged += OnSelectionChanged;
         panelRegistry_ = panelRegistry;
         backgroundTasks_ = backgroundTasks ?? new EditorBackgroundTaskService();
         uiDispatcher_ = uiDispatcher ?? new AvaloniaEditorUiDispatcher();
@@ -90,7 +95,11 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         RefreshBackgroundTaskSummary();
 
         LifecycleEvents = lifecycleEvents ?? new EditorLifecycleEventService();
-        DockWorkspace = new EditorDockWorkspaceViewModel(panelRegistry_, LifecycleEvents);
+        DockWorkspace = new EditorDockWorkspaceViewModel(
+            panelRegistry_,
+            LifecycleEvents,
+            panelFrameScheduler: null,
+            defaultLayoutFactory: defaultLayoutFactory);
         panelCommandService_ = new PanelCommandService(DockWorkspace);
         DialogHost = new EditorDialogHostViewModel();
         var actions = actionRegistry.GetAll();
@@ -120,9 +129,11 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             pendingFloatingWindowSnapshots_.AddRange(floatingWindows);
         }
         RefreshPanelMenuOpenStates();
+        RefreshSelectionSummary();
 
         SaveLayoutCommand = new RelayCommand(SaveLayout);
         ResetLayoutCommand = new RelayCommand(ResetLayout);
+        ApplyCompactLayoutCommand = new RelayCommand(ApplyCompactLayout);
     }
 
     public IEditorSelectionService SelectionService { get; }
@@ -134,6 +145,8 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     public IRelayCommand SaveLayoutCommand { get; }
 
     public IRelayCommand ResetLayoutCommand { get; }
+
+    public IRelayCommand ApplyCompactLayoutCommand { get; }
 
     public IRelayCommand<string?> OpenPanelCommand { get; }
 
@@ -148,6 +161,38 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     public IReadOnlyList<WorkbenchMenuItemViewModel> HelpMenuItems { get; }
 
     public IReadOnlyList<PanelMenuItemViewModel> PanelMenuItems { get; }
+
+    public string ProjectDisplayName => "No project";
+
+    public string DocumentDisplayName => "No document";
+
+    public bool IsDocumentDirty => false;
+
+    public string WindowTitle =>
+        $"{DocumentDisplayName} — {ProjectDisplayName} — Asharia Studio";
+
+    public string EditorModeText => "Edit";
+
+    public string ToolUnavailableReason =>
+        "Viewport tools are unavailable until a tool service is connected.";
+
+    public string SessionUnavailableReason =>
+        "Run controls are unavailable until a project session is active.";
+
+    public string SelectionSummary
+    {
+        get => selectionSummary_;
+        private set => SetProperty(ref selectionSummary_, value);
+    }
+
+    public string BackgroundTaskSummary =>
+        HasActiveBackgroundTasks ? ActiveBackgroundTaskTitle : "No active tasks";
+
+    public string DiagnosticSummary
+    {
+        get => diagnosticSummary_;
+        private set => SetProperty(ref diagnosticSummary_, value);
+    }
 
     public bool HasActiveBackgroundTasks
     {
@@ -269,6 +314,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
         isDisposed_ = true;
         closeFloatingWindows_?.Invoke();
+        SelectionService.SelectionChanged -= OnSelectionChanged;
         backgroundTasks_.TasksChanged -= OnBackgroundTasksChanged;
         diagnostics_.DiagnosticsChanged -= OnDiagnosticsChanged;
         panelCommandService_.PanelStateChanged -= OnPanelCommandStateChanged;
@@ -299,6 +345,15 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         pendingFloatingWindowSnapshots_.Clear();
         closeFloatingWindows_?.Invoke();
         DockWorkspace.ResetLayout();
+        EditorDockLayoutStore.TryDelete();
+    }
+
+    private void ApplyCompactLayout()
+    {
+        pendingFloatingWindowSnapshots_.Clear();
+        closeFloatingWindows_?.Invoke();
+        _ = DockWorkspace.RestoreLayoutSnapshot(
+            EditorWorkbenchLayoutPreset.CreateCompact());
         EditorDockLayoutStore.TryDelete();
     }
 
@@ -337,6 +392,19 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         uiDispatcher_.Post(RefreshBackgroundTaskSummary);
     }
 
+    private void OnSelectionChanged(
+        object? sender,
+        EditorSelectionChangedEventArgs e)
+    {
+        if (uiDispatcher_.CheckAccess())
+        {
+            RefreshSelectionSummary();
+            return;
+        }
+
+        uiDispatcher_.Post(RefreshSelectionSummary);
+    }
+
     private void OnDiagnosticsChanged(object? sender, EventArgs e)
     {
         if (uiDispatcher_.CheckAccess())
@@ -356,6 +424,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             HasActiveBackgroundTasks = false;
             ActiveBackgroundTaskTitle = string.Empty;
             ActiveBackgroundTaskMessage = string.Empty;
+            OnPropertyChanged(nameof(BackgroundTaskSummary));
             return;
         }
 
@@ -363,6 +432,18 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         HasActiveBackgroundTasks = true;
         ActiveBackgroundTaskTitle = activeBackgroundTask.Title;
         ActiveBackgroundTaskMessage = activeBackgroundTask.Message ?? string.Empty;
+        OnPropertyChanged(nameof(BackgroundTaskSummary));
+    }
+
+    private void RefreshSelectionSummary()
+    {
+        var selection = SelectionService.Current;
+        SelectionSummary = selection.Items.Count switch
+        {
+            0 => "Nothing selected",
+            1 => selection.Items[0].DisplayName,
+            _ => $"{selection.Items.Count} items selected",
+        };
     }
 
     internal void PublishStatusMessage(EditorStatusMessageSnapshot snapshot)
@@ -405,8 +486,38 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
         latestStatusDiagnostic_ = latestDiagnostic;
         statusMessageSeverity_ = ResolveStatusMessageSeverity(latestDiagnostic);
+        RefreshDiagnosticSummary();
         OnStatusMessageProjectionChanged();
     }
+
+    private void RefreshDiagnosticSummary()
+    {
+        var warningCount = 0;
+        var errorCount = 0;
+        foreach (var diagnostic in diagnostics_.GetRecentDiagnostics())
+        {
+            if (diagnostic.Severity == EditorDiagnosticSeverity.Warning)
+            {
+                warningCount++;
+            }
+            else if (diagnostic.Severity == EditorDiagnosticSeverity.Error)
+            {
+                errorCount++;
+            }
+        }
+
+        DiagnosticSummary = (errorCount, warningCount) switch
+        {
+            (> 0, > 0) =>
+                $"{FormatDiagnosticCount(errorCount, "error")}, {FormatDiagnosticCount(warningCount, "warning")}",
+            (> 0, _) => FormatDiagnosticCount(errorCount, "error"),
+            (_, > 0) => FormatDiagnosticCount(warningCount, "warning"),
+            _ => "No diagnostics",
+        };
+    }
+
+    private static string FormatDiagnosticCount(int count, string label) =>
+        $"{count} {label}{(count == 1 ? string.Empty : "s")}";
 
     private void OnStatusMessageProjectionChanged()
     {
@@ -481,14 +592,16 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             StudioCompositionRoot.CreateDefaultComposition(selectionService, diagnostics),
             savedLayout,
             selectionService,
-            diagnostics);
+            diagnostics,
+            EditorWorkbenchLayoutPreset.CreateDefault);
     }
 
     private sealed record MainWindowViewModelArguments(
         EditorExtensionComposition Composition,
         EditorDockLayoutSnapshot? SavedLayout,
         IEditorSelectionService SelectionService,
-        IEditorDiagnosticService Diagnostics);
+        IEditorDiagnosticService Diagnostics,
+        Func<EditorDockLayoutSnapshot> DefaultLayoutFactory);
 
     private IReadOnlyList<PanelMenuItemViewModel> CreatePanelMenuItems(
         IReadOnlyList<WorkbenchActionDescriptor> actions,

@@ -56,7 +56,8 @@ internal sealed class StudioCompositionRoot
                 composition.ActionRegistry,
                 savedLayout,
                 selectionService,
-                diagnostics: diagnostics);
+                diagnostics: diagnostics,
+                defaultLayoutFactory: EditorWorkbenchLayoutPreset.CreateDefault);
             return new StudioCompositionSession(viewModel, composition, compatibilityAdapter);
         }
         catch (Exception exception)
