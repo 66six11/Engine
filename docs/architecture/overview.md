@@ -130,8 +130,21 @@ Asharia Engine 当前目标仍是先做一个小而完整的 Vulkan renderer，�
   receipts、禁止重试并要求重启。definition set 再把 exact metadata/object/declaration 纯内存投影为
   static/dynamic 共用的 shared definitions，不反向持有 static factory registration。scope preparer 只在
   caller 显式提供 ProjectSession scope/host capabilities 后构建不可见、combined-validated candidate，不把
-  persistent ProjectId 当 session identity。当前仍不创建 current pointer，不实例化 attribute，不调用
-  registry Commit/Activate，不推进 active/LKG，也不支持 `.asmdef`/Package；完整 generation host 尚未实现。
+  persistent ProjectId 当 session identity。initial scope committer 只在 captured snapshot 仍有效且目标 scope
+  为空时提交 exact candidate，并返回 compare-and-remove registration owner；stale、已有 scope、重复消费与
+  successor replacement 均 fail closed。initial scope activator 再复核 runtime capability snapshot 与 Prepare
+  时的 capability ID 集合完全一致，把 registration 一次性转交给独占异步 owner；`WaitingForCapability`/
+  `Blocked` 是可持有 soft outcome，任一 `Faulted`、取消或 Host failure 都先释放 activation，再退役 exact
+  registration。当前仍不创建正式 ProjectSession composition，不推进 contribution/current/active/LKG，
+  也不支持 `.asmdef`/Package、replacement、catalog transaction 或前端接线。
+
+  归档 `331824a3` 中剩余独有的一体化 Authoring host、catalog 与旧 generation publisher/contracts 不再是待恢复
+  实现：其 build/publication/load/Configure/registry/activation 职责已由上述窄阶段替代，而 replacement、
+  revision、catalog commit 与 collectible unload 仍需未来独立合同，所以这些文件只保留为历史设计参考。归档
+  中旧 build-environment/workspace/build/artifact contract 变体及配套测试、独立设计稿也已由当前 typed receipts、
+  real-chain tests 与 canonical architecture 文档替代。
+  归档中的 provider/runtime/Scene 草案也不回灌；当前 Application provider host、Runtime Scene value ABI、
+  native Scene Core 与 managed Scene Bridge 已由独立实现和测试拥有。
   Studio 在 Windows 上必须优先配置 `Win32RenderingMode.Vulkan`，再回退到 `AngleEgl` / `Software`，否则 Avalonia
   composition GPU interop 可能只暴露 D3D/ANGLE 共享纹理路径，无法进入 Vulkan opaque NT image/semaphore spike。
 

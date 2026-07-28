@@ -446,8 +446,8 @@ git diff --check
   snapshot、loader-owned exact non-collectible binary host、exact indexed runtime Type receipt、at-most-once
   constructed module objects、immutable configured declarations、shared definition projection、caller-supplied
   ProjectSession scope 下的 invisible candidate，以及 empty-scope initial registry registration/exact retirement
-  owner；正式 ProjectSession/manifest handoff、`.asmdef`、Package、activation/replacement/catalog commit 与完整
-  ALC generation pipeline 尚未实现；
+  owner，以及 exact-capability initial activation owner；正式 ProjectSession/manifest handoff、`.asmdef`、Package、
+  replacement/catalog commit 与完整 collectible ALC generation pipeline 尚未实现；
 - App shutdown 仍有 sync-over-async；
 - Game View、PlaySession 和 standalone orchestration 未完成；
 - Linux/macOS GPU presentation 尚未验证；

@@ -151,7 +151,9 @@ assembly declaration surface 完全一致。结果是 path-free、content-addres
 publication。candidate receipt 继承 publication absolute root 仅供进程内寻址，identity/module facts 不含路径；
 current check 会重新索引并对证 surface。该 receipt 只允许后继 loader 开始预执行验证，不证明 managed reload
 eligibility。上述步骤不写 sidecar、不加载 assembly，也不创建 ALC。Package、Avalonia resource、NuGet lock、
-aggregate host、module Configure/activation 和完整 ALC generation 尚未实现。host policy selector 再只消费 current candidate；
+aggregate host、正式 ProjectSession composition、replacement/catalog commit 和 collectible ALC generation 尚未实现。
+后续 pinned 路径已落地 exact Configure 与 initial scope activation，但不把它们宣称为上述完整 generation
+pipeline。host policy selector 再只消费 current candidate；
 当前 external-build v1 没有 resource/native/global-side-effect 与 cooperative-unload evidence，因此不按
 activation/handover 猜测能力，而是确定性签发 `Pinned + RestartRequired` receipt。policy identity 绑定
 candidate 与稳定 enum/reason，不含 absolute locator；后继 loader 在创建 non-collectible ALC 前仍须复验
