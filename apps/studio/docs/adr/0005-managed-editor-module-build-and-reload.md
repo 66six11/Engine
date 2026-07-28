@@ -99,8 +99,10 @@ non-collectible ALC 并保持引用；#318 再把 #313 exact index 对证为 run
 restart-required；#320 再按 exact object/index 至多一次地执行 Configure 并冻结 declaration/metadata receipt。
 #321 将这些 receipts 投影为 static/dynamic 共用的 module definitions，但不进入 registry。#322 再在
 caller-supplied ProjectSession scope 下完成 combined structural validation 与 invisible candidate；
-#332 完成 empty-scope initial registry commit 与 exact registration retirement ownership，但不 Activate；
-activation、replacement 与 catalog commit 仍是后继边界。
+#332 完成 empty-scope initial registry commit 与 exact registration retirement ownership；#333 再把该
+registration 一次性转交给独占异步 activation owner，复核 exact host-capability ID 集合，并在 `Faulted`、
+取消或 Host failure 时按 activation-first 顺序清理。正式 ProjectSession composition、replacement 与
+catalog commit 仍是后继边界。
 
 ### Generation replacement
 

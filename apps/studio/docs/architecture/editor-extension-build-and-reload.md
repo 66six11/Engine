@@ -208,6 +208,15 @@ partition 仍是同一 reference 时移除它，重复关闭无副作用，succe
 successor。stale、已有 scope 或重复消费返回 path-free conflict 并要求重新 Prepare。该边界不 Activate、
 不发布 contribution/current/active/LKG，也不实现 replacement、revision、rollback observer 或 I/O。
 
+initial Project scope activator 只消费仍持有 exact registration 的 owner，并要求 runtime capability snapshot
+与 Prepare 时的 host capability ID 集合完全一致。它把 registration 所有权一次性转交给独占异步 owner，
+再要求 `EditorModuleHost` 为同一 exact partition 建立新的 scope activation；已有 scope activation 即使引用
+同一 partition 也会拒绝，避免两个 owner 共享 disposal 责任。`Active`、`Dormant`、
+`WaitingForCapability` 与 `Blocked` 保留 owner，其中后两者是 soft outcome；任一 `Faulted`、取消或 Host
+异常都会先释放 activation，再退役 exact registration。成功 owner 的重复关闭幂等，并使用相同顺序释放。
+该边界仍不创建正式 ProjectSession，不执行 I/O，不推进 contribution/current/active/LKG，也不实现
+replacement、revision、catalog transaction 或前端接线。
+
 外部自定义 `.csproj` 必须由 `asharia.package.json.editor` 显式声明，视为受信任 external build，默认 `restart-required`。Host 记录实际 project、SDK、binlog 和 artifact，但不把它伪装成标准可重复 `.asmdef` build。
 
 分发 Package 可以提供 Package-wide prebuilt artifact manifest，包含全部 logical assembly identity、TFM/RID、API/schema compatibility、module DLL/PDB/index/resource、aggregate host/统一 `.deps.json`、private/native asset table 和 content hash。`asharia.packages.lock.json` 为整个 Package generation 选择 `source-build` 或一个 prebuilt artifact ID；禁止逐 assembly 混合 source/prebuilt 后临时合成 closure，也不允许从目录中猜测散落 DLL。Manifest 同时提供 source 与 prebuilt variant 时，Project policy 决定可选集合，但实际选择必须被 lock 固定。

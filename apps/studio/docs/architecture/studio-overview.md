@@ -39,8 +39,11 @@ loader-owned project reservation 幂等装入 exact non-collectible ALC，并把
 module Type receipt，再由独立 owner 按 exact constructor receipt 至多一次地构造 module objects。
 后继独立 owner 再逐 object 至多一次 Configure 并冻结 declaration/metadata receipt，随后纯内存投影为
 static/dynamic 共用的 shared definitions。未来 ProjectSession 显式提供 scope identity/host capabilities 后，
-现有 transaction 可准备不可见 combined structural candidate；registry commit、Activate 与 catalog
-尚未落地。
+现有 transaction 可准备不可见 combined structural candidate，并完成 empty-scope initial registry
+registration。registration 所有权可一次性转交给独占异步 activation owner；runtime capability snapshot
+必须与 Prepare 时的 capability ID 集合完全一致，`WaitingForCapability`/`Blocked` 保留为 soft outcome，
+`Faulted`、取消或 Host 异常按 activation-first 顺序清理。正式 ProjectSession composition、replacement、
+revision、contribution publication 与 catalog commit 尚未落地。
 
 当前仍为 Partial：
 

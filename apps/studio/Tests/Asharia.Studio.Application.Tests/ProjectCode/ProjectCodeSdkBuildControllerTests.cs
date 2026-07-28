@@ -385,6 +385,8 @@ public sealed class ProjectCodeSdkBuildControllerTests
             "ASHARIA_TEST_PROJECT_CODE_MODULE_CONFIGURE_FAILURE";
         const string ModuleActivateMarker =
             "ASHARIA_TEST_PROJECT_CODE_MODULE_ACTIVATE";
+        const string ModuleActivationFailureTrigger =
+            "ASHARIA_TEST_PROJECT_CODE_MODULE_ACTIVATION_FAILURE";
         const string ModuleConstructorFailureTrigger =
             "ASHARIA_TEST_PROJECT_CODE_MODULE_CONSTRUCTOR_FAILURE";
         Environment.SetEnvironmentVariable(
@@ -407,6 +409,9 @@ public sealed class ProjectCodeSdkBuildControllerTests
             null);
         Environment.SetEnvironmentVariable(
             ModuleActivateMarker,
+            null);
+        Environment.SetEnvironmentVariable(
+            ModuleActivationFailureTrigger,
             null);
         Environment.SetEnvironmentVariable(
             ModuleConstructorFailureTrigger,
@@ -537,6 +542,39 @@ public sealed class ProjectCodeSdkBuildControllerTests
             {
                 public override void Configure(EditorModuleBuilder editor)
                 {
+                    editor.Dependencies.RequireCapability(
+                        EditorCapabilityId.Create(
+                            "fixture.host.v1"));
+                    editor.Capabilities.Provide(
+                        EditorCapabilityId.Create(
+                            "fixture.ready-module.v1"));
+                }
+
+                public override ValueTask<IEditorModuleActivation> ActivateAsync(
+                    EditorModuleContext context,
+                    CancellationToken cancellationToken)
+                {
+                    var current = Environment.GetEnvironmentVariable(
+                        "MODULE_ACTIVATE_MARKER");
+                    var count = int.TryParse(current, out var value)
+                        ? value
+                        : 0;
+                    Environment.SetEnvironmentVariable(
+                        "MODULE_ACTIVATE_MARKER",
+                        (count + 1).ToString());
+                    if (string.Equals(
+                            Environment.GetEnvironmentVariable(
+                                "MODULE_ACTIVATION_FAILURE_TRIGGER"),
+                            "fail",
+                            StringComparison.Ordinal))
+                    {
+                        throw new InvalidOperationException(
+                            "Injected module activation failure.");
+                    }
+
+                    return base.ActivateAsync(
+                        context,
+                        cancellationToken);
                 }
             }
 
@@ -549,6 +587,9 @@ public sealed class ProjectCodeSdkBuildControllerTests
             {
                 public override void Configure(EditorModuleBuilder editor)
                 {
+                    editor.Dependencies.RequireCapability(
+                        EditorCapabilityId.Create(
+                            "fixture.ready-module.v1"));
                 }
             }
 
@@ -579,6 +620,10 @@ public sealed class ProjectCodeSdkBuildControllerTests
             .Replace(
                 "MODULE_ACTIVATE_MARKER",
                 ModuleActivateMarker,
+                StringComparison.Ordinal)
+            .Replace(
+                "MODULE_ACTIVATION_FAILURE_TRIGGER",
+                ModuleActivationFailureTrigger,
                 StringComparison.Ordinal));
         moduleProject.WriteEditorSource(
             "LoadProbe.cs",
@@ -1343,13 +1388,299 @@ public sealed class ProjectCodeSdkBuildControllerTests
             scopeRegistration.Partition,
             scopeRegistry.GetRequiredPartition(projectScope));
 
+        await using var moduleHost = new EditorModuleHost();
+        var readyCapability = EditorCapabilitySnapshot.Create(
+            hostCapability,
+            11,
+            EditorCapabilityState.Ready);
+        await Assert.ThrowsAsync<ArgumentException>(
+            async () => await ProjectCodePinnedModuleScopeActivator
+                .ActivateAsync(
+                    scopeRegistration,
+                    moduleHost,
+                    []));
+        await Assert.ThrowsAsync<ArgumentException>(
+            async () => await ProjectCodePinnedModuleScopeActivator
+                .ActivateAsync(
+                    scopeRegistration,
+                    moduleHost,
+                    [default]));
+        await Assert.ThrowsAsync<ArgumentException>(
+            async () => await ProjectCodePinnedModuleScopeActivator
+                .ActivateAsync(
+                    scopeRegistration,
+                    moduleHost,
+                    [readyCapability, readyCapability]));
+        Assert.Same(
+            scopeRegistration.Partition,
+            scopeRegistry.GetRequiredPartition(projectScope));
+
+        var scopeActivationResult =
+            await ProjectCodePinnedModuleScopeActivator.ActivateAsync(
+                scopeRegistration,
+                moduleHost,
+                [readyCapability]);
+        Assert.True(
+            scopeActivationResult.Succeeded,
+            Render(scopeActivationResult));
+        var scopeActivation = scopeActivationResult.Activation!;
+        Assert.Same(
+            refreshedScopePreparation,
+            scopeActivation.Preparation);
+        Assert.Same(
+            scopeRegistration.Partition,
+            scopeActivation.Partition);
+        Assert.Equal(
+            [readyCapability],
+            scopeActivation.Capabilities);
+        var onDemandDefinition = definitionSet.Definitions.Single(
+            definition =>
+                definition.Id.Module.Value == "fixture.module");
+        var onReadyDefinition = definitionSet.Definitions.Single(
+            definition =>
+                definition.Id.Module.Value
+                == "policy.on-ready.coexist");
+        var onReadyDependentDefinition =
+            definitionSet.Definitions.Single(
+                definition =>
+                    definition.Id.Module.Value
+                    == "policy.on-ready.quiesce");
+        Assert.Equal(
+            EditorModuleInstanceState.Dormant,
+            scopeActivation.Instances[
+                onDemandDefinition.Id].State);
+        Assert.Equal(
+            EditorModuleInstanceState.Active,
+            scopeActivation.Instances[
+                onReadyDefinition.Id].State);
+        Assert.Equal(
+            EditorModuleInstanceState.Active,
+            scopeActivation.Instances[
+                onReadyDependentDefinition.Id].State);
+        Assert.Equal(
+            "1",
+            Environment.GetEnvironmentVariable(
+                ModuleActivateMarker));
+        var repeatedActivationResult =
+            await ProjectCodePinnedModuleScopeActivator.ActivateAsync(
+                scopeRegistration,
+                moduleHost,
+                [readyCapability]);
+        AssertDiagnostic(
+            repeatedActivationResult,
+            "project-code.pinned-module-scope-activation.registration-unavailable");
+        Assert.Same(
+            scopeActivation.Partition,
+            scopeRegistry.GetRequiredPartition(projectScope));
+
         scopeRegistration.Dispose();
+        Assert.Same(
+            scopeActivation.Partition,
+            scopeRegistry.GetRequiredPartition(projectScope));
+        var firstScopeDisposal =
+            scopeActivation.DisposeAsync().AsTask();
+        var repeatedScopeDisposal =
+            scopeActivation.DisposeAsync().AsTask();
+        Assert.Same(
+            firstScopeDisposal,
+            repeatedScopeDisposal);
+        await firstScopeDisposal;
         scopeRegistration.Dispose();
         Assert.False(scopeRegistry.TryGetPartition(
             projectScope,
             out _));
         Assert.True(scopeRegistry.TryGetPartition(
             ScopeInstanceId.Application,
+            out _));
+
+        var waitingScope = ScopeInstanceId.ForProject(
+            Guid.Parse("81818181-8181-8181-8181-818181818181"));
+        var waitingRegistry = new EditorModuleRegistry();
+        var waitingPreparationResult =
+            ProjectCodePinnedModuleScopePreparer.Prepare(
+                definitionSet,
+                waitingScope,
+                waitingRegistry,
+                [hostCapability]);
+        Assert.True(
+            waitingPreparationResult.Succeeded,
+            Render(waitingPreparationResult));
+        var waitingCommit =
+            ProjectCodePinnedModuleScopeCommitter.CommitInitial(
+                waitingPreparationResult.Preparation!);
+        Assert.True(waitingCommit.Succeeded, Render(waitingCommit));
+        var unavailableCapability =
+            EditorCapabilitySnapshot.Create(
+                hostCapability,
+                12,
+                EditorCapabilityState.Unavailable);
+        var waitingActivationResult =
+            await ProjectCodePinnedModuleScopeActivator.ActivateAsync(
+                waitingCommit.Registration!,
+                moduleHost,
+                [unavailableCapability]);
+        Assert.True(
+            waitingActivationResult.Succeeded,
+            Render(waitingActivationResult));
+        var waitingActivation =
+            waitingActivationResult.Activation!;
+        Assert.Equal(
+            EditorModuleInstanceState.WaitingForCapability,
+            waitingActivation.Instances[
+                onReadyDefinition.Id].State);
+        Assert.Equal(
+            EditorModuleInstanceState.Blocked,
+            waitingActivation.Instances[
+                onReadyDependentDefinition.Id].State);
+        Assert.Equal(
+            "1",
+            Environment.GetEnvironmentVariable(
+                ModuleActivateMarker));
+        await waitingActivation.DisposeAsync();
+        Assert.False(waitingRegistry.TryGetPartition(
+            waitingScope,
+            out _));
+
+        var successorScope = ScopeInstanceId.ForProject(
+            Guid.Parse("84848484-8484-8484-8484-848484848484"));
+        var successorRegistry = new EditorModuleRegistry();
+        var successorPreparationResult =
+            ProjectCodePinnedModuleScopePreparer.Prepare(
+                definitionSet,
+                successorScope,
+                successorRegistry,
+                [hostCapability]);
+        Assert.True(
+            successorPreparationResult.Succeeded,
+            Render(successorPreparationResult));
+        var successorCommit =
+            ProjectCodePinnedModuleScopeCommitter.CommitInitial(
+                successorPreparationResult.Preparation!);
+        Assert.True(
+            successorCommit.Succeeded,
+            Render(successorCommit));
+        var predecessorActivationResult =
+            await ProjectCodePinnedModuleScopeActivator.ActivateAsync(
+                successorCommit.Registration!,
+                moduleHost,
+                [unavailableCapability]);
+        Assert.True(
+            predecessorActivationResult.Succeeded,
+            Render(predecessorActivationResult));
+        var predecessorActivation =
+            predecessorActivationResult.Activation!;
+        var successorTransaction = EditorScopeTransaction.Prepare(
+            successorRegistry,
+            successorScope,
+            definitionSet.Definitions,
+            [hostCapability]);
+        successorTransaction.Commit();
+        await Assert.ThrowsAsync<AggregateException>(
+            async () => await predecessorActivation.DisposeAsync());
+        Assert.Same(
+            successorTransaction.Candidate,
+            successorRegistry.GetRequiredPartition(successorScope));
+
+        var faultedScope = ScopeInstanceId.ForProject(
+            Guid.Parse("82828282-8282-8282-8282-828282828282"));
+        var faultedRegistry = new EditorModuleRegistry();
+        var faultedPreparationResult =
+            ProjectCodePinnedModuleScopePreparer.Prepare(
+                definitionSet,
+                faultedScope,
+                faultedRegistry,
+                [hostCapability]);
+        Assert.True(
+            faultedPreparationResult.Succeeded,
+            Render(faultedPreparationResult));
+        var faultedCommit =
+            ProjectCodePinnedModuleScopeCommitter.CommitInitial(
+                faultedPreparationResult.Preparation!);
+        Assert.True(faultedCommit.Succeeded, Render(faultedCommit));
+        Environment.SetEnvironmentVariable(
+            ModuleActivationFailureTrigger,
+            "fail");
+        var faultedActivation =
+            await ProjectCodePinnedModuleScopeActivator.ActivateAsync(
+                faultedCommit.Registration!,
+                moduleHost,
+                [readyCapability]);
+        Environment.SetEnvironmentVariable(
+            ModuleActivationFailureTrigger,
+            null);
+        AssertDiagnostic(
+            faultedActivation,
+            "project-code.pinned-module-scope-activation.module-faulted");
+        AssertNoAbsolutePathLeak(
+            Render(faultedActivation),
+            moduleProject.ProjectRoot,
+            modulePublicationReceipt.AbsoluteRoot);
+        Assert.False(faultedRegistry.TryGetPartition(
+            faultedScope,
+            out _));
+        Assert.Equal(
+            "2",
+            Environment.GetEnvironmentVariable(
+                ModuleActivateMarker));
+
+        var canceledScope = ScopeInstanceId.ForProject(
+            Guid.Parse("83838383-8383-8383-8383-838383838383"));
+        var canceledRegistry = new EditorModuleRegistry();
+        var canceledPreparationResult =
+            ProjectCodePinnedModuleScopePreparer.Prepare(
+                definitionSet,
+                canceledScope,
+                canceledRegistry,
+                [hostCapability]);
+        Assert.True(
+            canceledPreparationResult.Succeeded,
+            Render(canceledPreparationResult));
+        var canceledCommit =
+            ProjectCodePinnedModuleScopeCommitter.CommitInitial(
+                canceledPreparationResult.Preparation!);
+        Assert.True(canceledCommit.Succeeded, Render(canceledCommit));
+        using var canceledActivation =
+            new CancellationTokenSource();
+        canceledActivation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            async () => await ProjectCodePinnedModuleScopeActivator
+                .ActivateAsync(
+                    canceledCommit.Registration!,
+                    moduleHost,
+                    [readyCapability],
+                    canceledActivation.Token));
+        Assert.False(canceledRegistry.TryGetPartition(
+            canceledScope,
+            out _));
+
+        var failedHostScope = ScopeInstanceId.ForProject(
+            Guid.Parse("85858585-8585-8585-8585-858585858585"));
+        var failedHostRegistry = new EditorModuleRegistry();
+        var failedHostPreparationResult =
+            ProjectCodePinnedModuleScopePreparer.Prepare(
+                definitionSet,
+                failedHostScope,
+                failedHostRegistry,
+                [hostCapability]);
+        Assert.True(
+            failedHostPreparationResult.Succeeded,
+            Render(failedHostPreparationResult));
+        var failedHostCommit =
+            ProjectCodePinnedModuleScopeCommitter.CommitInitial(
+                failedHostPreparationResult.Preparation!);
+        Assert.True(
+            failedHostCommit.Succeeded,
+            Render(failedHostCommit));
+        var disposedModuleHost = new EditorModuleHost();
+        await disposedModuleHost.DisposeAsync();
+        await Assert.ThrowsAsync<ObjectDisposedException>(
+            async () => await ProjectCodePinnedModuleScopeActivator
+                .ActivateAsync(
+                    failedHostCommit.Registration!,
+                    disposedModuleHost,
+                    [readyCapability]));
+        Assert.False(failedHostRegistry.TryGetPartition(
+            failedHostScope,
             out _));
 
         var existingTransaction = EditorScopeTransaction.Prepare(
@@ -1381,8 +1712,10 @@ public sealed class ProjectCodeSdkBuildControllerTests
             "1",
             Environment.GetEnvironmentVariable(
                 ModuleConfigureMarker));
-        Assert.Null(Environment.GetEnvironmentVariable(
-            ModuleActivateMarker));
+        Assert.Equal(
+            "2",
+            Environment.GetEnvironmentVariable(
+                ModuleActivateMarker));
         Assert.Null(Environment.GetEnvironmentVariable(
             AttributeConstructorMarker));
         Assert.Null(Environment.GetEnvironmentVariable(
@@ -1434,8 +1767,10 @@ public sealed class ProjectCodeSdkBuildControllerTests
             "2",
             Environment.GetEnvironmentVariable(
                 ModuleConfigureMarker));
-        Assert.Null(Environment.GetEnvironmentVariable(
-            ModuleActivateMarker));
+        Assert.Equal(
+            "2",
+            Environment.GetEnvironmentVariable(
+                ModuleActivateMarker));
         Assert.Null(Environment.GetEnvironmentVariable(
             AttributeConstructorMarker));
 
@@ -1464,8 +1799,10 @@ public sealed class ProjectCodeSdkBuildControllerTests
             StaticConstructorMarker));
         Assert.Null(Environment.GetEnvironmentVariable(
             AttributeConstructorMarker));
-        Assert.Null(Environment.GetEnvironmentVariable(
-            ModuleActivateMarker));
+        Assert.Equal(
+            "2",
+            Environment.GetEnvironmentVariable(
+                ModuleActivateMarker));
         Assert.Equal(1, pinnedAssemblyHost.AssemblyCount);
         var mutatedLoadImageImplementation =
             loadImageImplementation.ToArray();
@@ -2919,6 +3256,16 @@ public sealed class ProjectCodeSdkBuildControllerTests
             diagnostic => diagnostic.Code == code);
     }
 
+    private static void AssertDiagnostic(
+        ProjectCodePinnedModuleScopeActivationResult result,
+        string code)
+    {
+        Assert.False(result.Succeeded);
+        Assert.Contains(
+            result.Diagnostics,
+            diagnostic => diagnostic.Code == code);
+    }
+
     private static byte[] ReplaceUtf8(
         byte[] source,
         string oldValue,
@@ -3197,6 +3544,13 @@ public sealed class ProjectCodeSdkBuildControllerTests
 
     private static string Render(
         ProjectCodePinnedModuleScopeCommitResult result) =>
+        string.Join(
+            Environment.NewLine,
+            result.Diagnostics.Select(diagnostic =>
+                $"{diagnostic.Code} {diagnostic.Location}: {diagnostic.Message}"));
+
+    private static string Render(
+        ProjectCodePinnedModuleScopeActivationResult result) =>
         string.Join(
             Environment.NewLine,
             result.Diagnostics.Select(diagnostic =>

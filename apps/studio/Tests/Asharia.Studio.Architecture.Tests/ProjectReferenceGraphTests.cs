@@ -1622,6 +1622,85 @@ public sealed class ProjectReferenceGraphTests
     }
 
     [Fact]
+    public void Project_code_initial_scope_activation_has_one_async_owner()
+    {
+        var studioRoot = FindStudioRoot();
+        var source = File.ReadAllText(Path.Combine(
+            studioRoot,
+            "src",
+            "Asharia.Studio.Application",
+            "ProjectCode",
+            "ProjectCodePinnedModuleScopeActivator.cs"));
+        var hostSource = File.ReadAllText(Path.Combine(
+            studioRoot,
+            "src",
+            "Asharia.Studio.Application",
+            "Extensions",
+            "EditorModuleHost.cs"));
+        var forbiddenTokens = new[]
+        {
+            "ProjectId",
+            "ScopeInstanceId.ForProject",
+            "ProjectSession(",
+            "StudioSession(",
+            "TryReserve",
+            "Reservation",
+            "OwnerToken",
+            "Revision",
+            "CommitObserver",
+            "AssemblyLoadContext",
+            "LoadFrom",
+            "File.",
+            "Directory.",
+            "Avalonia",
+            "Unreal",
+            "Unity",
+            "Godot",
+            "O3DE",
+        };
+
+        Assert.Contains(
+            "registration.TryTransfer(",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "moduleHost.ActivateNewScopeAsync(",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "actual.SetEquals(expected)",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "EditorModuleInstanceState.Faulted",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "IAsyncDisposable",
+            source,
+            StringComparison.Ordinal);
+        var activationDisposal = source.IndexOf(
+            "activation_.DisposeAsync()",
+            StringComparison.Ordinal);
+        var registrationDisposal = source.IndexOf(
+            "registration_.Dispose()",
+            StringComparison.Ordinal);
+        Assert.True(activationDisposal >= 0);
+        Assert.True(registrationDisposal > activationDisposal);
+        Assert.Contains(
+            "ReferenceEquals(existing.Partition, partition)",
+            hostSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "requireNew",
+            hostSource,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            forbiddenTokens,
+            token => source.Contains(token, StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Project_code_implicit_workspace_does_not_execute_or_load_candidates()
     {
         var sourceRoot = Path.Combine(

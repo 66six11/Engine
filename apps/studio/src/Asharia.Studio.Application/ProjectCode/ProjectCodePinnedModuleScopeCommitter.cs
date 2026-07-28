@@ -8,7 +8,8 @@ namespace Asharia.Studio.Application.ProjectCode;
 internal sealed class ProjectCodePinnedModuleScopeRegistration :
     IDisposable
 {
-    private readonly EditorScopeRegistration registration_;
+    private readonly object gate_ = new();
+    private EditorScopeRegistration? registration_;
 
     internal ProjectCodePinnedModuleScopeRegistration(
         ProjectCodePinnedModuleScopePreparation preparation,
@@ -37,9 +38,32 @@ internal sealed class ProjectCodePinnedModuleScopeRegistration :
         Preparation.ScopeInstanceId;
 
     public EditorScopePartition Partition =>
-        registration_.Partition;
+        Preparation.Candidate;
 
-    public void Dispose() => registration_.Dispose();
+    public void Dispose()
+    {
+        lock (gate_)
+        {
+            if (registration_ is null)
+            {
+                return;
+            }
+
+            registration_.Dispose();
+            registration_ = null;
+        }
+    }
+
+    internal bool TryTransfer(
+        out EditorScopeRegistration? registration)
+    {
+        lock (gate_)
+        {
+            registration = registration_;
+            registration_ = null;
+            return registration is not null;
+        }
+    }
 }
 
 internal sealed class ProjectCodePinnedModuleScopeCommitResult

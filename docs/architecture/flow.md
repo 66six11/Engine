@@ -353,7 +353,7 @@ flowchart LR
 current selection、Project Open 或 Host activation。Editor Image 的资格检查不加载或执行候选输入，也不证明 ABI、
 launch behavior 或 runtime health。
 
-## Studio Project Code 隔离 SDK 构建、发布与 initial scope registration 流（#305–#322、#332）
+## Studio Project Code 隔离 SDK 构建、发布与 initial scope activation 流（#305–#322、#332–#333）
 
 这是 `Asharia.Studio.Application` 的 headless Project Code control plane，不经过 Avalonia storage API；
 pinned loader 节点加载 exact 项目 assembly，resolver 只解析已索引 Type，constructor owner 才首次有意执行
@@ -385,6 +385,7 @@ flowchart LR
     Definitions["shared module definitions<br/>exact pure projection"]
     ScopeCandidate["invisible Project scope candidate<br/>caller ProjectSession identity"]
     Registration["initial registry registration<br/>exact partition owner"]
+    Activation["exclusive initial scope activation<br/>single async owner"]
 
     Image --> Projection
     Projection --> Credential
@@ -409,6 +410,7 @@ flowchart LR
     Configure --> Definitions
     Definitions --> ScopeCandidate
     ScopeCandidate --> Registration
+    Registration --> Activation
 ```
 
 workspace 和 dotnet closure 在每个外部步骤后复验；同 project 新调用会 supersede 旧调用。CLI 环境从空白
@@ -462,8 +464,12 @@ static/dynamic 共用的 shared definitions，保留顺序与 keyed lookup，但
 transaction Prepare，生成不可见、combined-validated candidate；它不把 persistent ProjectId 当 session id，
 也不 Commit/reserve/Activate。#332 只在 captured snapshot 仍有效且目标 Project scope 为空时首次提交 exact
 candidate，并返回绑定 exact partition reference 的 registration owner；关闭 owner 时幂等 compare-and-remove，
-stale/已有 scope/重复消费返回 path-free conflict，successor replacement 永不被旧 owner 删除。该阶段仍不
-Activate，不推进 current/active/LKG，也不实现 replacement、revision、catalog transaction 或前端接线。
+stale/已有 scope/重复消费返回 path-free conflict，successor replacement 永不被旧 owner 删除。#333 要求
+runtime capability snapshot 与 Prepare 时的 capability ID 集合完全一致，再把 registration 一次性转交给
+独占异步 activation owner；同 scope 已有 activation 即使绑定同一 partition 也会拒绝。`Active`、`Dormant`、
+`WaitingForCapability` 与 `Blocked` 保留 owner，任一 `Faulted` 返回 path-free typed failure；取消、Host
+failure 与显式关闭都先释放 activation，再退役 exact registration。该阶段仍不创建正式 ProjectSession，
+不推进 contribution/current/active/LKG，也不实现 replacement、revision、catalog transaction 或前端接线。
 
 ## 当前架构总览
 
