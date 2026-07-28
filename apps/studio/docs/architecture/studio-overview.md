@@ -297,7 +297,8 @@ flowchart LR
 ### Public Editor Framework
 
 - `Asharia.Editor`：stable ID、snapshot、command、transaction、selection、module/contribution、service port 和 Code-first UI-neutral API；
-- `Asharia.Editor.Avalonia`：可选复杂 UI bridge，允许 panel content Control/XAML，但不暴露 Window/Dock/native ownership。
+- `Asharia.Editor.Avalonia`：可选复杂 UI bridge，允许 panel content 使用 compiled XAML 或直接代码创建同一
+  Avalonia Control graph，但不暴露 Window/Dock/native ownership。
 
 Panel、Action、Tool、Code-first/Avalonia authoring 与 Host lifecycle 的详细合同见
 [Studio 前端框架](studio-frontend-framework.md)。
@@ -307,7 +308,8 @@ Panel、Action、Tool、Code-first/Avalonia authoring 与 Host lifecycle 的详�
 - `Asharia.Studio.Application`：session、document、extension build/load/host、command、transaction 和 scheduling；
 - `Asharia.Studio.EngineInterop`：GPU frame lease、external resource descriptor 与 ownership narrow waist；
 - `Asharia.Studio.EngineBridge`：native loading、ABI、Engine/World/Viewport adapter；
-- `Asharia.Studio.Presentation.Avalonia`：Window、Dock、Code-first reconciler、Avalonia extension host 和 GPU import；
+- `Asharia.Studio.Presentation.Avalonia`：Window、Dock、Code-first content builder、Avalonia extension host 和 GPU import；
+  keyed Code-first reconciler 尚未实现；
 - `Asharia.Studio.App`：唯一 composition root 和 platform startup。
 
 ### Built-in dogfooding

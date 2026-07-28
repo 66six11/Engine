@@ -291,16 +291,18 @@ Scene View 不直接执行 engine mutation。picking 产生 selection intent；g
 
 | 场景 | 首选 backend | 原因 |
 | --- | --- | --- |
-| 调试工具、小型 Inspector、标准表单、按钮/过滤/列表/只读详情 | Code-first UI | UI-neutral、开发快，复用 Host theme、command、state 和 lifecycle |
+| 低频、小规模、标准按钮/过滤/只读详情 | Code-first UI | UI-neutral、开发快，复用 Host theme、command、state 和 lifecycle |
 | 复杂长期面板、深度数据绑定、模板、动画、自定义控件 | Avalonia + compiled XAML/ViewModel | 直接使用成熟 retained UI、compiled binding 和虚拟化能力 |
+| algorithmic composition、typed code binding | code-only Avalonia + ViewModel | 与 XAML 使用同一控件运行时，不需要第二套 backend |
 | Viewport overlay、graph、timeline | 专用 Avalonia control + 公共 Editor contract | 输入、绘制和性能需求不应被塞进通用 Code-first primitive |
 
 两种 backend 的共同规则：
 
 - 它们属于同一个 `EditorModule` / contribution / panel lifecycle，不是两套扩展 SDK；
 - 同一 extension 可以贡献不同 backend 的不同 panel，但单个 panel 选择一种 backend；
-- Code-first 是类似 IMGUI 的顺序 authoring API，Host 会把稳定 key 的 node tree reconcile 为 retained Avalonia controls；它不建立第二个 immediate-mode renderer；
-- XAML content 由 Host-owned content lease 承载，不自行创建 `Window`、操作 Dock 或接管 application lifetime；
+- Code-first 是类似 IMGUI 的顺序 authoring API；当前 Host 把 node tree 重建为 retained Avalonia content subtree，
+  keyed reconcile 尚未实现；它不建立第二个 immediate-mode renderer；
+- XAML 与 code-only Avalonia 共享同一 content backend/lease，不自行创建 `Window`、操作 Dock 或接管 application lifetime；
 - ViewModel 与持久 mutation 继续只依赖公共 Editor service，并走 command/transaction/dirty/validation；
 - backend 选择不改变本章的 selection、focus、diagnostics、layout 和 accessibility 合同。
 

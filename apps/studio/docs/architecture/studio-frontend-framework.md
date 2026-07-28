@@ -1,6 +1,7 @@
 # Studio 前端框架
 
-状态：Target（Code-first v1 已实现；统一 Action、Avalonia extension backend 与工具合同仍在迁移）
+状态：Target（authoring 分层已校准；Code-first v1 当前使用整棵 content subtree 重建，
+keyed reconcile 尚未实现；统一 Action、Avalonia extension backend 与工具合同仍在迁移）
 
 更新日期：2026-07-28
 
@@ -20,6 +21,8 @@
 - 可扩展：built-in、项目 `Editor/` 和 Package 使用同一个 Editor Framework；
 - 可测试：Application 合同无 Avalonia，ViewModel/authoring tree 可 headless 验证；
 - 可替换 presentation：公共 Editor API 不依赖 Avalonia、Dock、Window、filesystem implementation 或 native handle。
+- 单一控件运行时：XAML 与直接代码创建的是同一类 Avalonia object graph，不把 authoring syntax 误建模为不同 backend；
+- 不造第二套 toolkit：Code-first 只覆盖稳定的标准工具 schema，不追求 Avalonia 控件、布局、样式或 binding 能力对等。
 
 ## 2. 不变量
 
@@ -33,14 +36,24 @@
 8. 未实现或当前上下文不可执行的操作不伪装成功；返回 typed result 并给出可理解原因。
 9. UI 更新由 snapshot revision、event 或显式 frame request 驱动，不每帧重建整个工作台。
 10. 同一功能只存在一条 production 路径；迁移 adapter 必须可删除，不能成为第二套框架。
+11. XAML 与 code-only Avalonia 共用同一个 content backend、控件生命周期、样式和 binding 规则；二者只是 authoring syntax。
+12. Code-first 是受限、UI-neutral 的标准工具 schema；它不是 Avalonia code-only UI 的别名，也不能成为通用控件抽象层。
 
 ## 3. 成熟引擎案例结论
 
-### 3.1 主参考：模块化 retained editor UI
+### 3.1 证据等级
+
+- O3DE、Godot 与 Avalonia 的公开源码和官方文档用于核对真实 ownership、registration 与控件运行时；
+- Unreal 的源码在 EULA 下可访问，但不是 OSI 开源；本文只采用其公开文档/API 所能证明的边界，不复制实现；
+- Unity 同样只作为公开 retained editor UI 文档证据，不把其产品名、类型名或内部实现带入公共 API；
+- 外部案例先证明问题和边界，不能仅凭“成熟引擎也有”就新增 registry、DSL 或 abstraction。
+
+### 3.2 主参考：模块化 retained editor UI
 
 Unreal Editor 的公开文档和 API 展现出五个对 Studio 有直接价值的边界：
 
-- Slate 使用代码中的声明式组合，但运行时仍是 retained widget tree；
+- Slate 使用代码中的声明式组合并维护 widget tree；它证明代码 authoring 与 retained UI 可以共存，
+  但不证明 Studio 已有或必须复制 virtual-tree reconcile；
 - `FUICommandList` 把 execute、can-execute、checked state 和输入绑定从具体按钮分离；
 - `FTabManager`/tab spawner 使用稳定 tab identity 恢复布局和按需创建内容；
 - `IDetailsView` 与 `IPropertyHandle` 把 selection 展示、property access、transaction 和 change notification 从具体控件分离；
@@ -48,7 +61,7 @@ Unreal Editor 的公开文档和 API 展现出五个对 Studio 有直接价值�
 
 采用：
 
-- Code-first authoring + retained Avalonia reconcile；
+- Code-first tree recording + retained Avalonia controls；当前实现为 subtree replacement，不误称已有 reconcile；
 - action definition 与 surface placement 分离；
 - panel descriptor + Host-owned spawn/restore；
 - property handle 作为后续可写 Inspector 的窄腰；
@@ -60,7 +73,25 @@ Unreal Editor 的公开文档和 API 展现出五个对 Studio 有直接价值�
 - 把大型通用 Property Editor 作为 Scene Authoring 的前置条件；
 - 把外部引擎类型名写进 Asharia public API。
 
-### 3.2 交叉参考：Action、插件与 Inspector
+### 3.3 同一控件运行时的多种 authoring
+
+Unity UI Toolkit 允许 UXML、UI Builder 和 C# 创建同一 `VisualElement` tree；Avalonia 官方也明确说明 XAML
+与 code-only UI 生成相同 runtime object graph，二者可混用，code-only binding 也可以编译检查。
+
+采用：
+
+- XAML 和直接代码都归入 Avalonia content backend，不建立 `XamlBackend` 与 `CodeOnlyBackend`；
+- compiled XAML + ViewModel 是复杂长期 panel 的默认 authoring；
+- algorithmic composition、专用绘制或不适合 markup 的局部视图可以直接代码创建 Avalonia control；
+- 两种写法共享相同 `UserControl`/`TemplatedControl`/custom-drawn control 选择、Host lifecycle、主题和测试门禁。
+
+不采用：
+
+- 为了“统一语法”把 XAML 编译成自有 `GuiNode`，或把直接代码限制为自有 builder；
+- 让 Code-first schema 追赶 DataTemplate、binding、virtualization、style selector、animation 或 accessibility API；
+- 因为两个 authoring syntax 最终产生相同 object graph，就允许 extension 接管 Window、Dock 或全局 resource。
+
+### 3.4 交叉参考：Action、插件与 Inspector
 
 O3DE Action Manager 明确区分 action、context、context mode、menu/toolbar placement、hotkey 和 event-driven updater。其 toolbar 默认在 mode 内保持位置稳定，避免 selection 变化导致按钮抖动；menu 可以按上下文隐藏无关 action。
 
@@ -98,7 +129,7 @@ flowchart LR
 
     Application --> Presentation["Presentation.Avalonia"]
     Presentation --> Dock["Window / Dock / Focus"]
-    Presentation --> CodeFirst["Code-first reconciler"]
+    Presentation --> CodeFirst["Code-first content builder"]
     Presentation --> AvaloniaContent["Avalonia content lease"]
     Presentation --> Specialized["Specialized controls"]
 
@@ -136,7 +167,9 @@ UI 不直接“同步写模型再等待系统追认”。新 revision 是 mutati
 ### 5.1 当前已有
 
 - `Asharia.Editor.Panels.EditorPanelDescriptor` 已定义 stable contribution id、title、kind、default dock、cache policy、backend 和 factory-local id；
-- `UiBackendId.CodeFirst`、`CodeFirstEditorPanel`、稳定 `GuiNodeId`、`GuiFrameBuilder`、event queue、local state store 和 Avalonia reconciler 已存在；
+- `UiBackendId.CodeFirst`、`CodeFirstEditorPanel`、稳定 `GuiNodeId`、`GuiFrameBuilder`、event queue 和 local state store 已存在；
+- 当前 `CodeFirstPanelHostView` 在 tree 更新时通过 `GuiAvaloniaControlFactory` 重新创建整棵 content subtree；
+  尚无 keyed control reconcile，也不保证重建时保留 control identity、focus、IME composition 或 scroll；
 - `WorkbenchActionDescriptor`、menu、shortcut、Command Palette 与 command result 路径存在，但仍是 legacy app-local contract；
 - selection、transaction、dirty、diagnostic、background task、panel scheduler 和 lifecycle snapshot 已有公共或迁移中合同；
 - built-in XAML View 已使用 Avalonia + MVVM，但公开 `Asharia.Editor.Avalonia` content backend 尚未落地。
@@ -291,9 +324,22 @@ CanStart(context)
 
 首个实现 Slice #338 只显示 Edit mode 与 disabled tool affordance，不提前实现此 registry。
 
-## 10. 三种 UI authoring 路径
+## 10. 一个控件运行时、两个 backend、三种 authoring 路径
 
-Avalonia 官方同时支持 code-only UI 与 XAML；二者生成同类 runtime object graph。Studio 在其上提供三条有意约束的 authoring 路径。
+Studio 只有一个实际桌面控件运行时：Avalonia。Panel contribution 当前/目标只有两个 backend：
+
+```text
+Code-first backend
+  -> UI-neutral standard tool schema
+  -> Host builds Avalonia controls
+
+Avalonia content backend
+  -> compiled XAML + ViewModel
+  -> code-only Avalonia control composition/custom drawing
+```
+
+因此是三个 authoring 路径、两个 backend，不是三套 framework。XAML 与直接代码可以在同一个 Avalonia content
+内部按普通控件组合规则混用；Code-first panel 则保持 UI-neutral，不能嵌入 raw control。
 
 ### 10.1 Code-first Editor UI
 
@@ -308,10 +354,19 @@ Avalonia 官方同时支持 code-only UI 与 XAML；二者生成同类 runtime o
 
 - API 位于 UI-neutral `Asharia.Editor.UI.CodeFirst`；
 - 类似 IMGUI 的顺序 `OnGui` authoring，但结果是 immutable node tree；
-- stable key 生成 `GuiNodeId`，Host reconcile 为 retained Avalonia controls；
-- local focus/selection/scroll/foldout/split state 由 Host/state store 恢复；
+- stable key 生成 `GuiNodeId`；
+- 显式建模的 text、selection、foldout、split 等 local state 由 Host/state store 恢复；
 - `OnGui` 只消费 snapshot、生成 UI 和 action intent，不执行 IO/GPU/长查询；
 - rebuild 由 input、lifecycle、snapshot invalidation 或显式 `FrameUpdateRequest` 触发。
+
+当前实现边界：
+
+- 每次有效 tree 更新会重新创建 content subtree，不是 keyed diff/reconcile；
+- `GuiStateStore` 可以恢复部分显式状态，但不能等价证明 TextBox、focus、IME、scroll 或虚拟化容器 identity 被保留；
+- 因而当前 Code-first 只用于低频更新、小规模、标准控件工具；文本编辑密集、高频刷新、大列表和复杂可访问性场景
+  应使用 Avalonia content backend；
+- 在有真实 profile、focus/IME regression 和第二个需要增量更新的 consumer 前，不实现通用 reconciler；
+- 现有 node kind 集合冻结；新增 primitive 必须证明两个 consumer，或证明无法用 Avalonia content 更简单地完成。
 
 不允许：
 
@@ -333,11 +388,14 @@ Avalonia 官方同时支持 code-only UI 与 XAML；二者生成同类 runtime o
 | 需求 | 首选 |
 | --- | --- |
 | 复杂长期 panel、模板、深度 binding、design preview | compiled XAML + ViewModel |
+| algorithmic composition，但仍需 typed binding/retained identity | code-only Avalonia control composition |
 | 行为与外观可复用的通用控件 | `TemplatedControl` + scoped `ControlTheme` |
-| graph/timeline/curve/viewport chrome 的高频专用绘制 | code-only/custom drawn `Control` |
-| 只是标准表单和列表 | Code-first，不创建专用 Avalonia content |
+| graph/timeline/curve/viewport chrome 的高频专用绘制 | code-only/custom-drawn `Control` |
+| 低频、小规模、标准表单或调试工具 | Code-first |
 
-所有路径都由 `IAvaloniaContentLease` 目标合同承载。extension 只提供 content；Host 调用 attach/activate/deactivate/detach/dispose，并拥有 popup、timer、focus、Dock 和 Window cleanup。
+Avalonia content backend 内的 XAML 与 code-only 路径都由 `IAvaloniaContentLease` 目标合同承载。
+extension 只提供 content；Host 调用 attach/activate/deactivate/detach/dispose，并拥有 popup、timer、focus、Dock 和 Window cleanup。
+Code-first 使用自身的 panel host lifecycle，不经过该 content lease。
 
 compiled binding 是默认门禁。动态/无法编译的 binding 必须有局部理由和测试，不能全局退回 reflection binding。
 
@@ -350,7 +408,7 @@ compiled binding 是默认门禁。动态/无法编译的 binding 必须有局�
 - 两套互相嵌套的 lifecycle；
 - focus/shortcut ownership 不明；
 - generation unload 时 raw control 泄漏；
-- Code-first tree diff 无法理解外部 visual subtree。
+- Code-first schema/host 无法拥有外部 visual subtree。
 
 ## 11. UI state 与 truth
 
@@ -379,7 +437,8 @@ compiled binding 是默认门禁。动态/无法编译的 binding 必须有局�
 - Application 按 revision 发布事件；
 - ViewModel 在 dispatcher 上替换 snapshot projection；
 - XAML 通过 observable property/collection 更新；
-- Code-first host 聚合 `GuiRebuildReason`，每个 dispatcher turn 至多 reconcile 一次；
+- code-only Avalonia 通过同一 property/binding/observable 机制更新，不重建整个 content；
+- Code-first host 聚合 `GuiRebuildReason`，每个 dispatcher turn 至多 rebuild 一次；
 - action updater 只刷新受 invalidation key 影响的 action；
 - viewport frame 与普通 panel rebuild 分离。
 
@@ -394,7 +453,7 @@ Avalonia control 创建、binding、layout、input 和 visual tree 操作只发�
 - sort/filter 在后台或 UI-neutral projection 处理时可取消、可 supersede；
 - 不为不可见 item 创建 control；
 - 高速日志有界并聚合重复项；
-- layout/reconcile/command execution 分别有 diagnostics，避免只看“界面卡了”。
+- layout/build-replace/command execution 分别有 diagnostics，避免只看“界面卡了”。
 
 ## 13. Inspector 与 property handle
 
@@ -469,7 +528,8 @@ Code-first 当前 `OnCreate/OnEnable/OnGui/OnFrame/OnDisable/OnDestroy` 映射�
 - registration failure 不发布半成品；
 - action context、mode、enabled、checked、visibility 和 shortcut arbitration；
 - panel lifecycle exact pairing、KeepAlive、RecreateOnOpen 和 repeated close；
-- Code-first stable key、duplicate key、state restore、batched rebuild 和 tree diff；
+- Code-first stable key、duplicate key、state restore、batched rebuild 和当前 full-subtree replacement；
+- keyed reconcile、control identity/focus/IME preservation 属于未实现 target，只有进入独立实现 Slice 后才列为通过能力；
 - Avalonia compiled binding、content lease cleanup 和 scoped resource；
 - property handle revision mismatch、validation、undo/redo 和 cancel；
 - interactive tool input capture、accept/cancel、document transition；
@@ -492,6 +552,13 @@ open project
 ```
 
 ## 17. 实施顺序
+
+### F0：冻结 authoring 边界
+
+- 不新增 Code-first node kind、layout DSL 或 style API；
+- 文档和诊断明确当前 full-subtree rebuild，不把 target reconcile 写成已有能力；
+- 新 panel 先按“低频标准 schema / XAML / code-only Avalonia”决策表选择 authoring；
+- 只有真实 consumer 与 profile 证明 full rebuild 不可接受时，才建立窄 keyed update Slice。
 
 ### F1：Shell context（#338）
 
@@ -536,6 +603,8 @@ open project
 - [Unreal IDetailsView](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Editor/PropertyEditor/IDetailsView)
 - [Unreal IPropertyHandle](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Editor/PropertyEditor/IPropertyHandle)
 - [Unreal UInteractiveToolsContext](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/InteractiveToolsFramework/UInteractiveToolsContext)
+- [Unity UI Toolkit retained-mode architecture](https://docs.unity3d.com/6000.0/Documentation/Manual/ui-systems/introduction-ui-toolkit.html)
+- [Unity VisualElement：UI Builder、UXML 与 C# 共用控件树](https://docs.unity3d.com/6000.0/Documentation/Manual/UIE-uxml-element-VisualElement.html)
 - [O3DE Action Manager](https://www.docs.o3de.org/docs/user-guide/action-manager/)
 - [O3DE Actions and Context Modes](https://www.docs.o3de.org/docs/user-guide/action-manager/fundamentals/concepts/actions/)
 - [O3DE Action Visibility](https://www.docs.o3de.org/docs/user-guide/action-manager/fundamentals/architecture/visibility/)
@@ -544,6 +613,13 @@ open project
 - [Godot EditorUndoRedoManager](https://docs.godotengine.org/en/stable/classes/class_editorundoredomanager.html)
 - [Blender Operator API](https://docs.blender.org/api/current/bpy.types.Operator.html)
 - [Blender HIG：Selection](https://developer.blender.org/docs/features/interface/human_interface_guidelines/selection/)
+
+开源实现：
+
+- [O3DE Action Manager source](https://github.com/o3de/o3de/tree/development/Code/Framework/AzToolsFramework/AzToolsFramework/ActionManager)
+- [O3DE Document Property Editor source](https://github.com/o3de/o3de/tree/development/Code/Framework/AzFramework/AzFramework/DocumentPropertyEditor)
+- [Godot editor source](https://github.com/godotengine/godot/tree/master/editor)
+- [Avalonia source](https://github.com/AvaloniaUI/Avalonia/tree/12.0.4)
 
 Presentation backend：
 

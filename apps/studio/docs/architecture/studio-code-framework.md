@@ -392,7 +392,7 @@ Windows/
 职责：
 
 - Avalonia Window、Dock、focus、input、clipboard、drag/drop；
-- Code-first reconciler 和 control adapters；
+- Code-first content builder；keyed reconciler/control update adapters 属于未实现 target；
 - Avalonia extension content host；
 - DataTemplate、semantic theme、accessibility；
 - composition surface 与 external GPU frame import。
@@ -526,7 +526,8 @@ Asharia.Studio.App.*
 
 ### Presentation.Avalonia.Tests
 
-- headless binding、focus、Dock、Window、Code-first reconcile；
+- headless binding、focus、Dock、Window、Code-first full-subtree replacement；keyed reconcile/focus preservation
+  只有进入独立 Slice 后才作为 target 验证；
 - Avalonia extension content/style/resource scope；
 - fake frame lease 和 viewport presentation。
 
@@ -577,7 +578,8 @@ Asharia.Studio.App.*
 在项目尚未拆分前：
 
 - 新 extension-facing contract 可以暂放 UI-neutral `Core`，但必须标注目标 `Asharia.Editor`；
-- 新 Code-first primitive 不引用 Avalonia；adapter 留在 Shell；
+- 现有 Code-first primitive 冻结且不引用 Avalonia；新增 primitive 需要两个真实 consumer 或证明 Avalonia
+  content 更复杂，adapter 留在 Shell；
 - 新复杂 Feature 可以使用 Avalonia/XAML，但不得自行创建 Window/Dock；
 - 新 P/Invoke 只能进入现有 Interop 兼容区，不得被 View/ViewModel 调用；
 - 不新增 `WorkbenchFeatureModule` 聚合依赖；新 Feature 应有独立 module；

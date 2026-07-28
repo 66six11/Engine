@@ -175,6 +175,9 @@
 - 前端遵循 `apps/studio/docs/architecture/studio-frontend-framework.md` 的 contribution/backend/lifecycle
   合同和 `apps/studio/docs/architecture/studio-workbench-experience.md` 的默认体验：Scene View 保持中心
   document，Hierarchy/Project 负责查找与选择，Inspector 负责检查与编辑，底部 Diagnostics 按需展开；
+- 新 panel 先按 authoring 决策表选择：低频、小规模 standard-tool 才使用冻结的 Code-first schema；
+  compiled XAML 与 code-only Avalonia 共用同一 content backend；复杂、高频、大列表或文本编辑密集 UI
+  不扩 Code-first primitive；
 - scene file save/load：entity hierarchy、transform、mesh renderer、camera/light component baseline。
 - Hierarchy 消费真实 scene snapshot。
 - Inspector 提供 transform/material reference 的最小可写字段。
