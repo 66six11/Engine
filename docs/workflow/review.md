@@ -469,7 +469,8 @@ rg -n "debugWorldLines|camera|viewProjection|viewportSlots_|requestedViewport_|R
 `tools\check-doc-sync.ps1` 会在 `apps/`、`engine/`、`packages/`、`shaders/`、CMake/Conan、
 `scripts/`、`tools/` 或 GitHub Actions workflow 发生变化但没有文档变化时失败。若确认无需文档更新，
 必须在 PR 模板中说明原因；本地临时验证可使用 `-NoDocsReason` 显式给出原因。脚本默认只检查 tracked
-diff；需要把未跟踪文件也纳入本地自检时，显式使用 `-IncludeUntracked`。
+diff；需要把未跟踪文件也纳入本地自检时，显式使用 `-IncludeUntracked`。脚本同时把
+`apps/studio/docs/` 识别为 Studio 实现文档，避免要求在仓库根文档中重复维护前端实现事实。
 
 按改动范围更新唯一事实源：
 
