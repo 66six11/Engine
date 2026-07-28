@@ -2,11 +2,15 @@
 
 状态：Partial（当前 v1 已实现；公共 Editor API 迁移未完成）
 
-更新日期：2026-07-11
+更新日期：2026-07-28
 
 > 本文定义统一 Editor Extension Framework 的 Code-first UI authoring。Studio 内置功能、项目 `Editor/`、Package 和已安装插件使用同一合同。目标是让工具作者获得类似 IMGUI 的开发体验，同时让 Host 继续掌握 Dock、生命周期、主题、命令、状态、诊断和 Avalonia 控件创建。
 
-扩展来源、`.asmdef`、Package 和 ALC 见 [Editor 扩展开发模型](architecture/editor-extension-authoring.md)；复杂 XAML 的 content lease、资源和 reload tier 见 [Avalonia/XAML Editor 扩展规范](architecture/editor-extension-avalonia.md)。本文只定义 Code-first backend。
+前端的 Panel/Action/Tool、state、invalidation 和 Host lifecycle 总合同见
+[Studio 前端框架](architecture/studio-frontend-framework.md)；扩展来源、`.asmdef`、Package 和 ALC 见
+[Editor 扩展开发模型](architecture/editor-extension-authoring.md)；复杂 XAML/code-only Avalonia content 的
+lease、资源和 reload tier 见 [Avalonia/XAML Editor 扩展规范](architecture/editor-extension-avalonia.md)。
+本文只定义 Code-first backend。
 
 ## 1. 目标
 

@@ -2,13 +2,15 @@
 
 状态：Target（authoring 已批准；动态加载尚未实现）
 
-更新日期：2026-07-11
+更新日期：2026-07-28
 
 ## 1. 目的
 
 本文定义 `Asharia.Editor.Avalonia` 的公共 authoring 与 Studio Avalonia backend 边界。目标是在允许 Graph、Timeline、Asset Browser、Profiler、复杂 Inspector 等 compiled XAML/custom control 的同时，保持 Window、Dock、生命周期、主题、Engine 和 native rendering ownership 归 Host。
 
 Code-first 与 Avalonia/XAML 是同一 `EditorModule` 的两种 UI backend，不是内部/第三方两套 SDK。
+两者共同的 Panel/Action/Tool、state、invalidation 和 Host lifecycle 由
+[Studio 前端框架](studio-frontend-framework.md)定义；本文只细化 Avalonia content backend。
 
 ## 2. 分层
 
