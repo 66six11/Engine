@@ -59,8 +59,8 @@ cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --pre
 
 ClangCL test gate 将 production/test translation units 的所有 clang-tidy diagnostics 作为 error。
 `.github/workflows/native-code-quality.yml` 固定在包含 Visual Studio 2022 的 `windows-2022` hosted runner 上。所有变更先运行
-encoding、diff whitespace、package topology、package/factory/product/artifact contracts、asset boundary 和 Vulkan package
-boundary/safety heuristic review；只有改动命中原生源码或原生构建输入时，才安装 Conan/Vulkan SDK 并运行两编译器 build 和 CTest。
+encoding、diff whitespace、package topology、package/factory/product/artifact contracts 和 asset boundary；只有改动命中原生源码或
+原生构建输入时，才安装 Conan/Vulkan SDK，并运行 Vulkan package boundary/safety heuristic review、两编译器 build 和 CTest。
 原生构建输入包括 `engine/`、`packages/`、`apps/editor/`、`apps/sample-viewer/`、`tools/asset-processor/`、`shaders/`，
 CMake/Conan/profile/bootstrap 配置、`.clang-tidy` 和该 workflow 本身；这些目录下的 Markdown、reStructuredText 与嵌套
 `docs/` 仅视作文档，不触发编译。`workflow_dispatch` 始终执行完整原生构建。Package topology 从 source-boundary
