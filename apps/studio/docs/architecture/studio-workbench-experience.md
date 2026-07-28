@@ -55,6 +55,8 @@ find -> inspect -> select -> edit -> preview -> validate -> commit/undo
 - `Compact` preset 把 Hierarchy 与 Project 合并为 tab group，仍保留 Scene View 与 Inspector；
 - UI Style、Frame Debugger、Console 和 Problems 继续注册并可恢复，但不再由新默认布局创建；
 - Project 当前是 compiled XAML 空状态面板；尚未连接 project/asset service；
+- `Asharia.Editor.Projects` 已定义 project-open session 的 UI-neutral snapshot，Application 已能严格解析
+  canonical bootstrap report；当前 Shell 尚未注入该 snapshot，也未启用 project action；
 - Hierarchy 到 Inspector 与 Workbench Bar 的 selection 同步和 Command Palette 已可工作。
 
 当前缺口：
@@ -132,6 +134,9 @@ selection summary
 background activity summary
 diagnostic summary
 ```
+
+其中 project display name 与 project-open 状态应由 Application 投影已有
+`ProjectOpenSessionSnapshot`；Presentation 不读取 bootstrap report，也不从 `null` 猜测 loading/error。
 
 窗口标题建议使用：
 
@@ -371,11 +376,12 @@ launch Studio
 
 ### Slice B 及以后
 
-1. Project 面板接入真实 asset/product snapshot 与 readiness；
-2. Inspector 明确 empty/read-only/dirty/invalid，并接入第一个 transaction-backed writable field；
-3. Scene View toolbar/overlay 与 diagnostic deduplication；
-4. Scene picking、gizmo transaction 和 Scene Authoring MVP；
-5. Play/Game View 与运行态 session。
+1. Application 把 project-open snapshot 注入 Shell，Project 面板先呈现状态、诊断和真实可执行动作；
+2. Project 面板接入真实 asset/product snapshot 与 readiness；
+3. Inspector 明确 empty/read-only/dirty/invalid，并接入第一个 transaction-backed writable field；
+4. Scene View toolbar/overlay 与 diagnostic deduplication；
+5. Scene picking、gizmo transaction 和 Scene Authoring MVP；
+6. Play/Game View 与运行态 session。
 
 每项独立跟踪，不把后续能力并入 Slice A。
 

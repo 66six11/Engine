@@ -1181,6 +1181,9 @@ package/session inspection 与 headless Bootstrap 状态。下一步先补固定
 
 **目标：** editor 成为建立在公共系统契约上的 authoring host，并提供 package control plane 的正式 UI。
 
+当前 checkpoint：UI-neutral project-open session snapshot 与 canonical bootstrap report 的 managed parser
+已落地；report source、ProjectSession owner、Shell/Project panel projection、Safe Mode 与修复动作仍属于本阶段后续 Slice。
+
 工作：
 
 - 从 `apps/editor` 提取 `editor_domain` 和 `editor_runtime` targets；

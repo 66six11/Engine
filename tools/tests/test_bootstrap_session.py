@@ -256,6 +256,17 @@ class BootstrapSessionTests(unittest.TestCase):
         self.assertEqual(1, data["schemaVersion"])
         self.assertEqual("Ready", data["state"])
         self.assertNotIn(str(self.request.project_root), first.decode("utf-8"))
+        fixture_path = (
+            Path(__file__).parents[2]
+            / "apps"
+            / "studio"
+            / "Tests"
+            / "Asharia.Studio.Application.Tests"
+            / "Projects"
+            / "Fixtures"
+            / "bootstrap-session-ready-v1.json"
+        )
+        self.assertEqual(fixture_path.read_bytes(), first)
 
     def test_mixed_failure_owners_follow_the_frozen_gate_priority(self) -> None:
         cases = (

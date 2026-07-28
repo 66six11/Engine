@@ -207,6 +207,11 @@ v1 的 `Ready` 证明：
 - `PendingBuild` 现在有明确 current-image evidence，`PendingRestart` 则不会在没有 current-process generation tracker 时被猜测；
 - 项目成功检查与完整 Editor 功能激活保持两个独立可验证阶段。
 
+当前 managed consumer checkpoint 已建立：`Asharia.Editor` 只公开 UI-neutral 的状态、动作、项目摘要和诊断快照，
+`Asharia.Studio.Application` 严格消费 canonical `com.asharia.bootstrap-session` v1 bytes。解析器不执行文件 IO、
+进程启动或状态归约，也不把 `Ready` 提升为 `ProjectReady`；Python renderer fixture 与 managed parser 的
+byte-level parity 由测试固定。
+
 ## v1 非目标
 
 本 ADR 不实现：
@@ -228,6 +233,7 @@ v1 的 `Ready` 证明：
 - normal-open 不 hash executable、只执行 published artifact 的测试；
 - Host spawn/timeout/overflow/exit/stderr/summary schema-version/protocol 测试；
 - Project Bootstrap valid/invalid descriptor、exit `65`、clean stop 与同根目录端到端测试；
+- canonical report 的 managed parser、状态/动作不变量、拒绝非规范 bytes 与 Python renderer fixture parity 测试；
 - ClangCL/MSVC 单次 generated Host build、publication/deep verification 后的真实执行链；
 - package contracts、encoding、docs、topology、diff 与双编译器门禁。
 
@@ -237,7 +243,7 @@ v1 的 `Ready` 证明：
 
 1. `PendingBuild` 的 Build/Publish controller，以及成功后的 Editor restart orchestration；
 2. current-process generation tracker 与可证明的 `PendingRestart`；
-3. 消费本状态合同的最小 Editor UI、Safe Mode 与修复入口；
+3. 把已有 managed 状态快照接入最小 Editor UI、Safe Mode 与修复入口；
 4. 完整 Editor Host Profile activation 与更强的 `ProjectReady` 状态；
 5. Repair Executor、active generation selection、rollback 与外部 Launcher/Installer；
 6. 只有真实重链接瓶颈和 ABI 需求出现后，才重新评估 exact-build native dynamic module。
