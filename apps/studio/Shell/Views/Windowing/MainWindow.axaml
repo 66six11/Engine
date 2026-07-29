@@ -161,7 +161,7 @@
                     <TextBlock Classes="workbench-context workbench-muted"
                                MaxWidth="92"
                                Text="{Binding ProjectDisplayName}"
-                               ToolTip.Tip="Active project" />
+                               ToolTip.Tip="{Binding ProjectOpenStatusText}" />
                     <TextBlock Classes="workbench-context workbench-muted"
                                Text="/" />
                     <TextBlock Classes="workbench-context"

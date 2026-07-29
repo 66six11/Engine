@@ -17,9 +17,13 @@ public sealed class ProjectPanelViewXamlTests
 
         Assert.Contains("x:DataType=\"vm:ProjectPanelViewModel\"", xaml);
         Assert.Contains("IsEnabled=\"{Binding CanSearch}\"", xaml);
-        Assert.Contains("IsEnabled=\"{Binding CanOpenProject}\"", xaml);
+        Assert.Contains("IsEnabled=\"{Binding CanExecutePrimaryAction}\"", xaml);
         Assert.Contains("ToolTip.Tip=\"{Binding UnavailableReason}\"", xaml);
-        Assert.Contains("Text=\"{Binding EmptyStateTitle}\"", xaml);
+        Assert.Contains("Text=\"{Binding StateTitle}\"", xaml);
+        Assert.Contains("Text=\"{Binding StateLabel}\"", xaml);
+        Assert.Contains("Content=\"{Binding PrimaryActionLabel}\"", xaml);
+        Assert.Contains("IsVisible=\"{Binding HasDiagnostics}\"", xaml);
+        Assert.Contains("Text=\"{Binding PrimaryDiagnosticMessage}\"", xaml);
     }
 
     private static string LoadSource(params string[] pathParts)

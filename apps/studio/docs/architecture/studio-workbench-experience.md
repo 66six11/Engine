@@ -54,14 +54,17 @@ find -> inspect -> select -> edit -> preview -> validate -> commit/undo
 - 默认工作台使用 Shell-owned `Default` preset：Hierarchy 与 Project 左侧垂直分割、Scene View 居中、Inspector 右置，Diagnostics 默认折叠；
 - `Compact` preset 把 Hierarchy 与 Project 合并为 tab group，仍保留 Scene View 与 Inspector；
 - UI Style、Frame Debugger、Console 和 Problems 继续注册并可恢复，但不再由新默认布局创建；
-- Project 当前是 compiled XAML 空状态面板；尚未连接 project/asset service；
+- Project 当前是 compiled XAML 状态面板，可显示全部 canonical project-open 状态、下一动作与首要诊断；
+  搜索和动作仍未连接 project/asset service；
 - `Asharia.Editor.Projects` 已定义 project-open session 的 UI-neutral snapshot，Application 已能严格解析
-  canonical bootstrap report；当前 Shell 尚未注入该 snapshot，也未启用 project action；
+  canonical bootstrap report，并通过共享内存 source 把 snapshot 注入 Shell 与 Project panel；
+  当前仍没有正式 report provider，也未启用 project action；
 - Hierarchy 到 Inspector 与 Workbench Bar 的 selection 同步和 Command Palette 已可工作。
 
 当前缺口：
 
-1. Project 仍只有显式空状态，`find asset -> inspect/use` 要等待真实 project/asset snapshot service。
+1. Project 已有 project-open 状态投影，但 project selection/report provider 和 `find asset -> inspect/use`
+   仍要等待真实 project/asset service。
 2. Inspector 主要是只读属性表，read-only、dirty、invalid、locked 等状态仍需随 writable property Slice 完成。
 3. Scene View 缺少面板内工具栏和轻量 overlay；backend 失败仍会占用主要视区。
 4. 同一诊断可同时以 Scene View 消息、Console 行和 Status 文本出现，仍需收敛 primary feedback 与重复聚合。
@@ -135,8 +138,10 @@ background activity summary
 diagnostic summary
 ```
 
-其中 project display name 与 project-open 状态应由 Application 投影已有
-`ProjectOpenSessionSnapshot`；Presentation 不读取 bootstrap report，也不从 `null` 猜测 loading/error。
+其中 project display name 与 project-open 状态由 Application 的共享
+`IProjectOpenSessionSnapshotSource` 投影已有 `ProjectOpenSessionSnapshot`；Presentation 不读取 bootstrap report，
+也不从 `null` 猜测 loading/error。非 Ready snapshot 按合同不包含 project summary，因此 Workbench Bar 保持
+`No project`，同时用 tooltip 呈现明确的 project-open 状态。
 
 窗口标题建议使用：
 
@@ -211,6 +216,11 @@ Inspector header 固定回答“正在看什么、能否编辑、为何不能编
 
 Project 面板负责 asset/product 的查找与状态投影，不直接拥有 importer 或文件 IO：
 
+- 当前先消费共享 project-open snapshot，呈现 state、next action 和首要 diagnostic；
+- `Ready` 只表示 bootstrap inspection 通过，不表示 ProjectScope、asset catalog 或运行态 session 已激活；
+- 没有对应 application service 的 next action 只作为 disabled 恢复提示，不绑定空命令；
+- 当前 Problems service 只有 append-only publish，没有按 source 替换/撤销语义；project-open diagnostic 暂不复制过去，
+  避免状态切换后遗留重复问题；
 - 顶部只有 search、scope/filter 和 view mode；
 - row/tile 使用稳定 asset id，显示 readiness、stale、missing、failed 等 product state；
 - selection 与 Inspector 协作；
@@ -376,12 +386,14 @@ launch Studio
 
 ### Slice B 及以后
 
-1. Application 把 project-open snapshot 注入 Shell，Project 面板先呈现状态、诊断和真实可执行动作；
-2. Project 面板接入真实 asset/product snapshot 与 readiness；
-3. Inspector 明确 empty/read-only/dirty/invalid，并接入第一个 transaction-backed writable field；
-4. Scene View toolbar/overlay 与 diagnostic deduplication；
-5. Scene picking、gizmo transaction 和 Scene Authoring MVP；
-6. Play/Game View 与运行态 session。
+1. #343 已把 project-open snapshot 注入 Shell，并让 Project 面板呈现状态、首要诊断和 disabled next-action hint；
+2. 接入正式 project selection/report provider；每个动作只有在对应 application service 与 command route 存在后才启用；
+3. Project 面板接入真实 asset/product snapshot 与 readiness；
+4. 为 Problems 增加可按稳定 source 替换的诊断投影，再同步 project-open diagnostics；
+5. Inspector 明确 empty/read-only/dirty/invalid，并接入第一个 transaction-backed writable field；
+6. Scene View toolbar/overlay 与 diagnostic deduplication；
+7. Scene picking、gizmo transaction 和 Scene Authoring MVP；
+8. Play/Game View 与运行态 session。
 
 每项独立跟踪，不把后续能力并入 Slice A。
 

@@ -26,6 +26,26 @@
             <Setter Property="TextAlignment" Value="Center" />
             <Setter Property="TextWrapping" Value="Wrap" />
         </Style>
+        <Style Selector="Border.project-state">
+            <Setter Property="Padding" Value="7,3" />
+            <Setter Property="CornerRadius" Value="3" />
+            <Setter Property="Background" Value="{DynamicResource EditorBrushSurface02}" />
+            <Setter Property="HorizontalAlignment" Value="Center" />
+        </Style>
+        <Style Selector="Border.project-diagnostic">
+            <Setter Property="Margin" Value="0,4,0,0" />
+            <Setter Property="Padding" Value="8" />
+            <Setter Property="MaxWidth" Value="280" />
+            <Setter Property="Background" Value="{DynamicResource EditorBrushSurface01}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource EditorBrushDivider}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="3" />
+        </Style>
+        <Style Selector="TextBlock.project-diagnostic-detail">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextMuted}" />
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeSmall}" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
     </UserControl.Styles>
 
     <Border Background="{DynamicResource EditorBrushBase00}">
@@ -48,13 +68,29 @@
                         HorizontalAlignment="Center"
                         VerticalAlignment="Center"
                         Spacing="8">
+                <Border Classes="project-state">
+                    <TextBlock Text="{Binding StateLabel}" />
+                </Border>
                 <TextBlock Classes="project-empty-title"
-                           Text="{Binding EmptyStateTitle}" />
+                           Text="{Binding StateTitle}" />
                 <TextBlock Classes="project-empty-message"
-                           Text="{Binding EmptyStateMessage}" />
+                           Text="{Binding StateMessage}" />
+                <Border Classes="project-diagnostic"
+                        IsVisible="{Binding HasDiagnostics}">
+                    <StackPanel Spacing="3">
+                        <TextBlock FontWeight="SemiBold"
+                                   Text="{Binding DiagnosticCountText}" />
+                        <TextBlock Classes="project-diagnostic-detail"
+                                   Text="{Binding PrimaryDiagnosticCode}" />
+                        <TextBlock Text="{Binding PrimaryDiagnosticMessage}"
+                                   TextWrapping="Wrap" />
+                        <TextBlock Classes="project-diagnostic-detail"
+                                   Text="{Binding PrimaryDiagnosticLocation}" />
+                    </StackPanel>
+                </Border>
                 <Button HorizontalAlignment="Center"
-                        Content="Open Project"
-                        IsEnabled="{Binding CanOpenProject}"
+                        Content="{Binding PrimaryActionLabel}"
+                        IsEnabled="{Binding CanExecutePrimaryAction}"
                         ToolTip.Tip="{Binding UnavailableReason}" />
             </StackPanel>
         </Grid>

@@ -212,11 +212,16 @@ v1 的 `Ready` 证明：
 进程启动或状态归约，也不把 `Ready` 提升为 `ProjectReady`；Python renderer fixture 与 managed parser 的
 byte-level parity 由测试固定。
 
+当前 workbench consumer checkpoint 继续保持该所有权：`IProjectOpenSessionSnapshotSource` 只公开 current
+snapshot 与变更事件，Application 的内存 source 向 Shell 和 Project panel 发布同一 snapshot。Avalonia
+Presentation 只投影状态、下一动作与首要诊断，未连接的动作保持 disabled；它仍不读取报告文件、不调用
+bootstrap reducer，也不把 `Ready` 提升为 ProjectScope 或运行态 session。
+
 ## v1 非目标
 
 本 ADR 不实现：
 
-- Editor、Safe Mode、Package Manager、ImGui 或 Avalonia UI；
+- project picker、可执行恢复动作、Safe Mode、Package Manager 或完整 project/asset Avalonia UI；
 - resolver、Manifest/Lock 编辑、rollback 或 registry/marketplace；
 - CMake/Conan 构建、artifact 获取、Repair Executor 或 Editor restart；
 - `PendingRestart` 的 current-process generation evidence；

@@ -3,8 +3,10 @@ using Asharia.Editor.Diagnostics;
 using Asharia.Studio.Application.Diagnostics;
 using Asharia.Editor.Diagnostics.FrameDebug;
 using Asharia.Editor.Panels;
+using Asharia.Editor.Projects;
 using Asharia.Editor.Selection;
 using Asharia.Editor.Worlds.Snapshots;
+using Asharia.Studio.Application.Projects;
 using Editor.Core.Abstractions;
 using Editor.Core.Models.Extensions;
 using Editor.Core.Models.Panels;
@@ -31,12 +33,14 @@ public sealed class WorkbenchFeatureModule : IEditorFeatureModule
     private readonly ISceneSnapshotProvider sceneSnapshotProvider_;
     private readonly IFrameDebuggerSnapshotProvider frameDebuggerSnapshotProvider_;
     private readonly IEditorDiagnosticService diagnostics_;
+    private readonly IProjectOpenSessionSnapshotSource projectOpenSessions_;
     private readonly IEditorUiDispatcher uiDispatcher_;
 
     public WorkbenchFeatureModule(IEditorSelectionService selectionService)
         : this(
             selectionService,
             new EditorDiagnosticService(),
+            new ProjectOpenSessionSnapshotSource(),
             CreateDefaultSceneSnapshotProvider(),
             CreateDefaultFrameDebuggerSnapshotProvider())
     {
@@ -48,6 +52,20 @@ public sealed class WorkbenchFeatureModule : IEditorFeatureModule
         : this(
             selectionService,
             diagnostics,
+            new ProjectOpenSessionSnapshotSource(),
+            CreateDefaultSceneSnapshotProvider(),
+            CreateDefaultFrameDebuggerSnapshotProvider())
+    {
+    }
+
+    public WorkbenchFeatureModule(
+        IEditorSelectionService selectionService,
+        IEditorDiagnosticService diagnostics,
+        IProjectOpenSessionSnapshotSource projectOpenSessions)
+        : this(
+            selectionService,
+            diagnostics,
+            projectOpenSessions,
             CreateDefaultSceneSnapshotProvider(),
             CreateDefaultFrameDebuggerSnapshotProvider())
     {
@@ -56,7 +74,12 @@ public sealed class WorkbenchFeatureModule : IEditorFeatureModule
     internal WorkbenchFeatureModule(
         IEditorSelectionService selectionService,
         ISceneSnapshotProvider sceneSnapshotProvider)
-        : this(selectionService, new EditorDiagnosticService(), sceneSnapshotProvider)
+        : this(
+            selectionService,
+            new EditorDiagnosticService(),
+            new ProjectOpenSessionSnapshotSource(),
+            sceneSnapshotProvider,
+            CreateDefaultFrameDebuggerSnapshotProvider())
     {
     }
 
@@ -68,6 +91,7 @@ public sealed class WorkbenchFeatureModule : IEditorFeatureModule
         : this(
             selectionService,
             diagnostics,
+            new ProjectOpenSessionSnapshotSource(),
             sceneSnapshotProvider,
             CreateDefaultFrameDebuggerSnapshotProvider(),
             uiDispatcher)
@@ -77,17 +101,20 @@ public sealed class WorkbenchFeatureModule : IEditorFeatureModule
     internal WorkbenchFeatureModule(
         IEditorSelectionService selectionService,
         IEditorDiagnosticService diagnostics,
+        IProjectOpenSessionSnapshotSource projectOpenSessions,
         ISceneSnapshotProvider sceneSnapshotProvider,
         IFrameDebuggerSnapshotProvider frameDebuggerSnapshotProvider,
         IEditorUiDispatcher? uiDispatcher = null)
     {
         ArgumentNullException.ThrowIfNull(selectionService);
         ArgumentNullException.ThrowIfNull(diagnostics);
+        ArgumentNullException.ThrowIfNull(projectOpenSessions);
         ArgumentNullException.ThrowIfNull(sceneSnapshotProvider);
         ArgumentNullException.ThrowIfNull(frameDebuggerSnapshotProvider);
 
         selectionService_ = selectionService;
         diagnostics_ = diagnostics;
+        projectOpenSessions_ = projectOpenSessions;
         sceneSnapshotProvider_ = sceneSnapshotProvider;
         frameDebuggerSnapshotProvider_ = frameDebuggerSnapshotProvider;
         uiDispatcher_ = uiDispatcher ?? new AvaloniaEditorUiDispatcher();
@@ -177,7 +204,7 @@ public sealed class WorkbenchFeatureModule : IEditorFeatureModule
                 EditorDockArea.Left,
                 "Window/Panels/Project",
                 DockContentCachePolicy.KeepAlive,
-                () => new ProjectPanelViewModel(),
+                () => new ProjectPanelViewModel(projectOpenSessions_, uiDispatcher_),
                 IconKey: EditorIconKey.PanelProject,
                 Tag: "LEFT",
                 TitleDetail: "project content",

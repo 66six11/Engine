@@ -5,11 +5,14 @@ using System.Threading;
 using System.Threading.Tasks;
 using Asharia.Editor.Diagnostics;
 using Asharia.Editor.Panels;
+using Asharia.Editor.Projects;
+using Asharia.Studio.Application.Projects;
 using Editor.Core.Abstractions;
 using Editor.Core.Models.Extensions;
 using Editor.Features.Console.ViewModels;
 using Editor.Features.Hierarchy.ViewModels;
 using Editor.Features.Inspector.ViewModels;
+using Editor.Features.Project.ViewModels;
 using Editor.Shell.Compatibility;
 using Editor.Shell.Composition;
 using Editor.Shell.Docking.Layout;
@@ -122,6 +125,32 @@ public sealed class StudioCompositionRootTests
         var record = Assert.Single(console.Records);
         Assert.Equal(EditorDiagnosticChannel.Debug, record.Channel);
         Assert.Equal(record.Message, session.MainWindowViewModel.StatusMessageText);
+    }
+
+    [Fact]
+    public async Task CreateMainWindowSession_shares_project_open_state_with_workbench()
+    {
+        var projectOpenSessions = new ProjectOpenSessionSnapshotSource(
+            new ProjectOpenSessionSnapshot(
+                ProjectOpenSessionState.Ready,
+                ProjectOpenNextAction.ActivateProjectProfile,
+                new ProjectOpenSummarySnapshot(
+                    "Example",
+                    Guid.Parse("7b535774-005d-47ff-90d7-83165df8bac8"),
+                    assetSourceRootCount: 1)));
+
+        await using var session = new StudioCompositionRoot()
+            .CreateMainWindowSession(
+                savedLayout: null,
+                projectOpenSessions: projectOpenSessions);
+
+        using var projectPanel = Assert.IsType<ProjectPanelViewModel>(
+            session.Composition.PanelRegistry
+                .GetRequired("project")
+                .CreateContent());
+
+        Assert.Equal("Example", session.MainWindowViewModel.ProjectDisplayName);
+        Assert.Equal("Example", projectPanel.ProjectDisplayName);
     }
 
     [Fact]
