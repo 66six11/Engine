@@ -5,6 +5,7 @@
         xmlns:commandPaletteViews="using:Editor.Shell.Views.CommandPalette"
         xmlns:dialogViews="using:Editor.Shell.Views.Dialogs"
         xmlns:dockViews="using:Editor.Shell.Views.Docking"
+        xmlns:projectViews="using:Editor.Shell.Views.Projects"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d" d:DesignWidth="1440" d:DesignHeight="900"
@@ -89,7 +90,7 @@
         </Style>
     </Window.Styles>
 
-    <Grid RowDefinitions="Auto,Auto,*,Auto"
+    <Grid RowDefinitions="Auto,Auto,Auto,*,Auto"
           ClipToBounds="False">
         <Border Grid.Row="0"
                 Background="{DynamicResource EditorBrushBase01}"
@@ -160,8 +161,8 @@
                             VerticalAlignment="Center">
                     <TextBlock Classes="workbench-context workbench-muted"
                                MaxWidth="92"
-                               Text="{Binding ProjectDisplayName}"
-                               ToolTip.Tip="{Binding ProjectOpenStatusText}" />
+                               Text="{Binding ActiveProjectDisplayName}"
+                               ToolTip.Tip="No project session is active." />
                     <TextBlock Classes="workbench-context workbench-muted"
                                Text="/" />
                     <TextBlock Classes="workbench-context"
@@ -234,7 +235,10 @@
             </Grid>
         </Border>
 
-        <Border Grid.Row="3"
+        <projectViews:ProjectLaunchView Grid.Row="2"
+                                        DataContext="{Binding ProjectLaunch}" />
+
+        <Border Grid.Row="4"
                 Height="{DynamicResource EditorMainMenuHeight}"
                 Background="{DynamicResource EditorBrushBase01}"
                 BorderBrush="{DynamicResource EditorBrushDivider}"
@@ -268,15 +272,15 @@
             </DockPanel>
         </Border>
 
-        <dockViews:EditorDockWorkspaceView Grid.Row="2"
+        <dockViews:EditorDockWorkspaceView Grid.Row="3"
                                            DataContext="{Binding DockWorkspace}" />
 
         <commandPaletteViews:CommandPaletteView Grid.Row="0"
-                                                Grid.RowSpan="4"
+                                                Grid.RowSpan="5"
                                                 DataContext="{Binding CommandPalette}" />
 
         <dialogViews:EditorDialogHostView Grid.Row="0"
-                                          Grid.RowSpan="4"
+                                          Grid.RowSpan="5"
                                           DataContext="{Binding DialogHost}" />
     </Grid>
 

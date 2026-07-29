@@ -144,13 +144,18 @@ public sealed class StudioCompositionRootTests
                 savedLayout: null,
                 projectOpenSessions: projectOpenSessions);
 
-        using var projectPanel = Assert.IsType<ProjectPanelViewModel>(
+        var projectPanel = Assert.IsType<ProjectPanelViewModel>(
             session.Composition.PanelRegistry
                 .GetRequired("project")
                 .CreateContent());
 
-        Assert.Equal("Example", session.MainWindowViewModel.ProjectDisplayName);
-        Assert.Equal("Example", projectPanel.ProjectDisplayName);
+        Assert.Equal(
+            "Example",
+            session.MainWindowViewModel.ProjectLaunch.ProjectCandidateDisplayName);
+        Assert.Equal(
+            "No active project",
+            session.MainWindowViewModel.ActiveProjectDisplayName);
+        Assert.Equal("No active project", projectPanel.ProjectDisplayName);
     }
 
     [Fact]

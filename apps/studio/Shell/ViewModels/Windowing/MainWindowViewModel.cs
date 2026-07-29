@@ -27,7 +27,7 @@ using Editor.Shell.ViewModels.CommandPalette;
 using Editor.Shell.ViewModels.Dialogs;
 using Editor.Shell.ViewModels.Docking;
 using Editor.Shell.ViewModels.Menus;
-using Editor.UI.Presentation;
+using Editor.Shell.ViewModels.Projects;
 using Editor.UI.ViewModels;
 
 namespace Editor.Shell.ViewModels.Windowing;
@@ -40,7 +40,6 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     private readonly IEditorBackgroundTaskService backgroundTasks_;
     private readonly IEditorUiDispatcher uiDispatcher_;
     private readonly IEditorDiagnosticService diagnostics_;
-    private readonly IProjectOpenSessionSnapshotSource projectOpenSessions_;
     private readonly RelayCommand openStatusMessageTargetCommand_;
     private readonly List<EditorDockFloatingWindowSnapshot> pendingFloatingWindowSnapshots_ = [];
     private Func<IReadOnlyList<EditorDockFloatingWindowSnapshot>>? captureFloatingWindowSnapshots_;
@@ -53,7 +52,6 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     private EditorStatusMessageSnapshot? lastStatusMessage_;
     private EditorDiagnosticRecord? latestStatusDiagnostic_;
     private EditorStatusMessageSeverity? statusMessageSeverity_;
-    private ProjectOpenSessionSnapshot projectOpenSnapshot_;
     private bool isDisposed_;
 
     public MainWindowViewModel()
@@ -97,10 +95,9 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         uiDispatcher_ = uiDispatcher ?? new AvaloniaEditorUiDispatcher();
         diagnostics_ = diagnostics ?? new EditorDiagnosticService();
         diagnostics_.DiagnosticsChanged += OnDiagnosticsChanged;
-        projectOpenSessions_ =
-            projectOpenSessions ?? new ProjectOpenSessionSnapshotSource();
-        projectOpenSnapshot_ = projectOpenSessions_.Current;
-        projectOpenSessions_.SnapshotChanged += OnProjectOpenSnapshotChanged;
+        ProjectLaunch = new ProjectLaunchViewModel(
+            projectOpenSessions ?? new ProjectOpenSessionSnapshotSource(),
+            uiDispatcher_);
         RefreshLatestDiagnostic();
         backgroundTasks_.TasksChanged += OnBackgroundTasksChanged;
         RefreshBackgroundTaskSummary();
@@ -167,24 +164,22 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
     public EditorDialogHostViewModel DialogHost { get; }
 
+    public ProjectLaunchViewModel ProjectLaunch { get; }
+
     public IReadOnlyList<WorkbenchMenuItemViewModel> ToolsMenuItems { get; }
 
     public IReadOnlyList<WorkbenchMenuItemViewModel> HelpMenuItems { get; }
 
     public IReadOnlyList<PanelMenuItemViewModel> PanelMenuItems { get; }
 
-    public string ProjectDisplayName =>
-        ProjectOpenSessionText.GetProjectDisplayName(projectOpenSnapshot_);
-
-    public string ProjectOpenStatusText =>
-        ProjectOpenSessionText.GetStateTitle(projectOpenSnapshot_.State);
+    public string ActiveProjectDisplayName => "No active project";
 
     public string DocumentDisplayName => "No document";
 
     public bool IsDocumentDirty => false;
 
     public string WindowTitle =>
-        $"{DocumentDisplayName} — {ProjectDisplayName} — Asharia Studio";
+        $"{DocumentDisplayName} — {ActiveProjectDisplayName} — Asharia Studio";
 
     public string EditorModeText => "Edit";
 
@@ -192,10 +187,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         "Viewport tools are unavailable until a tool service is connected.";
 
     public string SessionUnavailableReason =>
-        projectOpenSnapshot_.IsBootstrapReady
-            ? "Run controls are unavailable until project profile activation is connected."
-            : ProjectOpenSessionText.GetUnavailableReason(
-                projectOpenSnapshot_.NextAction);
+        "Run controls are unavailable until a project is active.";
 
     public string SelectionSummary
     {
@@ -335,7 +327,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         SelectionService.SelectionChanged -= OnSelectionChanged;
         backgroundTasks_.TasksChanged -= OnBackgroundTasksChanged;
         diagnostics_.DiagnosticsChanged -= OnDiagnosticsChanged;
-        projectOpenSessions_.SnapshotChanged -= OnProjectOpenSnapshotChanged;
+        ProjectLaunch.Dispose();
         panelCommandService_.PanelStateChanged -= OnPanelCommandStateChanged;
         DockWorkspace.Dispose();
     }
@@ -435,17 +427,6 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         uiDispatcher_.Post(RefreshLatestDiagnostic);
     }
 
-    private void OnProjectOpenSnapshotChanged(object? sender, EventArgs e)
-    {
-        if (uiDispatcher_.CheckAccess())
-        {
-            RefreshProjectOpenSnapshot();
-            return;
-        }
-
-        uiDispatcher_.Post(RefreshProjectOpenSnapshot);
-    }
-
     private void RefreshBackgroundTaskSummary()
     {
         var activeBackgroundTasks = backgroundTasks_.GetActiveSnapshots();
@@ -474,21 +455,6 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             1 => selection.Items[0].DisplayName,
             _ => $"{selection.Items.Count} items selected",
         };
-    }
-
-    private void RefreshProjectOpenSnapshot()
-    {
-        var nextSnapshot = projectOpenSessions_.Current;
-        if (ReferenceEquals(projectOpenSnapshot_, nextSnapshot))
-        {
-            return;
-        }
-
-        projectOpenSnapshot_ = nextSnapshot;
-        OnPropertyChanged(nameof(ProjectDisplayName));
-        OnPropertyChanged(nameof(ProjectOpenStatusText));
-        OnPropertyChanged(nameof(WindowTitle));
-        OnPropertyChanged(nameof(SessionUnavailableReason));
     }
 
     internal void PublishStatusMessage(EditorStatusMessageSnapshot snapshot)
@@ -553,9 +519,9 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
         DiagnosticSummary = (errorCount, warningCount) switch
         {
-            (> 0, > 0) =>
+            ( > 0, > 0) =>
                 $"{FormatDiagnosticCount(errorCount, "error")}, {FormatDiagnosticCount(warningCount, "warning")}",
-            (> 0, _) => FormatDiagnosticCount(errorCount, "error"),
+            ( > 0, _) => FormatDiagnosticCount(errorCount, "error"),
             (_, > 0) => FormatDiagnosticCount(warningCount, "warning"),
             _ => "No diagnostics",
         };
@@ -623,13 +589,11 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
     internal static EditorExtensionComposition CreateDefaultComposition(
         IEditorSelectionService? selectionService = null,
-        IEditorDiagnosticService? diagnostics = null,
-        IProjectOpenSessionSnapshotSource? projectOpenSessions = null)
+        IEditorDiagnosticService? diagnostics = null)
     {
         return StudioCompositionRoot.CreateDefaultComposition(
             selectionService,
-            diagnostics,
-            projectOpenSessions);
+            diagnostics);
     }
 
     private static MainWindowViewModelArguments CreateDefaultViewModelArguments(
@@ -641,8 +605,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         return new MainWindowViewModelArguments(
             StudioCompositionRoot.CreateDefaultComposition(
                 selectionService,
-                diagnostics,
-                projectOpenSessions),
+                diagnostics),
             savedLayout,
             selectionService,
             diagnostics,

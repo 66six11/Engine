@@ -82,11 +82,11 @@ public sealed class MainWindowViewModelTests
             uiDispatcher: new CapturingUiDispatcher(hasAccess: true),
             defaultLayoutFactory: EditorWorkbenchLayoutPreset.CreateDefault);
 
-        Assert.Equal("No project", viewModel.ProjectDisplayName);
+        Assert.Equal("No active project", viewModel.ActiveProjectDisplayName);
         Assert.Equal("No document", viewModel.DocumentDisplayName);
         Assert.False(viewModel.IsDocumentDirty);
         Assert.Equal(
-            "No document — No project — Asharia Studio",
+            "No document — No active project — Asharia Studio",
             viewModel.WindowTitle);
         Assert.Equal("Edit", viewModel.EditorModeText);
         Assert.Equal("Nothing selected", viewModel.SelectionSummary);
@@ -134,16 +134,17 @@ public sealed class MainWindowViewModelTests
 
         projectOpenSessions.Publish(CreateReadyProjectOpenSnapshot());
 
-        Assert.Equal("No project", viewModel.ProjectDisplayName);
+        Assert.Equal("No project", viewModel.ProjectLaunch.ProjectCandidateDisplayName);
         Assert.Equal(1, dispatcher.PostCount);
         dispatcher.RunPostedActions();
-        Assert.Equal("Example", viewModel.ProjectDisplayName);
-        Assert.Equal("Project bootstrap is ready", viewModel.ProjectOpenStatusText);
+        Assert.Equal("Example", viewModel.ProjectLaunch.ProjectCandidateDisplayName);
+        Assert.Equal("Project check completed", viewModel.ProjectLaunch.StateTitle);
+        Assert.Equal("No active project", viewModel.ActiveProjectDisplayName);
         Assert.Equal(
-            "No document — Example — Asharia Studio",
+            "No document — No active project — Asharia Studio",
             viewModel.WindowTitle);
         Assert.Contains(
-            "project profile activation",
+            "project is active",
             viewModel.SessionUnavailableReason,
             StringComparison.OrdinalIgnoreCase);
     }
@@ -161,7 +162,7 @@ public sealed class MainWindowViewModelTests
         projectOpenSessions.Publish(CreateReadyProjectOpenSnapshot());
 
         Assert.Equal(0, dispatcher.PostCount);
-        Assert.Equal("No project", viewModel.ProjectDisplayName);
+        Assert.Equal("No project", viewModel.ProjectLaunch.ProjectCandidateDisplayName);
     }
 
     [Fact]
@@ -858,8 +859,7 @@ public sealed class MainWindowViewModelTests
         diagnostics ??= new EditorDiagnosticService();
         projectOpenSessions ??= new ProjectOpenSessionSnapshotSource();
         var composition = CreateDefaultComposition(
-            diagnostics: diagnostics,
-            projectOpenSessions: projectOpenSessions);
+            diagnostics: diagnostics);
 
         return new MainWindowViewModel(
             composition.PanelRegistry,
@@ -874,13 +874,11 @@ public sealed class MainWindowViewModelTests
 
     private static EditorExtensionComposition CreateDefaultComposition(
         IEditorSelectionService? selectionService = null,
-        IEditorDiagnosticService? diagnostics = null,
-        IProjectOpenSessionSnapshotSource? projectOpenSessions = null)
+        IEditorDiagnosticService? diagnostics = null)
     {
         return StudioCompositionRoot.CreateDefaultComposition(
             selectionService,
-            diagnostics,
-            projectOpenSessions);
+            diagnostics);
     }
 
     private static ProjectOpenSessionSnapshot CreateReadyProjectOpenSnapshot() =>

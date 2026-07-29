@@ -213,9 +213,10 @@ v1 的 `Ready` 证明：
 byte-level parity 由测试固定。
 
 当前 workbench consumer checkpoint 继续保持该所有权：`IProjectOpenSessionSnapshotSource` 只公开 current
-snapshot 与变更事件，Application 的内存 source 向 Shell 和 Project panel 发布同一 snapshot。Avalonia
-Presentation 只投影状态、下一动作与首要诊断，未连接的动作保持 disabled；它仍不读取报告文件、不调用
-bootstrap reducer，也不把 `Ready` 提升为 ProjectScope 或运行态 session。
+snapshot 与变更事件，Application 的内存 source 向 Shell-owned project launch surface 发布 snapshot。Avalonia
+Presentation 只投影候选工程、状态、非交互下一步与首要诊断；active-project window context 和 Project asset panel
+不消费 bootstrap identity。它仍不读取报告文件、不调用 bootstrap reducer，也不把 `Ready` 提升为 ProjectScope、
+`ProjectReady` 或运行态 session。
 
 ## v1 非目标
 

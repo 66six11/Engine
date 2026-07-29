@@ -1,0 +1,88 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Editor.Shell.ViewModels.Projects"
+             x:Class="Editor.Shell.Views.Projects.ProjectLaunchView"
+             x:DataType="vm:ProjectLaunchViewModel">
+    <UserControl.Styles>
+        <Style Selector="Border.project-launch-surface">
+            <Setter Property="Background" Value="{DynamicResource EditorBrushSurface01}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource EditorBrushDivider}" />
+            <Setter Property="BorderThickness" Value="0,0,0,1" />
+            <Setter Property="Padding" Value="12,8" />
+        </Style>
+        <Style Selector="Border.project-launch-state">
+            <Setter Property="Background" Value="{DynamicResource EditorBrushBase02}" />
+            <Setter Property="CornerRadius" Value="3" />
+            <Setter Property="Padding" Value="7,3" />
+            <Setter Property="VerticalAlignment" Value="Top" />
+        </Style>
+        <Style Selector="TextBlock.project-launch-label">
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeSmall}" />
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextMuted}" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+        <Style Selector="TextBlock.project-launch-title">
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+        <Style Selector="Border.project-launch-diagnostic">
+            <Setter Property="Margin" Value="0,8,0,0" />
+            <Setter Property="Padding" Value="8,6" />
+            <Setter Property="Background" Value="{DynamicResource EditorBrushBase02}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource EditorBrushWarning}" />
+            <Setter Property="BorderThickness" Value="2,0,0,0" />
+        </Style>
+    </UserControl.Styles>
+
+    <Border Classes="project-launch-surface">
+        <ScrollViewer x:Name="ProjectLaunchScrollViewer"
+                      MaxHeight="180"
+                      HorizontalScrollBarVisibility="Disabled"
+                      VerticalScrollBarVisibility="Auto">
+            <Grid ColumnDefinitions="Auto,*,Auto"
+                  RowDefinitions="Auto,Auto"
+                  ColumnSpacing="12">
+                <Border Grid.Column="0"
+                        Classes="project-launch-state">
+                    <TextBlock Classes="project-launch-label"
+                               Text="{Binding StateLabel}" />
+                </Border>
+
+                <StackPanel Grid.Column="1"
+                            Spacing="2">
+                    <TextBlock Classes="project-launch-label"
+                               Text="{Binding ProjectCandidateDisplayName}" />
+                    <TextBlock Classes="project-launch-title"
+                               Text="{Binding StateTitle}" />
+                    <TextBlock Classes="project-launch-label"
+                               Text="{Binding StateMessage}" />
+                </StackPanel>
+
+                <TextBlock Grid.Column="2"
+                           Classes="project-launch-label"
+                           MaxWidth="220"
+                           Text="{Binding NextStepText}"
+                           TextAlignment="Right" />
+
+                <Border Grid.Row="1"
+                        Grid.Column="1"
+                        Grid.ColumnSpan="2"
+                        Classes="project-launch-diagnostic"
+                        IsVisible="{Binding HasDiagnostics}">
+                    <StackPanel Spacing="2">
+                        <TextBlock Classes="project-launch-title"
+                                   Text="{Binding DiagnosticCountText}" />
+                        <TextBlock Classes="project-launch-label"
+                                   Text="{Binding PrimaryDiagnosticCode}" />
+                        <TextBlock Text="{Binding PrimaryDiagnosticMessage}"
+                                   TextWrapping="Wrap" />
+                        <TextBlock Classes="project-launch-label"
+                                   Text="{Binding PrimaryDiagnosticManifestPath}" />
+                        <TextBlock Classes="project-launch-label"
+                                   Text="{Binding PrimaryDiagnosticPointer}" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </ScrollViewer>
+    </Border>
+</UserControl>

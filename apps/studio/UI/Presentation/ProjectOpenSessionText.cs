@@ -17,13 +17,13 @@ internal static class ProjectOpenSessionText
         {
             ProjectOpenSessionState.NoProject => "No project",
             ProjectOpenSessionState.Opening => "Opening",
-            ProjectOpenSessionState.Ready => "Bootstrap ready",
+            ProjectOpenSessionState.Ready => "Ready to open",
             ProjectOpenSessionState.PendingBuild => "Build required",
             ProjectOpenSessionState.PendingRestart => "Restart required",
             ProjectOpenSessionState.RepairRequired => "Repair required",
             ProjectOpenSessionState.UpgradeRequired => "Upgrade required",
             ProjectOpenSessionState.SafeMode => "Safe mode",
-            ProjectOpenSessionState.FatalDistributionError => "Editor image error",
+            ProjectOpenSessionState.FatalDistributionError => "Studio installation error",
             _ => throw new ArgumentOutOfRangeException(nameof(state), state, null),
         };
 
@@ -31,14 +31,14 @@ internal static class ProjectOpenSessionText
         state switch
         {
             ProjectOpenSessionState.NoProject => "No project is open",
-            ProjectOpenSessionState.Opening => "Inspecting project",
-            ProjectOpenSessionState.Ready => "Project bootstrap is ready",
-            ProjectOpenSessionState.PendingBuild => "Project host build required",
-            ProjectOpenSessionState.PendingRestart => "Editor restart required",
-            ProjectOpenSessionState.RepairRequired => "Engine distribution repair required",
-            ProjectOpenSessionState.UpgradeRequired => "Engine upgrade required",
+            ProjectOpenSessionState.Opening => "Checking project",
+            ProjectOpenSessionState.Ready => "Project check completed",
+            ProjectOpenSessionState.PendingBuild => "Project code build required",
+            ProjectOpenSessionState.PendingRestart => "Studio restart required",
+            ProjectOpenSessionState.RepairRequired => "Engine installation repair required",
+            ProjectOpenSessionState.UpgradeRequired => "Compatible engine version required",
             ProjectOpenSessionState.SafeMode => "Safe mode required",
-            ProjectOpenSessionState.FatalDistributionError => "Editor image repair required",
+            ProjectOpenSessionState.FatalDistributionError => "Studio installation repair required",
             _ => throw new ArgumentOutOfRangeException(nameof(state), state, null),
         };
 
@@ -46,23 +46,23 @@ internal static class ProjectOpenSessionText
         state switch
         {
             ProjectOpenSessionState.NoProject =>
-                "Select a project when project selection is connected.",
+                "Select a project after project opening is connected.",
             ProjectOpenSessionState.Opening =>
-                "Project manifests and the current editor image are being inspected.",
+                "The project and current Studio installation are being checked.",
             ProjectOpenSessionState.Ready =>
-                "Project profile activation and asset browsing are not connected yet.",
+                "The project can be activated after project opening is connected.",
             ProjectOpenSessionState.PendingBuild =>
-                "A matching project host must be built before activation.",
+                "Matching project code must be built before the project can open.",
             ProjectOpenSessionState.PendingRestart =>
-                "Restart the editor to use the prepared project host.",
+                "Restart Studio to use the prepared project code.",
             ProjectOpenSessionState.RepairRequired =>
-                "Repair the engine distribution before opening this project.",
+                "Repair the engine installation before opening this project.",
             ProjectOpenSessionState.UpgradeRequired =>
-                "Use a compatible engine version before opening this project.",
+                "Open this project with a compatible engine version.",
             ProjectOpenSessionState.SafeMode =>
                 "Open without project code after safe mode is connected.",
             ProjectOpenSessionState.FatalDistributionError =>
-                "Repair the editor image before opening a project.",
+                "Repair the Studio installation before opening a project.",
             _ => throw new ArgumentOutOfRangeException(nameof(state), state, null),
         };
 
@@ -70,17 +70,14 @@ internal static class ProjectOpenSessionText
         action switch
         {
             ProjectOpenNextAction.SelectProject => "Select Project",
-            ProjectOpenNextAction.InspectProject => "Inspect Project",
-            ProjectOpenNextAction.ActivateProjectProfile => "Activate Project Profile",
-            ProjectOpenNextAction.BuildProjectHost => "Build Project Host",
-            ProjectOpenNextAction.RestartEditor => "Restart Editor",
-            ProjectOpenNextAction.RepairDistribution => "Repair Distribution",
-            ProjectOpenNextAction.UpgradeEngine => "Upgrade Engine",
-            ProjectOpenNextAction.OpenSafeMode => "Open Safe Mode",
-            ProjectOpenNextAction.RepairEditorImage => "Repair Editor Image",
+            ProjectOpenNextAction.InspectProject => "Check Project",
+            ProjectOpenNextAction.ActivateProjectProfile => "Open Project",
+            ProjectOpenNextAction.BuildProjectHost => "Build Project Code",
+            ProjectOpenNextAction.RestartEditor => "Restart Studio",
+            ProjectOpenNextAction.RepairDistribution => "Repair Engine Installation",
+            ProjectOpenNextAction.UpgradeEngine => "Use Compatible Engine Version",
+            ProjectOpenNextAction.OpenSafeMode => "Open in Safe Mode",
+            ProjectOpenNextAction.RepairEditorImage => "Repair Studio Installation",
             _ => throw new ArgumentOutOfRangeException(nameof(action), action, null),
         };
-
-    public static string GetUnavailableReason(ProjectOpenNextAction action) =>
-        $"The {GetNextActionLabel(action)} action is not connected to a project-open service.";
 }

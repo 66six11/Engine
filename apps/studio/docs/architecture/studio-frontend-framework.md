@@ -175,8 +175,8 @@ UI 不直接“同步写模型再等待系统追认”。新 revision 是 mutati
 - `Asharia.Editor.Projects` 已有 UI-neutral project-open session snapshot，`Asharia.Studio.Application` 已有
   canonical bootstrap report 的严格 parser；两者都不拥有文件 IO、进程启动或 UI；
 - `IProjectOpenSessionSnapshotSource` 只向 Presentation 暴露当前不可变 snapshot 与变更通知；
-  `ProjectOpenSessionSnapshotSource` 在 Application 内负责内存发布，composition root 把同一实例交给 Shell 与 Project panel；
-- Project-open event callback 通过现有 UI dispatcher 更新 ViewModel，panel/window dispose 时退订；source 不依赖 Avalonia，
+  `ProjectOpenSessionSnapshotSource` 在 Application 内负责内存发布，composition root 把实例交给 Shell-owned project launch surface；
+- Project-open event callback 通过现有 UI dispatcher 更新 launch ViewModel，window dispose 时退订；source 不依赖 Avalonia，
   ViewModel 也不读取报告文件或执行 project-open 动作；
 - built-in XAML View 已使用 Avalonia + MVVM，但公开 `Asharia.Editor.Avalonia` content backend 尚未落地。
 
@@ -572,7 +572,8 @@ open project
 - Shell-owned `Default` / `Compact` preset 编排默认 panel composition，保存布局继续优先；
 - UI Style、Frame Debugger 与折叠 Diagnostics 保持注册和可恢复，但不默认实例化；
 - disabled action/tool state 通过 tooltip/accessibility reason 可解释；
-- Project 使用 compiled XAML 显示真实空状态，不伪造 asset IO；
+- Shell project launch surface 使用 compiled XAML 显示 project-open lifecycle；Project 面板只显示真实 asset 空状态，
+  两者都不伪造 project/asset IO；
 - 未新增 public registry，也未把 layout/open state 放进 panel descriptor。
 
 ### F2：Action public contract
@@ -584,19 +585,20 @@ open project
 Project-open session contract（#341）已作为 F1 与后续真实 Project UI 之间的独立前置 Slice 完成：
 Presentation 只消费 Application 提供的 snapshot，不读取报告文件、不运行 bootstrap，也不自行归约状态。
 
-Project-open workbench consumer（#343）在该边界上只增加一条单向状态路径：
+Project-open workbench consumer（#343、#345）在该边界上只保留一条单向状态路径：
 
 ```text
 Application publication source
   -> IProjectOpenSessionSnapshotSource
-  -> MainWindow / ProjectPanel ViewModel
+  -> Shell-owned ProjectLaunchViewModel
   -> compiled Avalonia binding
 ```
 
-Shell 与 Project panel 共享同一 source；Ready 只显示 canonical project name 和“bootstrap ready”，不提升为
-`ProjectReady`。全部 next action 在没有真实 application service 时保持 disabled。session diagnostic 先在
-Project panel 就地显示首项；当前 Problems service 是 append-only，尚无 replace-by-source 语义，因此本阶段不复制，
-避免同一 project-open 状态产生过期或重复问题记录。
+Ready 只在 project launch surface 显示 canonical candidate name 与“project check completed”，不进入 active-project
+window title/context，也不提升为 `ProjectReady`。没有真实 application service 时，next action 只显示为非交互文本。
+session diagnostic 在有界滚动 surface 就地显示首项，manifest path 与 JSON pointer 分开；当前 Problems service 是
+append-only，尚无 replace-by-source 语义，因此本阶段不复制，避免同一 project-open 状态产生过期或重复问题记录。
+Project panel 不再消费 project-open source，只等待未来正式 ProjectSession 提供 asset/product snapshot。
 
 ### F3：第一个 writable property
 

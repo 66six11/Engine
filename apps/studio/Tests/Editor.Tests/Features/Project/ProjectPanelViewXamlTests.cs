@@ -7,7 +7,7 @@ namespace Editor.Tests.Features.Project;
 public sealed class ProjectPanelViewXamlTests
 {
     [Fact]
-    public void Project_panel_uses_compiled_bindings_and_explains_disabled_actions()
+    public void Project_panel_uses_compiled_bindings_and_keeps_asset_responsibility()
     {
         var xaml = LoadSource(
             "Features",
@@ -17,13 +17,13 @@ public sealed class ProjectPanelViewXamlTests
 
         Assert.Contains("x:DataType=\"vm:ProjectPanelViewModel\"", xaml);
         Assert.Contains("IsEnabled=\"{Binding CanSearch}\"", xaml);
-        Assert.Contains("IsEnabled=\"{Binding CanExecutePrimaryAction}\"", xaml);
         Assert.Contains("ToolTip.Tip=\"{Binding UnavailableReason}\"", xaml);
         Assert.Contains("Text=\"{Binding StateTitle}\"", xaml);
-        Assert.Contains("Text=\"{Binding StateLabel}\"", xaml);
-        Assert.Contains("Content=\"{Binding PrimaryActionLabel}\"", xaml);
-        Assert.Contains("IsVisible=\"{Binding HasDiagnostics}\"", xaml);
-        Assert.Contains("Text=\"{Binding PrimaryDiagnosticMessage}\"", xaml);
+        Assert.Contains("Text=\"{Binding StateMessage}\"", xaml);
+        Assert.Contains("Text=\"{Binding UnavailableReason}\"", xaml);
+        Assert.Contains("x:Name=\"ProjectPanelScrollViewer\"", xaml);
+        Assert.DoesNotContain("PrimaryActionLabel", xaml);
+        Assert.DoesNotContain("PrimaryDiagnosticMessage", xaml);
     }
 
     private static string LoadSource(params string[] pathParts)

@@ -39,8 +39,7 @@ internal sealed class StudioCompositionRoot
             new LegacyEditorModuleCompatibilityAdapter(
                 EditorFeatureCatalog.CreateDefaultModules(
                     selectionService,
-                    diagnostics,
-                    projectOpenSessions)),
+                    diagnostics)),
             selectionService,
             diagnostics,
             projectOpenSessions);
@@ -103,27 +102,22 @@ internal sealed class StudioCompositionRoot
 
     public static EditorExtensionComposition CreateDefaultComposition(
         IEditorSelectionService? selectionService = null,
-        IEditorDiagnosticService? diagnostics = null,
-        IProjectOpenSessionSnapshotSource? projectOpenSessions = null)
+        IEditorDiagnosticService? diagnostics = null)
     {
         selectionService ??= new EditorSelectionService();
         diagnostics ??= new EditorDiagnosticService();
-        projectOpenSessions ??= new ProjectOpenSessionSnapshotSource();
         return CreateDefaultCompatibilityAdapter(
             selectionService,
-            diagnostics,
-            projectOpenSessions).Compose();
+            diagnostics).Compose();
     }
 
     private static LegacyEditorModuleCompatibilityAdapter CreateDefaultCompatibilityAdapter(
         IEditorSelectionService selectionService,
-        IEditorDiagnosticService diagnostics,
-        IProjectOpenSessionSnapshotSource projectOpenSessions)
+        IEditorDiagnosticService diagnostics)
     {
         return new LegacyEditorModuleCompatibilityAdapter(
             EditorFeatureCatalog.CreateDefaultModules(
                 selectionService,
-                diagnostics,
-                projectOpenSessions));
+                diagnostics));
     }
 }

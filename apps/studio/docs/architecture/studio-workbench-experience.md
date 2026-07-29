@@ -44,7 +44,7 @@ find -> inspect -> select -> edit -> preview -> validate -> commit/undo
 
 ## 3. 当前实现事实与缺口
 
-2026-07-28 的源码与运行态审计确认：
+2026-07-29 的源码与运行态审计确认：
 
 - `Editor.csproj` 已使用 Avalonia、compiled binding、CommunityToolkit.Mvvm 和现有图标能力；
 - Shell 已有 Main Menu、Dock、Status Bar、Command Palette 和 Dialog；
@@ -54,17 +54,17 @@ find -> inspect -> select -> edit -> preview -> validate -> commit/undo
 - 默认工作台使用 Shell-owned `Default` preset：Hierarchy 与 Project 左侧垂直分割、Scene View 居中、Inspector 右置，Diagnostics 默认折叠；
 - `Compact` preset 把 Hierarchy 与 Project 合并为 tab group，仍保留 Scene View 与 Inspector；
 - UI Style、Frame Debugger、Console 和 Problems 继续注册并可恢复，但不再由新默认布局创建；
-- Project 当前是 compiled XAML 状态面板，可显示全部 canonical project-open 状态、下一动作与首要诊断；
-  搜索和动作仍未连接 project/asset service；
+- Shell-owned project launch surface 显示全部 canonical project-open 状态、候选工程、下一步与首要诊断；
+- Project compiled XAML 面板只保留 active project asset workspace 占位；搜索仍未连接 asset service；
 - `Asharia.Editor.Projects` 已定义 project-open session 的 UI-neutral snapshot，Application 已能严格解析
-  canonical bootstrap report，并通过共享内存 source 把 snapshot 注入 Shell 与 Project panel；
+  canonical bootstrap report，并通过共享内存 source 把 snapshot 注入 Shell-owned project launch surface；
   当前仍没有正式 report provider，也未启用 project action；
 - Hierarchy 到 Inspector 与 Workbench Bar 的 selection 同步和 Command Palette 已可工作。
 
 当前缺口：
 
-1. Project 已有 project-open 状态投影，但 project selection/report provider 和 `find asset -> inspect/use`
-   仍要等待真实 project/asset service。
+1. Shell 已有 project-open 状态投影，但 project selection/report provider、正式 ProjectSession 和
+   `find asset -> inspect/use` 仍要等待真实 project/asset service。
 2. Inspector 主要是只读属性表，read-only、dirty、invalid、locked 等状态仍需随 writable property Slice 完成。
 3. Scene View 缺少面板内工具栏和轻量 overlay；backend 失败仍会占用主要视区。
 4. 同一诊断可同时以 Scene View 消息、Console 行和 Status 文本出现，仍需收敛 primary feedback 与重复聚合。
@@ -81,6 +81,7 @@ find -> inspect -> select -> edit -> preview -> validate -> commit/undo
 ```text
 ┌ Main Menu ────────────────────────────────────────────────────────────────┐
 ├ Project / Document │ Select Move Rotate Scale │ Snap │ Edit │ Run controls ┤
+├ Project launch / recovery state · candidate · next step · diagnostics ─────┤
 ├─────────────────┬──────────────────────────────────────┬──────────────────┤
 │ Hierarchy       │ Scene View                           │ Inspector        │
 │                 │ ┌ camera / shading / overlay ─────┐ │                  │
@@ -101,6 +102,7 @@ find -> inspect -> select -> edit -> preview -> validate -> commit/undo
 | --- | --- | --- |
 | Main Menu | 现有紧凑高度 | 只承载稳定菜单入口 |
 | Workbench Bar | 32–36 px | 呈现全局 context/mode/tool，不承载面板局部选项 |
+| Project launch surface | content-driven，最大 180 px | Shell-owned；有界滚动，不进入 Dock/layout persistence |
 | 左列 | 260 px | Hierarchy 与 Project 垂直分割；均可成为 tab |
 | 右列 | 320 px | Inspector；优先保留可读宽度 |
 | 底部抽屉 | 打开时约 180–220 px | 默认折叠，warning/error/running task 可提示但不强制展开 |
@@ -214,13 +216,14 @@ Inspector header 固定回答“正在看什么、能否编辑、为何不能编
 
 ### 8.1 Project
 
-Project 面板负责 asset/product 的查找与状态投影，不直接拥有 importer 或文件 IO：
+Project 面板负责 active project 的 asset/product 查找与状态投影，不直接拥有 project-open lifecycle、importer 或文件 IO：
 
-- 当前先消费共享 project-open snapshot，呈现 state、next action 和首要 diagnostic；
+- project selection、build、restart、repair、upgrade 与 Safe Mode 属于 Shell-owned project launch/recovery surface；
 - `Ready` 只表示 bootstrap inspection 通过，不表示 ProjectScope、asset catalog 或运行态 session 已激活；
-- 没有对应 application service 的 next action 只作为 disabled 恢复提示，不绑定空命令；
-- 当前 Problems service 只有 append-only publish，没有按 source 替换/撤销语义；project-open diagnostic 暂不复制过去，
-  避免状态切换后遗留重复问题；
+- bootstrap 候选工程不得进入 active project window title/context；只有未来正式 ProjectSession 可以发布 active identity；
+- 没有 application service 的 next action 只显示为非交互“下一步”文本，不渲染永久 disabled 的假按钮；
+- 当前 Problems service 只有 append-only publish，没有按 source 替换/撤销语义；project-open diagnostic 先在 Shell surface
+  就地显示，避免状态切换后遗留重复问题；
 - 顶部只有 search、scope/filter 和 view mode；
 - row/tile 使用稳定 asset id，显示 readiness、stale、missing、failed 等 product state；
 - selection 与 Inspector 协作；
@@ -327,6 +330,7 @@ Scene View 不直接执行 engine mutation。picking 产生 selection intent；g
 | 来源 | 观察 | 决策 |
 | --- | --- | --- |
 | Unreal Editor Interface / Level Editor / Outliner | Viewport、Outliner、Details、Content 与底部诊断围绕选择和任务协作 | Adopt 关系；不复制外观、素材或名称 |
+| Unreal Project Browser / Content Browser、Godot/O3DE Project Manager / asset dock、Unity Hub / Project window | 工程选择、版本、构建与恢复在工作台前或独立管理 surface；编辑器内 asset browser 只管理 active project 内容 | Adopt 所有权分层；当前先用 Shell surface，独立进程延后 |
 | Godot Editor / Inspector Dock | Scene、FileSystem、Inspector 协作；底部面板可折叠；Inspector 有搜索、历史和恢复入口 | Adopt 可折叠诊断与明确 Inspector 状态；历史/收藏延后 |
 | O3DE Editor / Entity Outliner | Outliner + Asset Browser + Viewport + Inspector 的生产布局；搜索、过滤、锁定和可见性状态明确 | Adopt 默认信息架构与状态可见性；复杂列/批量能力延后 |
 | Blender HIG | 区分 scene selection、UI selection、drag 与 undo；空间上下文明确 | Adopt selection/focus/undo 边界 |
@@ -386,9 +390,10 @@ launch Studio
 
 ### Slice B 及以后
 
-1. #343 已把 project-open snapshot 注入 Shell，并让 Project 面板呈现状态、首要诊断和 disabled next-action hint；
-2. 接入正式 project selection/report provider；每个动作只有在对应 application service 与 command route 存在后才启用；
-3. Project 面板接入真实 asset/product snapshot 与 readiness；
+1. #343 已把 project-open snapshot 注入 workbench；#345 把生命周期状态收敛到 Shell launch surface，
+   Project 面板恢复为 active-project asset workspace 占位；
+2. 接入正式 project selection/report provider；每个动作只有在对应 application service 与 command route 存在后才渲染为控件；
+3. 完成正式 ProjectSession/ProjectReady 后，Project 面板接入真实 asset/product snapshot 与 readiness；
 4. 为 Problems 增加可按稳定 source 替换的诊断投影，再同步 project-open diagnostics；
 5. Inspector 明确 empty/read-only/dirty/invalid，并接入第一个 transaction-backed writable field；
 6. Scene View toolbar/overlay 与 diagnostic deduplication；
@@ -431,10 +436,17 @@ git diff --check
 - [Unreal Editor Interface](https://dev.epicgames.com/documentation/en-us/unreal-engine/unreal-editor-interface)
 - [Unreal Level Editor](https://dev.epicgames.com/documentation/en-us/unreal-engine/level-editor-in-unreal-engine)
 - [Unreal Outliner](https://dev.epicgames.com/documentation/en-us/unreal-engine/outliner-in-unreal-engine)
+- [Unreal Opening an Existing Project](https://dev.epicgames.com/documentation/en-us/unreal-engine/opening-an-existing-unreal-engine-project)
+- [Unreal Content Browser](https://dev.epicgames.com/documentation/en-us/unreal-engine/content-browser-in-unreal-engine)
 - [Godot：A first look at the editor](https://docs.godotengine.org/en/stable/getting_started/introduction/first_look_at_the_editor.html)
 - [Godot Inspector Dock](https://docs.godotengine.org/en/stable/tutorials/editor/inspector_dock.html)
+- [Godot Project Manager](https://docs.godotengine.org/en/stable/tutorials/editor/project_manager.html)
 - [O3DE Editor](https://docs.o3de.org/docs/user-guide/editor/)
 - [O3DE Entity Outliner](https://www.docs.o3de.org/docs/user-guide/editor/entity-outliner/)
+- [O3DE Project Manager](https://www.docs.o3de.org/docs/user-guide/project-config/project-manager/)
+- [O3DE Asset Browser](https://www.docs.o3de.org/docs/user-guide/editor/asset-browser/)
+- [Unity Hub Manage Projects](https://docs.unity.com/en-us/hub/project-manage)
+- [Unity Project window](https://docs.unity3d.com/Manual/ProjectView.html)
 - [Blender HIG：Selection](https://developer.blender.org/docs/features/interface/human_interface_guidelines/selection/)
 - [Blender HIG：General Patterns](https://developer.blender.org/docs/features/interface/human_interface_guidelines/general_patterns/)
 

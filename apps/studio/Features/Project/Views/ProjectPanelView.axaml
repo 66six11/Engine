@@ -1,49 +1,32 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:controls="using:Editor.UI.Controls.Base"
              xmlns:vm="using:Editor.Features.Project.ViewModels"
+             xmlns:controls="using:Editor.UI.Controls.Base"
              x:Class="Editor.Features.Project.Views.ProjectPanelView"
              x:DataType="vm:ProjectPanelViewModel">
     <UserControl.Styles>
         <Style Selector="Border.project-toolbar">
-            <Setter Property="Padding" Value="6,5" />
+            <Setter Property="Padding" Value="8" />
             <Setter Property="Background" Value="{DynamicResource EditorBrushSurface01}" />
             <Setter Property="BorderBrush" Value="{DynamicResource EditorBrushDivider}" />
             <Setter Property="BorderThickness" Value="0,0,0,1" />
         </Style>
         <Style Selector="TextBlock.project-name">
-            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextMuted}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
             <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeSmall}" />
             <Setter Property="TextTrimming" Value="CharacterEllipsis" />
         </Style>
         <Style Selector="TextBlock.project-empty-title">
             <Setter Property="FontWeight" Value="SemiBold" />
             <Setter Property="HorizontalAlignment" Value="Center" />
-        </Style>
-        <Style Selector="TextBlock.project-empty-message">
-            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextMuted}" />
-            <Setter Property="MaxWidth" Value="240" />
             <Setter Property="TextAlignment" Value="Center" />
             <Setter Property="TextWrapping" Value="Wrap" />
         </Style>
-        <Style Selector="Border.project-state">
-            <Setter Property="Padding" Value="7,3" />
-            <Setter Property="CornerRadius" Value="3" />
-            <Setter Property="Background" Value="{DynamicResource EditorBrushSurface02}" />
-            <Setter Property="HorizontalAlignment" Value="Center" />
-        </Style>
-        <Style Selector="Border.project-diagnostic">
-            <Setter Property="Margin" Value="0,4,0,0" />
-            <Setter Property="Padding" Value="8" />
-            <Setter Property="MaxWidth" Value="280" />
-            <Setter Property="Background" Value="{DynamicResource EditorBrushSurface01}" />
-            <Setter Property="BorderBrush" Value="{DynamicResource EditorBrushDivider}" />
-            <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="CornerRadius" Value="3" />
-        </Style>
-        <Style Selector="TextBlock.project-diagnostic-detail">
+        <Style Selector="TextBlock.project-empty-message">
             <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextMuted}" />
             <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeSmall}" />
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="TextAlignment" Value="Center" />
             <Setter Property="TextWrapping" Value="Wrap" />
         </Style>
     </UserControl.Styles>
@@ -58,41 +41,27 @@
                                Text="{Binding ProjectDisplayName}" />
                     <controls:SearchBox Grid.Row="1"
                                         IsEnabled="{Binding CanSearch}"
-                                        PlaceholderText="Search project"
+                                        PlaceholderText="Search project assets"
                                         ToolTip.Tip="{Binding UnavailableReason}" />
                 </Grid>
             </Border>
 
-            <StackPanel Grid.Row="1"
-                        Margin="20"
-                        HorizontalAlignment="Center"
-                        VerticalAlignment="Center"
-                        Spacing="8">
-                <Border Classes="project-state">
-                    <TextBlock Text="{Binding StateLabel}" />
-                </Border>
-                <TextBlock Classes="project-empty-title"
-                           Text="{Binding StateTitle}" />
-                <TextBlock Classes="project-empty-message"
-                           Text="{Binding StateMessage}" />
-                <Border Classes="project-diagnostic"
-                        IsVisible="{Binding HasDiagnostics}">
-                    <StackPanel Spacing="3">
-                        <TextBlock FontWeight="SemiBold"
-                                   Text="{Binding DiagnosticCountText}" />
-                        <TextBlock Classes="project-diagnostic-detail"
-                                   Text="{Binding PrimaryDiagnosticCode}" />
-                        <TextBlock Text="{Binding PrimaryDiagnosticMessage}"
-                                   TextWrapping="Wrap" />
-                        <TextBlock Classes="project-diagnostic-detail"
-                                   Text="{Binding PrimaryDiagnosticLocation}" />
-                    </StackPanel>
-                </Border>
-                <Button HorizontalAlignment="Center"
-                        Content="{Binding PrimaryActionLabel}"
-                        IsEnabled="{Binding CanExecutePrimaryAction}"
-                        ToolTip.Tip="{Binding UnavailableReason}" />
-            </StackPanel>
+            <ScrollViewer x:Name="ProjectPanelScrollViewer"
+                          Grid.Row="1"
+                          HorizontalScrollBarVisibility="Disabled"
+                          VerticalScrollBarVisibility="Auto">
+                <StackPanel Margin="20"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            Spacing="8">
+                    <TextBlock Classes="project-empty-title"
+                               Text="{Binding StateTitle}" />
+                    <TextBlock Classes="project-empty-message"
+                               Text="{Binding StateMessage}" />
+                    <TextBlock Classes="project-empty-message"
+                               Text="{Binding UnavailableReason}" />
+                </StackPanel>
+            </ScrollViewer>
         </Grid>
     </Border>
 </UserControl>

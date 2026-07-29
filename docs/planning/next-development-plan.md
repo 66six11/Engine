@@ -10,7 +10,7 @@
 
 - 已有 package-first 基线：`rendergraph` 后端无关，`rhi-vulkan` 不依赖 RenderGraph，Vulkan/RG 翻译在 `rhi_vulkan_rendergraph`，`renderer_basic` 不暴露 Vulkan。
 - Vulkan 主路径已覆盖 dynamic rendering、synchronization2 barrier、descriptor/pipeline wrapper、transient image pool、buffer upload、compute dispatch、offscreen RenderView、Frame Debug replay 和 editor viewport sampled texture。
-- Editor 已具备 production workbench shell、Scene View camera/grid/debug-line、Live RG View、Frame Debugger、Asset Browser snapshot-backed catalog 和多项 smoke；Avalonia Studio 已有 Shell-owned Workbench Bar、Default/Compact layout preset、Hierarchy -> Inspector/Workbench Bar selection 联动，以及由共享 UI-neutral source 驱动的 project-open Shell/Project 状态投影；canonical bootstrap report parser 已落地，但尚未连接正式 report provider、project selection/action 或真实 project/asset service。
+- Editor 已具备 production workbench shell、Scene View camera/grid/debug-line、Live RG View、Frame Debugger、Asset Browser snapshot-backed catalog 和多项 smoke；Avalonia Studio 已有 Shell-owned Workbench Bar、Default/Compact layout preset、Hierarchy -> Inspector/Workbench Bar selection 联动，以及由共享 UI-neutral source 驱动的 project-open Shell launch/recovery surface；Project 面板已恢复为 active-project asset workspace 占位，bootstrap candidate 不再伪装为 active project。canonical bootstrap report parser 已落地，但尚未连接正式 report provider、project selection/action、ProjectSession 或真实 project/asset service。
 - `asset-core` / `asset-pipeline` / `project-core` / `material-core` / `scene-core` 已是 CPU/headless 数据模型或 baseline package，但尚未形成“真实 scene object -> material/mesh/texture product -> GPU resource -> editor authoring”的完整闭环。
 - 当前风险不是缺少大系统名词，而是 route 太多：渲染、资产、scene、editor、material、play/session 必须按可验证切片合流。
 
@@ -24,6 +24,8 @@
   参考：<https://docs.o3de.org/docs/atom-guide/dev-guide/rpi/working-with-scene-and-rendering-pipeline/>
 - Unity、Unreal、Godot 的资产系统都强调 source discovery、metadata/import settings、import/reimport、asset registry/catalog 与 runtime reference 的分离；Asharia 应先稳定 deterministic product/cache 和 resource handle，再做 watcher、热更新或完整 importer UI。
   参考：<https://docs.unity3d.com/6000.4/Documentation/Manual/AssetDatabaseRefreshing.html>、<https://dev.epicgames.com/documentation/unreal-engine/asset-management-in-unreal-engine>、<https://docs.godotengine.org/en/stable/tutorials/assets_pipeline/import_process.html>
+- Unreal Project Browser、Unity Hub、Godot/O3DE Project Manager 把工程选择、版本、构建或恢复与编辑器内 asset browser 分开；Asharia 当前采用 Shell-owned launch/recovery surface 作为过渡，不把这些动作放进 Project asset panel，等安装/版本管理需求成熟后再判断是否拆独立进程。
+  参考：<https://dev.epicgames.com/documentation/en-us/unreal-engine/opening-an-existing-unreal-engine-project>、<https://docs.unity.com/en-us/hub/project-manage>、<https://docs.godotengine.org/en/stable/tutorials/editor/project_manager.html>、<https://www.docs.o3de.org/docs/user-guide/project-config/project-manager/>
 - Vulkan 官方资料继续支持当前方向：dynamic rendering 减少预声明 render pass/framebuffer，synchronization2 要求明确 stage/access/layout；VMA 负责 allocator/lifetime 基础，但 transient/pool/counter 策略仍由引擎验证。
   参考：<https://docs.vulkan.org/samples/latest/samples/extensions/dynamic_rendering/README.html>、<https://docs.vulkan.org/guide/latest/synchronization_examples.html>、<https://gpuopen-librariesandsdks.github.io/VulkanMemoryAllocator/html/>
 
