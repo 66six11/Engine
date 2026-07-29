@@ -178,6 +178,11 @@ UI 不直接“同步写模型再等待系统追认”。新 revision 是 mutati
   `ProjectOpenSessionSnapshotSource` 在 Application 内负责内存发布，composition root 把实例交给 Shell-owned project launch surface；
 - Project-open event callback 通过现有 UI dispatcher 更新 launch ViewModel，window dispose 时退订；source 不依赖 Avalonia，
   ViewModel 也不读取报告文件或执行 project-open 动作；
+- `IProjectSessionService` 与 bootstrap source 分离，只发布 `NoProject | Ready` 活动项目 identity 和
+  typed create/open result；Application service 通过 native descriptor gateway 成功后才切换 current，
+  失败时保持上一成功会话；
+- recent-project 是 Application-owned Studio preference；写入使用同目录临时文件加替换，启动恢复必须重新
+  调用 descriptor gateway，不能把缓存路径或 bootstrap-ready candidate 直接解释为活动 `ProjectSession`；
 - built-in XAML View 已使用 Avalonia + MVVM，但公开 `Asharia.Editor.Avalonia` content backend 尚未落地。
 
 ### 5.2 迁移目标

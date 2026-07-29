@@ -534,6 +534,37 @@ flowchart TB
 - `apps/studio` 是 managed shell；Scene View 可以拥有 Avalonia composition surface 和 status ViewModel，
   但 Vulkan frame recording、external image/semaphore 创建和 native packet release 仍在 native bridge/RHI 边界。
 
+## Studio Active Project Session 流程
+
+Studio 将“用户当前打开的项目”和 Bootstrap `ProjectOpenSession` 分开建模：后者只是启动候选与
+发行镜像验证状态，不能直接成为窗口标题、最近项目或 Scene View 的活动项目身份。
+
+```mermaid
+flowchart LR
+    Picker["Avalonia folder picker"]
+    Session["Application ProjectSessionService"]
+    Gateway["Project descriptor gateway"]
+    Bridge["EngineBridge"]
+    Native["editor_native / project-core"]
+    Active["ActiveProjectSnapshot"]
+    Recent["Local recent-project preference"]
+
+    Picker -->|"create / open"| Session
+    Session --> Gateway
+    Gateway --> Bridge
+    Bridge --> Native
+    Native -->|"canonical validated descriptor"| Active
+    Active --> Recent
+    Recent -->|"restore through the same open path"| Session
+```
+
+- `ProjectSessionService` 只在原生描述符创建或打开成功后替换活动项目；失败保留原会话和最近项目路径。
+- 最近项目只是 Application 层偏好，不是可信项目状态。启动恢复必须重新经过 gateway、EngineBridge 和
+  `project-core` 复验。
+- `ActiveProjectSnapshot` 只表达已验证的项目身份与路径，不持有 Avalonia 对象、原生指针或 runtime 对象。
+- 该最小会话尚不创建完整 Project extension scope 或 EngineHost；Bootstrap `Ready` 与活动项目
+  `Ready` 仍是不同状态，后续由组合根显式协调。
+
 ## Studio Avalonia Scene View Composition 流程
 
 ```mermaid

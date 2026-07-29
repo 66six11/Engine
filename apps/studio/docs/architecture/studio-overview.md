@@ -2,7 +2,7 @@
 
 状态：Target（迁移中）
 
-更新日期：2026-07-28
+更新日期：2026-07-29
 
 ## 1. 目的
 
@@ -27,11 +27,15 @@ verifier，并可从 current inventory lease 投影 Distribution-bound managed b
 `Asharia.Runtime.Contracts` 当前把 Scene `EntityId`、float3、quaternion 与 local Transform 固定为
 8/12/16/40-byte unmanaged values，并用显式 offsets 对齐 native C ABI；这些只是项目代码可引用的稳定
 value contracts，不包含 native function import、World handle、Scene provider、Avalonia dispatcher 或文件 IO。
-EngineBridge 当前提供 Scene World ABI v1 create/destroy、owner-thread deterministic disposal、复用 `Asharia.Runtime.EntityId` 的 entity create/destroy/is-alive、逐值传递 `TransformValue` 的 local Transform get/set，以及最多 4096-byte、caller-owned buffer 的 strict UTF-8 display-name get/set；它不暴露 native pointer，不使用 finalizer thread 销毁 thread-affine World，也不把名称当作 identity/path/unique key。snapshot/query projection、ProjectSession wiring 与 native library deployment 尚未提供。
+EngineBridge 当前提供 Scene World ABI v1 create/destroy、owner-thread deterministic disposal、复用 `Asharia.Runtime.EntityId` 的 entity create/destroy/is-alive、逐值传递 `TransformValue` 的 local Transform get/set，以及最多 4096-byte、caller-owned buffer 的 strict UTF-8 display-name get/set；它还通过 `editor_native` project ABI 调用 native `project-core` 新建/打开 canonical `asharia.project.json`，把返回的 native-owned UTF-8 buffers 在调用期复制为 `ProjectDescriptorSnapshot` 并始终显式释放，不在 managed 层复制描述符 schema。EngineBridge 不暴露 native pointer，不使用 finalizer thread 销毁 thread-affine World，也不把名称当作 identity/path/unique key。Scene snapshot/query projection 与完整 ProjectSession/EngineHost wiring 尚未提供。
 `Asharia.Editor.Projects` 已公开 UI-neutral 的 project-open session snapshot；`Asharia.Studio.Application`
 已严格解析 canonical bootstrap session v1 report，并以 typed failure 拒绝非法或非规范输入。该 parser
-不执行文件 IO、进程启动或状态归约；正式 report source、ProjectSession composition 和 Presentation wiring
-仍未提供。
+不执行文件 IO、进程启动或状态归约。与该 bootstrap candidate 明确分离的最小活动会话合同
+`IProjectSessionService` 只发布 `NoProject | Ready` 和 canonical root/name/id；Application
+`ProjectSessionService` 仅在 native descriptor gateway 成功后替换 current session，失败时保留上一成功会话，
+并把 recent-project 作为 Studio preference 原子替换。启动恢复会重新通过同一 gateway 校验 recent root，
+不会把路径缓存直接提升为活动项目。正式 report provider、Project scope/EngineHost composition 和
+Presentation wiring 仍未提供。
 Project Code 还能把该 projection 复验为 semantic build credential，并为 caller 已规范化的项目根
 `Editor/**/*.cs` 原子生成 implicit SDK workspace，再使用 credential-bound dotnet closure 执行隔离
 restore/build 并发布四类 raw build output；current raw-output lease 现在还能经过无执行 artifact metadata
@@ -58,7 +62,7 @@ revision、contribution publication 与 catalog commit 尚未落地。
   Package loader 与 dynamic generation 尚未形成闭环；
 - `ViewportScheduler` 未接入 production frame loop；
 - Scene View bridge 固定使用 Windows NT handle；
-- 尚无正式 Project/Edit/Play/Preview session、Game View 和 Linux/macOS backend。
+- 尚无完整 Project scope/EngineHost、Edit/Play/Preview session、Game View 和 Linux/macOS backend。
 
 这些事实只约束迁移顺序，不是目标边界。
 
