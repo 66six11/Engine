@@ -22,7 +22,8 @@
   cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake --preset msvc-debug && cmake --build --preset msvc-debug"
   ```
   The `conanbuild.bat` sets VS compiler env vars required by Ninja+MSVC. From "Developer PowerShell for VS 2022" you can skip it.
-- **Two-compiler workflow:** `msvc-*` presets for daily dev; `clangcl-*` presets for pre-commit with `clang-tidy` enabled (`ASHARIA_ENABLE_CLANG_TIDY=ON`). Always run at least `clangcl-debug` before committing.
+- **Two-compiler workflow:** `msvc-*` presets are the daily compiler and `clangcl-*` presets are the second-compiler gate. Compilation never runs `clang-tidy` implicitly.
+- **Run clang-tidy separately:** configure and build a ClangCL preset first, then use `cmake --build --preset clangcl-debug --target asharia-tidy` for the full repository or `python tools/run_clang_tidy.py --changed --include-untracked` for changed translation units. Changed headers and build inputs deliberately expand to the full compilation database.
 
 ## Encoding — critical
 
@@ -76,6 +77,7 @@
 powershell -ExecutionPolicy Bypass -File tools\check-text-encoding.ps1
 git diff --check
 cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --preset clangcl-debug && cmake --build --preset clangcl-debug"
+cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --build --preset clangcl-debug --target asharia-tidy"
 cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake --preset msvc-debug && cmake --build --preset msvc-debug"
 ```
 

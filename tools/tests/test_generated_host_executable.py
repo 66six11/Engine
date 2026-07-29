@@ -6,6 +6,8 @@ import hashlib
 import json
 import os
 import shutil
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -396,9 +398,6 @@ asharia_include_generated_host_template()
                 generator_name="Ninja",
                 generator_multi_config=False,
                 parallel_jobs=min(os.cpu_count() or 1, 8),
-                enable_clang_tidy=(
-                    os.environ.get("ASHARIA_HOST_TEST_ENABLE_CLANG_TIDY") == "1"
-                ),
                 environment=environment,
             )
             built = host_build_adapter.run_final_host_build(
@@ -417,6 +416,25 @@ asharia_include_generated_host_template()
                 built.target.artifact_relative_path,
             )
             self.assertTrue(built.target.artifact_path.is_file())
+
+            if os.environ.get("ASHARIA_HOST_TEST_RUN_CLANG_TIDY") == "1":
+                tidy = subprocess.run(
+                    [
+                        sys.executable,
+                        str(REPOSITORY_ROOT / "tools" / "run_clang_tidy.py"),
+                        "--source-root",
+                        str(source_root),
+                        "--build-dir",
+                        str(built.target.build_root),
+                        "--config-file",
+                        str(REPOSITORY_ROOT / ".clang-tidy"),
+                        "--jobs",
+                        "2",
+                    ],
+                    cwd=REPOSITORY_ROOT,
+                    check=False,
+                )
+                self.assertEqual(0, tidy.returncode)
 
             compiler_facts = list(
                 (built.target.build_root / "CMakeFiles").glob(

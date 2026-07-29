@@ -12,10 +12,12 @@ python -m pip install -r tools\requirements.txt
 
 - `msvc-debug`：日常 Debug 构建。
 - `msvc-release`：日常 Release 构建。
-- `clangcl-debug`：Debug 代码检查构建，启用 `clang-tidy`。
-- `clangcl-release`：Release 代码检查构建，启用 `clang-tidy`。
+- `clangcl-debug`：Debug 第二编译器构建，生成 compilation database。
+- `clangcl-release`：Release 第二编译器构建，生成 compilation database。
 
-Visual Studio 中直接选择这四个项目级 preset 即可。`msvc-*` 负责常规编译、IntelliSense 和构建；`clangcl-*` 用作第二编译器验证和 `clang-tidy` 检查。
+Visual Studio 中直接选择这四个项目级 preset 即可。`msvc-*` 负责常规编译、IntelliSense 和构建；`clangcl-*`
+只负责第二编译器验证。`clang-tidy` 不再挂在编译动作上，而是读取 ClangCL preset 生成的
+`compile_commands.json` 独立运行。
 
 ## 目录约定
 
@@ -70,13 +72,40 @@ cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake --preset
 cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --preset clangcl-debug-tests && cmake --build --preset clangcl-debug-tests && ctest --preset clangcl-debug-tests --output-on-failure"
 ```
 
-ClangCL test preset 对 production 和 test translation units 启用 clang-tidy，且所有 clang-tidy
-diagnostics 都作为 errors 处理。
+## 独立 clang-tidy 入口
+
+ClangCL configure/build 成功后，可以独立运行全量 tidy：
+
+```powershell
+cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --build --preset clangcl-debug --target asharia-tidy"
+```
+
+开发中只检查当前改动直接命中的 translation units：
+
+```powershell
+cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && python tools\run_clang_tidy.py --changed --include-untracked"
+```
+
+该入口只消费 compilation database 中属于当前 source root、且不位于 `build/` 的 translation units。
+changed `.cc/.cpp/.cxx` 必须精确存在于 database，否则 fail closed。C 源文件继续由编译 gate 检查；
+头文件、`.clang-tidy`、
+CMake、Conan 或 profile 变化无法仅靠 compilation database 安全推导完整依赖闭包，因此 changed 模式会自动升级为全量。
+本地默认最多并行八个 tidy 进程，可通过 `--jobs` 显式调整；CI 固定为两个并发以限制 hosted runner 的内存峰值。
+`.clang-tidy` 继续把所有 diagnostics 作为 errors。
+
+这一拆分采用 LLVM 官方 `run-clang-tidy` + compilation database 路径：
+
+- CMake 的 [`CMAKE_EXPORT_COMPILE_COMMANDS`](https://cmake.org/cmake/help/latest/variable/CMAKE_EXPORT_COMPILE_COMMANDS.html)
+  为 Ninja build 生成每个 translation unit 的精确编译命令；
+- LLVM 的 [clang-tidy automation](https://clang.llvm.org/extra/clang-tidy/index.html#clang-tidy-automation)
+  明确支持在 build graph 外并行分析 compilation database；
+- 不采用 `clang-tidy-diff` 作为提速路径，因为 LLVM 明确说明它仍分析整个文件、只过滤最终诊断，且可能漏掉落在未改行上的影响。
 
 `.github/workflows/native-code-quality.yml` 在 pull request、push to `main` 和 manual dispatch 时运行。
 Windows hosted job 固定使用包含 Visual Studio 2022 的 `windows-2022` runner；仓库 Conan profiles
 要求 Visual Studio 17，因此不得依赖会迁移到更新 Visual Studio 主版本的 `windows-latest`。Job 先安装锁定版本的 Conan/Vulkan SDK、bootstrap Conan，再运行 encoding、diff
-whitespace、asset boundary、两编译器 build 和 CTest；ClangCL hosted build 使用 `--parallel 2`，限制并发 clang-tidy 的内存峰值。Hosted CI 不运行 GPU/window smokes；相关本地
+whitespace、asset boundary、两编译器 build 和 CTest；ClangCL build 完成后，CI 在独立 step 中以两个并发进程运行全量 tidy，
+因此编译失败和静态检查失败可以分别归因。Hosted CI 不运行 GPU/window smokes；相关本地
 pre-commit smoke gate 以 `docs/workflow/review.md` 为准。
 
 也可以从 “Developer PowerShell for VS 2022” 进入项目目录后运行 `cmake --preset ...` 和 `cmake --build --preset ...`。
@@ -84,7 +113,7 @@ pre-commit smoke gate 以 `docs/workflow/review.md` 为准。
 ## 日常建议
 
 - 平时开发优先使用 `msvc-debug`。
-- 提交前至少跑一次 `clangcl-debug`，让 ClangCL 和 `clang-tidy` 帮我们抓 MSVC 不容易暴露的问题。
+- 提交前至少跑一次 `clangcl-debug`，再独立运行 changed 或 full tidy，让第二编译器和静态检查分别提供证据。
 - 做发布或性能验证时使用 `msvc-release`。
 - 需要更严格检查发布配置时再跑 `clangcl-release`。
 

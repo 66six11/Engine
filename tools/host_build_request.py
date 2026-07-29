@@ -38,7 +38,6 @@ class FinalHostBuildRequestV1:
     generator_name: str
     generator_multi_config: bool
     parallel_jobs: int
-    enable_clang_tidy: bool
     environment: tuple[tuple[str, str], ...] = field(repr=False)
     configure_timeout_seconds: float = 300.0
     build_timeout_seconds: float = 900.0
@@ -208,22 +207,14 @@ def validate_final_host_build_request(
             _diagnostic("host-build.parallelism-invalid", "/parallelJobs",
                         f"parallel jobs must be between 1 and {_MAX_PARALLEL_JOBS}")
         )
-    for value, code, pointer, message in (
-        (
-            request.generator_multi_config,
-            "host-build.generator-invalid",
-            "/generatorMultiConfig",
-            "generator multi-config fact must be boolean",
-        ),
-        (
-            request.enable_clang_tidy,
-            "host-build.clang-tidy-invalid",
-            "/enableClangTidy",
-            "clang-tidy selection must be boolean",
-        ),
-    ):
-        if not isinstance(value, bool):
-            diagnostics.append(_diagnostic(code, pointer, message))
+    if not isinstance(request.generator_multi_config, bool):
+        diagnostics.append(
+            _diagnostic(
+                "host-build.generator-invalid",
+                "/generatorMultiConfig",
+                "generator multi-config fact must be boolean",
+            )
+        )
     for pointer, value, label in (
         ("/targetName", request.target_name, "target name"),
         ("/configuration", request.configuration, "configuration"),
@@ -379,11 +370,9 @@ def configure_final_host_arguments(
         "-G",
         request.generator_name,
         f"-DCMAKE_TOOLCHAIN_FILE:FILEPATH={validated.toolchain_file}",
+        "-DCMAKE_EXPORT_COMPILE_COMMANDS:BOOL=ON",
         "-DASHARIA_BUILD_APPS:BOOL=OFF",
         "-DASHARIA_BUILD_TESTS:BOOL=OFF",
-        "-DASHARIA_ENABLE_CLANG_TIDY:BOOL=" + (
-            "ON" if request.enable_clang_tidy else "OFF"
-        ),
         f"-DASHARIA_GENERATED_HOST_TEMPLATE_ROOT:PATH={validated.host_template_root}",
         f"-DASHARIA_STATIC_COMPOSITION_ROOT:PATH={validated.static_composition_root}",
     ]

@@ -307,7 +307,7 @@ ProcessScope stop 规则是 Asharia 的实现结论。
 - ClangCL 和 MSVC exact generated Host：restricted snapshot、binding publication/deep verification、真实项目 normal run、坏项目
   failure + clean stop；
 - full Python/contracts/topology/encoding/doc sync/diff/Vulkan review；
-- Conan-before-CMake ClangCL + clang-tidy 与 MSVC Debug build/test gates。
+- Conan-before-CMake ClangCL build/test、独立 clang-tidy 与 MSVC Debug build/test gates。
 
 ## 后续
 

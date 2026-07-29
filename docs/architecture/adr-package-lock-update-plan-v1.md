@@ -333,7 +333,7 @@ policy 独立，必须由后继 transaction ADR 决定。
 - Distribution + Project/local providers → update plan → canonical proposed Lock → existing validators 的 headless handoff。
 
 提交前仍运行 Python 3.14 全量 tests、package contracts/topology、encoding、doc-sync、asset boundaries、`git diff --check`，以及
-Conan-before-CMake 的 incremental ClangCL + clang-tidy / MSVC gates。该 Slice 不修改 C++ targets 或 CMake topology；复用现有 build trees，
+Conan-before-CMake 的 incremental ClangCL build、独立 clang-tidy / MSVC gates。该 Slice 不修改 C++ targets 或 CMake topology；复用现有 build trees，
 不以 clean rebuild 代替相关性验证。
 
 ## 后果与后继边界

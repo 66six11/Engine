@@ -20,8 +20,7 @@
         "CMAKE_CXX_EXTENSIONS": "OFF",
         "CMAKE_POLICY_DEFAULT_CMP0091": "NEW",
         "ASHARIA_BUILD_APPS": "ON",
-        "ASHARIA_BUILD_TESTS": "OFF",
-        "ASHARIA_ENABLE_CLANG_TIDY": "OFF"
+        "ASHARIA_BUILD_TESTS": "OFF"
       }
     },
     {
@@ -38,8 +37,7 @@
         "CMAKE_CXX_EXTENSIONS": "OFF",
         "CMAKE_POLICY_DEFAULT_CMP0091": "NEW",
         "ASHARIA_BUILD_APPS": "ON",
-        "ASHARIA_BUILD_TESTS": "OFF",
-        "ASHARIA_ENABLE_CLANG_TIDY": "OFF"
+        "ASHARIA_BUILD_TESTS": "OFF"
       }
     },
     {
@@ -53,7 +51,7 @@
     },
     {
       "name": "clangcl-debug",
-      "displayName": "ClangCL Debug Check",
+      "displayName": "ClangCL Debug",
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/cmake/clangcl-debug",
       "toolchainFile": "${sourceDir}/build/conan/clangcl-debug/Debug/generators/conan_toolchain.cmake",
@@ -65,8 +63,7 @@
         "CMAKE_CXX_EXTENSIONS": "OFF",
         "CMAKE_POLICY_DEFAULT_CMP0091": "NEW",
         "ASHARIA_BUILD_APPS": "ON",
-        "ASHARIA_BUILD_TESTS": "OFF",
-        "ASHARIA_ENABLE_CLANG_TIDY": "ON"
+        "ASHARIA_BUILD_TESTS": "OFF"
       },
       "vendor": {
         "microsoft.com/VisualStudioSettings/CMake/1.0": {
@@ -86,7 +83,7 @@
     },
     {
       "name": "clangcl-release",
-      "displayName": "ClangCL Release Check",
+      "displayName": "ClangCL Release",
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/cmake/clangcl-release",
       "toolchainFile": "${sourceDir}/build/conan/clangcl-release/Release/generators/conan_toolchain.cmake",
@@ -98,8 +95,7 @@
         "CMAKE_CXX_EXTENSIONS": "OFF",
         "CMAKE_POLICY_DEFAULT_CMP0091": "NEW",
         "ASHARIA_BUILD_APPS": "ON",
-        "ASHARIA_BUILD_TESTS": "OFF",
-        "ASHARIA_ENABLE_CLANG_TIDY": "ON"
+        "ASHARIA_BUILD_TESTS": "OFF"
       },
       "vendor": {
         "microsoft.com/VisualStudioSettings/CMake/1.0": {
@@ -148,13 +144,13 @@
     },
     {
       "name": "clangcl-debug",
-      "displayName": "ClangCL Debug Check",
+      "displayName": "ClangCL Debug",
       "configurePreset": "clangcl-debug",
       "jobs": 20
     },
     {
       "name": "clangcl-release",
-      "displayName": "ClangCL Release Check",
+      "displayName": "ClangCL Release",
       "configurePreset": "clangcl-release",
       "jobs": 20
     },
@@ -192,7 +188,7 @@
     },
     {
       "name": "clangcl-debug",
-      "displayName": "ClangCL Debug Check Tests",
+      "displayName": "ClangCL Debug Tests",
       "configurePreset": "clangcl-debug",
       "execution": {
         "jobs": 20
@@ -200,7 +196,7 @@
     },
     {
       "name": "clangcl-release",
-      "displayName": "ClangCL Release Check Tests",
+      "displayName": "ClangCL Release Tests",
       "configurePreset": "clangcl-release",
       "execution": {
         "jobs": 20

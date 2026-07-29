@@ -74,7 +74,6 @@ def build_request_fixture() -> Iterator[
                 composition_generation.manifest.generator_multi_config
             ),
             parallel_jobs=8,
-            enable_clang_tidy=False,
             environment=(("PATH", "tools"), ("SYSTEMROOT", "windows")),
         )
         yield request, validators
@@ -120,6 +119,7 @@ class FinalHostBuildRequestTests(unittest.TestCase):
 
             self.assertEqual(str(validated.cmake_executable), configure[0])
             self.assertIn("-DCMAKE_BUILD_TYPE:STRING=Debug", configure)
+            self.assertIn("-DCMAKE_EXPORT_COMPILE_COMMANDS:BOOL=ON", configure)
             self.assertIn("-DASHARIA_BUILD_APPS:BOOL=OFF", configure)
             self.assertIn("-DASHARIA_BUILD_TESTS:BOOL=OFF", configure)
             self.assertEqual(

@@ -220,4 +220,8 @@ jobs:
 
       - name: Build and test with ClangCL
         shell: cmd
-        run: build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --preset clangcl-debug-tests && cmake --build --preset clangcl-debug-tests --parallel 2 && ctest --preset clangcl-debug-tests --output-on-failure
+        run: build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --preset clangcl-debug-tests && cmake --build --preset clangcl-debug-tests && ctest --preset clangcl-debug-tests --output-on-failure
+
+      - name: Run clang-tidy
+        shell: cmd
+        run: build\conan\clangcl-debug\Debug\generators\conanbuild.bat && python tools\run_clang_tidy.py --build-dir build\cmake\clangcl-debug-tests --jobs 2

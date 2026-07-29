@@ -9,13 +9,14 @@ project(
 
 option(ASHARIA_BUILD_APPS "Build Asharia Engine host applications." ON)
 option(ASHARIA_BUILD_TESTS "Build Asharia Engine tests." OFF)
-option(ASHARIA_ENABLE_CLANG_TIDY "Enable clang-tidy for supported builds and Visual Studio presets." OFF)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
 include(AshariaCompilerOptions)
 include(AshariaGeneratedHost)
@@ -59,3 +60,14 @@ if(ASHARIA_BUILD_APPS)
     add_subdirectory(apps/editor)
     add_subdirectory(apps/sample-viewer)
 endif()
+
+add_custom_target(asharia-tidy
+    COMMAND
+        "${Python3_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/run_clang_tidy.py"
+        --build-dir
+        "${CMAKE_BINARY_DIR}"
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+    USES_TERMINAL
+    VERBATIM
+)

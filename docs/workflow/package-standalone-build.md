@@ -89,7 +89,7 @@ cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake -S packa
 ```
 
 ```powershell
-cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake -S packages\scene-core -B build\cmake\package-scene-core-tests-clangcl-debug -G Ninja -DCMAKE_BUILD_TYPE=Debug -DASHARIA_BUILD_TESTS=ON -DASHARIA_ENABLE_CLANG_TIDY=ON -DCMAKE_TOOLCHAIN_FILE=%CD%/build/conan/clangcl-debug/Debug/generators/conan_toolchain.cmake && cmake --build build\cmake\package-scene-core-tests-clangcl-debug && ctest --test-dir build\cmake\package-scene-core-tests-clangcl-debug --output-on-failure"
+cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake -S packages\scene-core -B build\cmake\package-scene-core-tests-clangcl-debug -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DASHARIA_BUILD_TESTS=ON -DCMAKE_TOOLCHAIN_FILE=%CD%/build/conan/clangcl-debug/Debug/generators/conan_toolchain.cmake && cmake --build build\cmake\package-scene-core-tests-clangcl-debug && ctest --test-dir build\cmake\package-scene-core-tests-clangcl-debug --output-on-failure && python tools\run_clang_tidy.py --build-dir build\cmake\package-scene-core-tests-clangcl-debug"
 ```
 
 ```powershell

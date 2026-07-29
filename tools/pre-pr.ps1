@@ -47,7 +47,7 @@ function Get-ChangedFiles {
         $gitArgs += "--cached"
     } elseif ($BaseRef -eq "HEAD") {
         $gitArgs += "HEAD"
-    } elseif ($BaseRef -match "\.\.\.") {
+    } elseif ($BaseRef -match "\.\.") {
         $gitArgs += $BaseRef
     } else {
         $gitArgs += "$BaseRef...HEAD"
@@ -55,7 +55,7 @@ function Get-ChangedFiles {
 
     $files = @(& git @gitArgs)
 
-    if ($IncludeUntracked -and -not $Staged -and $BaseRef -eq "HEAD") {
+    if ($IncludeUntracked -and -not $Staged) {
         $files += @(& git ls-files --others --exclude-standard)
     }
 
@@ -303,6 +303,16 @@ try {
     Write-Host "  python tools\check_package_topology.py"
     Write-Host "  git diff --check"
     Write-Host "  cmd /c `"build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --preset clangcl-debug && cmake --build --preset clangcl-debug`""
+    $tidyCommand = "python tools\run_clang_tidy.py --changed"
+    if ($Staged) {
+        $tidyCommand += " --staged"
+    } elseif ($BaseRef -ne "HEAD") {
+        $tidyCommand += " --base-ref `"$BaseRef`""
+    }
+    if ($IncludeUntracked -and -not $Staged) {
+        $tidyCommand += " --include-untracked"
+    }
+    Write-Host "  cmd /c `"build\conan\clangcl-debug\Debug\generators\conanbuild.bat && $tidyCommand`""
     Write-Host "  cmd /c `"build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake --preset msvc-debug && cmake --build --preset msvc-debug`""
 
     if ($packageTestCommands.Count -gt 0) {

@@ -29,7 +29,6 @@ class AshariaEngineConan(ConanFile):
         toolchain.user_presets_path = "ConanPresets.json"
         toolchain.cache_variables["ASHARIA_BUILD_APPS"] = "ON"
         toolchain.cache_variables["ASHARIA_BUILD_TESTS"] = "OFF"
-        toolchain.cache_variables["ASHARIA_ENABLE_CLANG_TIDY"] = "OFF"
         toolchain.cache_variables["CMAKE_CXX_STANDARD"] = "23"
         toolchain.cache_variables["CMAKE_CXX_STANDARD_REQUIRED"] = "ON"
         toolchain.cache_variables["CMAKE_CXX_EXTENSIONS"] = "OFF"
