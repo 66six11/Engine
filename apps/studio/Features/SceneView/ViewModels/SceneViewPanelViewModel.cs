@@ -5,7 +5,9 @@ using Asharia.Editor.Diagnostics;
 using Editor.Core.Models.Panels;
 using Asharia.Editor.Selection;
 using Asharia.Editor.Viewports;
+using Asharia.Editor.Worlds.Snapshots;
 using Editor.Core.Models.Viewports;
+using Editor.Core.Services;
 using Editor.UI.ViewModels;
 
 namespace Editor.Features.SceneView.ViewModels;
@@ -18,16 +20,20 @@ public sealed class SceneViewPanelViewModel : ViewModelBase, IEditorPanelFrameUp
     private static readonly ViewportId DefaultViewportId = new("scene-view/main");
     private readonly IEditorSelectionService selectionService_;
     private readonly IEditorDiagnosticService? diagnostics_;
+    private readonly ISceneSnapshotProvider sceneSnapshots_;
     private NativePresentDiagnosticKey? lastPublishedNativePresentDiagnostic_;
 
     public SceneViewPanelViewModel(
         IEditorSelectionService selectionService,
-        IEditorDiagnosticService? diagnostics = null)
+        IEditorDiagnosticService? diagnostics = null,
+        ISceneSnapshotProvider? sceneSnapshots = null)
     {
         ArgumentNullException.ThrowIfNull(selectionService);
 
         selectionService_ = selectionService;
         diagnostics_ = diagnostics;
+        sceneSnapshots_ = sceneSnapshots
+            ?? new InMemorySceneSnapshotProvider(SceneSnapshot.Empty);
     }
 
     public string ViewportStateTitle => "Viewport backend deferred";
@@ -109,6 +115,14 @@ public sealed class SceneViewPanelViewModel : ViewModelBase, IEditorPanelFrameUp
         ArgumentNullException.ThrowIfNull(context);
 
         FrameRequested?.Invoke(this, context);
+    }
+
+    internal (bool HasScene, ulong Revision) GetSceneRenderState()
+    {
+        var snapshot = sceneSnapshots_.GetCurrentSnapshot();
+        return (
+            snapshot.Revision > 0 || snapshot.Objects.Count > 0,
+            checked((ulong)snapshot.Revision));
     }
 
     private void PublishNativePresentDiagnosticIfNeeded(ViewportNativePresentSnapshot snapshot)

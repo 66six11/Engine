@@ -64,6 +64,13 @@ namespace {
         };
     }
 
+    [[nodiscard]] EditorViewportNativeAbiHeader runtimeStatsV6Header() {
+        return EditorViewportNativeAbiHeader{
+            .abiVersion = EDITOR_NATIVE_ABI_VERSION,
+            .structSize = static_cast<std::uint32_t>(sizeof(EditorViewportNativeRuntimeStatsV6)),
+        };
+    }
+
     [[nodiscard]] bool hasSupportedRequestHeader(
         const EditorViewportNativeCompatibilityRequest& request) {
         return request.header.abiVersion == EDITOR_NATIVE_ABI_VERSION &&
@@ -75,6 +82,13 @@ namespace {
         const EditorViewportNativePresentRequest& request) {
         return request.header.abiVersion == EDITOR_NATIVE_ABI_VERSION &&
                request.header.structSize >= sizeof(EditorViewportNativePresentRequest) &&
+               hasSupportedRequestHeader(request.compatibility);
+    }
+
+    [[nodiscard]] bool hasSupportedPresentRequestV2Header(
+        const EditorViewportNativePresentRequestV2& request) {
+        return request.header.abiVersion == EDITOR_NATIVE_ABI_VERSION &&
+               request.header.structSize >= sizeof(EditorViewportNativePresentRequestV2) &&
                hasSupportedRequestHeader(request.compatibility);
     }
 
@@ -317,6 +331,58 @@ namespace {
         return EditorViewportNativeStatus_Success;
     }
 
+    [[nodiscard]] std::uint32_t acquirePresentPacket(
+        const EditorViewportNativeCompatibilityRequest& compatibility,
+        std::uint32_t widthPixels, std::uint32_t heightPixels, bool hasScene,
+        std::uint64_t sceneRevision, EditorViewportNativePresentPacket* packet) {
+        if (!hasSupportedHandleTypes(compatibility)) {
+            clearPresentPacket(packet, EditorViewportNativeStatus_UnsupportedHandleType);
+            return EditorViewportNativeStatus_UnsupportedHandleType;
+        }
+
+        if (widthPixels == 0U || heightPixels == 0U) {
+            clearPresentPacket(packet, EditorViewportNativeStatus_InvalidArgument);
+            return EditorViewportNativeStatus_InvalidArgument;
+        }
+
+        auto context = asharia::editor::EditorSharedViewportRuntime::instance().ensureContext();
+        if (!context) {
+            return writePresentPacketFailure(packet, EditorViewportNativeStatus_Unavailable,
+                                             context.error().message);
+        }
+
+        const asharia::VulkanDeviceInfo& deviceInfo = (*context)->deviceInfo();
+        if (!matchesRequestedDevice(compatibility, deviceInfo.identity)) {
+            return writePresentPacketFailure(
+                packet, EditorViewportNativeStatus_DeviceMismatch,
+                "Avalonia compositor device does not match the Vulkan viewport device.");
+        }
+
+        auto present =
+            asharia::editor::EditorSharedViewportRuntime::instance().renderSceneViewFrame(
+                asharia::editor::EditorSharedViewportPresentDesc{
+                    .panelId = "scene-view/native",
+                    .kind = asharia::editor::EditorViewportKind::Scene,
+                    .extent =
+                        asharia::editor::EditorExtent2D{
+                            .width = widthPixels,
+                            .height = heightPixels,
+                        },
+                    .hasScene = hasScene,
+                    .sceneRevision = sceneRevision,
+                });
+        if (!present) {
+            const asharia::editor::EditorSharedViewportRenderFrameError& error = present.error();
+            const std::uint32_t status =
+                error.kind == asharia::editor::EditorSharedViewportRenderFrameErrorKind::Backpressure
+                    ? EditorViewportNativeStatus_Unavailable
+                    : EditorViewportNativeStatus_RenderFailed;
+            return writePresentPacketFailure(packet, status, error.error.message);
+        }
+
+        return writePresentPacketSuccess(packet, *present);
+    }
+
 } // namespace
 
 extern "C" {
@@ -376,49 +442,32 @@ std::uint32_t EDITOR_NATIVE_CALL editor_viewport_acquire_present_packet(
         return EditorViewportNativeStatus_UnsupportedAbi;
     }
 
-    if (!hasSupportedHandleTypes(request->compatibility)) {
-        clearPresentPacket(packet, EditorViewportNativeStatus_UnsupportedHandleType);
-        return EditorViewportNativeStatus_UnsupportedHandleType;
-    }
+    return acquirePresentPacket(request->compatibility, request->widthPixels,
+                                request->heightPixels, false, 0U, packet);
+}
 
-    if (request->widthPixels == 0U || request->heightPixels == 0U) {
+std::uint32_t EDITOR_NATIVE_CALL editor_viewport_acquire_present_packet_v2(
+    const EditorViewportNativePresentRequestV2* request,
+    EditorViewportNativePresentPacket* packet) {
+    if (request == nullptr || packet == nullptr) {
         clearPresentPacket(packet, EditorViewportNativeStatus_InvalidArgument);
         return EditorViewportNativeStatus_InvalidArgument;
     }
 
-    auto context = asharia::editor::EditorSharedViewportRuntime::instance().ensureContext();
-    if (!context) {
-        return writePresentPacketFailure(packet, EditorViewportNativeStatus_Unavailable,
-                                         context.error().message);
+    if (!hasSupportedPresentRequestV2Header(*request)) {
+        clearPresentPacket(packet, EditorViewportNativeStatus_UnsupportedAbi);
+        return EditorViewportNativeStatus_UnsupportedAbi;
     }
 
-    const asharia::VulkanDeviceInfo& deviceInfo = (*context)->deviceInfo();
-    if (!matchesRequestedDevice(request->compatibility, deviceInfo.identity)) {
-        return writePresentPacketFailure(
-            packet, EditorViewportNativeStatus_DeviceMismatch,
-            "Avalonia compositor device does not match the Vulkan viewport device.");
+    if (request->hasScene > 1U || request->reserved != 0U ||
+        (request->hasScene == 0U && request->sceneRevision != 0U)) {
+        clearPresentPacket(packet, EditorViewportNativeStatus_InvalidArgument);
+        return EditorViewportNativeStatus_InvalidArgument;
     }
 
-    auto present = asharia::editor::EditorSharedViewportRuntime::instance().renderSceneViewFrame(
-        asharia::editor::EditorSharedViewportPresentDesc{
-            .panelId = "scene-view/native",
-            .kind = asharia::editor::EditorViewportKind::Scene,
-            .extent =
-                asharia::editor::EditorExtent2D{
-                    .width = request->widthPixels,
-                    .height = request->heightPixels,
-                },
-        });
-    if (!present) {
-        const asharia::editor::EditorSharedViewportRenderFrameError& error = present.error();
-        const std::uint32_t status =
-            error.kind == asharia::editor::EditorSharedViewportRenderFrameErrorKind::Backpressure
-                ? EditorViewportNativeStatus_Unavailable
-                : EditorViewportNativeStatus_RenderFailed;
-        return writePresentPacketFailure(packet, status, error.error.message);
-    }
-
-    return writePresentPacketSuccess(packet, *present);
+    return acquirePresentPacket(request->compatibility, request->widthPixels,
+                                request->heightPixels, request->hasScene != 0U,
+                                request->sceneRevision, packet);
 }
 
 void EDITOR_NATIVE_CALL editor_viewport_release_present_packet(
@@ -563,6 +612,41 @@ std::uint32_t EDITOR_NATIVE_CALL editor_viewport_query_runtime_stats_v5(
         .rendererCreations = runtimeStats.rendererCreations,
         .maxOutstandingPackets = static_cast<std::uint64_t>(runtimeStats.maxOutstandingPackets),
         .packetBackpressureHits = runtimeStats.packetBackpressureHits,
+        .hasContext = runtimeStats.hasContext ? 1U : 0U,
+        .hasRenderProducer = runtimeStats.hasRenderProducer ? 1U : 0U,
+        .shutdownRequested = runtimeStats.shutdownRequested ? 1U : 0U,
+    };
+    return EditorViewportNativeStatus_Success;
+}
+
+std::uint32_t EDITOR_NATIVE_CALL editor_viewport_query_runtime_stats_v6(
+    EditorViewportNativeRuntimeStatsV6* stats) {
+    if (stats == nullptr) {
+        return EditorViewportNativeStatus_InvalidArgument;
+    }
+
+    const asharia::editor::EditorSharedViewportRuntimeStats runtimeStats =
+        asharia::editor::EditorSharedViewportRuntime::instance().stats();
+    *stats = EditorViewportNativeRuntimeStatsV6{
+        .header = runtimeStatsV6Header(),
+        .framesRendered = runtimeStats.framesRendered,
+        .producersCreated = runtimeStats.producersCreated,
+        .packetsCreated = runtimeStats.packetsCreated,
+        .outstandingPackets = static_cast<std::uint64_t>(runtimeStats.outstandingPackets),
+        .externalImagesAcquired = runtimeStats.externalImagesAcquired,
+        .externalImagesCreated = runtimeStats.externalImagesCreated,
+        .externalImagesReused = runtimeStats.externalImagesReused,
+        .externalImagesReleased = runtimeStats.externalImagesReleased,
+        .externalImagesAvailable = runtimeStats.externalImagesAvailable,
+        .externalImagesLeased = runtimeStats.externalImagesLeased,
+        .frameEpochsSubmitted = runtimeStats.frameEpochsSubmitted,
+        .frameEpochsCompleted = runtimeStats.frameEpochsCompleted,
+        .frameEpochsPending = runtimeStats.frameEpochsPending,
+        .rendererCreations = runtimeStats.rendererCreations,
+        .maxOutstandingPackets = static_cast<std::uint64_t>(runtimeStats.maxOutstandingPackets),
+        .packetBackpressureHits = runtimeStats.packetBackpressureHits,
+        .sceneFramesRendered = runtimeStats.sceneFramesRendered,
+        .lastSceneRevision = runtimeStats.lastSceneRevision,
         .hasContext = runtimeStats.hasContext ? 1U : 0U,
         .hasRenderProducer = runtimeStats.hasRenderProducer ? 1U : 0U,
         .shutdownRequested = runtimeStats.shutdownRequested ? 1U : 0U,

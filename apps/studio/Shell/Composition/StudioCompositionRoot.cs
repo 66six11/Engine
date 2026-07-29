@@ -1,14 +1,17 @@
 using System;
+using System.Collections.Generic;
 using Asharia.Editor.Diagnostics;
 using Asharia.Studio.Application.Diagnostics;
 using Asharia.Editor.Projects;
 using Asharia.Editor.Selection;
+using Asharia.Editor.Worlds.Snapshots;
 using Editor.Core.Services;
 using Editor.Shell.Compatibility;
 using Editor.Shell.Docking.Layout;
 using Asharia.Studio.Application.Selection;
 using Asharia.Studio.Application.Projects;
 using Editor.Core.Interop.Projects.Adapters;
+using Editor.Shell.Services;
 using Editor.Shell.ViewModels.Windowing;
 
 namespace Editor.Shell.Composition;
@@ -53,16 +56,24 @@ internal sealed class StudioCompositionRoot
 
         var selectionService = new EditorSelectionService();
         var diagnostics = new EditorDiagnosticService();
+        var sceneSnapshots = new InMemorySceneSnapshotProvider(SceneSnapshot.Empty);
+        var compatibilityAdapter = new LegacyEditorModuleCompatibilityAdapter(
+            EditorFeatureCatalog.CreateDefaultModules(
+                selectionService,
+                diagnostics,
+                sceneSnapshots));
+        var projectSceneProjection = new ProjectSceneSessionProjection(
+            projectSessions,
+            sceneSnapshots,
+            new AvaloniaEditorUiDispatcher());
         return CreateMainWindowSession(
             savedLayout,
-            new LegacyEditorModuleCompatibilityAdapter(
-                EditorFeatureCatalog.CreateDefaultModules(
-                    selectionService,
-                    diagnostics)),
+            compatibilityAdapter,
             selectionService,
             diagnostics,
             projectOpenSessions,
-            projectSessions);
+            projectSessions,
+            projectSceneProjection);
     }
 
     internal StudioCompositionSession CreateMainWindowSession(
@@ -75,7 +86,8 @@ internal sealed class StudioCompositionRoot
             new EditorSelectionService(),
             new EditorDiagnosticService(),
             new ProjectOpenSessionSnapshotSource(),
-            CreateProjectSessionService());
+            CreateProjectSessionService(),
+            projectSceneProjection: null);
     }
 
     private static StudioCompositionSession CreateMainWindowSession(
@@ -84,7 +96,8 @@ internal sealed class StudioCompositionRoot
         IEditorSelectionService selectionService,
         IEditorDiagnosticService diagnostics,
         IProjectOpenSessionSnapshotSource projectOpenSessions,
-        IProjectSessionService projectSessions)
+        IProjectSessionService projectSessions,
+        IDisposable? projectSceneProjection)
     {
         var compatibilityAdapter = modules;
         var composition = compatibilityAdapter.Compose();
@@ -100,26 +113,49 @@ internal sealed class StudioCompositionRoot
                 projectOpenSessions: projectOpenSessions,
                 projectSessions: projectSessions,
                 defaultLayoutFactory: EditorWorkbenchLayoutPreset.CreateDefault);
-            return new StudioCompositionSession(viewModel, composition, compatibilityAdapter);
+            return new StudioCompositionSession(
+                viewModel,
+                composition,
+                compatibilityAdapter,
+                projectSceneProjection);
         }
         catch (Exception exception)
         {
-            DisposeAdapterAfterCreationFailure(compatibilityAdapter, exception);
+            DisposeAfterCreationFailure(
+                compatibilityAdapter,
+                projectSceneProjection,
+                exception);
             throw;
         }
     }
 
-    private static void DisposeAdapterAfterCreationFailure(
+    private static void DisposeAfterCreationFailure(
         LegacyEditorModuleCompatibilityAdapter compatibilityAdapter,
+        IDisposable? projectSceneProjection,
         Exception creationException)
     {
+        var failures = new List<Exception> { creationException };
+        try
+        {
+            projectSceneProjection?.Dispose();
+        }
+        catch (Exception disposeException)
+        {
+            failures.Add(disposeException);
+        }
+
         try
         {
             compatibilityAdapter.DisposeAsync().GetAwaiter().GetResult();
         }
         catch (Exception disposeException)
         {
-            throw new AggregateException(creationException, disposeException);
+            failures.Add(disposeException);
+        }
+
+        if (failures.Count > 1)
+        {
+            throw new AggregateException(failures);
         }
     }
 

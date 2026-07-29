@@ -129,7 +129,7 @@ public sealed class ViewportNativeBridgeTests
     }
 
     [Fact]
-    public void Acquire_present_packet_sends_compatibility_and_extent_to_native_api()
+    public void Acquire_present_packet_sends_compatibility_extent_and_scene_revision_to_native_api()
     {
         using var api = new StubViewportNativeApi
         {
@@ -140,15 +140,20 @@ public sealed class ViewportNativeBridgeTests
 
         var packet = bridge.AcquirePresentPacket(
             CreateCompositionCapabilities(),
-            requestedExtent);
+            requestedExtent,
+            hasScene: true,
+            sceneRevision: 42UL);
 
         Assert.Equal(ViewportNativeStatus.Success, packet.Status);
+        Assert.Equal(88U, ViewportNativePresentRequestV2.CurrentStructSize);
         Assert.Equal(ViewportNativeAbiHeader.ExpectedAbiVersion, api.LastPresentRequest.Header.AbiVersion);
-        Assert.Equal(ViewportNativePresentRequest.CurrentStructSize, api.LastPresentRequest.Header.StructSize);
+        Assert.Equal(ViewportNativePresentRequestV2.CurrentStructSize, api.LastPresentRequest.Header.StructSize);
         Assert.Equal(ViewportNativeHandleTypes.VulkanOpaqueNt, api.LastPresentRequest.Compatibility.ImageHandleType);
         Assert.Equal(ViewportNativeHandleTypes.VulkanOpaqueNt, api.LastPresentRequest.Compatibility.SemaphoreHandleType);
         Assert.Equal((uint)requestedExtent.WidthPixels, api.LastPresentRequest.WidthPixels);
         Assert.Equal((uint)requestedExtent.HeightPixels, api.LastPresentRequest.HeightPixels);
+        Assert.Equal(1U, api.LastPresentRequest.HasScene);
+        Assert.Equal(42UL, api.LastPresentRequest.SceneRevision);
     }
 
     [Fact]
@@ -371,7 +376,7 @@ public sealed class ViewportNativeBridgeTests
 
         public ViewportNativeCompatibilityRequest LastRequest { get; private set; }
 
-        public ViewportNativePresentRequest LastPresentRequest { get; private set; }
+        public ViewportNativePresentRequestV2 LastPresentRequest { get; private set; }
 
         public int ReleaseCompatibilityResultCalls { get; private set; }
 
@@ -424,8 +429,8 @@ public sealed class ViewportNativeBridgeTests
             }
         }
 
-        public uint AcquirePresentPacket(
-            in ViewportNativePresentRequest request,
+        public uint AcquirePresentPacketV2(
+            in ViewportNativePresentRequestV2 request,
             ref ViewportNativePresentPacket packet)
         {
             if (AcquireException is not null)

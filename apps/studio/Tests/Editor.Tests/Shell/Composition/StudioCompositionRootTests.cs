@@ -98,7 +98,10 @@ public sealed class StudioCompositionRootTests
     [Fact]
     public async Task CreateMainWindowViewModel_uses_shared_default_composition()
     {
-        await using var session = new StudioCompositionRoot().CreateMainWindowSession(savedLayout: null);
+        await using var session = new StudioCompositionRoot().CreateMainWindowSession(
+            savedLayout: null,
+            projectOpenSessions: new ProjectOpenSessionSnapshotSource(),
+            projectSessions: CreateReadyProjectSessions());
         var viewModel = session.MainWindowViewModel;
 
         var hierarchy = Assert.IsType<HierarchyPanelViewModel>(
@@ -106,11 +109,11 @@ public sealed class StudioCompositionRootTests
         var inspector = Assert.IsType<InspectorPanelViewModel>(
             viewModel.DockWorkspace.RightWindow.Tabs.Single(tab => tab.Id == "inspector").Content);
 
-        var cube = hierarchy.Nodes.Single(node => node.Id == "scene:main/cube");
-        hierarchy.SelectedNode = cube;
+        var camera = hierarchy.Nodes.Single(node => node.DisplayName == "Main Camera");
+        hierarchy.SelectedNode = camera;
 
         Assert.Equal("hierarchy", inspector.CurrentSelection.ActiveContextId);
-        Assert.Equal("Demo Cube", inspector.Document?.Title);
+        Assert.Equal("Main Camera", inspector.Document?.Title);
     }
 
     [Fact]
@@ -249,6 +252,16 @@ public sealed class StudioCompositionRootTests
             onActivate_?.Invoke(cancellationToken);
             return ValueTask.FromResult(lease_);
         }
+    }
+
+    private static StubProjectSessionService CreateReadyProjectSessions()
+    {
+        return new StubProjectSessionService(
+            ProjectSessionSnapshot.Ready(
+                new ActiveProjectSnapshot(
+                    @"D:\Projects\Example",
+                    "Example",
+                    Guid.Parse("45ad5a9c-4c1f-4723-966c-21c0ac638932"))));
     }
 
     private sealed class RecordingLease(

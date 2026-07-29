@@ -123,7 +123,9 @@ internal sealed class ViewportNativeBridge
 
     public ViewportNativePresentPacket AcquirePresentPacket(
         ViewportCompositionCapabilitiesSnapshot compositionCapabilities,
-        ViewportExtent requestedExtent)
+        ViewportExtent requestedExtent,
+        bool hasScene = false,
+        ulong sceneRevision = 0UL)
     {
         ArgumentNullException.ThrowIfNull(compositionCapabilities);
         ArgumentNullException.ThrowIfNull(requestedExtent);
@@ -142,14 +144,16 @@ internal sealed class ViewportNativeBridge
                 requestedExtent);
         }
 
-        var request = new ViewportNativePresentRequest(
+        var request = new ViewportNativePresentRequestV2(
             CreateCompatibilityRequest(compositionCapabilities),
             checked((uint)requestedExtent.WidthPixels),
-            checked((uint)requestedExtent.HeightPixels));
+            checked((uint)requestedExtent.HeightPixels),
+            hasScene,
+            sceneRevision);
         var packet = ViewportNativePresentPacket.CreateForCall();
         try
         {
-            _ = api_.AcquirePresentPacket(request, ref packet);
+            _ = api_.AcquirePresentPacketV2(request, ref packet);
         }
         catch (Exception ex) when (IsNativeBindingException(ex))
         {

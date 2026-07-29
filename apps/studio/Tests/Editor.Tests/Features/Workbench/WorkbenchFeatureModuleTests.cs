@@ -246,7 +246,7 @@ public sealed class WorkbenchFeatureModuleTests
         var providers = composition.ProviderHost.GetSceneProviders();
 
         var descriptor = Assert.Single(providers);
-        Assert.Equal("workbench.scene.fixture", descriptor.Id);
+        Assert.Equal("workbench.scene.active", descriptor.Id);
         Assert.Equal(EditorProviderRoles.ActiveScene, descriptor.Role);
         Assert.IsType<InMemorySceneSnapshotProvider>(
             composition.ProviderHost.GetRequiredSceneSnapshotProvider(EditorProviderRoles.ActiveScene));
@@ -342,10 +342,13 @@ public sealed class WorkbenchFeatureModuleTests
             composition.PanelRegistry.GetRequired("hierarchy").CreateContent());
         var inspector = Assert.IsType<InspectorPanelViewModel>(
             composition.PanelRegistry.GetRequired("inspector").CreateContent());
+        var sceneView = Assert.IsType<SceneViewPanelViewModel>(
+            composition.PanelRegistry.GetRequired("scene-view").CreateContent());
 
         hierarchy.SelectedNode = hierarchy.Nodes.Single(node => node.Id == "scene:test/sphere");
 
         Assert.Equal("Sphere", inspector.Document?.Title);
+        Assert.Equal((true, 2UL), sceneView.GetSceneRenderState());
     }
 
     private static PanelDescriptorSnapshot CreateSnapshot(PanelDescriptor descriptor)

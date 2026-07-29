@@ -79,6 +79,7 @@ add_library(editor-native SHARED
     src/editor_shared_viewport_frame_epoch.cpp
     src/editor_shared_viewport_render_producer.cpp
     src/editor_shared_viewport_runtime.cpp
+    src/editor_viewport.cpp
     src/editor_frame_debugger.cpp
     src/editor_frame_debugger_replay.cpp
     src/editor_frame_debugger_snapshot_projector.cpp
@@ -105,6 +106,7 @@ target_link_libraries(editor-native
         asharia::project_core_io
         asharia::renderer_basic_vulkan
         asharia::rhi_vulkan
+        glm::glm
 )
 
 target_compile_definitions(editor-native

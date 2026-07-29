@@ -31,6 +31,8 @@ namespace asharia::editor {
         EditorExtent2D extent;
         EditorSharedViewportExternalImageHandleFamily imageHandleFamily{
             EditorSharedViewportExternalImageHandleFamily::VulkanOpaqueNt};
+        bool hasScene{};
+        std::uint64_t sceneRevision{};
     };
 
     struct EditorSharedViewportPresentPacket {
@@ -57,6 +59,8 @@ namespace asharia::editor {
         std::uint64_t frameEpochsSubmitted{};
         std::uint64_t frameEpochsCompleted{};
         std::uint64_t frameEpochsPending{};
+        std::uint64_t sceneFramesRendered{};
+        std::uint64_t lastSceneRevision{};
     };
 
     struct EditorSharedViewportPacketState final {

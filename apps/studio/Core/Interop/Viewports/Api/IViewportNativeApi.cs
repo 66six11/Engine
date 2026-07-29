@@ -8,8 +8,8 @@ internal interface IViewportNativeApi
 
     void ReleaseCompatibilityResult(ViewportNativeCompatibilityResult result);
 
-    uint AcquirePresentPacket(
-        in ViewportNativePresentRequest request,
+    uint AcquirePresentPacketV2(
+        in ViewportNativePresentRequestV2 request,
         ref ViewportNativePresentPacket packet);
 
     void ReleasePresentPacket(ViewportNativePresentPacket packet);

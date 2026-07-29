@@ -17,6 +17,9 @@ public sealed class SceneViewPanelViewSourceTests
         Assert.Contains("SceneViewNativeViewportLifecycle", source, StringComparison.Ordinal);
         Assert.Contains("QueryCompositionCompatibility(", source, StringComparison.Ordinal);
         Assert.Contains("AcquirePresentPacket(", source, StringComparison.Ordinal);
+        Assert.Contains("GetSceneRenderState()", source, StringComparison.Ordinal);
+        Assert.Contains("scene.HasScene", source, StringComparison.Ordinal);
+        Assert.Contains("scene.Revision", source, StringComparison.Ordinal);
         Assert.Contains("PresentAsync(", source, StringComparison.Ordinal);
         Assert.Contains("CompositionHost.Surface", source, StringComparison.Ordinal);
         Assert.Contains("TryGetCompositionGpuInterop", source, StringComparison.Ordinal);

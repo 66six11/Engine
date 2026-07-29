@@ -27,15 +27,19 @@ verifier，并可从 current inventory lease 投影 Distribution-bound managed b
 `Asharia.Runtime.Contracts` 当前把 Scene `EntityId`、float3、quaternion 与 local Transform 固定为
 8/12/16/40-byte unmanaged values，并用显式 offsets 对齐 native C ABI；这些只是项目代码可引用的稳定
 value contracts，不包含 native function import、World handle、Scene provider、Avalonia dispatcher 或文件 IO。
-EngineBridge 当前提供 Scene World ABI v1 create/destroy、owner-thread deterministic disposal、复用 `Asharia.Runtime.EntityId` 的 entity create/destroy/is-alive、逐值传递 `TransformValue` 的 local Transform get/set，以及最多 4096-byte、caller-owned buffer 的 strict UTF-8 display-name get/set；它还通过 `editor_native` project ABI 调用 native `project-core` 新建/打开 canonical `asharia.project.json`，把返回的 native-owned UTF-8 buffers 在调用期复制为 `ProjectDescriptorSnapshot` 并始终显式释放，不在 managed 层复制描述符 schema。EngineBridge 不暴露 native pointer，不使用 finalizer thread 销毁 thread-affine World，也不把名称当作 identity/path/unique key。Scene snapshot/query projection 与完整 ProjectSession/EngineHost wiring 尚未提供。
+EngineBridge 当前提供 Scene World ABI v1 create/destroy、owner-thread deterministic disposal、复用 `Asharia.Runtime.EntityId` 的 entity create/destroy/is-alive、逐值传递 `TransformValue` 的 local Transform get/set，以及最多 4096-byte、caller-owned buffer 的 strict UTF-8 display-name get/set；它还通过 `editor_native` project ABI 调用 native `project-core` 新建/打开 canonical `asharia.project.json`，把返回的 native-owned UTF-8 buffers 在调用期复制为 `ProjectDescriptorSnapshot` 并始终显式释放，不在 managed 层复制描述符 schema。EngineBridge 不暴露 native pointer，不使用 finalizer thread 销毁 thread-affine World，也不把名称当作 identity/path/unique key。生产组合根现已把活动 ProjectSession 投影为共享的最小 `SceneSnapshot`（场景根 + 编辑相机），供 Hierarchy、Inspector 与 Scene View 共用；该投影仍不是持久化场景、Engine World query 或完整 ProjectSession/EngineHost wiring。
 `Asharia.Editor.Projects` 已公开 UI-neutral 的 project-open session snapshot；`Asharia.Studio.Application`
 已严格解析 canonical bootstrap session v1 report，并以 typed failure 拒绝非法或非规范输入。该 parser
 不执行文件 IO、进程启动或状态归约。与该 bootstrap candidate 明确分离的最小活动会话合同
 `IProjectSessionService` 只发布 `NoProject | Ready` 和 canonical root/name/id；Application
 `ProjectSessionService` 仅在 native descriptor gateway 成功后替换 current session，失败时保留上一成功会话，
 并把 recent-project 作为 Studio preference 原子替换。启动恢复会重新通过同一 gateway 校验 recent root，
-不会把路径缓存直接提升为活动项目。正式 report provider、Project scope/EngineHost composition 和
-Presentation wiring 仍未提供。
+不会把路径缓存直接提升为活动项目。正式 report provider 与 Project scope/EngineHost composition
+仍未提供。
+File/New、File/Open、窗口活动项目投影与最近项目启动恢复已接入 production Presentation。Scene View
+从共享 provider 读取 `hasScene + revision`，通过 additive viewport present request v2 交给
+`editor_native`；原生 renderer 只在有活动场景时绘制默认编辑相机下的 world grid 与原点三轴，不读取
+managed SceneObject，也不把该最小投影解释为 runtime World。
 Project Code 还能把该 projection 复验为 semantic build credential，并为 caller 已规范化的项目根
 `Editor/**/*.cs` 原子生成 implicit SDK workspace，再使用 credential-bound dotnet closure 执行隔离
 restore/build 并发布四类 raw build output；current raw-output lease 现在还能经过无执行 artifact metadata
@@ -57,7 +61,8 @@ revision、contribution publication 与 catalog commit 尚未落地。
 
 - `Core` 混合 UI-neutral model、service、P/Invoke、native adapter 和部分 Avalonia vocabulary；
 - App、View、Shell 和静态 native API 分散拥有启动与关闭；
-- `WorkbenchFeatureModule` 聚合大多数 Feature 和 fixture provider；
+- `WorkbenchFeatureModule` 仍聚合大多数 Feature；production 由组合根注入活动 scene provider，默认
+  fixture 只保留给独立 feature/headless 测试；
 - `Asharia.Editor` 与 `Asharia.Studio.Application` 已有独立合同和 static host 基线，但项目 `Editor/` build、
   Package loader 与 dynamic generation 尚未形成闭环；
 - `ViewportScheduler` 未接入 production frame loop；

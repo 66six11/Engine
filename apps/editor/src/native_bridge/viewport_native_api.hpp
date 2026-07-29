@@ -83,6 +83,16 @@ struct EditorViewportNativePresentRequest {
     std::uint32_t heightPixels;
 };
 
+struct EditorViewportNativePresentRequestV2 {
+    EditorViewportNativeAbiHeader header;
+    EditorViewportNativeCompatibilityRequest compatibility;
+    std::uint32_t widthPixels;
+    std::uint32_t heightPixels;
+    std::uint32_t hasScene;
+    std::uint32_t reserved;
+    std::uint64_t sceneRevision;
+};
+
 struct EditorViewportNativeRuntimeStats {
     EditorViewportNativeAbiHeader header;
     std::uint64_t framesRendered;
@@ -175,6 +185,31 @@ struct EditorViewportNativeRuntimeStatsV5 {
     std::uint32_t shutdownRequested;
 };
 
+struct EditorViewportNativeRuntimeStatsV6 {
+    EditorViewportNativeAbiHeader header;
+    std::uint64_t framesRendered;
+    std::uint64_t producersCreated;
+    std::uint64_t packetsCreated;
+    std::uint64_t outstandingPackets;
+    std::uint64_t externalImagesAcquired;
+    std::uint64_t externalImagesCreated;
+    std::uint64_t externalImagesReused;
+    std::uint64_t externalImagesReleased;
+    std::uint64_t externalImagesAvailable;
+    std::uint64_t externalImagesLeased;
+    std::uint64_t frameEpochsSubmitted;
+    std::uint64_t frameEpochsCompleted;
+    std::uint64_t frameEpochsPending;
+    std::uint64_t rendererCreations;
+    std::uint64_t maxOutstandingPackets;
+    std::uint64_t packetBackpressureHits;
+    std::uint64_t sceneFramesRendered;
+    std::uint64_t lastSceneRevision;
+    std::uint32_t hasContext;
+    std::uint32_t hasRenderProducer;
+    std::uint32_t shutdownRequested;
+};
+
 EDITOR_NATIVE_API std::uint32_t EDITOR_NATIVE_CALL
 editor_viewport_query_composition_compatibility(
     const EditorViewportNativeCompatibilityRequest* request,
@@ -185,6 +220,10 @@ editor_viewport_release_compatibility_result(EditorViewportNativeCompatibilityRe
 
 EDITOR_NATIVE_API std::uint32_t EDITOR_NATIVE_CALL editor_viewport_acquire_present_packet(
     const EditorViewportNativePresentRequest* request,
+    EditorViewportNativePresentPacket* packet);
+
+EDITOR_NATIVE_API std::uint32_t EDITOR_NATIVE_CALL editor_viewport_acquire_present_packet_v2(
+    const EditorViewportNativePresentRequestV2* request,
     EditorViewportNativePresentPacket* packet);
 
 EDITOR_NATIVE_API void EDITOR_NATIVE_CALL
@@ -204,6 +243,9 @@ editor_viewport_query_runtime_stats_v4(EditorViewportNativeRuntimeStatsV4* stats
 
 EDITOR_NATIVE_API std::uint32_t EDITOR_NATIVE_CALL
 editor_viewport_query_runtime_stats_v5(EditorViewportNativeRuntimeStatsV5* stats);
+
+EDITOR_NATIVE_API std::uint32_t EDITOR_NATIVE_CALL
+editor_viewport_query_runtime_stats_v6(EditorViewportNativeRuntimeStatsV6* stats);
 
 EDITOR_NATIVE_API void EDITOR_NATIVE_CALL editor_viewport_shutdown();
 

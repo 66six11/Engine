@@ -575,6 +575,7 @@ flowchart LR
 sequenceDiagram
     participant View as SceneViewPanelView
     participant VM as SceneViewPanelViewModel
+    participant Scene as shared SceneSnapshotProvider
     participant Avalonia as Avalonia Compositor GPU interop
     participant Bridge as ViewportNativeBridge
     participant Native as editor_native ABI
@@ -590,8 +591,9 @@ sequenceDiagram
     Native-->>Bridge: status + message
     Bridge-->>View: ViewportNativePresentSnapshot
     View->>VM: UpdateNativePresent(snapshot)
-    View->>Bridge: AcquirePresentPacket(snapshot, extent)
-    Bridge->>Native: editor_viewport_acquire_present_packet
+    VM->>Scene: read hasScene + revision
+    View->>Bridge: AcquirePresentPacket(snapshot, extent, scene state)
+    Bridge->>Native: editor_viewport_acquire_present_packet_v2
     Native->>Runtime: render Scene View frame
     Runtime->>Producer: render Scene View frame
     Producer->>RHI: record RenderView into external Vulkan image
@@ -609,6 +611,10 @@ sequenceDiagram
 当前约束：
 
 - `Core/Models/Viewports` 不引用 Avalonia、native pointer、Vulkan handle 或 OS handle，只保存 snapshot。
+- production `ProjectSceneSessionProjection` 把活动项目映射为场景根和编辑相机组成的最小
+  `SceneSnapshot`；Hierarchy、Inspector 与 Scene View 共用该 provider，无项目时为 Empty。
+- viewport request v2 只增加 `hasScene + sceneRevision`。native producer 不读取 managed SceneObject；
+  有场景时使用 renderer-owned 默认编辑相机、world-grid pass 与三条原点轴线形成可证明的真实 GPU 画面。
 - `Core/Interop/Viewports` 是 managed Core 中唯一可持有 ABI structs、`IntPtr` 和 packet release 逻辑的区域。
 - `Features/SceneView` 是 managed Studio 中唯一导入 Avalonia composition external image/semaphore 的区域。
 - `SceneViewCompositionPresenter` 只通过 Avalonia `ICompositionGpuInterop` import opaque NT handles，并在 `finally`
@@ -646,8 +652,9 @@ sequenceDiagram
   distinct pool key before image reuse.
 - `editor_viewport_query_runtime_stats` 只作为 native smoke / diagnostics 的 additive C ABI；v3 native runtime
   stats expose epoch diagnostics, v4 stats expose renderer creation reuse
-  diagnostics, and v5 stats expose `maxOutstandingPackets` plus
-  `packetBackpressureHits` while v1/v2/v3/v4 stats remain unchanged.
+  diagnostics, v5 stats expose `maxOutstandingPackets` plus
+  `packetBackpressureHits`, and v6 stats expose consumed scene-frame count plus
+  last scene revision while v1/v2/v3/v4/v5 stats remain unchanged.
 - Scene View present 是单 viewport spike：如果上一帧 present task 未完成，新的 bounds/probe tick 会丢帧而不是阻塞 UI thread。
 
 ## 启动与 Context 流程

@@ -5,7 +5,9 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
+#include <array>
 #include <memory>
+#include <span>
 #include <utility>
 
 #include "asharia/core/log.hpp"
@@ -16,6 +18,23 @@ namespace asharia::editor {
     namespace {
 
         constexpr VkFormat kSharedViewportFormat = VK_FORMAT_B8G8R8A8_UNORM;
+        constexpr std::array<BasicDebugWorldLine, 3> kMinimalSceneAxes{
+            BasicDebugWorldLine{
+                .start = {0.0F, 0.0F, 0.0F},
+                .end = {1.5F, 0.0F, 0.0F},
+                .color = {0.92F, 0.18F, 0.18F, 1.0F},
+            },
+            BasicDebugWorldLine{
+                .start = {0.0F, 0.0F, 0.0F},
+                .end = {0.0F, 1.5F, 0.0F},
+                .color = {0.24F, 0.82F, 0.32F, 1.0F},
+            },
+            BasicDebugWorldLine{
+                .start = {0.0F, 0.0F, 0.0F},
+                .end = {0.0F, 0.0F, 1.5F},
+                .color = {0.22F, 0.42F, 0.94F, 1.0F},
+            },
+        };
 
         [[nodiscard]] Result<void> checkVk(VkResult result, std::string_view context) {
             if (result == VK_SUCCESS) {
@@ -166,6 +185,32 @@ namespace asharia::editor {
                 .renderScale = 1.0F,
             };
             view.viewName = desc.panelId.empty() ? "Studio Scene View" : desc.panelId;
+            if (desc.hasScene) {
+                const EditorViewportCamera camera = defaultEditorSceneViewCamera(desc.extent);
+                view.camera = BasicRenderViewCamera{
+                    .view = camera.view,
+                    .projection = camera.projection,
+                    .viewProjection = camera.viewProjection,
+                    .position = camera.position,
+                    .nearPlane = camera.nearPlane,
+                    .farPlane = camera.farPlane,
+                };
+                view.overlay = BasicRenderViewOverlayDesc{
+                    .enabled = true,
+                    .worldGrid =
+                        BasicRenderViewWorldGridDesc{
+                            .enabled = true,
+                            .planeY = 0.0F,
+                            .minorSpacing = 1.0F,
+                            .majorSpacing = 10.0F,
+                            .fadeStart = 12.0F,
+                            .fadeEnd = 80.0F,
+                            .opacity = 0.72F,
+                            .color = {0.36F, 0.39F, 0.44F, 1.0F},
+                        },
+                    .debugWorldLines = std::span<const BasicDebugWorldLine>{kMinimalSceneAxes},
+                };
+            }
 
             auto recorded =
                 renderer.recordViewFrame(frame, view, state.transientImagePool,
@@ -322,6 +367,10 @@ namespace asharia::editor {
 
         ++stats_.framesRendered;
         ++stats_.packetsCreated;
+        if (desc.hasScene) {
+            ++stats_.sceneFramesRendered;
+            stats_.lastSceneRevision = desc.sceneRevision;
+        }
         return state;
     }
 

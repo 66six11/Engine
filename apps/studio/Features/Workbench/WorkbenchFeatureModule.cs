@@ -104,7 +104,7 @@ public sealed class WorkbenchFeatureModule : IEditorFeatureModule
         ArgumentNullException.ThrowIfNull(builder);
 
         builder.AddSceneProvider(new SceneProviderDescriptor(
-            "workbench.scene.fixture",
+            "workbench.scene.active",
             EditorProviderRoles.ActiveScene,
             () => sceneSnapshotProvider_));
 
@@ -156,7 +156,10 @@ public sealed class WorkbenchFeatureModule : IEditorFeatureModule
                 EditorDockArea.Center,
                 "Window/Panels/Scene View",
                 DockContentCachePolicy.KeepAlive,
-                () => new SceneViewPanelViewModel(selectionService_, diagnostics_),
+                () => new SceneViewPanelViewModel(
+                    selectionService_,
+                    diagnostics_,
+                    sceneSnapshotProvider_),
                 IconKey: "studio.scene-view",
                 Tag: "DOC",
                 TitleDetail: "viewport deferred",

@@ -187,7 +187,12 @@ public partial class SceneViewPanelView : UserControl
             return;
         }
 
-        var packet = nativeBridge_.AcquirePresentPacket(compositionCapabilities, requestedExtent);
+        var scene = viewModel.GetSceneRenderState();
+        var packet = nativeBridge_.AcquirePresentPacket(
+            compositionCapabilities,
+            requestedExtent,
+            scene.HasScene,
+            scene.Revision);
         if (packet.Status != ViewportNativeStatus.Success)
         {
             viewModel.UpdateNativePresent(

@@ -89,6 +89,24 @@ namespace asharia::editor {
             };
         }
 
+        [[nodiscard]] EditorViewportNativePresentRequestV2
+        makePresentRequestV2(VkExtent2D extent, bool hasScene, std::uint64_t sceneRevision) {
+            return EditorViewportNativePresentRequestV2{
+                .header =
+                    EditorViewportNativeAbiHeader{
+                        .abiVersion = EDITOR_NATIVE_ABI_VERSION,
+                        .structSize = static_cast<std::uint32_t>(
+                            sizeof(EditorViewportNativePresentRequestV2)),
+                    },
+                .compatibility = makeRequest(),
+                .widthPixels = extent.width,
+                .heightPixels = extent.height,
+                .hasScene = hasScene ? 1U : 0U,
+                .reserved = 0U,
+                .sceneRevision = hasScene ? sceneRevision : 0U,
+            };
+        }
+
         void releaseIfNeeded(EditorViewportNativeCompatibilityResult result) {
             if (result.messageUtf8 != nullptr) {
                 editor_viewport_release_compatibility_result(result);
@@ -138,6 +156,13 @@ namespace asharia::editor {
             return status == EditorViewportNativeStatus_Success &&
                    stats.header.abiVersion == EDITOR_NATIVE_ABI_VERSION &&
                    stats.header.structSize == sizeof(EditorViewportNativeRuntimeStatsV5);
+        }
+
+        [[nodiscard]] bool queryRuntimeStatsV6(EditorViewportNativeRuntimeStatsV6& stats) {
+            const std::uint32_t status = editor_viewport_query_runtime_stats_v6(&stats);
+            return status == EditorViewportNativeStatus_Success &&
+                   stats.header.abiVersion == EDITOR_NATIVE_ABI_VERSION &&
+                   stats.header.structSize == sizeof(EditorViewportNativeRuntimeStatsV6);
         }
 
         [[nodiscard]] bool smokeCompatibilityContract() {
@@ -194,11 +219,25 @@ namespace asharia::editor {
         }
 
         [[nodiscard]] bool smokeFirstPacketAndBackpressure() {
+            EditorViewportNativePresentRequestV2 invalidSceneRequest =
+                makePresentRequestV2(VkExtent2D{.width = 320U, .height = 180U}, false, 0U);
+            invalidSceneRequest.sceneRevision = 1U;
+            EditorViewportNativePresentPacket invalidScenePacket{};
+            if (editor_viewport_acquire_present_packet_v2(&invalidSceneRequest,
+                                                          &invalidScenePacket) !=
+                    EditorViewportNativeStatus_InvalidArgument ||
+                invalidScenePacket.status != EditorViewportNativeStatus_InvalidArgument) {
+                releaseIfNeeded(invalidScenePacket);
+                logError("Viewport native bridge smoke accepted a scene revision without a "
+                         "scene.");
+                return false;
+            }
+
             EditorViewportNativePresentPacket packet{};
-            EditorViewportNativePresentRequest firstPresentRequest =
-                makePresentRequest(VkExtent2D{.width = 320U, .height = 180U});
+            EditorViewportNativePresentRequestV2 firstPresentRequest =
+                makePresentRequestV2(VkExtent2D{.width = 320U, .height = 180U}, true, 42U);
             const std::uint32_t packetStatus =
-                editor_viewport_acquire_present_packet(&firstPresentRequest, &packet);
+                editor_viewport_acquire_present_packet_v2(&firstPresentRequest, &packet);
             const bool packetAvailable =
                 packetStatus == EditorViewportNativeStatus_Success &&
                 packet.status == EditorViewportNativeStatus_Success &&
@@ -274,10 +313,21 @@ namespace asharia::editor {
                     "Viewport native bridge smoke did not expose runtime stats v4 before release.");
                 return false;
             }
+            EditorViewportNativeRuntimeStatsV6 statsV6AfterFirstPacket{};
+            if (!queryRuntimeStatsV6(statsV6AfterFirstPacket) ||
+                statsV6AfterFirstPacket.framesRendered != 1U ||
+                statsV6AfterFirstPacket.sceneFramesRendered != 1U ||
+                statsV6AfterFirstPacket.lastSceneRevision != 42U) {
+                releaseIfNeeded(packet);
+                logError("Viewport native bridge smoke did not consume the minimal scene "
+                         "revision.");
+                return false;
+            }
 
             EditorViewportNativePresentPacket backpressuredPacket{};
             const std::uint32_t backpressuredStatus =
-                editor_viewport_acquire_present_packet(&firstPresentRequest, &backpressuredPacket);
+                editor_viewport_acquire_present_packet_v2(&firstPresentRequest,
+                                                          &backpressuredPacket);
             const bool acquireRejectedWhilePending =
                 backpressuredStatus == EditorViewportNativeStatus_Unavailable &&
                 backpressuredPacket.status == EditorViewportNativeStatus_Unavailable &&

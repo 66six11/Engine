@@ -43,6 +43,8 @@ namespace asharia::editor {
         std::uint64_t frameEpochsPending{};
         std::uint64_t rendererCreations{};
         std::uint64_t packetBackpressureHits{};
+        std::uint64_t sceneFramesRendered{};
+        std::uint64_t lastSceneRevision{};
         std::size_t maxOutstandingPackets{};
         std::size_t outstandingPackets{};
         bool hasContext{};

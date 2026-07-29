@@ -4,6 +4,7 @@ using Asharia.Editor.Panels;
 using Asharia.Editor.Diagnostics;
 using Asharia.Studio.Application.Diagnostics;
 using Asharia.Editor.Viewports;
+using Asharia.Editor.Worlds.Snapshots;
 using Editor.Core.Abstractions;
 using Editor.Core.Models.Panels;
 using Editor.Core.Models.Viewports;
@@ -225,6 +226,25 @@ public sealed class SceneViewPanelViewModelTests
 
         Assert.Equal(EditorPanelFrameUpdateMode.Active, frameSink.FrameUpdateRequest.Mode);
         Assert.Equal(30d, frameSink.FrameUpdateRequest.TargetFramesPerSecond);
+    }
+
+    [Fact]
+    public void Scene_view_reads_shared_scene_availability_and_revision()
+    {
+        var scenes = new InMemorySceneSnapshotProvider(SceneSnapshot.Empty);
+        var viewModel = new SceneViewPanelViewModel(
+            new EditorSelectionService(),
+            sceneSnapshots: scenes);
+
+        Assert.Equal((false, 0UL), viewModel.GetSceneRenderState());
+
+        scenes.ReplaceSnapshot(new SceneSnapshot(
+            "scene:minimal",
+            "Untitled Scene",
+            7,
+            [new SceneObjectSnapshot("scene:minimal", "Untitled Scene", "scene")]));
+
+        Assert.Equal((true, 7UL), viewModel.GetSceneRenderState());
     }
 
     [Fact]

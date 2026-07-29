@@ -198,6 +198,8 @@ namespace asharia::editor {
             .frameEpochsPending = producerStats.frameEpochsPending,
             .rendererCreations = producerStats.rendererCreations,
             .packetBackpressureHits = packetBackpressureHits_,
+            .sceneFramesRendered = producerStats.sceneFramesRendered,
+            .lastSceneRevision = producerStats.lastSceneRevision,
             .maxOutstandingPackets = kMaxOutstandingPackets,
             .outstandingPackets = outstandingPackets_.size(),
             .hasContext = context_.has_value(),

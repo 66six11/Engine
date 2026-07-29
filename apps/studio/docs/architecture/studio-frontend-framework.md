@@ -3,7 +3,7 @@
 状态：Target（authoring 分层已校准；Code-first v1 当前使用整棵 content subtree 重建，
 keyed reconcile 尚未实现；统一 Action、Avalonia extension backend 与工具合同仍在迁移）
 
-更新日期：2026-07-28
+更新日期：2026-07-29
 
 跟踪：GitHub Epic #119；设计 Slice #337；首个实现 Slice #338
 
@@ -183,6 +183,11 @@ UI 不直接“同步写模型再等待系统追认”。新 revision 是 mutati
   失败时保持上一成功会话；
 - recent-project 是 Application-owned Studio preference；写入使用同目录临时文件加替换，启动恢复必须重新
   调用 descriptor gateway，不能把缓存路径或 bootstrap-ready candidate 直接解释为活动 `ProjectSession`；
+- production composition 将活动项目投影为共享的最小 `SceneSnapshot`，Hierarchy、Inspector 与 Scene View
+  读取同一 provider；无活动项目时 provider 为 Empty，不显示 demo object。该 snapshot 是 Editor projection，
+  不是持久化 scene 或 runtime World；
+- Scene View 只把 `hasScene + revision` 送入 native viewport request v2；View/code-behind 不传
+  SceneObject、GPU resource 或 native pointer，renderer 以自己的默认编辑相机与 overlay contract 绘制 grid/axes；
 - built-in XAML View 已使用 Avalonia + MVVM，但公开 `Asharia.Editor.Avalonia` content backend 尚未落地。
 
 ### 5.2 迁移目标
