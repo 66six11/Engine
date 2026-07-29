@@ -18,6 +18,7 @@
 #include "editor_asset_catalog.hpp"
 #include "editor_asset_catalog_report.hpp"
 #include "native_bridge/frame_debugger_native_smoke.hpp"
+#include "native_bridge/project_native_smoke.hpp"
 #include "native_bridge/viewport_native_smoke.hpp"
 
 namespace {
@@ -243,6 +244,16 @@ namespace {
         return EXIT_SUCCESS;
     }
 
+    [[nodiscard]] int runProjectNativeSmoke(std::span<char*> args) {
+        if (!validateSingleSmokeArg(args, "--smoke-editor-project-native")) {
+            return EXIT_FAILURE;
+        }
+        if (!asharia::editor::runProjectNativeBridgeSmoke()) {
+            return EXIT_FAILURE;
+        }
+        return EXIT_SUCCESS;
+    }
+
     void printVersion() {
         std::cout << asharia::kEngineName << " editor " << asharia::kEngineVersion.major << '.'
                   << asharia::kEngineVersion.minor << '.' << asharia::kEngineVersion.patch << '\n';
@@ -253,7 +264,8 @@ namespace {
             << "Usage: asharia-editor [--help] [--version] [--smoke-editor-shell] "
                "[--smoke-editor-asset-browser] [--smoke-editor-viewport] "
                "[--smoke-editor-viewport-resize] [--smoke-editor-frame-debugger] "
-               "[--smoke-editor-native-bridge] [--smoke-editor-viewport-native]\n"
+               "[--smoke-editor-native-bridge] [--smoke-editor-viewport-native] "
+               "[--smoke-editor-project-native]\n"
                "       asharia-editor [--project <asharia.project.json|project-dir>] "
                "[--product-manifest <products.aproducts.json>] "
                "[--asset-target-profile <profile>]\n"
@@ -321,6 +333,10 @@ int main(int argc, char** argv) {
 
         if (hasArg(args, "--smoke-editor-viewport-native")) {
             return runViewportNativeSmoke(args);
+        }
+
+        if (hasArg(args, "--smoke-editor-project-native")) {
+            return runProjectNativeSmoke(args);
         }
 
         if (args.size() == 1) {

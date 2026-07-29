@@ -325,6 +325,20 @@ public asset-pipeline headers、asset-processor tool code、runtime texture owne
 和 sample-viewer smoke。KTX/KTX2/Basis/DDS/HDR/EXR policy 不等于 decoder implementation，不能因为
 文档提到格式就让 runtime、editor、RenderGraph、renderer 或 RHI 直接依赖具体 decoder/transcoder library。
 
+涉及 Studio 项目新建/打开、`project-core` 描述符 IO 或 editor project native bridge 时，还必须在两个
+standard debug presets 上运行项目 bridge smoke，证明新建不覆盖已有描述符、创建后可重新打开且损坏描述符
+会被拒绝：
+
+```powershell
+foreach ($preset in @("clangcl-debug", "msvc-debug")) {
+    $exe = "build\cmake\$preset\apps\editor\asharia-editor.exe"
+    & $exe --smoke-editor-project-native
+    if ($LASTEXITCODE -ne 0) {
+        throw "$preset --smoke-editor-project-native failed with exit code $LASTEXITCODE"
+    }
+}
+```
+
 涉及 `packages/resource-runtime` runtime handle/status/product-record resolution/diagnostics 时，必须跑
 package-local tests，证明 pending / ready / failed、generation、product key mismatch 和 product record
 诊断矩阵没有漂移：
