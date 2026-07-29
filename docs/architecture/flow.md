@@ -561,6 +561,10 @@ flowchart LR
 - `ProjectSessionService` 只在原生描述符创建或打开成功后替换活动项目；失败保留原会话和最近项目路径。
 - 最近项目只是 Application 层偏好，不是可信项目状态。启动恢复必须重新经过 gateway、EngineBridge 和
   `project-core` 复验。
+- File/New 与 File/Open 的 Avalonia code-behind 只选择本地文件夹并转交路径；`MainWindowViewModel`
+  发起会话操作、发布结果，并只在 UI dispatcher 上替换活动项目投影。
+- 生产组合根用薄 gateway adapter 连接 Application 与 EngineBridge，并在创建主窗口 ViewModel 前尝试恢复
+  最近项目；测试组合路径显式注入会话，不读取用户偏好。
 - `ActiveProjectSnapshot` 只表达已验证的项目身份与路径，不持有 Avalonia 对象、原生指针或 runtime 对象。
 - 该最小会话尚不创建完整 Project extension scope 或 EngineHost；Bootstrap `Ready` 与活动项目
   `Ready` 仍是不同状态，后续由组合根显式协调。

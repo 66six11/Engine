@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using Asharia.Editor.Commands;
 using Asharia.Editor.Diagnostics;
@@ -150,6 +151,61 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
+    public void Active_project_session_updates_workbench_context_on_ui_dispatcher()
+    {
+        var dispatcher = new CapturingUiDispatcher(hasAccess: false);
+        var projectSessions = new StubProjectSessionService();
+        using var viewModel = CreateMainWindowViewModel(
+            uiDispatcher: dispatcher,
+            projectSessions: projectSessions);
+
+        projectSessions.Publish(ProjectSessionSnapshot.Ready(
+            new ActiveProjectSnapshot(
+                @"D:\Projects\Example",
+                "Example",
+                Guid.Parse("45ad5a9c-4c1f-4723-966c-21c0ac638932"))));
+
+        Assert.Equal("No active project", viewModel.ActiveProjectDisplayName);
+        Assert.Equal(1, dispatcher.PostCount);
+
+        dispatcher.RunPostedActions();
+
+        Assert.True(viewModel.HasActiveProject);
+        Assert.Equal("Example", viewModel.ActiveProjectDisplayName);
+        Assert.Equal("Untitled Scene", viewModel.DocumentDisplayName);
+        Assert.Equal(
+            "Untitled Scene — Example — Asharia Studio",
+            viewModel.WindowTitle);
+        Assert.Contains(
+            "runtime session",
+            viewModel.SessionUnavailableReason,
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Project_actions_forward_selected_roots_and_publish_status()
+    {
+        var projectSessions = new StubProjectSessionService();
+        using var viewModel = CreateMainWindowViewModel(
+            projectSessions: projectSessions);
+
+        var createResult = viewModel.CreateMinimalProject(
+            @"D:\Projects\Example");
+        var openResult = viewModel.OpenProject(
+            @"D:\Projects\Existing");
+
+        Assert.True(createResult.Succeeded);
+        Assert.Equal(@"D:\Projects\Example", projectSessions.CreatedRoot);
+        Assert.Equal("Example", projectSessions.CreatedName);
+        Assert.True(openResult.Succeeded);
+        Assert.Equal(@"D:\Projects\Existing", projectSessions.OpenedRoot);
+        Assert.Equal(
+            EditorStatusMessageSeverity.Success,
+            viewModel.LastStatusMessage?.Severity);
+        Assert.Equal("Opened project 'Existing'.", viewModel.StatusMessageText);
+    }
+
+    [Fact]
     public void Dispose_unsubscribes_from_project_open_context()
     {
         var dispatcher = new CapturingUiDispatcher(hasAccess: false);
@@ -163,6 +219,26 @@ public sealed class MainWindowViewModelTests
 
         Assert.Equal(0, dispatcher.PostCount);
         Assert.Equal("No project", viewModel.ProjectLaunch.ProjectCandidateDisplayName);
+    }
+
+    [Fact]
+    public void Dispose_unsubscribes_from_active_project_session()
+    {
+        var dispatcher = new CapturingUiDispatcher(hasAccess: false);
+        var projectSessions = new StubProjectSessionService();
+        var viewModel = CreateMainWindowViewModel(
+            uiDispatcher: dispatcher,
+            projectSessions: projectSessions);
+
+        viewModel.Dispose();
+        projectSessions.Publish(ProjectSessionSnapshot.Ready(
+            new ActiveProjectSnapshot(
+                @"D:\Projects\Example",
+                "Example",
+                Guid.Parse("45ad5a9c-4c1f-4723-966c-21c0ac638932"))));
+
+        Assert.Equal(0, dispatcher.PostCount);
+        Assert.Equal("No active project", viewModel.ActiveProjectDisplayName);
     }
 
     [Fact]
@@ -853,7 +929,8 @@ public sealed class MainWindowViewModelTests
         IEditorUiDispatcher? uiDispatcher = null,
         IEditorLifecycleEventService? lifecycleEvents = null,
         IEditorDiagnosticService? diagnostics = null,
-        IProjectOpenSessionSnapshotSource? projectOpenSessions = null)
+        IProjectOpenSessionSnapshotSource? projectOpenSessions = null,
+        IProjectSessionService? projectSessions = null)
     {
         uiDispatcher ??= new CapturingUiDispatcher(hasAccess: true);
         diagnostics ??= new EditorDiagnosticService();
@@ -869,7 +946,8 @@ public sealed class MainWindowViewModelTests
             uiDispatcher: uiDispatcher,
             lifecycleEvents: lifecycleEvents,
             diagnostics: diagnostics,
-            projectOpenSessions: projectOpenSessions);
+            projectOpenSessions: projectOpenSessions,
+            projectSessions: projectSessions);
     }
 
     private static EditorExtensionComposition CreateDefaultComposition(
@@ -911,6 +989,56 @@ public sealed class MainWindowViewModelTests
             }
 
             postedActions_.Clear();
+        }
+    }
+
+    private sealed class StubProjectSessionService : IProjectSessionService
+    {
+        public event EventHandler? SnapshotChanged;
+
+        public ProjectSessionSnapshot Current { get; private set; } =
+            ProjectSessionSnapshot.NoProject;
+
+        public string? CreatedRoot { get; private set; }
+
+        public string? CreatedName { get; private set; }
+
+        public string? OpenedRoot { get; private set; }
+
+        public ProjectSessionOperationResult CreateMinimalProject(
+            string projectRoot,
+            string projectName)
+        {
+            CreatedRoot = projectRoot;
+            CreatedName = projectName;
+            return Activate(projectRoot, projectName);
+        }
+
+        public ProjectSessionOperationResult OpenProject(string projectRoot)
+        {
+            OpenedRoot = projectRoot;
+            var name = Path.GetFileName(projectRoot);
+            return Activate(projectRoot, name);
+        }
+
+        public void Publish(ProjectSessionSnapshot snapshot)
+        {
+            Current = snapshot;
+            SnapshotChanged?.Invoke(this, EventArgs.Empty);
+        }
+
+        private ProjectSessionOperationResult Activate(
+            string projectRoot,
+            string projectName)
+        {
+            Publish(ProjectSessionSnapshot.Ready(
+                new ActiveProjectSnapshot(
+                    projectRoot,
+                    projectName,
+                    Guid.Parse("45ad5a9c-4c1f-4723-966c-21c0ac638932"))));
+            return ProjectSessionOperationResult.Success(
+                Current,
+                $"Opened project '{projectName}'.");
         }
     }
 

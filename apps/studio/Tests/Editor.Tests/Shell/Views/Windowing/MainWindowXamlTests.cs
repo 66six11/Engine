@@ -58,6 +58,14 @@ public sealed class MainWindowXamlTests
         Assert.Contains("ToolTip.Tip=\"{Binding ToolUnavailableReason}\"", xaml);
         Assert.Contains("ToolTip.Tip=\"{Binding SessionUnavailableReason}\"", xaml);
         Assert.Contains("Command=\"{Binding ApplyCompactLayoutCommand}\"", xaml);
+        Assert.Contains("Click=\"OnNewProjectClick\"", xaml);
+        Assert.Contains("Click=\"OnOpenProjectClick\"", xaml);
+        Assert.DoesNotContain(
+            "Project creation is unavailable until the project service is connected.",
+            xaml);
+        Assert.DoesNotContain(
+            "Project opening is unavailable until the project service is connected.",
+            xaml);
     }
 
     private static string LoadMainWindowXaml()

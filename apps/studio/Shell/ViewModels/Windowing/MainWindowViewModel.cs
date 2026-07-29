@@ -1,6 +1,7 @@
 using CommunityToolkit.Mvvm.Input;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using Asharia.Editor.Commands;
 using Asharia.Editor.Diagnostics;
 using Asharia.Studio.Application.Diagnostics;
@@ -40,6 +41,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     private readonly IEditorBackgroundTaskService backgroundTasks_;
     private readonly IEditorUiDispatcher uiDispatcher_;
     private readonly IEditorDiagnosticService diagnostics_;
+    private readonly IProjectSessionService projectSessions_;
     private readonly RelayCommand openStatusMessageTargetCommand_;
     private readonly List<EditorDockFloatingWindowSnapshot> pendingFloatingWindowSnapshots_ = [];
     private Func<IReadOnlyList<EditorDockFloatingWindowSnapshot>>? captureFloatingWindowSnapshots_;
@@ -49,6 +51,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     private string activeBackgroundTaskMessage_ = string.Empty;
     private string selectionSummary_ = "Nothing selected";
     private string diagnosticSummary_ = "No diagnostics";
+    private ProjectSessionSnapshot projectSession_;
     private EditorStatusMessageSnapshot? lastStatusMessage_;
     private EditorDiagnosticRecord? latestStatusDiagnostic_;
     private EditorStatusMessageSeverity? statusMessageSeverity_;
@@ -72,6 +75,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             arguments.SelectionService,
             diagnostics: arguments.Diagnostics,
             projectOpenSessions: arguments.ProjectOpenSessions,
+            projectSessions: arguments.ProjectSessions,
             defaultLayoutFactory: arguments.DefaultLayoutFactory)
     {
     }
@@ -86,6 +90,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         IEditorLifecycleEventService? lifecycleEvents = null,
         IEditorDiagnosticService? diagnostics = null,
         IProjectOpenSessionSnapshotSource? projectOpenSessions = null,
+        IProjectSessionService? projectSessions = null,
         Func<EditorDockLayoutSnapshot>? defaultLayoutFactory = null)
     {
         SelectionService = selectionService ?? new EditorSelectionService();
@@ -95,6 +100,9 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         uiDispatcher_ = uiDispatcher ?? new AvaloniaEditorUiDispatcher();
         diagnostics_ = diagnostics ?? new EditorDiagnosticService();
         diagnostics_.DiagnosticsChanged += OnDiagnosticsChanged;
+        projectSessions_ = projectSessions ?? UnavailableProjectSessionService.Instance;
+        projectSession_ = projectSessions_.Current;
+        projectSessions_.SnapshotChanged += OnProjectSessionChanged;
         ProjectLaunch = new ProjectLaunchViewModel(
             projectOpenSessions ?? new ProjectOpenSessionSnapshotSource(),
             uiDispatcher_);
@@ -172,9 +180,13 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
     public IReadOnlyList<PanelMenuItemViewModel> PanelMenuItems { get; }
 
-    public string ActiveProjectDisplayName => "No active project";
+    public string ActiveProjectDisplayName =>
+        projectSession_.Project?.ProjectName ?? "No active project";
 
-    public string DocumentDisplayName => "No document";
+    public string DocumentDisplayName =>
+        HasActiveProject ? "Untitled Scene" : "No document";
+
+    public bool HasActiveProject => projectSession_.IsReady;
 
     public bool IsDocumentDirty => false;
 
@@ -186,8 +198,9 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     public string ToolUnavailableReason =>
         "Viewport tools are unavailable until a tool service is connected.";
 
-    public string SessionUnavailableReason =>
-        "Run controls are unavailable until a project is active.";
+    public string SessionUnavailableReason => HasActiveProject
+        ? "Run controls are unavailable until a runtime session is connected."
+        : "Run controls are unavailable until a project is active.";
 
     public string SelectionSummary
     {
@@ -307,6 +320,22 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         return requests;
     }
 
+    public ProjectSessionOperationResult CreateMinimalProject(string projectRoot)
+    {
+        var result = projectSessions_.CreateMinimalProject(
+            projectRoot,
+            ProjectNameFromRoot(projectRoot));
+        PublishProjectOperationResult("project.create-minimal", result);
+        return result;
+    }
+
+    public ProjectSessionOperationResult OpenProject(string projectRoot)
+    {
+        var result = projectSessions_.OpenProject(projectRoot);
+        PublishProjectOperationResult("project.open", result);
+        return result;
+    }
+
     public void RefreshPanelMenuOpenStates()
     {
         foreach (var item in PanelMenuItems)
@@ -327,6 +356,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         SelectionService.SelectionChanged -= OnSelectionChanged;
         backgroundTasks_.TasksChanged -= OnBackgroundTasksChanged;
         diagnostics_.DiagnosticsChanged -= OnDiagnosticsChanged;
+        projectSessions_.SnapshotChanged -= OnProjectSessionChanged;
         ProjectLaunch.Dispose();
         panelCommandService_.PanelStateChanged -= OnPanelCommandStateChanged;
         DockWorkspace.Dispose();
@@ -427,6 +457,21 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         uiDispatcher_.Post(RefreshLatestDiagnostic);
     }
 
+    private void OnProjectSessionChanged(object? sender, EventArgs e)
+    {
+        if (isDisposed_)
+        {
+            return;
+        }
+        if (uiDispatcher_.CheckAccess())
+        {
+            RefreshProjectSessionProjection();
+            return;
+        }
+
+        uiDispatcher_.Post(RefreshProjectSessionProjection);
+    }
+
     private void RefreshBackgroundTaskSummary()
     {
         var activeBackgroundTasks = backgroundTasks_.GetActiveSnapshots();
@@ -455,6 +500,49 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             1 => selection.Items[0].DisplayName,
             _ => $"{selection.Items.Count} items selected",
         };
+    }
+
+    private void RefreshProjectSessionProjection()
+    {
+        if (isDisposed_)
+        {
+            return;
+        }
+
+        projectSession_ = projectSessions_.Current;
+        OnPropertyChanged(nameof(ActiveProjectDisplayName));
+        OnPropertyChanged(nameof(DocumentDisplayName));
+        OnPropertyChanged(nameof(HasActiveProject));
+        OnPropertyChanged(nameof(WindowTitle));
+        OnPropertyChanged(nameof(SessionUnavailableReason));
+    }
+
+    private void PublishProjectOperationResult(
+        string commandId,
+        ProjectSessionOperationResult result)
+    {
+        PublishCommandStatusMessage(new EditorCommandExecutionResult(
+            result.Succeeded
+                ? EditorCommandExecutionStatus.Succeeded
+                : EditorCommandExecutionStatus.Failed,
+            commandId,
+            result.Message));
+    }
+
+    private static string ProjectNameFromRoot(string projectRoot)
+    {
+        if (string.IsNullOrWhiteSpace(projectRoot))
+        {
+            return "Untitled Project";
+        }
+
+        var trimmedRoot = projectRoot.TrimEnd(
+            Path.DirectorySeparatorChar,
+            Path.AltDirectorySeparatorChar);
+        var name = Path.GetFileName(trimmedRoot);
+        return string.IsNullOrWhiteSpace(name)
+            ? "Untitled Project"
+            : name;
     }
 
     internal void PublishStatusMessage(EditorStatusMessageSnapshot snapshot)
@@ -610,6 +698,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             selectionService,
             diagnostics,
             projectOpenSessions,
+            UnavailableProjectSessionService.Instance,
             EditorWorkbenchLayoutPreset.CreateDefault);
     }
 
@@ -619,7 +708,35 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         IEditorSelectionService SelectionService,
         IEditorDiagnosticService Diagnostics,
         IProjectOpenSessionSnapshotSource ProjectOpenSessions,
+        IProjectSessionService ProjectSessions,
         Func<EditorDockLayoutSnapshot> DefaultLayoutFactory);
+
+    private sealed class UnavailableProjectSessionService : IProjectSessionService
+    {
+        public static UnavailableProjectSessionService Instance { get; } = new();
+
+        public event EventHandler? SnapshotChanged
+        {
+            add { }
+            remove { }
+        }
+
+        public ProjectSessionSnapshot Current => ProjectSessionSnapshot.NoProject;
+
+        public ProjectSessionOperationResult CreateMinimalProject(
+            string projectRoot,
+            string projectName)
+        {
+            return ProjectSessionOperationResult.Failure(
+                "Project creation is unavailable.");
+        }
+
+        public ProjectSessionOperationResult OpenProject(string projectRoot)
+        {
+            return ProjectSessionOperationResult.Failure(
+                "Project opening is unavailable.");
+        }
+    }
 
     private IReadOnlyList<PanelMenuItemViewModel> CreatePanelMenuItems(
         IReadOnlyList<WorkbenchActionDescriptor> actions,

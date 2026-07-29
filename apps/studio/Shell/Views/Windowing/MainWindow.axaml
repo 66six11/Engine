@@ -100,12 +100,10 @@
                 <MenuItem Header="File" Classes="editor-menu-item">
                     <MenuItem Header="New"
                               Classes="editor-menu-item"
-                              IsEnabled="False"
-                              ToolTip.Tip="Project creation is unavailable until the project service is connected." />
+                              Click="OnNewProjectClick" />
                     <MenuItem Header="Open"
                               Classes="editor-menu-item"
-                              IsEnabled="False"
-                              ToolTip.Tip="Project opening is unavailable until the project service is connected." />
+                              Click="OnOpenProjectClick" />
                     <MenuItem Header="Save" Classes="editor-menu-item" IsEnabled="False" />
                     <MenuItem Header="Save As" Classes="editor-menu-item" IsEnabled="False" />
                     <Separator Classes="editor-menu-separator" />
@@ -162,7 +160,7 @@
                     <TextBlock Classes="workbench-context workbench-muted"
                                MaxWidth="92"
                                Text="{Binding ActiveProjectDisplayName}"
-                               ToolTip.Tip="No project session is active." />
+                               ToolTip.Tip="Active project" />
                     <TextBlock Classes="workbench-context workbench-muted"
                                Text="/" />
                     <TextBlock Classes="workbench-context"

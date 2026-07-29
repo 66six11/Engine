@@ -4,8 +4,11 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Data;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Layout;
+using Avalonia.Platform.Storage;
 using Avalonia.Threading;
+using Asharia.Editor.Commands;
 using Editor.Core.Interop.Viewports.Adapters;
 using Asharia.Editor.Lifecycle;
 using Editor.UI.Icons;
@@ -83,6 +86,74 @@ public partial class MainWindow : Window
     private void OnMainWindowSizeChanged(object? sender, SizeChangedEventArgs e)
     {
         PseudoClasses.Set(":compact", e.NewSize.Width < CompactWorkbenchWidth);
+    }
+
+    private async void OnNewProjectClick(object? sender, RoutedEventArgs e)
+    {
+        var projectRoot = await SelectProjectFolder(
+            "Select an empty folder for the new project");
+        if (projectRoot is not null
+            && DataContext is MainWindowViewModel viewModel)
+        {
+            _ = viewModel.CreateMinimalProject(projectRoot);
+        }
+    }
+
+    private async void OnOpenProjectClick(object? sender, RoutedEventArgs e)
+    {
+        var projectRoot = await SelectProjectFolder(
+            "Select an existing project folder");
+        if (projectRoot is not null
+            && DataContext is MainWindowViewModel viewModel)
+        {
+            _ = viewModel.OpenProject(projectRoot);
+        }
+    }
+
+    private async System.Threading.Tasks.Task<string?> SelectProjectFolder(
+        string title)
+    {
+        try
+        {
+            var folders = await StorageProvider.OpenFolderPickerAsync(
+                new FolderPickerOpenOptions
+                {
+                    Title = title,
+                    AllowMultiple = false,
+                });
+            if (folders.Count == 0)
+            {
+                return null;
+            }
+
+            var localPath = folders[0].TryGetLocalPath();
+            if (!string.IsNullOrWhiteSpace(localPath))
+            {
+                return localPath;
+            }
+
+            PublishProjectPickerFailure(
+                "The selected folder does not expose a local path.");
+        }
+        catch (Exception exception)
+        {
+            PublishProjectPickerFailure(
+                "Could not open the project folder picker: "
+                    + exception.Message);
+        }
+
+        return null;
+    }
+
+    private void PublishProjectPickerFailure(string message)
+    {
+        if (DataContext is MainWindowViewModel viewModel)
+        {
+            viewModel.PublishStatusMessage(new EditorStatusMessageSnapshot(
+                EditorStatusMessageSeverity.Error,
+                EditorStatusMessageSource.Command,
+                message));
+        }
     }
 
     private async void OnWindowClosing(object? sender, WindowClosingEventArgs e)

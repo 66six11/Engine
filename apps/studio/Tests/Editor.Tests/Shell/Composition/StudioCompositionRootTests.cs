@@ -159,6 +159,31 @@ public sealed class StudioCompositionRootTests
     }
 
     [Fact]
+    public async Task CreateMainWindowSession_projects_the_injected_active_project()
+    {
+        var projectSessions = new StubProjectSessionService(
+            ProjectSessionSnapshot.Ready(
+                new ActiveProjectSnapshot(
+                    @"D:\Projects\Example",
+                    "Example",
+                    Guid.Parse("45ad5a9c-4c1f-4723-966c-21c0ac638932"))));
+
+        await using var session = new StudioCompositionRoot()
+            .CreateMainWindowSession(
+                savedLayout: null,
+                projectOpenSessions: new ProjectOpenSessionSnapshotSource(),
+                projectSessions: projectSessions);
+
+        Assert.True(session.MainWindowViewModel.HasActiveProject);
+        Assert.Equal(
+            "Example",
+            session.MainWindowViewModel.ActiveProjectDisplayName);
+        Assert.Equal(
+            "Untitled Scene — Example — Asharia Studio",
+            session.MainWindowViewModel.WindowTitle);
+    }
+
+    [Fact]
     public async Task CreateMainWindowSession_keeps_extension_host_alive_until_session_disposal()
     {
         var session = new StudioCompositionRoot().CreateMainWindowSession(savedLayout: null);
@@ -234,6 +259,32 @@ public sealed class StudioCompositionRootTests
         {
             disposalOrder.Add(id);
             return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class StubProjectSessionService(
+        ProjectSessionSnapshot current) : IProjectSessionService
+    {
+        public event EventHandler? SnapshotChanged
+        {
+            add { }
+            remove { }
+        }
+
+        public ProjectSessionSnapshot Current { get; } = current;
+
+        public ProjectSessionOperationResult CreateMinimalProject(
+            string projectRoot,
+            string projectName)
+        {
+            return ProjectSessionOperationResult.Failure(
+                "Not used by this test.");
+        }
+
+        public ProjectSessionOperationResult OpenProject(string projectRoot)
+        {
+            return ProjectSessionOperationResult.Failure(
+                "Not used by this test.");
         }
     }
 }
