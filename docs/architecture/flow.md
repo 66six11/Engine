@@ -581,6 +581,10 @@ sequenceDiagram
 - `editor shared viewport runtime` owns Vulkan context, producer lifetime,
   outstanding packet tracking and shutdown drain. `outstandingPackets` remains
   the authoritative count for managed compositor packet ownership.
+- The Studio shared viewport context keeps Vulkan debug labels optional and
+  does not require a separately installed validation layer. Strict validation
+  remains an explicit native editor / renderer smoke environment requirement,
+  so missing SDK tooling cannot disable the shipped Studio viewport.
 - The runtime allows at most one outstanding shared viewport packet. A second
   acquire while a packet is pending is rejected before producer work with
   native `Unavailable`; this applies backpressure without blocking the UI

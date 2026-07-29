@@ -2,7 +2,7 @@
 
 状态：Target（Windows 当前为 Experimental/Partial）
 
-更新日期：2026-07-11
+更新日期：2026-07-29
 
 ## 1. 目的
 
@@ -16,6 +16,9 @@
 - 查询 compositor GPU capability；
 - 从 native bridge 获取 Vulkan image/semaphore packet；
 - 使用 `UpdateWithSemaphoresAsync` 更新 surface。
+- shared viewport runtime 不把单独安装的 Vulkan SDK validation layer 作为 Studio
+  运行时前提；它保留 optional debug labels。严格 validation 仍由显式加载 SDK layer
+  的 native editor / renderer smoke 门禁承担。
 
 当前实现仍是 Experimental/Partial：
 

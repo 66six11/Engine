@@ -20,7 +20,10 @@ namespace asharia::editor {
                 .applicationName = "Asharia Studio Shared Viewport",
                 .requiredInstanceExtensions = {},
                 .createSurface = {},
-                .enableValidation = true,
+                // Studio runtime availability must not depend on a separately
+                // installed Vulkan SDK validation layer. Dedicated renderer
+                // validation gates still create strict validation contexts.
+                .enableValidation = false,
                 .debugLabels = asharia::VulkanDebugLabelMode::Optional,
                 .requireVulkan14 = true,
                 .externalInterop =
@@ -133,8 +136,7 @@ namespace asharia::editor {
         outstandingPackets_.insert(statePtr);
         ++framesRendered_;
         ++packetsCreated_;
-        [[maybe_unused]] EditorSharedViewportPacketState* const releasedState =
-            state->release();
+        [[maybe_unused]] EditorSharedViewportPacketState* const releasedState = state->release();
         return statePtr->toPresentPacket();
     }
 

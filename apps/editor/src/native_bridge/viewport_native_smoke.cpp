@@ -12,14 +12,18 @@
 namespace asharia::editor {
     namespace {
 
-        void logPresentPacketMessage(const EditorViewportNativePresentPacket& packet) {
-            if (packet.messageUtf8 == nullptr || packet.messageByteLength == 0U) {
+        void logNativeMessage(const void* messageUtf8, std::uint64_t messageByteLength) {
+            if (messageUtf8 == nullptr || messageByteLength == 0U) {
                 return;
             }
 
-            const auto message = std::string_view{static_cast<const char*>(packet.messageUtf8),
-                                                  packet.messageByteLength};
+            const auto message =
+                std::string_view{static_cast<const char*>(messageUtf8), messageByteLength};
             logError(message);
+        }
+
+        void logPresentPacketMessage(const EditorViewportNativePresentPacket& packet) {
+            logNativeMessage(packet.messageUtf8, packet.messageByteLength);
         }
 
         class SharedViewportRuntimeShutdown final {
@@ -170,11 +174,13 @@ namespace asharia::editor {
                                        EditorViewportNativeHandleType_VulkanOpaqueNt &&
                                    supportedResult.producedSemaphoreHandleType ==
                                        EditorViewportNativeHandleType_VulkanOpaqueNt;
-            releaseIfNeeded(supportedResult);
             if (!supported) {
+                logNativeMessage(supportedResult.messageUtf8, supportedResult.messageByteLength);
+                releaseIfNeeded(supportedResult);
                 logError("Viewport native bridge smoke did not accept a Vulkan opaque NT request.");
                 return false;
             }
+            releaseIfNeeded(supportedResult);
 
             EditorViewportNativeCompatibilityRequest mismatchedRequest =
                 makeMismatchedUuidRequest();
