@@ -6,6 +6,7 @@ using Asharia.Editor.Diagnostics;
 using Asharia.Studio.Application.Diagnostics;
 using Asharia.Editor.Lifecycle;
 using Asharia.Editor.Panels;
+using Asharia.Editor.Projects;
 using Asharia.Editor.Selection;
 using Asharia.Editor.Tasks;
 using Avalonia.Input;
@@ -20,6 +21,7 @@ using Editor.Shell.Composition;
 using Editor.Shell.Docking.Layout;
 using Editor.Shell.Docking.Panels;
 using Asharia.Studio.Application.Lifecycle;
+using Asharia.Studio.Application.Projects;
 using Asharia.Studio.Application.Selection;
 using Asharia.Studio.Application.Tasks;
 using Editor.Shell.Services;
@@ -119,6 +121,47 @@ public sealed class MainWindowViewModelTests
         Assert.Equal("Nothing selected", viewModel.SelectionSummary);
         dispatcher.RunPostedActions();
         Assert.Equal("Demo Cube", viewModel.SelectionSummary);
+    }
+
+    [Fact]
+    public void Project_open_context_updates_on_ui_dispatcher()
+    {
+        var dispatcher = new CapturingUiDispatcher(hasAccess: false);
+        var projectOpenSessions = new ProjectOpenSessionSnapshotSource();
+        using var viewModel = CreateMainWindowViewModel(
+            uiDispatcher: dispatcher,
+            projectOpenSessions: projectOpenSessions);
+
+        projectOpenSessions.Publish(CreateReadyProjectOpenSnapshot());
+
+        Assert.Equal("No project", viewModel.ProjectDisplayName);
+        Assert.Equal(1, dispatcher.PostCount);
+        dispatcher.RunPostedActions();
+        Assert.Equal("Example", viewModel.ProjectDisplayName);
+        Assert.Equal("Project bootstrap is ready", viewModel.ProjectOpenStatusText);
+        Assert.Equal(
+            "No document — Example — Asharia Studio",
+            viewModel.WindowTitle);
+        Assert.Contains(
+            "project profile activation",
+            viewModel.SessionUnavailableReason,
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Dispose_unsubscribes_from_project_open_context()
+    {
+        var dispatcher = new CapturingUiDispatcher(hasAccess: false);
+        var projectOpenSessions = new ProjectOpenSessionSnapshotSource();
+        var viewModel = CreateMainWindowViewModel(
+            uiDispatcher: dispatcher,
+            projectOpenSessions: projectOpenSessions);
+
+        viewModel.Dispose();
+        projectOpenSessions.Publish(CreateReadyProjectOpenSnapshot());
+
+        Assert.Equal(0, dispatcher.PostCount);
+        Assert.Equal("No project", viewModel.ProjectDisplayName);
     }
 
     [Fact]
@@ -808,11 +851,15 @@ public sealed class MainWindowViewModelTests
         IEditorBackgroundTaskService? backgroundTasks = null,
         IEditorUiDispatcher? uiDispatcher = null,
         IEditorLifecycleEventService? lifecycleEvents = null,
-        IEditorDiagnosticService? diagnostics = null)
+        IEditorDiagnosticService? diagnostics = null,
+        IProjectOpenSessionSnapshotSource? projectOpenSessions = null)
     {
         uiDispatcher ??= new CapturingUiDispatcher(hasAccess: true);
         diagnostics ??= new EditorDiagnosticService();
-        var composition = CreateDefaultComposition(diagnostics: diagnostics);
+        projectOpenSessions ??= new ProjectOpenSessionSnapshotSource();
+        var composition = CreateDefaultComposition(
+            diagnostics: diagnostics,
+            projectOpenSessions: projectOpenSessions);
 
         return new MainWindowViewModel(
             composition.PanelRegistry,
@@ -821,15 +868,29 @@ public sealed class MainWindowViewModelTests
             backgroundTasks: backgroundTasks,
             uiDispatcher: uiDispatcher,
             lifecycleEvents: lifecycleEvents,
-            diagnostics: diagnostics);
+            diagnostics: diagnostics,
+            projectOpenSessions: projectOpenSessions);
     }
 
     private static EditorExtensionComposition CreateDefaultComposition(
         IEditorSelectionService? selectionService = null,
-        IEditorDiagnosticService? diagnostics = null)
+        IEditorDiagnosticService? diagnostics = null,
+        IProjectOpenSessionSnapshotSource? projectOpenSessions = null)
     {
-        return StudioCompositionRoot.CreateDefaultComposition(selectionService, diagnostics);
+        return StudioCompositionRoot.CreateDefaultComposition(
+            selectionService,
+            diagnostics,
+            projectOpenSessions);
     }
+
+    private static ProjectOpenSessionSnapshot CreateReadyProjectOpenSnapshot() =>
+        new(
+            ProjectOpenSessionState.Ready,
+            ProjectOpenNextAction.ActivateProjectProfile,
+            new ProjectOpenSummarySnapshot(
+                "Example",
+                Guid.Parse("7b535774-005d-47ff-90d7-83165df8bac8"),
+                assetSourceRootCount: 1));
 
     private sealed class CapturingUiDispatcher(bool hasAccess) : IEditorUiDispatcher
     {

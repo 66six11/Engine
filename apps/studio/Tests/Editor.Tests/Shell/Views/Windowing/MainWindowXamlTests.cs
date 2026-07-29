@@ -49,6 +49,7 @@ public sealed class MainWindowXamlTests
         Assert.Contains("Title=\"{Binding WindowTitle}\"", xaml);
         Assert.Contains("Classes=\"workbench-bar\"", xaml);
         Assert.Contains("Text=\"{Binding ProjectDisplayName}\"", xaml);
+        Assert.Contains("ToolTip.Tip=\"{Binding ProjectOpenStatusText}\"", xaml);
         Assert.Contains("Text=\"{Binding DocumentDisplayName}\"", xaml);
         Assert.Contains("Text=\"{Binding SelectionSummary}\"", xaml);
         Assert.Contains("Text=\"{Binding EditorModeText}\"", xaml);

@@ -1,6 +1,6 @@
 # 整体路线图
 
-更新日期：2026-07-13
+更新日期：2026-07-29
 
 本文是全项目下一阶段的唯一**功能阶段路线图**；目标系统框架、package/target 收敛方向、跨系统契约和架构迁移门禁见 `docs/planning/system-architecture-roadmap.md`，Kernel、Host Runtime、Foundation Systems、scope/activation 和基础门禁见 `docs/architecture/foundation-framework.md`。RenderGraph 当前语义见 `docs/rendergraph/mvp.md` 与 `docs/rendergraph/rhi-boundary.md`，可编程管线边界见 `docs/rendergraph/programmable-pipeline.md`；Editor 当前事实见 `docs/architecture/editor.md`；资产系统见 `docs/systems/asset-architecture.md`；shader/material authoring 见 `docs/systems/shader-material-authoring.md` 及 V2 specs。实际 Slice 顺序、状态、阻塞和 Done evidence 维护在 GitHub Issues / Project，不在本文重复。
 
@@ -10,7 +10,7 @@
 
 - 已有 package-first 基线：`rendergraph` 后端无关，`rhi-vulkan` 不依赖 RenderGraph，Vulkan/RG 翻译在 `rhi_vulkan_rendergraph`，`renderer_basic` 不暴露 Vulkan。
 - Vulkan 主路径已覆盖 dynamic rendering、synchronization2 barrier、descriptor/pipeline wrapper、transient image pool、buffer upload、compute dispatch、offscreen RenderView、Frame Debug replay 和 editor viewport sampled texture。
-- Editor 已具备 production workbench shell、Scene View camera/grid/debug-line、Live RG View、Frame Debugger、Asset Browser snapshot-backed catalog 和多项 smoke；Avalonia Studio 已有 Shell-owned Workbench Bar、Default/Compact layout preset、Project 明确空状态以及 Hierarchy -> Inspector/Workbench Bar selection 联动；UI-neutral project-open session snapshot 与 canonical bootstrap report parser 已落地，但尚未连接正式 report source、Shell project 状态或真实 project/asset service。
+- Editor 已具备 production workbench shell、Scene View camera/grid/debug-line、Live RG View、Frame Debugger、Asset Browser snapshot-backed catalog 和多项 smoke；Avalonia Studio 已有 Shell-owned Workbench Bar、Default/Compact layout preset、Hierarchy -> Inspector/Workbench Bar selection 联动，以及由共享 UI-neutral source 驱动的 project-open Shell/Project 状态投影；canonical bootstrap report parser 已落地，但尚未连接正式 report provider、project selection/action 或真实 project/asset service。
 - `asset-core` / `asset-pipeline` / `project-core` / `material-core` / `scene-core` 已是 CPU/headless 数据模型或 baseline package，但尚未形成“真实 scene object -> material/mesh/texture product -> GPU resource -> editor authoring”的完整闭环。
 - 当前风险不是缺少大系统名词，而是 route 太多：渲染、资产、scene、editor、material、play/session 必须按可验证切片合流。
 

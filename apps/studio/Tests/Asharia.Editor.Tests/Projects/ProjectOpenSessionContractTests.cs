@@ -17,6 +17,7 @@ public sealed class ProjectOpenSessionContractTests
             typeof(ProjectOpenSessionDiagnosticSnapshot),
             typeof(ProjectOpenSummarySnapshot),
             typeof(ProjectOpenSessionSnapshot),
+            typeof(IProjectOpenSessionSnapshotSource),
         };
 
         Assert.All(

@@ -174,6 +174,10 @@ UI 不直接“同步写模型再等待系统追认”。新 revision 是 mutati
 - selection、transaction、dirty、diagnostic、background task、panel scheduler 和 lifecycle snapshot 已有公共或迁移中合同；
 - `Asharia.Editor.Projects` 已有 UI-neutral project-open session snapshot，`Asharia.Studio.Application` 已有
   canonical bootstrap report 的严格 parser；两者都不拥有文件 IO、进程启动或 UI；
+- `IProjectOpenSessionSnapshotSource` 只向 Presentation 暴露当前不可变 snapshot 与变更通知；
+  `ProjectOpenSessionSnapshotSource` 在 Application 内负责内存发布，composition root 把同一实例交给 Shell 与 Project panel；
+- Project-open event callback 通过现有 UI dispatcher 更新 ViewModel，panel/window dispose 时退订；source 不依赖 Avalonia，
+  ViewModel 也不读取报告文件或执行 project-open 动作；
 - built-in XAML View 已使用 Avalonia + MVVM，但公开 `Asharia.Editor.Avalonia` content backend 尚未落地。
 
 ### 5.2 迁移目标
@@ -579,6 +583,20 @@ open project
 
 Project-open session contract（#341）已作为 F1 与后续真实 Project UI 之间的独立前置 Slice 完成：
 Presentation 只消费 Application 提供的 snapshot，不读取报告文件、不运行 bootstrap，也不自行归约状态。
+
+Project-open workbench consumer（#343）在该边界上只增加一条单向状态路径：
+
+```text
+Application publication source
+  -> IProjectOpenSessionSnapshotSource
+  -> MainWindow / ProjectPanel ViewModel
+  -> compiled Avalonia binding
+```
+
+Shell 与 Project panel 共享同一 source；Ready 只显示 canonical project name 和“bootstrap ready”，不提升为
+`ProjectReady`。全部 next action 在没有真实 application service 时保持 disabled。session diagnostic 先在
+Project panel 就地显示首项；当前 Problems service 是 append-only，尚无 replace-by-source 语义，因此本阶段不复制，
+避免同一 project-open 状态产生过期或重复问题记录。
 
 ### F3：第一个 writable property
 
