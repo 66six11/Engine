@@ -2,7 +2,7 @@
 
 状态：Target（迁移中）
 
-更新日期：2026-07-11
+更新日期：2026-07-30
 
 ## 1. 目的
 
@@ -215,14 +215,42 @@ Engine/renderer capability publish 单调 Epoch。DeviceLost 先撤销旧 epoch 
 ### Panel instance
 
 ```text
-Created -> Attached -> Activated
-Activated -> Deactivated
-Deactivated -> Activated | Detached
-Detached -> Attached | Disposed
-Created | Attached | Deactivated -> Disposed
+Lease:      Created -> Attached -> Detached -> Attached | Disposed
+Visibility: Hidden <-> Shown
+Activation: Inactive <-> Active
 ```
 
-`KeepAlive` 的 Detach 是可逆状态；重新打开时，同一 content lease 可以再次 Attached/Activated。`RecreateOnOpen`、module reload、Project close 和 Application close 才进入 terminal Dispose。Dock move、float 和 reorder 不等价于 Detach。只有 logical host 关系结束时才 detach。
+三个维度由 Host 分别拥有：
+
+- Open/Close 是 Shell command，不复制成 `OnOpen`/`OnClose` callback。Open 建立 logical host
+  关系并产生 Attach；Close 先撤销 activation/visibility，再产生 Detach。
+- Shown 表示该 tab 是所在 Dock window 当前选中的可见内容。非当前 tab 即使仍 Attached，也必须是 Hidden。
+- Active 表示 workspace 的 command/focus target。Active 必须同时 Shown；窗口内的 tab 选择与 workspace
+  activation 是不同状态。主窗口和浮动窗口初始均为 Inactive，只能由真实 top-level
+  Activated/Deactivated 事件改变；创建 ViewModel 或恢复布局本身不得产生虚假 focus pulse。
+- `LayoutChanged` 是布局完成后的通知，不是 lifetime 状态。Host 将 arrange、DPI 与 tab 切换合并为
+  layout/render 之后的一次 UI dispatcher 通知，再读取当前 logical width、logical height 和 render
+  scale；快速连续变化只发布最新状态，detach 会取消旧 Host 的待处理通知。Shown panel 对三者完全相同的
+  重复结果继续在 tab 边界去重。
+
+典型打开顺序是 `Attached -> Shown -> Active`；关闭顺序是
+`Inactive -> Hidden -> Detached`。非活动 Dock window 的选中 tab 可以是 Shown + Inactive。
+
+`KeepAlive` 的 Detach 是可逆状态；重新打开时，同一 content lease 可以再次 Attached。`RecreateOnOpen`、
+module reload、Project close 和 Application close 才进入 terminal Dispose。Dock move、float 和 reorder
+不等价于 Detach。只有 logical host 关系结束时才 detach。
+
+同一 Studio window session 的 main/floating workspace 共享 panel instance manager 与 frame scheduler。
+main workspace 是唯一 owner，floating workspace 只借用；shutdown 先 best-effort 关闭全部 floating
+workspace，再由 main workspace 一次性释放 manager。不同 session 的 workspace 不允许直接搬移 tab。
+
+生命周期 callback 是通知，不拥有 Host 状态迁移。callback 抛出异常时，Host 仍须完成 scheduler 清理、
+Hide、Detach 与 release/dispose；只有一个失败时保留原异常，多阶段失败时按发生顺序抛出
+`AggregateException`。同一 release token 即使清理失败也只消费一次，避免重复释放 content lease。
+Host 只批处理已知 callback/release 边界；collection、layout graph 与 Add/Insert 等结构操作仍 fail-fast，
+不得把结构错误当作可忽略 callback 后继续执行。Attach 失败会先撤销 scheduler 注册并释放新 lease，
+再报告原始或聚合错误。异步 layout 通知在 UI dispatcher 边界隔离并报告 extension callback 异常，
+不得让异常逃出 dispatcher；shutdown/close 则完成其余 Host cleanup 后在边界末尾报告聚合错误。
 
 ### Module generation
 

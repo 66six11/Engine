@@ -115,6 +115,198 @@ public sealed class EditorDockWorkspaceViewModelTests
     }
 
     [Fact]
+    public void CloseTab_hide_failure_still_removes_and_releases_panel_once()
+    {
+        var content = new ThrowingWorkspacePanelSink();
+        var workspace = new EditorDockWorkspaceViewModel(CreateRegistry(
+            "panel",
+            DockContentCachePolicy.RecreateOnOpen,
+            () => content));
+        var tab = workspace.CenterWindow.Tabs.Single();
+        content.ThrowOnHidden = true;
+
+        var exception = Assert.Throws<InvalidOperationException>(
+            () => workspace.CloseTab(tab));
+
+        Assert.Same(content.HiddenFailure, exception);
+        Assert.False(workspace.ContainsPanel("panel"));
+        Assert.Equal(1, content.DisposeCount);
+        Assert.Empty(workspace.PanelFrameScheduler.Tick(DateTimeOffset.UnixEpoch));
+        Assert.False(workspace.CloseTab(tab));
+        Assert.Equal(1, content.DisposeCount);
+    }
+
+    [Fact]
+    public void Constructor_show_failure_releases_created_panel_content()
+    {
+        var content = new ThrowingWorkspacePanelSink
+        {
+            ThrowOnShown = true,
+        };
+
+        var exception = Assert.Throws<InvalidOperationException>(
+            () => new EditorDockWorkspaceViewModel(CreateRegistry(
+                "panel",
+                DockContentCachePolicy.RecreateOnOpen,
+                () => content)));
+
+        Assert.Same(content.ShownFailure, exception);
+        Assert.Equal(1, content.DisposeCount);
+    }
+
+    [Fact]
+    public void Floating_restore_show_failure_releases_created_panel_content()
+    {
+        var content = new ThrowingWorkspacePanelSink
+        {
+            ThrowOnShown = true,
+        };
+        var registry = new PanelRegistry();
+        registry.Register(CreateDescriptor(
+            "main-panel",
+            DockContentCachePolicy.KeepAlive,
+            () => new object()));
+        registry.Register(CreateDescriptor(
+            "floating-panel",
+            DockContentCachePolicy.RecreateOnOpen,
+            () => content));
+        var mainWorkspace = new EditorDockWorkspaceViewModel(
+            registry,
+            lifecycleEvents: null,
+            panelFrameScheduler: null,
+            defaultLayoutFactory: () => CreateSinglePanelLayoutSnapshot(
+                "main-panel",
+                "main-window"));
+
+        var exception = Assert.Throws<InvalidOperationException>(
+            () => mainWorkspace.TryCreateFloatingWorkspace(
+                CreateFloatingWindowSnapshot(
+                    "floating-panel",
+                    "floating-window"),
+                out _));
+
+        Assert.Same(content.ShownFailure, exception);
+        Assert.Equal(1, content.DisposeCount);
+        Assert.True(mainWorkspace.ContainsPanel("main-panel"));
+    }
+
+    [Fact]
+    public void Floating_restore_attach_failure_releases_earlier_tabs_in_same_window()
+    {
+        var goodContent = new ThrowingWorkspacePanelSink();
+        var failingContent = new ThrowingWorkspacePanelSink
+        {
+            ThrowOnAttached = true,
+        };
+        var registry = new PanelRegistry();
+        registry.Register(CreateDescriptor(
+            "main-panel",
+            DockContentCachePolicy.KeepAlive,
+            () => new object()));
+        registry.Register(CreateDescriptor(
+            "good-panel",
+            DockContentCachePolicy.RecreateOnOpen,
+            () => goodContent));
+        registry.Register(CreateDescriptor(
+            "failing-panel",
+            DockContentCachePolicy.RecreateOnOpen,
+            () => failingContent));
+        var mainWorkspace = new EditorDockWorkspaceViewModel(
+            registry,
+            lifecycleEvents: null,
+            panelFrameScheduler: null,
+            defaultLayoutFactory: () => CreateSinglePanelLayoutSnapshot(
+                "main-panel",
+                "main-window"));
+        var snapshot = CreateFloatingWindowSnapshot(
+            "good-panel",
+            "floating-window");
+        snapshot.Root!.TabIds = ["good-panel", "failing-panel"];
+
+        var exception = Assert.Throws<InvalidOperationException>(
+            () => mainWorkspace.TryCreateFloatingWorkspace(snapshot, out _));
+
+        Assert.Same(failingContent.AttachedFailure, exception);
+        Assert.Equal(1, goodContent.DetachedCount);
+        Assert.Equal(1, goodContent.DisposeCount);
+        Assert.Equal(1, failingContent.DetachedCount);
+        Assert.Equal(1, failingContent.DisposeCount);
+    }
+
+    [Fact]
+    public void ResetLayout_releases_all_panels_before_reporting_lifecycle_failures()
+    {
+        var first = new ThrowingWorkspacePanelSink();
+        var second = new ThrowingWorkspacePanelSink();
+        var firstReplacement = new object();
+        var secondReplacement = new object();
+        var firstFactory = new QueueContentFactory(first, firstReplacement);
+        var secondFactory = new QueueContentFactory(second, secondReplacement);
+        var registry = new PanelRegistry();
+        registry.Register(CreateDescriptor(
+            "first",
+            DockContentCachePolicy.RecreateOnOpen,
+            firstFactory.Create));
+        registry.Register(CreateDescriptor(
+            "second",
+            DockContentCachePolicy.RecreateOnOpen,
+            secondFactory.Create));
+        var workspace = new EditorDockWorkspaceViewModel(registry);
+        first.ThrowOnHidden = true;
+        second.ThrowOnDetached = true;
+        second.ThrowOnDispose = true;
+
+        var exception = Assert.Throws<AggregateException>(workspace.ResetLayout);
+
+        Assert.Collection(
+            exception.InnerExceptions,
+            item => Assert.Same(first.HiddenFailure, item),
+            item => Assert.Same(second.DetachedFailure, item),
+            item => Assert.Same(second.DisposeFailure, item));
+        Assert.Equal(1, first.DisposeCount);
+        Assert.Equal(1, second.DisposeCount);
+        Assert.Same(
+            firstReplacement,
+            workspace.CenterWindow.Tabs.Single(tab => tab.Id == "first").Content);
+        Assert.Same(
+            secondReplacement,
+            workspace.CenterWindow.Tabs.Single(tab => tab.Id == "second").Content);
+    }
+
+    [Fact]
+    public void Dispose_attempts_all_keep_alive_panels_and_is_idempotent_after_failures()
+    {
+        var first = new ThrowingWorkspacePanelSink();
+        var second = new ThrowingWorkspacePanelSink();
+        var registry = new PanelRegistry();
+        registry.Register(CreateDescriptor(
+            "first",
+            DockContentCachePolicy.KeepAlive,
+            () => first));
+        registry.Register(CreateDescriptor(
+            "second",
+            DockContentCachePolicy.KeepAlive,
+            () => second));
+        var workspace = new EditorDockWorkspaceViewModel(registry);
+        first.ThrowOnDispose = true;
+        second.ThrowOnDispose = true;
+
+        var exception = Assert.Throws<AggregateException>(workspace.Dispose);
+
+        Assert.Collection(
+            exception.InnerExceptions,
+            item => Assert.Same(first.DisposeFailure, item),
+            item => Assert.Same(second.DisposeFailure, item));
+        Assert.Equal(1, first.DisposeCount);
+        Assert.Equal(1, second.DisposeCount);
+        Assert.False(workspace.HasDockContent());
+
+        workspace.Dispose();
+        Assert.Equal(1, first.DisposeCount);
+        Assert.Equal(1, second.DisposeCount);
+    }
+
+    [Fact]
     public void Dispose_releases_hierarchy_snapshot_subscription_created_through_panel_instance_manager()
     {
         var provider = new InMemorySceneSnapshotProvider(new SceneSnapshot(
@@ -184,6 +376,123 @@ public sealed class EditorDockWorkspaceViewModelTests
     }
 
     [Fact]
+    public void Host_focus_deactivates_and_reactivates_shown_panel()
+    {
+        var events = new List<string>();
+        var content = new RecordingPanelLifecycleSink("content", events);
+        var workspace = new EditorDockWorkspaceViewModel(CreateRegistry(
+            "panel",
+            DockContentCachePolicy.KeepAlive,
+            () => content));
+        var tab = workspace.CenterWindow.Tabs.Single();
+        events.Clear();
+
+        workspace.SetHostFocusState(false);
+        workspace.SetHostFocusState(false);
+        workspace.SetHostFocusState(true);
+
+        Assert.Equal(
+            [
+                "content:Deactivated:panel:Center:Main",
+                "content:Activated:panel:Center:Main",
+            ],
+            events);
+        Assert.True(tab.IsActive);
+        Assert.Same(tab, workspace.CenterWindow.ActiveTab);
+    }
+
+    [Fact]
+    public void Activating_window_while_unfocused_defers_panel_activation_until_focus_returns()
+    {
+        var events = new List<string>();
+        var center = new RecordingPanelLifecycleSink("center", events);
+        var left = new RecordingPanelLifecycleSink("left", events);
+        var registry = new PanelRegistry();
+        registry.Register(CreateDescriptor(
+            "center",
+            DockContentCachePolicy.KeepAlive,
+            () => center));
+        registry.Register(CreateDescriptor(
+            "left",
+            DockContentCachePolicy.KeepAlive,
+            () => left,
+            EditorDockArea.Left));
+        var workspace = new EditorDockWorkspaceViewModel(registry);
+        var leftTab = workspace.LeftWindow.Tabs.Single();
+        events.Clear();
+
+        workspace.SetHostFocusState(false);
+        workspace.ActivateTab(leftTab);
+
+        Assert.Equal(
+            ["center:Deactivated:center:Center:Main"],
+            events);
+        Assert.Same(workspace.LeftWindow, workspace.ActiveWindow);
+
+        workspace.SetHostFocusState(true);
+
+        Assert.Equal(
+            [
+                "center:Deactivated:center:Center:Main",
+                "left:Activated:left:Left:Main",
+            ],
+            events);
+    }
+
+    [Fact]
+    public void Floating_host_focus_uses_floating_panel_lifecycle_context()
+    {
+        var events = new List<string>();
+        var content = new RecordingPanelLifecycleSink("content", events);
+        var sourceWorkspace = new EditorDockWorkspaceViewModel(CreateRegistry(
+            "panel",
+            DockContentCachePolicy.KeepAlive,
+            () => content));
+        var tab = sourceWorkspace.CenterWindow.Tabs.Single();
+        var target = new EditorDockDropTarget(
+            EditorDockDropOperation.Float,
+            EditorDockDropGuideKind.Float,
+            TargetArea: null,
+            TargetId: null,
+            PreviewBounds: new Rect(24, 32, 320, 220),
+            Label: "Float window");
+        sourceWorkspace.BeginDrag(tab);
+        var request = Assert.IsType<EditorDockFloatingWindowRequest>(
+            sourceWorkspace.CompleteDrag(target));
+        events.Clear();
+
+        request.Window.DockWorkspace.SetHostFocusState(true);
+        request.Window.DockWorkspace.SetHostFocusState(false);
+
+        Assert.Equal(
+            [
+                "content:Activated:panel:Center:Floating",
+                "content:Deactivated:panel:Center:Floating",
+            ],
+            events);
+    }
+
+    [Fact]
+    public void Host_focus_change_completes_state_before_reporting_lifecycle_failure()
+    {
+        var content = new ThrowingWorkspacePanelSink();
+        var workspace = new EditorDockWorkspaceViewModel(CreateRegistry(
+            "panel",
+            DockContentCachePolicy.KeepAlive,
+            () => content));
+        var tabStripItem = workspace.CenterWindow.TabStripItems.Single();
+        content.ThrowOnDeactivated = true;
+
+        var exception = Assert.Throws<InvalidOperationException>(
+            () => workspace.SetHostFocusState(false));
+
+        Assert.Same(content.DeactivatedFailure, exception);
+        Assert.False(workspace.IsHostFocused);
+        Assert.True(tabStripItem.IsSelectedInInactiveWindow);
+        Assert.Empty(workspace.PanelFrameScheduler.Tick(DateTimeOffset.UnixEpoch));
+    }
+
+    [Fact]
     public void ActivateTab_moves_active_window_to_tab_owner()
     {
         var registry = new PanelRegistry();
@@ -237,6 +546,190 @@ public sealed class EditorDockWorkspaceViewModelTests
     }
 
     [Fact]
+    public void ActivatePanel_completes_active_window_transition_before_aggregating_callbacks()
+    {
+        var center = new ThrowingWorkspacePanelSink();
+        var left = new ThrowingWorkspacePanelSink();
+        var registry = new PanelRegistry();
+        registry.Register(CreateDescriptor(
+            "center",
+            DockContentCachePolicy.KeepAlive,
+            () => center));
+        registry.Register(CreateDescriptor(
+            "left",
+            DockContentCachePolicy.KeepAlive,
+            () => left,
+            EditorDockArea.Left));
+        var workspace = new EditorDockWorkspaceViewModel(registry);
+        center.ThrowOnDeactivated = true;
+        left.ThrowOnActivated = true;
+
+        var exception = Assert.Throws<AggregateException>(
+            () => workspace.ActivatePanel("left"));
+
+        Assert.Collection(
+            exception.InnerExceptions,
+            item => Assert.Same(center.DeactivatedFailure, item),
+            item => Assert.Same(left.ActivatedFailure, item));
+        Assert.Same(workspace.LeftWindow, workspace.ActiveWindow);
+        Assert.Equal("left", workspace.ActiveWindow?.ActiveTab?.Id);
+        var frame = Assert.Single(
+            workspace.PanelFrameScheduler.Tick(DateTimeOffset.UnixEpoch));
+        Assert.Equal("left", frame.Panel.PanelId);
+    }
+
+    [Fact]
+    public void Cross_window_move_completes_rehost_before_reporting_hide_failure()
+    {
+        var source = new ThrowingWorkspacePanelSink();
+        var target = new ThrowingWorkspacePanelSink();
+        var registry = new PanelRegistry();
+        registry.Register(CreateDescriptor(
+            "source",
+            DockContentCachePolicy.KeepAlive,
+            () => source));
+        registry.Register(CreateDescriptor(
+            "target",
+            DockContentCachePolicy.KeepAlive,
+            () => target,
+            EditorDockArea.Left));
+        var workspace = new EditorDockWorkspaceViewModel(registry);
+        var sourceTab = workspace.CenterWindow.Tabs.Single();
+        workspace.BeginDrag(sourceTab);
+        source.ThrowOnHidden = true;
+        var dropTarget = new EditorDockDropTarget(
+            EditorDockDropOperation.TabInto,
+            EditorDockDropGuideKind.Merge,
+            TargetArea: EditorDockArea.Left,
+            TargetId: workspace.LeftWindow.Id,
+            PreviewBounds: default,
+            Label: "Left tab strip");
+
+        var exception = Assert.Throws<InvalidOperationException>(
+            () => workspace.CompleteDrag(dropTarget));
+
+        Assert.Same(source.HiddenFailure, exception);
+        Assert.DoesNotContain(sourceTab, workspace.CenterWindow.Tabs);
+        Assert.Contains(sourceTab, workspace.LeftWindow.Tabs);
+        Assert.Same(sourceTab, workspace.LeftWindow.ActiveTab);
+        Assert.Same(workspace.LeftWindow, workspace.ActiveWindow);
+        Assert.Equal(0, source.DisposeCount);
+        var frame = Assert.Single(
+            workspace.PanelFrameScheduler.Tick(DateTimeOffset.UnixEpoch));
+        Assert.Equal("source", frame.Panel.PanelId);
+    }
+
+    [Fact]
+    public void Float_hide_failure_rolls_tab_back_before_reporting_error()
+    {
+        var content = new ThrowingWorkspacePanelSink();
+        var workspace = new EditorDockWorkspaceViewModel(CreateRegistry(
+            "panel",
+            DockContentCachePolicy.KeepAlive,
+            () => content));
+        var tab = workspace.CenterWindow.Tabs.Single();
+        workspace.BeginDrag(tab);
+        content.ThrowOnHidden = true;
+        var dropTarget = new EditorDockDropTarget(
+            EditorDockDropOperation.Float,
+            EditorDockDropGuideKind.Float,
+            TargetArea: null,
+            TargetId: null,
+            PreviewBounds: new Rect(24, 32, 320, 220),
+            Label: "Float");
+
+        var exception = Assert.Throws<InvalidOperationException>(
+            () => workspace.CompleteDrag(dropTarget));
+
+        Assert.Same(content.HiddenFailure, exception);
+        Assert.Contains(tab, workspace.CenterWindow.Tabs);
+        Assert.Same(tab, workspace.CenterWindow.ActiveTab);
+        Assert.Same(workspace.CenterWindow, workspace.ActiveWindow);
+        Assert.Equal(0, content.DisposeCount);
+        var frame = Assert.Single(
+            workspace.PanelFrameScheduler.Tick(DateTimeOffset.UnixEpoch));
+        Assert.Equal("panel", frame.Panel.PanelId);
+    }
+
+    [Fact]
+    public void Float_show_failure_discards_candidate_and_restores_source_lease()
+    {
+        var content = new ThrowingWorkspacePanelSink();
+        var workspace = new EditorDockWorkspaceViewModel(CreateRegistry(
+            "panel",
+            DockContentCachePolicy.RecreateOnOpen,
+            () => content));
+        var tab = workspace.CenterWindow.Tabs.Single();
+        workspace.BeginDrag(tab);
+        content.ThrowOnFloatingShown = true;
+        var dropTarget = new EditorDockDropTarget(
+            EditorDockDropOperation.Float,
+            EditorDockDropGuideKind.Float,
+            TargetArea: null,
+            TargetId: null,
+            PreviewBounds: new Rect(24, 32, 320, 220),
+            Label: "Float");
+
+        var exception = Assert.Throws<InvalidOperationException>(
+            () => workspace.CompleteDrag(dropTarget));
+
+        Assert.Same(content.ShownFailure, exception);
+        Assert.Contains(tab, workspace.CenterWindow.Tabs);
+        Assert.Same(tab, workspace.CenterWindow.ActiveTab);
+        Assert.Same(workspace.CenterWindow, workspace.ActiveWindow);
+        var frame = Assert.Single(
+            workspace.PanelFrameScheduler.Tick(DateTimeOffset.UnixEpoch));
+        Assert.Equal("panel", frame.Panel.PanelId);
+        Assert.False(frame.Panel.IsFloatingWorkspace);
+        Assert.Equal(0, content.DisposeCount);
+
+        Assert.True(workspace.CloseTab(tab));
+        Assert.Equal(1, content.DisposeCount);
+        workspace.Dispose();
+        Assert.Equal(1, content.DisposeCount);
+    }
+
+    [Fact]
+    public void Float_failure_restores_tab_at_original_index()
+    {
+        var content = new ThrowingWorkspacePanelSink();
+        var registry = new PanelRegistry();
+        registry.Register(CreateDescriptor(
+            "first",
+            DockContentCachePolicy.KeepAlive,
+            () => new object()));
+        registry.Register(CreateDescriptor(
+            "middle",
+            DockContentCachePolicy.KeepAlive,
+            () => content));
+        registry.Register(CreateDescriptor(
+            "last",
+            DockContentCachePolicy.KeepAlive,
+            () => new object()));
+        var workspace = new EditorDockWorkspaceViewModel(registry);
+        var originalOrder = workspace.CenterWindow.Tabs.Select(tab => tab.Id).ToArray();
+        var tab = workspace.CenterWindow.Tabs.Single(candidate => candidate.Id == "middle");
+        workspace.BeginDrag(tab);
+        content.ThrowOnFloatingShown = true;
+        var dropTarget = new EditorDockDropTarget(
+            EditorDockDropOperation.Float,
+            EditorDockDropGuideKind.Float,
+            TargetArea: null,
+            TargetId: null,
+            PreviewBounds: new Rect(24, 32, 320, 220),
+            Label: "Float");
+
+        var exception = Assert.Throws<InvalidOperationException>(
+            () => workspace.CompleteDrag(dropTarget));
+
+        Assert.Same(content.ShownFailure, exception);
+        Assert.Equal(
+            originalOrder,
+            workspace.CenterWindow.Tabs.Select(candidate => candidate.Id));
+        Assert.Same(tab, workspace.CenterWindow.ActiveTab);
+    }
+
+    [Fact]
     public void CloseTab_deactivates_and_detaches_active_panel_before_disposal()
     {
         var events = new List<string>();
@@ -261,7 +754,7 @@ public sealed class EditorDockWorkspaceViewModelTests
     }
 
     [Fact]
-    public void Floating_active_tab_deactivates_main_panel_then_activates_floating_panel()
+    public void Floating_panel_stays_inactive_until_real_host_focus_arrives()
     {
         var events = new List<string>();
         var content = new RecordingPanelLifecycleSink("content", events);
@@ -286,6 +779,13 @@ public sealed class EditorDockWorkspaceViewModelTests
 
         Assert.NotNull(request);
         Assert.Equal(
+            ["content:Deactivated:panel:Center:Main"],
+            events);
+        Assert.False(request.Window.DockWorkspace.IsHostFocused);
+
+        request.Window.DockWorkspace.SetHostFocusState(true);
+
+        Assert.Equal(
             [
                 "content:Deactivated:panel:Center:Main",
                 "content:Activated:panel:Center:Floating",
@@ -296,38 +796,55 @@ public sealed class EditorDockWorkspaceViewModelTests
     }
 
     [Fact]
-    public void Cross_workspace_tab_into_deactivates_source_before_activating_target()
+    public void Session_child_tab_move_deactivates_target_before_activating_moved_panel()
     {
         var events = new List<string>();
         var sourceContent = new RecordingPanelLifecycleSink("source", events);
         var targetContent = new RecordingPanelLifecycleSink("target", events);
-        var sourceWorkspace = new EditorDockWorkspaceViewModel(CreateRegistry(
+        var registry = new PanelRegistry();
+        registry.Register(CreateDescriptor(
             "source-panel",
             DockContentCachePolicy.KeepAlive,
             () => sourceContent));
-        var targetWorkspace = new EditorDockWorkspaceViewModel(CreateRegistry(
+        registry.Register(CreateDescriptor(
             "target-panel",
             DockContentCachePolicy.KeepAlive,
             () => targetContent));
-        var sourceTab = sourceWorkspace.CenterWindow.Tabs.Single();
+        var sourceWorkspace = new EditorDockWorkspaceViewModel(registry);
+        var sourceTab = sourceWorkspace.CenterWindow.Tabs.Single(
+            tab => tab.Id == "source-panel");
+        var targetTab = sourceWorkspace.CenterWindow.Tabs.Single(
+            tab => tab.Id == "target-panel");
+        var floatTarget = new EditorDockDropTarget(
+            EditorDockDropOperation.Float,
+            EditorDockDropGuideKind.Float,
+            TargetArea: null,
+            TargetId: null,
+            PreviewBounds: new Rect(24, 32, 320, 220),
+            Label: "Float window");
+        sourceWorkspace.BeginDrag(targetTab);
+        var floatingRequest = Assert.IsType<EditorDockFloatingWindowRequest>(
+            sourceWorkspace.CompleteDrag(floatTarget));
+        var targetWorkspace = floatingRequest.Window.DockWorkspace;
+        sourceWorkspace.SetHostFocusState(false);
+        targetWorkspace.SetHostFocusState(true);
         var target = new EditorDockDropTarget(
             EditorDockDropOperation.TabInto,
             EditorDockDropGuideKind.Merge,
             TargetArea: EditorDockArea.Center,
-            TargetId: targetWorkspace.CenterWindow.Id,
+            TargetId: targetWorkspace.ActiveWindow?.Id,
             PreviewBounds: new Rect(0, 0, 320, 220),
             Label: "Target tab strip");
         events.Clear();
 
         sourceWorkspace.BeginDrag(sourceTab);
-        var request = sourceWorkspace.CompleteDragInto(targetWorkspace, target);
+        var moveRequest = sourceWorkspace.CompleteDragInto(targetWorkspace, target);
 
-        Assert.Null(request);
+        Assert.Null(moveRequest);
         Assert.Equal(
             [
-                "source:Deactivated:source-panel:Center:Main",
-                "target:Deactivated:target-panel:Center:Main",
-                "source:Activated:source-panel:Center:Main",
+                "target:Deactivated:target-panel:Center:Floating",
+                "source:Activated:source-panel:Center:Floating",
             ],
             events);
         Assert.DoesNotContain(events, candidate => candidate.Contains(":Detached:", StringComparison.Ordinal));
@@ -390,7 +907,7 @@ public sealed class EditorDockWorkspaceViewModelTests
     }
 
     [Fact]
-    public void Cross_workspace_drag_rehosts_panel_frame_scheduler()
+    public void Foreign_session_drag_is_rejected_without_moving_panel()
     {
         var sourceContent = new RecordingFrameUpdateSink(EditorPanelFrameUpdateRequest.Active());
         var sourceWorkspace = new EditorDockWorkspaceViewModel(CreateRegistry(
@@ -411,10 +928,13 @@ public sealed class EditorDockWorkspaceViewModelTests
             Label: "Target tab strip");
 
         sourceWorkspace.BeginDrag(sourceTab);
-        sourceWorkspace.CompleteDragInto(targetWorkspace, target);
+        var request = sourceWorkspace.CompleteDragInto(targetWorkspace, target);
         sourceWorkspace.PanelFrameScheduler.Tick(DateTimeOffset.UnixEpoch);
         targetWorkspace.PanelFrameScheduler.Tick(DateTimeOffset.UnixEpoch);
 
+        Assert.Null(request);
+        Assert.Contains(sourceTab, sourceWorkspace.CenterWindow.Tabs);
+        Assert.DoesNotContain(sourceTab, targetWorkspace.CenterWindow.Tabs);
         var frame = Assert.Single(sourceContent.Frames);
         Assert.Equal("source-panel", frame.Panel.PanelId);
     }
@@ -442,8 +962,91 @@ public sealed class EditorDockWorkspaceViewModelTests
 
         Assert.NotNull(request);
         Assert.Same(sourceWorkspace.PanelFrameScheduler, request.Window.DockWorkspace.PanelFrameScheduler);
+        request.Window.DockWorkspace.SetHostFocusState(true);
         sourceWorkspace.PanelFrameScheduler.Tick(DateTimeOffset.UnixEpoch);
         Assert.Single(content.Frames);
+    }
+
+    [Fact]
+    public void Restored_floating_panel_uses_session_scheduler_and_waits_for_host_focus()
+    {
+        var content = new RecordingLifecycleFrameSink();
+        var registry = new PanelRegistry();
+        registry.Register(CreateDescriptor(
+            "main-panel",
+            DockContentCachePolicy.KeepAlive,
+            () => new object()));
+        registry.Register(CreateDescriptor(
+            "floating-panel",
+            DockContentCachePolicy.KeepAlive,
+            () => content));
+        var mainWorkspace = new EditorDockWorkspaceViewModel(registry);
+        Assert.True(mainWorkspace.RestoreLayoutSnapshot(
+            CreateSinglePanelLayoutSnapshot("main-panel", "main-window")));
+        content.Events.Clear();
+
+        Assert.True(mainWorkspace.TryCreateFloatingWorkspace(
+            CreateFloatingWindowSnapshot("floating-panel", "floating-window"),
+            out var floatingWorkspace));
+
+        Assert.False(floatingWorkspace.IsHostFocused);
+        Assert.Same(
+            mainWorkspace.PanelFrameScheduler,
+            floatingWorkspace.PanelFrameScheduler);
+        Assert.Contains("attached:Floating", content.Events);
+        Assert.DoesNotContain("activated:Floating", content.Events);
+        mainWorkspace.PanelFrameScheduler.Tick(DateTimeOffset.UnixEpoch);
+        Assert.Empty(content.Frames);
+
+        floatingWorkspace.SetHostFocusState(true);
+        mainWorkspace.PanelFrameScheduler.Tick(DateTimeOffset.UnixEpoch);
+
+        Assert.Contains("activated:Floating", content.Events);
+        var frame = Assert.Single(content.Frames);
+        Assert.True(frame.Panel.IsFloatingWorkspace);
+    }
+
+    [Fact]
+    public void Restored_floating_tab_keeps_session_owned_content_when_source_closes()
+    {
+        var content = new RecordingDisposable();
+        var registry = new PanelRegistry();
+        registry.Register(CreateDescriptor(
+            "main-panel",
+            DockContentCachePolicy.KeepAlive,
+            () => new object()));
+        registry.Register(CreateDescriptor(
+            "floating-panel",
+            DockContentCachePolicy.KeepAlive,
+            () => content));
+        var mainWorkspace = new EditorDockWorkspaceViewModel(registry);
+        Assert.True(mainWorkspace.RestoreLayoutSnapshot(
+            CreateSinglePanelLayoutSnapshot("main-panel", "main-window")));
+        Assert.True(mainWorkspace.TryCreateFloatingWorkspace(
+            CreateFloatingWindowSnapshot("floating-panel", "floating-window"),
+            out var floatingWorkspace));
+        var tab = floatingWorkspace.ActiveWindow?.ActiveTab;
+        Assert.NotNull(tab);
+        var target = new EditorDockDropTarget(
+            EditorDockDropOperation.TabInto,
+            EditorDockDropGuideKind.Merge,
+            TargetArea: EditorDockArea.Center,
+            TargetId: mainWorkspace.ActiveWindow?.Id,
+            PreviewBounds: default,
+            Label: "Main");
+
+        floatingWorkspace.BeginDrag(tab);
+        floatingWorkspace.CompleteDragInto(mainWorkspace, target);
+        floatingWorkspace.Dispose();
+
+        Assert.False(content.IsDisposed);
+        Assert.Contains(tab, mainWorkspace.ActiveWindow?.Tabs ?? []);
+
+        Assert.True(mainWorkspace.CloseTab(tab));
+        Assert.False(content.IsDisposed);
+
+        mainWorkspace.Dispose();
+        Assert.Equal(1, content.DisposeCount);
     }
 
     [Fact]
@@ -756,6 +1359,50 @@ public sealed class EditorDockWorkspaceViewModelTests
             createContent);
     }
 
+    private static EditorDockLayoutSnapshot CreateSinglePanelLayoutSnapshot(
+        string panelId,
+        string windowId)
+    {
+        return new EditorDockLayoutSnapshot
+        {
+            Version = 1,
+            ActiveWindowId = windowId,
+            Root = CreateSinglePanelLayoutNode(panelId, windowId),
+        };
+    }
+
+    private static EditorDockFloatingWindowSnapshot CreateFloatingWindowSnapshot(
+        string panelId,
+        string windowId)
+    {
+        return new EditorDockFloatingWindowSnapshot
+        {
+            X = 16,
+            Y = 24,
+            Width = 480,
+            Height = 320,
+            ActiveWindowId = windowId,
+            Root = CreateSinglePanelLayoutNode(panelId, windowId),
+        };
+    }
+
+    private static EditorDockLayoutNodeSnapshot CreateSinglePanelLayoutNode(
+        string panelId,
+        string windowId)
+    {
+        return new EditorDockLayoutNodeSnapshot
+        {
+            Kind = "Window",
+            Id = $"node-{windowId}",
+            WindowId = windowId,
+            WindowTitle = panelId,
+            WindowArea = EditorDockArea.Center,
+            WindowRole = "Test",
+            TabIds = [panelId],
+            ActiveTabId = panelId,
+        };
+    }
+
     private sealed class CountingContentFactory
     {
         public int CreateCount { get; private set; }
@@ -827,6 +1474,162 @@ public sealed class EditorDockWorkspaceViewModelTests
         public void OnEditorPanelFrame(EditorPanelFrameContext context)
         {
             Frames.Add(context);
+        }
+    }
+
+    private sealed class RecordingLifecycleFrameSink :
+        IEditorPanelLifecycleSink,
+        IEditorPanelFrameUpdateSink
+    {
+        public List<string> Events { get; } = [];
+
+        public List<EditorPanelFrameContext> Frames { get; } = [];
+
+        public EditorPanelFrameUpdateRequest FrameUpdateRequest =>
+            EditorPanelFrameUpdateRequest.Active();
+
+        public void OnPanelAttached(EditorPanelLifecycleContext context)
+        {
+            Events.Add($"attached:{GetHostKind(context)}");
+        }
+
+        public void OnPanelActivated(EditorPanelLifecycleContext context)
+        {
+            Events.Add($"activated:{GetHostKind(context)}");
+        }
+
+        public void OnPanelDeactivated(EditorPanelLifecycleContext context)
+        {
+            Events.Add($"deactivated:{GetHostKind(context)}");
+        }
+
+        public void OnPanelDetached(EditorPanelLifecycleContext context)
+        {
+            Events.Add($"detached:{GetHostKind(context)}");
+        }
+
+        public void OnEditorPanelFrame(EditorPanelFrameContext context)
+        {
+            Frames.Add(context);
+        }
+
+        private static string GetHostKind(EditorPanelLifecycleContext context)
+        {
+            return context.IsFloatingWorkspace ? "Floating" : "Main";
+        }
+    }
+
+    private sealed class ThrowingWorkspacePanelSink :
+        IEditorPanelLifecycleSink,
+        IEditorPanelVisibilitySink,
+        IEditorPanelFrameUpdateSink,
+        IDisposable
+    {
+        public InvalidOperationException ActivatedFailure { get; } =
+            new("activated failure");
+
+        public InvalidOperationException AttachedFailure { get; } =
+            new("attached failure");
+
+        public InvalidOperationException DeactivatedFailure { get; } =
+            new("deactivated failure");
+
+        public InvalidOperationException HiddenFailure { get; } =
+            new("hidden failure");
+
+        public InvalidOperationException ShownFailure { get; } =
+            new("shown failure");
+
+        public InvalidOperationException DetachedFailure { get; } =
+            new("detached failure");
+
+        public InvalidOperationException DisposeFailure { get; } =
+            new("dispose failure");
+
+        public bool ThrowOnActivated { get; set; }
+
+        public bool ThrowOnAttached { get; set; }
+
+        public bool ThrowOnFloatingShown { get; set; }
+
+        public bool ThrowOnShown { get; set; }
+
+        public bool ThrowOnDeactivated { get; set; }
+
+        public bool ThrowOnHidden { get; set; }
+
+        public bool ThrowOnDetached { get; set; }
+
+        public bool ThrowOnDispose { get; set; }
+
+        public int DisposeCount { get; private set; }
+
+        public int DetachedCount { get; private set; }
+
+        public EditorPanelFrameUpdateRequest FrameUpdateRequest =>
+            EditorPanelFrameUpdateRequest.Active();
+
+        public void OnPanelAttached(EditorPanelLifecycleContext context)
+        {
+            if (ThrowOnAttached)
+            {
+                throw AttachedFailure;
+            }
+        }
+
+        public void OnPanelActivated(EditorPanelLifecycleContext context)
+        {
+            if (ThrowOnActivated)
+            {
+                throw ActivatedFailure;
+            }
+        }
+
+        public void OnPanelDeactivated(EditorPanelLifecycleContext context)
+        {
+            if (ThrowOnDeactivated)
+            {
+                throw DeactivatedFailure;
+            }
+        }
+
+        public void OnPanelDetached(EditorPanelLifecycleContext context)
+        {
+            DetachedCount++;
+            if (ThrowOnDetached)
+            {
+                throw DetachedFailure;
+            }
+        }
+
+        public void OnPanelShown(EditorPanelLifecycleContext context)
+        {
+            if (ThrowOnShown
+                || (ThrowOnFloatingShown && context.IsFloatingWorkspace))
+            {
+                throw ShownFailure;
+            }
+        }
+
+        public void OnPanelHidden(EditorPanelLifecycleContext context)
+        {
+            if (ThrowOnHidden)
+            {
+                throw HiddenFailure;
+            }
+        }
+
+        public void OnEditorPanelFrame(EditorPanelFrameContext context)
+        {
+        }
+
+        public void Dispose()
+        {
+            DisposeCount++;
+            if (ThrowOnDispose)
+            {
+                throw DisposeFailure;
+            }
         }
     }
 

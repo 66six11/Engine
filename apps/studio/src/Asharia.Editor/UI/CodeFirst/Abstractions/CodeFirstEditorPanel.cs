@@ -15,9 +15,20 @@ public abstract class CodeFirstEditorPanel : ICodeFirstEditorPanelHost
 
     void ICodeFirstEditorPanelHost.Enable() => OnEnable();
 
+    void ICodeFirstEditorPanelHost.Show() => OnShown();
+
+    void ICodeFirstEditorPanelHost.Activate() => OnActivated();
+
     void ICodeFirstEditorPanelHost.BuildGui(EditorGui gui) => OnGui(gui);
 
     void ICodeFirstEditorPanelHost.Frame(EditorPanelFrameContext context) => OnFrame(context);
+
+    void ICodeFirstEditorPanelHost.LayoutChanged(EditorPanelLayoutContext context) =>
+        OnLayoutChanged(context);
+
+    void ICodeFirstEditorPanelHost.Deactivate() => OnDeactivated();
+
+    void ICodeFirstEditorPanelHost.Hide() => OnHidden();
 
     void ICodeFirstEditorPanelHost.Disable() => OnDisable();
 
@@ -31,9 +42,29 @@ public abstract class CodeFirstEditorPanel : ICodeFirstEditorPanelHost
     {
     }
 
+    protected virtual void OnShown()
+    {
+    }
+
+    protected virtual void OnActivated()
+    {
+    }
+
     protected abstract void OnGui(EditorGui gui);
 
     protected virtual void OnFrame(EditorPanelFrameContext context)
+    {
+    }
+
+    protected virtual void OnLayoutChanged(EditorPanelLayoutContext context)
+    {
+    }
+
+    protected virtual void OnDeactivated()
+    {
+    }
+
+    protected virtual void OnHidden()
     {
     }
 

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using Asharia.Editor.Panels;
 using Asharia.Studio.Application.Panels;
 using Editor.Core.Models.Panels;
+using Editor.Shell.Lifecycle;
 using Editor.Shell.ViewModels.Docking;
 
 namespace Editor.Shell.Docking.Panels;
@@ -38,15 +39,29 @@ internal sealed class PanelInstanceManager : IDisposable
             descriptor.IconKey,
             new PanelInstanceRelease(this, descriptor, content),
             frameScheduler_);
-        tab.AttachPanelInstance(isFloatingWorkspace);
+        var exceptions = new CallbackExceptionBatch();
+        tab.AttachPanelInstance(isFloatingWorkspace, exceptions);
+        if (exceptions.HasExceptions)
+        {
+            tab.ReleasePanelInstance(exceptions);
+            exceptions.ThrowIfAny();
+        }
+
         return tab;
     }
 
     public void Dispose()
     {
+        var exceptions = new CallbackExceptionBatch();
+        Dispose(exceptions);
+        exceptions.ThrowIfAny();
+    }
+
+    internal void Dispose(CallbackExceptionBatch exceptions)
+    {
         foreach (var content in keptAliveContentByPanelId_.Values)
         {
-            DisposeContent(content);
+            exceptions.Capture(() => DisposeContent(content));
         }
 
         keptAliveContentByPanelId_.Clear();
@@ -109,8 +124,9 @@ internal sealed class PanelInstanceManager : IDisposable
 
         public void Dispose()
         {
-            manager_?.ReleaseTabContent(descriptor, content);
+            var owner = manager_;
             manager_ = null;
+            owner?.ReleaseTabContent(descriptor, content);
         }
     }
 }

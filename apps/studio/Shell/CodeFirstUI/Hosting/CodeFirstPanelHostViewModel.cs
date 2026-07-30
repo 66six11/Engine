@@ -11,6 +11,7 @@ using Asharia.Editor.UI.CodeFirst.State;
 using Asharia.Editor.UI.CodeFirst.Validation;
 using Editor.Core.Models.Panels;
 using Editor.Core.Models.Workbench;
+using Editor.Shell.Lifecycle;
 using Editor.Shell.CodeFirstUI.Adapters;
 using Editor.UI.ViewModels;
 
@@ -20,6 +21,8 @@ internal sealed class CodeFirstPanelHostViewModel :
     ViewModelBase,
     IGuiAvaloniaHost,
     IEditorPanelLifecycleSink,
+    IEditorPanelVisibilitySink,
+    IEditorPanelLayoutSink,
     IEditorPanelFrameUpdateSink,
     IDisposable
 {
@@ -34,6 +37,8 @@ internal sealed class CodeFirstPanelHostViewModel :
     private bool isCreated_;
     private bool isDisposed_;
     private bool isEnabled_;
+    private bool isShown_;
+    private bool isActivated_;
     private string? lastBuildErrorMessage_;
     private GuiTreeValidationResult lastValidationResult = GuiTreeValidationResult.Success;
     private EditorPanelLifecycleContext? lifecycleContext_;
@@ -346,7 +351,12 @@ internal sealed class CodeFirstPanelHostViewModel :
         ThrowIfDisposed();
 
         lifecycleContext_ = context;
-        RequestRebuild(GuiRebuildReason.LifecycleChanged);
+        var exceptions = new CallbackExceptionBatch();
+        exceptions.Capture(ShowPanel);
+        exceptions.Capture(ActivatePanel);
+        exceptions.Capture(
+            () => RequestRebuild(GuiRebuildReason.LifecycleChanged));
+        exceptions.ThrowIfAny();
     }
 
     public void OnPanelDeactivated(EditorPanelLifecycleContext context)
@@ -355,6 +365,48 @@ internal sealed class CodeFirstPanelHostViewModel :
         ThrowIfDisposed();
 
         lifecycleContext_ = context;
+        DeactivatePanel();
+    }
+
+    public void OnPanelShown(EditorPanelLifecycleContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ThrowIfDisposed();
+
+        lifecycleContext_ = context;
+        if (isShown_)
+        {
+            return;
+        }
+
+        var exceptions = new CallbackExceptionBatch();
+        exceptions.Capture(ShowPanel);
+        exceptions.Capture(
+            () => RequestRebuild(GuiRebuildReason.LifecycleChanged));
+        exceptions.ThrowIfAny();
+    }
+
+    public void OnPanelHidden(EditorPanelLifecycleContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ThrowIfDisposed();
+
+        lifecycleContext_ = context;
+        HidePanel();
+    }
+
+    public void OnPanelLayoutChanged(EditorPanelLayoutContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ThrowIfDisposed();
+
+        lifecycleContext_ = context.Panel;
+        if (!isEnabled_ || !isShown_)
+        {
+            return;
+        }
+
+        panelHost_.LayoutChanged(context);
     }
 
     public void OnPanelDetached(EditorPanelLifecycleContext context)
@@ -386,9 +438,11 @@ internal sealed class CodeFirstPanelHostViewModel :
             return;
         }
 
-        DisablePanel();
-        panelHost_.Destroy();
         isDisposed_ = true;
+        var exceptions = new CallbackExceptionBatch();
+        exceptions.Capture(DisablePanel);
+        exceptions.Capture(panelHost_.Destroy);
+        exceptions.ThrowIfAny();
     }
 
     internal void RequestRebuild(GuiRebuildReason reason)
@@ -479,8 +533,8 @@ internal sealed class CodeFirstPanelHostViewModel :
             return;
         }
 
-        panelHost_.Enable();
         isEnabled_ = true;
+        panelHost_.Enable();
     }
 
     private void DisablePanel()
@@ -490,8 +544,58 @@ internal sealed class CodeFirstPanelHostViewModel :
             return;
         }
 
-        panelHost_.Disable();
         isEnabled_ = false;
+        var exceptions = new CallbackExceptionBatch();
+        exceptions.Capture(HidePanel);
+        exceptions.Capture(panelHost_.Disable);
+        exceptions.ThrowIfAny();
+    }
+
+    private void ShowPanel()
+    {
+        if (!isEnabled_ || isShown_)
+        {
+            return;
+        }
+
+        isShown_ = true;
+        panelHost_.Show();
+    }
+
+    private void HidePanel()
+    {
+        if (!isShown_)
+        {
+            return;
+        }
+
+        isShown_ = false;
+        var exceptions = new CallbackExceptionBatch();
+        exceptions.Capture(DeactivatePanel);
+        exceptions.Capture(panelHost_.Hide);
+        exceptions.ThrowIfAny();
+    }
+
+    private void ActivatePanel()
+    {
+        if (!isEnabled_ || isActivated_)
+        {
+            return;
+        }
+
+        isActivated_ = true;
+        panelHost_.Activate();
+    }
+
+    private void DeactivatePanel()
+    {
+        if (!isActivated_)
+        {
+            return;
+        }
+
+        isActivated_ = false;
+        panelHost_.Deactivate();
     }
 
     private void ThrowIfDisposed()

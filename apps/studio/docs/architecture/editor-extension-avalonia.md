@@ -67,11 +67,19 @@ public interface IAvaloniaContentLease : IAsyncDisposable
         AvaloniaContentHostContext context,
         CancellationToken cancellationToken);
 
+    ValueTask ShowAsync(CancellationToken cancellationToken);
+
     ValueTask ActivateAsync(CancellationToken cancellationToken);
+
+    ValueTask LayoutChangedAsync(
+        EditorPanelLayoutContext context,
+        CancellationToken cancellationToken);
 
     ValueTask DeactivateAsync(
         AvaloniaContentDeactivateReason reason,
         CancellationToken cancellationToken);
+
+    ValueTask HideAsync(CancellationToken cancellationToken);
 
     ValueTask DetachAsync(
         AvaloniaContentDetachReason reason,
@@ -81,17 +89,19 @@ public interface IAvaloniaContentLease : IAsyncDisposable
 
 Lease 同时拥有 Content 和 teardown。Host 拥有 panel container、Dock/Window binding 和 lease 调用顺序。
 
-生命周期是：
+生命周期分成三个正交维度；布局是 post-layout 通知，不是第四个状态轴：
 
 ```text
-Created -> Attached -> Activated
-Activated -> Deactivated
-Deactivated -> Activated | Detached
-Detached -> Attached | Disposed
-Created | Attached | Deactivated -> Disposed
+Lease:      Created -> Attached -> Detached -> Attached | Disposed
+Visibility: Hidden <-> Shown
+Activation: Inactive <-> Active
+Layout:     latest logical size + render scale after layout
 ```
 
-`Attach/Detach` 是可逆 host-binding transition，`DisposeAsync()` 是 terminal transition。Host 在 UI dispatcher 串行调用；每次成功 Attach 必须恰好对应一次 Detach，每次成功 Activate 必须恰好对应一次 Deactivate。取消或重复 close 不能造成 double subscription/double dispose。
+`Attach/Detach` 是可逆 host-binding transition，`DisposeAsync()` 是 terminal transition。Host
+在 UI dispatcher 串行调用；每次成功 Attach、Show、Activate 必须分别对应一次
+Detach、Hide、Deactivate。Active 必须同时 Shown；非活动 top-level 的当前 tab 可以
+Shown + Inactive。取消或重复 close 不能造成 double subscription/double dispose。
 
 ViewModel 只依赖 `Asharia.Editor` service；View 可以依赖 `Asharia.Editor.Avalonia` 和 Host-pinned Avalonia compatibility band。Engine mutation 仍经 command/transaction。
 
@@ -134,7 +144,7 @@ XAML 与 code-only 可以在一个 content 内混用，不产生嵌套 backend l
 - focus scope、global command routing 和 shortcut arbitration；
 - theme baseline、DPI 和 accessibility policy；
 - Viewport composition surface、native control host 和 GPU import；
-- panel attach/activate/deactivate/detach/dispose；
+- panel attach/detach、shown/hidden、active/inactive、post-layout 和 dispose；
 - module generation 和 ALC。
 
 需要独立 Window 的扩展贡献 `EditorWindowDescriptor + content factory`，由 Window host 创建真实 Window。扩展不能返回已经创建的 Window。
@@ -290,8 +300,9 @@ Extension 不创建或导入 native GPU resource。Viewport tool/overlay 使用 
 - extension content 无法通过公共 API 取得 Window/Dock/native surface；
 - factory/attach/detach/dispose failure isolation；
 - callback 抛错/timeout 不短路 Host `finally` cleanup；KeepAlive transition failure 强制 fault + terminal recreate；
-- Attach/Activate/Deactivate/Detach 每个成功 transition 恰好配对，重复 close/dispose 幂等；
-- KeepAlive Detach 后使用同一 lease/ViewModel 重新 Attach/Activate，Active/Attachment work 已暂停且 persistent state 保留；
+- Attach/Show/Activate/Deactivate/Hide/Detach 每个成功 transition 恰好配对，重复 close/dispose 幂等；
+- KeepAlive Detach 后使用同一 lease/ViewModel 重新 Attach/Show，并在取得 focus 时 Activate；hidden/active/attachment work 已暂停且 persistent state 保留；
+- post-layout 通知合并快速 arrange/DPI 变化、读取最新 logical size/render scale，detach 使旧回调失效；
 - RecreateOnOpen 与 reload/Project close 执行 terminal Dispose，不保留旧 generation Control；
 - 关闭单个 RecreateOnOpen panel 只释放 content instance；关闭一个 Project 只 retire 其 scope，不撤销其他 scope/generation factory/resource；
 - Tier-0 close/reopen 复用一个 pinned host，generation 变化要求 restart，不重复创建 ALC；

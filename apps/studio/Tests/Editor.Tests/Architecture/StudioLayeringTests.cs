@@ -261,6 +261,7 @@ public sealed class StudioLayeringTests
             "EditorDockFloatingPreviewView.axaml.cs",
             "EditorDockFloatingWindow.axaml",
             "EditorDockFloatingWindow.axaml.cs",
+            "EditorDockPanelContentHost.cs",
             "EditorDockSplitNodeView.axaml",
             "EditorDockSplitNodeView.axaml.cs",
             "EditorDockTabItemView.axaml",

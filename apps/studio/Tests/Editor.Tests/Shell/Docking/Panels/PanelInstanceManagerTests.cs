@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Asharia.Editor.Panels;
+using Asharia.Studio.Application.Panels;
 using Editor.Core.Abstractions;
 using Editor.Core.Models.Panels;
 using Editor.Shell.Docking.Panels;
@@ -116,6 +117,227 @@ public sealed class PanelInstanceManagerTests
     }
 
     [Fact]
+    public void ReleaseTab_deactivates_and_hides_before_detaching()
+    {
+        var events = new List<string>();
+        var content = new RecordingPanelLifecycleSink("content", events);
+        var descriptor = CreateDescriptor(
+            "panel",
+            DockContentCachePolicy.RecreateOnOpen,
+            () => content);
+        var manager = new PanelInstanceManager();
+        var tab = manager.CreateTab(descriptor);
+        tab.ShowPanelInstance();
+        tab.ActivatePanelInstance();
+        events.Clear();
+
+        tab.ReleasePanelInstance();
+
+        Assert.Equal(
+            [
+                "content:Deactivated:panel:Left:Main",
+                "content:Hidden:panel:Left:Main",
+                "content:Detached:panel:Left:Main",
+                "content:Disposed",
+            ],
+            events);
+    }
+
+    [Fact]
+    public void Show_callback_failure_does_not_prevent_scheduler_visibility()
+    {
+        var scheduler = new EditorPanelFrameScheduler();
+        var content = new ThrowingPanelLifecycleSink(
+            EditorPanelFrameUpdateRequest.Visible())
+        {
+            ThrowOnShown = true,
+        };
+        var manager = new PanelInstanceManager(scheduler);
+        var tab = manager.CreateTab(CreateDescriptor(
+            "panel",
+            DockContentCachePolicy.RecreateOnOpen,
+            () => content));
+
+        var exception = Assert.Throws<InvalidOperationException>(tab.ShowPanelInstance);
+
+        Assert.Same(content.ShownFailure, exception);
+        Assert.Single(scheduler.Tick(DateTimeOffset.UnixEpoch));
+        tab.ReleasePanelInstance();
+    }
+
+    [Fact]
+    public void Hide_callback_failure_does_not_prevent_scheduler_visibility_cleanup()
+    {
+        var scheduler = new EditorPanelFrameScheduler();
+        var content = new ThrowingPanelLifecycleSink(
+            EditorPanelFrameUpdateRequest.Visible());
+        var manager = new PanelInstanceManager(scheduler);
+        var tab = manager.CreateTab(CreateDescriptor(
+            "panel",
+            DockContentCachePolicy.RecreateOnOpen,
+            () => content));
+        tab.ShowPanelInstance();
+        content.ThrowOnHidden = true;
+
+        var exception = Assert.Throws<InvalidOperationException>(tab.HidePanelInstance);
+
+        Assert.Same(content.HiddenFailure, exception);
+        Assert.Empty(scheduler.Tick(DateTimeOffset.UnixEpoch));
+        tab.ReleasePanelInstance();
+    }
+
+    [Fact]
+    public void Deactivate_callback_failure_does_not_prevent_scheduler_activation_cleanup()
+    {
+        var scheduler = new EditorPanelFrameScheduler();
+        var content = new ThrowingPanelLifecycleSink(
+            EditorPanelFrameUpdateRequest.Active());
+        var manager = new PanelInstanceManager(scheduler);
+        var tab = manager.CreateTab(CreateDescriptor(
+            "panel",
+            DockContentCachePolicy.RecreateOnOpen,
+            () => content));
+        tab.ShowPanelInstance();
+        tab.ActivatePanelInstance();
+        content.ThrowOnDeactivated = true;
+
+        var exception = Assert.Throws<InvalidOperationException>(tab.DeactivatePanelInstance);
+
+        Assert.Same(content.DeactivatedFailure, exception);
+        Assert.Empty(scheduler.Tick(DateTimeOffset.UnixEpoch));
+        tab.ReleasePanelInstance();
+    }
+
+    [Fact]
+    public void Release_aggregates_detach_and_dispose_failures_after_scheduler_cleanup()
+    {
+        var scheduler = new EditorPanelFrameScheduler();
+        var content = new ThrowingPanelLifecycleSink(
+            EditorPanelFrameUpdateRequest.Visible())
+        {
+            ThrowOnDetached = true,
+            ThrowOnDispose = true,
+        };
+        var manager = new PanelInstanceManager(scheduler);
+        var tab = manager.CreateTab(CreateDescriptor(
+            "panel",
+            DockContentCachePolicy.RecreateOnOpen,
+            () => content));
+        tab.ShowPanelInstance();
+
+        var exception = Assert.Throws<AggregateException>(tab.ReleasePanelInstance);
+
+        Assert.Collection(
+            exception.InnerExceptions,
+            item => Assert.Same(content.DetachedFailure, item),
+            item => Assert.Same(content.DisposeFailure, item));
+        Assert.Equal(1, content.DisposeCount);
+        Assert.Empty(scheduler.Tick(DateTimeOffset.UnixEpoch));
+
+        tab.ReleasePanelInstance();
+        Assert.Equal(1, content.DisposeCount);
+    }
+
+    [Fact]
+    public void CreateTab_attach_failure_releases_content_and_scheduler_registration()
+    {
+        var scheduler = new EditorPanelFrameScheduler();
+        var content = new ThrowingPanelLifecycleSink(
+            EditorPanelFrameUpdateRequest.Visible())
+        {
+            ThrowOnAttached = true,
+        };
+        var manager = new PanelInstanceManager(scheduler);
+
+        var exception = Assert.Throws<InvalidOperationException>(
+            () => manager.CreateTab(CreateDescriptor(
+                "panel",
+                DockContentCachePolicy.RecreateOnOpen,
+                () => content)));
+
+        Assert.Same(content.AttachedFailure, exception);
+        Assert.Equal(1, content.DisposeCount);
+        var context = new EditorPanelLifecycleContext(
+            "panel",
+            "panel",
+            EditorDockArea.Left,
+            IsFloatingWorkspace: false);
+        scheduler.ShowPanel(context);
+        Assert.Empty(scheduler.Tick(DateTimeOffset.UnixEpoch));
+    }
+
+    [Fact]
+    public void CreateTab_aggregates_attach_and_cleanup_failures_in_order()
+    {
+        var scheduler = new EditorPanelFrameScheduler();
+        var content = new ThrowingPanelLifecycleSink(
+            EditorPanelFrameUpdateRequest.Visible())
+        {
+            ThrowOnAttached = true,
+            ThrowOnDetached = true,
+            ThrowOnDispose = true,
+        };
+        var manager = new PanelInstanceManager(scheduler);
+
+        var exception = Assert.Throws<AggregateException>(
+            () => manager.CreateTab(CreateDescriptor(
+                "panel",
+                DockContentCachePolicy.RecreateOnOpen,
+                () => content)));
+
+        Assert.Collection(
+            exception.InnerExceptions,
+            item => Assert.Same(content.AttachedFailure, item),
+            item => Assert.Same(content.DetachedFailure, item),
+            item => Assert.Same(content.DisposeFailure, item));
+        Assert.Equal(1, content.DisposeCount);
+        var context = new EditorPanelLifecycleContext(
+            "panel",
+            "panel",
+            EditorDockArea.Left,
+            IsFloatingWorkspace: false);
+        scheduler.ShowPanel(context);
+        Assert.Empty(scheduler.Tick(DateTimeOffset.UnixEpoch));
+    }
+
+    [Fact]
+    public void Dispose_attempts_all_keep_alive_contents_and_clears_cache_after_failures()
+    {
+        var first = new ThrowingPanelLifecycleSink(EditorPanelFrameUpdateRequest.Manual)
+        {
+            ThrowOnDispose = true,
+        };
+        var second = new ThrowingPanelLifecycleSink(EditorPanelFrameUpdateRequest.Manual)
+        {
+            ThrowOnDispose = true,
+        };
+        var manager = new PanelInstanceManager();
+        var firstTab = manager.CreateTab(CreateDescriptor(
+            "first",
+            DockContentCachePolicy.KeepAlive,
+            () => first));
+        var secondTab = manager.CreateTab(CreateDescriptor(
+            "second",
+            DockContentCachePolicy.KeepAlive,
+            () => second));
+        firstTab.ReleasePanelInstance();
+        secondTab.ReleasePanelInstance();
+
+        var exception = Assert.Throws<AggregateException>(manager.Dispose);
+
+        Assert.Collection(
+            exception.InnerExceptions,
+            item => Assert.Same(first.DisposeFailure, item),
+            item => Assert.Same(second.DisposeFailure, item));
+        Assert.Equal(1, first.DisposeCount);
+        Assert.Equal(1, second.DisposeCount);
+
+        manager.Dispose();
+        Assert.Equal(1, first.DisposeCount);
+        Assert.Equal(1, second.DisposeCount);
+    }
+
+    [Fact]
     public void CreateTab_preserves_workspace_descriptor_metadata_defaults()
     {
         var manager = new PanelInstanceManager();
@@ -163,7 +385,10 @@ public sealed class PanelInstanceManagerTests
 
     private sealed class RecordingPanelLifecycleSink(
         string name,
-        List<string> events) : IEditorPanelLifecycleSink, IDisposable
+        List<string> events) :
+        IEditorPanelLifecycleSink,
+        IEditorPanelVisibilitySink,
+        IDisposable
     {
         public void OnPanelAttached(EditorPanelLifecycleContext context)
         {
@@ -183,6 +408,16 @@ public sealed class PanelInstanceManagerTests
         public void OnPanelDetached(EditorPanelLifecycleContext context)
         {
             events.Add($"{name}:Detached:{context.PanelId}:{context.DockArea}:{GetHostKind(context)}");
+        }
+
+        public void OnPanelShown(EditorPanelLifecycleContext context)
+        {
+            events.Add($"{name}:Shown:{context.PanelId}:{context.DockArea}:{GetHostKind(context)}");
+        }
+
+        public void OnPanelHidden(EditorPanelLifecycleContext context)
+        {
+            events.Add($"{name}:Hidden:{context.PanelId}:{context.DockArea}:{GetHostKind(context)}");
         }
 
         public void Dispose()
@@ -205,6 +440,105 @@ public sealed class PanelInstanceManagerTests
         public void Dispose()
         {
             DisposeCount++;
+        }
+    }
+
+    private sealed class ThrowingPanelLifecycleSink(
+        EditorPanelFrameUpdateRequest frameUpdateRequest) :
+        IEditorPanelLifecycleSink,
+        IEditorPanelVisibilitySink,
+        IEditorPanelFrameUpdateSink,
+        IDisposable
+    {
+        public InvalidOperationException AttachedFailure { get; } =
+            new("attached failure");
+
+        public InvalidOperationException ShownFailure { get; } =
+            new("shown failure");
+
+        public InvalidOperationException HiddenFailure { get; } =
+            new("hidden failure");
+
+        public InvalidOperationException DeactivatedFailure { get; } =
+            new("deactivated failure");
+
+        public InvalidOperationException DetachedFailure { get; } =
+            new("detached failure");
+
+        public InvalidOperationException DisposeFailure { get; } =
+            new("dispose failure");
+
+        public bool ThrowOnShown { get; init; }
+
+        public bool ThrowOnAttached { get; init; }
+
+        public bool ThrowOnHidden { get; set; }
+
+        public bool ThrowOnDeactivated { get; set; }
+
+        public bool ThrowOnDetached { get; init; }
+
+        public bool ThrowOnDispose { get; init; }
+
+        public int DisposeCount { get; private set; }
+
+        public EditorPanelFrameUpdateRequest FrameUpdateRequest { get; } = frameUpdateRequest;
+
+        public void OnPanelAttached(EditorPanelLifecycleContext context)
+        {
+            if (ThrowOnAttached)
+            {
+                throw AttachedFailure;
+            }
+        }
+
+        public void OnPanelActivated(EditorPanelLifecycleContext context)
+        {
+        }
+
+        public void OnPanelDeactivated(EditorPanelLifecycleContext context)
+        {
+            if (ThrowOnDeactivated)
+            {
+                throw DeactivatedFailure;
+            }
+        }
+
+        public void OnPanelDetached(EditorPanelLifecycleContext context)
+        {
+            if (ThrowOnDetached)
+            {
+                throw DetachedFailure;
+            }
+        }
+
+        public void OnPanelShown(EditorPanelLifecycleContext context)
+        {
+            if (ThrowOnShown)
+            {
+                throw ShownFailure;
+            }
+        }
+
+        public void OnPanelHidden(EditorPanelLifecycleContext context)
+        {
+            if (ThrowOnHidden)
+            {
+                throw HiddenFailure;
+            }
+        }
+
+        public void OnEditorPanelFrame(EditorPanelFrameContext context)
+        {
+        }
+
+        public void Dispose()
+        {
+            DisposeCount++;
+            if (ThrowOnDispose)
+            {
+                throw DisposeFailure;
+            }
         }
     }
 }

@@ -11,9 +11,29 @@ public interface ICodeFirstEditorPanelHost
 
     void Enable();
 
+    void Show()
+    {
+    }
+
+    void Activate()
+    {
+    }
+
     void BuildGui(EditorGui gui);
 
     void Frame(EditorPanelFrameContext context);
+
+    void LayoutChanged(EditorPanelLayoutContext context)
+    {
+    }
+
+    void Deactivate()
+    {
+    }
+
+    void Hide()
+    {
+    }
 
     void Disable();
 

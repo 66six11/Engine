@@ -3,7 +3,7 @@
 状态：Partial（公共 UI-neutral tree、state、event、validation 与整棵 Avalonia content subtree 重建已实现；
 keyed reconcile/control reuse 尚未实现；Avalonia content backend 与统一 extension contract 仍在迁移）
 
-更新日期：2026-07-28
+更新日期：2026-07-30
 
 > 本文定义统一 Editor Extension Framework 的受限 Code-first UI authoring。Studio 内置功能、项目 `Editor/`、
 > Package 和已安装插件使用同一合同。它是低频、小规模、标准工具 schema，不是 Avalonia code-only UI 的别名，
@@ -163,10 +163,12 @@ Features
 
 - `PanelDescriptor`：描述面板 ID、标题、默认 Dock 区域、菜单路径、缓存策略和内容工厂。
 - `PanelInstanceManager`：根据 `DockContentCachePolicy` 创建或复用面板内容。
-- `EditorDockTabViewModel`：在面板 attach、activate、deactivate、detach 时转发生命周期。
-- `IEditorPanelLifecycleSink`：面板实例生命周期回调。
+- `EditorDockTabViewModel`：分别转发 attach/detach、shown/hidden、active/inactive，并对布局结果去重。
+- `IEditorPanelLifecycleSink`：面板 attach、active、inactive 和 detach 回调。
+- `IEditorPanelVisibilitySink`：面板 shown/hidden 回调。
+- `IEditorPanelLayoutSink`：布局完成后的 logical size 与 render scale 回调。
 - `IEditorPanelFrameUpdateSink`：面板帧更新回调。
-- `EditorPanelFrameScheduler`：按 active/manual/frame rate 调度面板帧更新。
+- `EditorPanelFrameScheduler`：只为 shown 面板调度帧更新；active 模式还要求面板是 command/focus target。
 - `WorkbenchCommandRouter`：统一命令执行和失败反馈。
 - `EditorExtensionHost`：声明贡献、验证、注册、激活和释放。
 
@@ -211,11 +213,21 @@ public abstract class CodeFirstEditorPanel
 
     protected virtual void OnEnable() {}
 
+    protected virtual void OnShown() {}
+
+    protected virtual void OnActivated() {}
+
     protected abstract void OnGui(EditorGui gui);
 
     protected virtual void OnSelectionChanged(EditorSelectionSnapshot selection) {}
 
+    protected virtual void OnLayoutChanged(EditorPanelLayoutContext layout) {}
+
     protected virtual void OnFrame(EditorPanelFrameContext frame) {}
+
+    protected virtual void OnDeactivated() {}
+
+    protected virtual void OnHidden() {}
 
     protected virtual void OnDisable() {}
 
@@ -227,10 +239,15 @@ public abstract class CodeFirstEditorPanel
 
 - `OnCreate` 只调用一次，适合初始化轻量状态和订阅服务。
 - `OnEnable` 在面板被 attach 或重新打开时调用。
+- `OnShown` / `OnHidden` 对应 tab 成为或不再是 Dock window 的当前可见内容。
+- `OnActivated` / `OnDeactivated` 对应 workspace command/focus target，不等于 tab visibility。
 - `OnGui` 声明当前 UI。
 - `OnSelectionChanged` 接收编辑器选择状态。
+- `OnLayoutChanged` 在 Host 完成 layout 后通过 UI dispatcher 接收最新 logical size 和 render scale；
+  快速 arrange/DPI 变化合并为最新状态，detach 取消旧回调，相同几何不重复通知。普通 retained controls
+  会自行 layout，因此该通知不自动重建整棵 Code-first tree。
 - `OnFrame` 用于需要帧更新的调试面板。
-- `OnDisable` 在关闭、隐藏或 detach 前调用。
+- `OnDisable` 在 detach/关闭 logical host 关系时调用，不因普通 tab 隐藏而调用。
 - `OnDestroy` 释放订阅、缓存和临时资源。
 
 ### 6.2 示例写法
@@ -923,6 +940,8 @@ Host content 应实现现有接口：
 ```csharp
 internal sealed class CodeFirstPanelHostViewModel :
     IEditorPanelLifecycleSink,
+    IEditorPanelVisibilitySink,
+    IEditorPanelLayoutSink,
     IEditorPanelFrameUpdateSink,
     IDisposable
 {
@@ -933,25 +952,37 @@ internal sealed class CodeFirstPanelHostViewModel :
 
 ```text
 OnPanelAttached    -> panel.OnCreate once, panel.OnEnable, Rebuild
-OnPanelActivated   -> mark active, Rebuild if needed
+OnPanelShown       -> panel.OnShown, Rebuild
+OnPanelActivated   -> panel.OnActivated, Rebuild if needed
+OnPanelLayoutChanged -> panel.OnLayoutChanged; retained controls perform normal layout
 OnEditorPanelFrame -> panel.OnFrame, Rebuild if panel requested
-OnPanelDeactivated -> mark inactive
-OnPanelDetached    -> panel.OnDisable, maybe panel.OnDestroy depending cache policy
+OnPanelDeactivated -> panel.OnDeactivated
+OnPanelHidden      -> panel.OnHidden
+OnPanelDetached    -> panel.OnDisable
 Dispose            -> panel.OnDestroy
 ```
+
+Open/Close 是 Shell command，不是另一组 callback。Open 产生 Attach，选中的 tab 再产生 Shown，workspace
+command target 再产生 Activated；Close 按 `Deactivated -> Hidden -> Detached` 清理。非活动 Dock window 的
+当前 tab 可以 Shown 但未 Activated。
+
+几何通知由 Avalonia panel content host 在 arrange 完成后的 dispatcher 回调发出，内容是 UI-neutral
+logical width、logical height 与 render scale。Host 会合并 arrange、DPI 与 tab 切换请求，回调执行时读取
+最新状态，不使用 timer/debounce；detach 会取消旧 Host 回调。tab 对三者完全相同的重复结果去重；切换 tab
+即使 host 尺寸不变也会安排一次通知，因此新 panel 会收到自己的当前几何。
 
 `DockContentCachePolicy.KeepAlive`：
 
 ```text
-close tab -> OnDisable
-reopen    -> OnEnable with same panel instance and GuiStateStore
+close tab -> OnDeactivated, OnHidden, OnDisable
+reopen    -> OnEnable, OnShown with same panel instance and GuiStateStore
 app exit  -> OnDestroy
 ```
 
 `DockContentCachePolicy.RecreateOnOpen`：
 
 ```text
-close tab -> OnDisable, OnDestroy
+close tab -> OnDeactivated, OnHidden, OnDisable, OnDestroy
 reopen    -> new panel instance
 ```
 
@@ -1200,7 +1231,8 @@ apps/studio/Tests/Editor.Tests/Shell/CodeFirstUI/**
 - `CodeFirstPanelHostViewModel`。
 - 接入 `IEditorPanelLifecycleSink`。
 - 接入 `IEditorPanelFrameUpdateSink`。
-- `OnCreate` / `OnEnable` / `OnDisable` / `OnDestroy` 调用顺序。
+- `OnCreate` / `OnEnable` / `OnShown` / `OnActivated` / `OnLayoutChanged` /
+  `OnDeactivated` / `OnHidden` / `OnDisable` / `OnDestroy` 调用顺序。
 
 测试：
 
@@ -1382,6 +1414,8 @@ Code-first UI
 ## 28. 参考资料
 
 - Unity Editor Windows：`https://docs.unity3d.com/Manual/editor-EditorWindows.html`
+- Unity `EditorWindow` lifecycle API：`https://docs.unity3d.com/6000.0/Documentation/ScriptReference/EditorWindow.html`
+- Unity UI Toolkit layout events：`https://docs.unity3d.com/2022.3/Documentation/Manual/UIE-Layout-Events.html`
 - Unity UI Toolkit custom Editor window：`https://docs.unity3d.com/Manual/UIE-HowTo-CreateEditorWindow.html`
 - Unity UI Toolkit retained-mode architecture：`https://docs.unity3d.com/6000.0/Documentation/Manual/ui-systems/introduction-ui-toolkit.html`
 - Dear ImGui README：`https://github.com/ocornut/imgui`

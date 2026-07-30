@@ -1,6 +1,7 @@
 using System;
 using Avalonia.Controls;
 using Asharia.Editor.Lifecycle;
+using Editor.Shell.Lifecycle;
 using Editor.Shell.ViewModels.Docking;
 using Editor.Shell.Views.Windowing;
 
@@ -30,10 +31,23 @@ public partial class EditorDockFloatingWindow : Window
     protected override void OnClosed(EventArgs e)
     {
         var viewModel = DataContext as EditorDockFloatingWindowViewModel;
-        EditorDockFloatingWindowRegistry.Unregister(this);
-        PublishLifecycleEvent(EditorLifecycleEventKind.FloatingWindowClosed);
-        DisposeFloatingWindowViewModel(viewModel);
-        base.OnClosed(e);
+        var exceptions = new CallbackExceptionBatch();
+        exceptions.Capture(
+            () => EditorDockFloatingWindowRegistry.Unregister(this));
+        exceptions.Capture(
+            () => PublishLifecycleEvent(EditorLifecycleEventKind.FloatingWindowClosed));
+        exceptions.Capture(
+            () => DisposeFloatingWindowViewModel(viewModel));
+        try
+        {
+            base.OnClosed(e);
+        }
+        catch (Exception exception)
+        {
+            exceptions.Add(exception);
+        }
+
+        exceptions.ThrowIfAny();
     }
 
     private void OnFloatingWindowDataContextChanged(object? sender, EventArgs e)

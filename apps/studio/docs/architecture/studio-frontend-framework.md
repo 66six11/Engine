@@ -3,7 +3,7 @@
 状态：Target（authoring 分层已校准；Code-first v1 当前使用整棵 content subtree 重建，
 keyed reconcile 尚未实现；统一 Action、Avalonia extension backend 与工具合同仍在迁移）
 
-更新日期：2026-07-29
+更新日期：2026-07-30
 
 跟踪：GitHub Epic #119；设计 Slice #337；首个实现 Slice #338
 
@@ -410,7 +410,8 @@ Avalonia content backend
 | 低频、小规模、标准表单或调试工具 | Code-first |
 
 Avalonia content backend 内的 XAML 与 code-only 路径都由 `IAvaloniaContentLease` 目标合同承载。
-extension 只提供 content；Host 调用 attach/activate/deactivate/detach/dispose，并拥有 popup、timer、focus、Dock 和 Window cleanup。
+extension 只提供 content；Host 分别管理 attach/detach、shown/hidden、active/inactive、post-layout
+和 dispose，并拥有 popup、timer、focus、Dock 和 Window cleanup。
 Code-first 使用自身的 panel host lifecycle，不经过该 content lease。
 
 compiled binding 是默认门禁。动态/无法编译的 binding 必须有局部理由和测试，不能全局退回 reflection binding。
@@ -517,18 +518,31 @@ Host 统一观察以下逻辑阶段：
 Registered
 -> Created
 -> Attached
--> Active
--> Inactive
+-> Shown | Hidden
+-> Active | Inactive
 -> Detached
 -> Disposed
 ```
 
-Code-first 当前 `OnCreate/OnEnable/OnGui/OnFrame/OnDisable/OnDestroy` 映射到该逻辑生命周期；Avalonia content 使用 lease 的 Attach/Activate/Deactivate/Detach/Dispose。
+Open/Close 是 Shell command：Open 产生 Attach，Close 在清理可见性与 activation 后产生 Detach，不再增加一组
+重复的 `OnOpen`/`OnClose` callback。Attached 表示 content lease 已绑定到 logical host；Shown 表示 tab 是
+所在 Dock window 当前选择；Active 表示 workspace command/focus target。一个非活动 Dock window 的当前 tab
+可以 Shown 但 Inactive，Hidden tab 不得 Active。
+
+布局通知与 lifetime 正交。Presentation host 不在 arrange 调用栈内同步进入 panel，而是把 arrange、DPI 与
+tab 切换合并为 layout/render 之后的一次 UI dispatcher 通知，并在执行时读取最新 logical width、logical
+height 与 render scale；不使用 timer/debounce。detach 会使旧回调失效，同一 panel 对完全相同的三元组只
+通知一次。切换到新 tab 时即使 host 尺寸不变，也会安排一次通知，使新 panel 得到自己的当前几何。该合同不
+替代 Scene View 等专用 surface 对子控件几何的直接观察。
+
+Code-first 当前把 `OnCreate/OnEnable/OnShown/OnActivated/OnGui/OnLayoutChanged/OnFrame/OnDeactivated/OnHidden/OnDisable/OnDestroy`
+映射到这些状态和通知；Avalonia content 使用对应的 Host lease/sink。
 
 规则：
 
-- 每次成功 attach/activate 恰好对应一次 detach/deactivate；
+- 每次成功 attach/activate/show 恰好对应一次 detach/deactivate/hide；
 - KeepAlive close 不销毁 persistent panel local state，但必须停止 active input/task/timer；
+- `Visible` frame request 只在 Shown 时调度；`Active` frame request 同时要求 Shown 与 Active；
 - terminal dispose 释放 content-owned subscription、popup、task、dispatcher callback 和 generation lease；
 - callback 失败不短路 Host `finally` cleanup；
 - Avalonia/XAML/custom control 默认 restart-required Tier 0，直到 resource/type/static registry cleanup 有重复 canary 证明；
@@ -641,6 +655,8 @@ Project panel 不再消费 project-open source，只等待未来正式 ProjectSe
 - [Unreal IPropertyHandle](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Editor/PropertyEditor/IPropertyHandle)
 - [Unreal UInteractiveToolsContext](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/InteractiveToolsFramework/UInteractiveToolsContext)
 - [Unity UI Toolkit retained-mode architecture](https://docs.unity3d.com/6000.0/Documentation/Manual/ui-systems/introduction-ui-toolkit.html)
+- [Unity EditorWindow lifecycle API](https://docs.unity3d.com/6000.0/Documentation/ScriptReference/EditorWindow.html)
+- [Unity UI Toolkit layout events](https://docs.unity3d.com/2022.3/Documentation/Manual/UIE-Layout-Events.html)
 - [Unity VisualElement：UI Builder、UXML 与 C# 共用控件树](https://docs.unity3d.com/6000.0/Documentation/Manual/UIE-uxml-element-VisualElement.html)
 - [O3DE Action Manager](https://www.docs.o3de.org/docs/user-guide/action-manager/)
 - [O3DE Actions and Context Modes](https://www.docs.o3de.org/docs/user-guide/action-manager/fundamentals/concepts/actions/)

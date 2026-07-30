@@ -10,6 +10,7 @@ using Editor.Core.Models.Panels;
 using Editor.Shell.Docking.DropTargets;
 using Editor.Shell.Docking.Layout;
 using Editor.Shell.Docking.Panels;
+using Editor.Shell.Lifecycle;
 using Asharia.Studio.Application.Lifecycle;
 using Editor.UI.ViewModels;
 
@@ -22,6 +23,7 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
     private const string LayoutNodeKindWindow = "Window";
     private readonly IPanelRegistry? panelRegistry_;
     private readonly PanelInstanceManager panelInstanceManager_;
+    private readonly bool ownsPanelInstanceManager_;
     private readonly Dictionary<EditorDockArea, EditorDockWindowViewModel> windowsByArea_;
     private readonly Dictionary<string, EditorDockWindowViewModel> windowsById_;
     private readonly Func<EditorDockLayoutSnapshot>? defaultLayoutFactory_;
@@ -31,7 +33,7 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
     private EditorDockWindowViewModel? dragSourceWindow_;
     private EditorDockTabViewModel? dragSourceTab_;
     private EditorDockWindowViewModel? tabInsertPreviewWindow_;
-    private bool isHostFocused_ = true;
+    private bool isHostFocused_;
     private int nextDynamicWindowIndex_ = 1;
     private int nextDynamicSplitIndex_ = 1;
 
@@ -47,7 +49,8 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
             panelRegistry,
             lifecycleEvents,
             panelFrameScheduler,
-            defaultLayoutFactory: null)
+            defaultLayoutFactory: null,
+            initiallyFocused: true)
     {
     }
 
@@ -55,13 +58,16 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
         IPanelRegistry panelRegistry,
         IEditorLifecycleEventService? lifecycleEvents,
         EditorPanelFrameScheduler? panelFrameScheduler,
-        Func<EditorDockLayoutSnapshot>? defaultLayoutFactory)
+        Func<EditorDockLayoutSnapshot>? defaultLayoutFactory,
+        bool initiallyFocused = true)
     {
         panelRegistry_ = panelRegistry;
         defaultLayoutFactory_ = defaultLayoutFactory;
         LifecycleEvents = lifecycleEvents ?? new EditorLifecycleEventService();
         PanelFrameScheduler = panelFrameScheduler ?? new EditorPanelFrameScheduler();
         panelInstanceManager_ = new PanelInstanceManager(PanelFrameScheduler);
+        ownsPanelInstanceManager_ = true;
+        isHostFocused_ = initiallyFocused;
         WorkspaceKind = EditorDockWorkspaceKind.MainWindow;
         LeftWindow = new EditorDockWindowViewModel("owned-dock-left", "Hierarchy", EditorDockArea.Left, "Scene tree");
         CenterWindow = new EditorDockWindowViewModel("owned-dock-center", "Viewport", EditorDockArea.Center, "Primary work area");
@@ -83,19 +89,33 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
             [RightWindow.Id] = RightWindow,
         };
 
-        ApplyDefaultLayout();
+        try
+        {
+            ApplyDefaultLayout();
+        }
+        catch (Exception exception)
+        {
+            var exceptions = new CallbackExceptionBatch();
+            exceptions.Add(exception);
+            Dispose(exceptions);
+            exceptions.ThrowIfAny();
+        }
     }
 
     private EditorDockWorkspaceViewModel(
         EditorDockWindowViewModel floatingDockWindow,
         IEditorLifecycleEventService lifecycleEvents,
-        EditorPanelFrameScheduler panelFrameScheduler)
+        EditorPanelFrameScheduler panelFrameScheduler,
+        PanelInstanceManager panelInstanceManager,
+        CallbackExceptionBatch exceptions)
     {
         panelRegistry_ = null;
         defaultLayoutFactory_ = null;
         LifecycleEvents = lifecycleEvents;
         PanelFrameScheduler = panelFrameScheduler;
-        panelInstanceManager_ = new PanelInstanceManager(PanelFrameScheduler);
+        panelInstanceManager_ = panelInstanceManager;
+        ownsPanelInstanceManager_ = false;
+        isHostFocused_ = false;
         WorkspaceKind = EditorDockWorkspaceKind.FloatingWindow;
         LeftWindow = floatingDockWindow;
         CenterWindow = floatingDockWindow;
@@ -109,20 +129,23 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
         SetPanelLifecycleHostKind(floatingDockWindow, isFloatingWorkspace: true);
         nextDynamicWindowIndex_ = GetNextDynamicWindowIndex(windowsById_.Values);
         rootNode_ = new EditorDockWindowNodeViewModel($"node-{floatingDockWindow.Id}", floatingDockWindow);
-        SetActiveWindow(floatingDockWindow);
+        SetActiveWindow(floatingDockWindow, exceptions);
     }
 
     private EditorDockWorkspaceViewModel(
         IPanelRegistry panelRegistry,
         EditorDockFloatingWindowSnapshot snapshot,
         IEditorLifecycleEventService lifecycleEvents,
-        EditorPanelFrameScheduler? panelFrameScheduler = null)
+        EditorPanelFrameScheduler panelFrameScheduler,
+        PanelInstanceManager panelInstanceManager)
     {
         panelRegistry_ = panelRegistry;
         defaultLayoutFactory_ = null;
         LifecycleEvents = lifecycleEvents;
-        PanelFrameScheduler = panelFrameScheduler ?? new EditorPanelFrameScheduler();
-        panelInstanceManager_ = new PanelInstanceManager(PanelFrameScheduler);
+        PanelFrameScheduler = panelFrameScheduler;
+        panelInstanceManager_ = panelInstanceManager;
+        ownsPanelInstanceManager_ = false;
+        isHostFocused_ = false;
         WorkspaceKind = EditorDockWorkspaceKind.FloatingWindow;
         var fallbackWindow = new EditorDockWindowViewModel(
             "owned-dock-floating-restore",
@@ -138,42 +161,51 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
 
         var descriptorsById = CreatePanelDescriptorsById();
         var usedTabIds = new HashSet<string>(StringComparer.Ordinal);
+        var exceptions = new CallbackExceptionBatch();
         rootNode_ = snapshot.Root is null
             ? null
-            : RestoreLayoutNode(snapshot.Root, descriptorsById, usedTabIds);
+            : RestoreLayoutNode(
+                snapshot.Root,
+                descriptorsById,
+                usedTabIds,
+                exceptions);
         nextDynamicWindowIndex_ = GetNextDynamicWindowIndex(windowsById_.Values);
         nextDynamicSplitIndex_ = GetNextDynamicSplitIndex(rootNode_);
         SetActiveWindow(
             snapshot.ActiveWindowId is not null
                 && windowsById_.TryGetValue(snapshot.ActiveWindowId, out var activeWindow)
                     ? activeWindow
-                    : FindFirstWindowWithContent());
+                    : FindFirstWindowWithContent(),
+            exceptions);
+        if (exceptions.HasExceptions)
+        {
+            Dispose(exceptions);
+            exceptions.ThrowIfAny();
+        }
     }
 
-    public static bool TryCreateFloatingWorkspace(
-        IPanelRegistry panelRegistry,
+    public bool TryCreateFloatingWorkspace(
         EditorDockFloatingWindowSnapshot snapshot,
         out EditorDockWorkspaceViewModel workspace)
     {
-        return TryCreateFloatingWorkspace(
-            panelRegistry,
+        if (panelRegistry_ is null)
+        {
+            workspace = null!;
+            return false;
+        }
+
+        workspace = new EditorDockWorkspaceViewModel(
+            panelRegistry_,
             snapshot,
-            new EditorLifecycleEventService(),
-            out workspace);
-    }
-
-    public static bool TryCreateFloatingWorkspace(
-        IPanelRegistry panelRegistry,
-        EditorDockFloatingWindowSnapshot snapshot,
-        IEditorLifecycleEventService lifecycleEvents,
-        out EditorDockWorkspaceViewModel workspace)
-    {
-        workspace = new EditorDockWorkspaceViewModel(panelRegistry, snapshot, lifecycleEvents);
+            LifecycleEvents,
+            PanelFrameScheduler,
+            panelInstanceManager_);
         if (workspace.RootNode is not null && workspace.HasDockContent())
         {
             return true;
         }
 
+        workspace.Dispose();
         workspace = null!;
         return false;
     }
@@ -241,18 +273,22 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
             return false;
         }
 
-        ClearTransientDockState();
-        ResetWorkspaceWindows();
+        var exceptions = new CallbackExceptionBatch();
+        ClearTransientDockState(exceptions);
+        ResetWorkspaceWindows(exceptions);
 
-        if (!TryApplyLayoutSnapshot(snapshot))
+        var restored = TryApplyLayoutSnapshot(snapshot, exceptions);
+        if (!restored)
         {
-            ResetWorkspaceWindows();
-            ApplyDefaultLayout();
+            ResetWorkspaceWindows(exceptions);
+            ApplyDefaultLayout(exceptions);
             NotifyDockContentChanged();
+            exceptions.ThrowIfAny();
             return false;
         }
 
         NotifyDockContentChanged();
+        exceptions.ThrowIfAny();
         return true;
     }
 
@@ -263,12 +299,14 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
             return;
         }
 
-        ClearTransientDockState();
-        ResetWorkspaceWindows();
+        var exceptions = new CallbackExceptionBatch();
+        ClearTransientDockState(exceptions);
+        ResetWorkspaceWindows(exceptions);
         nextDynamicWindowIndex_ = 1;
         nextDynamicSplitIndex_ = 1;
-        ApplyDefaultLayout();
+        ApplyDefaultLayout(exceptions);
         NotifyDockContentChanged();
+        exceptions.ThrowIfAny();
     }
 
     public bool ActivatePanel(string panelId)
@@ -278,8 +316,10 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
             return false;
         }
 
-        window.Activate(tab);
-        SetActiveWindow(window);
+        var exceptions = new CallbackExceptionBatch();
+        window.Activate(tab, exceptions);
+        SetActiveWindow(window, exceptions);
+        exceptions.ThrowIfAny();
         return true;
     }
 
@@ -305,10 +345,12 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
         }
 
         var tab = CreateTab(descriptor, targetWindow.Area);
-        targetWindow.Add(tab);
-        targetWindow.Activate(tab);
-        SetActiveWindow(targetWindow);
+        var exceptions = new CallbackExceptionBatch();
+        targetWindow.Add(tab, exceptions);
+        targetWindow.Activate(tab, exceptions);
+        SetActiveWindow(targetWindow, exceptions);
         NotifyDockContentChanged();
+        exceptions.ThrowIfAny();
         return true;
     }
 
@@ -346,10 +388,12 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
             return;
         }
 
-        window.Activate(tab);
-        SetActiveWindow(window);
+        var exceptions = new CallbackExceptionBatch();
+        window.Activate(tab, exceptions);
+        SetActiveWindow(window, exceptions);
         SetDragSourceState(window, tab);
         DragState.Begin(tab);
+        exceptions.ThrowIfAny();
     }
 
     public bool ActivateTab(EditorDockTabViewModel tab)
@@ -360,8 +404,10 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
             return false;
         }
 
-        window.Activate(tab);
-        SetActiveWindow(window);
+        var exceptions = new CallbackExceptionBatch();
+        window.Activate(tab, exceptions);
+        SetActiveWindow(window, exceptions);
+        exceptions.ThrowIfAny();
         return true;
     }
 
@@ -376,8 +422,10 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
         }
 
         var moved = window.Move(tab, targetIndex);
-        window.Activate(tab);
-        SetActiveWindow(window);
+        var exceptions = new CallbackExceptionBatch();
+        window.Activate(tab, exceptions);
+        SetActiveWindow(window, exceptions);
+        exceptions.ThrowIfAny();
         return moved;
     }
 
@@ -472,6 +520,10 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
         {
             window.SetHostFocusState(isHostFocused);
         }
+
+        var exceptions = new CallbackExceptionBatch();
+        UpdateActivePanelLifecycle(exceptions);
+        exceptions.ThrowIfAny();
     }
 
     public EditorDockFloatingWindowRequest? CompleteDrag(EditorDockDropTarget target)
@@ -555,17 +607,25 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
                 return FloatTab(tab, target.PreviewBounds);
             }
 
+            if (!ReferenceEquals(
+                    panelInstanceManager_,
+                    targetWorkspace.panelInstanceManager_))
+            {
+                return null;
+            }
+
             if (!targetWorkspace.CanAcceptDetachedTab(target))
             {
                 return null;
             }
 
             var sourceArea = sourceWindow.Area;
-            sourceWindow.Remove(tab);
-            SetActiveWindow(sourceWindow.Tabs.Count > 0 ? sourceWindow : FindFirstWindowWithContent());
-            targetWorkspace.InsertDetachedTab(tab, target, sourceArea);
-            RemoveWindowIfEmpty(sourceWindow);
-            NormalizeLayoutGraph();
+            MoveDetachedTabInto(
+                tab,
+                sourceWindow,
+                targetWorkspace,
+                target,
+                sourceArea);
             return null;
         }
         finally
@@ -607,12 +667,18 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
             return false;
         }
 
-        sourceWindow.Remove(tab);
-        tab.ReleasePanelInstance();
-        RemoveWindowIfEmpty(sourceWindow);
+        var exceptions = new CallbackExceptionBatch();
+        sourceWindow.Remove(tab, exceptions);
+        tab.ReleasePanelInstance(exceptions);
+        RemoveWindowIfEmpty(sourceWindow, exceptions);
         NormalizeLayoutGraph();
-        SetActiveWindow(sourceWindow.Tabs.Count > 0 ? sourceWindow : FindFirstWindowWithContent());
+        SetActiveWindow(
+            sourceWindow.Tabs.Count > 0
+                ? sourceWindow
+                : FindFirstWindowWithContent(),
+            exceptions);
         NotifyDockContentChanged();
+        exceptions.ThrowIfAny();
         return true;
     }
 
@@ -624,8 +690,18 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
 
     public void Dispose()
     {
-        ResetWorkspaceWindows();
-        panelInstanceManager_.Dispose();
+        var exceptions = new CallbackExceptionBatch();
+        Dispose(exceptions);
+        exceptions.ThrowIfAny();
+    }
+
+    private void Dispose(CallbackExceptionBatch exceptions)
+    {
+        ResetWorkspaceWindows(exceptions);
+        if (ownsPanelInstanceManager_)
+        {
+            panelInstanceManager_.Dispose(exceptions);
+        }
     }
 
     public bool ContainsPanel(string panelId)
@@ -722,16 +798,25 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
     private EditorDockNodeViewModel? RestoreLayoutNode(
         EditorDockLayoutNodeSnapshot snapshot,
         IReadOnlyDictionary<string, PanelDescriptor> descriptorsById,
-        HashSet<string> usedTabIds)
+        HashSet<string> usedTabIds,
+        CallbackExceptionBatch exceptions)
     {
         if (snapshot.Kind == LayoutNodeKindSplit)
         {
             var first = snapshot.First is null
                 ? null
-                : RestoreLayoutNode(snapshot.First, descriptorsById, usedTabIds);
+                : RestoreLayoutNode(
+                    snapshot.First,
+                    descriptorsById,
+                    usedTabIds,
+                    exceptions);
             var second = snapshot.Second is null
                 ? null
-                : RestoreLayoutNode(snapshot.Second, descriptorsById, usedTabIds);
+                : RestoreLayoutNode(
+                    snapshot.Second,
+                    descriptorsById,
+                    usedTabIds,
+                    exceptions);
             if (first is null)
             {
                 return second;
@@ -756,7 +841,11 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
             return null;
         }
 
-        var window = RestoreWindow(snapshot, descriptorsById, usedTabIds);
+        var window = RestoreWindow(
+            snapshot,
+            descriptorsById,
+            usedTabIds,
+            exceptions);
         return window is null
             ? null
             : new EditorDockWindowNodeViewModel(
@@ -767,16 +856,31 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
     private EditorDockWindowViewModel? RestoreWindow(
         EditorDockLayoutNodeSnapshot snapshot,
         IReadOnlyDictionary<string, PanelDescriptor> descriptorsById,
-        HashSet<string> usedTabIds)
+        HashSet<string> usedTabIds,
+        CallbackExceptionBatch exceptions)
     {
         var tabs = new List<EditorDockTabViewModel>();
-        foreach (var tabId in snapshot.TabIds)
+        try
         {
-            if (descriptorsById.TryGetValue(tabId, out var descriptor)
-                && usedTabIds.Add(tabId))
+            foreach (var tabId in snapshot.TabIds)
             {
-                tabs.Add(CreateTab(descriptor, snapshot.WindowArea));
+                if (descriptorsById.TryGetValue(tabId, out var descriptor)
+                    && usedTabIds.Add(tabId))
+                {
+                    tabs.Add(CreateTab(descriptor, snapshot.WindowArea));
+                }
             }
+        }
+        catch (Exception exception)
+        {
+            exceptions.Add(exception);
+            foreach (var tab in tabs)
+            {
+                tab.ReleasePanelInstance(exceptions);
+            }
+
+            exceptions.ThrowIfAny();
+            throw;
         }
 
         if (tabs.Count == 0)
@@ -787,7 +891,7 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
         var window = GetOrCreateRestoredWindow(snapshot, tabs[0]);
         foreach (var tab in tabs)
         {
-            window.Add(tab);
+            window.Add(tab, exceptions);
         }
 
         if (snapshot.ActiveTabId is not null)
@@ -796,13 +900,13 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
             {
                 if (tab.Id == snapshot.ActiveTabId)
                 {
-                    window.Activate(tab);
+                    window.Activate(tab, exceptions);
                     return window;
                 }
             }
         }
 
-        window.Activate(window.Tabs[0]);
+        window.Activate(window.Tabs[0], exceptions);
         return window;
     }
 
@@ -859,8 +963,15 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
 
     private void ApplyDefaultLayout()
     {
+        var exceptions = new CallbackExceptionBatch();
+        ApplyDefaultLayout(exceptions);
+        exceptions.ThrowIfAny();
+    }
+
+    private void ApplyDefaultLayout(CallbackExceptionBatch exceptions)
+    {
         if (defaultLayoutFactory_ is not null
-            && TryApplyLayoutSnapshot(defaultLayoutFactory_()))
+            && TryApplyLayoutSnapshot(defaultLayoutFactory_(), exceptions))
         {
             return;
         }
@@ -869,13 +980,19 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
         foreach (var descriptor in panelRegistry_?.GetAll() ?? [])
         {
             var window = windowsByArea_[descriptor.DefaultArea];
-            window.Add(CreateTab(descriptor, window.Area));
+            window.Add(CreateTab(descriptor, window.Area), exceptions);
         }
 
-        SetActiveWindow(CenterWindow.Tabs.Count > 0 ? CenterWindow : FindFirstWindowWithContent());
+        SetActiveWindow(
+            CenterWindow.Tabs.Count > 0
+                ? CenterWindow
+                : FindFirstWindowWithContent(),
+            exceptions);
     }
 
-    private bool TryApplyLayoutSnapshot(EditorDockLayoutSnapshot? snapshot)
+    private bool TryApplyLayoutSnapshot(
+        EditorDockLayoutSnapshot? snapshot,
+        CallbackExceptionBatch exceptions)
     {
         if (panelRegistry_ is null
             || snapshot?.Root is null
@@ -886,7 +1003,11 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
 
         var descriptorsById = CreatePanelDescriptorsById();
         var usedTabIds = new HashSet<string>(StringComparer.Ordinal);
-        var restoredRoot = RestoreLayoutNode(snapshot.Root, descriptorsById, usedTabIds);
+        var restoredRoot = RestoreLayoutNode(
+            snapshot.Root,
+            descriptorsById,
+            usedTabIds,
+            exceptions);
         if (restoredRoot is null)
         {
             return false;
@@ -899,18 +1020,19 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
             snapshot.ActiveWindowId is not null
                 && windowsById_.TryGetValue(snapshot.ActiveWindowId, out var activeWindow)
                     ? activeWindow
-                    : FindFirstWindowWithContent());
+                    : FindFirstWindowWithContent(),
+            exceptions);
         return true;
     }
 
-    private void ResetWorkspaceWindows()
+    private void ResetWorkspaceWindows(CallbackExceptionBatch exceptions)
     {
-        SetActivePanelLifecycle(null);
+        SetActivePanelLifecycle(null, exceptions);
         var existingWindows = new List<EditorDockWindowViewModel>(windowsById_.Values);
         foreach (var window in existingWindows)
         {
-            ReleaseWindowTabs(window);
-            window.ResetTabs();
+            ReleaseWindowTabs(window, exceptions);
+            window.ResetTabs(exceptions);
             window.SetActiveWindowState(false);
             window.SetDragSourceWindowState(false);
         }
@@ -930,22 +1052,28 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
         windowsByArea_[window.Area] = window;
     }
 
-    private void ClearTransientDockState()
+    private void ClearTransientDockState(CallbackExceptionBatch exceptions)
     {
         ClearTabInsertPreview();
         ClearDragSourceState();
         DragState.Clear();
-        SetActivePanelLifecycle(null);
-        activeWindow_?.SetActiveWindowState(false);
+        SetActivePanelLifecycle(null, exceptions);
+        if (activeWindow_ is not null)
+        {
+            activeWindow_.SetActiveWindowState(false);
+        }
+
         activeWindow_ = null;
     }
 
-    private static void ReleaseWindowTabs(EditorDockWindowViewModel window)
+    private static void ReleaseWindowTabs(
+        EditorDockWindowViewModel window,
+        CallbackExceptionBatch exceptions)
     {
         var tabs = new List<EditorDockTabViewModel>(window.Tabs);
         foreach (var tab in tabs)
         {
-            tab.ReleasePanelInstance();
+            tab.ReleasePanelInstance(exceptions);
         }
     }
 
@@ -957,14 +1085,40 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
             return;
         }
 
+        var exceptions = new CallbackExceptionBatch();
         if (!ReferenceEquals(sourceWindow, targetWindow))
         {
-            sourceWindow.Remove(tab);
-            targetWindow.Add(tab);
+            sourceWindow.Remove(tab, exceptions);
+            targetWindow.Add(tab, exceptions);
         }
 
-        targetWindow.Activate(tab);
-        SetActiveWindow(targetWindow);
+        targetWindow.Activate(tab, exceptions);
+        SetActiveWindow(targetWindow, exceptions);
+        exceptions.ThrowIfAny();
+    }
+
+    private void MoveDetachedTabInto(
+        EditorDockTabViewModel tab,
+        EditorDockWindowViewModel sourceWindow,
+        EditorDockWorkspaceViewModel targetWorkspace,
+        EditorDockDropTarget target,
+        EditorDockArea sourceArea)
+    {
+        var exceptions = new CallbackExceptionBatch();
+        sourceWindow.Remove(tab, exceptions);
+        SetActiveWindow(
+            sourceWindow.Tabs.Count > 0
+                ? sourceWindow
+                : FindFirstWindowWithContent(),
+            exceptions);
+        targetWorkspace.InsertDetachedTab(
+            tab,
+            target,
+            sourceArea,
+            exceptions);
+        RemoveWindowIfEmpty(sourceWindow, exceptions);
+        NormalizeLayoutGraph();
+        exceptions.ThrowIfAny();
     }
 
     private void InsertTabAtIndex(
@@ -984,12 +1138,14 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
             return;
         }
 
-        sourceWindow.Remove(tab);
-        targetWindow.Insert(tab, targetIndex);
-        targetWindow.Activate(tab);
-        SetActiveWindow(targetWindow);
-        RemoveWindowIfEmpty(sourceWindow);
+        var exceptions = new CallbackExceptionBatch();
+        sourceWindow.Remove(tab, exceptions);
+        targetWindow.Insert(tab, targetIndex, exceptions);
+        targetWindow.Activate(tab, exceptions);
+        SetActiveWindow(targetWindow, exceptions);
+        RemoveWindowIfEmpty(sourceWindow, exceptions);
         NormalizeLayoutGraph();
+        exceptions.ThrowIfAny();
     }
 
     private void ReorderTabInWindow(
@@ -1004,8 +1160,10 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
         }
 
         targetWindow.Move(tab, targetIndex);
-        targetWindow.Activate(tab);
-        SetActiveWindow(targetWindow);
+        var exceptions = new CallbackExceptionBatch();
+        targetWindow.Activate(tab, exceptions);
+        SetActiveWindow(targetWindow, exceptions);
+        exceptions.ThrowIfAny();
     }
 
     private EditorDockWindowViewModel? FindWindow(EditorDockTabViewModel tab)
@@ -1135,38 +1293,54 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
         };
     }
 
-    private void SetActiveWindow(EditorDockWindowViewModel? window)
+    private void SetActiveWindow(
+        EditorDockWindowViewModel? window,
+        CallbackExceptionBatch exceptions)
     {
         if (ReferenceEquals(activeWindow_, window))
         {
-            UpdateActivePanelLifecycle();
+            UpdateActivePanelLifecycle(exceptions);
             return;
         }
 
         activeWindow_?.SetActiveWindowState(false);
         activeWindow_ = window;
         activeWindow_?.SetActiveWindowState(true);
-        UpdateActivePanelLifecycle();
+        UpdateActivePanelLifecycle(exceptions);
         OnPropertyChanged(nameof(ActiveWindow));
         OnPropertyChanged(nameof(ActiveWindowTitle));
         OnPropertyChanged(nameof(HostTitle));
     }
 
-    private void UpdateActivePanelLifecycle()
+    private void UpdateActivePanelLifecycle(CallbackExceptionBatch exceptions)
     {
-        SetActivePanelLifecycle(activeWindow_?.ActiveTab);
+        SetActivePanelLifecycle(
+            IsHostFocused
+                ? activeWindow_?.ActiveTab
+                : null,
+            exceptions);
     }
 
-    private void SetActivePanelLifecycle(EditorDockTabViewModel? tab)
+    private void SetActivePanelLifecycle(
+        EditorDockTabViewModel? tab,
+        CallbackExceptionBatch exceptions)
     {
         if (ReferenceEquals(activeLifecycleTab_, tab))
         {
+            activeLifecycleTab_?.ActivatePanelInstance(exceptions);
             return;
         }
 
-        activeLifecycleTab_?.DeactivatePanelInstance();
+        if (activeLifecycleTab_ is not null)
+        {
+            activeLifecycleTab_.DeactivatePanelInstance(exceptions);
+        }
+
         activeLifecycleTab_ = tab;
-        activeLifecycleTab_?.ActivatePanelInstance();
+        if (activeLifecycleTab_ is not null)
+        {
+            activeLifecycleTab_.ActivatePanelInstance(exceptions);
+        }
     }
 
     private static void SetPanelLifecycleHostKind(
@@ -1216,21 +1390,84 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
             return null;
         }
 
-        sourceWindow.Remove(tab);
-        SetActiveWindow(sourceWindow.Tabs.Count > 0 ? sourceWindow : FindFirstWindowWithContent());
+        var sourceIndex = sourceWindow.Tabs.IndexOf(tab);
+        var exceptions = new CallbackExceptionBatch();
+        sourceWindow.Remove(tab, exceptions);
+        SetActiveWindow(
+            sourceWindow.Tabs.Count > 0
+                ? sourceWindow
+                : FindFirstWindowWithContent(),
+            exceptions);
+        if (exceptions.HasExceptions)
+        {
+            RestoreTabAfterFailedFloat(
+                tab,
+                sourceWindow,
+                sourceIndex,
+                floatingDockWindow: null,
+                floatingWorkspace: null,
+                exceptions);
+            exceptions.ThrowIfAny();
+        }
 
         var floatingDockWindow = CreateDynamicWindow(tab, sourceWindow.Area);
         tab.SetPanelLifecycleHostKind(isFloatingWorkspace: true);
-        floatingDockWindow.Add(tab);
-        RemoveWindowIfEmpty(sourceWindow);
-        NormalizeLayoutGraph();
+        floatingDockWindow.Add(tab, exceptions);
+        if (exceptions.HasExceptions)
+        {
+            RestoreTabAfterFailedFloat(
+                tab,
+                sourceWindow,
+                sourceIndex,
+                floatingDockWindow,
+                floatingWorkspace: null,
+                exceptions);
+            exceptions.ThrowIfAny();
+        }
 
         var floatingWorkspace = new EditorDockWorkspaceViewModel(
             floatingDockWindow,
             LifecycleEvents,
-            PanelFrameScheduler);
+            PanelFrameScheduler,
+            panelInstanceManager_,
+            exceptions);
+        if (exceptions.HasExceptions)
+        {
+            RestoreTabAfterFailedFloat(
+                tab,
+                sourceWindow,
+                sourceIndex,
+                floatingDockWindow,
+                floatingWorkspace,
+                exceptions);
+            exceptions.ThrowIfAny();
+        }
+
+        RemoveWindowIfEmpty(sourceWindow, exceptions);
+        NormalizeLayoutGraph();
         var floatingWindow = new EditorDockFloatingWindowViewModel(floatingWorkspace, LifecycleEvents);
         return new EditorDockFloatingWindowRequest(floatingWindow, bounds);
+    }
+
+    private void RestoreTabAfterFailedFloat(
+        EditorDockTabViewModel tab,
+        EditorDockWindowViewModel sourceWindow,
+        int sourceIndex,
+        EditorDockWindowViewModel? floatingDockWindow,
+        EditorDockWorkspaceViewModel? floatingWorkspace,
+        CallbackExceptionBatch exceptions)
+    {
+        if (floatingWorkspace is not null)
+        {
+            floatingWorkspace.SetActiveWindow(null, exceptions);
+        }
+
+        floatingDockWindow?.Remove(tab, exceptions);
+        floatingWorkspace?.Dispose(exceptions);
+        tab.SetPanelLifecycleHostKind(IsFloatingWindow);
+        sourceWindow.Insert(tab, sourceIndex, exceptions);
+        sourceWindow.Activate(tab, exceptions);
+        SetActiveWindow(sourceWindow, exceptions);
     }
 
     private void InsertTabAtSplitter(EditorDockTabViewModel tab, EditorDockDropTarget target)
@@ -1249,15 +1486,18 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
 
         if (IsSplitterInsertNoOp(targetSplit, sourceWindow))
         {
-            sourceWindow.Activate(tab);
-            SetActiveWindow(sourceWindow);
+            var noOpExceptions = new CallbackExceptionBatch();
+            sourceWindow.Activate(tab, noOpExceptions);
+            SetActiveWindow(sourceWindow, noOpExceptions);
+            noOpExceptions.ThrowIfAny();
             return;
         }
 
-        sourceWindow.Remove(tab);
+        var exceptions = new CallbackExceptionBatch();
+        sourceWindow.Remove(tab, exceptions);
 
         var insertedWindow = CreateDynamicWindow(tab, sourceWindow.Area);
-        insertedWindow.Add(tab);
+        insertedWindow.Add(tab, exceptions);
         windowsById_.Add(insertedWindow.Id, insertedWindow);
 
         var insertedNode = new EditorDockWindowNodeViewModel(
@@ -1265,8 +1505,9 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
             insertedWindow);
         InsertWindowNodeAtSplitter(targetSplit, insertedNode, target);
 
-        RemoveWindowIfEmpty(sourceWindow);
-        SetActiveWindow(insertedWindow);
+        RemoveWindowIfEmpty(sourceWindow, exceptions);
+        SetActiveWindow(insertedWindow, exceptions);
+        exceptions.ThrowIfAny();
     }
 
     private void InsertTabAdjacentToWindow(
@@ -1297,10 +1538,11 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
             return;
         }
 
-        sourceWindow.Remove(tab);
+        var exceptions = new CallbackExceptionBatch();
+        sourceWindow.Remove(tab, exceptions);
 
         var insertedWindow = CreateDynamicWindow(tab, sourceWindow.Area);
-        insertedWindow.Add(tab);
+        insertedWindow.Add(tab, exceptions);
         windowsById_.Add(insertedWindow.Id, insertedWindow);
 
         var insertedNode = new EditorDockWindowNodeViewModel(
@@ -1309,9 +1551,10 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
         var replacement = CreateWindowInsertionSplit(operation, targetNode, insertedNode);
 
         ReplaceNode(targetNode, replacement);
-        RemoveWindowIfEmpty(sourceWindow);
+        RemoveWindowIfEmpty(sourceWindow, exceptions);
         NormalizeLayoutGraph();
-        SetActiveWindow(insertedWindow);
+        SetActiveWindow(insertedWindow, exceptions);
+        exceptions.ThrowIfAny();
     }
 
     private void InsertTabAtWorkspaceEdge(
@@ -1325,10 +1568,11 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
             return;
         }
 
-        sourceWindow.Remove(tab);
+        var exceptions = new CallbackExceptionBatch();
+        sourceWindow.Remove(tab, exceptions);
 
         var insertedWindow = CreateDynamicWindow(tab, sourceWindow.Area);
-        insertedWindow.Add(tab);
+        insertedWindow.Add(tab, exceptions);
         windowsById_.Add(insertedWindow.Id, insertedWindow);
 
         var insertedNode = new EditorDockWindowNodeViewModel(
@@ -1336,9 +1580,10 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
             insertedWindow);
         InsertWindowNodeAtWorkspaceEdge(operation, insertedNode);
 
-        RemoveWindowIfEmpty(sourceWindow);
+        RemoveWindowIfEmpty(sourceWindow, exceptions);
         NormalizeLayoutGraph();
-        SetActiveWindow(insertedWindow);
+        SetActiveWindow(insertedWindow, exceptions);
+        exceptions.ThrowIfAny();
     }
 
     private bool CanAcceptDetachedTab(EditorDockDropTarget target)
@@ -1391,7 +1636,8 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
     private void InsertDetachedTab(
         EditorDockTabViewModel tab,
         EditorDockDropTarget target,
-        EditorDockArea fallbackArea)
+        EditorDockArea fallbackArea,
+        CallbackExceptionBatch exceptions)
     {
         tab.SetPanelFrameScheduler(PanelFrameScheduler);
         tab.SetPanelLifecycleHostKind(IsFloatingWindow);
@@ -1399,9 +1645,9 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
             && target.TargetId is { } targetWindowId
             && windowsById_.TryGetValue(targetWindowId, out var targetWindow))
         {
-            targetWindow.Add(tab);
-            targetWindow.Activate(tab);
-            SetActiveWindow(targetWindow);
+            targetWindow.Add(tab, exceptions);
+            targetWindow.Activate(tab, exceptions);
+            SetActiveWindow(targetWindow, exceptions);
             return;
         }
 
@@ -1410,9 +1656,12 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
             && target.TargetIndex is { } tabInsertTargetIndex
             && windowsById_.TryGetValue(tabInsertTargetWindowId, out var tabInsertTargetWindow))
         {
-            tabInsertTargetWindow.Insert(tab, tabInsertTargetIndex);
-            tabInsertTargetWindow.Activate(tab);
-            SetActiveWindow(tabInsertTargetWindow);
+            tabInsertTargetWindow.Insert(
+                tab,
+                tabInsertTargetIndex,
+                exceptions);
+            tabInsertTargetWindow.Activate(tab, exceptions);
+            SetActiveWindow(tabInsertTargetWindow, exceptions);
             return;
         }
 
@@ -1425,14 +1674,21 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
                 return;
             }
 
-            var insertedNode = CreateDetachedWindowNode(tab, fallbackArea);
+            var insertedNode = CreateDetachedWindowNode(
+                tab,
+                fallbackArea,
+                exceptions);
             InsertWindowNodeAtSplitter(targetSplit, insertedNode, target);
             return;
         }
 
         if (IsWorkspaceEdgeInsertOperation(target.Operation))
         {
-            InsertDetachedTabAtWorkspaceEdge(tab, target, fallbackArea);
+            InsertDetachedTabAtWorkspaceEdge(
+                tab,
+                target,
+                fallbackArea,
+                exceptions);
             NormalizeLayoutGraph();
             return;
         }
@@ -1448,7 +1704,10 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
                 out var targetNode)
             && targetNode is not null)
         {
-            var insertedNode = CreateDetachedWindowNode(tab, fallbackArea);
+            var insertedNode = CreateDetachedWindowNode(
+                tab,
+                fallbackArea,
+                exceptions);
             var replacement = CreateWindowInsertionSplit(target.Operation, targetNode, insertedNode);
             ReplaceNode(targetNode, replacement);
             NormalizeLayoutGraph();
@@ -1458,18 +1717,25 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
     private void InsertDetachedTabAtWorkspaceEdge(
         EditorDockTabViewModel tab,
         EditorDockDropTarget target,
-        EditorDockArea fallbackArea)
+        EditorDockArea fallbackArea,
+        CallbackExceptionBatch exceptions)
     {
-        var insertedNode = CreateDetachedWindowNode(tab, fallbackArea);
+        var insertedNode = CreateDetachedWindowNode(
+            tab,
+            fallbackArea,
+            exceptions);
         InsertWindowNodeAtWorkspaceEdge(target.Operation, insertedNode);
     }
 
-    private EditorDockWindowNodeViewModel CreateDetachedWindowNode(EditorDockTabViewModel tab, EditorDockArea fallbackArea)
+    private EditorDockWindowNodeViewModel CreateDetachedWindowNode(
+        EditorDockTabViewModel tab,
+        EditorDockArea fallbackArea,
+        CallbackExceptionBatch exceptions)
     {
         var insertedWindow = CreateDynamicWindow(tab, fallbackArea);
-        insertedWindow.Add(tab);
+        insertedWindow.Add(tab, exceptions);
         windowsById_.Add(insertedWindow.Id, insertedWindow);
-        SetActiveWindow(insertedWindow);
+        SetActiveWindow(insertedWindow, exceptions);
         return new EditorDockWindowNodeViewModel(
             $"node-{insertedWindow.Id}",
             insertedWindow);
@@ -1579,7 +1845,9 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
         return EditorDockLayoutGraph.FindSplitNode(node, splitId);
     }
 
-    private void RemoveWindowIfEmpty(EditorDockWindowViewModel window)
+    private void RemoveWindowIfEmpty(
+        EditorDockWindowViewModel window,
+        CallbackExceptionBatch exceptions)
     {
         if (window.Tabs.Count > 0)
         {
@@ -1604,7 +1872,7 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
             RootNode = null;
             if (isActiveWindow)
             {
-                SetActiveWindow(null);
+                SetActiveWindow(null, exceptions);
             }
 
             return;
@@ -1614,7 +1882,7 @@ public sealed class EditorDockWorkspaceViewModel : ViewModelBase, IDisposable
         ReplaceNode(parentSplit, sibling);
         if (isActiveWindow)
         {
-            SetActiveWindow(FindFirstWindowWithContent());
+            SetActiveWindow(FindFirstWindowWithContent(), exceptions);
         }
     }
 

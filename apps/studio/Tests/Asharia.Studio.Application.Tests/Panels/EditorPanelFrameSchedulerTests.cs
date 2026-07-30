@@ -22,7 +22,7 @@ public sealed class EditorPanelFrameSchedulerTests
     }
 
     [Fact]
-    public void Visible_panel_ticks_only_while_attached()
+    public void Visible_panel_ticks_only_while_shown_and_attached()
     {
         var scheduler = new EditorPanelFrameScheduler();
         var sink = new RecordingFrameUpdateSink(EditorPanelFrameUpdateRequest.Visible());
@@ -30,11 +30,17 @@ public sealed class EditorPanelFrameSchedulerTests
 
         scheduler.AttachPanel(context, sink);
         scheduler.Tick(DateTimeOffset.UnixEpoch);
-        scheduler.DetachPanel(context);
+        scheduler.ShowPanel(context);
         scheduler.Tick(DateTimeOffset.UnixEpoch.AddMilliseconds(16));
+        scheduler.HidePanel(context);
+        scheduler.Tick(DateTimeOffset.UnixEpoch.AddMilliseconds(32));
+        scheduler.ShowPanel(context);
+        scheduler.Tick(DateTimeOffset.UnixEpoch.AddMilliseconds(48));
+        scheduler.DetachPanel(context);
+        scheduler.Tick(DateTimeOffset.UnixEpoch.AddMilliseconds(64));
 
-        var frame = Assert.Single(sink.Frames);
-        Assert.Equal("visible", frame.Panel.PanelId);
+        Assert.Equal(2, sink.Frames.Count);
+        Assert.All(sink.Frames, frame => Assert.Equal("visible", frame.Panel.PanelId));
     }
 
     [Fact]
@@ -45,6 +51,7 @@ public sealed class EditorPanelFrameSchedulerTests
         var context = CreateContext("active");
 
         scheduler.AttachPanel(context, sink);
+        scheduler.ShowPanel(context);
         scheduler.Tick(DateTimeOffset.UnixEpoch);
         scheduler.ActivatePanel(context);
         scheduler.Tick(DateTimeOffset.UnixEpoch.AddMilliseconds(16));
@@ -52,8 +59,14 @@ public sealed class EditorPanelFrameSchedulerTests
         scheduler.Tick(DateTimeOffset.UnixEpoch.AddMilliseconds(32));
         scheduler.ActivatePanel(context);
         scheduler.Tick(DateTimeOffset.UnixEpoch.AddMilliseconds(48));
+        scheduler.HidePanel(context);
+        scheduler.Tick(DateTimeOffset.UnixEpoch.AddMilliseconds(64));
+        scheduler.ShowPanel(context);
+        scheduler.Tick(DateTimeOffset.UnixEpoch.AddMilliseconds(80));
+        scheduler.ActivatePanel(context);
+        scheduler.Tick(DateTimeOffset.UnixEpoch.AddMilliseconds(96));
 
-        Assert.Equal(2, sink.Frames.Count);
+        Assert.Equal(3, sink.Frames.Count);
         Assert.All(sink.Frames, frame => Assert.Equal("active", frame.Panel.PanelId));
     }
 
@@ -65,6 +78,7 @@ public sealed class EditorPanelFrameSchedulerTests
         var context = CreateContext("throttled");
 
         scheduler.AttachPanel(context, sink);
+        scheduler.ShowPanel(context);
         scheduler.Tick(DateTimeOffset.UnixEpoch);
         scheduler.Tick(DateTimeOffset.UnixEpoch.AddMilliseconds(250));
         scheduler.Tick(DateTimeOffset.UnixEpoch.AddMilliseconds(500));
@@ -103,6 +117,7 @@ public sealed class EditorPanelFrameSchedulerTests
         var context = CreateContext("repaint");
 
         scheduler.AttachPanel(context, sink);
+        scheduler.ShowPanel(context);
         var frames = scheduler.Tick(DateTimeOffset.UnixEpoch);
 
         var frame = Assert.Single(frames);

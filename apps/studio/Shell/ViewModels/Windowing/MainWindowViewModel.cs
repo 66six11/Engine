@@ -24,6 +24,7 @@ using Asharia.Studio.Application.Projects;
 using Asharia.Studio.Application.Selection;
 using Asharia.Studio.Application.Tasks;
 using Editor.Shell.Services;
+using Editor.Shell.Lifecycle;
 using Editor.Shell.ViewModels.CommandPalette;
 using Editor.Shell.ViewModels.Dialogs;
 using Editor.Shell.ViewModels.Docking;
@@ -115,7 +116,8 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             panelRegistry_,
             LifecycleEvents,
             panelFrameScheduler: null,
-            defaultLayoutFactory: defaultLayoutFactory);
+            defaultLayoutFactory: defaultLayoutFactory,
+            initiallyFocused: false);
         panelCommandService_ = new PanelCommandService(DockWorkspace);
         DialogHost = new EditorDialogHostViewModel();
         var actions = actionRegistry.GetAll();
@@ -298,10 +300,8 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         var requests = new List<EditorDockFloatingWindowRequest>();
         foreach (var snapshot in pendingFloatingWindowSnapshots_)
         {
-            if (!EditorDockWorkspaceViewModel.TryCreateFloatingWorkspace(
-                    panelRegistry_,
+            if (!DockWorkspace.TryCreateFloatingWorkspace(
                     snapshot,
-                    LifecycleEvents,
                     out var floatingWorkspace))
             {
                 continue;
@@ -352,14 +352,21 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         }
 
         isDisposed_ = true;
-        closeFloatingWindows_?.Invoke();
-        SelectionService.SelectionChanged -= OnSelectionChanged;
-        backgroundTasks_.TasksChanged -= OnBackgroundTasksChanged;
-        diagnostics_.DiagnosticsChanged -= OnDiagnosticsChanged;
-        projectSessions_.SnapshotChanged -= OnProjectSessionChanged;
-        ProjectLaunch.Dispose();
-        panelCommandService_.PanelStateChanged -= OnPanelCommandStateChanged;
-        DockWorkspace.Dispose();
+        var exceptions = new CallbackExceptionBatch();
+        exceptions.Capture(() => closeFloatingWindows_?.Invoke());
+        exceptions.Capture(
+            () => SelectionService.SelectionChanged -= OnSelectionChanged);
+        exceptions.Capture(
+            () => backgroundTasks_.TasksChanged -= OnBackgroundTasksChanged);
+        exceptions.Capture(
+            () => diagnostics_.DiagnosticsChanged -= OnDiagnosticsChanged);
+        exceptions.Capture(
+            () => projectSessions_.SnapshotChanged -= OnProjectSessionChanged);
+        exceptions.Capture(ProjectLaunch.Dispose);
+        exceptions.Capture(
+            () => panelCommandService_.PanelStateChanged -= OnPanelCommandStateChanged);
+        exceptions.Capture(DockWorkspace.Dispose);
+        exceptions.ThrowIfAny();
     }
 
     internal EditorCommandExecutionResult? ExecuteShortcut(

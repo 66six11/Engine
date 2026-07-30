@@ -42,6 +42,29 @@ public sealed class EditorPanelFrameScheduler
         }
     }
 
+    public void ShowPanel(EditorPanelLifecycleContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        if (panelsById_.TryGetValue(context.PanelId, out var panel))
+        {
+            panel.Context = context;
+            panel.IsVisible = true;
+        }
+    }
+
+    public void HidePanel(EditorPanelLifecycleContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        if (panelsById_.TryGetValue(context.PanelId, out var panel))
+        {
+            panel.Context = context;
+            panel.IsVisible = false;
+            panel.IsActive = false;
+        }
+    }
+
     public void DeactivatePanel(EditorPanelLifecycleContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -94,6 +117,11 @@ public sealed class EditorPanelFrameScheduler
             return false;
         }
 
+        if (!panel.IsVisible)
+        {
+            return false;
+        }
+
         if (request.Mode == EditorPanelFrameUpdateMode.Active && !panel.IsActive)
         {
             return false;
@@ -123,6 +151,8 @@ public sealed class EditorPanelFrameScheduler
         public IEditorPanelFrameUpdateSink Sink { get; } = sink;
 
         public bool IsActive { get; set; }
+
+        public bool IsVisible { get; set; }
 
         public DateTimeOffset? LastFrameAtUtc { get; set; }
     }

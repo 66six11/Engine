@@ -72,6 +72,9 @@ public sealed class EditorLifecycleViewHookTests
         Assert.Contains("PublishLifecycleEvent(EditorLifecycleEventKind.HostActivated", source);
         Assert.Contains("PublishLifecycleEvent(EditorLifecycleEventKind.HostDeactivated", source);
         Assert.Contains("PublishLifecycleEvent(EditorLifecycleEventKind.WorkspaceRestored", source);
+        Assert.Contains("exceptions.Capture", source);
+        Assert.Contains("base.OnClosed(e);", source);
+        Assert.Contains("exceptions.Add(exception);", source);
     }
 
     [Fact]
@@ -83,6 +86,27 @@ public sealed class EditorLifecycleViewHookTests
         Assert.Contains("PublishLifecycleEvent(EditorLifecycleEventKind.FloatingWindowClosed", source);
         Assert.Contains("PublishLifecycleEvent(EditorLifecycleEventKind.FloatingWindowActivated", source);
         Assert.Contains("PublishLifecycleEvent(EditorLifecycleEventKind.FloatingWindowDeactivated", source);
+        Assert.Contains("exceptions.Capture", source);
+        Assert.Contains("base.OnClosed(e);", source);
+        Assert.Contains("exceptions.Add(exception);", source);
+    }
+
+    [Fact]
+    public void Floating_registry_close_panel_always_closes_empty_host()
+    {
+        var source = LoadSource(
+            "Shell",
+            "Views",
+            "Windowing",
+            "EditorDockFloatingWindowRegistry.cs");
+
+        Assert.Contains("viewModel.DockWorkspace.ContainsPanel(panelId)", source);
+        Assert.Contains(
+            "exceptions.Capture(",
+            source);
+        Assert.Contains("!viewModel.DockWorkspace.HasDockContent()", source);
+        Assert.Contains("exceptions.Capture(window.Close);", source);
+        Assert.Contains("exceptions.ThrowIfAny();", source);
     }
 
     [Fact]

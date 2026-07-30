@@ -238,7 +238,8 @@ public sealed class WorkbenchFeatureModule : IEditorFeatureModule
                 "Window/Panels/Frame Debugger",
                 DockContentCachePolicy.KeepAlive,
                 () => new CodeFirstPanelHostViewModel(
-                    new FrameDebuggerPanel(frameDebuggerSnapshotProvider_, diagnostics_)),
+                    new FrameDebuggerPanel(frameDebuggerSnapshotProvider_, diagnostics_),
+                    uiDispatcher: uiDispatcher_),
                 IconKey: EditorIconKey.PanelFrameDebugger,
                 Tag: "DEBUG",
                 TitleDetail: "read-only snapshot",
@@ -251,7 +252,9 @@ public sealed class WorkbenchFeatureModule : IEditorFeatureModule
                 EditorDockArea.Center,
                 "Window/Panels/UI Style",
                 DockContentCachePolicy.KeepAlive,
-                () => new CodeFirstPanelHostViewModel(new UiStylePanel()),
+                () => new CodeFirstPanelHostViewModel(
+                    new UiStylePanel(),
+                    uiDispatcher: uiDispatcher_),
                 IconKey: EditorIconKey.PanelUiStyle,
                 Tag: "STYLE",
                 TitleDetail: "code-first component guide",

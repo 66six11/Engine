@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Asharia.Editor.Panels;
 using Editor.Core.Abstractions;
 using Asharia.Editor.UI.CodeFirst.Abstractions;
@@ -102,6 +103,95 @@ public sealed class CodeFirstPanelHostViewModelTests
         Assert.Equal(
             ["create:render.frameDebugger", "enable", "gui", "disable", "destroy"],
             panel.Events);
+    }
+
+    [Fact]
+    public void Visibility_activation_and_layout_callbacks_are_distinct_and_ordered()
+    {
+        var dispatcher = new RecordingEditorUiDispatcher();
+        var panel = new RecordingCodeFirstPanel();
+        var host = new CodeFirstPanelHostViewModel(panel, uiDispatcher: dispatcher);
+        var lifecycle = CreateLifecycleContext();
+
+        host.OnPanelAttached(lifecycle);
+        dispatcher.RunPending();
+        host.OnPanelShown(lifecycle);
+        host.OnPanelActivated(lifecycle);
+        Assert.Equal(1, dispatcher.PendingCount);
+        dispatcher.RunPending();
+        host.OnPanelLayoutChanged(new EditorPanelLayoutContext(lifecycle, 800, 450, 1.5));
+        host.OnPanelDeactivated(lifecycle);
+        host.OnPanelHidden(lifecycle);
+        host.OnPanelDetached(lifecycle);
+        host.Dispose();
+
+        Assert.Equal(
+            [
+                "create:render.frameDebugger",
+                "enable",
+                "gui",
+                "shown",
+                "activated",
+                "gui",
+                "layout:800x450@1.5",
+                "deactivated",
+                "hidden",
+                "disable",
+                "destroy",
+            ],
+            panel.Events);
+    }
+
+    [Fact]
+    public void Shown_inactive_panel_rebuilds_to_reflect_shown_state()
+    {
+        var dispatcher = new RecordingEditorUiDispatcher();
+        var panel = new RecordingCodeFirstPanel();
+        var host = new CodeFirstPanelHostViewModel(panel, uiDispatcher: dispatcher);
+        var lifecycle = CreateLifecycleContext();
+        host.OnPanelAttached(lifecycle);
+        dispatcher.RunPending();
+        panel.Events.Clear();
+        var initialBuildCount = panel.GuiBuildCount;
+
+        host.OnPanelShown(lifecycle);
+
+        Assert.Equal(["shown"], panel.Events);
+        Assert.Equal(initialBuildCount, panel.GuiBuildCount);
+        Assert.Equal(1, dispatcher.PendingCount);
+
+        dispatcher.RunPending();
+
+        Assert.Equal(["shown", "gui"], panel.Events);
+        Assert.Equal(initialBuildCount + 1, panel.GuiBuildCount);
+    }
+
+    [Fact]
+    public void Dispose_attempts_all_terminal_callbacks_when_panel_callbacks_throw()
+    {
+        var panel = new ThrowingLifecycleCodeFirstPanel();
+        var host = new CodeFirstPanelHostViewModel(panel);
+        var lifecycle = CreateLifecycleContext();
+        host.OnPanelAttached(lifecycle);
+        host.OnPanelShown(lifecycle);
+        host.OnPanelActivated(lifecycle);
+        panel.ThrowDuringCleanup = true;
+
+        var exception = Assert.Throws<AggregateException>(host.Dispose);
+
+        Assert.Equal(
+            ["deactivated", "hidden", "disabled", "destroyed"],
+            panel.CleanupEvents);
+        Assert.Equal(
+            [
+                "deactivated failure",
+                "hidden failure",
+                "disabled failure",
+                "destroyed failure",
+            ],
+            exception.InnerExceptions.Select(item => item.Message));
+        host.Dispose();
+        Assert.Equal(4, panel.CleanupEvents.Count);
     }
 
     [Fact]
@@ -730,6 +820,16 @@ public sealed class CodeFirstPanelHostViewModelTests
             Events.Add("enable");
         }
 
+        protected override void OnShown()
+        {
+            Events.Add("shown");
+        }
+
+        protected override void OnActivated()
+        {
+            Events.Add("activated");
+        }
+
         protected override void OnGui(EditorGui gui)
         {
             GuiBuildCount++;
@@ -744,6 +844,22 @@ public sealed class CodeFirstPanelHostViewModelTests
             {
                 context.RequestRepaint();
             }
+        }
+
+        protected override void OnLayoutChanged(EditorPanelLayoutContext context)
+        {
+            Events.Add(FormattableString.Invariant(
+                $"layout:{context.LogicalWidth}x{context.LogicalHeight}@{context.RenderScale}"));
+        }
+
+        protected override void OnDeactivated()
+        {
+            Events.Add("deactivated");
+        }
+
+        protected override void OnHidden()
+        {
+            Events.Add("hidden");
         }
 
         protected override void OnDisable()
@@ -769,6 +885,47 @@ public sealed class CodeFirstPanelHostViewModelTests
             }
 
             gui.Label("title", "Valid");
+        }
+    }
+
+    private sealed class ThrowingLifecycleCodeFirstPanel : CodeFirstEditorPanel
+    {
+        public List<string> CleanupEvents { get; } = [];
+
+        public bool ThrowDuringCleanup { get; set; }
+
+        protected override void OnGui(EditorGui gui)
+        {
+            gui.Label("title", "Lifecycle");
+        }
+
+        protected override void OnDeactivated()
+        {
+            RecordCleanup("deactivated");
+        }
+
+        protected override void OnHidden()
+        {
+            RecordCleanup("hidden");
+        }
+
+        protected override void OnDisable()
+        {
+            RecordCleanup("disabled");
+        }
+
+        protected override void OnDestroy()
+        {
+            RecordCleanup("destroyed");
+        }
+
+        private void RecordCleanup(string phase)
+        {
+            CleanupEvents.Add(phase);
+            if (ThrowDuringCleanup)
+            {
+                throw new InvalidOperationException($"{phase} failure");
+            }
         }
     }
 

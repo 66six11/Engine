@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Avalonia;
 using Editor.Shell.Docking.Layout;
+using Editor.Shell.Lifecycle;
 using Editor.Shell.ViewModels.Docking;
 using Editor.Shell.Views.Docking;
 
@@ -85,17 +86,44 @@ internal static class EditorDockFloatingWindowRegistry
 
     public static void CloseAll()
     {
-        Prune();
+        var exceptions = new CallbackExceptionBatch();
+        exceptions.Capture(Prune);
+        var closeActions = new List<Action>();
         foreach (var reference in Windows.ToArray())
         {
             if (reference.TryGetTarget(out var window))
             {
-                window.Close();
+                closeActions.Add(window.Close);
             }
         }
 
-        Windows.Clear();
-        RaiseDockContentChanged();
+        CloseAllCore(
+            closeActions,
+            () =>
+            {
+                Windows.Clear();
+                RaiseDockContentChanged();
+            },
+            exceptions);
+        exceptions.ThrowIfAny();
+    }
+
+    internal static void CloseAllCore(
+        IEnumerable<Action> closeActions,
+        Action onCompleted,
+        CallbackExceptionBatch? exceptions = null)
+    {
+        var callbackExceptions = exceptions ?? new CallbackExceptionBatch();
+        foreach (var closeAction in closeActions)
+        {
+            callbackExceptions.Capture(closeAction);
+        }
+
+        callbackExceptions.Capture(onCompleted);
+        if (exceptions is null)
+        {
+            callbackExceptions.ThrowIfAny();
+        }
     }
 
     public static bool TryActivatePanel(string panelId)
@@ -150,17 +178,22 @@ internal static class EditorDockFloatingWindowRegistry
         {
             if (!TryGetOpenWindow(reference, out var window)
                 || window.DataContext is not EditorDockFloatingWindowViewModel viewModel
-                || !viewModel.DockWorkspace.ClosePanel(panelId))
+                || !viewModel.DockWorkspace.ContainsPanel(panelId))
             {
                 continue;
             }
 
+            var exceptions = new CallbackExceptionBatch();
+            var closed = false;
+            exceptions.Capture(
+                () => closed = viewModel.DockWorkspace.ClosePanel(panelId));
             if (!viewModel.DockWorkspace.HasDockContent())
             {
-                window.Close();
+                exceptions.Capture(window.Close);
             }
 
-            return true;
+            exceptions.ThrowIfAny();
+            return closed;
         }
 
         return false;

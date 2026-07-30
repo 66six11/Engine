@@ -10,6 +10,7 @@ using Avalonia.VisualTree;
 using Editor.Shell.Docking.DropTargets;
 using Editor.Shell.Docking.TabStrips;
 using Editor.Shell.ViewModels.Docking;
+using Editor.Shell.Lifecycle;
 using Editor.Shell.Views.Windowing;
 
 namespace Editor.Shell.Views.Docking;
@@ -144,16 +145,13 @@ public partial class EditorDockWorkspaceView : UserControl
         }
 
         var routedTarget = UpdateRoutedDropPreview(workspace, point);
-        var floatingWindowRequest = workspace.CompleteDragInto(routedTarget.Workspace, routedTarget.Target);
-        if (floatingWindowRequest is not null)
-        {
-            routedTarget.View.ShowFloatingWindow(floatingWindowRequest);
-        }
-
-        HideDraggedDockTabPreview();
-        ClearPreviewWorkspace(routedTarget.View);
-        previewWorkspace_ = null;
-        CloseEmptyFloatingHost(workspace);
+        CompleteTabDragCore(
+            () => workspace.CompleteDragInto(routedTarget.Workspace, routedTarget.Target),
+            routedTarget.View.ShowFloatingWindow,
+            HideDraggedDockTabPreview,
+            () => ClearPreviewWorkspace(routedTarget.View),
+            () => previewWorkspace_ = null,
+            () => CloseEmptyFloatingHost(workspace));
     }
 
     public void CancelTabDrag()
@@ -168,6 +166,28 @@ public partial class EditorDockWorkspaceView : UserControl
         previewWorkspace_ = null;
     }
 
+    internal static EditorDockFloatingWindowRequest? CompleteTabDragCore(
+        Func<EditorDockFloatingWindowRequest?> completeDrag,
+        Action<EditorDockFloatingWindowRequest> showFloatingWindow,
+        params Action[] cleanupActions)
+    {
+        var exceptions = new CallbackExceptionBatch();
+        EditorDockFloatingWindowRequest? request = null;
+        exceptions.Capture(() => request = completeDrag());
+        if (request is { } floatingWindowRequest)
+        {
+            exceptions.Capture(() => showFloatingWindow(floatingWindowRequest));
+        }
+
+        foreach (var cleanupAction in cleanupActions)
+        {
+            exceptions.Capture(cleanupAction);
+        }
+
+        exceptions.ThrowIfAny();
+        return request;
+    }
+
     public void CloseTab(EditorDockTabViewModel tab)
     {
         if (DataContext is not EditorDockWorkspaceViewModel workspace)
@@ -175,8 +195,10 @@ public partial class EditorDockWorkspaceView : UserControl
             return;
         }
 
-        workspace.CloseTab(tab);
-        CloseEmptyFloatingHost(workspace);
+        var exceptions = new CallbackExceptionBatch();
+        exceptions.Capture(() => workspace.CloseTab(tab));
+        exceptions.Capture(() => CloseEmptyFloatingHost(workspace));
+        exceptions.ThrowIfAny();
     }
 
     private RoutedDockDropTarget UpdateRoutedDropPreview(

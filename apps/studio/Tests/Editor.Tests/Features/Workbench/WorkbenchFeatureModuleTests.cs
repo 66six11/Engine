@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using System.Linq;
 using Asharia.Editor.Panels;
 using Editor.Core.Models.Panels;
@@ -9,6 +11,7 @@ using Editor.Core.Models.Scene;
 using Editor.Core.Models.Viewports;
 using Editor.Core.Models.Workbench;
 using Editor.Core.Services;
+using Editor.Core.Abstractions;
 using Editor.Features.Console.ViewModels;
 using Editor.Features.Hierarchy.ViewModels;
 using Editor.Features.Inspector.ViewModels;
@@ -135,6 +138,46 @@ public sealed class WorkbenchFeatureModuleTests
         Assert.IsType<ProblemsPanelViewModel>(descriptors[5].CreateContent());
         Assert.IsType<CodeFirstPanelHostViewModel>(descriptors[6].CreateContent());
         Assert.IsType<CodeFirstPanelHostViewModel>(descriptors[7].CreateContent());
+    }
+
+    [Theory]
+    [InlineData("frame-debugger")]
+    [InlineData("ui-style")]
+    public void Code_first_panel_factories_share_dispatcher_and_coalesce_open_rebuild(
+        string panelId)
+    {
+        var dispatcher = new RecordingEditorUiDispatcher();
+        var sceneProvider = new InMemorySceneSnapshotProvider(new SceneSnapshot(
+            "scene:test",
+            "Test",
+            1,
+            []));
+        var composition = new EditorExtensionHost(
+            [new WorkbenchFeatureModule(
+                new EditorSelectionService(),
+                new EditorDiagnosticService(),
+                sceneProvider,
+                dispatcher)]).Compose();
+        var host = Assert.IsType<CodeFirstPanelHostViewModel>(
+            composition.PanelRegistry.GetRequired(panelId).CreateContent());
+        var context = new EditorPanelLifecycleContext(
+            panelId,
+            panelId,
+            EditorDockArea.Center,
+            IsFloatingWorkspace: false);
+
+        host.OnPanelAttached(context);
+        host.OnPanelShown(context);
+        host.OnPanelActivated(context);
+
+        Assert.Equal(1, dispatcher.PendingCount);
+        Assert.Null(host.CurrentTree);
+
+        dispatcher.RunPending();
+
+        Assert.NotNull(host.CurrentTree);
+        Assert.Equal(0, dispatcher.PendingCount);
+        host.Dispose();
     }
 
     [Fact]
@@ -379,4 +422,26 @@ public sealed class WorkbenchFeatureModuleTests
         string? TitleDetail,
         string? StatusText);
     // ReSharper restore NotAccessedPositionalProperty.Local
+
+    private sealed class RecordingEditorUiDispatcher : IEditorUiDispatcher
+    {
+        private readonly Queue<Action> pendingActions_ = [];
+
+        public int PendingCount => pendingActions_.Count;
+
+        public bool CheckAccess() => true;
+
+        public void Post(Action action)
+        {
+            pendingActions_.Enqueue(action);
+        }
+
+        public void RunPending()
+        {
+            while (pendingActions_.TryDequeue(out var action))
+            {
+                action();
+            }
+        }
+    }
 }

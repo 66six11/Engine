@@ -16,6 +16,7 @@ using Editor.Shell.ViewModels.Windowing;
 using Editor.Shell.ViewModels.Docking;
 using Editor.Shell.ViewModels.Menus;
 using Editor.Shell.Views.Docking;
+using Editor.Shell.Lifecycle;
 
 namespace Editor.Shell.Views.Windowing;
 
@@ -61,14 +62,27 @@ public partial class MainWindow : Window
 
     protected override void OnClosed(EventArgs e)
     {
-        KeyDown -= OnMainWindowKeyDown;
-        SizeChanged -= OnMainWindowSizeChanged;
-        StopPanelFrameTimer();
-        panelFrameTimer_.Tick -= OnPanelFrameTimerTick;
-        Closing -= OnWindowClosing;
-        EditorDockFloatingWindowRegistry.DockContentChanged -= OnFloatingDockContentChanged;
-        PublishLifecycleEvent(EditorLifecycleEventKind.ApplicationClosed);
-        base.OnClosed(e);
+        var exceptions = new CallbackExceptionBatch();
+        exceptions.Capture(() => KeyDown -= OnMainWindowKeyDown);
+        exceptions.Capture(() => SizeChanged -= OnMainWindowSizeChanged);
+        exceptions.Capture(StopPanelFrameTimer);
+        exceptions.Capture(
+            () => panelFrameTimer_.Tick -= OnPanelFrameTimerTick);
+        exceptions.Capture(() => Closing -= OnWindowClosing);
+        exceptions.Capture(
+            () => EditorDockFloatingWindowRegistry.DockContentChanged -= OnFloatingDockContentChanged);
+        exceptions.Capture(
+            () => PublishLifecycleEvent(EditorLifecycleEventKind.ApplicationClosed));
+        try
+        {
+            base.OnClosed(e);
+        }
+        catch (Exception exception)
+        {
+            exceptions.Add(exception);
+        }
+
+        exceptions.ThrowIfAny();
     }
 
     private void OnPanelFrameTimerTick(object? sender, EventArgs e)

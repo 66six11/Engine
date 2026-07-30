@@ -27,7 +27,7 @@ Shell、Dock、platform Window、EngineHost、renderer 和 native bridge 是宿�
 - `EditorExtensionHost` 的 ID/descriptor 校验、注册回滚和逆序 disposal；
 - panel/action/provider typed registry；
 - `PanelInstanceManager` 的 KeepAlive/RecreateOnOpen；
-- panel attach/activate/deactivate/detach 和 frame callback v0；
+- panel attach/detach、shown/hidden、active/inactive、post-layout 和 frame callback v0；
 - Code-first UI 的 node、state、event、validation 和 Avalonia adapter 垂直切片。
 - dependency-free `Asharia.Editor` 中 declaration-only 的 Panel contribution ID、descriptor、builder、同 module duplicate validation 与 immutable freeze。
 - dependency-free `Asharia.Editor.Dialogs` 中七个 UI-neutral public type；request 构造验证 invariant 并冻结 action 防御性只读快照，action ID、role、default、destructive 和 completion 语义彼此独立。
@@ -305,20 +305,20 @@ Code-first 扩展不能访问 Avalonia Control。使用 `Asharia.Editor.Avalonia
 
 Panel factory 永远不返回“已经拥有生命周期的 Window”。需要独立或 floating Window 时，扩展贡献 window/panel descriptor 与 content factory，由 Window host 创建平台窗口并绑定相同 panel lifecycle。
 
-Panel 生命周期：
+Panel 生命周期分成三个正交维度，布局通知与 lifetime 正交：
 
 ```text
-Created -> Attached -> Activated
-Activated -> Deactivated
-Deactivated -> Activated | Detached
-Detached -> Attached | Disposed
-Created | Attached | Deactivated -> Disposed
+Lease:      Created -> Attached -> Detached -> Attached | Disposed
+Visibility: Hidden <-> Shown
+Activation: Inactive <-> Active
+Layout:     latest logical size + render scale after layout
 ```
 
-- `KeepAlive` close：Deactivate → Detach；同一 content lease 可再次 Attach/Activate，module reload/project shutdown 才 Dispose；
-- `RecreateOnOpen` close：Deactivate → Detach → Dispose；
+- `KeepAlive` close：Deactivate → Hide → Detach；同一 content lease 可再次 Attach/Show，并在取得 focus 时 Activate，module reload/project shutdown 才 Dispose；
+- `RecreateOnOpen` close：Deactivate → Hide → Detach → Dispose；
 - Dock move/reorder/float 不等于 Detach/Dispose；
 - callback exception 由 host 捕获并发布 diagnostics；
+- layout notification 在 layout 完成后发布，快速变化 latest-wins，detach 取消旧回调；
 - frame callback 由统一 scheduler 驱动，不能由每个 Window 建 timer。
 
 ## 10. Command、事务与状态

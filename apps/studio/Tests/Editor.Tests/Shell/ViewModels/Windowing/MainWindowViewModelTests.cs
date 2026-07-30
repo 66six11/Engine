@@ -296,7 +296,68 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
-    public void Restored_floating_window_view_model_dispose_releases_panel_instances()
+    public void Dispose_finishes_main_cleanup_after_floating_close_failure()
+    {
+        var floatingFailure = new InvalidOperationException("floating close failure");
+        var mainFailure = new InvalidOperationException("main dispose failure");
+        var disposable = new RecordingDisposable(() => throw mainFailure);
+        var panels = new PanelRegistry();
+        panels.Register(new PanelDescriptor(
+            "panel",
+            "Panel",
+            PanelKind.Tool,
+            EditorDockArea.Center,
+            "Window/Panels/Panel",
+            DockContentCachePolicy.KeepAlive,
+            () => disposable));
+        var viewModel = new MainWindowViewModel(
+            panels,
+            new WorkbenchActionRegistry(),
+            savedLayout: null);
+        viewModel.SetFloatingWindowCallbacks(
+            () => [],
+            () => throw floatingFailure,
+            _ => false,
+            _ => false);
+
+        var exception = Assert.Throws<AggregateException>(viewModel.Dispose);
+
+        Assert.Collection(
+            exception.InnerExceptions,
+            item => Assert.Same(floatingFailure, item),
+            item => Assert.Same(mainFailure, item));
+        Assert.True(disposable.IsDisposed);
+        viewModel.Dispose();
+    }
+
+    [Fact]
+    public void Main_workspace_waits_for_actual_window_focus_before_activating_panel()
+    {
+        var content = new RecordingLifecycleSink();
+        var panels = new PanelRegistry();
+        panels.Register(new PanelDescriptor(
+            "panel",
+            "Panel",
+            PanelKind.Tool,
+            EditorDockArea.Center,
+            "Window/Panels/Panel",
+            DockContentCachePolicy.KeepAlive,
+            () => content));
+        var viewModel = new MainWindowViewModel(
+            panels,
+            new WorkbenchActionRegistry(),
+            savedLayout: null);
+
+        Assert.False(viewModel.DockWorkspace.IsHostFocused);
+        Assert.Equal(["attached"], content.Events);
+
+        viewModel.DockWorkspace.SetHostFocusState(true);
+
+        Assert.Equal(["attached", "activated"], content.Events);
+    }
+
+    [Fact]
+    public void Restored_floating_window_borrows_panel_instances_until_main_session_disposes()
     {
         var disposable = new RecordingDisposable();
         var panels = new PanelRegistry();
@@ -342,6 +403,9 @@ public sealed class MainWindowViewModelTests
 
         var request = Assert.Single(viewModel.ConsumeRestoredFloatingWindowRequests());
         request.Window.Dispose();
+
+        Assert.False(disposable.IsDisposed);
+        viewModel.Dispose();
 
         Assert.True(disposable.IsDisposed);
     }
@@ -1065,6 +1129,31 @@ public sealed class MainWindowViewModelTests
         {
             IsDisposed = true;
             onDispose?.Invoke();
+        }
+    }
+
+    private sealed class RecordingLifecycleSink : IEditorPanelLifecycleSink
+    {
+        public List<string> Events { get; } = [];
+
+        public void OnPanelAttached(EditorPanelLifecycleContext context)
+        {
+            Events.Add("attached");
+        }
+
+        public void OnPanelActivated(EditorPanelLifecycleContext context)
+        {
+            Events.Add("activated");
+        }
+
+        public void OnPanelDeactivated(EditorPanelLifecycleContext context)
+        {
+            Events.Add("deactivated");
+        }
+
+        public void OnPanelDetached(EditorPanelLifecycleContext context)
+        {
+            Events.Add("detached");
         }
     }
 }

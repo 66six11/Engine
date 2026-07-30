@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using Asharia.Editor.Panels;
 using Editor.Core.Models.Panels;
+using Editor.Shell.Lifecycle;
 using Editor.UI.ViewModels;
 
 namespace Editor.Shell.ViewModels.Docking;
@@ -77,6 +78,15 @@ public sealed class EditorDockWindowViewModel : ViewModelBase
 
     public void Add(EditorDockTabViewModel tab)
     {
+        var exceptions = new CallbackExceptionBatch();
+        Add(tab, exceptions);
+        exceptions.ThrowIfAny();
+    }
+
+    internal void Add(
+        EditorDockTabViewModel tab,
+        CallbackExceptionBatch exceptions)
+    {
         tab.Area = Area;
         Tabs.Add(tab);
         tabs_.Add(tab);
@@ -85,11 +95,21 @@ public sealed class EditorDockWindowViewModel : ViewModelBase
 
         if (ActiveTab is null)
         {
-            Activate(tab);
+            Activate(tab, exceptions);
         }
     }
 
     public void Insert(EditorDockTabViewModel tab, int index)
+    {
+        var exceptions = new CallbackExceptionBatch();
+        Insert(tab, index, exceptions);
+        exceptions.ThrowIfAny();
+    }
+
+    internal void Insert(
+        EditorDockTabViewModel tab,
+        int index,
+        CallbackExceptionBatch exceptions)
     {
         tab.Area = Area;
         Tabs.Insert(System.Math.Clamp(index, 0, Tabs.Count), tab);
@@ -99,7 +119,7 @@ public sealed class EditorDockWindowViewModel : ViewModelBase
 
         if (ActiveTab is null)
         {
-            Activate(tab);
+            Activate(tab, exceptions);
         }
     }
 
@@ -130,11 +150,21 @@ public sealed class EditorDockWindowViewModel : ViewModelBase
 
     public void Remove(EditorDockTabViewModel tab)
     {
+        var exceptions = new CallbackExceptionBatch();
+        Remove(tab, exceptions);
+        exceptions.ThrowIfAny();
+    }
+
+    internal void Remove(
+        EditorDockTabViewModel tab,
+        CallbackExceptionBatch exceptions)
+    {
         if (!Tabs.Remove(tab))
         {
             return;
         }
 
+        tab.HidePanelInstance(exceptions);
         tabs_.Remove(tab);
         tab.IsActive = false;
         tab.SetDragSourceState(false);
@@ -148,16 +178,26 @@ public sealed class EditorDockWindowViewModel : ViewModelBase
             if (ActiveTab is not null)
             {
                 ActiveTab.IsActive = true;
+                ActiveTab.ShowPanelInstance(exceptions);
             }
 
             RefreshTabSelectionStates();
         }
+
     }
 
     internal void ResetTabs()
     {
+        var exceptions = new CallbackExceptionBatch();
+        ResetTabs(exceptions);
+        exceptions.ThrowIfAny();
+    }
+
+    internal void ResetTabs(CallbackExceptionBatch exceptions)
+    {
         foreach (var tab in Tabs)
         {
+            tab.HidePanelInstance(exceptions);
             tab.IsActive = false;
             tab.SetDragSourceState(false);
         }
@@ -177,12 +217,30 @@ public sealed class EditorDockWindowViewModel : ViewModelBase
 
     public void Activate(EditorDockTabViewModel tab)
     {
+        var exceptions = new CallbackExceptionBatch();
+        Activate(tab, exceptions);
+        exceptions.ThrowIfAny();
+    }
+
+    internal void Activate(
+        EditorDockTabViewModel tab,
+        CallbackExceptionBatch exceptions)
+    {
+        if (!ReferenceEquals(ActiveTab, tab))
+        {
+            if (ActiveTab is not null)
+            {
+                ActiveTab.HidePanelInstance(exceptions);
+            }
+        }
+
         foreach (var item in Tabs)
         {
             item.IsActive = ReferenceEquals(item, tab);
         }
 
         ActiveTab = tab;
+        ActiveTab.ShowPanelInstance(exceptions);
         RefreshTabSelectionStates();
     }
 
