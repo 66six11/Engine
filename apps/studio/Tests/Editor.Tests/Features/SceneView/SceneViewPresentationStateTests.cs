@@ -31,7 +31,7 @@ public sealed class SceneViewPresentationStateTests
     }
 
     [Fact]
-    public void Consecutive_resize_keeps_only_C_pending_and_rejects_A_and_B_completions()
+    public void Consecutive_resize_presents_completed_frames_monotonically_while_C_remains_latest()
     {
         var state = CreateAttachedState();
         var requestA = state.Observe(Observation(width: 100));
@@ -46,16 +46,73 @@ public sealed class SceneViewPresentationStateTests
         Assert.False(state.IsCurrent(requestB));
         Assert.True(state.IsCurrent(requestC));
         Assert.Equal(requestC, state.LatestPendingRequest);
+        Assert.True(state.CanPresent(requestA));
+        Assert.True(state.MarkPresented(requestA));
+        Assert.True(state.CanPresent(requestB));
+        Assert.True(state.MarkPresented(requestB));
+        Assert.False(state.CanPresent(requestA));
+        Assert.True(state.CanPresent(requestC));
+        Assert.True(state.MarkPresented(requestC));
+        Assert.Equal(
+            requestC.FrameSequence,
+            state.LastPresentedFrameSequence);
 
         state.CompleteFrame(
             workA.SlotId,
-            canReuse: false,
-            warmCurrentGeneration: false);
+            canReuse: false);
         _ = state.CollectRetirements();
 
         Assert.True(
             state.TryBeginWork(allowSlotCreation: true, out var latestWork));
         Assert.Equal(requestC, latestWork.Request);
+    }
+
+    [Fact]
+    public void Newer_presented_resize_prevents_a_late_intermediate_frame_from_regressing()
+    {
+        var state = CreateAttachedState();
+        var requestA = state.Observe(Observation(width: 100));
+        var requestB = state.Observe(Observation(width: 200));
+        var requestC = state.Observe(Observation(width: 300));
+
+        Assert.True(state.MarkPresented(requestA));
+        Assert.True(state.MarkPresented(requestC));
+        Assert.False(state.CanPresent(requestB));
+        Assert.False(state.MarkPresented(requestB));
+        Assert.Equal(
+            requestC.FrameSequence,
+            state.LastPresentedFrameSequence);
+    }
+
+    [Fact]
+    public void Scene_revision_change_rejects_completed_frames_from_the_old_content()
+    {
+        var state = CreateAttachedState();
+        var oldScene =
+            state.Observe(
+                Observation(
+                    width: 100,
+                    sceneRevision: 4));
+        var resizedOldScene =
+            state.Observe(
+                Observation(
+                    width: 200,
+                    sceneRevision: 4));
+
+        Assert.True(state.CanPresent(oldScene));
+        Assert.True(state.MarkPresented(oldScene));
+        Assert.True(state.CanPresent(resizedOldScene));
+
+        var newScene =
+            state.Observe(
+                Observation(
+                    width: 200,
+                    sceneRevision: 5));
+
+        Assert.False(state.CanPresent(resizedOldScene));
+        Assert.False(state.MarkPresented(resizedOldScene));
+        Assert.True(state.CanPresent(newScene));
+        Assert.True(state.MarkPresented(newScene));
     }
 
     [Fact]
@@ -109,46 +166,53 @@ public sealed class SceneViewPresentationStateTests
 
         state.CompleteFrame(
             startedWork.SlotId,
-            canReuse: false,
-            warmCurrentGeneration: false);
+            canReuse: false);
         Assert.True(startedWork.NativeStartAdmission.IsDisposed);
     }
 
     [Fact]
-    public void Successful_first_frame_warms_second_slot_then_stops()
+    public void Successful_first_frame_stops_without_automatic_warmup()
     {
         var state = CreateAttachedState();
 
-        var request = state.Observe(Observation(width: 100));
+        state.Observe(Observation(width: 100));
         Assert.True(
             state.TryBeginWork(allowSlotCreation: true, out var first));
         Assert.Equal(SceneViewPresentationWorkKind.CreateSlot, first.Kind);
         state.CompleteSlotCreation(first.SlotId);
         state.CompleteFrame(
             first.SlotId,
-            canReuse: true,
-            warmCurrentGeneration: true);
-
-        Assert.Equal(request, state.LatestPendingRequest);
-        Assert.False(
-            state.TryBeginWork(allowSlotCreation: false, out _));
-        Assert.Equal(request, state.LatestPendingRequest);
-        Assert.True(
-            state.TryBeginWork(allowSlotCreation: true, out var second));
-        Assert.Equal(SceneViewPresentationWorkKind.CreateSlot, second.Kind);
-        Assert.NotEqual(first.SlotId, second.SlotId);
-        state.CompleteSlotCreation(second.SlotId);
-        state.CompleteFrame(
-            second.SlotId,
-            canReuse: true,
-            warmCurrentGeneration: true);
+            canReuse: true);
 
         Assert.Null(state.LatestPendingRequest);
         Assert.False(
             state.TryBeginWork(allowSlotCreation: true, out _));
-        Assert.Equal(
-            SceneViewPresentationState.MaximumActiveSlots,
-            state.ActiveSlotCount);
+        Assert.Equal(1, state.ActiveSlotCount);
+    }
+
+    [Fact]
+    public void First_real_follow_up_request_creates_the_second_slot_lazily()
+    {
+        var state = CreateAttachedState();
+        state.Observe(Observation(width: 100, sceneRevision: 1));
+        Assert.True(
+            state.TryBeginWork(allowSlotCreation: true, out var first));
+        state.CompleteSlotCreation(first.SlotId);
+        state.CompleteFrame(first.SlotId, canReuse: true);
+
+        var followUp =
+            state.Observe(
+                Observation(
+                    width: 100,
+                    sceneRevision: 2));
+
+        Assert.True(
+            state.TryBeginWork(allowSlotCreation: true, out var second));
+        Assert.Equal(SceneViewPresentationWorkKind.CreateSlot, second.Kind);
+        Assert.Equal(followUp, second.Request);
+        Assert.NotEqual(first.SlotId, second.SlotId);
+        Assert.Equal(2, state.ActiveSlotCount);
+        state.AbortWork(second.SlotId);
     }
 
     [Fact]
@@ -169,8 +233,7 @@ public sealed class SceneViewPresentationStateTests
 
         state.CompleteFrame(
             firstWork.SlotId,
-            canReuse: true,
-            warmCurrentGeneration: false);
+            canReuse: true);
         var nextRequest = state.Observe(Observation(width: 100));
 
         Assert.True(nextRequest.FrameSequence > firstRequest.FrameSequence);
@@ -227,8 +290,7 @@ public sealed class SceneViewPresentationStateTests
 
         state.CompleteFrame(
             first.SlotId,
-            canReuse: false,
-            warmCurrentGeneration: false);
+            canReuse: false);
         _ = state.CollectRetirements();
 
         Assert.True(
@@ -281,8 +343,7 @@ public sealed class SceneViewPresentationStateTests
         state.CompleteSlotCreation(first.SlotId);
         state.CompleteFrame(
             first.SlotId,
-            canReuse: false,
-            warmCurrentGeneration: false);
+            canReuse: false);
         Assert.Equal(0, state.ActiveSlotCount);
         Assert.Equal(1, state.PendingRetirementCount);
 
@@ -292,8 +353,7 @@ public sealed class SceneViewPresentationStateTests
         state.CompleteSlotCreation(second.SlotId);
         state.CompleteFrame(
             second.SlotId,
-            canReuse: false,
-            warmCurrentGeneration: false);
+            canReuse: false);
         Assert.Equal(0, state.ActiveSlotCount);
         Assert.Equal(2, state.PendingRetirementCount);
 
@@ -320,8 +380,7 @@ public sealed class SceneViewPresentationStateTests
         state.CompleteSlotCreation(created.SlotId);
         state.CompleteFrame(
             created.SlotId,
-            canReuse: true,
-            warmCurrentGeneration: false);
+            canReuse: true);
 
         var secondRequest =
             state.Observe(Observation(width: 100, sceneRevision: 2));
@@ -343,8 +402,7 @@ public sealed class SceneViewPresentationStateTests
         state.CompleteSlotCreation(work.SlotId);
         state.CompleteFrame(
             work.SlotId,
-            canReuse: true,
-            warmCurrentGeneration: false);
+            canReuse: true);
 
         var request = state.Observe(Observation(width: 100));
         var retirements = state.Detach();
@@ -388,8 +446,7 @@ public sealed class SceneViewPresentationStateTests
             state.CompleteSlotCreation(work.SlotId);
             state.CompleteFrame(
                 work.SlotId,
-                canReuse: true,
-                warmCurrentGeneration: false);
+                canReuse: true);
         }
     }
 }

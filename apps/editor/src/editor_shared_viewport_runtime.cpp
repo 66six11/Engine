@@ -1,11 +1,13 @@
 ﻿#include "editor_shared_viewport_runtime.hpp"
 
 #include <array>
+#include <exception>
 #include <expected>
 #include <mutex>
 #include <optional>
 #include <utility>
 
+#include "asharia/core/log.hpp"
 #include "asharia/rhi_vulkan/vulkan_error.hpp"
 
 namespace asharia::editor {
@@ -117,6 +119,7 @@ namespace asharia::editor {
             return renderFrameFailure(vulkanError("Shared viewport runtime has shut down"));
         }
 
+        pollRetiringPacketsLocked();
         if (outstandingLegacyPackets_ >= kMaxOutstandingLegacyPackets) {
             ++packetBackpressureHits_;
             return renderFrameBackpressure();
@@ -164,6 +167,7 @@ namespace asharia::editor {
             return renderFrameFailure(vulkanError("Shared viewport runtime has shut down"));
         }
 
+        pollRetiringPacketsLocked();
         const std::optional<std::size_t> frameResourceIndex = availableFrameResourceIndexLocked();
         if (!frameResourceIndex) {
             ++packetBackpressureHits_;
@@ -210,6 +214,7 @@ namespace asharia::editor {
             return renderFrameFailure(vulkanError("Shared viewport runtime has shut down"));
         }
 
+        pollRetiringPacketsLocked();
         auto* state = static_cast<EditorSharedViewportPacketState*>(nativeSlot);
         if (!outstandingPackets_.contains(state) || !state->reusable) {
             return renderFrameFailure(
@@ -244,37 +249,29 @@ namespace asharia::editor {
         }
 
         auto* packetState = static_cast<EditorSharedViewportPacketState*>(nativePacket);
-        std::unique_ptr<EditorSharedViewportPacketState> state;
-        std::optional<std::size_t> releasingFrameResourceIndex;
+        std::optional<asharia::VulkanContext> contextToDestroy;
         {
             std::lock_guard lock{mutex_};
             if (outstandingPackets_.erase(packetState) == 0U) {
                 return;
             }
 
-            if (packetState->frameResources) {
-                const std::size_t index = packetState->frameResources->index();
-                if (index < releasingFrameResourceIndices_.size()) {
-                    releasingFrameResourceIndex = index;
-                    releasingFrameResourceIndices_.at(index) = true;
-                }
-            }
             if (!packetState->reusable) {
                 --outstandingLegacyPackets_;
             }
-            ++releasingPacketCount_;
-            state.reset(packetState);
-        }
 
-        state.reset();
-
-        std::optional<asharia::VulkanContext> contextToDestroy;
-        {
-            std::lock_guard lock{mutex_};
-            if (releasingFrameResourceIndex) {
-                releasingFrameResourceIndices_.at(*releasingFrameResourceIndex) = false;
+            std::unique_ptr<EditorSharedViewportPacketState> state{packetState};
+            auto retired = state->retireCompletedGpuWork();
+            if (!retired) {
+                logError(retired.error().message);
+                if (state->submitted) {
+                    state->abandonPendingGpuWork();
+                    retainRetiringPacketLocked(std::move(state), true);
+                }
+            } else if (!*retired) {
+                retainRetiringPacketLocked(std::move(state), false);
             }
-            --releasingPacketCount_;
+
             contextToDestroy = takeContextForShutdownIfIdleLocked();
         }
     }
@@ -292,18 +289,80 @@ namespace asharia::editor {
         return {};
     }
 
+    void EditorSharedViewportRuntime::pollRetiringPacketsLocked() {
+        for (RetiringPacket& packet : retiringPackets_) {
+            if (!packet.state || packet.quarantined) {
+                continue;
+            }
+
+            auto retired = packet.state->retireCompletedGpuWork();
+            if (!retired) {
+                logError(retired.error().message);
+                if (packet.state->submitted) {
+                    packet.state->abandonPendingGpuWork();
+                    packet.quarantined = true;
+                } else {
+                    packet.state.reset();
+                }
+                continue;
+            }
+            if (*retired) {
+                packet.state.reset();
+            }
+        }
+    }
+
+    void EditorSharedViewportRuntime::retainRetiringPacketLocked(
+        std::unique_ptr<EditorSharedViewportPacketState> state, bool quarantined) {
+        for (RetiringPacket& packet : retiringPackets_) {
+            if (!packet.state) {
+                packet.state = std::move(state);
+                packet.quarantined = quarantined;
+                return;
+            }
+        }
+
+        logError("Shared viewport retirement exceeded its fixed packet capacity.");
+        state->abandonPendingGpuWork();
+        std::terminate();
+    }
+
+    std::size_t EditorSharedViewportRuntime::retiringPacketCountLocked() const {
+        std::size_t count = 0U;
+        for (const RetiringPacket& packet : retiringPackets_) {
+            if (packet.state) {
+                ++count;
+            }
+        }
+        return count;
+    }
+
     std::optional<std::size_t>
     EditorSharedViewportRuntime::availableFrameResourceIndexLocked() const {
-        if (outstandingPackets_.size() >= kMaxOutstandingPackets) {
+        if (outstandingPackets_.size() + retiringPacketCountLocked() >= kMaxOutstandingPackets) {
             return std::nullopt;
         }
 
-        std::array<bool, kMaxOutstandingPackets> used = releasingFrameResourceIndices_;
+        std::array<bool, kMaxOutstandingPackets> used{};
         for (const EditorSharedViewportPacketState* state : outstandingPackets_) {
             if (!state->frameResources) {
                 return std::nullopt;
             }
             const std::size_t index = state->frameResources->index();
+            if (index >= used.size()) {
+                return std::nullopt;
+            }
+            used.at(index) = true;
+        }
+        for (const RetiringPacket& packet : retiringPackets_) {
+            if (!packet.state) {
+                continue;
+            }
+            const auto& frameResources = packet.state->frameResources;
+            if (!frameResources) {
+                return std::nullopt;
+            }
+            const std::size_t index = frameResources->index();
             if (index >= used.size()) {
                 return std::nullopt;
             }
@@ -323,46 +382,54 @@ namespace asharia::editor {
         {
             std::lock_guard lock{mutex_};
             shutdownRequested_ = true;
+            pollRetiringPacketsLocked();
             contextToDestroy = takeContextForShutdownIfIdleLocked();
         }
     }
 
-    EditorSharedViewportRuntimeStats EditorSharedViewportRuntime::stats() const {
-        std::lock_guard lock{mutex_};
-        EditorSharedViewportRenderProducerStats producerStats{};
-        if (renderProducer_) {
-            producerStats = renderProducer_->stats();
-        }
+    EditorSharedViewportRuntimeStats EditorSharedViewportRuntime::stats() {
+        std::optional<asharia::VulkanContext> contextToDestroy;
+        EditorSharedViewportRuntimeStats snapshot;
+        {
+            std::lock_guard lock{mutex_};
+            pollRetiringPacketsLocked();
+            EditorSharedViewportRenderProducerStats producerStats{};
+            if (renderProducer_) {
+                producerStats = renderProducer_->stats();
+            }
+            contextToDestroy = takeContextForShutdownIfIdleLocked();
 
-        return EditorSharedViewportRuntimeStats{
-            .framesRendered = framesRendered_,
-            .producersCreated = producersCreated_,
-            .packetsCreated = packetsCreated_,
-            .externalImagesAcquired = producerStats.externalImagesAcquired,
-            .externalImagesCreated = producerStats.externalImagesCreated,
-            .externalImagesReused = producerStats.externalImagesReused,
-            .externalImagesReleased = producerStats.externalImagesReleased,
-            .externalImagesAvailable = producerStats.externalImagesAvailable,
-            .externalImagesLeased = producerStats.externalImagesLeased,
-            .frameEpochsSubmitted = producerStats.frameEpochsSubmitted,
-            .frameEpochsCompleted = producerStats.frameEpochsCompleted,
-            .frameEpochsPending = producerStats.frameEpochsPending,
-            .rendererCreations = producerStats.rendererCreations,
-            .packetBackpressureHits = packetBackpressureHits_,
-            .sceneFramesRendered = producerStats.sceneFramesRendered,
-            .lastSceneRevision = producerStats.lastSceneRevision,
-            .maxOutstandingPackets = kMaxOutstandingPackets,
-            .outstandingPackets = outstandingPackets_.size(),
-            .hasContext = context_.has_value(),
-            .hasRenderProducer = renderProducer_.has_value(),
-            .shutdownRequested = shutdownRequested_,
-        };
+            snapshot = EditorSharedViewportRuntimeStats{
+                .framesRendered = framesRendered_,
+                .producersCreated = producersCreated_,
+                .packetsCreated = packetsCreated_,
+                .externalImagesAcquired = producerStats.externalImagesAcquired,
+                .externalImagesCreated = producerStats.externalImagesCreated,
+                .externalImagesReused = producerStats.externalImagesReused,
+                .externalImagesReleased = producerStats.externalImagesReleased,
+                .externalImagesAvailable = producerStats.externalImagesAvailable,
+                .externalImagesLeased = producerStats.externalImagesLeased,
+                .frameEpochsSubmitted = producerStats.frameEpochsSubmitted,
+                .frameEpochsCompleted = producerStats.frameEpochsCompleted,
+                .frameEpochsPending = producerStats.frameEpochsPending,
+                .rendererCreations = producerStats.rendererCreations,
+                .packetBackpressureHits = packetBackpressureHits_,
+                .sceneFramesRendered = producerStats.sceneFramesRendered,
+                .lastSceneRevision = producerStats.lastSceneRevision,
+                .maxOutstandingPackets = kMaxOutstandingPackets,
+                .outstandingPackets = outstandingPackets_.size(),
+                .hasContext = context_.has_value(),
+                .hasRenderProducer = renderProducer_.has_value(),
+                .shutdownRequested = shutdownRequested_,
+            };
+        }
+        return snapshot;
     }
 
     std::optional<asharia::VulkanContext>
     EditorSharedViewportRuntime::takeContextForShutdownIfIdleLocked() {
-        if (!shutdownRequested_ || !outstandingPackets_.empty() || releasingPacketCount_ != 0U ||
-            !context_) {
+        if (!shutdownRequested_ || !outstandingPackets_.empty() ||
+            retiringPacketCountLocked() != 0U || !context_) {
             return std::nullopt;
         }
 

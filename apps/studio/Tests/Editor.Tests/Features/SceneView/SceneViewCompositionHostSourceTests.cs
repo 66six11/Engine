@@ -8,7 +8,7 @@ namespace Editor.Tests.Features.SceneView;
 public sealed class SceneViewCompositionHostSourceTests
 {
     [Fact]
-    public void Host_commits_exact_frame_geometry_atomically_and_centers_old_frame()
+    public void Host_serializes_surface_updates_and_keeps_the_visual_fitted_to_current_bounds()
     {
         var source = LoadSource("Features", "SceneView", "Views", "SceneViewCompositionHost.cs");
 
@@ -19,27 +19,31 @@ public sealed class SceneViewCompositionHostSourceTests
         Assert.Contains("ElementComposition.SetElementChildVisual(this, visual_)", source, StringComparison.Ordinal);
         Assert.Contains("CompositionDrawingSurface? Surface", source, StringComparison.Ordinal);
         Assert.Contains("TryCommitFrameAsync(", source, StringComparison.Ordinal);
-        Assert.Contains("surfaceUpdateGate_.WaitAsync()", source, StringComparison.Ordinal);
+        Assert.Contains("SceneViewSurfaceUpdateGate surfaceUpdateGate_", source, StringComparison.Ordinal);
+        Assert.Contains("surfaceUpdateGate_.RunAsync(", source, StringComparison.Ordinal);
         Assert.Contains("RequestCompositionUpdate(", source, StringComparison.Ordinal);
         Assert.Contains("updateTask = updateSurface(surface)", source, StringComparison.Ordinal);
-        Assert.Contains("ApplyFramePlacement(visual, frameSizeDip)", source, StringComparison.Ordinal);
-        Assert.Contains("visual.Size = ToVector(size)", source, StringComparison.Ordinal);
+        Assert.Contains("ApplyFramePlacement(visual)", source, StringComparison.Ordinal);
+        Assert.Contains("visual.Size = ToVector(Bounds.Size)", source, StringComparison.Ordinal);
+        Assert.Contains("visual.Offset = Vector3.Zero", source, StringComparison.Ordinal);
         Assert.Contains("change.Property == BoundsProperty", source, StringComparison.Ordinal);
-        Assert.Contains("isPlacementUpdateQueued_", source, StringComparison.Ordinal);
-        Assert.Contains("(Bounds.Width - size.Width) / 2d", source, StringComparison.Ordinal);
-        Assert.Contains("(Bounds.Height - size.Height) / 2d", source, StringComparison.Ordinal);
         Assert.Equal(
-            2,
+            1,
             source.Split(
-                "!isCurrent() || !Bounds.Size.Equals(frameSizeDip)",
+                "RequestCompositionUpdate(",
                 StringSplitOptions.None).Length - 1);
+        Assert.DoesNotContain("Bounds.Size.Equals(frameSizeDip)", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("isPlacementUpdateQueued_", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("(Bounds.Width -", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("(Bounds.Height -", source, StringComparison.Ordinal);
         Assert.Contains("ReleaseCompositionResourcesAsync(", source, StringComparison.Ordinal);
         Assert.Contains("DisposeSurfaceAfterAsync(", source, StringComparison.Ordinal);
-        Assert.Contains("CompleteSuccessfulAttempt(", source, StringComparison.Ordinal);
-        Assert.Contains("TryGetRollbackTarget(", source, StringComparison.Ordinal);
-        Assert.Contains("LastSuccessfulFrameSizeDip", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("SceneViewCompositionCommitState", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("TryGetRollbackTarget(", source, StringComparison.Ordinal);
         Assert.DoesNotContain("WidthPixels /", source, StringComparison.Ordinal);
         Assert.DoesNotContain("HeightPixels /", source, StringComparison.Ordinal);
+
+        Assert.DoesNotContain("SemaphoreSlim", source, StringComparison.Ordinal);
     }
 
     private static string LoadSource(params string[] pathParts)

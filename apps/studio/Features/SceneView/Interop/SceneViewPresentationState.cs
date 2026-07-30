@@ -146,16 +146,18 @@ internal sealed class SceneViewPresentationState
     private ulong sessionEpoch_;
     private ulong surfaceGeneration_;
     private ulong frameSequence_;
+    private ulong lastPresentedFrameSequence_;
     private FrameSignature? currentSignature_;
     private SceneViewFrameRequest? currentRequest_;
     private SceneViewFrameRequest? latestPendingRequest_;
-    private bool isWarmupPending_;
 
     public int ActiveSlotCount => activeSlots_.Count;
 
     public int PendingRetirementCount => pendingRetirements_.Count;
 
     public SceneViewFrameRequest? LatestPendingRequest => latestPendingRequest_;
+
+    public ulong LastPresentedFrameSequence => lastPresentedFrameSequence_;
 
     public void Attach()
     {
@@ -164,7 +166,7 @@ internal sealed class SceneViewPresentationState
         currentSignature_ = null;
         currentRequest_ = null;
         latestPendingRequest_ = null;
-        isWarmupPending_ = false;
+        lastPresentedFrameSequence_ = 0;
     }
 
     public IReadOnlyList<int> Detach()
@@ -190,7 +192,7 @@ internal sealed class SceneViewPresentationState
         currentSignature_ = null;
         currentRequest_ = null;
         latestPendingRequest_ = null;
-        isWarmupPending_ = false;
+        lastPresentedFrameSequence_ = 0;
 
         foreach (var slot in activeSlots_.Values)
         {
@@ -244,7 +246,6 @@ internal sealed class SceneViewPresentationState
                 ++frameSequence_);
         currentRequest_ = request;
         latestPendingRequest_ = request;
-        isWarmupPending_ = false;
 
         foreach (var slot in activeSlots_.Values)
         {
@@ -323,7 +324,6 @@ internal sealed class SceneViewPresentationState
                     request,
                     createAdmission));
             latestPendingRequest_ = null;
-            isWarmupPending_ = false;
             work =
                 new SceneViewPresentationWork(
                     SceneViewPresentationWorkKind.CreateSlot,
@@ -333,7 +333,7 @@ internal sealed class SceneViewPresentationState
             return true;
         }
 
-        if (isWarmupPending_ || reusableSlot is null)
+        if (reusableSlot is null)
         {
             return false;
         }
@@ -341,7 +341,6 @@ internal sealed class SceneViewPresentationState
         var reuseAdmission =
             reusableSlot.BeginFrame(request);
         latestPendingRequest_ = null;
-        isWarmupPending_ = false;
         work =
             new SceneViewPresentationWork(
                 SceneViewPresentationWorkKind.RenderSlot,
@@ -378,8 +377,7 @@ internal sealed class SceneViewPresentationState
 
     public void CompleteFrame(
         int slotId,
-        bool canReuse,
-        bool warmCurrentGeneration)
+        bool canReuse)
     {
         var slot = GetSlot(slotId);
         if (slot.Lifecycle is not (SlotLifecycle.InFlight or SlotLifecycle.Creating))
@@ -388,7 +386,6 @@ internal sealed class SceneViewPresentationState
                 "Only an active Scene View slot can complete a frame.");
         }
 
-        var completedRequest = slot.ActiveRequest;
         slot.CompleteActiveWork();
         var remainsActive =
             canReuse &&
@@ -401,18 +398,6 @@ internal sealed class SceneViewPresentationState
         }
 
         slot.Lifecycle = SlotLifecycle.Available;
-        if (warmCurrentGeneration &&
-            completedRequest is not null &&
-            IsCurrent(completedRequest) &&
-            latestPendingRequest_ is null &&
-            activeSlots_.Values.Count(
-                candidate =>
-                    candidate.SurfaceGeneration == slot.SurfaceGeneration) <
-            MaximumSlotsPerGeneration)
-        {
-            latestPendingRequest_ = completedRequest;
-            isWarmupPending_ = true;
-        }
     }
 
     public void AbortWork(int slotId)
@@ -440,7 +425,6 @@ internal sealed class SceneViewPresentationState
         if (IsCurrent(request) && latestPendingRequest_ is null)
         {
             latestPendingRequest_ = request;
-            isWarmupPending_ = false;
         }
     }
 
@@ -453,6 +437,29 @@ internal sealed class SceneViewPresentationState
                current.ViewportId == request.ViewportId &&
                current.SurfaceGeneration == request.SurfaceGeneration &&
                current.FrameSequence == request.FrameSequence;
+    }
+
+    public bool CanPresent(SceneViewFrameRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        return isAccepting_ &&
+               currentRequest_ is { } current &&
+               current.SessionEpoch == request.SessionEpoch &&
+               current.ViewportId == request.ViewportId &&
+               current.HasScene == request.HasScene &&
+               current.SceneRevision == request.SceneRevision &&
+               request.FrameSequence > lastPresentedFrameSequence_;
+    }
+
+    public bool MarkPresented(SceneViewFrameRequest request)
+    {
+        if (!CanPresent(request))
+        {
+            return false;
+        }
+
+        lastPresentedFrameSequence_ = request.FrameSequence;
+        return true;
     }
 
     public IReadOnlyList<int> CollectRetirements()

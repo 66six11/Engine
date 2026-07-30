@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <unordered_set>
@@ -65,13 +66,22 @@ namespace asharia::editor {
         renderPresentSlot(void* nativeSlot, EditorSharedViewportPresentDesc desc);
         void releasePresentPacket(void* nativePacket);
         void shutdown();
-        [[nodiscard]] EditorSharedViewportRuntimeStats stats() const;
+        [[nodiscard]] EditorSharedViewportRuntimeStats stats();
 
     private:
+        struct RetiringPacket {
+            std::unique_ptr<EditorSharedViewportPacketState> state;
+            bool quarantined{};
+        };
+
         [[nodiscard]] asharia::Result<EditorSharedViewportRenderProducer*>
         ensureRenderProducerLocked();
         [[nodiscard]] std::optional<asharia::VulkanContext> takeContextForShutdownIfIdleLocked();
         [[nodiscard]] asharia::Result<void> retireCompletedPresentSlotsLocked();
+        void pollRetiringPacketsLocked();
+        void retainRetiringPacketLocked(std::unique_ptr<EditorSharedViewportPacketState> state,
+                                        bool quarantined);
+        [[nodiscard]] std::size_t retiringPacketCountLocked() const;
         [[nodiscard]] std::optional<std::size_t> availableFrameResourceIndexLocked() const;
 
         static constexpr std::size_t kMaxOutstandingPackets = 4U;
@@ -81,9 +91,8 @@ namespace asharia::editor {
         std::optional<asharia::VulkanContext> context_;
         std::optional<EditorSharedViewportRenderProducer> renderProducer_;
         std::unordered_set<EditorSharedViewportPacketState*> outstandingPackets_;
-        std::array<bool, kMaxOutstandingPackets> releasingFrameResourceIndices_{};
+        std::array<RetiringPacket, kMaxOutstandingPackets> retiringPackets_;
         std::size_t outstandingLegacyPackets_{};
-        std::size_t releasingPacketCount_{};
         std::uint64_t producersCreated_{};
         std::uint64_t framesRendered_{};
         std::uint64_t packetsCreated_{};

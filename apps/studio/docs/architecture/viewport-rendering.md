@@ -14,15 +14,17 @@
 
 - 创建 Avalonia `CompositionDrawingSurface`；
 - 查询 compositor GPU capability；
-- 通过单一 `SceneViewPresentationSession` 保存 latest request、generation、sequence、
-  双槽、backpressure 和 drain 状态；
+- 通过单一 `SceneViewPresentationSession` 分离 current request、ready frame 与
+  last-presented sequence，并保存 generation、按需双槽、backpressure 和 drain 状态；
 - 在串行后台 producer 上创建或重录 native present slot；
 - Scene View 默认按需渲染；初始 attach、Bounds/DPI、scene revision 和显式交互
-  invalidation 先合并到单一 queued composition update，再采样最新状态触发帧请求；
-  静止且场景不变时不加入固定帧率 panel tick；
+  invalidation 直接采样布局完成后的 `CompositionHost.Bounds` 并写入 latest state；
+  native lane 暂不可用时才使用 queued composition update 提供重试节拍，静止且场景
+  不变时不加入固定帧率 panel tick；
 - 每个 slot 只导入一次 image 和两枚 semaphore，并使用
   `UpdateWithSemaphoresAsync` 的完成任务作为 compositor 使用期边界；
-- resize 时保持最后成功帧的原始 DIP 尺寸，在最新 Bounds 中居中裁剪，不缩放旧帧；
+- resize 时让最后成功 surface 始终覆盖最新 Bounds，并允许相同 scene revision 的
+  ready frame 按 sequence 单调前进；最新 exact-size 帧到达后再收敛到精确分辨率；
 - 关闭、detach 和 reattach 时先排空 frame/slot，再在 UI dispatcher 释放
   composition surface；
 - shared viewport runtime 不把单独安装的 Vulkan SDK validation layer 作为 Studio
@@ -120,9 +122,11 @@ Scene View 默认选择 `OnDemand`。只有相机/工具交互、场景或渲染
 
 ## 7. Presentation generation
 
-每次 attach、resize、render-scale change、backend recovery 和 device recovery 增加 `SurfaceGeneration`。
+每次 attach、不兼容的 pixel extent/render-scale change、backend recovery 和 device recovery
+增加 `SurfaceGeneration`。只改变 DIP、但换算后的 pixel extent 与 render scale 未变时，仅推进
+frame sequence。
 
-异步结果只有同时匹配以下字段才允许更新当前状态：
+异步结果只有同时匹配以下字段才允许更新当前 ViewModel、诊断和严格 current 状态：
 
 ```text
 EngineEpoch
@@ -131,10 +135,13 @@ SurfaceGeneration
 FrameSequence
 ```
 
-旧 generation 的 probe、frame 和 completion 只完成资源释放，不更新 ViewModel 或 surface。
-当前 generation 的 active chain 与旧 generation 的 retirement backlog 分开计数；backlog
-可以短暂包含多个历史 extent，但 active、retiring、reservation 和 quarantine 总量有界，
-不能因连续 resize 建立无界资源队列。
+旧 generation 的 probe 只完成资源释放，不更新当前状态。ready frame 即使尺寸 generation
+已经过期，只要 session、viewport、scene revision 仍一致且 sequence 更新，也可以进入单一
+drawing surface update，作为 resize 过渡帧；它不更新当前 ViewModel。frame 进入 update 后，
+scene revision 仍可能再次变化，此时 surface 可能落地一次，但 completion 不会被接受，也不能
+覆盖更大的已接受 sequence。当前 generation 的 active chain 与旧 generation 的 retirement
+backlog 分开计数；backlog 可以短暂包含多个历史 extent，但 active、retiring、reservation 和
+quarantine 总量有界，不能因连续 resize 建立无界资源队列。
 
 ## 8. 跨平台 backend
 
@@ -243,7 +250,7 @@ Scene View input 先进入 editor tool/router，再形成 camera、selection、g
 ## 13. Resize、隐藏和 detach
 
 详细决策见
-[ADR-0006：视口交互 Resize 采用最新请求合并与代际提交](../adr/0006-viewport-interactive-resize.md)。
+[ADR-0006：面板交互 Resize 采用连续呈现与最新尺寸收敛](../adr/0006-viewport-interactive-resize.md)。
 
 - 同一次 Bounds/DPI 观察同时捕获原始 DIP size、render scale、pixel extent、generation
   和 frame sequence；禁止从 pixel extent 反推 DIP size；
@@ -251,26 +258,30 @@ Scene View input 先进入 editor tool/router，再形成 camera、selection、g
   不兼容 image；
 - presentation 始终只保存一个 latest pending request；连续 resize 覆盖旧 pending，
   不为历史 Bounds 建立队列；
-- Bounds/DPI/scene invalidation 先合并到一个 queued composition update；每个合成周期
-  至多捕获一次最新观察并启动一次 producer，Bounds 回调不直接创建 native work；
+- `CompositionHost.SizeChanged` 在面板布局完成后立即捕获最新观察并写入 session；
+  Bounds 回调不执行 native 工作，producer 仍在串行后台路径启动；
 - 与当前 pending/in-flight request 完全相同的观察不会创建新 sequence，避免固定
   invalidation 在首帧较慢时持续使自身过期；当前工作完成后才允许同内容的下一帧；
 - native create/render/submit 在串行 producer worker 执行；composition import、commit
   和 dispose 只在 compositor dispatcher 执行；
 - 新 generation 会取消仍停留在 producer gate 前、尚未开始 native 的旧 generation
   工作；已经进入 native/GPU/compositor 的工作不可取消，只能完成并按代际退役；
-- 单个 composition surface 的更新串行提交；只有成功 completion 能推进“最后成功帧”
-  状态，失败始终恢复到最后成功帧，不能把尝试尺寸当成已呈现尺寸；
-- completion 只有匹配当前 engine epoch、viewport、generation 和 sequence 才能更新
-  surface 或 ViewModel；stale completion 只退役资源；
-- 旧 generation 保持最后成功帧的原始尺寸，在当前 Bounds 中居中并由 host clip；
-  不缩放、不变形。新 extent 首帧与精确 visual geometry 在同一个 composition update
-  中提交；
+- 单个 composition surface 的更新串行提交；成功 completion 推进单调
+  `LastPresentedSequence`，该 accept 在 surface gate 释放前完成，不能依赖调用方
+  continuation 顺序；失败保留 drawing surface 中上一份成功 snapshot；
+- producer admission 继续要求严格 current；ready frame 的显示资格则要求同一
+  session/viewport/scene revision 且 sequence 大于最后已呈现值。仅尺寸 generation
+  过期的 completion 可以作为 resize 过渡帧，ViewModel 状态仍只由严格 current 更新。
+  revision 检查是进入单一 drawing surface update 前的 admission；已经获准进入的在途
+  update 可能再落地一次，但不会再次被接受，也不能覆盖更大的已接受 sequence；
+- composition visual 始终覆盖当前 Bounds。exact-size 帧尚未到达时，最后成功 surface
+  由 compositor 临时重采样；最新 extent 到达后再收敛到精确像素映射；
 - 不使用“两次相同尺寸”或固定 debounce 作为正确性条件；两个 active slot 都忙或总
   native lane 已满时保留 latest request；active/retirement completion 直接唤醒，
   native `Unavailable` 只请求下一次 compositor cadence，不运行固定 retry timer；
-- 当前 extent 的首个成功帧会自动 warm 第二个持久 slot，之后静止；过期 slot 移交独立
-  retirement backlog 后不再占 active-chain 配额；
+- 当前 extent 的首个成功帧不会自动 warm；同一 generation 的第二次真实 render
+  invalidation 才按需创建第二个持久 slot。过期 slot 移交独立 retirement backlog 后
+  不再占 active-chain 配额；
 - active chain 最多两个当前-generation slot；active、retiring、create reservation 与
   quarantine 合计仍受四个 native frame-resource lane 的硬上限约束；
 - capability probe 不属于 resize 热路径；
@@ -278,7 +289,9 @@ Scene View input 先进入 editor tool/router，再形成 camera、selection、g
   Bounds 首次有效时只重试 extent-dependent presentation 配置，不重新读取 capability；
   Unsupported/失败状态不会因后续 resize 重复 probe；
 - presentation 配置完成后，后续 Bounds 变化只提交 latest frame request；
-- UI dispatcher 不等待 Vulkan fence、queue idle 或 device idle；
+- UI dispatcher 不等待 Vulkan fence、queue idle 或 device idle；consumer release 后
+  native packet 进入非阻塞 retirement queue，由后续 producer 调用轮询 fence，完成后
+  才销毁资源并归还 lane；
 - hidden/minimized presentation 停止 continuous render request；
 - Dock move 不销毁 ViewportSession；
 - visual detach 进入 Draining，完成当前 lease 后释放 imported wrapper；
@@ -317,7 +330,10 @@ Scene View input 先进入 editor tool/router，再形成 camera、selection、g
 - 两个以上同时渲染的 Viewport；
 - Scene 与 Game View target 不同 World；
 - Dock→float→Dock；
-- resize、DPI change、minimize、restore、hide、close、reopen；
+- 连续拖动 Scene View Dock 分割条，包括大幅 resize、DPI change、minimize、
+  restore、hide、close、reopen；
+- resize 期间 surface 持续覆盖面板、ready frame 单调前进，并在停止后收敛到最新
+  exact extent；
 - import failure、stale generation、device mismatch、device lost；
 - scheduler fairness、backpressure 和 dropped frame；
 - 无 validation error、handle leak、pending lease 和无界队列；

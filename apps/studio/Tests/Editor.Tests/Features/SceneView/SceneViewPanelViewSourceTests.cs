@@ -23,14 +23,15 @@ public sealed class SceneViewPanelViewSourceTests
         Assert.Contains("UpdateNativePresent(", source, StringComparison.Ordinal);
         Assert.Contains("RenderRequested", source, StringComparison.Ordinal);
         Assert.Contains("OnSceneViewRenderRequested", source, StringComparison.Ordinal);
-        Assert.Contains("QueueNativeFrame()", source, StringComparison.Ordinal);
-        Assert.Contains("isFrameRequestQueued_", source, StringComparison.Ordinal);
+        Assert.Contains("QueueNativeFrameRetry", source, StringComparison.Ordinal);
+        Assert.Contains("isRetryQueued_", source, StringComparison.Ordinal);
         Assert.Contains("RequestCompositionUpdate(", source, StringComparison.Ordinal);
-        Assert.Contains("CompleteQueuedFrameRequest(queueSequence)", source, StringComparison.Ordinal);
+        Assert.Contains("CompleteQueuedFrameRetry(queueSequence)", source, StringComparison.Ordinal);
         Assert.Contains("RequestNativeFrame()", source, StringComparison.Ordinal);
         Assert.Contains("TopLevel.GetTopLevel", source, StringComparison.Ordinal);
         Assert.Contains("RenderScaling", source, StringComparison.Ordinal);
         Assert.Contains("CompositionHost.Bounds.Size", source, StringComparison.Ordinal);
+        Assert.Contains("CompositionHost.SizeChanged += OnCompositionHostSizeChanged", source, StringComparison.Ordinal);
         Assert.Contains("Task.Run(", source, StringComparison.Ordinal);
         Assert.Contains("await precedingDetach", source, StringComparison.Ordinal);
         Assert.Contains("ReleaseCompositionResourcesAsync(", source, StringComparison.Ordinal);
@@ -39,7 +40,8 @@ public sealed class SceneViewPanelViewSourceTests
         Assert.Contains("isAttached_ = true", source, StringComparison.Ordinal);
         Assert.Contains("OnDataContextChanged", source, StringComparison.Ordinal);
         Assert.Contains("BeginCapabilityProbe();", source, StringComparison.Ordinal);
-        Assert.Contains("change.Property != BoundsProperty || !isAttached_", source, StringComparison.Ordinal);
+        Assert.Contains("private void OnCompositionHostSizeChanged(", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("change.Property != BoundsProperty", source, StringComparison.Ordinal);
         Assert.Contains("PresentationSetupState.Configured", source, StringComparison.Ordinal);
         Assert.Contains("PresentationSetupState.WaitingForFrameExtent", source, StringComparison.Ordinal);
         Assert.Contains("BeginPresentationConfiguration();", source, StringComparison.Ordinal);
@@ -51,6 +53,46 @@ public sealed class SceneViewPanelViewSourceTests
         Assert.DoesNotContain(".Wait()", source, StringComparison.Ordinal);
         Assert.DoesNotContain(".Result", source, StringComparison.Ordinal);
         Assert.DoesNotContain("Thread.Sleep", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Layout_size_and_scene_changes_observe_immediately_while_retry_uses_composition_cadence()
+    {
+        var source = LoadSource("Features", "SceneView", "Views", "SceneViewPanelView.axaml.cs");
+        var resizeHandler =
+            source[
+                source.IndexOf(
+                    "private void OnCompositionHostSizeChanged(",
+                    StringComparison.Ordinal)..source.IndexOf(
+                    "private void OnTopLevelScalingChanged(",
+                    StringComparison.Ordinal)];
+        var sceneHandler =
+            source[
+                source.IndexOf(
+                    "private void OnSceneViewRenderRequested(",
+                    StringComparison.Ordinal)..source.IndexOf(
+                    "private void OnCompositionHostSizeChanged(",
+                    StringComparison.Ordinal)];
+        var presentationChange =
+            source[
+                source.IndexOf(
+                    "private void RequestFrameForPresentationChange()",
+                    StringComparison.Ordinal)..source.IndexOf(
+                    "private enum PresentationSetupState",
+                    StringComparison.Ordinal)];
+
+        Assert.Contains("RequestFrameForPresentationChange();", resizeHandler, StringComparison.Ordinal);
+        Assert.Contains("RequestNativeFrame();", sceneHandler, StringComparison.Ordinal);
+        Assert.DoesNotContain("QueueNativeFrameRetry", resizeHandler, StringComparison.Ordinal);
+        Assert.DoesNotContain("QueueNativeFrameRetry", sceneHandler, StringComparison.Ordinal);
+        Assert.Contains("RequestNativeFrame();", presentationChange, StringComparison.Ordinal);
+        Assert.DoesNotContain("QueueNativeFrameRetry", presentationChange, StringComparison.Ordinal);
+        Assert.Contains("configuration.RequestRetry()", LoadSource(
+            "Features",
+            "SceneView",
+            "Interop",
+            "SceneViewPresentationSession.cs"), StringComparison.Ordinal);
+        Assert.Contains("RequestCompositionUpdate(", source, StringComparison.Ordinal);
     }
 
     [Fact]

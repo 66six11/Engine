@@ -9,12 +9,16 @@
 // clang-format on
 
 #include <array>
+#include <chrono>
 #include <cstdint>
 #include <string_view>
+#include <thread>
 
 #include "asharia/core/log.hpp"
 #include "asharia/rhi_vulkan/vulkan_context.hpp"
+#include "asharia/rhi_vulkan/vulkan_error.hpp"
 
+#include "editor_shared_viewport_render_producer.hpp"
 #include "native_bridge/viewport_native_api.hpp"
 
 namespace asharia::editor {
@@ -286,6 +290,49 @@ namespace asharia::editor {
                    stats.header.structSize == sizeof(EditorViewportNativeRuntimeStatsV6);
         }
 
+        [[nodiscard]] bool waitForRuntimeEpochs(std::uint64_t submitted, std::uint64_t completed,
+                                                std::uint64_t pending,
+                                                std::uint64_t outstandingPackets) {
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
+            while (std::chrono::steady_clock::now() < deadline) {
+                EditorViewportNativeRuntimeStatsV3 stats{};
+                if (queryRuntimeStatsV3(stats) && stats.frameEpochsSubmitted == submitted &&
+                    stats.frameEpochsCompleted == completed &&
+                    stats.frameEpochsPending == pending &&
+                    stats.outstandingPackets == outstandingPackets) {
+                    return true;
+                }
+                std::this_thread::yield();
+            }
+            return false;
+        }
+
+        [[nodiscard]] bool waitForExternalImageLeases(std::uint64_t expectedLeases) {
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
+            while (std::chrono::steady_clock::now() < deadline) {
+                EditorViewportNativeRuntimeStatsV2 stats{};
+                if (queryRuntimeStatsV2(stats) && stats.externalImagesLeased == expectedLeases) {
+                    return true;
+                }
+                std::this_thread::yield();
+            }
+            return false;
+        }
+
+        [[nodiscard]] bool waitForRuntimeShutdown() {
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
+            while (std::chrono::steady_clock::now() < deadline) {
+                EditorViewportNativeRuntimeStatsV2 stats{};
+                if (queryRuntimeStatsV2(stats) && stats.hasContext == 0U &&
+                    stats.hasRenderProducer == 0U && stats.shutdownRequested == 1U &&
+                    stats.outstandingPackets == 0U) {
+                    return true;
+                }
+                std::this_thread::yield();
+            }
+            return false;
+        }
+
         [[nodiscard]] bool smokeCompatibilityContract() {
             if (!expectCompatibilityStatus(nullptr, EditorViewportNativeStatus_InvalidArgument)) {
                 logError(
@@ -481,6 +528,10 @@ namespace asharia::editor {
             }
             releaseIfNeeded(backpressuredPacket);
             releaseIfNeeded(packet);
+            if (!waitForRuntimeEpochs(1U, 1U, 0U, 0U)) {
+                logError("Viewport native bridge smoke did not poll the first packet retirement.");
+                return false;
+            }
 
             EditorViewportNativeRuntimeStatsV3 statsV3AfterFirstRelease{};
             if (!queryRuntimeStatsV3(statsV3AfterFirstRelease) ||
@@ -542,6 +593,11 @@ namespace asharia::editor {
                 return false;
             }
             releaseIfNeeded(secondPacket);
+            if (!waitForRuntimeEpochs(2U, 2U, 0U, 0U)) {
+                logError(
+                    "Viewport native bridge smoke did not poll the same-size packet retirement.");
+                return false;
+            }
 
             EditorViewportNativeRuntimeStatsV3 statsV3AfterSecondRelease{};
             if (!queryRuntimeStatsV3(statsV3AfterSecondRelease) ||
@@ -602,6 +658,11 @@ namespace asharia::editor {
                 return false;
             }
             releaseIfNeeded(resizedPacket);
+            if (!waitForRuntimeEpochs(3U, 3U, 0U, 0U)) {
+                logError(
+                    "Viewport native bridge smoke did not poll the resized packet retirement.");
+                return false;
+            }
 
             EditorViewportNativeRuntimeStatsV3 statsV3AfterResizeRelease{};
             if (!queryRuntimeStatsV3(statsV3AfterResizeRelease) ||
@@ -655,6 +716,10 @@ namespace asharia::editor {
                 return false;
             }
             releaseIfNeeded(resizeChurnPacket);
+            if (!waitForRuntimeEpochs(4U, 4U, 0U, 0U)) {
+                logError("Viewport native bridge smoke did not poll the resize churn retirement.");
+                return false;
+            }
 
             EditorViewportNativeRuntimeStatsV2 statsAfterResizeChurn{};
             if (!queryRuntimeStatsV2(statsAfterResizeChurn) ||
@@ -771,16 +836,143 @@ namespace asharia::editor {
 
         [[nodiscard]] bool smokeReusableSlotStats() {
             EditorViewportNativeRuntimeStatsV5 stats{};
-            if (!queryRuntimeStatsV5(stats) || stats.framesRendered != 10U ||
-                stats.packetsCreated != 8U || stats.outstandingPackets != 0U ||
-                stats.maxOutstandingPackets != 4U || stats.packetBackpressureHits != 2U ||
-                stats.frameEpochsSubmitted != 10U || stats.frameEpochsCompleted != 10U ||
-                stats.frameEpochsPending != 0U) {
+            if (!waitForRuntimeEpochs(10U, 10U, 0U, 0U) || !queryRuntimeStatsV5(stats) ||
+                stats.framesRendered != 10U || stats.packetsCreated != 8U ||
+                stats.outstandingPackets != 0U || stats.maxOutstandingPackets != 4U ||
+                stats.packetBackpressureHits != 2U || stats.frameEpochsSubmitted != 10U ||
+                stats.frameEpochsCompleted != 10U || stats.frameEpochsPending != 0U) {
                 logError("Viewport native bridge smoke did not retire reusable slots cleanly.");
                 return false;
             }
 
             return true;
+        }
+
+        [[nodiscard]] bool
+        smokeNonBlockingRetirement(const VulkanContext& compositionContext,
+                                   const EditorViewportNativePresentRequestV2& request) {
+            EditorViewportNativeRuntimeStatsV5 statsBefore{};
+            if (!queryRuntimeStatsV5(statsBefore) || statsBefore.frameEpochsPending != 0U ||
+                statsBefore.outstandingPackets != 0U) {
+                logError(
+                    "Viewport native bridge smoke did not start retirement from an idle runtime.");
+                return false;
+            }
+
+            EditorViewportNativePresentPacket slot{};
+            if (editor_viewport_create_present_slot_v3(&request, &slot) !=
+                    EditorViewportNativeStatus_Success ||
+                slot.status != EditorViewportNativeStatus_Success || slot.nativePacket == nullptr ||
+                slot.frameIndex != statsBefore.framesRendered + 1U) {
+                logPresentPacketMessage(slot);
+                releaseIfNeeded(slot);
+                logError("Viewport native bridge smoke could not create the retirement test slot.");
+                return false;
+            }
+
+            auto* state = static_cast<EditorSharedViewportPacketState*>(slot.nativePacket);
+            if (state->device == VK_NULL_HANDLE || state->fence == VK_NULL_HANDLE ||
+                !state->submitted) {
+                releaseIfNeeded(slot);
+                logError("Viewport native bridge smoke received an incomplete retirement slot.");
+                return false;
+            }
+
+            VkQueue graphicsQueue = VK_NULL_HANDLE;
+            // Both smoke contexts use the same no-surface queue policy; the preceding interop
+            // checks establish that this family is valid for the packet device.
+            vkGetDeviceQueue(state->device, compositionContext.graphicsQueueFamily(), 0U,
+                             &graphicsQueue);
+
+            constexpr std::uint64_t kInitialFrameTimeoutNanoseconds = 5'000'000'000ULL;
+            VkResult setupResult = vkWaitForFences(state->device, 1U, &state->fence, VK_TRUE,
+                                                   kInitialFrameTimeoutNanoseconds);
+            if (setupResult != VK_SUCCESS) {
+                releaseIfNeeded(slot);
+                logError(
+                    "Viewport native bridge smoke could not observe the initial frame completion.");
+                return false;
+            }
+
+            setupResult = vkResetFences(state->device, 1U, &state->fence);
+            if (setupResult != VK_SUCCESS || graphicsQueue == VK_NULL_HANDLE) {
+                state->submitted = false;
+                releaseIfNeeded(slot);
+                logError("Viewport native bridge smoke could not reset its retirement fence.");
+                return false;
+            }
+
+            const VkFence retirementFence = state->fence;
+            const auto releaseStarted = std::chrono::steady_clock::now();
+            releaseIfNeeded(slot);
+            slot = {};
+            const auto releaseDuration = std::chrono::steady_clock::now() - releaseStarted;
+            constexpr auto kMaximumNonBlockingReleaseDuration = std::chrono::milliseconds{500};
+            bool passed = releaseDuration < kMaximumNonBlockingReleaseDuration;
+            if (!passed) {
+                logError("Viewport native bridge smoke observed a blocking packet release.");
+            }
+
+            const std::uint64_t expectedSubmitted = statsBefore.frameEpochsSubmitted + 1U;
+            const std::uint64_t expectedCompleted = statsBefore.frameEpochsCompleted;
+            EditorViewportNativeRuntimeStatsV5 statsPending{};
+            if (!queryRuntimeStatsV5(statsPending) ||
+                statsPending.frameEpochsSubmitted != expectedSubmitted ||
+                statsPending.frameEpochsCompleted != expectedCompleted ||
+                statsPending.frameEpochsPending != 1U || statsPending.outstandingPackets != 0U) {
+                logError("Viewport native bridge smoke did not retain pending work for polling.");
+                passed = false;
+            }
+
+            EditorViewportNativeRuntimeStatsV2 statsPendingV2{};
+            if (!queryRuntimeStatsV2(statsPendingV2) || statsPendingV2.externalImagesLeased != 1U) {
+                logError("Viewport native bridge smoke released a pending external image early.");
+                passed = false;
+            }
+
+            VkSubmitInfo2 completionSubmit{};
+            completionSubmit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
+            const VkResult completionSubmitted =
+                vkQueueSubmit2(graphicsQueue, 1U, &completionSubmit, retirementFence);
+            if (completionSubmitted != VK_SUCCESS) {
+                logError(vulkanError("Viewport native bridge smoke could not submit retirement "
+                                     "completion",
+                                     completionSubmitted)
+                             .message);
+                return false;
+            }
+
+            const bool epochsReclaimed =
+                waitForRuntimeEpochs(expectedSubmitted, expectedSubmitted, 0U, 0U);
+            const bool leaseReturned = waitForExternalImageLeases(0U);
+            if (!epochsReclaimed || !leaseReturned) {
+                // Debug-smoke cleanup only: no render loop can reach this fallback.
+                const VkResult queueIdle = vkQueueWaitIdle(graphicsQueue);
+                if (queueIdle != VK_SUCCESS) {
+                    logError(vulkanError("Viewport native bridge smoke could not idle the "
+                                         "retirement queue",
+                                         queueIdle)
+                                 .message);
+                }
+                EditorViewportNativeRuntimeStatsV2 finalPoll{};
+                [[maybe_unused]] const bool finalPollSucceeded = queryRuntimeStatsV2(finalPoll);
+            }
+
+            if (!epochsReclaimed) {
+                logError("Viewport native bridge smoke did not reclaim the polled retirement.");
+                return false;
+            }
+            if (!leaseReturned) {
+                logError("Viewport native bridge smoke did not return the retired image lease.");
+                return false;
+            }
+
+            EditorViewportNativeRuntimeStatsV2 statsAfter{};
+            if (!queryRuntimeStatsV2(statsAfter) || statsAfter.externalImagesLeased != 0U) {
+                logError("Viewport native bridge smoke retained a reclaimed external image lease.");
+                return false;
+            }
+            return passed;
         }
 
         [[nodiscard]] bool smokeReusableSlots() {
@@ -811,7 +1003,8 @@ namespace asharia::editor {
             const bool framesPassed = smokeReusableSlotFrames(*compositionContext, reusableSlot);
             const bool limitPassed = framesPassed && smokeBoundedReusableSlots(request);
             releaseIfNeeded(reusableSlot);
-            return framesPassed && limitPassed && smokeReusableSlotStats();
+            const bool statsPassed = framesPassed && limitPassed && smokeReusableSlotStats();
+            return statsPassed && smokeNonBlockingRetirement(*compositionContext, request);
         }
 
         [[nodiscard]] bool smokeShutdownOrdering() {
@@ -827,7 +1020,7 @@ namespace asharia::editor {
                 shutdownPendingPacket.imageHandle != nullptr &&
                 shutdownPendingPacket.waitSemaphoreHandle != nullptr &&
                 shutdownPendingPacket.signalSemaphoreHandle != nullptr &&
-                shutdownPendingPacket.frameIndex == 11U;
+                shutdownPendingPacket.frameIndex == 12U;
             if (!shutdownPendingPacketAvailable) {
                 logPresentPacketMessage(shutdownPendingPacket);
                 releaseIfNeeded(shutdownPendingPacket);
@@ -838,8 +1031,8 @@ namespace asharia::editor {
 
             EditorViewportNativeRuntimeStatsV3 statsV3BeforeShutdown{};
             if (!queryRuntimeStatsV3(statsV3BeforeShutdown) ||
-                statsV3BeforeShutdown.frameEpochsSubmitted != 11U ||
-                statsV3BeforeShutdown.frameEpochsCompleted != 10U ||
+                statsV3BeforeShutdown.frameEpochsSubmitted != 12U ||
+                statsV3BeforeShutdown.frameEpochsCompleted != 11U ||
                 statsV3BeforeShutdown.frameEpochsPending != 1U ||
                 statsV3BeforeShutdown.outstandingPackets != 1U) {
                 releaseIfNeeded(shutdownPendingPacket);
@@ -850,9 +1043,9 @@ namespace asharia::editor {
             EditorViewportNativeRuntimeStatsV4 statsV4BeforeShutdown{};
             if (!queryRuntimeStatsV4(statsV4BeforeShutdown) ||
                 statsV4BeforeShutdown.rendererCreations != 1U ||
-                statsV4BeforeShutdown.packetsCreated != 9U ||
-                statsV4BeforeShutdown.frameEpochsSubmitted != 11U ||
-                statsV4BeforeShutdown.frameEpochsCompleted != 10U ||
+                statsV4BeforeShutdown.packetsCreated != 10U ||
+                statsV4BeforeShutdown.frameEpochsSubmitted != 12U ||
+                statsV4BeforeShutdown.frameEpochsCompleted != 11U ||
                 statsV4BeforeShutdown.frameEpochsPending != 1U ||
                 statsV4BeforeShutdown.outstandingPackets != 1U) {
                 releaseIfNeeded(shutdownPendingPacket);
@@ -863,6 +1056,20 @@ namespace asharia::editor {
 
             editor_viewport_shutdown();
             releaseIfNeeded(shutdownPendingPacket);
+            if (!waitForRuntimeShutdown()) {
+                logError("Viewport native bridge smoke retained an idle shutdown context.");
+                return false;
+            }
+
+            EditorViewportNativeRuntimeStatsV2 statsAfterRetirement{};
+            if (!queryRuntimeStatsV2(statsAfterRetirement) ||
+                statsAfterRetirement.hasContext != 0U ||
+                statsAfterRetirement.hasRenderProducer != 0U ||
+                statsAfterRetirement.shutdownRequested != 1U ||
+                statsAfterRetirement.outstandingPackets != 0U) {
+                logError("Viewport native bridge smoke reported inconsistent shutdown state.");
+                return false;
+            }
 
             EditorViewportNativePresentPacket afterShutdownPacket{};
             EditorViewportNativePresentRequest afterShutdownRequest =

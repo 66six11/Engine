@@ -32,6 +32,15 @@ public sealed class SceneViewPresentationSessionSourceTests
         Assert.Contains("configuration.RequestRetry()", source, StringComparison.Ordinal);
         Assert.Contains("return !state_.IsCurrent(work.Request)", source, StringComparison.Ordinal);
         Assert.Contains("state_.IsCurrent(work.Request)", source, StringComparison.Ordinal);
+        Assert.Contains("state_.CanPresent(work.Request)", source, StringComparison.Ordinal);
+        Assert.Contains(
+            "() => state_.MarkPresented(work.Request),",
+            source,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "committed = committed && state_.MarkPresented",
+            source,
+            StringComparison.Ordinal);
         Assert.Contains("MaximumOwnedSlots = 4", source, StringComparison.Ordinal);
         Assert.Contains("activeSlots_", source, StringComparison.Ordinal);
         Assert.Contains("retiringSlots_", source, StringComparison.Ordinal);
@@ -41,9 +50,10 @@ public sealed class SceneViewPresentationSessionSourceTests
         Assert.Contains("retiringSlots_.Add(slotId, slot)", source, StringComparison.Ordinal);
         Assert.Contains("retiringSlots_.Remove(slotId)", source, StringComparison.Ordinal);
         Assert.Contains("SceneViewResourceQuarantine.Count", source, StringComparison.Ordinal);
-        Assert.Contains("warmCurrentGeneration: committed", source, StringComparison.Ordinal);
         Assert.Contains("SceneViewResourceRetirement.RunAsync(", source, StringComparison.Ordinal);
         Assert.Contains("() => DisposeImportedObjectsAsync(slot)", source, StringComparison.Ordinal);
+        Assert.Contains("Task.WhenAll(releases)", source, StringComparison.Ordinal);
+        Assert.Contains("DisposeAsync().AsTask()", source, StringComparison.Ordinal);
         Assert.Contains("SceneViewResourceQuarantine.Retain(", source, StringComparison.Ordinal);
         Assert.Contains("ReleasePresentPacket", source, StringComparison.Ordinal);
         Assert.Contains("RegisterShutdownParticipant(DetachAsync)", source, StringComparison.Ordinal);
@@ -63,6 +73,7 @@ public sealed class SceneViewPresentationSessionSourceTests
         Assert.DoesNotContain("Thread.Sleep", source, StringComparison.Ordinal);
         Assert.DoesNotContain("Task.Delay", source, StringComparison.Ordinal);
         Assert.DoesNotContain("ScheduleBackpressureRetry", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("warmCurrentGeneration", source, StringComparison.Ordinal);
         Assert.DoesNotContain("Task.Run(operation, nativeStartAdmission.CancellationToken)", source, StringComparison.Ordinal);
     }
 

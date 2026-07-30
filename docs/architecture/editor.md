@@ -236,6 +236,16 @@ EditorViewportCoordinator::recordRequestedViews()
 The display is intentionally one frame delayed. This keeps panel drawing simple and avoids two-phase panel rendering until
 same-frame presentation is required and measured.
 
+### Studio external presentation boundary
+
+The Avalonia Studio Scene View uses the same native renderer through a separate external-presentation path. Interactive
+panel resize is event-driven and latest-request-wins: the composition visual follows the current panel bounds immediately,
+while ready frames advance monotonically and converge on the newest pixel extent. Two presentation slots are allocated on
+demand, and native frame resources are retired only after fence completion; failed consumer release is quarantined within
+the fixed resource budget instead of blocking the UI thread. The detailed contracts are maintained in
+[`apps/studio/docs/architecture/viewport-rendering.md`](../../apps/studio/docs/architecture/viewport-rendering.md) and
+[`apps/studio/docs/adr/0006-viewport-interactive-resize.md`](../../apps/studio/docs/adr/0006-viewport-interactive-resize.md).
+
 Scene View overlay state remains editor-owned until the coordinator translates it into renderer-owned data. Renderer-facing
 `BasicRenderViewDesc` uses `BasicRenderViewKind`, camera matrices, per-view frame params, explicit overlay color load/store
 and blend policy, plus a data-only debug world-line span. It does not use `EditorViewportKind`,

@@ -75,6 +75,7 @@ namespace asharia::editor {
 
         [[nodiscard]] EditorSharedViewportPresentPacket toPresentPacket();
         [[nodiscard]] Result<bool> retireCompletedGpuWork();
+        void abandonPendingGpuWork() noexcept;
 
         static void closeHandle(void*& handle);
 

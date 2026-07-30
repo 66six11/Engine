@@ -230,8 +230,7 @@ internal sealed class SceneViewPresentationSession
                 var canRetry = renderResult.Status == ViewportNativeStatus.Unavailable;
                 state_.CompleteFrame(
                     work.SlotId,
-                    canReuse: canRetry,
-                    warmCurrentGeneration: false);
+                    canReuse: canRetry);
                 StartPendingRetirements();
                 if (canRetry)
                 {
@@ -258,12 +257,11 @@ internal sealed class SceneViewPresentationSession
             }
         }
 
-        if (!state_.IsCurrent(work.Request))
+        if (!state_.CanPresent(work.Request))
         {
             state_.CompleteFrame(
                 work.SlotId,
-                canReuse: false,
-                warmCurrentGeneration: false);
+                canReuse: false);
             StartPendingRetirements();
             return true;
         }
@@ -273,8 +271,8 @@ internal sealed class SceneViewPresentationSession
         {
             committed =
                 await host_.TryCommitFrameAsync(
-                    work.Request.DisplaySizeDip,
-                    () => state_.IsCurrent(work.Request),
+                    () => state_.CanPresent(work.Request),
+                    () => state_.MarkPresented(work.Request),
                     surface =>
                         surface.UpdateWithSemaphoresAsync(
                             slot.Image!,
@@ -285,8 +283,7 @@ internal sealed class SceneViewPresentationSession
         {
             state_.CompleteFrame(
                 work.SlotId,
-                canReuse: false,
-                warmCurrentGeneration: false);
+                canReuse: false);
             state_.RequeueIfCurrent(work.Request);
             StartPendingRetirements();
             UpdatePresentIfCurrent(
@@ -302,10 +299,7 @@ internal sealed class SceneViewPresentationSession
             return false;
         }
 
-        state_.CompleteFrame(
-            work.SlotId,
-            canReuse: committed,
-            warmCurrentGeneration: committed);
+        state_.CompleteFrame(work.SlotId, canReuse: committed);
         StartPendingRetirements();
         if (!committed)
         {
@@ -364,12 +358,11 @@ internal sealed class SceneViewPresentationSession
         var slot = new PresentSlot(packet);
         slotCreationReservations_.Remove(work.SlotId);
         activeSlots_.Add(work.SlotId, slot);
-        if (!state_.IsCurrent(work.Request))
+        if (!state_.CanPresent(work.Request))
         {
             state_.CompleteFrame(
                 work.SlotId,
-                canReuse: false,
-                warmCurrentGeneration: false);
+                canReuse: false);
             StartPendingRetirements();
             return null;
         }
@@ -397,8 +390,7 @@ internal sealed class SceneViewPresentationSession
         {
             state_.CompleteFrame(
                 work.SlotId,
-                canReuse: false,
-                warmCurrentGeneration: false);
+                canReuse: false);
             state_.RequeueIfCurrent(work.Request);
             StartPendingRetirements();
             UpdatePresentIfCurrent(
@@ -577,23 +569,26 @@ internal sealed class SceneViewPresentationSession
     private static async Task DisposeImportedObjectsAsync(PresentSlot slot)
     {
         EnsureUiThread();
+        var releases = new List<Task>(capacity: 3);
         if (slot.Image is { } image)
         {
-            await image.DisposeAsync();
-            slot.Image = null;
+            releases.Add(image.DisposeAsync().AsTask());
         }
 
         if (slot.WaitSemaphore is { } waitSemaphore)
         {
-            await waitSemaphore.DisposeAsync();
-            slot.WaitSemaphore = null;
+            releases.Add(waitSemaphore.DisposeAsync().AsTask());
         }
 
         if (slot.SignalSemaphore is { } signalSemaphore)
         {
-            await signalSemaphore.DisposeAsync();
-            slot.SignalSemaphore = null;
+            releases.Add(signalSemaphore.DisposeAsync().AsTask());
         }
+
+        await Task.WhenAll(releases);
+        slot.Image = null;
+        slot.WaitSemaphore = null;
+        slot.SignalSemaphore = null;
     }
 
     private void UpdatePresentIfCurrent(

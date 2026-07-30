@@ -4,6 +4,7 @@
 
 #define WIN32_LEAN_AND_MEAN
 #include <array>
+#include <exception>
 #include <memory>
 #include <span>
 #include <utility>
@@ -293,16 +294,10 @@ namespace asharia::editor {
     } // namespace
 
     EditorSharedViewportPacketState::~EditorSharedViewportPacketState() {
-        if (submitted && device != VK_NULL_HANDLE && fence != VK_NULL_HANDLE) {
-            // Packet release is a compositor/native ownership boundary. Waiting here keeps
-            // command-buffer resources alive without stalling the render submit path.
-            const VkResult waited = vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX);
-            if (waited != VK_SUCCESS) {
-                logError("Shared viewport packet fence wait failed during release.");
-                frameEpoch.abandon();
-            } else {
-                frameEpoch.complete();
-            }
+        if (submitted) {
+            logError("Shared viewport packet destruction was attempted before GPU completion.");
+            frameEpoch.abandon();
+            std::terminate();
         }
 
         closeHandle(imageHandle);
@@ -345,6 +340,10 @@ namespace asharia::editor {
         }
         transientImages.clear();
         return true;
+    }
+
+    void EditorSharedViewportPacketState::abandonPendingGpuWork() noexcept {
+        frameEpoch.abandon();
     }
 
     EditorSharedViewportPresentPacket EditorSharedViewportPacketState::toPresentPacket() {

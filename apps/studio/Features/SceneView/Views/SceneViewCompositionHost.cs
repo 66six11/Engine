@@ -1,5 +1,4 @@
 using System;
-using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
@@ -12,13 +11,10 @@ namespace Editor.Features.SceneView.Views;
 
 internal sealed class SceneViewCompositionHost : Control
 {
-    private readonly SemaphoreSlim surfaceUpdateGate_ =
-        new(initialCount: 1, maxCount: 1);
-    private readonly SceneViewCompositionCommitState commitState_ = new();
+    private readonly SceneViewSurfaceUpdateGate surfaceUpdateGate_ = new();
     private CompositionSurfaceVisual? visual_;
     private CompositionDrawingSurface? surface_;
     private Task resourceReleaseTask_ = Task.CompletedTask;
-    private bool isPlacementUpdateQueued_;
 
     public CompositionDrawingSurface? Surface => surface_;
 
@@ -37,43 +33,30 @@ internal sealed class SceneViewCompositionHost : Control
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
-        if (change.Property == BoundsProperty)
+        if (change.Property == BoundsProperty && visual_ is { } visual)
         {
-            QueueCommittedFramePlacement();
+            ApplyFramePlacement(visual);
         }
     }
 
-    public async Task<bool> TryCommitFrameAsync(
-        Size frameSizeDip,
-        Func<bool> isCurrent,
+    public Task<bool> TryCommitFrameAsync(
+        Func<bool> canPresent,
+        Func<bool> tryAcceptPresentation,
         Func<CompositionDrawingSurface, Task> updateSurface)
     {
-        ArgumentNullException.ThrowIfNull(isCurrent);
+        ArgumentNullException.ThrowIfNull(canPresent);
+        ArgumentNullException.ThrowIfNull(tryAcceptPresentation);
         ArgumentNullException.ThrowIfNull(updateSurface);
         EnsureUiThread();
 
-        await surfaceUpdateGate_.WaitAsync();
-        try
-        {
-            if (!isCurrent() || !Bounds.Size.Equals(frameSizeDip))
-            {
-                return false;
-            }
-
-            return await TryCommitFrameCoreAsync(
-                frameSizeDip,
-                isCurrent,
-                updateSurface);
-        }
-        finally
-        {
-            surfaceUpdateGate_.Release();
-        }
+        return surfaceUpdateGate_.RunAsync(
+            canPresent,
+            () => TryCommitFrameCoreAsync(canPresent, updateSurface),
+            tryAcceptPresentation);
     }
 
     private Task<bool> TryCommitFrameCoreAsync(
-        Size frameSizeDip,
-        Func<bool> isCurrent,
+        Func<bool> canPresent,
         Func<CompositionDrawingSurface, Task> updateSurface)
     {
         if (visual_ is null || surface_ is null)
@@ -89,34 +72,24 @@ internal sealed class SceneViewCompositionHost : Control
         visual.Compositor.RequestCompositionUpdate(
             () =>
             {
-                if (!isCurrent() || !Bounds.Size.Equals(frameSizeDip))
+                if (!canPresent())
                 {
                     completion.TrySetResult(false);
                     return;
                 }
 
                 Task updateTask;
-                var commitVersion = commitState_.BeginAttempt();
                 try
                 {
                     updateTask = updateSurface(surface);
-                    ApplyFramePlacement(visual, frameSizeDip);
+                    ApplyFramePlacement(visual);
                     _ = CompleteUpdateAsync(
                         updateTask,
                         visual,
-                        frameSizeDip,
-                        commitVersion,
                         completion);
                 }
                 catch (Exception ex)
                 {
-                    if (commitState_.TryGetRollbackTarget(
-                            commitVersion,
-                            out var rollbackFrameSizeDip))
-                    {
-                        ApplyFramePlacement(visual, rollbackFrameSizeDip);
-                    }
-
                     completion.TrySetException(ex);
                 }
             });
@@ -132,8 +105,6 @@ internal sealed class SceneViewCompositionHost : Control
         var surface = surface_;
         visual_ = null;
         surface_ = null;
-        commitState_.Reset();
-        isPlacementUpdateQueued_ = false;
 
         var prerequisite = Task.WhenAll(resourceReleaseTask_, presentationDrain);
         resourceReleaseTask_ =
@@ -159,36 +130,9 @@ internal sealed class SceneViewCompositionHost : Control
         var compositor = selfVisual.Compositor;
         surface_ = compositor.CreateDrawingSurface();
         visual_ = compositor.CreateSurfaceVisual();
-        visual_.Size = default;
-        visual_.Offset = Vector3.Zero;
+        ApplyFramePlacement(visual_);
         visual_.Surface = surface_;
         ElementComposition.SetElementChildVisual(this, visual_);
-    }
-
-    private void QueueCommittedFramePlacement()
-    {
-        if (visual_ is not { } visual ||
-            commitState_.LastSuccessfulFrameSizeDip is not { } lastSuccessfulFrameSizeDip ||
-            isPlacementUpdateQueued_)
-        {
-            return;
-        }
-
-        isPlacementUpdateQueued_ = true;
-        visual.Compositor.RequestCompositionUpdate(
-            () =>
-            {
-                isPlacementUpdateQueued_ = false;
-                if (!ReferenceEquals(visual_, visual) ||
-                    commitState_.LastSuccessfulFrameSizeDip !=
-                        lastSuccessfulFrameSizeDip)
-                {
-                    QueueCommittedFramePlacement();
-                    return;
-                }
-
-                ApplyFramePlacement(visual, lastSuccessfulFrameSizeDip);
-            });
     }
 
     private static Vector ToVector(Size size)
@@ -199,8 +143,6 @@ internal sealed class SceneViewCompositionHost : Control
     private async Task CompleteUpdateAsync(
         Task updateTask,
         CompositionSurfaceVisual visual,
-        Size frameSizeDip,
-        ulong commitVersion,
         TaskCompletionSource<bool> completion)
     {
         Exception? updateFailure = null;
@@ -213,65 +155,26 @@ internal sealed class SceneViewCompositionHost : Control
             updateFailure = ex;
         }
 
-        try
+        EnsureUiThread();
+        if (updateFailure is not null)
         {
-            visual.Compositor.RequestCompositionUpdate(
-                () =>
-                {
-                    if (ReferenceEquals(visual_, visual))
-                    {
-                        if (updateFailure is null)
-                        {
-                            if (commitState_.CompleteSuccessfulAttempt(
-                                    commitVersion,
-                                    frameSizeDip))
-                            {
-                                ApplyFramePlacement(visual, frameSizeDip);
-                            }
-                        }
-                        else if (commitState_.TryGetRollbackTarget(
-                                     commitVersion,
-                                     out var rollbackFrameSizeDip))
-                        {
-                            ApplyFramePlacement(
-                                visual,
-                                rollbackFrameSizeDip);
-                        }
-                    }
-
-                    if (updateFailure is null)
-                    {
-                        completion.TrySetResult(true);
-                    }
-                    else
-                    {
-                        completion.TrySetException(updateFailure);
-                    }
-                });
-        }
-        catch (Exception ex)
-        {
-            completion.TrySetException(updateFailure ?? ex);
-        }
-    }
-
-    private void ApplyFramePlacement(
-        CompositionSurfaceVisual visual,
-        Size? frameSizeDip)
-    {
-        if (frameSizeDip is not { } size)
-        {
-            visual.Size = default;
-            visual.Offset = Vector3.Zero;
+            completion.TrySetException(updateFailure);
             return;
         }
 
-        visual.Size = ToVector(size);
-        visual.Offset =
-            new Vector3(
-                (float)((Bounds.Width - size.Width) / 2d),
-                (float)((Bounds.Height - size.Height) / 2d),
-                0f);
+        var updated = ReferenceEquals(visual_, visual);
+        if (updated)
+        {
+            ApplyFramePlacement(visual);
+        }
+
+        completion.TrySetResult(updated);
+    }
+
+    private void ApplyFramePlacement(CompositionSurfaceVisual visual)
+    {
+        visual.Size = ToVector(Bounds.Size);
+        visual.Offset = Vector3.Zero;
     }
 
     private static async Task DisposeSurfaceAfterAsync(

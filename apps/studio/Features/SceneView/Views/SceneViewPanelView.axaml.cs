@@ -20,11 +20,11 @@ public partial class SceneViewPanelView : UserControl
     private ViewportCompositionCapabilitiesSnapshot? compositionCapabilities_;
     private TopLevel? presentationTopLevel_;
     private Task detachTask_ = Task.CompletedTask;
-    private bool isFrameRequestQueued_;
+    private bool isRetryQueued_;
     private bool isAttached_;
     private bool isSessionAttached_;
     private PresentationSetupState presentationSetup_;
-    private ulong frameRequestQueueSequence_;
+    private ulong retryQueueSequence_;
     private ulong probeSequence_;
 
     public SceneViewPanelView()
@@ -32,6 +32,7 @@ public partial class SceneViewPanelView : UserControl
         InitializeComponent();
         presentationSession_ =
             new SceneViewPresentationSession(nativeBridge_, CompositionHost);
+        CompositionHost.SizeChanged += OnCompositionHostSizeChanged;
         DataContextChanged += OnDataContextChanged;
     }
 
@@ -52,8 +53,8 @@ public partial class SceneViewPanelView : UserControl
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
         isAttached_ = false;
-        isFrameRequestQueued_ = false;
-        frameRequestQueueSequence_++;
+        isRetryQueued_ = false;
+        retryQueueSequence_++;
         if (presentationTopLevel_ is not null)
         {
             presentationTopLevel_.ScalingChanged -= OnTopLevelScalingChanged;
@@ -72,17 +73,6 @@ public partial class SceneViewPanelView : UserControl
                 presentationDrain);
         _ = ViewportNativePresentDrain.TrackAsync(detachTask_);
         base.OnDetachedFromVisualTree(e);
-    }
-
-    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
-    {
-        base.OnPropertyChanged(change);
-        if (change.Property != BoundsProperty || !isAttached_)
-        {
-            return;
-        }
-
-        RequestFrameForPresentationChange();
     }
 
     private void BeginPresentationAttach()
@@ -276,8 +266,8 @@ public partial class SceneViewPanelView : UserControl
                         presentationSession_.ResetConfiguration();
                     }
                 },
-                QueueNativeFrame);
-            QueueNativeFrame();
+                QueueNativeFrameRetry);
+            RequestNativeFrame();
         }
         catch (Exception ex)
         {
@@ -297,11 +287,11 @@ public partial class SceneViewPanelView : UserControl
         }
     }
 
-    private void QueueNativeFrame()
+    private void QueueNativeFrameRetry()
     {
         if (!isAttached_ ||
             presentationSetup_ != PresentationSetupState.Configured ||
-            isFrameRequestQueued_)
+            isRetryQueued_)
         {
             return;
         }
@@ -313,20 +303,20 @@ public partial class SceneViewPanelView : UserControl
             return;
         }
 
-        isFrameRequestQueued_ = true;
-        var queueSequence = ++frameRequestQueueSequence_;
+        isRetryQueued_ = true;
+        var queueSequence = ++retryQueueSequence_;
         compositor.RequestCompositionUpdate(
-            () => CompleteQueuedFrameRequest(queueSequence));
+            () => CompleteQueuedFrameRetry(queueSequence));
     }
 
-    private void CompleteQueuedFrameRequest(ulong queueSequence)
+    private void CompleteQueuedFrameRetry(ulong queueSequence)
     {
-        if (queueSequence != frameRequestQueueSequence_)
+        if (queueSequence != retryQueueSequence_)
         {
             return;
         }
 
-        isFrameRequestQueued_ = false;
+        isRetryQueued_ = false;
         RequestNativeFrame();
     }
 
@@ -507,7 +497,14 @@ public partial class SceneViewPanelView : UserControl
 
     private void OnSceneViewRenderRequested(object? sender, EventArgs e)
     {
-        QueueNativeFrame();
+        RequestNativeFrame();
+    }
+
+    private void OnCompositionHostSizeChanged(
+        object? sender,
+        SizeChangedEventArgs e)
+    {
+        RequestFrameForPresentationChange();
     }
 
     private void OnTopLevelScalingChanged(object? sender, EventArgs e)
@@ -527,7 +524,7 @@ public partial class SceneViewPanelView : UserControl
 
         if (presentationSetup_ == PresentationSetupState.Configured)
         {
-            QueueNativeFrame();
+            RequestNativeFrame();
         }
         else if (presentationSetup_ == PresentationSetupState.WaitingForFrameExtent)
         {
