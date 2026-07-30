@@ -574,6 +574,7 @@ flowchart LR
 ```mermaid
 sequenceDiagram
     participant View as SceneViewPanelView
+    participant Session as SceneViewPresentationSession
     participant VM as SceneViewPanelViewModel
     participant Scene as shared SceneSnapshotProvider
     participant Avalonia as Avalonia Compositor GPU interop
@@ -591,21 +592,27 @@ sequenceDiagram
     Native-->>Bridge: status + message
     Bridge-->>View: ViewportNativePresentSnapshot
     View->>VM: UpdateNativePresent(snapshot)
-    VM->>Scene: read hasScene + revision
-    View->>Bridge: AcquirePresentPacket(snapshot, extent, scene state)
-    Bridge->>Native: editor_viewport_acquire_present_packet_v2
-    Native->>Runtime: render Scene View frame
+    View->>Avalonia: queue one composition update for all current invalidations
+    Avalonia-->>View: composition callback
+    VM->>Scene: read latest hasScene + revision
+    View->>Session: RequestFrame(latest exact DIP, extent, generation, sequence)
+    Session->>Session: overwrite latest pending / choose one of two slots
+    Session->>Bridge: CreatePresentSlot or RenderPresentSlot on serial worker
+    Bridge->>Native: editor_viewport_create_present_slot_v3 / render_present_slot_v3
+    Native->>Runtime: create or reuse fixed-extent Scene View slot
     Runtime->>Producer: render Scene View frame
     Producer->>RHI: record RenderView into external Vulkan image
     RHI-->>Producer: image + semaphores ready
     Producer-->>Runtime: native packet state
     Native-->>Bridge: native-owned opaque NT handles + packet
-    Bridge-->>View: ViewportNativePresentPacket
-    View->>Avalonia: ImportImage / ImportSemaphore
-    View->>Avalonia: CompositionDrawingSurface.UpdateWithSemaphoresAsync
-    View->>Bridge: ReleasePresentPacket in finally
+    Bridge-->>Session: reusable ViewportNativePresentPacket
+    Session->>Avalonia: import slot image/semaphores once on UI dispatcher
+    Session->>Avalonia: commit current generation with UpdateWithSemaphoresAsync
+    Avalonia-->>Session: compositor release completion
+    Session->>Session: return slot to current pool or drain stale slot
+    Session->>Bridge: ReleasePresentPacket on resize/detach/shutdown
     Bridge->>Native: editor_viewport_release_present_packet
-    View->>VM: presented/import-failed snapshot
+    Session->>VM: current presented/import-failed snapshot only
 ```
 
 当前约束：
@@ -617,36 +624,45 @@ sequenceDiagram
   有场景时使用 renderer-owned 默认编辑相机、world-grid pass 与三条原点轴线形成可证明的真实 GPU 画面。
 - `Core/Interop/Viewports` 是 managed Core 中唯一可持有 ABI structs、`IntPtr` 和 packet release 逻辑的区域。
 - `Features/SceneView` 是 managed Studio 中唯一导入 Avalonia composition external image/semaphore 的区域。
-- `SceneViewCompositionPresenter` 只通过 Avalonia `ICompositionGpuInterop` import opaque NT handles，并在 `finally`
-  释放 native packet；失败 packet 由 bridge 复制 message 后释放。
+- `SceneViewPresentationSession` 合并 latest pending、generation、双槽、backpressure
+  和 drain；它只通过 Avalonia `ICompositionGpuInterop` import opaque NT handles。
+  native create/render/release 经串行后台 gate，import/commit/dispose 留在 UI dispatcher。
+- Bounds、DPI、scene revision 和显式交互 invalidation 先合并到一个 queued
+  composition update；每个合成周期至多采样一次最新观察。完全相同且已有
+  pending/in-flight 的观察复用当前 sequence。Scene View 不加入固定 panel tick，
+  公共 scheduler 的 interactive burst 结束后也不生成 idle 帧；静止时复用最后成功帧。
+- 新 observation 会取消尚停留在 producer gate 前的 stale native work；已经进入
+  native/GPU/compositor 的 work 不取消，只完成代际退役，避免旧尺寸排队阻塞最新尺寸。
 - `editor shared viewport runtime` owns Vulkan context, producer lifetime,
-  outstanding packet tracking and shutdown drain. `outstandingPackets` remains
-  the authoritative count for managed compositor packet ownership.
+  outstanding/releasing slot tracking and shutdown drain. Releasing slot 的
+  frame-resource index 会一直保留到 fence wait 与析构完成，不能提前分配给新 slot。
 - The Studio shared viewport context keeps Vulkan debug labels optional and
   does not require a separately installed validation layer. Strict validation
   remains an explicit native editor / renderer smoke environment requirement,
   so missing SDK tooling cannot disable the shipped Studio viewport.
-- The runtime allows at most one outstanding shared viewport packet. A second
-  acquire while a packet is pending is rejected before producer work with
-  native `Unavailable`; this applies backpressure without blocking the UI
-  thread or allocating another packet.
+- Runtime 全局最多四个 outstanding/releasing frame-resource lane；legacy acquire
+  仍最多一个。Scene View active present chain 最多两个当前 generation 的持久 slot；
+  退役资源移交独立 backlog 后不再占 active 配额，但 active 与 retirement 合计仍不超过
+  四个 native lane。超过总上限时保留 latest request，retirement completion 释放容量后
+  立即唤醒，不阻塞 UI thread。
 - The native render producer owns RenderView recording, the persistent
   `BasicFullscreenTextureRenderer`, a producer-local external image pool keyed
   by image handle family, format, extent, usage and aspect mask, and a
   producer-local submitted/completed frame epoch tracker.
-- Each shared viewport packet owns its external image lease, transient
-  RenderGraph images recorded for that packet, wait/signal semaphores, command
-  pool, command buffer, fence, exported image/semaphore OS handles and frame
-  epoch lease. The persistent renderer rewinds rewritten descriptor/resource
-  cursors only when the producer epoch tracker reports no pending packet.
+- Each reusable slot owns its external image lease, transient RenderGraph
+  images, wait/signal semaphores, command pool, command buffer, fence, exported
+  image/semaphore OS handles, frame epoch lease and one explicit
+  `BasicRenderFrameResourceContext`. Four fixed renderer resource lanes prevent
+  descriptor/debug-buffer cursors from crossing slot ownership.
 - Runtime shutdown drain keeps the producer and Vulkan context alive while
   packets or packet release operations are outstanding, so persistent renderer
   resources are destroyed only after packet-owned GPU work has completed.
 - The frame epoch tracker is independent from `VulkanFrameLoop`; epoch
   completion is driven by packet release observing the packet fence.
-- External image pool entries own Vulkan image resources only. Win32 opaque NT
-  image/semaphore handles are exported fresh per packet and are closed during
-  native packet release; the pool does not store or close OS handles.
+- External image pool entries own Vulkan image resources only and retain at
+  most two completed images. Win32 opaque NT image/semaphore handles are
+  exported when a slot is created, reused with that slot, and closed during
+  native slot release; the pool does not store or close OS handles.
 - Windows `VulkanOpaqueNt` is the current validated composition backend. Other
   platforms must map their handle family through compatibility probing and a
   distinct pool key before image reuse.
@@ -655,7 +671,23 @@ sequenceDiagram
   diagnostics, v5 stats expose `maxOutstandingPackets` plus
   `packetBackpressureHits`, and v6 stats expose consumed scene-frame count plus
   last scene revision while v1/v2/v3/v4/v5 stats remain unchanged.
-- Scene View present 是单 viewport spike：如果上一帧 present task 未完成，新的 bounds/probe tick 会丢帧而不是阻塞 UI thread。
+- Scene View 是单 viewport、双 slot 的 latest-wins slice：相同在途观察去重，变化的
+  Bounds 只保留最新 request；Busy/Unavailable 通过 1–16 ms 有界退避或 slot
+  retirement completion 主动重试，不写入 Problems。
+- capability probe 只在 attach/DataContext 重建时执行。若 probe 成功但布局尺寸尚无效，
+  首个有效 Bounds 复用缓存 capability 完成 presentation 配置；Unsupported/失败状态
+  不会在 resize 热路径重复 probe。
+- `ViewportNativePresentDrain` 在应用关闭第一阶段调用已注册 presentation 的 detach，
+  因而空闲持久 slot 也进入等待集合。Scene View host 先移除 child visual，等待
+  presentation drain 后再在 UI dispatcher dispose composition surface。
+- 单个 composition surface 只允许一个在途 update；尝试尺寸不进入最后成功状态。
+  update 失败时 visual 恢复最后成功帧的原始尺寸，连续失败也不会回退到从未成功的尺寸。
+- imported wrapper release 与 native packet release 是两个有序阶段。前一阶段未确认时
+  不重复假设 `IAsyncDisposable` 可重试，而是把 wrapper 与仍 outstanding 的 native
+  packet 保留到进程结束；native shutdown 因 outstanding packet 延迟销毁 Vulkan context。
+  应用关闭超过 5 秒进入显式 process-exit fallback：不再执行 native runtime teardown，
+  process-lifetime runtime owner 也不会被 CRT 隐式析构，保持在途引用直到 OS 终止
+  进程；该路径不计作正常 drain 成功。正常 drain 仍显式销毁 producer/context。
 
 ## 启动与 Context 流程
 

@@ -34,6 +34,7 @@ public partial class MainWindow : Window
     private bool isClosing_;
     private bool nativeViewportPresentDrainStarted_;
     private bool nativeViewportPresentDrainCompleted_;
+    private bool nativeViewportProcessExitFallback_;
 
     public MainWindow()
     {
@@ -166,7 +167,9 @@ public partial class MainWindow : Window
         }
 
         ViewportNativePresentDrain.RequestShutdown();
-        if (nativeViewportPresentDrainCompleted_ || !ViewportNativePresentDrain.HasActivePresents)
+        if (nativeViewportPresentDrainCompleted_ ||
+            nativeViewportProcessExitFallback_ ||
+            !ViewportNativePresentDrain.HasActivePresents)
         {
             return;
         }
@@ -178,9 +181,33 @@ public partial class MainWindow : Window
         }
 
         nativeViewportPresentDrainStarted_ = true;
-        await ViewportNativePresentDrain.WaitForIdleAsync(TimeSpan.FromSeconds(5));
-        nativeViewportPresentDrainCompleted_ = true;
+        var drained =
+            await ViewportNativePresentDrain.WaitForIdleAsync(
+                TimeSpan.FromSeconds(5));
+        if (!drained)
+        {
+            PublishViewportShutdownDelay();
+            ViewportNativePresentDrain.RequestProcessExitFallback();
+            nativeViewportProcessExitFallback_ = true;
+        }
+        else
+        {
+            nativeViewportPresentDrainCompleted_ = true;
+        }
+
         Close();
+    }
+
+    private void PublishViewportShutdownDelay()
+    {
+        if (DataContext is MainWindowViewModel viewModel)
+        {
+            viewModel.PublishStatusMessage(
+                new EditorStatusMessageSnapshot(
+                    EditorStatusMessageSeverity.Warning,
+                    EditorStatusMessageSource.Command,
+                    "Viewport resources are being retained until process exit because shutdown drain exceeded five seconds."));
+        }
     }
 
     private void StopPanelFrameTimer()

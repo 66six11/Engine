@@ -18,6 +18,31 @@
 
 namespace asharia {
 
+    class BasicFullscreenTextureRenderer;
+
+    class BasicRenderFrameResourceContext final {
+    public:
+        BasicRenderFrameResourceContext(const BasicRenderFrameResourceContext&) = delete;
+        BasicRenderFrameResourceContext& operator=(const BasicRenderFrameResourceContext&) = delete;
+        BasicRenderFrameResourceContext(BasicRenderFrameResourceContext&&) noexcept = default;
+        BasicRenderFrameResourceContext&
+        operator=(BasicRenderFrameResourceContext&&) noexcept = default;
+        ~BasicRenderFrameResourceContext() = default;
+
+        [[nodiscard]] std::size_t index() const noexcept;
+
+    private:
+        friend class BasicFullscreenTextureRenderer;
+
+        explicit BasicRenderFrameResourceContext(std::size_t index) noexcept;
+        void beginFrame() noexcept;
+
+        std::size_t index_{};
+        std::size_t fullscreenDescriptorCursor_{};
+        std::size_t compositeDescriptorCursor_{};
+        std::size_t debugLineVertexBufferCursor_{};
+    };
+
     class BasicFullscreenTextureRenderer {
     public:
         BasicFullscreenTextureRenderer() = default;
@@ -38,10 +63,17 @@ namespace asharia {
                         VulkanTransientImagePool& transientImagePool,
                         std::vector<VulkanTransientImageResource>& transientImages);
         [[nodiscard]] Result<VulkanFrameRecordResult>
+        recordViewFrame(const VulkanFrameRecordContext& frame, BasicRenderViewDesc view,
+                        BasicRenderFrameResourceContext& frameResources,
+                        VulkanTransientImagePool& transientImagePool,
+                        std::vector<VulkanTransientImageResource>& transientImages);
+        [[nodiscard]] Result<VulkanFrameRecordResult>
         recordOffscreenViewportFrame(const VulkanFrameRecordContext& frame);
         [[nodiscard]] Result<VulkanFrameRecordResult>
         recordOffscreenViewportFrame(const VulkanFrameRecordContext& frame,
                                      VkExtent2D viewportExtent);
+        [[nodiscard]] Result<BasicRenderFrameResourceContext>
+        createFrameResourceContext(std::size_t index) const;
         void resetFrameResourceCursors() noexcept;
         [[nodiscard]] BasicPipelineCacheStats pipelineCacheStats() const;
         [[nodiscard]] BasicOffscreenViewportStats offscreenViewportStats() const;
@@ -56,12 +88,20 @@ namespace asharia {
         [[nodiscard]] Result<void>
         ensureDebugLinePipeline(VkFormat colorFormat, BasicRenderViewOverlayBlendMode blendMode);
         [[nodiscard]] VkDescriptorSet
-        acquireFullscreenDescriptorSet(const VulkanFrameRecordContext& frame);
+        acquireFullscreenDescriptorSet(const VulkanFrameRecordContext& frame,
+                                       BasicRenderFrameResourceContext* frameResources);
         [[nodiscard]] VkDescriptorSet
-        acquireCompositeDescriptorSet(const VulkanFrameRecordContext& frame);
+        acquireCompositeDescriptorSet(const VulkanFrameRecordContext& frame,
+                                      BasicRenderFrameResourceContext* frameResources);
         [[nodiscard]] Result<VkBuffer>
         uploadDebugLineVertices(const VulkanFrameRecordContext& frame,
-                                std::span<const std::byte> vertices);
+                                std::span<const std::byte> vertices,
+                                BasicRenderFrameResourceContext* frameResources);
+        [[nodiscard]] Result<VulkanFrameRecordResult>
+        recordViewFrame(const VulkanFrameRecordContext& frame, BasicRenderViewDesc view,
+                        BasicRenderFrameResourceContext* frameResources,
+                        VulkanTransientImagePool& transientImagePool,
+                        std::vector<VulkanTransientImageResource>& transientImages);
         [[nodiscard]] Result<void>
         ensureOffscreenViewportTarget(const VulkanFrameRecordContext& frame, VkFormat format,
                                       VkExtent2D extent);

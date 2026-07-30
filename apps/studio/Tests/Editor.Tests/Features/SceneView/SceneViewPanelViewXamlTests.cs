@@ -15,7 +15,13 @@ public sealed class SceneViewPanelViewXamlTests
         Assert.Contains("xmlns:views=\"using:Editor.Features.SceneView.Views\"", xaml, StringComparison.Ordinal);
         Assert.Contains("<views:SceneViewCompositionHost", xaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"CompositionHost\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("ClipToBounds=\"True\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Focusable=\"True\"", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("scene-view-status", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("ViewportStateTitle", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("ViewportStateMessage", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("ViewportStatusText", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("RowDefinitions=", xaml, StringComparison.Ordinal);
     }
 
     private static string LoadSource(params string[] pathParts)

@@ -14,8 +14,17 @@
 
 - 创建 Avalonia `CompositionDrawingSurface`；
 - 查询 compositor GPU capability；
-- 从 native bridge 获取 Vulkan image/semaphore packet；
-- 导入 image 和两枚 semaphore，并使用 `UpdateWithSemaphoresAsync` 更新 surface；
+- 通过单一 `SceneViewPresentationSession` 保存 latest request、generation、sequence、
+  双槽、backpressure 和 drain 状态；
+- 在串行后台 producer 上创建或重录 native present slot；
+- Scene View 默认按需渲染；初始 attach、Bounds/DPI、scene revision 和显式交互
+  invalidation 先合并到单一 queued composition update，再采样最新状态触发帧请求；
+  静止且场景不变时不加入固定帧率 panel tick；
+- 每个 slot 只导入一次 image 和两枚 semaphore，并使用
+  `UpdateWithSemaphoresAsync` 的完成任务作为 compositor 使用期边界；
+- resize 时保持最后成功帧的原始 DIP 尺寸，在最新 Bounds 中居中裁剪，不缩放旧帧；
+- 关闭、detach 和 reattach 时先排空 frame/slot，再在 UI dispatcher 释放
+  composition surface；
 - shared viewport runtime 不把单独安装的 Vulkan SDK validation layer 作为 Studio
   运行时前提；它保留 optional debug labels。严格 validation 仍由显式加载 SDK layer
   的 native editor / renderer smoke 门禁承担。
@@ -24,14 +33,6 @@
 
 - handle 类型固定为 `VulkanOpaqueNtHandle`；
 - View 自己创建 bridge；
-- packet、managed import 与 native release 仍是逐帧原型，完成边界不完整；
-- Scene View 顶部状态区仍占用 viewport 内容空间；
-- Bounds 变化会重新执行 compositor/device capability probe；
-- native slot create/render、RenderGraph command recording 和 queue submit 仍由 UI
-  frame callback 同步触发；
-- managed presentation 尚无 `SurfaceGeneration`、`FrameSequence` 和唯一的 latest
-  pending request，旧尺寸 completion 仍可能回写 surface；
-- presenter、lifecycle 与 native runtime 分散维护 backpressure 上限；
 - `ViewportScheduler` 没有生产调用者；
 - 多 floating window scheduler 驱动不一致；
 - Linux/macOS 未验证；
@@ -108,6 +109,15 @@ Hidden
 FrameDebug(single-step)
 ```
 
+Scene View 默认选择 `OnDemand`。只有相机/工具交互、场景或渲染设置变化、resize/DPI、
+初始帧缺失时才置 dirty 并请求一帧；静止且没有动画内容时复用最后成功帧。需要动画材质、
+粒子、实时预览或 Play Session 时，调用方必须显式选择 `Continuous(target FPS)`，并在
+动画结束后恢复 `OnDemand`。这与 Unity Scene View 的公开行为一致：默认只在必要时重绘，
+固定间隔刷新由单独的 `alwaysRefresh` 状态启用。
+
+`InteractiveBurst` 只覆盖仍在进行的输入交互；burst 结束后直接回到 dirty-only。调度器
+不伪造 5 FPS idle repaint，`VisibleExposed` 只能由真实 expose/resize 事件写入。
+
 ## 7. Presentation generation
 
 每次 attach、resize、render-scale change、backend recovery 和 device recovery 增加 `SurfaceGeneration`。
@@ -122,8 +132,9 @@ FrameSequence
 ```
 
 旧 generation 的 probe、frame 和 completion 只完成资源释放，不更新 ViewModel 或 surface。
-实现允许当前 generation 与一个正在排空的旧 generation 短暂共存；总 slot 数有界，不能因
-连续 resize 为每个历史 extent 建立无界队列。
+当前 generation 的 active chain 与旧 generation 的 retirement backlog 分开计数；backlog
+可以短暂包含多个历史 extent，但 active、retiring、reservation 和 quarantine 总量有界，
+不能因连续 resize 建立无界资源队列。
 
 ## 8. 跨平台 backend
 
@@ -240,22 +251,49 @@ Scene View input 先进入 editor tool/router，再形成 camera、selection、g
   不兼容 image；
 - presentation 始终只保存一个 latest pending request；连续 resize 覆盖旧 pending，
   不为历史 Bounds 建立队列；
+- Bounds/DPI/scene invalidation 先合并到一个 queued composition update；每个合成周期
+  至多捕获一次最新观察并启动一次 producer，Bounds 回调不直接创建 native work；
+- 与当前 pending/in-flight request 完全相同的观察不会创建新 sequence，避免固定
+  invalidation 在首帧较慢时持续使自身过期；当前工作完成后才允许同内容的下一帧；
 - native create/render/submit 在串行 producer worker 执行；composition import、commit
   和 dispose 只在 compositor dispatcher 执行；
+- 新 generation 会取消仍停留在 producer gate 前、尚未开始 native 的旧 generation
+  工作；已经进入 native/GPU/compositor 的工作不可取消，只能完成并按代际退役；
+- 单个 composition surface 的更新串行提交；只有成功 completion 能推进“最后成功帧”
+  状态，失败始终恢复到最后成功帧，不能把尝试尺寸当成已呈现尺寸；
 - completion 只有匹配当前 engine epoch、viewport、generation 和 sequence 才能更新
   surface 或 ViewModel；stale completion 只退役资源；
 - 旧 generation 保持最后成功帧的原始尺寸，在当前 Bounds 中居中并由 host clip；
   不缩放、不变形。新 extent 首帧与精确 visual geometry 在同一个 composition update
   中提交；
-- 不使用“两次相同尺寸”或固定 debounce 作为正确性条件；两个 slot 都忙或旧
-  generation 尚未排空时，静默丢弃本次 attempt、保留 latest request，并在 slot 释放后
-  自动重试；
-- 每个 extent 建立两个持久 slot，当前与 draining generation 合计最多四个 slot；
+- 不使用“两次相同尺寸”或固定 debounce 作为正确性条件；两个 active slot 都忙或总
+  native lane 已满时保留 latest request；active/retirement completion 直接唤醒，
+  native `Unavailable` 只请求下一次 compositor cadence，不运行固定 retry timer；
+- 当前 extent 的首个成功帧会自动 warm 第二个持久 slot，之后静止；过期 slot 移交独立
+  retirement backlog 后不再占 active-chain 配额；
+- active chain 最多两个当前-generation slot；active、retiring、create reservation 与
+  quarantine 合计仍受四个 native frame-resource lane 的硬上限约束；
 - capability probe 不属于 resize 热路径；
+- attach 时若 capability probe 早于布局、尚无有效 Bounds，则缓存成功 capability；
+  Bounds 首次有效时只重试 extent-dependent presentation 配置，不重新读取 capability；
+  Unsupported/失败状态不会因后续 resize 重复 probe；
+- presentation 配置完成后，后续 Bounds 变化只提交 latest frame request；
 - UI dispatcher 不等待 Vulkan fence、queue idle 或 device idle；
 - hidden/minimized presentation 停止 continuous render request；
 - Dock move 不销毁 ViewportSession；
 - visual detach 进入 Draining，完成当前 lease 后释放 imported wrapper；
+- imported wrapper 的异步释放没有确认完成时，slot 进入进程期 quarantine；
+  wrapper 与 native packet 都保持存活，native runtime 延迟 shutdown，不能假定
+  `DisposeAsync` 可重试或提前销毁共享 Vulkan resource；
+- 应用关闭先同步通知所有已注册 presentation 进入 Draining，再等待这些任务，不能只
+  统计当时恰好运行中的 frame task；
+- 关闭等待超过诊断阈值进入显式 process-exit fallback：停止提交、保留仍在途的
+  managed/native resource、不调用 native runtime teardown，再由进程终止统一回收；
+  该路径单独标记，不能伪装为正常 drain 成功；
+- native viewport runtime owner 使用 process-lifetime storage；正常路径仍由显式
+  `shutdown()` 释放 producer/context，fallback 路径则避免 CRT 在 quarantine packet
+  尚存时隐式析构 Vulkan device；
+- composition surface 在 presentation drain 完成后才由 UI dispatcher 销毁；
 - native resource 在 compositor/native GPU 双方完成前不得回收。
 
 ## 14. Device lost
@@ -299,6 +337,12 @@ Scene View input 先进入 editor tool/router，再形成 camera、selection、g
   <https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/Engine/FSceneViewport>
 - Godot `SubViewportContainer`（容器尺寸驱动 viewport 尺寸）：
   <https://github.com/godotengine/godot/blob/master/scene/gui/subviewport_container.cpp>
+- Unity Scene View（默认只在必要时重绘，显式 `RepaintAll` 触发更新）：
+  <https://issuetracker.unity3d.com/issues/mesh-disappears-when-drawmesh-is-called-from-the-editorwindow>
+- Unity `SceneViewState.alwaysRefresh`（固定间隔刷新是显式选项）：
+  <https://docs.unity3d.com/6000.0/Documentation/ScriptReference/SceneView.SceneViewState.html>
+- Unity C# reference `SceneView.UpdateAnimatedMaterials`（显式 always-refresh 路径约 30 FPS）：
+  <https://github.com/Unity-Technologies/UnityCsReference/blob/master/Editor/Mono/SceneView/SceneView.cs>
 - Vulkan external synchronization：<https://docs.vulkan.org/spec/latest/chapters/synchronization.html>
 - Vulkan external memory guide：<https://docs.vulkan.org/guide/latest/extensions/external.html>
 - Vulkan Metal objects：<https://docs.vulkan.org/refpages/latest/refpages/source/VK_EXT_metal_objects.html>

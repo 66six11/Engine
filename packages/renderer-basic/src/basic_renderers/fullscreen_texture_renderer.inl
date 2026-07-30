@@ -3,6 +3,32 @@
     *this = std::move(other);
 }
 
+namespace {
+
+    constexpr std::size_t kDescriptorSetRingSize = 16U;
+    constexpr std::size_t kDebugLineVertexBufferRingSize = 16U;
+    constexpr std::size_t kFrameResourceContextCount = 4U;
+    constexpr std::size_t kResourcesPerFrameContext =
+        kDescriptorSetRingSize / kFrameResourceContextCount;
+
+    static_assert(kDescriptorSetRingSize % kFrameResourceContextCount == 0U);
+    static_assert(kDebugLineVertexBufferRingSize == kDescriptorSetRingSize);
+
+} // namespace
+
+BasicRenderFrameResourceContext::BasicRenderFrameResourceContext(std::size_t index) noexcept
+    : index_{index} {}
+
+std::size_t BasicRenderFrameResourceContext::index() const noexcept {
+    return index_;
+}
+
+void BasicRenderFrameResourceContext::beginFrame() noexcept {
+    fullscreenDescriptorCursor_ = 0U;
+    compositeDescriptorCursor_ = 0U;
+    debugLineVertexBufferCursor_ = 0U;
+}
+
 BasicFullscreenTextureRenderer&
 BasicFullscreenTextureRenderer::operator=(BasicFullscreenTextureRenderer&& other) noexcept {
     if (this == &other) {
@@ -26,14 +52,12 @@ BasicFullscreenTextureRenderer::operator=(BasicFullscreenTextureRenderer&& other
     worldGridPipeline_ = std::move(other.worldGridPipeline_);
     debugLinePipeline_ = std::move(other.debugLinePipeline_);
     pipelineFormat_ = std::exchange(other.pipelineFormat_, VK_FORMAT_UNDEFINED);
-    worldGridPipelineFormat_ =
-        std::exchange(other.worldGridPipelineFormat_, VK_FORMAT_UNDEFINED);
-    debugLinePipelineFormat_ =
-        std::exchange(other.debugLinePipelineFormat_, VK_FORMAT_UNDEFINED);
-    worldGridPipelineBlendMode_ = std::exchange(
-        other.worldGridPipelineBlendMode_, BasicRenderViewOverlayBlendMode::AlphaBlend);
-    debugLinePipelineBlendMode_ = std::exchange(
-        other.debugLinePipelineBlendMode_, BasicRenderViewOverlayBlendMode::AlphaBlend);
+    worldGridPipelineFormat_ = std::exchange(other.worldGridPipelineFormat_, VK_FORMAT_UNDEFINED);
+    debugLinePipelineFormat_ = std::exchange(other.debugLinePipelineFormat_, VK_FORMAT_UNDEFINED);
+    worldGridPipelineBlendMode_ = std::exchange(other.worldGridPipelineBlendMode_,
+                                                BasicRenderViewOverlayBlendMode::AlphaBlend);
+    debugLinePipelineBlendMode_ = std::exchange(other.debugLinePipelineBlendMode_,
+                                                BasicRenderViewOverlayBlendMode::AlphaBlend);
     pipelineCacheStats_ = std::exchange(other.pipelineCacheStats_, {});
     offscreenViewportTarget_ = std::move(other.offscreenViewportTarget_);
     descriptorAllocator_ = std::move(other.descriptorAllocator_);
@@ -159,8 +183,7 @@ BasicFullscreenTextureRenderer::create(const BasicFullscreenTextureRendererDesc&
         VkPushConstantRange{
             .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
             .offset = 0,
-            .size =
-                static_cast<std::uint32_t>(sizeof(BasicRenderViewWorldGridPushConstants)),
+            .size = static_cast<std::uint32_t>(sizeof(BasicRenderViewWorldGridPushConstants)),
         },
     };
     auto worldGridPipelineLayout = VulkanPipelineLayout::create(VulkanPipelineLayoutDesc{
@@ -205,8 +228,6 @@ BasicFullscreenTextureRenderer::create(const BasicFullscreenTextureRendererDesc&
         return std::unexpected{std::move(pipelineCache.error())};
     }
 
-    constexpr std::size_t kDescriptorSetRingSize = 16;
-    constexpr std::size_t kDebugLineVertexBufferRingSize = 16;
     constexpr std::uint32_t kDescriptorSetCount =
         static_cast<std::uint32_t>(kDescriptorSetRingSize * 2U);
     constexpr std::array poolSizes{
@@ -336,10 +357,11 @@ Result<void> BasicFullscreenTextureRenderer::ensurePipeline(VkFormat colorFormat
     return {};
 }
 
-Result<void> BasicFullscreenTextureRenderer::ensureWorldGridPipeline(
-    VkFormat colorFormat, BasicRenderViewOverlayBlendMode blendMode) {
-    if (worldGridPipeline_.handle() != VK_NULL_HANDLE &&
-        worldGridPipelineFormat_ == colorFormat && worldGridPipelineBlendMode_ == blendMode) {
+Result<void>
+BasicFullscreenTextureRenderer::ensureWorldGridPipeline(VkFormat colorFormat,
+                                                        BasicRenderViewOverlayBlendMode blendMode) {
+    if (worldGridPipeline_.handle() != VK_NULL_HANDLE && worldGridPipelineFormat_ == colorFormat &&
+        worldGridPipelineBlendMode_ == blendMode) {
         return {};
     }
 
@@ -387,10 +409,11 @@ Result<void> BasicFullscreenTextureRenderer::ensureWorldGridPipeline(
     return {};
 }
 
-Result<void> BasicFullscreenTextureRenderer::ensureDebugLinePipeline(
-    VkFormat colorFormat, BasicRenderViewOverlayBlendMode blendMode) {
-    if (debugLinePipeline_.handle() != VK_NULL_HANDLE &&
-        debugLinePipelineFormat_ == colorFormat && debugLinePipelineBlendMode_ == blendMode) {
+Result<void>
+BasicFullscreenTextureRenderer::ensureDebugLinePipeline(VkFormat colorFormat,
+                                                        BasicRenderViewOverlayBlendMode blendMode) {
+    if (debugLinePipeline_.handle() != VK_NULL_HANDLE && debugLinePipelineFormat_ == colorFormat &&
+        debugLinePipelineBlendMode_ == blendMode) {
         return {};
     }
 
@@ -445,7 +468,16 @@ BasicPipelineCacheStats BasicFullscreenTextureRenderer::pipelineCacheStats() con
 }
 
 VkDescriptorSet BasicFullscreenTextureRenderer::acquireFullscreenDescriptorSet(
-    const VulkanFrameRecordContext& frame) {
+    const VulkanFrameRecordContext& frame, BasicRenderFrameResourceContext* frameResources) {
+    if (frameResources != nullptr) {
+        if (frameResources->fullscreenDescriptorCursor_ >= kResourcesPerFrameContext) {
+            return VK_NULL_HANDLE;
+        }
+        const std::size_t resourceIndex = frameResources->index_ * kResourcesPerFrameContext +
+                                          frameResources->fullscreenDescriptorCursor_++;
+        return descriptorSets_[resourceIndex];
+    }
+
     const std::uint64_t epoch =
         frame.frameLoop == nullptr ? 0U : frame.frameLoop->submittedFrameEpoch() + 1U;
     if (descriptorSetEpoch_ != epoch) {
@@ -459,7 +491,16 @@ VkDescriptorSet BasicFullscreenTextureRenderer::acquireFullscreenDescriptorSet(
 }
 
 VkDescriptorSet BasicFullscreenTextureRenderer::acquireCompositeDescriptorSet(
-    const VulkanFrameRecordContext& frame) {
+    const VulkanFrameRecordContext& frame, BasicRenderFrameResourceContext* frameResources) {
+    if (frameResources != nullptr) {
+        if (frameResources->compositeDescriptorCursor_ >= kResourcesPerFrameContext) {
+            return VK_NULL_HANDLE;
+        }
+        const std::size_t resourceIndex = frameResources->index_ * kResourcesPerFrameContext +
+                                          frameResources->compositeDescriptorCursor_++;
+        return compositeDescriptorSets_[resourceIndex];
+    }
+
     const std::uint64_t epoch =
         frame.frameLoop == nullptr ? 0U : frame.frameLoop->submittedFrameEpoch() + 1U;
     if (compositeDescriptorSetEpoch_ != epoch) {
@@ -481,26 +522,53 @@ void BasicFullscreenTextureRenderer::resetFrameResourceCursors() noexcept {
     debugLineVertexBufferCursor_ = 0U;
 }
 
+Result<BasicRenderFrameResourceContext>
+BasicFullscreenTextureRenderer::createFrameResourceContext(std::size_t index) const {
+    if (index >= kFrameResourceContextCount || descriptorSets_.size() < kDescriptorSetRingSize ||
+        compositeDescriptorSets_.size() < kDescriptorSetRingSize ||
+        debugLineVertexBuffers_.size() < kDebugLineVertexBufferRingSize) {
+        return std::unexpected{
+            Error{ErrorDomain::Vulkan, 0,
+                  "Fullscreen texture renderer frame resource context is unavailable"}};
+    }
+
+    return BasicRenderFrameResourceContext{index};
+}
+
 Result<VkBuffer> BasicFullscreenTextureRenderer::uploadDebugLineVertices(
-    const VulkanFrameRecordContext& frame, std::span<const std::byte> vertices) {
+    const VulkanFrameRecordContext& frame, std::span<const std::byte> vertices,
+    BasicRenderFrameResourceContext* frameResources) {
     if (vertices.empty()) {
         return VK_NULL_HANDLE;
     }
-    const std::uint64_t epoch =
-        frame.frameLoop == nullptr ? 0U : frame.frameLoop->submittedFrameEpoch() + 1U;
-    if (debugLineVertexBufferEpoch_ != epoch) {
-        debugLineVertexBufferEpoch_ = epoch;
-        debugLineVertexBufferCursor_ = 0;
-    }
-    if (debugLineVertexBufferCursor_ >= debugLineVertexBuffers_.size()) {
-        return std::unexpected{
-            Error{ErrorDomain::Vulkan, 0,
-                  "Fullscreen texture renderer exhausted per-frame debug line vertex buffer ring"}};
+
+    std::size_t resourceIndex{};
+    if (frameResources != nullptr) {
+        if (frameResources->debugLineVertexBufferCursor_ >= kResourcesPerFrameContext) {
+            return std::unexpected{
+                Error{ErrorDomain::Vulkan, 0,
+                      "Fullscreen texture renderer exhausted frame-context debug line "
+                      "vertex buffers"}};
+        }
+        resourceIndex = frameResources->index_ * kResourcesPerFrameContext +
+                        frameResources->debugLineVertexBufferCursor_++;
+    } else {
+        const std::uint64_t epoch =
+            frame.frameLoop == nullptr ? 0U : frame.frameLoop->submittedFrameEpoch() + 1U;
+        if (debugLineVertexBufferEpoch_ != epoch) {
+            debugLineVertexBufferEpoch_ = epoch;
+            debugLineVertexBufferCursor_ = 0;
+        }
+        if (debugLineVertexBufferCursor_ >= debugLineVertexBuffers_.size()) {
+            return std::unexpected{Error{
+                ErrorDomain::Vulkan, 0,
+                "Fullscreen texture renderer exhausted per-frame debug line vertex buffer ring"}};
+        }
+        resourceIndex = debugLineVertexBufferCursor_++;
     }
 
-    VulkanBuffer& buffer = debugLineVertexBuffers_[debugLineVertexBufferCursor_];
-    VkDeviceSize& bufferSize = debugLineVertexBufferSizes_[debugLineVertexBufferCursor_];
-    ++debugLineVertexBufferCursor_;
+    VulkanBuffer& buffer = debugLineVertexBuffers_[resourceIndex];
+    VkDeviceSize& bufferSize = debugLineVertexBufferSizes_[resourceIndex];
 
     const auto requiredSize = static_cast<VkDeviceSize>(vertices.size_bytes());
     if (buffer.handle() == VK_NULL_HANDLE || bufferSize < requiredSize) {
@@ -582,13 +650,28 @@ BasicFullscreenTextureRenderer::recordFrame(const VulkanFrameRecordContext& fram
 Result<VulkanFrameRecordResult>
 BasicFullscreenTextureRenderer::recordViewFrame(const VulkanFrameRecordContext& frame,
                                                 BasicRenderViewDesc view) {
-    return recordViewFrame(frame, std::move(view), transientImagePool_, transientImages_);
+    return recordViewFrame(frame, std::move(view), nullptr, transientImagePool_, transientImages_);
 }
 
-Result<VulkanFrameRecordResult>
-BasicFullscreenTextureRenderer::recordViewFrame(
+Result<VulkanFrameRecordResult> BasicFullscreenTextureRenderer::recordViewFrame(
     const VulkanFrameRecordContext& frame, BasicRenderViewDesc view,
     VulkanTransientImagePool& transientImagePool,
+    std::vector<VulkanTransientImageResource>& transientImages) {
+    return recordViewFrame(frame, std::move(view), nullptr, transientImagePool, transientImages);
+}
+
+Result<VulkanFrameRecordResult> BasicFullscreenTextureRenderer::recordViewFrame(
+    const VulkanFrameRecordContext& frame, BasicRenderViewDesc view,
+    BasicRenderFrameResourceContext& frameResources, VulkanTransientImagePool& transientImagePool,
+    std::vector<VulkanTransientImageResource>& transientImages) {
+    frameResources.beginFrame();
+    return recordViewFrame(frame, std::move(view), &frameResources, transientImagePool,
+                           transientImages);
+}
+
+Result<VulkanFrameRecordResult> BasicFullscreenTextureRenderer::recordViewFrame(
+    const VulkanFrameRecordContext& frame, BasicRenderViewDesc view,
+    BasicRenderFrameResourceContext* frameResources, VulkanTransientImagePool& transientImagePool,
     std::vector<VulkanTransientImageResource>& transientImages) {
     auto target = validateBasicRenderViewTarget(view.target, "Fullscreen render view");
     if (!target) {
@@ -608,7 +691,8 @@ BasicFullscreenTextureRenderer::recordViewFrame(
     if (!sceneInputsValidated) {
         return std::unexpected{std::move(sceneInputsValidated.error())};
     }
-    const VkDescriptorSet fullscreenDescriptorSet = acquireFullscreenDescriptorSet(frame);
+    const VkDescriptorSet fullscreenDescriptorSet =
+        acquireFullscreenDescriptorSet(frame, frameResources);
     if (fullscreenDescriptorSet == VK_NULL_HANDLE) {
         return std::unexpected{
             Error{ErrorDomain::Vulkan, 0,
@@ -708,8 +792,8 @@ BasicFullscreenTextureRenderer::recordViewFrame(
                           "RenderView debug line vertex count exceeds Vulkan draw limits"}};
             }
             debugLineVertexCount = static_cast<std::uint32_t>(debugLineVertices.size());
-            auto uploadedDebugLines =
-                uploadDebugLineVertices(frame, std::as_bytes(std::span{debugLineVertices}));
+            auto uploadedDebugLines = uploadDebugLineVertices(
+                frame, std::as_bytes(std::span{debugLineVertices}), frameResources);
             if (!uploadedDebugLines) {
                 return std::unexpected{std::move(uploadedDebugLines.error())};
             }
@@ -763,8 +847,8 @@ BasicFullscreenTextureRenderer::recordViewFrame(
     }
 
     if (renderViewPassPolicy.worldGridEnabled) {
-        addBasicRenderViewWorldGridPass(
-            renderViewRecording, worldGridPipeline_.handle(), worldGridPipelineLayout_.handle());
+        addBasicRenderViewWorldGridPass(renderViewRecording, worldGridPipeline_.handle(),
+                                        worldGridPipelineLayout_.handle());
         auto debugPreviewAfterWorldGrid = debugPreviewCursor.tryAddPreviewAfterSourcePass();
         if (!debugPreviewAfterWorldGrid) {
             return std::unexpected{std::move(debugPreviewAfterWorldGrid.error())};
@@ -772,9 +856,8 @@ BasicFullscreenTextureRenderer::recordViewFrame(
     }
 
     if (renderViewPassPolicy.debugLineOverlayEnabled) {
-        addBasicRenderViewOverlayPass(
-            renderViewRecording, debugLinePipeline_.handle(), debugLineVertexBuffer,
-            debugLineVertexCount);
+        addBasicRenderViewOverlayPass(renderViewRecording, debugLinePipeline_.handle(),
+                                      debugLineVertexBuffer, debugLineVertexCount);
         auto debugPreviewAfterOverlay = debugPreviewCursor.tryAddPreviewAfterSourcePass();
         if (!debugPreviewAfterOverlay) {
             return std::unexpected{std::move(debugPreviewAfterOverlay.error())};
@@ -843,7 +926,7 @@ BasicFullscreenTextureRenderer::recordOffscreenViewportFrame(const VulkanFrameRe
     if (!pipeline) {
         return std::unexpected{std::move(pipeline.error())};
     }
-    const VkDescriptorSet compositeDescriptorSet = acquireCompositeDescriptorSet(frame);
+    const VkDescriptorSet compositeDescriptorSet = acquireCompositeDescriptorSet(frame, nullptr);
     if (compositeDescriptorSet == VK_NULL_HANDLE) {
         return std::unexpected{
             Error{ErrorDomain::Vulkan, 0,
@@ -887,8 +970,8 @@ BasicFullscreenTextureRenderer::recordOffscreenViewportFrame(const VulkanFrameRe
                 .setVec4("Tint", kCompositeParams.tint)
                 .drawFullscreenTriangle();
         })
-        .execute([&frame, &bindings, backbufferTarget,
-                  compositeDescriptorSet, this](RenderGraphPassContext pass) -> Result<void> {
+        .execute([&frame, &bindings, backbufferTarget, compositeDescriptorSet,
+                  this](RenderGraphPassContext pass) -> Result<void> {
             return executeBasicFullscreenTexturePass(
                 frame, pass, bindings, device_, pipeline_.handle(), pipelineLayout_.handle(),
                 compositeDescriptorSet, backbufferTarget.extent,

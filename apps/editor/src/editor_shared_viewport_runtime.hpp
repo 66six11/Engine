@@ -1,5 +1,6 @@
 ﻿#pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -58,6 +59,10 @@ namespace asharia::editor {
         [[nodiscard]] asharia::Result<const asharia::VulkanContext*> ensureContext();
         [[nodiscard]] EditorSharedViewportRenderFrameResult
         renderSceneViewFrame(EditorSharedViewportPresentDesc desc);
+        [[nodiscard]] EditorSharedViewportRenderFrameResult
+        createPresentSlot(EditorSharedViewportPresentDesc desc);
+        [[nodiscard]] EditorSharedViewportRenderFrameResult
+        renderPresentSlot(void* nativeSlot, EditorSharedViewportPresentDesc desc);
         void releasePresentPacket(void* nativePacket);
         void shutdown();
         [[nodiscard]] EditorSharedViewportRuntimeStats stats() const;
@@ -65,15 +70,19 @@ namespace asharia::editor {
     private:
         [[nodiscard]] asharia::Result<EditorSharedViewportRenderProducer*>
         ensureRenderProducerLocked();
-        [[nodiscard]] std::optional<asharia::VulkanContext>
-        takeContextForShutdownIfIdleLocked();
+        [[nodiscard]] std::optional<asharia::VulkanContext> takeContextForShutdownIfIdleLocked();
+        [[nodiscard]] asharia::Result<void> retireCompletedPresentSlotsLocked();
+        [[nodiscard]] std::optional<std::size_t> availableFrameResourceIndexLocked() const;
 
-        static constexpr std::size_t kMaxOutstandingPackets = 1U;
+        static constexpr std::size_t kMaxOutstandingPackets = 4U;
+        static constexpr std::size_t kMaxOutstandingLegacyPackets = 1U;
 
         mutable std::mutex mutex_;
         std::optional<asharia::VulkanContext> context_;
         std::optional<EditorSharedViewportRenderProducer> renderProducer_;
         std::unordered_set<EditorSharedViewportPacketState*> outstandingPackets_;
+        std::array<bool, kMaxOutstandingPackets> releasingFrameResourceIndices_{};
+        std::size_t outstandingLegacyPackets_{};
         std::size_t releasingPacketCount_{};
         std::uint64_t producersCreated_{};
         std::uint64_t framesRendered_{};

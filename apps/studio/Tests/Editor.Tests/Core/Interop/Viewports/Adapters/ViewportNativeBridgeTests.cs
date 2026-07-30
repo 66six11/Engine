@@ -157,6 +157,38 @@ public sealed class ViewportNativeBridgeTests
     }
 
     [Fact]
+    public void Reusable_present_slot_uses_v3_create_and_render_entry_points()
+    {
+        using var api = new StubViewportNativeApi
+        {
+            AcquiredPacketStatus = ViewportNativeStatus.Success,
+        };
+        var bridge = new ViewportNativeBridge(api);
+        var requestedExtent = CreateRequestedExtent();
+        var packet = bridge.CreatePresentSlot(
+            CreateCompositionCapabilities(),
+            requestedExtent,
+            hasScene: true,
+            sceneRevision: 41UL);
+
+        var status = bridge.RenderPresentSlot(
+            ref packet,
+            requestedExtent,
+            hasScene: true,
+            sceneRevision: 42UL);
+
+        Assert.Equal(ViewportNativeStatus.Success, status);
+        Assert.Equal(1, api.CreatePresentSlotCalls);
+        Assert.Equal(1, api.RenderPresentSlotCalls);
+        Assert.Equal(packet.NativePacket, api.LastSlotRenderRequest.NativeSlot);
+        Assert.Equal((uint)requestedExtent.WidthPixels, api.LastSlotRenderRequest.WidthPixels);
+        Assert.Equal((uint)requestedExtent.HeightPixels, api.LastSlotRenderRequest.HeightPixels);
+        Assert.Equal(1U, api.LastSlotRenderRequest.HasScene);
+        Assert.Equal(42UL, api.LastSlotRenderRequest.SceneRevision);
+        Assert.Equal(10UL, packet.FrameIndex);
+    }
+
+    [Fact]
     public void Acquire_present_packet_returns_native_failure_packet_for_caller_release()
     {
         using var api = new StubViewportNativeApi
@@ -378,6 +410,12 @@ public sealed class ViewportNativeBridgeTests
 
         public ViewportNativePresentRequestV2 LastPresentRequest { get; private set; }
 
+        public ViewportNativePresentSlotRenderRequest LastSlotRenderRequest { get; private set; }
+
+        public int CreatePresentSlotCalls { get; private set; }
+
+        public int RenderPresentSlotCalls { get; private set; }
+
         public int ReleaseCompatibilityResultCalls { get; private set; }
 
         public ViewportNativeCompatibilityResult LastReleasedCompatibilityResult { get; private set; }
@@ -462,6 +500,37 @@ public sealed class ViewportNativeBridgeTests
                 allocatedPresentMessage_,
                 (ulong)messageBytes.Length);
             return AcquiredPacketStatus;
+        }
+
+        public uint CreatePresentSlotV3(
+            in ViewportNativePresentRequestV2 request,
+            ref ViewportNativePresentPacket packet)
+        {
+            CreatePresentSlotCalls++;
+            return AcquirePresentPacketV2(request, ref packet);
+        }
+
+        public uint RenderPresentSlotV3(
+            in ViewportNativePresentSlotRenderRequest request,
+            ref ViewportNativePresentPacket packet)
+        {
+            RenderPresentSlotCalls++;
+            LastSlotRenderRequest = request;
+            packet = new ViewportNativePresentPacket(
+                packet.Header,
+                ViewportNativeStatus.Success,
+                packet.NativePacket,
+                packet.ImageHandle,
+                packet.WaitSemaphoreHandle,
+                packet.SignalSemaphoreHandle,
+                packet.WidthPixels,
+                packet.HeightPixels,
+                packet.Format,
+                packet.MemorySizeBytes,
+                packet.FrameIndex + 1UL,
+                packet.MessageUtf8,
+                packet.MessageByteLength);
+            return ViewportNativeStatus.Success;
         }
 
         public void ReleasePresentPacket(ViewportNativePresentPacket packet)

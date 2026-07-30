@@ -60,7 +60,7 @@ public sealed class ViewportSchedulerTests
     }
 
     [Fact]
-    public void Interactive_viewport_bursts_then_uses_idle_interval()
+    public void Interactive_viewport_stops_rendering_when_the_burst_ends()
     {
         var scheduler = new ViewportScheduler();
         var now = DateTimeOffset.UnixEpoch;
@@ -78,19 +78,17 @@ public sealed class ViewportSchedulerTests
         var activeRequests = scheduler.BuildRenderPlan(
             [active],
             new ViewportSchedulerContext(now.AddMilliseconds(17)));
-        var idleTooSoon = scheduler.BuildRenderPlan(
+        var idleSoon = scheduler.BuildRenderPlan(
             [idle],
             new ViewportSchedulerContext(now.AddMilliseconds(100)));
-        var idleAtInterval = scheduler.BuildRenderPlan(
+        var idleMuchLater = scheduler.BuildRenderPlan(
             [idle],
-            new ViewportSchedulerContext(now.AddMilliseconds(200)));
+            new ViewportSchedulerContext(now.AddMinutes(1)));
 
         var activeRequest = Assert.Single(activeRequests);
         Assert.True(activeRequest.Reason.HasFlag(ViewportRenderReason.InputActive));
-        Assert.Empty(idleTooSoon);
-
-        var idleRequest = Assert.Single(idleAtInterval);
-        Assert.True(idleRequest.Reason.HasFlag(ViewportRenderReason.VisibleExposed));
+        Assert.Empty(idleSoon);
+        Assert.Empty(idleMuchLater);
     }
 
     [Fact]
@@ -98,7 +96,6 @@ public sealed class ViewportSchedulerTests
     {
         var scheduler = new ViewportScheduler(new ViewportSchedulerOptions(
             interactiveBurstFramesPerSecond: 10,
-            sceneIdleFramesPerSecond: 5,
             previewFramesPerSecond: 15,
             runtimeFramesPerSecond: 60));
         var now = DateTimeOffset.UnixEpoch;

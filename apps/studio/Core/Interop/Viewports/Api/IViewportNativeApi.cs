@@ -12,6 +12,14 @@ internal interface IViewportNativeApi
         in ViewportNativePresentRequestV2 request,
         ref ViewportNativePresentPacket packet);
 
+    uint CreatePresentSlotV3(
+        in ViewportNativePresentRequestV2 request,
+        ref ViewportNativePresentPacket packet);
+
+    uint RenderPresentSlotV3(
+        in ViewportNativePresentSlotRenderRequest request,
+        ref ViewportNativePresentPacket packet);
+
     void ReleasePresentPacket(ViewportNativePresentPacket packet);
 
     void Shutdown();

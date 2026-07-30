@@ -29,6 +29,20 @@ internal sealed class ViewportNativeLibraryApi : IViewportNativeApi
         return ViewportNativeEntryPoints.AcquirePresentPacketV2(request, ref packet);
     }
 
+    public uint CreatePresentSlotV3(
+        in ViewportNativePresentRequestV2 request,
+        ref ViewportNativePresentPacket packet)
+    {
+        return ViewportNativeEntryPoints.CreatePresentSlotV3(request, ref packet);
+    }
+
+    public uint RenderPresentSlotV3(
+        in ViewportNativePresentSlotRenderRequest request,
+        ref ViewportNativePresentPacket packet)
+    {
+        return ViewportNativeEntryPoints.RenderPresentSlotV3(request, ref packet);
+    }
+
     public void ReleasePresentPacket(ViewportNativePresentPacket packet)
     {
         ViewportNativeEntryPoints.ReleasePresentPacket(packet);
@@ -55,6 +69,16 @@ internal static partial class ViewportNativeEntryPoints
     [LibraryImport(LibraryName, EntryPoint = "editor_viewport_acquire_present_packet_v2")]
     internal static partial uint AcquirePresentPacketV2(
         in ViewportNativePresentRequestV2 request,
+        ref ViewportNativePresentPacket packet);
+
+    [LibraryImport(LibraryName, EntryPoint = "editor_viewport_create_present_slot_v3")]
+    internal static partial uint CreatePresentSlotV3(
+        in ViewportNativePresentRequestV2 request,
+        ref ViewportNativePresentPacket packet);
+
+    [LibraryImport(LibraryName, EntryPoint = "editor_viewport_render_present_slot_v3")]
+    internal static partial uint RenderPresentSlotV3(
+        in ViewportNativePresentSlotRenderRequest request,
         ref ViewportNativePresentPacket packet);
 
     [LibraryImport(LibraryName, EntryPoint = "editor_viewport_release_present_packet")]

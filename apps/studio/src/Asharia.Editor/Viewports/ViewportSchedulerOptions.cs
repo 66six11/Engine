@@ -9,16 +9,12 @@ public sealed record ViewportSchedulerOptions
 
     public ViewportSchedulerOptions(
         double interactiveBurstFramesPerSecond = 60,
-        double sceneIdleFramesPerSecond = 5,
         double previewFramesPerSecond = 15,
         double runtimeFramesPerSecond = 60)
     {
         ValidateFrameRate(
             interactiveBurstFramesPerSecond,
             nameof(interactiveBurstFramesPerSecond));
-        ValidateFrameRate(
-            sceneIdleFramesPerSecond,
-            nameof(sceneIdleFramesPerSecond));
         ValidateFrameRate(
             previewFramesPerSecond,
             nameof(previewFramesPerSecond));
@@ -27,7 +23,6 @@ public sealed record ViewportSchedulerOptions
             nameof(runtimeFramesPerSecond));
 
         InteractiveBurstFramesPerSecond = interactiveBurstFramesPerSecond;
-        SceneIdleFramesPerSecond = sceneIdleFramesPerSecond;
         PreviewFramesPerSecond = previewFramesPerSecond;
         RuntimeFramesPerSecond = runtimeFramesPerSecond;
     }
@@ -35,8 +30,6 @@ public sealed record ViewportSchedulerOptions
     public static ViewportSchedulerOptions Default { get; } = new();
 
     public double InteractiveBurstFramesPerSecond { get; }
-
-    public double SceneIdleFramesPerSecond { get; }
 
     public double PreviewFramesPerSecond { get; }
 
@@ -46,11 +39,6 @@ public sealed record ViewportSchedulerOptions
         GetTargetFrameInterval(
             InteractiveBurstFramesPerSecond,
             nameof(InteractiveBurstFramesPerSecond));
-
-    public TimeSpan SceneIdleInterval =>
-        GetTargetFrameInterval(
-            SceneIdleFramesPerSecond,
-            nameof(SceneIdleFramesPerSecond));
 
     public TimeSpan PreviewInterval =>
         GetTargetFrameInterval(

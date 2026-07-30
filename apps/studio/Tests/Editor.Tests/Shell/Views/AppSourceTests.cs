@@ -16,6 +16,7 @@ public sealed class AppSourceTests
         Assert.Contains("ShutdownNativeViewportRuntime();", source, StringComparison.Ordinal);
         Assert.Contains("private static void ShutdownNativeViewportRuntime()", source, StringComparison.Ordinal);
         Assert.Contains("ViewportNativeLibraryApi.Instance.Shutdown();", source, StringComparison.Ordinal);
+        Assert.Contains("RequiresProcessExitFallback", source, StringComparison.Ordinal);
         Assert.Contains("catch (Exception ex) when (IsNativeBindingException(ex))", source, StringComparison.Ordinal);
     }
 

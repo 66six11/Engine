@@ -2,10 +2,18 @@
 
 #include <vulkan/vulkan.h>
 
+#define WIN32_LEAN_AND_MEAN
+// clang-format off
+#include <windows.h>
+#include <vulkan/vulkan_win32.h>
+// clang-format on
+
+#include <array>
 #include <cstdint>
 #include <string_view>
 
 #include "asharia/core/log.hpp"
+#include "asharia/rhi_vulkan/vulkan_context.hpp"
 
 #include "native_bridge/viewport_native_api.hpp"
 
@@ -117,6 +125,119 @@ namespace asharia::editor {
             if (packet.nativePacket != nullptr || packet.messageUtf8 != nullptr) {
                 editor_viewport_release_present_packet(packet);
             }
+        }
+
+        struct ImportedCompositionSemaphores final {
+            ImportedCompositionSemaphores() = default;
+            ImportedCompositionSemaphores(const ImportedCompositionSemaphores&) = delete;
+            ImportedCompositionSemaphores& operator=(const ImportedCompositionSemaphores&) = delete;
+            ImportedCompositionSemaphores(ImportedCompositionSemaphores&&) = delete;
+            ImportedCompositionSemaphores& operator=(ImportedCompositionSemaphores&&) = delete;
+
+            ~ImportedCompositionSemaphores() {
+                if (ready != VK_NULL_HANDLE) {
+                    vkDestroySemaphore(device, ready, nullptr);
+                }
+                if (release != VK_NULL_HANDLE) {
+                    vkDestroySemaphore(device, release, nullptr);
+                }
+            }
+
+            VkDevice device{VK_NULL_HANDLE};
+            VkSemaphore ready{VK_NULL_HANDLE};
+            VkSemaphore release{VK_NULL_HANDLE};
+        };
+
+        [[nodiscard]] PFN_vkImportSemaphoreWin32HandleKHR
+        loadImportSemaphoreWin32Handle(VkDevice device) {
+            // Vulkan extension entry points use the API's generic function-pointer lookup.
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+            return reinterpret_cast<PFN_vkImportSemaphoreWin32HandleKHR>(
+                vkGetDeviceProcAddr(device, "vkImportSemaphoreWin32HandleKHR"));
+        }
+
+        [[nodiscard]] bool
+        importCompositionSemaphore(VkDevice device,
+                                   PFN_vkImportSemaphoreWin32HandleKHR importSemaphore,
+                                   void* sourceHandle, VkSemaphore& semaphore) {
+            VkSemaphoreCreateInfo createInfo{};
+            createInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+            const VkResult created = vkCreateSemaphore(device, &createInfo, nullptr, &semaphore);
+            if (created != VK_SUCCESS) {
+                return false;
+            }
+
+            VkImportSemaphoreWin32HandleInfoKHR importInfo{};
+            importInfo.sType = VK_STRUCTURE_TYPE_IMPORT_SEMAPHORE_WIN32_HANDLE_INFO_KHR;
+            importInfo.semaphore = semaphore;
+            importInfo.handleType = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_WIN32_BIT;
+            importInfo.handle = static_cast<HANDLE>(sourceHandle);
+            return importSemaphore(device, &importInfo) == VK_SUCCESS;
+        }
+
+        [[nodiscard]] bool
+        completeCompositionCycle(const VulkanContext& context,
+                                 const EditorViewportNativePresentPacket& packet) {
+            if (packet.nativePacket == nullptr || packet.waitSemaphoreHandle == nullptr ||
+                packet.signalSemaphoreHandle == nullptr) {
+                return false;
+            }
+
+            const PFN_vkImportSemaphoreWin32HandleKHR importSemaphore =
+                loadImportSemaphoreWin32Handle(context.device());
+            if (importSemaphore == nullptr) {
+                logError("Viewport native bridge smoke could not load semaphore import.");
+                return false;
+            }
+
+            ImportedCompositionSemaphores semaphores;
+            semaphores.device = context.device();
+            if (!importCompositionSemaphore(context.device(), importSemaphore,
+                                            packet.waitSemaphoreHandle, semaphores.ready) ||
+                !importCompositionSemaphore(context.device(), importSemaphore,
+                                            packet.signalSemaphoreHandle, semaphores.release)) {
+                logError("Viewport native bridge smoke could not import composition semaphores.");
+                return false;
+            }
+
+            VkFence fence = VK_NULL_HANDLE;
+            VkFenceCreateInfo fenceInfo{};
+            fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+            VkResult result = vkCreateFence(context.device(), &fenceInfo, nullptr, &fence);
+            if (result != VK_SUCCESS) {
+                logError("Viewport native bridge smoke could not create a composition fence.");
+                return false;
+            }
+
+            VkSemaphoreSubmitInfo waitInfo{};
+            waitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
+            waitInfo.semaphore = semaphores.ready;
+            waitInfo.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+
+            VkSemaphoreSubmitInfo signalInfo{};
+            signalInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
+            signalInfo.semaphore = semaphores.release;
+            signalInfo.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+
+            VkSubmitInfo2 submitInfo{};
+            submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
+            submitInfo.waitSemaphoreInfoCount = 1U;
+            submitInfo.pWaitSemaphoreInfos = &waitInfo;
+            submitInfo.signalSemaphoreInfoCount = 1U;
+            submitInfo.pSignalSemaphoreInfos = &signalInfo;
+
+            result = vkQueueSubmit2(context.graphicsQueue(), 1U, &submitInfo, fence);
+            if (result == VK_SUCCESS) {
+                constexpr std::uint64_t kCompositionTimeoutNanoseconds = 5'000'000'000ULL;
+                result = vkWaitForFences(context.device(), 1U, &fence, VK_TRUE,
+                                         kCompositionTimeoutNanoseconds);
+            }
+            vkDestroyFence(context.device(), fence, nullptr);
+            if (result != VK_SUCCESS) {
+                logError("Viewport native bridge smoke did not complete the composition cycle.");
+                return false;
+            }
+            return true;
         }
 
         [[nodiscard]] bool
@@ -325,9 +446,8 @@ namespace asharia::editor {
             }
 
             EditorViewportNativePresentPacket backpressuredPacket{};
-            const std::uint32_t backpressuredStatus =
-                editor_viewport_acquire_present_packet_v2(&firstPresentRequest,
-                                                          &backpressuredPacket);
+            const std::uint32_t backpressuredStatus = editor_viewport_acquire_present_packet_v2(
+                &firstPresentRequest, &backpressuredPacket);
             const bool acquireRejectedWhilePending =
                 backpressuredStatus == EditorViewportNativeStatus_Unavailable &&
                 backpressuredPacket.status == EditorViewportNativeStatus_Unavailable &&
@@ -349,7 +469,7 @@ namespace asharia::editor {
                 statsV5AfterBackpressure.packetsCreated != 1U ||
                 statsV5AfterBackpressure.outstandingPackets != 1U ||
                 statsV5AfterBackpressure.rendererCreations != 1U ||
-                statsV5AfterBackpressure.maxOutstandingPackets != 1U ||
+                statsV5AfterBackpressure.maxOutstandingPackets != 4U ||
                 statsV5AfterBackpressure.packetBackpressureHits != 1U ||
                 statsV5AfterBackpressure.frameEpochsSubmitted != 1U ||
                 statsV5AfterBackpressure.frameEpochsCompleted != 0U ||
@@ -388,7 +508,7 @@ namespace asharia::editor {
                 statsV5AfterFirstRelease.rendererCreations != 1U ||
                 statsV5AfterFirstRelease.packetsCreated != 1U ||
                 statsV5AfterFirstRelease.outstandingPackets != 0U ||
-                statsV5AfterFirstRelease.maxOutstandingPackets != 1U ||
+                statsV5AfterFirstRelease.maxOutstandingPackets != 4U ||
                 statsV5AfterFirstRelease.packetBackpressureHits != 1U ||
                 statsV5AfterFirstRelease.frameEpochsSubmitted != 1U ||
                 statsV5AfterFirstRelease.frameEpochsCompleted != 1U ||
@@ -401,7 +521,7 @@ namespace asharia::editor {
             return true;
         }
 
-        [[nodiscard]] bool smokeSameSizeReuseAndResize() {
+        [[nodiscard]] bool smokeSameSizeLegacyReuse() {
             EditorViewportNativePresentPacket secondPacket{};
             EditorViewportNativePresentRequest secondPresentRequest =
                 makePresentRequest(VkExtent2D{.width = 320U, .height = 180U});
@@ -457,6 +577,10 @@ namespace asharia::editor {
                 return false;
             }
 
+            return true;
+        }
+
+        [[nodiscard]] bool smokeResizeChurn() {
             EditorViewportNativePresentPacket resizedPacket{};
             EditorViewportNativePresentRequest resizedPresentRequest =
                 makePresentRequest(VkExtent2D{.width = 640U, .height = 360U});
@@ -506,14 +630,188 @@ namespace asharia::editor {
                 statsAfterResize.externalImagesCreated != 2U ||
                 statsAfterResize.externalImagesReused < 1U ||
                 statsAfterResize.externalImagesReleased < 3U ||
-                statsAfterResize.externalImagesAvailable < 2U ||
+                statsAfterResize.externalImagesAvailable != 2U ||
                 statsAfterResize.externalImagesLeased != 0U) {
                 logError("Viewport native bridge smoke did not observe resize external image "
                          "allocation.");
                 return false;
             }
 
+            EditorViewportNativePresentPacket resizeChurnPacket{};
+            EditorViewportNativePresentRequest resizeChurnRequest =
+                makePresentRequest(VkExtent2D{.width = 800U, .height = 450U});
+            const std::uint32_t resizeChurnStatus =
+                editor_viewport_acquire_present_packet(&resizeChurnRequest, &resizeChurnPacket);
+            const bool resizeChurnPacketAvailable =
+                resizeChurnStatus == EditorViewportNativeStatus_Success &&
+                resizeChurnPacket.status == EditorViewportNativeStatus_Success &&
+                resizeChurnPacket.nativePacket != nullptr &&
+                resizeChurnPacket.widthPixels == 800U && resizeChurnPacket.heightPixels == 450U &&
+                resizeChurnPacket.frameIndex == 4U;
+            if (!resizeChurnPacketAvailable) {
+                logPresentPacketMessage(resizeChurnPacket);
+                releaseIfNeeded(resizeChurnPacket);
+                logError("Viewport native bridge smoke did not produce the resize churn packet.");
+                return false;
+            }
+            releaseIfNeeded(resizeChurnPacket);
+
+            EditorViewportNativeRuntimeStatsV2 statsAfterResizeChurn{};
+            if (!queryRuntimeStatsV2(statsAfterResizeChurn) ||
+                statsAfterResizeChurn.externalImagesAcquired != 4U ||
+                statsAfterResizeChurn.externalImagesCreated != 3U ||
+                statsAfterResizeChurn.externalImagesReleased < 4U ||
+                statsAfterResizeChurn.externalImagesAvailable != 2U ||
+                statsAfterResizeChurn.externalImagesLeased != 0U) {
+                logError("Viewport native bridge smoke observed an unbounded resize image cache.");
+                return false;
+            }
+
             return true;
+        }
+
+        using AdditionalPresentSlots = std::array<EditorViewportNativePresentPacket, 3U>;
+
+        void releaseAll(AdditionalPresentSlots& slots) {
+            for (EditorViewportNativePresentPacket& slot : slots) {
+                releaseIfNeeded(slot);
+            }
+        }
+
+        [[nodiscard]] bool createReusableSlot(const EditorViewportNativePresentRequestV2& request,
+                                              EditorViewportNativePresentPacket& slot) {
+            const std::uint32_t status = editor_viewport_create_present_slot_v3(&request, &slot);
+            if (status == EditorViewportNativeStatus_Success &&
+                slot.status == EditorViewportNativeStatus_Success && slot.nativePacket != nullptr &&
+                slot.frameIndex == 5U) {
+                return true;
+            }
+
+            logPresentPacketMessage(slot);
+            releaseIfNeeded(slot);
+            logError("Viewport native bridge smoke did not create a reusable present slot.");
+            return false;
+        }
+
+        [[nodiscard]] bool smokeReusableSlotFrames(const VulkanContext& compositionContext,
+                                                   EditorViewportNativePresentPacket& slot) {
+            EditorViewportNativePresentSlotRenderRequest renderRequest{
+                .header =
+                    EditorViewportNativeAbiHeader{
+                        .abiVersion = EDITOR_NATIVE_ABI_VERSION,
+                        .structSize = static_cast<std::uint32_t>(
+                            sizeof(EditorViewportNativePresentSlotRenderRequest)),
+                    },
+                .nativeSlot = slot.nativePacket,
+                .widthPixels = slot.widthPixels,
+                .heightPixels = slot.heightPixels,
+                .hasScene = 1U,
+                .reserved = 0U,
+                .sceneRevision = 10U,
+            };
+
+            if (!completeCompositionCycle(compositionContext, slot) ||
+                editor_viewport_render_present_slot_v3(&renderRequest, &slot) !=
+                    EditorViewportNativeStatus_Success ||
+                slot.frameIndex != 6U || !completeCompositionCycle(compositionContext, slot)) {
+                logError("Viewport native bridge smoke did not reuse a present slot.");
+                return false;
+            }
+
+            renderRequest.sceneRevision = 11U;
+            if (editor_viewport_render_present_slot_v3(&renderRequest, &slot) !=
+                    EditorViewportNativeStatus_Success ||
+                slot.frameIndex != 7U || !completeCompositionCycle(compositionContext, slot)) {
+                logError("Viewport native bridge smoke did not repeatedly reuse a present slot.");
+                return false;
+            }
+
+            EditorViewportNativePresentSlotRenderRequest mismatchedExtentRender = renderRequest;
+            ++mismatchedExtentRender.widthPixels;
+            if (editor_viewport_render_present_slot_v3(&mismatchedExtentRender, &slot) !=
+                EditorViewportNativeStatus_InvalidArgument) {
+                logError("Viewport native bridge smoke changed a present slot extent in place.");
+                return false;
+            }
+
+            return true;
+        }
+
+        [[nodiscard]] bool
+        smokeBoundedReusableSlots(const EditorViewportNativePresentRequestV2& request) {
+            AdditionalPresentSlots additionalSlots{};
+            for (EditorViewportNativePresentPacket& slot : additionalSlots) {
+                const std::uint32_t status =
+                    editor_viewport_create_present_slot_v3(&request, &slot);
+                if (status != EditorViewportNativeStatus_Success ||
+                    slot.status != EditorViewportNativeStatus_Success ||
+                    slot.nativePacket == nullptr) {
+                    releaseAll(additionalSlots);
+                    logError("Viewport native bridge smoke did not allocate four bounded slots.");
+                    return false;
+                }
+            }
+
+            EditorViewportNativePresentPacket slotBeyondLimit{};
+            const std::uint32_t status =
+                editor_viewport_create_present_slot_v3(&request, &slotBeyondLimit);
+            const bool limitEnforced =
+                status == EditorViewportNativeStatus_Unavailable &&
+                slotBeyondLimit.status == EditorViewportNativeStatus_Unavailable &&
+                slotBeyondLimit.nativePacket == nullptr;
+            releaseIfNeeded(slotBeyondLimit);
+            releaseAll(additionalSlots);
+            if (!limitEnforced) {
+                logError("Viewport native bridge smoke exceeded the four-slot limit.");
+                return false;
+            }
+
+            return true;
+        }
+
+        [[nodiscard]] bool smokeReusableSlotStats() {
+            EditorViewportNativeRuntimeStatsV5 stats{};
+            if (!queryRuntimeStatsV5(stats) || stats.framesRendered != 10U ||
+                stats.packetsCreated != 8U || stats.outstandingPackets != 0U ||
+                stats.maxOutstandingPackets != 4U || stats.packetBackpressureHits != 2U ||
+                stats.frameEpochsSubmitted != 10U || stats.frameEpochsCompleted != 10U ||
+                stats.frameEpochsPending != 0U) {
+                logError("Viewport native bridge smoke did not retire reusable slots cleanly.");
+                return false;
+            }
+
+            return true;
+        }
+
+        [[nodiscard]] bool smokeReusableSlots() {
+            auto compositionContext = VulkanContext::create(VulkanContextDesc{
+                .applicationName = "Shared viewport composition smoke",
+                .requiredInstanceExtensions = {},
+                .createSurface = {},
+                .enableValidation = false,
+                .debugLabels = VulkanDebugLabelMode::Optional,
+                .requireVulkan14 = true,
+                .externalInterop =
+                    VulkanExternalInteropOptions{
+                        .opaqueWin32Semaphore = true,
+                    },
+            });
+            if (!compositionContext) {
+                logError(compositionContext.error().message);
+                return false;
+            }
+
+            EditorViewportNativePresentPacket reusableSlot{};
+            const EditorViewportNativePresentRequestV2 request =
+                makePresentRequestV2(VkExtent2D{.width = 800U, .height = 450U}, true, 9U);
+            if (!createReusableSlot(request, reusableSlot)) {
+                return false;
+            }
+
+            const bool framesPassed = smokeReusableSlotFrames(*compositionContext, reusableSlot);
+            const bool limitPassed = framesPassed && smokeBoundedReusableSlots(request);
+            releaseIfNeeded(reusableSlot);
+            return framesPassed && limitPassed && smokeReusableSlotStats();
         }
 
         [[nodiscard]] bool smokeShutdownOrdering() {
@@ -529,7 +827,7 @@ namespace asharia::editor {
                 shutdownPendingPacket.imageHandle != nullptr &&
                 shutdownPendingPacket.waitSemaphoreHandle != nullptr &&
                 shutdownPendingPacket.signalSemaphoreHandle != nullptr &&
-                shutdownPendingPacket.frameIndex == 4U;
+                shutdownPendingPacket.frameIndex == 11U;
             if (!shutdownPendingPacketAvailable) {
                 logPresentPacketMessage(shutdownPendingPacket);
                 releaseIfNeeded(shutdownPendingPacket);
@@ -540,8 +838,8 @@ namespace asharia::editor {
 
             EditorViewportNativeRuntimeStatsV3 statsV3BeforeShutdown{};
             if (!queryRuntimeStatsV3(statsV3BeforeShutdown) ||
-                statsV3BeforeShutdown.frameEpochsSubmitted != 4U ||
-                statsV3BeforeShutdown.frameEpochsCompleted != 3U ||
+                statsV3BeforeShutdown.frameEpochsSubmitted != 11U ||
+                statsV3BeforeShutdown.frameEpochsCompleted != 10U ||
                 statsV3BeforeShutdown.frameEpochsPending != 1U ||
                 statsV3BeforeShutdown.outstandingPackets != 1U) {
                 releaseIfNeeded(shutdownPendingPacket);
@@ -552,9 +850,9 @@ namespace asharia::editor {
             EditorViewportNativeRuntimeStatsV4 statsV4BeforeShutdown{};
             if (!queryRuntimeStatsV4(statsV4BeforeShutdown) ||
                 statsV4BeforeShutdown.rendererCreations != 1U ||
-                statsV4BeforeShutdown.packetsCreated != 4U ||
-                statsV4BeforeShutdown.frameEpochsSubmitted != 4U ||
-                statsV4BeforeShutdown.frameEpochsCompleted != 3U ||
+                statsV4BeforeShutdown.packetsCreated != 9U ||
+                statsV4BeforeShutdown.frameEpochsSubmitted != 11U ||
+                statsV4BeforeShutdown.frameEpochsCompleted != 10U ||
                 statsV4BeforeShutdown.frameEpochsPending != 1U ||
                 statsV4BeforeShutdown.outstandingPackets != 1U) {
                 releaseIfNeeded(shutdownPendingPacket);
@@ -589,7 +887,8 @@ namespace asharia::editor {
     bool runViewportNativeBridgeSmoke() {
         const SharedViewportRuntimeShutdown shutdownOnExit;
         return smokeCompatibilityContract() && smokeFirstPacketAndBackpressure() &&
-               smokeSameSizeReuseAndResize() && smokeShutdownOrdering();
+               smokeSameSizeLegacyReuse() && smokeResizeChurn() && smokeReusableSlots() &&
+               smokeShutdownOrdering();
     }
 
 } // namespace asharia::editor

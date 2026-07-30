@@ -41,6 +41,9 @@ public sealed class MainWindowSourceTests
         Assert.Contains("ViewportNativePresentDrain.HasActivePresents", source, StringComparison.Ordinal);
         Assert.Contains("e.Cancel = true;", source, StringComparison.Ordinal);
         Assert.Contains("await ViewportNativePresentDrain.WaitForIdleAsync", source, StringComparison.Ordinal);
+        Assert.Contains("if (!drained)", source, StringComparison.Ordinal);
+        Assert.Contains("RequestProcessExitFallback()", source, StringComparison.Ordinal);
+        Assert.Contains("nativeViewportProcessExitFallback_", source, StringComparison.Ordinal);
         Assert.Contains("nativeViewportPresentDrainCompleted_", source, StringComparison.Ordinal);
         Assert.Contains("Close();", source, StringComparison.Ordinal);
     }

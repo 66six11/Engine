@@ -13,27 +13,41 @@ public sealed class SceneViewPanelViewSourceTests
         var source = LoadSource("Features", "SceneView", "Views", "SceneViewPanelView.axaml.cs");
 
         Assert.Contains("ViewportNativeBridge", source, StringComparison.Ordinal);
-        Assert.Contains("SceneViewCompositionPresenter", source, StringComparison.Ordinal);
-        Assert.Contains("SceneViewNativeViewportLifecycle", source, StringComparison.Ordinal);
+        Assert.Contains("SceneViewPresentationSession", source, StringComparison.Ordinal);
         Assert.Contains("QueryCompositionCompatibility(", source, StringComparison.Ordinal);
-        Assert.Contains("AcquirePresentPacket(", source, StringComparison.Ordinal);
         Assert.Contains("GetSceneRenderState()", source, StringComparison.Ordinal);
         Assert.Contains("scene.HasScene", source, StringComparison.Ordinal);
         Assert.Contains("scene.Revision", source, StringComparison.Ordinal);
-        Assert.Contains("PresentAsync(", source, StringComparison.Ordinal);
-        Assert.Contains("CompositionHost.Surface", source, StringComparison.Ordinal);
+        Assert.Contains("RequestFrame(", source, StringComparison.Ordinal);
         Assert.Contains("TryGetCompositionGpuInterop", source, StringComparison.Ordinal);
         Assert.Contains("UpdateNativePresent(", source, StringComparison.Ordinal);
-        Assert.Contains("viewportLifecycle_", source, StringComparison.Ordinal);
-        Assert.Contains("TryBeginPresent(", source, StringComparison.Ordinal);
-        Assert.Contains("FrameRequested", source, StringComparison.Ordinal);
-        Assert.Contains("OnSceneViewFrameRequested", source, StringComparison.Ordinal);
-        Assert.Contains("TryPresentNativeFrameFromCurrentStateAsync", source, StringComparison.Ordinal);
-        Assert.Contains("context.RequestRepaint()", source, StringComparison.Ordinal);
+        Assert.Contains("RenderRequested", source, StringComparison.Ordinal);
+        Assert.Contains("OnSceneViewRenderRequested", source, StringComparison.Ordinal);
+        Assert.Contains("QueueNativeFrame()", source, StringComparison.Ordinal);
+        Assert.Contains("isFrameRequestQueued_", source, StringComparison.Ordinal);
+        Assert.Contains("RequestCompositionUpdate(", source, StringComparison.Ordinal);
+        Assert.Contains("CompleteQueuedFrameRequest(queueSequence)", source, StringComparison.Ordinal);
+        Assert.Contains("RequestNativeFrame()", source, StringComparison.Ordinal);
         Assert.Contains("TopLevel.GetTopLevel", source, StringComparison.Ordinal);
         Assert.Contains("RenderScaling", source, StringComparison.Ordinal);
+        Assert.Contains("CompositionHost.Bounds.Size", source, StringComparison.Ordinal);
+        Assert.Contains("Task.Run(", source, StringComparison.Ordinal);
+        Assert.Contains("await precedingDetach", source, StringComparison.Ordinal);
+        Assert.Contains("ReleaseCompositionResourcesAsync(", source, StringComparison.Ordinal);
+        Assert.Contains("ViewportNativePresentDrain.TrackAsync(detachTask_)", source, StringComparison.Ordinal);
+        Assert.Contains("SetFrameSourceViewModel(DataContext as SceneViewPanelViewModel)", source, StringComparison.Ordinal);
+        Assert.Contains("isAttached_ = true", source, StringComparison.Ordinal);
+        Assert.Contains("OnDataContextChanged", source, StringComparison.Ordinal);
+        Assert.Contains("BeginCapabilityProbe();", source, StringComparison.Ordinal);
+        Assert.Contains("change.Property != BoundsProperty || !isAttached_", source, StringComparison.Ordinal);
+        Assert.Contains("PresentationSetupState.Configured", source, StringComparison.Ordinal);
+        Assert.Contains("PresentationSetupState.WaitingForFrameExtent", source, StringComparison.Ordinal);
+        Assert.Contains("BeginPresentationConfiguration();", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("EditorPanelFrameContext", source, StringComparison.Ordinal);
         Assert.DoesNotContain("pendingPresent_", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("CanStartPresent()", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("NativePresent?.Status", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("WidthPixels /", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("HeightPixels /", source, StringComparison.Ordinal);
         Assert.DoesNotContain(".Wait()", source, StringComparison.Ordinal);
         Assert.DoesNotContain(".Result", source, StringComparison.Ordinal);
         Assert.DoesNotContain("Thread.Sleep", source, StringComparison.Ordinal);
@@ -45,13 +59,23 @@ public sealed class SceneViewPanelViewSourceTests
         var source = LoadSource("Features", "SceneView", "Views", "SceneViewPanelView.axaml.cs");
 
         Assert.DoesNotContain("async void ProbeCompositionCapabilities()", source, StringComparison.Ordinal);
-        Assert.Contains("_ = ProbeCompositionCapabilitiesAsync()", source, StringComparison.Ordinal);
-        Assert.Contains("private async Task ProbeCompositionCapabilitiesAsync()", source, StringComparison.Ordinal);
+        Assert.Contains("_ = ProbeCompositionCapabilitiesAsync(probeSequence)", source, StringComparison.Ordinal);
+        Assert.Contains("private async Task ProbeCompositionCapabilitiesAsync(ulong probeSequence)", source, StringComparison.Ordinal);
         Assert.Contains("catch (Exception ex)", source, StringComparison.Ordinal);
         Assert.Contains("CreateLocalCompositionSnapshot(", source, StringComparison.Ordinal);
-        Assert.Contains("TryPresentNativeFrameFromCurrentStateCoreAsync", source, StringComparison.Ordinal);
-        Assert.Contains("await TryPresentNativeFrameFromCurrentStateCoreAsync(viewModel)", source, StringComparison.Ordinal);
         Assert.Contains("ViewportNativePresentStatus.RenderFailed", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Scene_view_invalidates_pixels_when_top_level_scaling_changes()
+    {
+        var source = LoadSource("Features", "SceneView", "Views", "SceneViewPanelView.axaml.cs");
+
+        Assert.Contains("presentationTopLevel_.ScalingChanged += OnTopLevelScalingChanged", source, StringComparison.Ordinal);
+        Assert.Contains("presentationTopLevel_.ScalingChanged -= OnTopLevelScalingChanged", source, StringComparison.Ordinal);
+        Assert.Contains("private void OnTopLevelScalingChanged(object? sender, EventArgs e)", source, StringComparison.Ordinal);
+        Assert.Contains("RequestFrameForPresentationChange();", source, StringComparison.Ordinal);
+        Assert.Contains("topLevel.RenderScaling", source, StringComparison.Ordinal);
     }
 
     private static string LoadSource(params string[] pathParts)

@@ -4,15 +4,16 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string_view>
 #include <vector>
 
 #include "asharia/core/result.hpp"
 #include "asharia/renderer_basic_vulkan/fullscreen_texture_renderer.hpp"
+#include "asharia/rhi_vulkan/vma_fwd.hpp"
 #include "asharia/rhi_vulkan/vulkan_external_memory.hpp"
 #include "asharia/rhi_vulkan/vulkan_external_semaphore.hpp"
 #include "asharia/rhi_vulkan/vulkan_frame_loop.hpp"
-#include "asharia/rhi_vulkan/vma_fwd.hpp"
 
 #include "editor_shared_viewport_external_image_handle_family.hpp"
 #include "editor_shared_viewport_external_image_pool.hpp"
@@ -67,13 +68,13 @@ namespace asharia::editor {
     public:
         EditorSharedViewportPacketState() = default;
         EditorSharedViewportPacketState(const EditorSharedViewportPacketState&) = delete;
-        EditorSharedViewportPacketState& operator=(const EditorSharedViewportPacketState&) =
-            delete;
+        EditorSharedViewportPacketState& operator=(const EditorSharedViewportPacketState&) = delete;
         EditorSharedViewportPacketState(EditorSharedViewportPacketState&&) = delete;
         EditorSharedViewportPacketState& operator=(EditorSharedViewportPacketState&&) = delete;
         ~EditorSharedViewportPacketState();
 
         [[nodiscard]] EditorSharedViewportPresentPacket toPresentPacket();
+        [[nodiscard]] Result<bool> retireCompletedGpuWork();
 
         static void closeHandle(void*& handle);
 
@@ -82,7 +83,10 @@ namespace asharia::editor {
         VkCommandBuffer commandBuffer{VK_NULL_HANDLE};
         VkFence fence{VK_NULL_HANDLE};
         bool submitted{false};
+        bool reusable{false};
+        bool waitForCompositionRelease{false};
         EditorSharedViewportFrameEpochLease frameEpoch;
+        std::optional<BasicRenderFrameResourceContext> frameResources;
         VulkanTransientImagePool transientImagePool;
         std::vector<VulkanTransientImageResource> transientImages;
         EditorSharedViewportExternalImageLease imageLease;
@@ -98,10 +102,9 @@ namespace asharia::editor {
     public:
         EditorSharedViewportRenderProducer() = default;
         EditorSharedViewportRenderProducer(const EditorSharedViewportRenderProducer&) = delete;
-        EditorSharedViewportRenderProducer& operator=(const EditorSharedViewportRenderProducer&) =
-            delete;
-        EditorSharedViewportRenderProducer(EditorSharedViewportRenderProducer&&) noexcept =
-            default;
+        EditorSharedViewportRenderProducer&
+        operator=(const EditorSharedViewportRenderProducer&) = delete;
+        EditorSharedViewportRenderProducer(EditorSharedViewportRenderProducer&&) noexcept = default;
         EditorSharedViewportRenderProducer&
         operator=(EditorSharedViewportRenderProducer&&) noexcept = default;
         ~EditorSharedViewportRenderProducer() = default;
@@ -110,7 +113,14 @@ namespace asharia::editor {
         create(const VulkanContext& context);
 
         [[nodiscard]] Result<std::unique_ptr<EditorSharedViewportPacketState>>
-        renderSceneViewFrame(EditorSharedViewportPresentDesc desc, std::uint64_t frameIndex);
+        renderSceneViewFrame(std::uint64_t frameIndex, EditorSharedViewportPresentDesc desc,
+                             std::size_t frameResourceIndex);
+        [[nodiscard]] Result<std::unique_ptr<EditorSharedViewportPacketState>>
+        createPresentSlot(std::uint64_t frameIndex, EditorSharedViewportPresentDesc desc,
+                          std::size_t frameResourceIndex);
+        [[nodiscard]] Result<void> renderPresentSlot(EditorSharedViewportPacketState& state,
+                                                     EditorSharedViewportPresentDesc desc,
+                                                     std::uint64_t frameIndex);
 
         [[nodiscard]] EditorSharedViewportRenderProducerStats stats() const;
 

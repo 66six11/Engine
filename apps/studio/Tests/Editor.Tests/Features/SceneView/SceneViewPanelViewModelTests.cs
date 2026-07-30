@@ -6,7 +6,6 @@ using Asharia.Studio.Application.Diagnostics;
 using Asharia.Editor.Viewports;
 using Asharia.Editor.Worlds.Snapshots;
 using Editor.Core.Abstractions;
-using Editor.Core.Models.Panels;
 using Editor.Core.Models.Viewports;
 using Editor.Core.Services;
 using Editor.Features.SceneView.ViewModels;
@@ -18,20 +17,17 @@ namespace Editor.Tests.Features.SceneView;
 public sealed class SceneViewPanelViewModelTests
 {
     [Fact]
-    public void Scene_view_exposes_stable_viewport_id_and_initial_composition_status()
+    public void Scene_view_exposes_stable_viewport_id_and_initial_snapshots()
     {
         var viewModel = new SceneViewPanelViewModel(new EditorSelectionService());
 
         Assert.Equal("scene-view/main", viewModel.ViewportId.Value);
         Assert.Null(viewModel.CompositionCapabilities);
-        Assert.Equal("composition pending", viewModel.ViewportStatusText);
-        Assert.Equal(
-            "Scene View is waiting for Avalonia composition GPU interop probing.",
-            viewModel.ViewportStateMessage);
+        Assert.Null(viewModel.NativePresent);
     }
 
     [Fact]
-    public void Update_composition_capabilities_projects_status_and_notifies_dependents()
+    public void Update_composition_capabilities_stores_snapshot_and_notifies()
     {
         var viewModel = new SceneViewPanelViewModel(new EditorSelectionService());
         var changedProperties = new List<string>();
@@ -50,11 +46,7 @@ public sealed class SceneViewPanelViewModelTests
         viewModel.UpdateCompositionCapabilities(snapshot);
 
         Assert.Same(snapshot, viewModel.CompositionCapabilities);
-        Assert.Equal("Supported", viewModel.ViewportStatusText);
-        Assert.Equal(snapshot.Message, viewModel.ViewportStateMessage);
         Assert.Contains(nameof(SceneViewPanelViewModel.CompositionCapabilities), changedProperties);
-        Assert.Contains(nameof(SceneViewPanelViewModel.ViewportStatusText), changedProperties);
-        Assert.Contains(nameof(SceneViewPanelViewModel.ViewportStateMessage), changedProperties);
     }
 
     [Fact]
@@ -107,15 +99,12 @@ public sealed class SceneViewPanelViewModelTests
         viewModel.UpdateCompositionCapabilities(compositionSnapshot);
 
         Assert.Null(viewModel.NativePresent);
-        Assert.Equal("GpuInteropUnavailable", viewModel.ViewportStatusText);
-        Assert.Equal("Avalonia composition GPU interop is unavailable.", viewModel.ViewportStateMessage);
+        Assert.Same(compositionSnapshot, viewModel.CompositionCapabilities);
         Assert.Contains(nameof(SceneViewPanelViewModel.NativePresent), changedProperties);
-        Assert.Contains(nameof(SceneViewPanelViewModel.ViewportStatusText), changedProperties);
-        Assert.Contains(nameof(SceneViewPanelViewModel.ViewportStateMessage), changedProperties);
     }
 
     [Fact]
-    public void Update_native_present_projects_status_and_notifies_dependents()
+    public void Update_native_present_stores_snapshot_and_notifies()
     {
         var viewModel = new SceneViewPanelViewModel(new EditorSelectionService());
         var changedProperties = new List<string>();
@@ -134,11 +123,7 @@ public sealed class SceneViewPanelViewModelTests
         viewModel.UpdateNativePresent(snapshot);
 
         Assert.Same(snapshot, viewModel.NativePresent);
-        Assert.Equal("Success", viewModel.ViewportStatusText);
-        Assert.Equal("Presented native Vulkan viewport frame.", viewModel.ViewportStateMessage);
         Assert.Contains(nameof(SceneViewPanelViewModel.NativePresent), changedProperties);
-        Assert.Contains(nameof(SceneViewPanelViewModel.ViewportStatusText), changedProperties);
-        Assert.Contains(nameof(SceneViewPanelViewModel.ViewportStateMessage), changedProperties);
     }
 
     [Fact]
@@ -219,13 +204,13 @@ public sealed class SceneViewPanelViewModelTests
     }
 
     [Fact]
-    public void Scene_view_requests_active_frame_updates_for_native_viewport()
+    public void Scene_view_does_not_join_the_periodic_panel_frame_scheduler()
     {
         var viewModel = new SceneViewPanelViewModel(new EditorSelectionService());
-        var frameSink = Assert.IsAssignableFrom<IEditorPanelFrameUpdateSink>(viewModel);
 
-        Assert.Equal(EditorPanelFrameUpdateMode.Active, frameSink.FrameUpdateRequest.Mode);
-        Assert.Equal(30d, frameSink.FrameUpdateRequest.TargetFramesPerSecond);
+        Assert.DoesNotContain(
+            typeof(IEditorPanelFrameUpdateSink),
+            viewModel.GetType().GetInterfaces());
     }
 
     [Fact]
@@ -248,25 +233,67 @@ public sealed class SceneViewPanelViewModelTests
     }
 
     [Fact]
-    public void Scene_view_publishes_panel_frame_context_to_view_subscribers()
+    public void Scene_change_requests_one_on_demand_render()
     {
-        var viewModel = new SceneViewPanelViewModel(new EditorSelectionService());
-        var frameSink = Assert.IsAssignableFrom<IEditorPanelFrameUpdateSink>(viewModel);
-        var context = new EditorPanelFrameContext(
-            new EditorPanelLifecycleContext(
-                "scene-view",
-                "Scene View",
-                EditorDockArea.Center,
-                IsFloatingWorkspace: false),
-            DateTimeOffset.UnixEpoch,
-            TimeSpan.FromMilliseconds(16),
-            sequence: 3);
-        EditorPanelFrameContext? receivedContext = null;
-        viewModel.FrameRequested += (_, frameContext) => receivedContext = frameContext;
+        var scenes = new InMemorySceneSnapshotProvider(SceneSnapshot.Empty);
+        using var viewModel = new SceneViewPanelViewModel(
+            new EditorSelectionService(),
+            sceneSnapshots: scenes);
+        var renderRequests = 0;
+        viewModel.RenderRequested += (_, _) => renderRequests++;
 
-        frameSink.OnEditorPanelFrame(context);
+        scenes.ReplaceSnapshot(new SceneSnapshot(
+            "scene:minimal",
+            "Untitled Scene",
+            1,
+            [new SceneObjectSnapshot("scene:minimal", "Untitled Scene", "scene")]));
 
-        Assert.Same(context, receivedContext);
+        Assert.Equal(1, renderRequests);
+    }
+
+    [Fact]
+    public void Dispose_stops_scene_change_render_requests()
+    {
+        var scenes = new InMemorySceneSnapshotProvider(SceneSnapshot.Empty);
+        var viewModel = new SceneViewPanelViewModel(
+            new EditorSelectionService(),
+            sceneSnapshots: scenes);
+        var renderRequests = 0;
+        viewModel.RenderRequested += (_, _) => renderRequests++;
+
+        viewModel.Dispose();
+        scenes.ReplaceSnapshot(new SceneSnapshot(
+            "scene:minimal",
+            "Untitled Scene",
+            1,
+            [new SceneObjectSnapshot("scene:minimal", "Untitled Scene", "scene")]));
+
+        Assert.Equal(0, renderRequests);
+    }
+
+    [Fact]
+    public void Scene_change_marshals_render_request_to_ui_dispatcher()
+    {
+        var scenes = new InMemorySceneSnapshotProvider(SceneSnapshot.Empty);
+        var dispatcher = new CapturingUiDispatcher(hasAccess: false);
+        using var viewModel = new SceneViewPanelViewModel(
+            new EditorSelectionService(),
+            diagnostics: null,
+            sceneSnapshots: scenes,
+            uiDispatcher: dispatcher);
+        var renderRequests = 0;
+        viewModel.RenderRequested += (_, _) => renderRequests++;
+
+        scenes.ReplaceSnapshot(new SceneSnapshot(
+            "scene:minimal",
+            "Untitled Scene",
+            1,
+            [new SceneObjectSnapshot("scene:minimal", "Untitled Scene", "scene")]));
+
+        Assert.Equal(0, renderRequests);
+        var request = Assert.Single(dispatcher.PostedActions);
+        request();
+        Assert.Equal(1, renderRequests);
     }
 
     private static ViewportNativePresentSnapshot CreateNativePresentSnapshot(
@@ -285,5 +312,17 @@ public sealed class SceneViewPanelViewModelTests
             status,
             message,
             DateTimeOffset.UnixEpoch);
+    }
+
+    private sealed class CapturingUiDispatcher(bool hasAccess) : IEditorUiDispatcher
+    {
+        public List<Action> PostedActions { get; } = [];
+
+        public bool CheckAccess() => hasAccess;
+
+        public void Post(Action action)
+        {
+            PostedActions.Add(action);
+        }
     }
 }

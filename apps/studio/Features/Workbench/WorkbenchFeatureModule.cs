@@ -159,7 +159,8 @@ public sealed class WorkbenchFeatureModule : IEditorFeatureModule
                 () => new SceneViewPanelViewModel(
                     selectionService_,
                     diagnostics_,
-                    sceneSnapshotProvider_),
+                    sceneSnapshotProvider_,
+                    uiDispatcher_),
                 IconKey: "studio.scene-view",
                 Tag: "DOC",
                 TitleDetail: "viewport deferred",

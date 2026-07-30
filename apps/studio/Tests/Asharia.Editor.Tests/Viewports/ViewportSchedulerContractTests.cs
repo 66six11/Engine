@@ -48,12 +48,10 @@ public sealed class ViewportSchedulerContractTests
     {
         var options = new ViewportSchedulerOptions(
             interactiveBurstFramesPerSecond: 60,
-            sceneIdleFramesPerSecond: 5,
             previewFramesPerSecond: 15,
             runtimeFramesPerSecond: 30);
 
         Assert.Equal(TimeSpan.FromTicks(166667), options.InteractiveBurstInterval);
-        Assert.Equal(TimeSpan.FromMilliseconds(200), options.SceneIdleInterval);
         Assert.Equal(TimeSpan.FromTicks(666667), options.PreviewInterval);
         Assert.Equal(TimeSpan.FromTicks(333334), options.RuntimeInterval);
     }
@@ -141,10 +139,6 @@ public sealed class ViewportSchedulerContractTests
         Assert.Throws<ArgumentOutOfRangeException>(
             () => new ViewportSchedulerOptions(
                 interactiveBurstFramesPerSecond: framesPerSecond));
-
-        Assert.Throws<ArgumentOutOfRangeException>(
-            () => new ViewportSchedulerOptions(
-                sceneIdleFramesPerSecond: framesPerSecond));
 
         Assert.Throws<ArgumentOutOfRangeException>(
             () => new ViewportSchedulerOptions(

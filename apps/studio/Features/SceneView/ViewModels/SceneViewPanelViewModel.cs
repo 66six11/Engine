@@ -1,8 +1,6 @@
 using System;
-using Asharia.Editor.Panels;
 using Editor.Core.Abstractions;
 using Asharia.Editor.Diagnostics;
-using Editor.Core.Models.Panels;
 using Asharia.Editor.Selection;
 using Asharia.Editor.Viewports;
 using Asharia.Editor.Worlds.Snapshots;
@@ -12,7 +10,7 @@ using Editor.UI.ViewModels;
 
 namespace Editor.Features.SceneView.ViewModels;
 
-public sealed class SceneViewPanelViewModel : ViewModelBase, IEditorPanelFrameUpdateSink
+public sealed class SceneViewPanelViewModel : ViewModelBase, IDisposable
 {
     private const string SelectionContextId = "scene-view";
     private const string DiagnosticSource = "scene-view";
@@ -21,22 +19,38 @@ public sealed class SceneViewPanelViewModel : ViewModelBase, IEditorPanelFrameUp
     private readonly IEditorSelectionService selectionService_;
     private readonly IEditorDiagnosticService? diagnostics_;
     private readonly ISceneSnapshotProvider sceneSnapshots_;
+    private readonly IEditorUiDispatcher uiDispatcher_;
     private NativePresentDiagnosticKey? lastPublishedNativePresentDiagnostic_;
+    private bool isDisposed_;
 
     public SceneViewPanelViewModel(
         IEditorSelectionService selectionService,
         IEditorDiagnosticService? diagnostics = null,
         ISceneSnapshotProvider? sceneSnapshots = null)
+        : this(
+            selectionService,
+            diagnostics,
+            sceneSnapshots,
+            new ImmediateEditorUiDispatcher())
+    {
+    }
+
+    internal SceneViewPanelViewModel(
+        IEditorSelectionService selectionService,
+        IEditorDiagnosticService? diagnostics,
+        ISceneSnapshotProvider? sceneSnapshots,
+        IEditorUiDispatcher uiDispatcher)
     {
         ArgumentNullException.ThrowIfNull(selectionService);
+        ArgumentNullException.ThrowIfNull(uiDispatcher);
 
         selectionService_ = selectionService;
         diagnostics_ = diagnostics;
         sceneSnapshots_ = sceneSnapshots
             ?? new InMemorySceneSnapshotProvider(SceneSnapshot.Empty);
+        uiDispatcher_ = uiDispatcher;
+        sceneSnapshots_.SnapshotChanged += OnSceneSnapshotChanged;
     }
-
-    public string ViewportStateTitle => "Viewport backend deferred";
 
     public ViewportId ViewportId => DefaultViewportId;
 
@@ -44,20 +58,7 @@ public sealed class SceneViewPanelViewModel : ViewModelBase, IEditorPanelFrameUp
 
     public ViewportNativePresentSnapshot? NativePresent { get; private set; }
 
-    public EditorPanelFrameUpdateRequest FrameUpdateRequest { get; } =
-        EditorPanelFrameUpdateRequest.Active(targetFramesPerSecond: 30d);
-
-    public event EventHandler<EditorPanelFrameContext>? FrameRequested;
-
-    public string ViewportStateMessage =>
-        NativePresent is not null
-            ? NativePresent.Message
-            : CompositionCapabilities is null
-            ? "Scene View is waiting for Avalonia composition GPU interop probing."
-            : CompositionCapabilities.Message;
-
-    public string ViewportStatusText =>
-        NativePresent?.Status.ToString() ?? CompositionCapabilities?.Status.ToString() ?? "composition pending";
+    public event EventHandler? RenderRequested;
 
     public void UpdateCompositionCapabilities(ViewportCompositionCapabilitiesSnapshot snapshot)
     {
@@ -78,9 +79,6 @@ public sealed class SceneViewPanelViewModel : ViewModelBase, IEditorPanelFrameUp
         {
             OnPropertyChanged(nameof(NativePresent));
         }
-
-        OnPropertyChanged(nameof(ViewportStateMessage));
-        OnPropertyChanged(nameof(ViewportStatusText));
     }
 
     public void UpdateNativePresent(ViewportNativePresentSnapshot snapshot)
@@ -95,8 +93,6 @@ public sealed class SceneViewPanelViewModel : ViewModelBase, IEditorPanelFrameUp
 
         NativePresent = snapshot;
         OnPropertyChanged(nameof(NativePresent));
-        OnPropertyChanged(nameof(ViewportStateMessage));
-        OnPropertyChanged(nameof(ViewportStatusText));
         PublishNativePresentDiagnosticIfNeeded(snapshot);
     }
 
@@ -110,11 +106,15 @@ public sealed class SceneViewPanelViewModel : ViewModelBase, IEditorPanelFrameUp
         selectionService_.ClearSelection(SelectionContextId);
     }
 
-    public void OnEditorPanelFrame(EditorPanelFrameContext context)
+    public void Dispose()
     {
-        ArgumentNullException.ThrowIfNull(context);
+        if (isDisposed_)
+        {
+            return;
+        }
 
-        FrameRequested?.Invoke(this, context);
+        isDisposed_ = true;
+        sceneSnapshots_.SnapshotChanged -= OnSceneSnapshotChanged;
     }
 
     internal (bool HasScene, ulong Revision) GetSceneRenderState()
@@ -123,6 +123,25 @@ public sealed class SceneViewPanelViewModel : ViewModelBase, IEditorPanelFrameUp
         return (
             snapshot.Revision > 0 || snapshot.Objects.Count > 0,
             checked((ulong)snapshot.Revision));
+    }
+
+    private void OnSceneSnapshotChanged(object? sender, EventArgs e)
+    {
+        if (uiDispatcher_.CheckAccess())
+        {
+            RequestRender();
+            return;
+        }
+
+        uiDispatcher_.Post(RequestRender);
+    }
+
+    private void RequestRender()
+    {
+        if (!isDisposed_)
+        {
+            RenderRequested?.Invoke(this, EventArgs.Empty);
+        }
     }
 
     private void PublishNativePresentDiagnosticIfNeeded(ViewportNativePresentSnapshot snapshot)

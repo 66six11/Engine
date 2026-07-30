@@ -164,6 +164,7 @@ namespace asharia {
         [[nodiscard]] Result<VulkanTransientImageResource> acquire(const VulkanImageDesc& desc);
         [[nodiscard]] Result<void> release(const VulkanFrameRecordContext& frame,
                                            VulkanTransientImageResource& resource);
+        [[nodiscard]] Result<void> releaseCompleted(VulkanTransientImageResource& resource);
         [[nodiscard]] VulkanTransientImagePoolStats stats() const;
 
     private:

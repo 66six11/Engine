@@ -3,6 +3,7 @@
 #include <vulkan/vulkan.h>
 
 #include <algorithm>
+#include <cstddef>
 #include <exception>
 #include <memory>
 #include <mutex>
@@ -17,6 +18,8 @@
 namespace asharia::editor {
     namespace {
 
+        constexpr std::size_t kMaxCachedExternalImages = 2U;
+
         [[nodiscard]] bool matchesKey(const EditorSharedViewportExternalImageKey& left,
                                       const EditorSharedViewportExternalImageKey& right) {
             return left.imageHandleFamily == right.imageHandleFamily &&
@@ -25,9 +28,9 @@ namespace asharia::editor {
                    left.aspectMask == right.aspectMask;
         }
 
-        [[nodiscard]] EditorSharedViewportExternalImageKey makeKey(
-            EditorSharedViewportExternalImageHandleFamily imageHandleFamily,
-            const VulkanExternalImageDesc& desc) {
+        [[nodiscard]] EditorSharedViewportExternalImageKey
+        makeKey(EditorSharedViewportExternalImageHandleFamily imageHandleFamily,
+                const VulkanExternalImageDesc& desc) {
             return EditorSharedViewportExternalImageKey{
                 .imageHandleFamily = imageHandleFamily,
                 .format = desc.format,
@@ -37,10 +40,11 @@ namespace asharia::editor {
             };
         }
 
-        [[nodiscard]] Result<void> validateAcquireInputs(
-            EditorSharedViewportExternalImageHandleFamily imageHandleFamily,
-            const VulkanExternalImageDesc& desc) {
-            if (imageHandleFamily != EditorSharedViewportExternalImageHandleFamily::VulkanOpaqueNt) {
+        [[nodiscard]] Result<void>
+        validateAcquireInputs(EditorSharedViewportExternalImageHandleFamily imageHandleFamily,
+                              const VulkanExternalImageDesc& desc) {
+            if (imageHandleFamily !=
+                EditorSharedViewportExternalImageHandleFamily::VulkanOpaqueNt) {
                 return std::unexpected{
                     vulkanError("Shared viewport external image handle family is unsupported")};
             }
@@ -60,16 +64,15 @@ namespace asharia::editor {
             std::terminate();
         }
 
-        [[nodiscard]] EditorSharedViewportExternalImagePoolResource&
-        leasedResource(std::optional<EditorSharedViewportExternalImagePoolResource>& resource) noexcept {
+        [[nodiscard]] EditorSharedViewportExternalImagePoolResource& leasedResource(
+            std::optional<EditorSharedViewportExternalImagePoolResource>& resource) noexcept {
             if (!resource) {
                 terminateReleasedLeaseAccess();
             }
             return *resource;
         }
 
-        [[nodiscard]] const EditorSharedViewportExternalImagePoolResource&
-        leasedResource(
+        [[nodiscard]] const EditorSharedViewportExternalImagePoolResource& leasedResource(
             const std::optional<EditorSharedViewportExternalImagePoolResource>& resource) noexcept {
             if (!resource) {
                 terminateReleasedLeaseAccess();
@@ -95,8 +98,7 @@ namespace asharia::editor {
         *this = std::move(other);
     }
 
-    EditorSharedViewportExternalImageLease&
-    EditorSharedViewportExternalImageLease::operator=(
+    EditorSharedViewportExternalImageLease& EditorSharedViewportExternalImageLease::operator=(
         EditorSharedViewportExternalImageLease&& other) noexcept {
         if (this == &other) {
             return *this;
@@ -138,6 +140,9 @@ namespace asharia::editor {
 
         try {
             state_->available.push_back(std::move(*resource_));
+            if (state_->available.size() > kMaxCachedExternalImages) {
+                state_->available.erase(state_->available.begin());
+            }
             state_->stats.available = static_cast<std::uint64_t>(state_->available.size());
         } catch (const std::bad_alloc&) {
             logError("Shared viewport external image pool dropped an image during release.");
@@ -151,8 +156,7 @@ namespace asharia::editor {
     EditorSharedViewportExternalImagePool::EditorSharedViewportExternalImagePool()
         : state_{std::make_shared<EditorSharedViewportExternalImagePoolState>()} {}
 
-    Result<EditorSharedViewportExternalImageLease>
-    EditorSharedViewportExternalImagePool::acquire(
+    Result<EditorSharedViewportExternalImageLease> EditorSharedViewportExternalImagePool::acquire(
         EditorSharedViewportExternalImageHandleFamily imageHandleFamily,
         const VulkanExternalImageDesc& desc) {
         if (!state_) {

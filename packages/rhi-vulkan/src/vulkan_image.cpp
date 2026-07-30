@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <memory>
+#include <new>
 #include <utility>
 #include <vector>
 #include <vk_mem_alloc.h>
@@ -448,6 +449,29 @@ namespace asharia {
 
         ++state_->stats.released;
         ++state_->stats.pending;
+        return {};
+    }
+
+    Result<void>
+    VulkanTransientImagePool::releaseCompleted(VulkanTransientImageResource& resource) {
+        if (state_ == nullptr) {
+            return std::unexpected{
+                vulkanError("Cannot release a transient Vulkan image to a moved pool")};
+        }
+        if (!hasTransientResource(resource)) {
+            return {};
+        }
+
+        try {
+            state_->available.push_back(std::move(resource));
+        } catch (const std::bad_alloc&) {
+            return std::unexpected{
+                vulkanError("Failed to retain a completed transient Vulkan image")};
+        }
+
+        ++state_->stats.released;
+        ++state_->stats.retired;
+        state_->stats.available = static_cast<std::uint64_t>(state_->available.size());
         return {};
     }
 

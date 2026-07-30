@@ -106,12 +106,6 @@ public sealed class ViewportScheduler
             reason |= ViewportRenderReason.InputActive;
         }
 
-        if (reason == ViewportRenderReason.None
-            && ShouldTick(viewport.LastRenderedAtUtc, nowUtc, options_.SceneIdleInterval))
-        {
-            reason |= ViewportRenderReason.VisibleExposed;
-        }
-
         return reason;
     }
 

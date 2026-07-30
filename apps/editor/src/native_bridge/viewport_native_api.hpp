@@ -93,6 +93,16 @@ struct EditorViewportNativePresentRequestV2 {
     std::uint64_t sceneRevision;
 };
 
+struct EditorViewportNativePresentSlotRenderRequest {
+    EditorViewportNativeAbiHeader header;
+    void* nativeSlot;
+    std::uint32_t widthPixels;
+    std::uint32_t heightPixels;
+    std::uint32_t hasScene;
+    std::uint32_t reserved;
+    std::uint64_t sceneRevision;
+};
+
 struct EditorViewportNativeRuntimeStats {
     EditorViewportNativeAbiHeader header;
     std::uint64_t framesRendered;
@@ -210,8 +220,7 @@ struct EditorViewportNativeRuntimeStatsV6 {
     std::uint32_t shutdownRequested;
 };
 
-EDITOR_NATIVE_API std::uint32_t EDITOR_NATIVE_CALL
-editor_viewport_query_composition_compatibility(
+EDITOR_NATIVE_API std::uint32_t EDITOR_NATIVE_CALL editor_viewport_query_composition_compatibility(
     const EditorViewportNativeCompatibilityRequest* request,
     EditorViewportNativeCompatibilityResult* result);
 
@@ -219,12 +228,17 @@ EDITOR_NATIVE_API void EDITOR_NATIVE_CALL
 editor_viewport_release_compatibility_result(EditorViewportNativeCompatibilityResult result);
 
 EDITOR_NATIVE_API std::uint32_t EDITOR_NATIVE_CALL editor_viewport_acquire_present_packet(
-    const EditorViewportNativePresentRequest* request,
-    EditorViewportNativePresentPacket* packet);
+    const EditorViewportNativePresentRequest* request, EditorViewportNativePresentPacket* packet);
 
 EDITOR_NATIVE_API std::uint32_t EDITOR_NATIVE_CALL editor_viewport_acquire_present_packet_v2(
-    const EditorViewportNativePresentRequestV2* request,
-    EditorViewportNativePresentPacket* packet);
+    const EditorViewportNativePresentRequestV2* request, EditorViewportNativePresentPacket* packet);
+
+EDITOR_NATIVE_API std::uint32_t EDITOR_NATIVE_CALL editor_viewport_create_present_slot_v3(
+    const EditorViewportNativePresentRequestV2* request, EditorViewportNativePresentPacket* packet);
+
+EDITOR_NATIVE_API std::uint32_t EDITOR_NATIVE_CALL
+editor_viewport_render_present_slot_v3(const EditorViewportNativePresentSlotRenderRequest* request,
+                                       EditorViewportNativePresentPacket* packet);
 
 EDITOR_NATIVE_API void EDITOR_NATIVE_CALL
 editor_viewport_release_present_packet(EditorViewportNativePresentPacket packet);

@@ -71,29 +71,40 @@ namespace {
         };
     }
 
-    [[nodiscard]] bool hasSupportedRequestHeader(
-        const EditorViewportNativeCompatibilityRequest& request) {
+    [[nodiscard]] bool
+    hasSupportedRequestHeader(const EditorViewportNativeCompatibilityRequest& request) {
         return request.header.abiVersion == EDITOR_NATIVE_ABI_VERSION &&
-               request.header.structSize >=
-                   sizeof(EditorViewportNativeCompatibilityRequest);
+               request.header.structSize >= sizeof(EditorViewportNativeCompatibilityRequest);
     }
 
-    [[nodiscard]] bool hasSupportedPresentRequestHeader(
-        const EditorViewportNativePresentRequest& request) {
+    [[nodiscard]] bool
+    hasSupportedPresentRequestHeader(const EditorViewportNativePresentRequest& request) {
         return request.header.abiVersion == EDITOR_NATIVE_ABI_VERSION &&
                request.header.structSize >= sizeof(EditorViewportNativePresentRequest) &&
                hasSupportedRequestHeader(request.compatibility);
     }
 
-    [[nodiscard]] bool hasSupportedPresentRequestV2Header(
-        const EditorViewportNativePresentRequestV2& request) {
+    [[nodiscard]] bool
+    hasSupportedPresentRequestV2Header(const EditorViewportNativePresentRequestV2& request) {
         return request.header.abiVersion == EDITOR_NATIVE_ABI_VERSION &&
                request.header.structSize >= sizeof(EditorViewportNativePresentRequestV2) &&
                hasSupportedRequestHeader(request.compatibility);
     }
 
-    [[nodiscard]] bool hasSupportedHandleTypes(
-        const EditorViewportNativeCompatibilityRequest& request) {
+    [[nodiscard]] bool hasSupportedPresentSlotRenderRequestHeader(
+        const EditorViewportNativePresentSlotRenderRequest& request) {
+        return request.header.abiVersion == EDITOR_NATIVE_ABI_VERSION &&
+               request.header.structSize >= sizeof(EditorViewportNativePresentSlotRenderRequest);
+    }
+
+    [[nodiscard]] bool
+    hasSupportedPresentPacketHeader(const EditorViewportNativePresentPacket& packet) {
+        return packet.header.abiVersion == EDITOR_NATIVE_ABI_VERSION &&
+               packet.header.structSize >= sizeof(EditorViewportNativePresentPacket);
+    }
+
+    [[nodiscard]] bool
+    hasSupportedHandleTypes(const EditorViewportNativeCompatibilityRequest& request) {
         return request.imageHandleType == EditorViewportNativeHandleType_VulkanOpaqueNt &&
                request.semaphoreHandleType == EditorViewportNativeHandleType_VulkanOpaqueNt;
     }
@@ -165,10 +176,8 @@ namespace {
         return true;
     }
 
-    [[nodiscard]] std::uint64_t readUuidLow(
-        const std::array<std::uint8_t, VK_UUID_SIZE>& bytes) {
-        return static_cast<std::uint64_t>(bytes[0]) |
-               (static_cast<std::uint64_t>(bytes[1]) << 8U) |
+    [[nodiscard]] std::uint64_t readUuidLow(const std::array<std::uint8_t, VK_UUID_SIZE>& bytes) {
+        return static_cast<std::uint64_t>(bytes[0]) | (static_cast<std::uint64_t>(bytes[1]) << 8U) |
                (static_cast<std::uint64_t>(bytes[2]) << 16U) |
                (static_cast<std::uint64_t>(bytes[3]) << 24U) |
                (static_cast<std::uint64_t>(bytes[4]) << 32U) |
@@ -177,10 +186,8 @@ namespace {
                (static_cast<std::uint64_t>(bytes[7]) << 56U);
     }
 
-    [[nodiscard]] std::uint64_t readUuidHigh(
-        const std::array<std::uint8_t, VK_UUID_SIZE>& bytes) {
-        return static_cast<std::uint64_t>(bytes[8]) |
-               (static_cast<std::uint64_t>(bytes[9]) << 8U) |
+    [[nodiscard]] std::uint64_t readUuidHigh(const std::array<std::uint8_t, VK_UUID_SIZE>& bytes) {
+        return static_cast<std::uint64_t>(bytes[8]) | (static_cast<std::uint64_t>(bytes[9]) << 8U) |
                (static_cast<std::uint64_t>(bytes[10]) << 16U) |
                (static_cast<std::uint64_t>(bytes[11]) << 24U) |
                (static_cast<std::uint64_t>(bytes[12]) << 32U) |
@@ -189,27 +196,23 @@ namespace {
                (static_cast<std::uint64_t>(bytes[15]) << 56U);
     }
 
-    [[nodiscard]] std::uint32_t readLuidLow(
-        const std::array<std::uint8_t, VK_LUID_SIZE>& bytes) {
-        return static_cast<std::uint32_t>(bytes[0]) |
-               (static_cast<std::uint32_t>(bytes[1]) << 8U) |
+    [[nodiscard]] std::uint32_t readLuidLow(const std::array<std::uint8_t, VK_LUID_SIZE>& bytes) {
+        return static_cast<std::uint32_t>(bytes[0]) | (static_cast<std::uint32_t>(bytes[1]) << 8U) |
                (static_cast<std::uint32_t>(bytes[2]) << 16U) |
                (static_cast<std::uint32_t>(bytes[3]) << 24U);
     }
 
-    [[nodiscard]] std::int32_t readLuidHigh(
-        const std::array<std::uint8_t, VK_LUID_SIZE>& bytes) {
-        const std::uint32_t value =
-            static_cast<std::uint32_t>(bytes[4]) |
-            (static_cast<std::uint32_t>(bytes[5]) << 8U) |
-            (static_cast<std::uint32_t>(bytes[6]) << 16U) |
-            (static_cast<std::uint32_t>(bytes[7]) << 24U);
+    [[nodiscard]] std::int32_t readLuidHigh(const std::array<std::uint8_t, VK_LUID_SIZE>& bytes) {
+        const std::uint32_t value = static_cast<std::uint32_t>(bytes[4]) |
+                                    (static_cast<std::uint32_t>(bytes[5]) << 8U) |
+                                    (static_cast<std::uint32_t>(bytes[6]) << 16U) |
+                                    (static_cast<std::uint32_t>(bytes[7]) << 24U);
         return std::bit_cast<std::int32_t>(value);
     }
 
-    [[nodiscard]] bool matchesRequestedDevice(
-        const EditorViewportNativeCompatibilityRequest& request,
-        const asharia::VulkanDeviceIdentity& identity) {
+    [[nodiscard]] bool
+    matchesRequestedDevice(const EditorViewportNativeCompatibilityRequest& request,
+                           const asharia::VulkanDeviceIdentity& identity) {
         if (request.hasDeviceUuid != 0U) {
             const std::uint64_t nativeUuidLow = readUuidLow(identity.deviceUuid);
             const std::uint64_t nativeUuidHigh = readUuidHigh(identity.deviceUuid);
@@ -235,11 +238,10 @@ namespace {
         return true;
     }
 
-    [[nodiscard]] std::uint32_t writeCompatibilityResult(
-        EditorViewportNativeCompatibilityResult* result,
-        std::uint32_t status,
-        const asharia::VulkanDeviceInfo* deviceInfo,
-        std::string_view message) {
+    [[nodiscard]] std::uint32_t
+    writeCompatibilityResult(EditorViewportNativeCompatibilityResult* result, std::uint32_t status,
+                             const asharia::VulkanDeviceInfo* deviceInfo,
+                             std::string_view message) {
         void* messageData{};
         std::uint64_t messageByteLength{};
         if (!allocateMessage(message, messageData, messageByteLength)) {
@@ -268,9 +270,9 @@ namespace {
         return status;
     }
 
-    [[nodiscard]] std::uint32_t writePresentPacketFailure(
-        EditorViewportNativePresentPacket* packet, std::uint32_t status,
-        std::string_view message) {
+    [[nodiscard]] std::uint32_t writePresentPacketFailure(EditorViewportNativePresentPacket* packet,
+                                                          std::uint32_t status,
+                                                          std::string_view message) {
         void* messageData{};
         std::uint64_t messageByteLength{};
         if (!allocateMessage(message, messageData, messageByteLength)) {
@@ -296,9 +298,9 @@ namespace {
         return status;
     }
 
-    [[nodiscard]] std::uint32_t writePresentPacketSuccess(
-        EditorViewportNativePresentPacket* packet,
-        const asharia::editor::EditorSharedViewportPresentPacket& present) {
+    [[nodiscard]] std::uint32_t
+    writePresentPacketSuccess(EditorViewportNativePresentPacket* packet,
+                              const asharia::editor::EditorSharedViewportPresentPacket& present) {
         std::uint32_t format = EditorViewportNativeImageFormat_Unknown;
         if (present.format == VK_FORMAT_R8G8B8A8_UNORM) {
             format = EditorViewportNativeImageFormat_Rgba8Unorm;
@@ -331,10 +333,11 @@ namespace {
         return EditorViewportNativeStatus_Success;
     }
 
-    [[nodiscard]] std::uint32_t acquirePresentPacket(
-        const EditorViewportNativeCompatibilityRequest& compatibility,
-        std::uint32_t widthPixels, std::uint32_t heightPixels, bool hasScene,
-        std::uint64_t sceneRevision, EditorViewportNativePresentPacket* packet) {
+    [[nodiscard]] std::uint32_t
+    acquirePresentPacket(const EditorViewportNativeCompatibilityRequest& compatibility,
+                         std::uint32_t widthPixels, std::uint32_t heightPixels, bool hasScene,
+                         std::uint64_t sceneRevision, bool reusableSlot,
+                         EditorViewportNativePresentPacket* packet) {
         if (!hasSupportedHandleTypes(compatibility)) {
             clearPresentPacket(packet, EditorViewportNativeStatus_UnsupportedHandleType);
             return EditorViewportNativeStatus_UnsupportedHandleType;
@@ -358,23 +361,27 @@ namespace {
                 "Avalonia compositor device does not match the Vulkan viewport device.");
         }
 
+        const asharia::editor::EditorSharedViewportPresentDesc desc{
+            .panelId = "scene-view/native",
+            .kind = asharia::editor::EditorViewportKind::Scene,
+            .extent =
+                asharia::editor::EditorExtent2D{
+                    .width = widthPixels,
+                    .height = heightPixels,
+                },
+            .hasScene = hasScene,
+            .sceneRevision = sceneRevision,
+        };
         auto present =
-            asharia::editor::EditorSharedViewportRuntime::instance().renderSceneViewFrame(
-                asharia::editor::EditorSharedViewportPresentDesc{
-                    .panelId = "scene-view/native",
-                    .kind = asharia::editor::EditorViewportKind::Scene,
-                    .extent =
-                        asharia::editor::EditorExtent2D{
-                            .width = widthPixels,
-                            .height = heightPixels,
-                        },
-                    .hasScene = hasScene,
-                    .sceneRevision = sceneRevision,
-                });
+            reusableSlot
+                ? asharia::editor::EditorSharedViewportRuntime::instance().createPresentSlot(desc)
+                : asharia::editor::EditorSharedViewportRuntime::instance().renderSceneViewFrame(
+                      desc);
         if (!present) {
             const asharia::editor::EditorSharedViewportRenderFrameError& error = present.error();
             const std::uint32_t status =
-                error.kind == asharia::editor::EditorSharedViewportRenderFrameErrorKind::Backpressure
+                error.kind ==
+                        asharia::editor::EditorSharedViewportRenderFrameErrorKind::Backpressure
                     ? EditorViewportNativeStatus_Unavailable
                     : EditorViewportNativeStatus_RenderFailed;
             return writePresentPacketFailure(packet, status, error.error.message);
@@ -401,9 +408,9 @@ std::uint32_t EDITOR_NATIVE_CALL editor_viewport_query_composition_compatibility
     }
 
     if (!hasSupportedHandleTypes(*request)) {
-        return writeCompatibilityResult(result, EditorViewportNativeStatus_UnsupportedHandleType,
-                                        nullptr,
-                                        "Vulkan opaque NT image and semaphore handles are required.");
+        return writeCompatibilityResult(
+            result, EditorViewportNativeStatus_UnsupportedHandleType, nullptr,
+            "Vulkan opaque NT image and semaphore handles are required.");
     }
 
     auto context = asharia::editor::EditorSharedViewportRuntime::instance().ensureContext();
@@ -414,24 +421,23 @@ std::uint32_t EDITOR_NATIVE_CALL editor_viewport_query_composition_compatibility
 
     const asharia::VulkanDeviceInfo& deviceInfo = (*context)->deviceInfo();
     if (!matchesRequestedDevice(*request, deviceInfo.identity)) {
-        return writeCompatibilityResult(result, EditorViewportNativeStatus_DeviceMismatch,
-                                        &deviceInfo,
-                                        "Avalonia compositor device does not match the Vulkan viewport device.");
+        return writeCompatibilityResult(
+            result, EditorViewportNativeStatus_DeviceMismatch, &deviceInfo,
+            "Avalonia compositor device does not match the Vulkan viewport device.");
     }
 
-    return writeCompatibilityResult(result, EditorViewportNativeStatus_Success, &deviceInfo,
-                                    "Vulkan viewport device is compatible with Avalonia composition.");
+    return writeCompatibilityResult(
+        result, EditorViewportNativeStatus_Success, &deviceInfo,
+        "Vulkan viewport device is compatible with Avalonia composition.");
 }
 
-void EDITOR_NATIVE_CALL editor_viewport_release_compatibility_result(
-    EditorViewportNativeCompatibilityResult result) {
-    const std::unique_ptr<std::byte[]> message{
-        static_cast<std::byte*>(result.messageUtf8)};
+void EDITOR_NATIVE_CALL
+editor_viewport_release_compatibility_result(EditorViewportNativeCompatibilityResult result) {
+    const std::unique_ptr<std::byte[]> message{static_cast<std::byte*>(result.messageUtf8)};
 }
 
 std::uint32_t EDITOR_NATIVE_CALL editor_viewport_acquire_present_packet(
-    const EditorViewportNativePresentRequest* request,
-    EditorViewportNativePresentPacket* packet) {
+    const EditorViewportNativePresentRequest* request, EditorViewportNativePresentPacket* packet) {
     if (request == nullptr || packet == nullptr) {
         clearPresentPacket(packet, EditorViewportNativeStatus_InvalidArgument);
         return EditorViewportNativeStatus_InvalidArgument;
@@ -442,13 +448,13 @@ std::uint32_t EDITOR_NATIVE_CALL editor_viewport_acquire_present_packet(
         return EditorViewportNativeStatus_UnsupportedAbi;
     }
 
-    return acquirePresentPacket(request->compatibility, request->widthPixels,
-                                request->heightPixels, false, 0U, packet);
+    return acquirePresentPacket(request->compatibility, request->widthPixels, request->heightPixels,
+                                false, 0U, false, packet);
 }
 
-std::uint32_t EDITOR_NATIVE_CALL editor_viewport_acquire_present_packet_v2(
-    const EditorViewportNativePresentRequestV2* request,
-    EditorViewportNativePresentPacket* packet) {
+std::uint32_t EDITOR_NATIVE_CALL
+editor_viewport_acquire_present_packet_v2(const EditorViewportNativePresentRequestV2* request,
+                                          EditorViewportNativePresentPacket* packet) {
     if (request == nullptr || packet == nullptr) {
         clearPresentPacket(packet, EditorViewportNativeStatus_InvalidArgument);
         return EditorViewportNativeStatus_InvalidArgument;
@@ -465,20 +471,80 @@ std::uint32_t EDITOR_NATIVE_CALL editor_viewport_acquire_present_packet_v2(
         return EditorViewportNativeStatus_InvalidArgument;
     }
 
-    return acquirePresentPacket(request->compatibility, request->widthPixels,
-                                request->heightPixels, request->hasScene != 0U,
-                                request->sceneRevision, packet);
+    return acquirePresentPacket(request->compatibility, request->widthPixels, request->heightPixels,
+                                request->hasScene != 0U, request->sceneRevision, false, packet);
 }
 
-void EDITOR_NATIVE_CALL editor_viewport_release_present_packet(
-    EditorViewportNativePresentPacket packet) {
+std::uint32_t EDITOR_NATIVE_CALL
+editor_viewport_create_present_slot_v3(const EditorViewportNativePresentRequestV2* request,
+                                       EditorViewportNativePresentPacket* packet) {
+    if (request == nullptr || packet == nullptr) {
+        clearPresentPacket(packet, EditorViewportNativeStatus_InvalidArgument);
+        return EditorViewportNativeStatus_InvalidArgument;
+    }
+    if (!hasSupportedPresentRequestV2Header(*request)) {
+        clearPresentPacket(packet, EditorViewportNativeStatus_UnsupportedAbi);
+        return EditorViewportNativeStatus_UnsupportedAbi;
+    }
+    if (request->hasScene > 1U || request->reserved != 0U ||
+        (request->hasScene == 0U && request->sceneRevision != 0U)) {
+        clearPresentPacket(packet, EditorViewportNativeStatus_InvalidArgument);
+        return EditorViewportNativeStatus_InvalidArgument;
+    }
+
+    return acquirePresentPacket(request->compatibility, request->widthPixels, request->heightPixels,
+                                request->hasScene != 0U, request->sceneRevision, true, packet);
+}
+
+std::uint32_t EDITOR_NATIVE_CALL
+editor_viewport_render_present_slot_v3(const EditorViewportNativePresentSlotRenderRequest* request,
+                                       EditorViewportNativePresentPacket* packet) {
+    if (request == nullptr || packet == nullptr) {
+        return EditorViewportNativeStatus_InvalidArgument;
+    }
+    if (!hasSupportedPresentSlotRenderRequestHeader(*request) ||
+        !hasSupportedPresentPacketHeader(*packet)) {
+        return EditorViewportNativeStatus_UnsupportedAbi;
+    }
+    if (request->nativeSlot == nullptr || request->nativeSlot != packet->nativePacket ||
+        request->widthPixels == 0U || request->heightPixels == 0U ||
+        request->widthPixels != packet->widthPixels ||
+        request->heightPixels != packet->heightPixels || request->hasScene > 1U ||
+        request->reserved != 0U || (request->hasScene == 0U && request->sceneRevision != 0U)) {
+        return EditorViewportNativeStatus_InvalidArgument;
+    }
+
+    auto present = asharia::editor::EditorSharedViewportRuntime::instance().renderPresentSlot(
+        request->nativeSlot, asharia::editor::EditorSharedViewportPresentDesc{
+                                 .panelId = "scene-view/native",
+                                 .kind = asharia::editor::EditorViewportKind::Scene,
+                                 .extent =
+                                     asharia::editor::EditorExtent2D{
+                                         .width = request->widthPixels,
+                                         .height = request->heightPixels,
+                                     },
+                                 .hasScene = request->hasScene != 0U,
+                                 .sceneRevision = request->sceneRevision,
+                             });
+    if (!present) {
+        const asharia::editor::EditorSharedViewportRenderFrameError& error = present.error();
+        return error.kind == asharia::editor::EditorSharedViewportRenderFrameErrorKind::Backpressure
+                   ? EditorViewportNativeStatus_Unavailable
+                   : EditorViewportNativeStatus_RenderFailed;
+    }
+
+    return writePresentPacketSuccess(packet, *present);
+}
+
+void EDITOR_NATIVE_CALL
+editor_viewport_release_present_packet(EditorViewportNativePresentPacket packet) {
     asharia::editor::EditorSharedViewportRuntime::instance().releasePresentPacket(
         packet.nativePacket);
     const std::unique_ptr<std::byte[]> message{static_cast<std::byte*>(packet.messageUtf8)};
 }
 
-std::uint32_t EDITOR_NATIVE_CALL editor_viewport_query_runtime_stats(
-    EditorViewportNativeRuntimeStats* stats) {
+std::uint32_t EDITOR_NATIVE_CALL
+editor_viewport_query_runtime_stats(EditorViewportNativeRuntimeStats* stats) {
     if (stats == nullptr) {
         return EditorViewportNativeStatus_InvalidArgument;
     }
@@ -498,8 +564,8 @@ std::uint32_t EDITOR_NATIVE_CALL editor_viewport_query_runtime_stats(
     return EditorViewportNativeStatus_Success;
 }
 
-std::uint32_t EDITOR_NATIVE_CALL editor_viewport_query_runtime_stats_v2(
-    EditorViewportNativeRuntimeStatsV2* stats) {
+std::uint32_t EDITOR_NATIVE_CALL
+editor_viewport_query_runtime_stats_v2(EditorViewportNativeRuntimeStatsV2* stats) {
     if (stats == nullptr) {
         return EditorViewportNativeStatus_InvalidArgument;
     }
@@ -525,8 +591,8 @@ std::uint32_t EDITOR_NATIVE_CALL editor_viewport_query_runtime_stats_v2(
     return EditorViewportNativeStatus_Success;
 }
 
-std::uint32_t EDITOR_NATIVE_CALL editor_viewport_query_runtime_stats_v3(
-    EditorViewportNativeRuntimeStatsV3* stats) {
+std::uint32_t EDITOR_NATIVE_CALL
+editor_viewport_query_runtime_stats_v3(EditorViewportNativeRuntimeStatsV3* stats) {
     if (stats == nullptr) {
         return EditorViewportNativeStatus_InvalidArgument;
     }
@@ -555,8 +621,8 @@ std::uint32_t EDITOR_NATIVE_CALL editor_viewport_query_runtime_stats_v3(
     return EditorViewportNativeStatus_Success;
 }
 
-std::uint32_t EDITOR_NATIVE_CALL editor_viewport_query_runtime_stats_v4(
-    EditorViewportNativeRuntimeStatsV4* stats) {
+std::uint32_t EDITOR_NATIVE_CALL
+editor_viewport_query_runtime_stats_v4(EditorViewportNativeRuntimeStatsV4* stats) {
     if (stats == nullptr) {
         return EditorViewportNativeStatus_InvalidArgument;
     }
@@ -586,8 +652,8 @@ std::uint32_t EDITOR_NATIVE_CALL editor_viewport_query_runtime_stats_v4(
     return EditorViewportNativeStatus_Success;
 }
 
-std::uint32_t EDITOR_NATIVE_CALL editor_viewport_query_runtime_stats_v5(
-    EditorViewportNativeRuntimeStatsV5* stats) {
+std::uint32_t EDITOR_NATIVE_CALL
+editor_viewport_query_runtime_stats_v5(EditorViewportNativeRuntimeStatsV5* stats) {
     if (stats == nullptr) {
         return EditorViewportNativeStatus_InvalidArgument;
     }
@@ -619,8 +685,8 @@ std::uint32_t EDITOR_NATIVE_CALL editor_viewport_query_runtime_stats_v5(
     return EditorViewportNativeStatus_Success;
 }
 
-std::uint32_t EDITOR_NATIVE_CALL editor_viewport_query_runtime_stats_v6(
-    EditorViewportNativeRuntimeStatsV6* stats) {
+std::uint32_t EDITOR_NATIVE_CALL
+editor_viewport_query_runtime_stats_v6(EditorViewportNativeRuntimeStatsV6* stats) {
     if (stats == nullptr) {
         return EditorViewportNativeStatus_InvalidArgument;
     }

@@ -40,6 +40,9 @@ compositor 显示。布局、native renderer 和 compositor 属于三个不同�
 - Avalonia 的 GPU interop sample 在同一个 composition update 中使用同一份 Bounds
   snapshot 计算 pixel extent、更新 surface 和 visual size；`SwapchainBase` 明确保留多个
   同尺寸 image，避免单 image 造成 UI lockup。Studio 保留两个持久 present slot。
+- Unity Scene View 默认只在场景或编辑状态变化时重绘；固定间隔刷新由
+  `SceneViewState.alwaysRefresh` 显式开启。Studio 同样默认按需渲染，只有动画或
+  Play Session 等调用方明确声明后才进入连续刷新。
 
 ### 不采用
 
@@ -48,6 +51,7 @@ compositor 显示。布局、native renderer 和 compositor 属于三个不同�
   wait 或旧资源销毁前 `WaitIdle`；
 - 不推测或照搬 Unreal Engine 未公开的 debounce 时间和具体 buffered-frame 数量；
 - 不为每个 Bounds 事件创建一份 GPU generation；
+- 不用固定 30 FPS panel tick 轮询 Scene View 场景变化；
 - 不把普通 backpressure 写入 Problems 或永久错误状态。
 
 ### 本地适配
@@ -82,8 +86,14 @@ ViewportFrameRequest
 
 ### 2. 最新请求覆盖旧请求
 
-每个 presentation 只保存一个 `LatestPendingRequest`。Bounds、DPI、scene revision 或
-显式 repaint 只覆盖该值并唤醒串行 producer；不建立无界请求队列。
+Bounds、DPI、scene revision 或显式 repaint 只标记一次待处理失效，并合并到下一次
+composition update。每个合成周期至多采样一次最新 Bounds、render scale 与 scene revision，
+再覆盖 presentation 的 `LatestPendingRequest` 并唤醒串行 producer；不为每个 UI 事件直接
+启动 native，也不建立无界请求队列。
+
+新请求还会取消仍停留在 producer gate 前、尚未开始 native 调用的旧工作。取消只作用于
+native admission：已经开始 native create/render、已经提交 GPU 或已经交给 compositor
+的工作不可取消，必须走现有 completion 与代际退役。
 
 ```text
 Ready
@@ -118,12 +128,18 @@ FrameSequence
 - UI/compositor dispatcher 独占 Bounds 观察、composition visual/surface、external
   object import/dispose、`RequestCompositionUpdate` 和
   `UpdateWithSemaphoresAsync`；
+- UI 失效通过单一 queued composition update 合并；回调执行时才捕获最新观察，Bounds
+  事件本身不直接启动 native producer；
 - 一个串行 producer worker 执行 native slot create/render、RenderGraph command
   recording 和 queue submit；
 - UI dispatcher 不等待 Vulkan fence、queue idle 或 device idle；
 - worker 不直接修改 Avalonia composition object 或 ViewModel；
 - worker 每次取任务前重新读取最新 request；一个 slot 完成或被 compositor 归还时主动
-  唤醒重试，不依赖下一次 30 FPS tick 碰巧到达。
+  唤醒重试，不依赖固定帧率 tick 碰巧到达；
+- Scene View 默认不加入 panel frame scheduler。初始帧、Bounds/DPI、scene snapshot
+  change 和显式相机/工具交互触发按需请求；动画预览必须显式选择连续策略并在结束后退出。
+- 公共 `ViewportScheduler` 的交互 burst 结束后回到 dirty-only，不生成定时 idle 帧；
+  `VisibleExposed` 必须来自真实 expose/resize 失效。
 
 当前切片只建立 Scene View 私有的 presentation session，不提前引入尚无第二个调用者的
 公共 `ViewportService`。
@@ -142,11 +158,16 @@ Free
 任意状态 -- generation 过期/detach --> Retiring --> Retired
 ```
 
-- 首个 slot 建立后，下一次 frame 优先建立第二个 slot，再复用已完成的第一个；
+- 当前 generation 的首个成功帧会自动排入一次 slot warmup：先建立第二个同尺寸 slot，
+  再进入静止按需状态，不依赖下一次外部 invalidation 才形成双槽；
 - 两个 slot 都忙时返回 `Busy`，不等待；
-- resize 期间最多同时保留当前资源 generation 与一个 draining generation；
-- 每个 generation 最多两个 slot，总 slot 硬上限为四；
-- 新 desired generation 在达到上限时仍只保存在 `LatestPendingRequest`，直到旧资源退役；
+- active present chain 只保存当前 generation，最多两个 slot；
+- 过期 slot 一旦完成在途工作便移交独立 retirement backlog，不再占 active chain 或
+  per-generation 配额；
+- active、retiring、create reservation 与 quarantine 合计仍受四个 native frame-resource
+  lane 的硬上限约束；backlog 可以包含多个历史 generation，但不能无界增长；
+- 新 desired generation 在总容量已满时仍只保存在 `LatestPendingRequest`；retirement
+  completion 释放容量后立即唤醒；
 - slot extent 创建后不可原地改变；
 - image、imported image 和两枚 external semaphore 跨帧复用；
 - slot 只有在 producer fence 完成且 compositor present/release 完成后才可复用或销毁；
@@ -181,14 +202,16 @@ frame-resource set。
 
 | 结果 | 行为 |
 | --- | --- |
-| `Busy` / `Unavailable` | 正常背压；静默丢本次 attempt，保留 latest request |
+| `Busy` / `Unavailable` | 正常背压；保留 latest request，由资源 completion 或下一次 compositor cadence 重试 |
 | stale generation/sequence | 不提交；安全退役 |
 | import failure | 退役该 slot；记录可恢复故障并尝试重建 generation |
 | device mismatch / unsupported ABI | presentation 进入 Unsupported |
 | device lost | 提升 engine epoch，停止新帧并进入恢复流程 |
 
 上一帧的错误 snapshot 不能作为永久兼容性门禁。capability probe 只在 attach、compositor
-变化或 device recovery 时执行，不进入 resize 热路径。
+变化或 device recovery 时执行，不进入 resize 热路径。若 probe 成功时 Bounds 尚无有效
+extent，presentation 缓存 capability，并在首个有效 Bounds 到达时只重试 extent-dependent
+配置；Unsupported/失败不会因 resize 重复 probe。
 
 ## Consequences
 
@@ -197,7 +220,10 @@ Positive：
 - UI 拖拽不再同步承担 Vulkan 录制和提交；
 - 历史异步帧无法让画面从新尺寸跳回旧尺寸；
 - 旧帧保持像素几何和相机中心，不发生非等比拉伸；
-- 请求、帧槽和历史 extent 都有硬上限；
+- active 双槽与退役 backlog 分开计数，总 native 资源仍有硬上限；
+- 静止且场景不变时不再产生 native frame；
+- 同一 composition 周期内的多次 Bounds 变化只产生一个最新尺寸观察；
+- 尚未进入 native 的旧尺寸工作不会在 gate 队列中阻塞 latest resize；
 - 分数 DPI 的 logical/pixel size 不再互相反推；
 - 设计可继续提升为多 Viewport presentation service，但当前实现范围保持小。
 
@@ -212,7 +238,8 @@ Negative：
 
 1. 用一个 Scene View presentation session 合并 presenter 与 lifecycle 的 pending、
    generation、backpressure 和 drain 状态。
-2. 先写纯状态测试，覆盖 A→B→C stale completion、latest retry、双槽和四槽上限。
+2. 先写纯状态测试，覆盖 A→B→C stale completion、latest retry、双槽 warmup、
+   active/retirement 分离和四 lane 总上限。
 3. 让 Bounds/DPI 产生不可变 request，并实现 host 的居中原尺寸过渡。
 4. 把 native create/render/submit 移到串行 worker；composition import/commit/dispose
    保留在 UI dispatcher。
@@ -225,9 +252,12 @@ Negative：
 
 - A→B→C 连续 resize 后，A/B completion 不能更新 surface 或 ViewModel；
 - `DisplaySizeDip` 等于捕获的原始 Bounds，不由 pixel extent 反算；
-- 同一 extent 在复用 slot 0 前会建立 slot 1；
+- 同一 extent 的首个成功帧会自动 warm slot 1，完成后静止；
 - 两个 slot 都忙时 latest request 保留，任一 slot 释放后自动重试；
-- current + draining 总 slot 数始终小于等于四；
+- retiring slot 不占 active-chain 配额，active + retiring + reservation + quarantine
+  总数始终小于等于四；
+- 同一 composition 周期的多个 Bounds 事件只启动一次 latest producer request；
+- 静止且无 pending request 时不产生 panel tick、retry timer 或 native frame；
 - detach/import failure/device lost 都不会泄漏 imported wrapper、handle 或 native slot；
 - renderer frame resources 在两个同时在途 slot 间不重叠；
 - normal backpressure 不产生 warning。
@@ -264,6 +294,12 @@ Negative：
   <https://github.com/AvaloniaUI/Avalonia/blob/12.0.4/src/Avalonia.Base/Rendering/SwapchainBase.cs>
 - Avalonia GPU interop sample：
   <https://github.com/AvaloniaUI/Avalonia/tree/12.0.4/samples/GpuInterop>
+- Unity Scene View 默认按需重绘说明：
+  <https://issuetracker.unity3d.com/issues/mesh-disappears-when-drawmesh-is-called-from-the-editorwindow>
+- Unity `SceneViewState.alwaysRefresh`：
+  <https://docs.unity3d.com/6000.0/Documentation/ScriptReference/SceneView.SceneViewState.html>
+- Unity C# reference `SceneView.UpdateAnimatedMaterials`：
+  <https://github.com/Unity-Technologies/UnityCsReference/blob/master/Editor/Mono/SceneView/SceneView.cs>
 - Vulkan synchronization：
   <https://docs.vulkan.org/spec/latest/chapters/synchronization.html>
 - Vulkan external memory and synchronization：

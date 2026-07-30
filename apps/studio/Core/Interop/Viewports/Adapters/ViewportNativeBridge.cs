@@ -127,6 +127,63 @@ internal sealed class ViewportNativeBridge
         bool hasScene = false,
         ulong sceneRevision = 0UL)
     {
+        return AcquirePresentResource(
+            compositionCapabilities,
+            requestedExtent,
+            hasScene,
+            sceneRevision,
+            reusableSlot: false);
+    }
+
+    public ViewportNativePresentPacket CreatePresentSlot(
+        ViewportCompositionCapabilitiesSnapshot compositionCapabilities,
+        ViewportExtent requestedExtent,
+        bool hasScene = false,
+        ulong sceneRevision = 0UL)
+    {
+        return AcquirePresentResource(
+            compositionCapabilities,
+            requestedExtent,
+            hasScene,
+            sceneRevision,
+            reusableSlot: true);
+    }
+
+    public uint RenderPresentSlot(
+        ref ViewportNativePresentPacket packet,
+        ViewportExtent requestedExtent,
+        bool hasScene,
+        ulong sceneRevision)
+    {
+        ArgumentNullException.ThrowIfNull(requestedExtent);
+        if (isShutdown_ || packet.NativePacket == IntPtr.Zero)
+        {
+            return ViewportNativeStatus.Unavailable;
+        }
+
+        var request = new ViewportNativePresentSlotRenderRequest(
+            packet.NativePacket,
+            checked((uint)requestedExtent.WidthPixels),
+            checked((uint)requestedExtent.HeightPixels),
+            hasScene,
+            sceneRevision);
+        try
+        {
+            return api_.RenderPresentSlotV3(request, ref packet);
+        }
+        catch (Exception ex) when (IsNativeBindingException(ex))
+        {
+            return ViewportNativeStatus.Unavailable;
+        }
+    }
+
+    private ViewportNativePresentPacket AcquirePresentResource(
+        ViewportCompositionCapabilitiesSnapshot compositionCapabilities,
+        ViewportExtent requestedExtent,
+        bool hasScene,
+        ulong sceneRevision,
+        bool reusableSlot)
+    {
         ArgumentNullException.ThrowIfNull(compositionCapabilities);
         ArgumentNullException.ThrowIfNull(requestedExtent);
 
@@ -153,7 +210,14 @@ internal sealed class ViewportNativeBridge
         var packet = ViewportNativePresentPacket.CreateForCall();
         try
         {
-            _ = api_.AcquirePresentPacketV2(request, ref packet);
+            if (reusableSlot)
+            {
+                _ = api_.CreatePresentSlotV3(request, ref packet);
+            }
+            else
+            {
+                _ = api_.AcquirePresentPacketV2(request, ref packet);
+            }
         }
         catch (Exception ex) when (IsNativeBindingException(ex))
         {

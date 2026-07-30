@@ -2,6 +2,7 @@ using System;
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
+using Editor.Core.Interop.Viewports.Adapters;
 using Editor.Core.Interop.Viewports.Api;
 using Editor.Shell.Composition;
 using Editor.Shell.Views.Windowing;
@@ -43,7 +44,10 @@ public partial class App : Application
         var session = compositionSession_;
         compositionSession_ = null;
         session?.DisposeAsync().AsTask().GetAwaiter().GetResult();
-        ShutdownNativeViewportRuntime();
+        if (!ViewportNativePresentDrain.RequiresProcessExitFallback)
+        {
+            ShutdownNativeViewportRuntime();
+        }
     }
 
     private static void ShutdownNativeViewportRuntime()
