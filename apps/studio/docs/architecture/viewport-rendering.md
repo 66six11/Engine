@@ -2,7 +2,7 @@
 
 状态：Target（Windows 当前为 Experimental/Partial）
 
-更新日期：2026-07-29
+更新日期：2026-07-30
 
 ## 1. 目的
 
@@ -15,7 +15,7 @@
 - 创建 Avalonia `CompositionDrawingSurface`；
 - 查询 compositor GPU capability；
 - 从 native bridge 获取 Vulkan image/semaphore packet；
-- 使用 `UpdateWithSemaphoresAsync` 更新 surface。
+- 导入 image 和两枚 semaphore，并使用 `UpdateWithSemaphoresAsync` 更新 surface；
 - shared viewport runtime 不把单独安装的 Vulkan SDK validation layer 作为 Studio
   运行时前提；它保留 optional debug labels。严格 validation 仍由显式加载 SDK layer
   的 native editor / renderer smoke 门禁承担。
@@ -24,7 +24,14 @@
 
 - handle 类型固定为 `VulkanOpaqueNtHandle`；
 - View 自己创建 bridge；
-- packet/managed import/native release 的完成边界不完整；
+- packet、managed import 与 native release 仍是逐帧原型，完成边界不完整；
+- Scene View 顶部状态区仍占用 viewport 内容空间；
+- Bounds 变化会重新执行 compositor/device capability probe；
+- native slot create/render、RenderGraph command recording 和 queue submit 仍由 UI
+  frame callback 同步触发；
+- managed presentation 尚无 `SurfaceGeneration`、`FrameSequence` 和唯一的 latest
+  pending request，旧尺寸 completion 仍可能回写 surface；
+- presenter、lifecycle 与 native runtime 分散维护 backpressure 上限；
 - `ViewportScheduler` 没有生产调用者；
 - 多 floating window scheduler 驱动不一致；
 - Linux/macOS 未验证；
@@ -44,7 +51,9 @@ ViewportSession 与一个 Avalonia composition surface 的临时绑定。Dock mo
 
 ### Native render target/frame
 
-Native renderer 拥有的 offscreen image、memory、semaphore 和 GPU work。Managed presentation 只持有明确生命周期的 frame lease。
+Native renderer 拥有的 offscreen image、memory、semaphore 和 GPU work。Managed
+presentation 持有明确生命周期的 present slot；slot 的 compositor completion 完成后才能
+再次提交，detach/resize retirement 完成后才能释放 native resource。
 
 ## 4. Viewport identity
 
@@ -113,6 +122,8 @@ FrameSequence
 ```
 
 旧 generation 的 probe、frame 和 completion 只完成资源释放，不更新 ViewModel 或 surface。
+实现允许当前 generation 与一个正在排空的旧 generation 短暂共存；总 slot 数有界，不能因
+连续 resize 为每个历史 extent 建立无界队列。
 
 ## 8. 跨平台 backend
 
@@ -220,8 +231,28 @@ Scene View input 先进入 editor tool/router，再形成 camera、selection、g
 
 ## 13. Resize、隐藏和 detach
 
-- DIP bounds 与 render scale 转换成 pixel extent；
-- extent 改变创建新 generation，不原地复用不兼容 image；
+详细决策见
+[ADR-0006：视口交互 Resize 采用最新请求合并与代际提交](../adr/0006-viewport-interactive-resize.md)。
+
+- 同一次 Bounds/DPI 观察同时捕获原始 DIP size、render scale、pixel extent、generation
+  和 frame sequence；禁止从 pixel extent 反推 DIP size；
+- extent、render scale、attach 或 device epoch 改变时创建新 generation，不原地复用
+  不兼容 image；
+- presentation 始终只保存一个 latest pending request；连续 resize 覆盖旧 pending，
+  不为历史 Bounds 建立队列；
+- native create/render/submit 在串行 producer worker 执行；composition import、commit
+  和 dispose 只在 compositor dispatcher 执行；
+- completion 只有匹配当前 engine epoch、viewport、generation 和 sequence 才能更新
+  surface 或 ViewModel；stale completion 只退役资源；
+- 旧 generation 保持最后成功帧的原始尺寸，在当前 Bounds 中居中并由 host clip；
+  不缩放、不变形。新 extent 首帧与精确 visual geometry 在同一个 composition update
+  中提交；
+- 不使用“两次相同尺寸”或固定 debounce 作为正确性条件；两个 slot 都忙或旧
+  generation 尚未排空时，静默丢弃本次 attempt、保留 latest request，并在 slot 释放后
+  自动重试；
+- 每个 extent 建立两个持久 slot，当前与 draining generation 合计最多四个 slot；
+- capability probe 不属于 resize 热路径；
+- UI dispatcher 不等待 Vulkan fence、queue idle 或 device idle；
 - hidden/minimized presentation 停止 continuous render request；
 - Dock move 不销毁 ViewportSession；
 - visual detach 进入 Draining，完成当前 lease 后释放 imported wrapper；
@@ -260,6 +291,14 @@ Scene View input 先进入 editor tool/router，再形成 camera、selection、g
 
 - Avalonia custom rendering：<https://docs.avaloniaui.net/docs/graphics-animation/custom-rendering>
 - Avalonia `ICompositionGpuInterop`：<https://docs.avaloniaui.net/api/avalonia/rendering/composition/icompositiongpuinterop>
+- Avalonia `SwapchainBase`（同尺寸多 image，避免 UI lockup）：
+  <https://github.com/AvaloniaUI/Avalonia/blob/12.0.4/src/Avalonia.Base/Rendering/SwapchainBase.cs>
+- Avalonia GPU interop sample（composition update、持久导入与 slot 轮换）：
+  <https://github.com/AvaloniaUI/Avalonia/tree/12.0.4/samples/GpuInterop>
+- Unreal Engine `FSceneViewport`（buffered frames 与 resize/resource 更新边界）：
+  <https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/Engine/FSceneViewport>
+- Godot `SubViewportContainer`（容器尺寸驱动 viewport 尺寸）：
+  <https://github.com/godotengine/godot/blob/master/scene/gui/subviewport_container.cpp>
 - Vulkan external synchronization：<https://docs.vulkan.org/spec/latest/chapters/synchronization.html>
 - Vulkan external memory guide：<https://docs.vulkan.org/guide/latest/extensions/external.html>
 - Vulkan Metal objects：<https://docs.vulkan.org/refpages/latest/refpages/source/VK_EXT_metal_objects.html>

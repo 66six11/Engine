@@ -54,6 +54,7 @@ Studio 文档分为三类，不能混用：
 - [ADR-0003：用六个项目建立编译期边界](../adr/0003-studio-project-boundaries.md)（Superseded）
 - [ADR-0004：采用统一 Editor Extension Framework](../adr/0004-unified-editor-extension-framework.md)
 - [ADR-0005：采用隔离构建、generation reload 与 last-known-good](../adr/0005-managed-editor-module-build-and-reload.md)
+- [ADR-0006：视口交互 Resize 采用最新请求合并与代际提交](../adr/0006-viewport-interactive-resize.md)
 
 ## Current guides
 
