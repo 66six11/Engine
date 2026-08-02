@@ -238,10 +238,10 @@ namespace {
         return true;
     }
 
-    [[nodiscard]] std::uint32_t
-    writeCompatibilityResult(EditorViewportNativeCompatibilityResult* result, std::uint32_t status,
-                             const asharia::VulkanDeviceInfo* deviceInfo,
-                             std::string_view message) {
+    [[nodiscard]] std::uint32_t writeCompatibilityResult(
+        EditorViewportNativeCompatibilityResult* result, std::uint32_t status,
+        const asharia::editor::EditorSharedViewportDeviceSnapshot* deviceSnapshot,
+        std::string_view message) {
         void* messageData{};
         std::uint64_t messageByteLength{};
         if (!allocateMessage(message, messageData, messageByteLength)) {
@@ -258,12 +258,12 @@ namespace {
             .producedSemaphoreHandleType = status == EditorViewportNativeStatus_Success
                                                ? EditorViewportNativeHandleType_VulkanOpaqueNt
                                                : EditorViewportNativeHandleType_Unknown,
-            .nativeDeviceVendorId = deviceInfo != nullptr ? deviceInfo->vendorId : 0U,
-            .nativeDeviceId = deviceInfo != nullptr ? deviceInfo->deviceId : 0U,
+            .nativeDeviceVendorId = deviceSnapshot != nullptr ? deviceSnapshot->vendorId : 0U,
+            .nativeDeviceId = deviceSnapshot != nullptr ? deviceSnapshot->deviceId : 0U,
             .nativeDeviceUuidLow =
-                deviceInfo != nullptr ? readUuidLow(deviceInfo->identity.deviceUuid) : 0U,
+                deviceSnapshot != nullptr ? readUuidLow(deviceSnapshot->identity.deviceUuid) : 0U,
             .nativeDeviceUuidHigh =
-                deviceInfo != nullptr ? readUuidHigh(deviceInfo->identity.deviceUuid) : 0U,
+                deviceSnapshot != nullptr ? readUuidHigh(deviceSnapshot->identity.deviceUuid) : 0U,
             .messageUtf8 = messageData,
             .messageByteLength = messageByteLength,
         };
@@ -348,14 +348,14 @@ namespace {
             return EditorViewportNativeStatus_InvalidArgument;
         }
 
-        auto context = asharia::editor::EditorSharedViewportRuntime::instance().ensureContext();
-        if (!context) {
+        const auto deviceSnapshot =
+            asharia::editor::EditorSharedViewportRuntime::instance().ensureDeviceSnapshot();
+        if (!deviceSnapshot) {
             return writePresentPacketFailure(packet, EditorViewportNativeStatus_Unavailable,
-                                             context.error().message);
+                                             deviceSnapshot.error().message);
         }
 
-        const asharia::VulkanDeviceInfo& deviceInfo = (*context)->deviceInfo();
-        if (!matchesRequestedDevice(compatibility, deviceInfo.identity)) {
+        if (!matchesRequestedDevice(compatibility, deviceSnapshot->identity)) {
             return writePresentPacketFailure(
                 packet, EditorViewportNativeStatus_DeviceMismatch,
                 "Avalonia compositor device does not match the Vulkan viewport device.");
@@ -413,21 +413,21 @@ std::uint32_t EDITOR_NATIVE_CALL editor_viewport_query_composition_compatibility
             "Vulkan opaque NT image and semaphore handles are required.");
     }
 
-    auto context = asharia::editor::EditorSharedViewportRuntime::instance().ensureContext();
-    if (!context) {
+    const auto deviceSnapshot =
+        asharia::editor::EditorSharedViewportRuntime::instance().ensureDeviceSnapshot();
+    if (!deviceSnapshot) {
         return writeCompatibilityResult(result, EditorViewportNativeStatus_Unavailable, nullptr,
-                                        context.error().message);
+                                        deviceSnapshot.error().message);
     }
 
-    const asharia::VulkanDeviceInfo& deviceInfo = (*context)->deviceInfo();
-    if (!matchesRequestedDevice(*request, deviceInfo.identity)) {
+    if (!matchesRequestedDevice(*request, deviceSnapshot->identity)) {
         return writeCompatibilityResult(
-            result, EditorViewportNativeStatus_DeviceMismatch, &deviceInfo,
+            result, EditorViewportNativeStatus_DeviceMismatch, &*deviceSnapshot,
             "Avalonia compositor device does not match the Vulkan viewport device.");
     }
 
     return writeCompatibilityResult(
-        result, EditorViewportNativeStatus_Success, &deviceInfo,
+        result, EditorViewportNativeStatus_Success, &*deviceSnapshot,
         "Vulkan viewport device is compatible with Avalonia composition.");
 }
 

@@ -193,7 +193,8 @@ namespace asharia::editor {
         }
 
         auto window = asharia::GlfwWindow::create(
-            *glfw, asharia::WindowDesc{.title = "Asharia Engine Editor"});
+            *glfw,
+            asharia::WindowDesc{.title = "Asharia Engine Editor", .visible = !smokeMode});
         if (!window) {
             asharia::logError(window.error().message);
             return EXIT_FAILURE;

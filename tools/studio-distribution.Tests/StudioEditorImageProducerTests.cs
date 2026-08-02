@@ -1,10 +1,8 @@
 using System.Buffers.Binary;
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Xml.Linq;
-using Asharia.Editor.Selection;
-using Asharia.Runtime;
 using Asharia.Studio.Distribution;
 using Xunit;
 
@@ -14,9 +12,6 @@ namespace Asharia.Studio.Distribution.Tests;
 public sealed class StudioEditorImageProducerTests
 {
     private const string EditorFileName = "Editor.exe";
-    private const string DotnetHostName = "dotnet.exe";
-    private const string EditorNativeFileName = "editor_native.dll";
-    private const string SlangFileName = "slang.dll";
     private readonly StudioEditorImageTestInputs inputs_;
 
     public StudioEditorImageProducerTests(StudioEditorImageTestInputs inputs)
@@ -25,7 +20,7 @@ public sealed class StudioEditorImageProducerTests
     }
 
     [Fact]
-    public void Produce_stages_one_closed_editor_image_and_canonical_metadata()
+    public async Task Produce_stages_one_closed_current_editor_image()
     {
         if (!OperatingSystem.IsWindows())
         {
@@ -56,43 +51,70 @@ public sealed class StudioEditorImageProducerTests
             file => file.Path == "bin/" + EditorFileName && file.Role == "executable");
         Assert.Contains(
             receipt.Files,
-            file => file.Path == "managed/dotnet/" + DotnetHostName
-                && file.Role == "executable");
+            file => file.Path == "bin/Asharia.Studio.Application.dll");
+        Assert.DoesNotContain(
+            receipt.Files,
+            file => file.Path is "bin/Asharia.Editor.dll"
+                or "bin/Asharia.Runtime.Contracts.dll"
+                or "bin/Asharia.Studio.DevelopmentHost.dll"
+                or "bin/Asharia.Studio.DevelopmentProtocol.dll"
+                or "bin/Asharia.Studio.EngineBridge.dll"
+                or "bin/editor_native.dll"
+                or "bin/slang.dll");
         Assert.Contains(
             receipt.Files,
-            file => file.Path == "metadata/managed-build-environment.json"
-                && file.Role == "metadata"
-                && file.MediaType == "application/json");
+            file => file.Path
+                == $"managed/dotnet/host/fxr/{inputs_.HostFxrVersion}/hostfxr.dll");
+        Assert.Contains(
+            receipt.Files,
+            file => file.Path
+                == $"managed/dotnet/shared/Microsoft.NETCore.App/{inputs_.HostRuntimeVersion}/coreclr.dll");
+        Assert.DoesNotContain(
+            receipt.Files,
+            file => file.Path == "managed/dotnet/dotnet.exe"
+                || file.Path.StartsWith("managed/dotnet/sdk/", StringComparison.Ordinal)
+                || file.Path.StartsWith("managed/dotnet/packs/", StringComparison.Ordinal));
         Assert.All(receipt.Files, file =>
         {
             Assert.True(file.Size >= 0);
             Assert.Matches("^[0-9a-f]{64}$", file.Sha256);
         });
+        using var stagedEditor = new Process
+        {
+            StartInfo = new ProcessStartInfo
+            {
+                FileName = Path.Combine(fixture.OutputRoot, "bin", EditorFileName),
+                WorkingDirectory = Path.Combine(fixture.OutputRoot, "bin"),
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            },
+        };
+        stagedEditor.StartInfo.Environment["DOTNET_ROOT"] =
+            Path.Combine(fixture.Root, "ambient-dotnet-must-not-be-used");
+        stagedEditor.StartInfo.Environment["DOTNET_ROOT_X64"] =
+            Path.Combine(fixture.Root, "ambient-dotnet-x64-must-not-be-used");
+        stagedEditor.StartInfo.Environment["DOTNET_MULTILEVEL_LOOKUP"] = "0";
+        Assert.True(stagedEditor.Start(), "Could not start the staged Editor apphost.");
+        var stagedStdout = stagedEditor.StandardOutput.ReadToEndAsync();
+        var stagedStderr = stagedEditor.StandardError.ReadToEndAsync();
+        await WaitForExitOrKillAsync(
+            stagedEditor,
+            TimeSpan.FromSeconds(30),
+            "The staged Editor apphost");
+        var output = await stagedStdout;
+        var error = await stagedStderr;
 
-        var metadataPath = Path.Combine(
-            fixture.OutputRoot,
-            "metadata",
-            "managed-build-environment.json");
-        var bytes = File.ReadAllBytes(metadataPath);
-        Assert.False(bytes.AsSpan().StartsWith(new byte[] { 0xef, 0xbb, 0xbf }));
-        Assert.Equal((byte)'\n', bytes[^1]);
-        Assert.DoesNotContain((byte)'\r', bytes);
-        using var document = JsonDocument.Parse(bytes);
-        var root = document.RootElement;
-        Assert.Equal("com.asharia.managed-build-environment", root.GetProperty("schema").GetString());
-        Assert.Equal(1, root.GetProperty("schemaVersion").GetInt32());
-        Assert.Equal("project-code-net10", root.GetProperty("environmentId").GetString());
-        Assert.Equal("net10.0", root.GetProperty("targetFramework").GetString());
-        Assert.Equal("managed/dotnet", root.GetProperty("dotnetRoot").GetString());
-        Assert.Equal(
-            $"managed/dotnet/sdk/{inputs_.SdkVersion}/dotnet.dll",
-            root.GetProperty("sdk").GetProperty("entryPath").GetString());
-        Assert.Equal(
-            "bin/Asharia.Runtime.Contracts.dll",
-            root.GetProperty("contracts").GetProperty("runtimePath").GetString());
-        Assert.Equal(
-            "bin/Asharia.Editor.dll",
-            root.GetProperty("contracts").GetProperty("editorPath").GetString());
+        Assert.True(
+            stagedEditor.ExitCode == 0,
+            $"Staged Editor exited with {stagedEditor.ExitCode}:"
+                + $"{Environment.NewLine}{output}"
+                + $"{Environment.NewLine}{error}");
+        Assert.Contains(
+            StudioEditorImageTestInputs.StagedEditorMainMarker,
+            output,
+            StringComparison.Ordinal);
     }
 
     [Fact]
@@ -119,12 +141,10 @@ public sealed class StudioEditorImageProducerTests
             stagingRoot,
             "managed",
             "dotnet",
-            "packs",
-            "Microsoft.NETCore.App.Ref",
-            inputs_.ReferencePackVersion,
-            "ref",
-            "net10.0",
-            "System.Runtime.dll");
+            "shared",
+            "Microsoft.NETCore.App",
+            inputs_.HostRuntimeVersion,
+            "System.Private.CoreLib.dll");
         Assert.True(stagedVersionPath.Length > 260);
 
         var request = fixture.Request with
@@ -141,12 +161,10 @@ public sealed class StudioEditorImageProducerTests
             outputRoot,
             "managed",
             "dotnet",
-            "packs",
-            "Microsoft.NETCore.App.Ref",
-            inputs_.ReferencePackVersion,
-            "ref",
-            "net10.0",
-            "System.Runtime.dll")));
+            "shared",
+            "Microsoft.NETCore.App",
+            inputs_.HostRuntimeVersion,
+            "System.Private.CoreLib.dll")));
     }
 
     [Fact]
@@ -194,60 +212,6 @@ public sealed class StudioEditorImageProducerTests
             diagnostic => diagnostic.Code == "studio-distribution.editor-image.output-exists");
         Assert.Equal("preserve", File.ReadAllText(sentinel, Encoding.UTF8));
         Assert.Single(Directory.EnumerateFiles(fixture.OutputRoot));
-    }
-
-    [Fact]
-    public void Produce_rejects_contracts_outside_the_publish_root()
-    {
-        if (!OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        using var fixture = new ProducerFixture(inputs_);
-        var externalContract = Path.Combine(fixture.Root, "Asharia.Editor.dll");
-        File.Copy(typeof(IEditorSelectionService).Assembly.Location, externalContract);
-        var request = fixture.Request with
-        {
-            EditorContract = new FileInfo(externalContract),
-        };
-
-        var result = StudioEditorImageProducer.Produce(request);
-
-        Assert.False(result.Succeeded);
-        Assert.Contains(
-            result.Diagnostics,
-            diagnostic => diagnostic.Code
-                == "studio-distribution.editor-image.path-outside-root"
-                && diagnostic.Location == "editorContract");
-        Assert.False(Directory.Exists(fixture.OutputRoot));
-    }
-
-    [Fact]
-    public void Produce_rejects_a_stale_contract_duplicate_inside_publish()
-    {
-        if (!OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        using var fixture = new ProducerFixture(inputs_);
-        var duplicateRoot = Path.Combine(fixture.PublishRoot, "stale");
-        Directory.CreateDirectory(duplicateRoot);
-        var duplicate = Path.Combine(duplicateRoot, "Asharia.Editor.dll");
-        File.Copy(typeof(IEditorSelectionService).Assembly.Location, duplicate);
-        var request = fixture.Request with
-        {
-            EditorContract = new FileInfo(duplicate),
-        };
-
-        var result = StudioEditorImageProducer.Produce(request);
-
-        Assert.False(result.Succeeded);
-        Assert.Contains(
-            result.Diagnostics,
-            diagnostic => diagnostic.Code
-                == "studio-distribution.editor-image.contract-location-invalid");
     }
 
     [Fact]
@@ -317,7 +281,17 @@ public sealed class StudioEditorImageProducerTests
         }
 
         using var fixture = new ProducerFixture(inputs_);
-        foreach (var relativePath in PythonProductPayloadFixture.AllowedPaths)
+        var allowedPaths = PythonProductPayloadFixture.AllowedPaths
+            .Except(
+                [
+                    "controls/dotnet.exe",
+                    "controls/sdk/10.0.302/dotnet.dll",
+                    "controls/editor_native.dll",
+                    "controls/slang.dll",
+                ],
+                StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        foreach (var relativePath in allowedPaths)
         {
             var path = Path.Combine(
                 fixture.PublishRoot,
@@ -331,7 +305,7 @@ public sealed class StudioEditorImageProducerTests
         Assert.True(result.Succeeded, Render(result));
         var receipt = Assert.IsType<StudioEditorImageProductionReceipt>(result.Receipt);
         Assert.All(
-            PythonProductPayloadFixture.AllowedPaths,
+            allowedPaths,
             relativePath => Assert.Contains(
                 receipt.Files,
                 file => file.Path == $"bin/{relativePath}"));
@@ -350,7 +324,8 @@ public sealed class StudioEditorImageProducerTests
         }
 
         using var fixture = new ProducerFixture(inputs_);
-        var relativePath = $"sdk/{inputs_.SdkVersion}/{selectedRelativePath}";
+        var relativePath =
+            $"shared/Microsoft.NETCore.App/{inputs_.HostRuntimeVersion}/{selectedRelativePath}";
         var path = Path.Combine(
             fixture.DotnetRoot,
             relativePath.Replace('/', Path.DirectorySeparatorChar));
@@ -365,7 +340,7 @@ public sealed class StudioEditorImageProducerTests
             diagnostic => diagnostic.Code
                 == "studio-distribution.editor-image.python-payload-forbidden"
                 && diagnostic.Location
-                    == $"managed/dotnet/sdk/{inputs_.SdkVersion}/{selectedRelativePath}");
+                    == $"managed/dotnet/{relativePath}");
         Assert.False(Directory.Exists(fixture.OutputRoot));
     }
 
@@ -415,8 +390,16 @@ public sealed class StudioEditorImageProducerTests
                 == "studio-distribution.editor-image.path-invalid");
     }
 
-    [Fact]
-    public void Produce_requires_the_fixed_native_runtime_dependencies()
+    [Theory]
+    [InlineData("nested/Asharia.Editor.dll")]
+    [InlineData("nested/Asharia.Runtime.Contracts.dll")]
+    [InlineData("dev/Asharia.Studio.DevelopmentHost.dll")]
+    [InlineData("dev/Asharia.Studio.DevelopmentProtocol.dll")]
+    [InlineData("deep/ASHARIA.STUDIO.ENGINEBRIDGE.PDB")]
+    [InlineData("plugins/Editor_Native.DlL")]
+    [InlineData("assets/SLANG.JsOn")]
+    public void Produce_rejects_a_retired_studio_publish_artifact_at_any_depth(
+        string relativePath)
     {
         if (!OperatingSystem.IsWindows())
         {
@@ -424,19 +407,32 @@ public sealed class StudioEditorImageProducerTests
         }
 
         using var fixture = new ProducerFixture(inputs_);
-        File.Delete(Path.Combine(fixture.PublishRoot, SlangFileName));
+        var artifactPath = Path.Combine(
+            fixture.PublishRoot,
+            relativePath.Replace('/', Path.DirectorySeparatorChar));
+        Directory.CreateDirectory(Path.GetDirectoryName(artifactPath)!);
+        File.WriteAllText(artifactPath, "retired");
 
         var result = StudioEditorImageProducer.Produce(fixture.Request);
 
         Assert.False(result.Succeeded);
         Assert.Contains(
             result.Diagnostics,
-            diagnostic => diagnostic.Code == "studio-distribution.editor-image.file-invalid"
-                && diagnostic.Location == $"publishRoot/{SlangFileName}");
+            diagnostic => diagnostic.Code
+                    == "studio-distribution.editor-image.forbidden-product-artifact"
+                && diagnostic.Location == $"bin/{relativePath}");
+        Assert.False(Directory.Exists(fixture.OutputRoot));
     }
 
-    [Fact]
-    public void Produce_rejects_a_managed_assembly_masquerading_as_native_runtime()
+    [Theory]
+    [InlineData("tools/DoTnEt.ExE")]
+    [InlineData("third-party/SdK/tool.dll")]
+    [InlineData("references/PACKS/System.Runtime.dll")]
+    [InlineData("MANAGED/runtime/coreclr.dll")]
+    [InlineData("payload/MeTaDaTa/receipt.json")]
+    [InlineData("nested/MANAGED-BUILD-ENVIRONMENT.JSON")]
+    public void Produce_rejects_publish_payload_without_a_current_runtime_reader(
+        string relativePath)
     {
         if (!OperatingSystem.IsWindows())
         {
@@ -444,18 +440,21 @@ public sealed class StudioEditorImageProducerTests
         }
 
         using var fixture = new ProducerFixture(inputs_);
-        File.Copy(
-            typeof(IEditorSelectionService).Assembly.Location,
-            Path.Combine(fixture.PublishRoot, SlangFileName),
-            overwrite: true);
+        var artifactPath = Path.Combine(
+            fixture.PublishRoot,
+            relativePath.Replace('/', Path.DirectorySeparatorChar));
+        Directory.CreateDirectory(Path.GetDirectoryName(artifactPath)!);
+        File.WriteAllText(artifactPath, "unread product payload");
 
         var result = StudioEditorImageProducer.Produce(fixture.Request);
 
         Assert.False(result.Succeeded);
         Assert.Contains(
             result.Diagnostics,
-            diagnostic => diagnostic.Code == "studio-distribution.editor-image.pe-invalid"
-                && diagnostic.Location == $"publishRoot/{SlangFileName}");
+            diagnostic => diagnostic.Code
+                    == "studio-distribution.editor-image.forbidden-product-artifact"
+                && diagnostic.Location == $"bin/{relativePath}");
+        Assert.False(Directory.Exists(fixture.OutputRoot));
     }
 
     [Fact]
@@ -468,7 +467,12 @@ public sealed class StudioEditorImageProducerTests
 
         using var fixture = new ProducerFixture(inputs_);
         File.Copy(
-            Path.Combine(fixture.DotnetRoot, DotnetHostName),
+            Path.Combine(
+                fixture.DotnetRoot,
+                "sdk",
+                inputs_.SdkVersion,
+                "AppHostTemplate",
+                "apphost.exe"),
             Path.Combine(fixture.PublishRoot, EditorFileName),
             overwrite: true);
 
@@ -715,7 +719,7 @@ public sealed class StudioEditorImageProducerTests
 
         using var fixture = new ProducerFixture(inputs_);
         File.Copy(
-            Path.Combine(fixture.PublishRoot, "Asharia.Editor.dll"),
+            Path.Combine(fixture.PublishRoot, "Asharia.Studio.Application.dll"),
             Path.Combine(fixture.PublishRoot, "Editor.dll"),
             overwrite: true);
 
@@ -727,58 +731,6 @@ public sealed class StudioEditorImageProducerTests
             diagnostic => diagnostic.Code
                     == "studio-distribution.editor-image.managed-identity-invalid"
                 && diagnostic.Location == "publishRoot/Editor.dll");
-        Assert.False(Directory.Exists(fixture.OutputRoot));
-    }
-
-    [Fact]
-    public void Produce_rejects_a_native_dependency_missing_one_required_export()
-    {
-        if (!OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        using var fixture = new ProducerFixture(inputs_);
-        StudioEditorImageTestInputs.WriteNativeDll(
-            Path.Combine(fixture.PublishRoot, EditorNativeFileName),
-            EditorNativeFileName,
-            StudioEditorImageTestInputs.EditorNativeRequiredExports[..^1]);
-
-        var result = StudioEditorImageProducer.Produce(fixture.Request);
-
-        Assert.False(result.Succeeded);
-        Assert.Contains(
-            result.Diagnostics,
-            diagnostic => diagnostic.Code
-                    == "studio-distribution.editor-image.native-identity-invalid"
-                && diagnostic.Location == $"publishRoot/{EditorNativeFileName}");
-        Assert.False(Directory.Exists(fixture.OutputRoot));
-    }
-
-    [Fact]
-    public void Produce_rejects_an_sdk_tree_whose_managed_identity_has_a_different_version()
-    {
-        if (!OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        using var fixture = new ProducerFixture(inputs_);
-        var parsed = Version.Parse(inputs_.SdkVersion);
-        var mismatchedVersion = $"{parsed.Major}.{parsed.Minor}.{parsed.Build + 1}";
-        Directory.Move(
-            Path.Combine(fixture.DotnetRoot, "sdk", inputs_.SdkVersion),
-            Path.Combine(fixture.DotnetRoot, "sdk", mismatchedVersion));
-
-        var result = StudioEditorImageProducer.Produce(
-            fixture.Request with { SdkVersion = mismatchedVersion });
-
-        Assert.False(result.Succeeded);
-        Assert.Contains(
-            result.Diagnostics,
-            diagnostic => diagnostic.Code
-                    == "studio-distribution.editor-image.managed-identity-invalid"
-                && diagnostic.Location == "sdkRoot/dotnet.dll");
         Assert.False(Directory.Exists(fixture.OutputRoot));
     }
 
@@ -810,7 +762,7 @@ public sealed class StudioEditorImageProducerTests
             result.Diagnostics,
             diagnostic => diagnostic.Code
                     == "studio-distribution.editor-image.component-version-invalid"
-                && diagnostic.Location == "dotnetRoot/dotnetHost");
+                && diagnostic.Location == "hostFxrRoot/hostfxr.dll");
         Assert.False(Directory.Exists(fixture.OutputRoot));
         Assert.DoesNotContain(
             Directory.EnumerateDirectories(fixture.Root),
@@ -828,8 +780,13 @@ public sealed class StudioEditorImageProducerTests
         }
 
         using var fixture = new ProducerFixture(inputs_);
-        var dotnetHost = Path.Combine(fixture.DotnetRoot, DotnetHostName);
-        var contents = File.ReadAllBytes(dotnetHost);
+        var hostFxr = Path.Combine(
+            fixture.DotnetRoot,
+            "host",
+            "fxr",
+            inputs_.HostFxrVersion,
+            "hostfxr.dll");
+        var contents = File.ReadAllBytes(hostFxr);
         ReadOnlySpan<byte> fixedVersionHeader =
         [
             0xbd, 0x04, 0xef, 0xfe,
@@ -841,7 +798,7 @@ public sealed class StudioEditorImageProducerTests
             -1,
             contents.AsSpan(markerOffset + 1).IndexOf(fixedVersionHeader));
         contents[markerOffset + sizeof(uint)] ^= 1;
-        File.WriteAllBytes(dotnetHost, contents);
+        File.WriteAllBytes(hostFxr, contents);
 
         var result = StudioEditorImageProducer.Produce(fixture.Request);
 
@@ -850,7 +807,7 @@ public sealed class StudioEditorImageProducerTests
             result.Diagnostics,
             diagnostic => diagnostic.Code
                     == "studio-distribution.editor-image.component-version-invalid"
-                && diagnostic.Location == "dotnetRoot/dotnetHost");
+                && diagnostic.Location == "hostFxrRoot/hostfxr.dll");
         Assert.False(Directory.Exists(fixture.OutputRoot));
     }
 
@@ -883,7 +840,7 @@ public sealed class StudioEditorImageProducerTests
     }
 
     [Fact]
-    public void Produce_rejects_editor_deps_with_a_mismatched_contract_version()
+    public void Produce_rejects_editor_deps_with_a_mismatched_application_version()
     {
         if (!OperatingSystem.IsWindows())
         {
@@ -894,7 +851,7 @@ public sealed class StudioEditorImageProducerTests
         var depsPath = Path.Combine(fixture.PublishRoot, "Editor.deps.json");
         var document = JsonNode.Parse(File.ReadAllText(depsPath))!;
         var runtimeTarget = document["runtimeTarget"]!["name"]!.GetValue<string>();
-        document["targets"]![runtimeTarget]!["Editor/1.0.0"]!["dependencies"]!["Asharia.Editor"] = "9.9.9";
+        document["targets"]![runtimeTarget]!["Editor/1.0.0"]!["dependencies"]!["Asharia.Studio.Application"] = "9.9.9";
         File.WriteAllText(
             depsPath,
             document.ToJsonString(new JsonSerializerOptions { WriteIndented = true }) + "\n",
@@ -911,178 +868,69 @@ public sealed class StudioEditorImageProducerTests
         Assert.False(Directory.Exists(fixture.OutputRoot));
     }
 
-    [Fact]
-    public void Produce_rejects_sdk_runtime_evidence_for_another_runtime_version()
-    {
-        if (!OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        using var fixture = new ProducerFixture(inputs_);
-        var runtimeConfig = Path.Combine(
-            fixture.DotnetRoot,
-            "sdk",
-            inputs_.SdkVersion,
-            "dotnet.runtimeconfig.json");
-        var document = JsonNode.Parse(File.ReadAllText(runtimeConfig))!;
-        document["runtimeOptions"]!["framework"]!["version"] = "0.0.0";
-        File.WriteAllText(
-            runtimeConfig,
-            document.ToJsonString(new JsonSerializerOptions { WriteIndented = true }) + "\n",
-            new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
-
-        var result = StudioEditorImageProducer.Produce(fixture.Request);
-
-        Assert.False(result.Succeeded);
-        Assert.Contains(
-            result.Diagnostics,
-            diagnostic => diagnostic.Code
-                    == "studio-distribution.editor-image.sdk-runtime-evidence-invalid"
-                && diagnostic.Location == "sdkRoot");
-        Assert.False(Directory.Exists(fixture.OutputRoot));
-    }
-
-    [Fact]
-    public void Produce_rejects_a_conditional_override_of_an_sdk_identity_property()
-    {
-        if (!OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        using var fixture = new ProducerFixture(inputs_);
-        var bundledVersions = Path.Combine(
-            fixture.DotnetRoot,
-            "sdk",
-            inputs_.SdkVersion,
-            "Microsoft.NETCoreSdk.BundledVersions.props");
-        var document = XDocument.Load(bundledVersions, LoadOptions.None);
-        var xmlNamespace = document.Root!.Name.Namespace;
-        document.Root.Add(
-            new XElement(
-                xmlNamespace + "PropertyGroup",
-                new XAttribute("Condition", "'1' == '1'"),
-                new XElement(xmlNamespace + "NETCoreSdkVersion", "0.0.0")));
-        File.WriteAllText(
-            bundledVersions,
-            document.ToString(SaveOptions.DisableFormatting) + "\n",
-            new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
-
-        var result = StudioEditorImageProducer.Produce(fixture.Request);
-
-        Assert.False(result.Succeeded);
-        Assert.Contains(
-            result.Diagnostics,
-            diagnostic => diagnostic.Code
-                    == "studio-distribution.editor-image.sdk-runtime-evidence-invalid"
-                && diagnostic.Location == "sdkRoot");
-        Assert.False(Directory.Exists(fixture.OutputRoot));
-    }
-
-    [Fact]
-    public void Produce_rejects_a_case_variant_override_of_an_sdk_identity_property()
-    {
-        if (!OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        using var fixture = new ProducerFixture(inputs_);
-        var bundledVersions = Path.Combine(
-            fixture.DotnetRoot,
-            "sdk",
-            inputs_.SdkVersion,
-            "Microsoft.NETCoreSdk.BundledVersions.props");
-        var document = XDocument.Load(bundledVersions, LoadOptions.None);
-        var xmlNamespace = document.Root!.Name.Namespace;
-        document.Root.Add(
-            new XElement(
-                xmlNamespace + "PropertyGroup",
-                new XElement(xmlNamespace + "netcoresdkversion", "0.0.0")));
-        File.WriteAllText(
-            bundledVersions,
-            document.ToString(SaveOptions.DisableFormatting) + "\n",
-            new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
-
-        var result = StudioEditorImageProducer.Produce(fixture.Request);
-
-        Assert.False(result.Succeeded);
-        Assert.Contains(
-            result.Diagnostics,
-            diagnostic => diagnostic.Code
-                    == "studio-distribution.editor-image.sdk-runtime-evidence-invalid"
-                && diagnostic.Location == "sdkRoot");
-        Assert.False(Directory.Exists(fixture.OutputRoot));
-    }
-
-    [Fact]
-    public void Produce_rejects_an_sdk_identity_document_with_an_import()
-    {
-        if (!OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        using var fixture = new ProducerFixture(inputs_);
-        var bundledVersions = Path.Combine(
-            fixture.DotnetRoot,
-            "sdk",
-            inputs_.SdkVersion,
-            "Microsoft.NETCoreSdk.BundledVersions.props");
-        var document = XDocument.Load(bundledVersions, LoadOptions.None);
-        var xmlNamespace = document.Root!.Name.Namespace;
-        document.Root.Add(
-            new XElement(
-                xmlNamespace + "Import",
-                new XAttribute("Project", "override.props"),
-                new XAttribute("Condition", "'1' == '1'")));
-        File.WriteAllText(
-            bundledVersions,
-            document.ToString(SaveOptions.DisableFormatting) + "\n",
-            new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
-
-        var result = StudioEditorImageProducer.Produce(fixture.Request);
-
-        Assert.False(result.Succeeded);
-        Assert.Contains(
-            result.Diagnostics,
-            diagnostic => diagnostic.Code
-                    == "studio-distribution.editor-image.sdk-runtime-evidence-invalid"
-                && diagnostic.Location == "sdkRoot");
-        Assert.False(Directory.Exists(fixture.OutputRoot));
-    }
-
-    [Fact]
-    public void Produce_rejects_a_native_dependency_with_the_wrong_internal_dll_name()
-    {
-        if (!OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        using var fixture = new ProducerFixture(inputs_);
-        StudioEditorImageTestInputs.WriteNativeDll(
-            Path.Combine(fixture.PublishRoot, SlangFileName),
-            "kernel32.dll",
-            StudioEditorImageTestInputs.SlangRequiredExports);
-
-        var result = StudioEditorImageProducer.Produce(fixture.Request);
-
-        Assert.False(result.Succeeded);
-        Assert.Contains(
-            result.Diagnostics,
-            diagnostic => diagnostic.Code
-                    == "studio-distribution.editor-image.native-identity-invalid"
-                && diagnostic.Location == $"publishRoot/{SlangFileName}");
-        Assert.False(Directory.Exists(fixture.OutputRoot));
-    }
-
     private static string Render(StudioEditorImageProductionResult result) =>
         string.Join(
             Environment.NewLine,
             result.Diagnostics.Select(diagnostic =>
                 $"{diagnostic.Code} {diagnostic.Location}: {diagnostic.Message}"));
+
+    private static async Task WaitForExitOrKillAsync(
+        Process process,
+        TimeSpan timeoutValue,
+        string description)
+    {
+        using var timeout = new CancellationTokenSource(timeoutValue);
+        try
+        {
+            await process.WaitForExitAsync(timeout.Token);
+            return;
+        }
+        catch (OperationCanceledException) when (timeout.IsCancellationRequested)
+        {
+            // Continue into the bounded kill path.
+        }
+
+        if (!HasExited(process))
+        {
+            try
+            {
+                process.Kill(entireProcessTree: true);
+            }
+            catch (InvalidOperationException)
+            {
+                throw new TimeoutException($"{description} did not exit within {timeoutValue}.");
+            }
+
+            using var killTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            try
+            {
+                await process.WaitForExitAsync(killTimeout.Token);
+            }
+            catch (InvalidOperationException)
+            {
+                // The process exited between Kill and the bounded wait.
+            }
+            catch (OperationCanceledException) when (killTimeout.IsCancellationRequested)
+            {
+                throw new TimeoutException(
+                    $"{description} did not exit within 5 seconds after it was killed.");
+            }
+        }
+
+        throw new TimeoutException($"{description} did not exit within {timeoutValue}.");
+    }
+
+    private static bool HasExited(Process process)
+    {
+        try
+        {
+            return process.HasExited;
+        }
+        catch (InvalidOperationException)
+        {
+            return true;
+        }
+    }
 
     private static int AlignUp(int value, int alignment) =>
         checked((value + alignment - 1) & -alignment);
@@ -1114,9 +962,6 @@ public sealed class StudioEditorImageProducerTests
                 inputs.SdkVersion,
                 inputs.HostFxrVersion,
                 inputs.HostRuntimeVersion,
-                inputs.ReferencePackVersion,
-                new FileInfo(Path.Combine(PublishRoot, "Asharia.Runtime.Contracts.dll")),
-                new FileInfo(Path.Combine(PublishRoot, "Asharia.Editor.dll")),
                 new DirectoryInfo(OutputRoot));
         }
 

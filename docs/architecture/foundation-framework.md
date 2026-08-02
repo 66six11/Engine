@@ -522,7 +522,7 @@ Package/version/schema 已可演进后，Editor 必须通过统一 upgrade plan 
 F2/F3 未通过前，不把新的大型 System Package、脚本 VM 或复杂 RenderGraph extension 当作主线基础工作。现有渲染和
 Editor 代码继续用于验证边界，但新增功能不得反向扩张 Kernel 或 app glue。
 
-F0 的第一项已由 `asharia.package.json` schema v1 与 `tools/check_package_topology.py` 实现：当前 26 个清单全部是
+F0 的第一项已由 `asharia.package.json` schema v1 与 `tools/check_package_topology.py` 实现：截至 2026-07-31，当前 28 个清单全部是
 `packageKind: source-boundary`、不可选择且不进入 catalog；每个 target/test target 有单一 role，多个边界可通过
 `plannedOwnershipRoot` 聚合到未来完整系统。F0 尚未因为这项落地而整体完成：Kernel allowlist、public consumers、optional dependency
 和完整 Host role 标注仍需后续 Slice；它们不得被猜测后一次性写入空字段。

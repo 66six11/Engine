@@ -22,5 +22,9 @@
 
     <ItemGroup>
         <ProjectReference Include="..\..\Editor.csproj" />
+        <ProjectReference Include="..\..\src\Asharia.Studio.DevelopmentHost\Asharia.Studio.DevelopmentHost.csproj"
+                          Condition="'$(Configuration)' == 'Debug'" />
+        <ProjectReference Include="..\..\src\Asharia.Studio.DevelopmentProtocol\Asharia.Studio.DevelopmentProtocol.csproj"
+                          Condition="'$(Configuration)' == 'Debug'" />
     </ItemGroup>
 </Project>

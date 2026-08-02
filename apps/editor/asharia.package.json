@@ -35,12 +35,12 @@
       "asharia-asset-core-io",
       "asharia-asset-pipeline",
       "asharia-core",
+      "editor-native",
       "asharia-project-core-io",
       "asharia-renderer-basic-vulkan",
       "asharia-renderer-basic-shaders",
       "asharia-rhi-vulkan",
       "asharia-scene-core",
-      "asharia-shader-slang",
       "asharia-window-glfw",
       "asharia-editor-imgui-shaders"
     ],

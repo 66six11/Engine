@@ -1,8 +1,12 @@
 # Viewport 渲染架构
 
-状态：Target（Windows 当前为 Experimental/Partial）
+状态：Target（presentation/scheduling 原则保留；native ABI 与 session owner 需 hard cut）
 
-更新日期：2026-07-30
+更新日期：2026-07-31
+
+> 当前 native blocker、显式 session/generational handle 和新 C ABI 门禁见
+> [Studio native boundary 审查](studio-native-boundary-audit.md)。本文不能被解释为批准保留 process singleton、
+> raw pointer token 或 managed static drain。
 
 ## 1. 目的
 
@@ -10,35 +14,9 @@
 
 ## 2. 当前实现事实
 
-当前 Scene View 已能在 Windows 路径中：
+R0 hard cut后的Studio没有Scene/Game/Preview View、managed native bridge、composition surface、ViewportSession、presentation或frame lease owner；root publish也不部署`editor_native.dll`。先前Windows `CompositionDrawingSurface`/双槽/present-session路径已作为无production入口的legacy surface删除。
 
-- 创建 Avalonia `CompositionDrawingSurface`；
-- 查询 compositor GPU capability；
-- 通过单一 `SceneViewPresentationSession` 分离 current request、ready frame 与
-  last-presented sequence，并保存 generation、按需双槽、backpressure 和 drain 状态；
-- 在串行后台 producer 上创建或重录 native present slot；
-- Scene View 默认按需渲染；初始 attach、Bounds/DPI、scene revision 和显式交互
-  invalidation 直接采样布局完成后的 `CompositionHost.Bounds` 并写入 latest state；
-  native lane 暂不可用时才使用 queued composition update 提供重试节拍，静止且场景
-  不变时不加入固定帧率 panel tick；
-- 每个 slot 只导入一次 image 和两枚 semaphore，并使用
-  `UpdateWithSemaphoresAsync` 的完成任务作为 compositor 使用期边界；
-- resize 时让最后成功 surface 始终覆盖最新 Bounds，并允许相同 scene revision 的
-  ready frame 按 sequence 单调前进；最新 exact-size 帧到达后再收敛到精确分辨率；
-- 关闭、detach 和 reattach 时先排空 frame/slot，再在 UI dispatcher 释放
-  composition surface；
-- shared viewport runtime 不把单独安装的 Vulkan SDK validation layer 作为 Studio
-  运行时前提；它保留 optional debug labels。严格 validation 仍由显式加载 SDK layer
-  的 native editor / renderer smoke 门禁承担。
-
-当前实现仍是 Experimental/Partial：
-
-- handle 类型固定为 `VulkanOpaqueNtHandle`；
-- View 自己创建 bridge；
-- `ViewportScheduler` 没有生产调用者；
-- 多 floating window scheduler 驱动不一致；
-- Linux/macOS 未验证；
-- Game View 和 Preview View 未接入。
+随后仅由tests消费的`Asharia.Editor.Viewports` 12个managed types与Application纯scheduler也已删除。C++ `asharia-editor` shared viewport runtime与native smokes仍作为独立native package证据存在，但它们不被Studio App/Shell消费，不能证明managed viewport能力。以下章节是未来target model，必须从真实consumer和owner重新通过I0/I1，不能用于恢复旧ABI、DTO或presentation路径。
 
 ## 3. 三种不同对象
 
@@ -86,7 +64,7 @@ SurfaceGeneration
 `StudioFramePump` 是 UI 侧唯一全局节拍源，但不推进 gameplay simulation。它调用：
 
 - `PanelUpdateScheduler`：普通面板的低成本编辑器更新；
-- `ViewportScheduler`：Viewport priority、fairness、budget 和 backpressure；
+- future Viewport scheduler：Viewport priority、fairness、budget 和 backpressure；
 - native renderer：执行 render plan。
 
 ## 6. 调度策略
@@ -210,7 +188,7 @@ ShutdownCancelled
 ```mermaid
 sequenceDiagram
     participant Pump as StudioFramePump
-    participant Scheduler as ViewportScheduler
+    participant Scheduler as Future viewport scheduler
     participant Native as NativeViewportRuntime
     participant Adapter as AvaloniaPresentationAdapter
     participant Compositor as Avalonia Compositor

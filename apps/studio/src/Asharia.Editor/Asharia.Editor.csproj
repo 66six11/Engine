@@ -1,8 +1,0 @@
-<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <AssemblyName>Asharia.Editor</AssemblyName>
-    <RootNamespace>Asharia.Editor</RootNamespace>
-    <Nullable>enable</Nullable>
-  </PropertyGroup>
-</Project>

@@ -1,5 +1,9 @@
 # Dock 系统指南
 
+状态：Superseded（历史实现记录）
+
+> R0已删除无真实Document/panel consumer的Dock、Workbench、Dialog与built-in Feature surface。本文只保存历史行为，不陈述当前production能力；当前合同见[Studio前端硬切架构](architecture/studio-frontend-hard-cut.md)。
+
 本文记录 Studio 当前自研 Dock 的边界、组件层级和后续高级 Dock 路线。目标不是给几个固定面板换皮，而是实现一个可完全控制窗口层级、组合结构、拖拽反馈和浮动窗口层级的 Dock 布局系统。
 
 ## 当前实现
@@ -120,24 +124,24 @@ Window 内插入命中来自可见 guide spokes 的固定几何热点，不使�
 31. Command Palette follow-up 继续复用 `WorkbenchActionDescriptor` 和 `WorkbenchCommandRouter`，支持 category 分组、in-memory recent commands 和 local command result feedback；当前仍只执行已注册的 workbench actions，不引入插件命令 API、完整快捷键编辑器、真实 provider 数据源或 native ABI
 32. `WorkbenchCommandRouter` 是当前 command-id execution route，返回 `WorkbenchCommandExecutionResult` typed result；`WorkbenchActionExecutor` 仍是 descriptor-level dispatcher，`OpenPanel` action 通过 `PanelCommandService.OpenOrFocusPanel` 执行
 33. Command Palette 可通过 catalog-backed `Tools > Command Palette` 或 `Ctrl+Shift+P` 打开；内建快捷键已由 `WorkbenchShortcutRouter` 解析 `WorkbenchActionDescriptor.DefaultShortcut` 并路由到 `WorkbenchCommandRouter`
-34. Selection Contract v0 定义 `IEditorSelectionService`、selection snapshot、active context 和 selection changed 事件；Shell 创建服务并通过 Feature 注册路径注入 Hierarchy、Scene View 和 Inspector
+34. Selection Contract v0从未获得Shell/Feature/Document/Scene producer或reader；public snapshot/event与Application内存service、self-tests现已整体删除，distribution fixture的synthetic type marker也已移除且未替换
 35. Inspector Data Model v0 将 selection snapshot 派生成只读 `InspectorDocumentModel`，支持无选中、单选基础属性和多选摘要；Inspector View 只渲染只读摘要，不做编辑器和真实引擎数据查询
-36. Hierarchy demo data source v0 已由共享 scene snapshot provider 取代；当前 Hierarchy 从 `ISceneSnapshotProvider` 的只读 snapshot 投影可选节点，用于 UI 验证和 selection-to-inspector 数据流测试
-37. Scene snapshot provider v0 在 Core 定义只读 scene/object/property snapshot contract，Workbench 以 fixture-backed provider 同时注入 Hierarchy 与 Inspector；Hierarchy 通过 `ISceneSnapshotProvider.GetCurrentSnapshot()` 只做树投影和 selection 写入，Inspector 通过 selection id 反查同一 snapshot 生成只读属性文档，不做 Transform 写回或真实 runtime scene 查询
-38. Scene snapshot provider refresh seam remains read-only: `InMemorySceneSnapshotProvider.ReplaceSnapshot(SceneSnapshot)` can publish replacement snapshots and raise `SnapshotChanged`; Hierarchy and Inspector refresh their read-only projections through the UI dispatcher, but this does not write Transform data and does not query a native runtime scene.
+36. Historical Hierarchy demo/shared snapshot path is retired；legacy Workbench/Feature consumer已删除，当前最小Shell没有Hierarchy/Inspector/Scene View数据流
+37. Historical `ISceneSnapshotProvider`与scene/object/property string DTO只由self-tests维持，没有Document/World owner或authoritative revision，现已整体删除
+38. Historical `InMemorySceneSnapshotProvider.ReplaceSnapshot`/`SnapshotChanged` fixture seam也已删除；未来R1 read Slice必须从真实Project/Document open与EditWorld owner重新定义projection
 39. Main menu command projection v0 从 `WorkbenchActionDescriptor.MenuPath` 生成 `Tools/*`、`Help/*` 和 `Window/Panels/*` 入口；Tools/Help 使用 `WorkbenchMenuItemViewModel`，Window/Panels 保留 `PanelMenuItemViewModel` 的 open-state indicator
-40. Dialog host v0 由 `EditorDialogHostViewModel` 和 `EditorDialogHostView` 承载单 active in-app modal；请求/结果使用 typed `EditorDialogRequest` / `EditorDialogResult`，`Help > About` 通过 catalog-backed command route 打开
-41. Background activity feedback v0 由 `IEditorBackgroundTaskService` 发布 UI-neutral task snapshot，Shell status chrome 使用 `ActivityIndicator` 显示当前运行任务摘要；完整 Background Tasks 面板仍属后续切片
-42. Transaction service v0 提供 UI-neutral `IEditorTransactionService`、edit command descriptor、begin/commit/rollback/undo/redo、dirty-state snapshot 和 diagnostics；apply 失败会回滚 pending commands 并记录 diagnostic；它只管理编辑器命令历史，不写 Transform、不查询真实 runtime scene，也不接 native ABI
-43. Lifecycle events v0 由 `IEditorLifecycleEventService` 和 `EditorLifecycleEventService` 提供 UI-neutral recent event stream；当前只记录主窗口 opened/closing/closed/activated/deactivated、workspace restored 和 floating window opened/closed/activated/deactivated，不代表 feature unload、provider reload、Play Session 或 native runtime lifecycle。
+40. Dialog host v0与`Help > About` route已随无consumer presentation删除；随后仅由self-tests/架构库存维持的public request/result/action types也整体删除。R0没有modal能力，未来必须从真实producer、owner Window与typed completion重新进入I0/I1。
+41. Background activity v0从未拥有真实work/CTS/cancel/join或App producer；public task DTO/service、Application无界状态字典与self-tests现已整体删除。未来首个真实operation必须由owner持有actual task、bounded terminal evidence与shutdown join后重新进入I0/I1。
+42. Transaction service v0没有Document/native mutation producer，string descriptor与closure Apply/Revert也无法表达revision、atomic commit或uncertain outcome；public Editing/Transactions、Application service与self-tests现已整体删除。未来只从typed intent、authoritative receipt/inverse、journal cursor与savepoint重新进入I0/I1。
+43. Lifecycle events v0从未获得App/MainWindow/Dock producer或reader；public kind/snapshot/service、Application 100项recent-event实现及self-tests现已整体删除。当前唯一process lifecycle owner是`StudioProcessSession`，未来事件面必须随真实owner transition与对称subscription重新进入I0/I1。
 44. Status/debug message v0 consumes `WorkbenchCommandExecutionResult` as the first producer, maps it to UI-neutral `EditorStatusMessageSnapshot`, and publishes latest status text through Shell status chrome; Console-targeted messages can open/focus Console, while command-result messages remain passive unless a target is explicitly provided. This intentionally does not add shell command input, toast history, combined Problems/Console panels, native logs, plugin APIs, or modal failure dialogs.
-45. Editor extension host v0 composes trusted built-in Feature modules once per application composition. Built-in modules declare panel/action contributions through a temporary builder, `EditorExtensionHost` validates duplicate ids before committing to typed registries, and Shell consumers still use `PanelRegistry` / `WorkbenchActionRegistry`. This does not add external plugin loading, ALC reload, provider lifecycle, native bridge, or script VM.
-46. Contribution ownership v0 records the owning `EditorExtensionId` inside typed panel/action registries and returns removal leases used by `EditorExtensionHost` for host disposal and activation rollback. The desktop app keeps the host alive through `StudioCompositionSession` and disposes it on application exit. Existing Shell consumers still read `PanelDescriptor` / `WorkbenchActionDescriptor` only; runtime enable/disable UI, provider lifecycle, external plugins, hot reload, and native bridge remain deferred.
-47. Panel instance manager v0 owns built-in panel content creation, logical panel attach/detach callbacks, and deterministic close/reset/shutdown release, including floating workspace host close. `KeepAlive` close 先撤销 active/shown，再 detach tab，但保留 content 到 workspace/session disposal；`RecreateOnOpen` close 和 reset 在重新打开前释放旧 content。
-48. Panel lifecycle callbacks v0 把 attach/detach、shown/hidden、active/inactive 分成独立合同，并以 `IEditorPanelLayoutSink` 在布局完成后通知 logical size 与 render scale。`PanelInstanceManager` owns attach/detach，Dock window owns shown/hidden，workspace owns active/inactive；Open/Close 仍是 Shell command，不复制 callback。
-49. Panel frame update scheduler v0 exposes `IEditorPanelFrameUpdateSink`, `EditorPanelFrameUpdateRequest`, `EditorPanelFrameContext` and `EditorPanelFrameScheduler`. Panels opt into manual, visible or active-only ticks with optional target FPS throttling；Visible 等于 Shown，Active 同时要求 Shown + Active。测试通过显式 `Tick(now)` 驱动；`RequestRepaint()` 只记录 editor repaint request，不调用 Avalonia render APIs、native viewport、renderer presentation 或 engine simulation。
-50. Provider contribution v0 registers the fixture-backed active scene provider under `scene.active` through the UI-neutral Application-owned `EditorProviderHost`; the compatibility adapter is the only converter from the legacy `SceneProviderDescriptor`. `ISceneSnapshotProvider` remains a read-only data contract; provider reload, native bridge connection, script VM, external plugins, Console/Problems projection and writable scene editing remain deferred.
-51. Diagnostic projection v0 adds `IEditorDiagnosticService` / `EditorDiagnosticService` as a UI-neutral bounded diagnostic stream. The same service feeds latest status feedback, `ConsolePanelViewModel` all-record projection, and `ProblemsPanelViewModel` problem-channel projection. It does not ingest native logs, add shell command input, load external plugins, persist logs, or implement the final Console/Problems table UI.
+45. Current-facts: the test-owned Editor extension host/registry/activation graph was deleted in the R0 hard cut; the current `StudioCompositionSession` owns only `StudioShellViewModel` and declares no extension capability.
+46. The orphan root-App `EditorExtensionId` was subsequently deleted because no production registry, contribution, lease or host consumed it. Future extension identity must be introduced by a real registered module owner together with activation and symmetric teardown; this historical guide is not a compatibility source.
+47. Panel instance manager v0及built-in panel content/Dock workspace已随legacy UI删除；剩余public panel declaration SCC随后也已删除，当前没有KeepAlive/RecreateOnOpen产品合同。
+48. Panel lifecycle callbacks v0没有真实PanelInstanceManager、Dock window/workspace或content consumer；public sink/context与self-tests现已整体删除。未来callbacks必须与实际instance owner和对称detach/dispose一起重立。
+49. Panel frame update scheduler v0没有Presentation timer、Window/Dock producer或render owner；public frame contracts、Application scheduler与self-tests现已整体删除，不保留manual/visible/active FPS planner。
+50. The provider contribution v0 claim is retired: App/composition never registered or queried an active-scene provider, the documented compatibility adapter did not exist, and the Core declarations plus tests-only Application/public/in-memory provider SCC are now deleted. Provider reload, native bridge connection, script VM, external plugins and writable scene editing remain deferred.
+51. Process diagnostics/log ingress v1 uses the one App-owned `IStudioDiagnosticHub`: fixed-capacity diagnostic/log rings, bounded subscribers, cursor/drop/truncation evidence and explicit managed/native/framework/subprocess mapping. Console and Problems are read-only projections of that truth. The subprocess contract is not production-wired because Studio owns no subprocess; the completed disposable-child gate remains external test infrastructure and does not publish a product capability. Shell command input, external plugins, persistence, arbitrary RPC and remote control remain deferred.
 ```
 
 当前未实现：
@@ -276,13 +280,13 @@ Dock.Avalonia 类型只允许出现在 Shell/Docking 或后续 Infrastructure �
 2. Layout operations：n-ary split group、更完整的比例编辑体验和 reset layout 细节。
 3. Floating window operations：补充窗口层级策略、跨屏手工验证和高级生命周期行为。
 4. Command palette follow-up：更多 action kind、命令结果弹出/日志反馈、用户可编辑快捷键策略和快捷键冲突 UI；暂不做插件命令 API。
-5. Hierarchy provider follow-up：将 fixture-backed scene snapshot provider 替换为真实 scene object provider，并保留 `IEditorSelectionService` 作为面板同步边界。
-6. Inspector provider follow-up：扩展真实 scene object / asset provider 的只读属性来源；编辑器控件和写回另做独立切片。
+5. Hierarchy read follow-up：从真实Project/Document open与EditWorld authoritative revision建立第一条只读scene projection；不得恢复fixture-backed provider。
+6. Inspector read follow-up：复用同一Document/World revision的真实scene object / asset只读来源；selection边界和写回分别重新过I0/I1。
 7. Project/Console 数据接入：接入真实 asset index / diagnostics source，但仍保持各自 Feature 边界。
 
 ## 性能约束
 
 默认布局面板数量保持小集合。不要把资源树、日志、问题列表或场景对象直接展开成大规模 Avalonia 控件；真实面板必须在各自 Feature 内做虚拟化、分页、批处理和资源释放。
-## 2026-07-04 Frame Debugger snapshot v0
+## 2026-07-04 Frame Debugger snapshot v0（已退役）
 
-Frame Debugger read-only snapshot v0 registers `frame-debugger` as a `Window/Panels/Frame Debugger` Code-first tool panel. Workbench injects a fixture-backed `IFrameDebuggerSnapshotProvider`; the panel renders pass/event/resource snapshot data and publishes diagnostics for capture/resume while native ABI, renderer capture control, RenderDoc-style replay, GPU previews, and writable runtime state remain deferred.
+历史上的 `frame-debugger` Code-first tool panel只消费fixture snapshot，没有真实Studio viewport、native session或render-lane owner，已随R0 hard-cut连同public/managed合同删除。当前不得注册Frame Debugger panel或以独立C++ smoke冒充Studio capture能力；未来只有真实viewport与同一render lane先通过I3，才可重新按独立Slice接入。

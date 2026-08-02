@@ -207,16 +207,14 @@ v1 的 `Ready` 证明：
 - `PendingBuild` 现在有明确 current-image evidence，`PendingRestart` 则不会在没有 current-process generation tracker 时被猜测；
 - 项目成功检查与完整 Editor 功能激活保持两个独立可验证阶段。
 
-当前 managed consumer checkpoint 已建立：`Asharia.Editor` 只公开 UI-neutral 的状态、动作、项目摘要和诊断快照，
-`Asharia.Studio.Application` 严格消费 canonical `com.asharia.bootstrap-session` v1 bytes。解析器不执行文件 IO、
-进程启动或状态归约，也不把 `Ready` 提升为 `ProjectReady`；Python renderer fixture 与 managed parser 的
-byte-level parity 由测试固定。
+历史 managed/workbench checkpoint 已在 Studio R0 hard-cut 中撤销：`Asharia.Editor` 的状态/动作/摘要/诊断
+records、`Asharia.Studio.Application` parser/source 与 Shell project-launch presentation均没有真实App ingress、
+selection owner或activation consumer，因而连同专属tests删除，不再把`Ready`冒充ProjectSession能力。
 
-当前 workbench consumer checkpoint 继续保持该所有权：`IProjectOpenSessionSnapshotSource` 只公开 current
-snapshot 与变更事件，Application 的内存 source 向 Shell-owned project launch surface 发布 snapshot。Avalonia
-Presentation 只投影候选工程、状态、非交互下一步与首要诊断；active-project window context 和 Project asset panel
-不消费 bootstrap identity。它仍不读取报告文件、不调用 bootstrap reducer，也不把 `Ready` 提升为 ProjectScope、
-`ProjectReady` 或运行态 session。
+本ADR治理的headless producer保持不变：`tools/bootstrap_session.py`仍生成canonical
+`com.asharia.bootstrap-session` v1 bytes，确定性fixture现由
+`tools/tests/fixtures/bootstrap-session-ready-v1.json`拥有并由Python renderer test直接验证。未来出现真实Studio
+project-open request owner后，必须围绕当时consumer重建窄adapter，不恢复旧snapshot/source第二真值。
 
 ## v1 非目标
 
@@ -239,7 +237,7 @@ Presentation 只投影候选工程、状态、非交互下一步与首要诊断�
 - normal-open 不 hash executable、只执行 published artifact 的测试；
 - Host spawn/timeout/overflow/exit/stderr/summary schema-version/protocol 测试；
 - Project Bootstrap valid/invalid descriptor、exit `65`、clean stop 与同根目录端到端测试；
-- canonical report 的 managed parser、状态/动作不变量、拒绝非规范 bytes 与 Python renderer fixture parity 测试；
+- canonical report 的 Python renderer确定性、schema/state/action与tool-owned fixture parity测试；
 - ClangCL/MSVC 单次 generated Host build、publication/deep verification 后的真实执行链；
 - package contracts、encoding、docs、topology、diff 与双编译器门禁。
 
@@ -249,7 +247,7 @@ Presentation 只投影候选工程、状态、非交互下一步与首要诊断�
 
 1. `PendingBuild` 的 Build/Publish controller，以及成功后的 Editor restart orchestration；
 2. current-process generation tracker 与可证明的 `PendingRestart`；
-3. 把已有 managed 状态快照接入最小 Editor UI、Safe Mode 与修复入口；
+3. 在真实Studio project-open request owner出现后重新定义窄managed adapter、UI、Safe Mode与修复入口；
 4. 完整 Editor Host Profile activation 与更强的 `ProjectReady` 状态；
 5. Repair Executor、active generation selection、rollback 与外部 Launcher/Installer；
 6. 只有真实重链接瓶颈和 ABI 需求出现后，才重新评估 exact-build native dynamic module。

@@ -9,11 +9,7 @@ public sealed record StudioEditorImageProductionRequest(
     string SdkVersion,
     string HostFxrVersion,
     string HostRuntimeVersion,
-    string ReferencePackVersion,
-    FileInfo RuntimeContract,
-    FileInfo EditorContract,
     DirectoryInfo OutputRoot,
-    string EnvironmentId = "project-code-net10",
     string TargetFramework = "net10.0");
 
 public sealed record StudioEditorImageFileBinding(

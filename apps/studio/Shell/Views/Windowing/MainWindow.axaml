@@ -1,285 +1,83 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:feedback="using:Editor.UI.Controls.Feedback"
         xmlns:vm="using:Editor.Shell.ViewModels.Windowing"
-        xmlns:commandPaletteViews="using:Editor.Shell.Views.CommandPalette"
-        xmlns:dialogViews="using:Editor.Shell.Views.Dialogs"
-        xmlns:dockViews="using:Editor.Shell.Views.Docking"
-        xmlns:projectViews="using:Editor.Shell.Views.Projects"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        mc:Ignorable="d" d:DesignWidth="1440" d:DesignHeight="900"
+        mc:Ignorable="d"
+        d:DesignWidth="960"
+        d:DesignHeight="600"
         x:Class="Editor.Shell.Views.Windowing.MainWindow"
-        x:DataType="vm:MainWindowViewModel"
+        x:DataType="vm:StudioShellViewModel"
+        AutomationProperties.AutomationId="StudioShellWindow"
+        AutomationProperties.Name="Asharia Studio"
         Icon="/Assets/avalonia-logo.ico"
         Title="{Binding WindowTitle}"
-        Width="1440"
-        Height="900"
-        MinWidth="720"
-        MinHeight="420"
-        Background="{DynamicResource EditorBrushBase00}">
+        Width="960"
+        Height="600"
+        MinWidth="640"
+        MinHeight="400"
+        Background="#0B0F14"
+        Foreground="#E6EDF3">
+    <Grid Margin="48">
+        <StackPanel MaxWidth="720"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Spacing="24">
+            <TextBlock AutomationProperties.AccessibilityView="Content"
+                       AutomationProperties.HeadingLevel="1"
+                       FontSize="28"
+                       FontWeight="SemiBold"
+                       Text="Asharia Studio" />
 
-    <Window.Styles>
-        <Style Selector="Button.status-message-status">
-            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeSmall}" />
-            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextMuted}" />
-            <Setter Property="Margin" Value="12,0,0,0" />
-            <Setter Property="MaxWidth" Value="520" />
-            <Setter Property="Padding" Value="0" />
-            <Setter Property="MinWidth" Value="0" />
-            <Setter Property="MinHeight" Value="0" />
-            <Setter Property="Background" Value="Transparent" />
-            <Setter Property="BorderBrush" Value="Transparent" />
-            <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="HorizontalContentAlignment" Value="Right" />
-        </Style>
-        <Style Selector="Button.status-message-status:disabled">
-            <Setter Property="Opacity" Value="1" />
-        </Style>
-        <Style Selector="Button.status-message-status.debug">
-            <Setter Property="Foreground" Value="{DynamicResource EditorBrushInfo}" />
-        </Style>
-        <Style Selector="Button.status-message-status.success">
-            <Setter Property="Foreground" Value="{DynamicResource EditorBrushSuccess}" />
-        </Style>
-        <Style Selector="Button.status-message-status.warning">
-            <Setter Property="Foreground" Value="{DynamicResource EditorBrushWarning}" />
-        </Style>
-        <Style Selector="Button.status-message-status.error">
-            <Setter Property="Foreground" Value="{DynamicResource EditorBrushError}" />
-        </Style>
-        <Style Selector="Button.status-message-status.info">
-            <Setter Property="Foreground" Value="{DynamicResource EditorBrushInfo}" />
-        </Style>
-        <Style Selector="Border.workbench-bar">
-            <Setter Property="Height" Value="34" />
-            <Setter Property="Padding" Value="8,0" />
-            <Setter Property="Background" Value="{DynamicResource EditorBrushSurface01}" />
-            <Setter Property="BorderBrush" Value="{DynamicResource EditorBrushDivider}" />
-            <Setter Property="BorderThickness" Value="0,0,0,1" />
-        </Style>
-        <Style Selector="Border.workbench-badge">
-            <Setter Property="MinHeight" Value="22" />
-            <Setter Property="Padding" Value="7,2" />
-            <Setter Property="CornerRadius" Value="3" />
-            <Setter Property="Background" Value="{DynamicResource EditorBrushBase02}" />
-            <Setter Property="VerticalAlignment" Value="Center" />
-        </Style>
-        <Style Selector="TextBlock.workbench-context">
-            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeSmall}" />
-            <Setter Property="VerticalAlignment" Value="Center" />
-            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
-        </Style>
-        <Style Selector="TextBlock.workbench-muted">
-            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextMuted}" />
-        </Style>
-        <Style Selector="Button.workbench-tool">
-            <Setter Property="MinWidth" Value="48" />
-            <Setter Property="MinHeight" Value="24" />
-            <Setter Property="Padding" Value="7,2" />
-            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeSmall}" />
-        </Style>
-        <Style Selector="Button.workbench-tool:disabled">
-            <Setter Property="Opacity" Value="0.65" />
-        </Style>
-        <Style Selector="Window:compact Button.workbench-secondary">
-            <Setter Property="IsVisible" Value="False" />
-        </Style>
-        <Style Selector="Window:compact TextBlock.workbench-low-priority">
-            <Setter Property="IsVisible" Value="False" />
-        </Style>
-    </Window.Styles>
+            <Border x:Name="StartingState"
+                    AutomationProperties.AutomationId="StudioShellStartingState"
+                    AutomationProperties.Name="Studio startup state"
+                    AutomationProperties.ControlTypeOverride="StatusBar"
+                    IsVisible="{Binding IsStarting}"
+                    Padding="18"
+                    Background="#10161D"
+                    BorderBrush="#1F2933"
+                    BorderThickness="1"
+                    CornerRadius="6">
+                <TextBlock x:Name="StartingStateText"
+                           AutomationProperties.LiveSetting="Polite"
+                           FontSize="18"
+                           Text="{Binding StartingStateText}" />
+            </Border>
 
-    <Grid RowDefinitions="Auto,Auto,Auto,*,Auto"
-          ClipToBounds="False">
-        <Border Grid.Row="0"
-                Background="{DynamicResource EditorBrushBase01}"
-                BorderBrush="{DynamicResource EditorBrushDivider}"
-                BorderThickness="0,0,0,1">
-            <Menu Classes="editor-main-menu">
-                <MenuItem Header="File" Classes="editor-menu-item">
-                    <MenuItem Header="New"
-                              Classes="editor-menu-item"
-                              Click="OnNewProjectClick" />
-                    <MenuItem Header="Open"
-                              Classes="editor-menu-item"
-                              Click="OnOpenProjectClick" />
-                    <MenuItem Header="Save" Classes="editor-menu-item" IsEnabled="False" />
-                    <MenuItem Header="Save As" Classes="editor-menu-item" IsEnabled="False" />
-                    <Separator Classes="editor-menu-separator" />
-                    <MenuItem Header="Exit" Classes="editor-menu-item" IsEnabled="False" />
-                </MenuItem>
-                <MenuItem Header="Edit" Classes="editor-menu-item">
-                    <MenuItem Header="Undo" Classes="editor-menu-item" IsEnabled="False" />
-                    <MenuItem Header="Redo" Classes="editor-menu-item" IsEnabled="False" />
-                    <Separator Classes="editor-menu-separator" />
-                    <MenuItem Header="Cut" Classes="editor-menu-item" IsEnabled="False" />
-                    <MenuItem Header="Copy" Classes="editor-menu-item" IsEnabled="False" />
-                    <MenuItem Header="Paste" Classes="editor-menu-item" IsEnabled="False" />
-                    <MenuItem Header="Delete" Classes="editor-menu-item" IsEnabled="False" />
-                </MenuItem>
-                <MenuItem Header="View" Classes="editor-menu-item">
-                    <MenuItem Header="Layout" Classes="editor-menu-item">
-                        <MenuItem Header="Reset Layout"
-                                  Classes="editor-menu-item"
-                                  Command="{Binding ResetLayoutCommand}" />
-                        <MenuItem Header="Compact Layout"
-                                  Classes="editor-menu-item"
-                                  Command="{Binding ApplyCompactLayoutCommand}" />
-                        <MenuItem Header="Save Layout"
-                                  Classes="editor-menu-item"
-                                  Command="{Binding SaveLayoutCommand}" />
-                    </MenuItem>
-                </MenuItem>
-                <MenuItem Header="Window" Classes="editor-menu-item">
-                    <MenuItem x:Name="PanelsMenu"
-                              Header="Panels"
-                              Classes="editor-menu-item" />
-                </MenuItem>
-                <MenuItem x:Name="ToolsMenu"
-                          Header="Tools"
-                          Classes="editor-menu-item">
-                    <MenuItem Header="Settings" Classes="editor-menu-item" IsEnabled="False" />
-                </MenuItem>
-                <MenuItem x:Name="HelpMenu"
-                          Header="Help"
-                          Classes="editor-menu-item">
-                    <MenuItem Header="Documentation" Classes="editor-menu-item" IsEnabled="False" />
-                </MenuItem>
-            </Menu>
-        </Border>
-
-        <Border Grid.Row="1"
-                Classes="workbench-bar">
-            <Grid ColumnDefinitions="220,Auto,*,Auto,Auto"
-                  ColumnSpacing="10">
-                <StackPanel Grid.Column="0"
-                            Orientation="Horizontal"
-                            Spacing="5"
-                            VerticalAlignment="Center">
-                    <TextBlock Classes="workbench-context workbench-muted"
-                               MaxWidth="92"
-                               Text="{Binding ActiveProjectDisplayName}"
-                               ToolTip.Tip="Active project" />
-                    <TextBlock Classes="workbench-context workbench-muted"
-                               Text="/" />
-                    <TextBlock Classes="workbench-context"
-                               MaxWidth="104"
-                               Text="{Binding DocumentDisplayName}"
-                               ToolTip.Tip="Active document" />
-                    <TextBlock Classes="workbench-context"
-                               IsVisible="{Binding IsDocumentDirty}"
-                               Text="*" />
-                </StackPanel>
-
-                <StackPanel Grid.Column="1"
-                            Orientation="Horizontal"
-                            Spacing="4"
-                            VerticalAlignment="Center">
-                    <Button Classes="workbench-tool"
-                            Content="Select"
-                            IsEnabled="False"
-                            ToolTip.Tip="{Binding ToolUnavailableReason}" />
-                    <Button Classes="workbench-tool"
-                            Content="Move"
-                            IsEnabled="False"
-                            ToolTip.Tip="{Binding ToolUnavailableReason}" />
-                    <Button Classes="workbench-tool workbench-secondary"
-                            Content="Rotate"
-                            IsEnabled="False"
-                            ToolTip.Tip="{Binding ToolUnavailableReason}" />
-                    <Button Classes="workbench-tool workbench-secondary"
-                            Content="Scale"
-                            IsEnabled="False"
-                            ToolTip.Tip="{Binding ToolUnavailableReason}" />
-                </StackPanel>
-
-                <StackPanel Grid.Column="2"
-                            HorizontalAlignment="Center"
-                            Orientation="Horizontal"
-                            Spacing="8"
-                            VerticalAlignment="Center">
-                    <Border Classes="workbench-badge">
-                        <TextBlock Classes="workbench-context"
-                                   Text="{Binding EditorModeText}"
-                                   ToolTip.Tip="Current editor mode" />
-                    </Border>
-                    <Button Classes="workbench-tool workbench-secondary"
-                            Content="Play"
-                            IsEnabled="False"
-                            ToolTip.Tip="{Binding SessionUnavailableReason}" />
-                </StackPanel>
-
-                <Border Grid.Column="3"
-                        Classes="workbench-badge"
-                        MaxWidth="220">
-                    <TextBlock Classes="workbench-context"
-                               Text="{Binding SelectionSummary}"
-                               ToolTip.Tip="Active selection" />
+            <Grid x:Name="EmptyWorkspaceState"
+                  IsVisible="{Binding IsWorkspaceEmpty}"
+                  ColumnDefinitions="*,*"
+                  ColumnSpacing="16">
+                <Border x:Name="NoProjectState"
+                        AutomationProperties.AutomationId="StudioShellNoProjectState"
+                        AutomationProperties.Name="Project state: No Project"
+                        AutomationProperties.ControlTypeOverride="Group"
+                        Padding="18"
+                        Background="#10161D"
+                        BorderBrush="#1F2933"
+                        BorderThickness="1"
+                        CornerRadius="6">
+                    <TextBlock x:Name="NoProjectStateText"
+                               FontSize="18"
+                               Text="{Binding ProjectStateText}" />
                 </Border>
 
-                <StackPanel Grid.Column="4"
-                            HorizontalAlignment="Right"
-                            Orientation="Horizontal"
-                            Spacing="10"
-                            VerticalAlignment="Center">
-                    <TextBlock Classes="workbench-context workbench-muted workbench-low-priority"
-                               Text="{Binding BackgroundTaskSummary}"
-                               ToolTip.Tip="Background tasks" />
-                    <TextBlock Classes="workbench-context workbench-muted workbench-low-priority"
-                               Text="{Binding DiagnosticSummary}"
-                               ToolTip.Tip="Diagnostics" />
-                </StackPanel>
+                <Border x:Name="NoDocumentState"
+                        Grid.Column="1"
+                        AutomationProperties.AutomationId="StudioShellNoDocumentState"
+                        AutomationProperties.Name="Document state: No Document"
+                        AutomationProperties.ControlTypeOverride="Group"
+                        Padding="18"
+                        Background="#10161D"
+                        BorderBrush="#1F2933"
+                        BorderThickness="1"
+                        CornerRadius="6">
+                    <TextBlock x:Name="NoDocumentStateText"
+                               FontSize="18"
+                               Text="{Binding DocumentStateText}" />
+                </Border>
             </Grid>
-        </Border>
-
-        <projectViews:ProjectLaunchView Grid.Row="2"
-                                        DataContext="{Binding ProjectLaunch}" />
-
-        <Border Grid.Row="4"
-                Height="{DynamicResource EditorMainMenuHeight}"
-                Background="{DynamicResource EditorBrushBase01}"
-                BorderBrush="{DynamicResource EditorBrushDivider}"
-                BorderThickness="0,1,0,0"
-                Padding="8,0">
-            <DockPanel LastChildFill="False">
-                <feedback:ActivityIndicator DockPanel.Dock="Left"
-                                            HorizontalAlignment="Left"
-                                            IsActive="{Binding HasActiveBackgroundTasks}"
-                                            Message="{Binding ActiveBackgroundTaskMessage}"
-                                            Title="{Binding ActiveBackgroundTaskTitle}"
-                                            VerticalAlignment="Center" />
-
-                <Button DockPanel.Dock="Right"
-                        Classes="status-message-status"
-                        Classes.debug="{Binding IsStatusMessageDebug}"
-                        Classes.success="{Binding IsStatusMessageSuccess}"
-                        Classes.warning="{Binding IsStatusMessageWarning}"
-                        Classes.error="{Binding IsStatusMessageError}"
-                        Classes.info="{Binding IsStatusMessageInfo}"
-                        Command="{Binding OpenStatusMessageTargetCommand}"
-                        HorizontalAlignment="Right"
-                        IsHitTestVisible="{Binding CanOpenStatusMessageTarget}"
-                        IsVisible="{Binding HasStatusMessage}"
-                        VerticalAlignment="Center">
-                    <TextBlock MaxWidth="520"
-                               Text="{Binding StatusMessageText}"
-                               TextAlignment="Right"
-                               TextTrimming="CharacterEllipsis" />
-                </Button>
-            </DockPanel>
-        </Border>
-
-        <dockViews:EditorDockWorkspaceView Grid.Row="3"
-                                           DataContext="{Binding DockWorkspace}" />
-
-        <commandPaletteViews:CommandPaletteView Grid.Row="0"
-                                                Grid.RowSpan="5"
-                                                DataContext="{Binding CommandPalette}" />
-
-        <dialogViews:EditorDialogHostView Grid.Row="0"
-                                          Grid.RowSpan="5"
-                                          DataContext="{Binding DialogHost}" />
+        </StackPanel>
     </Grid>
-
 </Window>

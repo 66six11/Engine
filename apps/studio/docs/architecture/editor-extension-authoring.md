@@ -1,8 +1,10 @@
 # Editor 扩展开发模型
 
-状态：Target（已批准，尚未实现完整加载链）
+状态：Superseded by [ADR-0007](../adr/0007-studio-frontend-hard-cut.md)
 
-更新日期：2026-07-11
+更新日期：2026-07-31
+
+> 本文保留未来扩展 authoring 的研究材料；它不是 Studio v1 production contract。
 
 ## 1. 目的
 
@@ -295,7 +297,7 @@ public interface IEditorModuleActivation : IAsyncDisposable
 
 Host 每个 Package generation、每个 `EditorModuleDefinitionId` 只创建一个 CLR `EditorModule` definition object，并且只调用一次 `Configure()`。Application catalog 在没有 Project 时也可以 configure/validate Project-scoped definition。
 
-Source Generator 在 module index 中生成 definition factory；module type 必须是非抽象 class并提供无参数构造路径（构造函数可以由同 assembly 生成代码访问），不使用 Host DI constructor。Package/assembly 的 immutable manifest/configuration 通过 `EditorModuleBuilder.DefinitionContext` 读取，Project/service state 只能在 `ActivateAsync(EditorModuleContext, ...)` 取得。
+R0 hard-cut 已删除 Source Generator、module index、definition factory、`EditorModuleBuilder` 与 `EditorModuleContext` 的全部 production path；当前没有可按本段 authoring 的 extension SDK。未来若真实 consumer 重新通过 I0/I1 并建立新 ADR，生成路径仍必须保持 definition 与 instance state 分离，且不得从本文恢复已删除 API；具体构造与 activation 合同以届时的 governing ADR 为准。
 
 同一个 definition object 的 `ActivateAsync()` 会对不同 `EditorModuleInstanceId` 调用一次，并可能因多个 ProjectSession 并发执行。约束：
 

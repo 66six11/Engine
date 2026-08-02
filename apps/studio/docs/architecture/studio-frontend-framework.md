@@ -1,9 +1,14 @@
 # Studio 前端框架
 
-状态：Target（authoring 分层已校准；Code-first v1 当前使用整棵 content subtree 重建，
-keyed reconcile 尚未实现；统一 Action、Avalonia extension backend 与工具合同仍在迁移）
+状态：Superseded by [ADR-0007](../adr/0007-studio-frontend-hard-cut.md)
 
-更新日期：2026-07-30
+> 本文保留 2026-07-31 代码审查证据和早期前端合同，不能再作为 production 迁移目标。
+> 当前权威目标是 [Studio 前端硬切架构](studio-frontend-hard-cut.md)：Document-first、单一 Avalonia
+> 路径、无 compatibility/Code-first/dynamic extension 前置。
+> 其中描述的ProjectOpenSession parser/source、public snapshots与project-launch presentation也已在R0因
+> production reachability为0删除；以下相关段落只保存历史设计。
+
+更新日期：2026-07-31
 
 跟踪：GitHub Epic #119；设计 Slice #337；首个实现 Slice #338
 
@@ -46,26 +51,34 @@ keyed reconcile 尚未实现；统一 Action、Avalonia extension backend 与工
 - O3DE、Godot 与 Avalonia 的公开源码和官方文档用于核对真实 ownership、registration 与控件运行时；
 - Unreal 的源码在 EULA 下可访问，但不是 OSI 开源；本文只采用其公开文档/API 所能证明的边界，不复制实现；
 - Unity 同样只作为公开 retained editor UI 文档证据，不把其产品名、类型名或内部实现带入公共 API；
+- Bevy 只用于核对 plugin、reflection、scene 与 task 等底层原语；截至当前官方仍把 editor-ready UI
+  作为建设目标，不能把它当作成熟 Editor Shell、Document、Undo 或 Dock 合同的依据；
 - 外部案例先证明问题和边界，不能仅凭“成熟引擎也有”就新增 registry、DSL 或 abstraction。
 
 ### 3.2 主参考：模块化 retained editor UI
 
-Unreal Editor 的公开文档和 API 展现出五个对 Studio 有直接价值的边界：
+Unreal Editor 的公开文档和 API 展现出一组对 Studio 有直接价值的边界：
 
 - Slate 使用代码中的声明式组合并维护 widget tree；它证明代码 authoring 与 retained UI 可以共存，
   但不证明 Studio 已有或必须复制 virtual-tree reconcile；
 - `FUICommandList` 把 execute、can-execute、checked state 和输入绑定从具体按钮分离；
 - `FTabManager`/tab spawner 使用稳定 tab identity 恢复布局和按需创建内容；
+- `FDocumentTracker` 与 Asset Editor API 把 document identity、document view/tab 和 editor instance 分开；
 - `IDetailsView` 与 `IPropertyHandle` 把 selection 展示、property access、transaction 和 change notification 从具体控件分离；
+- `FScopedTransaction` 把一次用户意图包装成可撤销单元，而不是让按钮或字段自己维护历史；
+- `USelection` 把选择作为编辑器服务，不把选中状态埋在某个 Outliner row；
 - Interactive Tools Framework 把 input router、tool manager、gizmo manager、context store 以及 Accept/Cancel/Complete 生命周期放进独立 tool context。
+- Play/Simulate 使用与编辑状态有明确边界的运行会话，支持 Studio 保持 Edit/Preview/Play world identity 分离。
 
 采用：
 
 - Code-first tree recording + retained Avalonia controls；当前实现为 subtree replacement，不误称已有 reconcile；
 - action definition 与 surface placement 分离；
 - panel descriptor + Host-owned spawn/restore；
+- document host 与 tab/view 分离；
 - property handle 作为后续可写 Inspector 的窄腰；
-- mode 与 lightweight interactive tool 分离。
+- mode 与 lightweight interactive tool 分离；
+- document-scoped transaction 与 Edit/Preview/Play session 分离。
 
 不采用：
 
@@ -99,6 +112,9 @@ Godot EditorPlugin/EditorDock 展示了稳定 dock key、默认位置、布局�
 
 Blender Operator 模型把 stable operator id、`poll(context)`、invoke/execute、modal、cancel、report 和 undo metadata 集中起来；Panel 只引用 operator，不直接实现业务。其 selection 指南还区分 scene selection 与纯 UI selection 的 undo 语义。
 
+O3DE 的 Editor/Runtime target 分离、Action Manager 与 viewport/tool 边界证明了构建期和运行期 owner 分离的价值。
+AtomTools 的 DocumentSystem 是专用工具框架的文档先例，不代表整个 O3DE Editor 已有一个统一全局 Document 合同。
+
 采用：
 
 - action context、mode、enabled/checked/visibility 分离；
@@ -113,29 +129,53 @@ Blender Operator 模型把 stable operator id、`poll(context)`、invoke/execute
 - Godot 插件可以直接提交/释放 `Control`；Studio 改为 Host-owned content lease，避免 Dock、popup、timer 和 generation cleanup 泄漏。
 - O3DE 的 Document Property Editor 是有价值的 document-to-widget 案例，但当前仍不证明 Asharia 需要通用 UI document 格式；Code-first node tree 只服务小型工具，不扩成序列化 UI DSL。
 - Blender 的全局 operator registry 在 Studio 中按 module/scope partition，Project close 或 generation retire 可精确撤销。
+- 不复制 Unity 的全局静态 Selection，也不把 Blender workspace state 写入 project/scene 内容。
+- 不把 Bevy 的底层 ECS/reflection/task primitives 描述为完整编辑器架构。
 
 ## 4. 总体结构
 
+架构决策：Studio 采用**合同优先的模块化单体 + 选择性进程外 worker**。
+
+- Shell、Document Host、Command/Transaction、Selection、Dock 与可信 UI extension 保持在一个 Avalonia
+  进程中，以保留 focus、input、GPU surface 和调试的一致语义；
+- `Asharia.Editor` 与 `Asharia.Studio.Application` 定义 UI-neutral 合同和状态机，
+  `EngineBridge` 只做运行时/原生合同转换，Presentation 只做 Avalonia 投影；
+- 资产导入、shader/外部工具调用、不可信脚本和高崩溃风险集成才进入受监督的进程外 worker；
+- 不引入微前端、全局消息总线、Service Locator 或仅为替换手工 composition root 的 DI framework。
+  当前变化点需要的是窄 owner 和可测试合同，不是更多运行时发现层。
+
+模块/进程边界：
+
 ```mermaid
-flowchart LR
-    Module["EditorModule"] --> Declare["Contribution declaration"]
-    Declare --> Panel["Panel registry"]
-    Declare --> Action["Action registry"]
-    Declare --> Tool["Tool registry"]
+flowchart TB
+    Extension["Built-in / trusted EditorModule"] --> Registry["Scoped contribution registries"]
+    Registry --> App["Studio.Application"]
 
-    Panel --> Application["Studio.Application snapshots and hosts"]
-    Action --> Application
-    Tool --> Application
+    subgraph App["Studio.Application"]
+        Document["Document Host + revision/dirty"]
+        Context["EditorContext + Selection"]
+        Mutation["Command + Transaction"]
+        Tasks["Task supervisor + diagnostics"]
+        Document --> Context
+        Context --> Mutation
+        Mutation --> Document
+    end
 
-    Application --> Presentation["Presentation.Avalonia"]
-    Presentation --> Dock["Window / Dock / Focus"]
-    Presentation --> CodeFirst["Code-first content builder"]
+    App <--> Bridge["EngineBridge / project providers"]
+    Tasks <--> Worker["Supervised out-of-process workers"]
+
+    App --> Presentation["Presentation.Avalonia"]
+    Presentation --> Shell["Window / Dock / focus / accessibility"]
+    Presentation --> CodeFirst["Code-first host"]
     Presentation --> AvaloniaContent["Avalonia content lease"]
-    Presentation --> Specialized["Specialized controls"]
-
-    Engine["EngineBridge / providers"] --> Application
-    Application --> Engine
+    Presentation --> Viewport["Viewport surface adapter"]
+    Viewport <--> Bridge
 ```
+
+依赖只向内指向合同：Feature 可以依赖 Application snapshot/command contract；Presentation adapter
+可以依赖 Avalonia；Application、public Editor API 和 EngineBridge 不能反向依赖 Shell View、Control、
+Dock layout 或 Windows handle。Viewport 的 native surface 与 OS handle 留在 Presentation/platform adapter，
+render session、picking、preview world 和 GPU lifetime 留在 Engine owner。
 
 读取路径：
 
@@ -166,29 +206,14 @@ UI 不直接“同步写模型再等待系统追认”。新 revision 是 mutati
 
 ### 5.1 当前已有
 
-- `Asharia.Editor.Panels.EditorPanelDescriptor` 已定义 stable contribution id、title、kind、default dock、cache policy、backend 和 factory-local id；
-- `UiBackendId.CodeFirst`、`CodeFirstEditorPanel`、稳定 `GuiNodeId`、`GuiFrameBuilder`、event queue 和 local state store 已存在；
-- 当前 `CodeFirstPanelHostView` 在 tree 更新时通过 `GuiAvaloniaControlFactory` 重新创建整棵 content subtree；
-  尚无 keyed control reconcile，也不保证重建时保留 control identity、focus、IME composition 或 scroll；
-- `WorkbenchActionDescriptor`、menu、shortcut、Command Palette 与 command result 路径存在，但仍是 legacy app-local contract；
-- selection、transaction、dirty、diagnostic、background task、panel scheduler 和 lifecycle snapshot 已有公共或迁移中合同；
-- `Asharia.Editor.Projects` 已有 UI-neutral project-open session snapshot，`Asharia.Studio.Application` 已有
-  canonical bootstrap report 的严格 parser；两者都不拥有文件 IO、进程启动或 UI；
-- `IProjectOpenSessionSnapshotSource` 只向 Presentation 暴露当前不可变 snapshot 与变更通知；
-  `ProjectOpenSessionSnapshotSource` 在 Application 内负责内存发布，composition root 把实例交给 Shell-owned project launch surface；
-- Project-open event callback 通过现有 UI dispatcher 更新 launch ViewModel，window dispose 时退订；source 不依赖 Avalonia，
-  ViewModel 也不读取报告文件或执行 project-open 动作；
-- `IProjectSessionService` 与 bootstrap source 分离，只发布 `NoProject | Ready` 活动项目 identity 和
-  typed create/open result；Application service 通过 native descriptor gateway 成功后才切换 current，
-  失败时保持上一成功会话；
-- recent-project 是 Application-owned Studio preference；写入使用同目录临时文件加替换，启动恢复必须重新
-  调用 descriptor gateway，不能把缓存路径或 bootstrap-ready candidate 直接解释为活动 `ProjectSession`；
-- production composition 将活动项目投影为共享的最小 `SceneSnapshot`，Hierarchy、Inspector 与 Scene View
-  读取同一 provider；无活动项目时 provider 为 Empty，不显示 demo object。该 snapshot 是 Editor projection，
-  不是持久化 scene 或 runtime World；
-- Scene View 只把 `hasScene + revision` 送入 native viewport request v2；View/code-behind 不传
-  SceneObject、GPU resource 或 native pointer，renderer 以自己的默认编辑相机与 overlay contract 绘制 grid/axes；
-- built-in XAML View 已使用 Avalonia + MVVM，但公开 `Asharia.Editor.Avalonia` content backend 尚未落地。
+- production `App -> StudioProcessSession -> StudioCompositionSession -> StudioShellViewModel`只提供
+  Starting/No Project/No Document最小Shell与真实process teardown；
+- diagnostics/log由唯一App-owned bounded hub拥有，Avalonia/native/managed映射进入同一truth；
+- legacy Workbench、Dock、Code-first、Feature、Project/Document/Scene/Viewport、selection、transaction、task、lifecycle、
+  provider与panel runtime均已删除；
+- 最后public Extensions/Contributions/Panel declaration SCC、空`Asharia.Editor` project/test/solution edge与
+  distribution identity/deps/image合同也已删除，不存在public extension SDK或空DLL；
+- 独立C++ editor/runtime与managed EngineBridge tests是各自边界证据，不是Studio composition capability。
 
 ### 5.2 迁移目标
 
@@ -208,6 +233,32 @@ panel-specific direct mutation
 
 迁移期间只允许 adapter 单向把 public descriptor 投影到 legacy Shell；禁止把 `Func<object>`、Avalonia `Control` 或 Shell service 反向加入 public Editor API。
 
+### 5.3 2026-07-31 实现审查与收敛门禁
+
+当前实现已经证明 package split、compiled binding、显式 composition root、stable panel id、列表虚拟化和
+retained composition viewport 的方向可行；以下问题在关闭前，前端仍不能标记为成熟基线：
+
+| 优先级 | 当前事实 | 违反的目标合同 | 关闭门禁 |
+| --- | --- | --- | --- |
+| P1 | Transaction 在 `Undo`/`Redo`/`Rollback` 完成前先移除 history/active entry，command 抛错会留下部分 mutation | transaction 原子性与可恢复 history | 为 apply/revert 记录进度，失败时补偿；补偿失败进入显式 document fault；覆盖中间 command 抛错测试 |
+| P1 | composition/startup/shutdown 在 UI thread 用 `GetAwaiter().GetResult()` 同步等待 async extension | UI thread 不阻塞；lifecycle 可取消、可观察 | 建立 async session start/stop 状态机；close 先请求 stop，完成后再关闭；native shutdown 放在可靠 `finally` barrier |
+| P1 | panel frame callback 没有逐 extension 隔离，单个 panel 抛错会短路同一帧其余 panel | extension fault domain 与 cleanup continuation | 每个 callback 独立捕获、诊断、退避/停用并继续健康 panel；加入 throwing + healthy panel 测试 |
+| P1 | 默认 layout 中任一 panel factory/attach/show 失败会使 DockWorkspace 构造重抛并终止 Studio startup | contribution fault 不应摧毁整个 Shell | factory 返回 typed result；Host 保留 placement 并显示 error placeholder，支持 retry/disable；隔离 owner/dependent chain |
+| P1 | Scene View attach/probe 存在 fire-and-forget Task，前序 detach fault 可成为未观察异常 | viewport operation 必须有 generation、owner 与 terminal observation | 交给 session task supervisor；整个 pipeline 使用 `try/catch/finally`、generation/cancellation，并在 detach/shutdown await |
+| P1 | project create/open/restore 从 UI event/startup 同步调用 native descriptor/filesystem gateway | UI thread 只提交 intent 和投影 snapshot | 提供可取消 `Start/Open/Create/RestoreAsync`，task center 显示进度；用 operation generation 保证 latest-request-wins |
+| P2 | window title 消费 `IProjectSessionService`，Project panel 仍硬编码 `No active project` | 同一概念只有一份 truth | Project panel 消费相同 immutable project snapshot；asset catalog 未实现时只显示明确的 unavailable/empty capability |
+| P2 | Dock tab 和 Hierarchy 展开主要依赖 pointer/double-tap，缺少 Tab/TreeItem keyboard 与 automation 语义 | Host 拥有 keyboard、focus 与 accessibility | 实现标准键盘路由、focus-visible、AutomationProperties/peer，并用 Avalonia Headless 验证 |
+| P2 | public event 由 caller thread 直接 multicast，subscriber 抛错会阻止后续 subscriber；部分 Presenter 未统一 marshal | event 只是 invalidation；subscriber/fault/thread owner 显式 | Host-owned per-subscriber 隔离；consumer 收到通知后重读 latest snapshot；Presenter 统一 dispatcher/coalescing |
+| P2 | Hierarchy 的 `SelectedRow = null` 不清理共享 selection，UI 可无高亮而 Inspector 仍显示旧对象 | view selection 与 content selection 必须一致或明确隐藏 | 区分用户清空和 filter 隐藏；用户清空发布 empty selection，隐藏 selection 保留并给出 reveal state |
+| P2 | KeepAlive panel attach 失败后可能保留已污染的 cached content | attach 失败必须原子回滚并释放 generation lease | factory/attach 失败时按 instance identity 驱逐并 dispose，不受 cache policy 影响；覆盖 KeepAlive retry |
+| P2 | Dock layout 直接覆盖写、失败静默，且与 recent-project 使用不同 settings root | user settings 原子、版本化、可诊断 | 统一 Settings owner；temp + flush + replace；schema/migration/quarantine；shutdown 保存失败可见 |
+| P3 | Code-first full-subtree replacement、无界 terminal task retention、反射 path binding 和 UI headless coverage 不足 | 性能/可测试性债务不能伪装成已完成能力 | 冻结 DSL；先补 task retention、typed binding 与 Headless 测试；只有 profile 和第二 consumer 证明后再做 keyed reconcile |
+
+上述 P1/P2 是当前 correction slices，不授权同时扩建新 framework。每个 Slice 必须先在真实 owner 边界建立
+负向测试，再修复最小闭环；相关 lifecycle 目标细节见
+[Studio 生命周期](studio-lifecycle.md)，Document/World 目标见
+[Editor Worlds 与 Play Mode](editor-worlds-and-play-mode.md)。
+
 ## 6. Contribution registry
 
 ### 6.1 只保留必要 registry
@@ -216,10 +267,10 @@ panel-specific direct mutation
 
 | Registry | Identity | 内容 | 当前状态 |
 | --- | --- | --- | --- |
-| Panel | `EditorContributionId` | kind、dock preference、cache、backend、factory | public baseline 已有 |
-| Action | stable action id | metadata、context、state query、execute route | legacy 已有，待 public 化 |
-| UI Backend | `UiBackendId` | generation-scoped factory resolver | Code-first 已有；Avalonia target |
-| Diagnostic/Task provider | stable source/operation id | immutable snapshot | baseline 已有 |
+| Panel | future typed identity | kind、dock preference、cache、backend、factory | Deferred；无真实consumer/registry |
+| Action | future stable action id | metadata、context、state query、execute route | Deferred；legacy已删除 |
+| UI Backend | future typed backend id | generation-scoped factory resolver | Deferred；Code-first已删除 |
+| Diagnostic source | App-owned source/operation id | bounded immutable records | Current；不是contribution registry |
 
 等有真实 consumer 后再增加：
 
@@ -248,7 +299,7 @@ declare
 
 ## 7. Panel 合同
 
-现有 `EditorPanelDescriptor` 保持小而稳定。以下信息不塞进 panel descriptor：
+当前不存在`EditorPanelDescriptor`。未来真实consumer重新通过I0/I1时，目标descriptor仍应保持小而稳定，且以下信息不塞入：
 
 - Menu/Toolbar placement：由 Action placement 声明；
 - layout split ratio、floating bounds：由 Host layout store 拥有；
@@ -309,6 +360,35 @@ Action
 5. action state 由 selection/document/mode/task 等事件触发 updater，不由 UI 每帧轮询所有 action。
 6. context menu 先按当前 selection/focus 计算 snapshot，再显示；菜单打开后不因后台小变化持续重排。
 7. shortcut 在 focused action context 中解析，文本输入和 modal/tool capture 具有明确优先级。
+
+每次执行都接收一个不可变、调用时冻结的 `EditorContextSnapshot`：
+
+```text
+window/workspace id
+project session id
+active document id + revision
+focused view/panel id
+selection ids + primary/top-level selection
+session/editor/tool mode
+viewport/runtime session id
+cancellation token
+```
+
+context 和 shortcut 仲裁顺序固定为：
+
+```text
+modal
+-> text/IME editing
+-> interactive tool capture
+-> focused view/panel
+-> active document
+-> workspace
+-> global
+```
+
+Action 不读取全局“current editor context”，也不长期持有 snapshot。执行阶段用 expected project/document/session
+identity 重新验证；对上下文无效、revision 过期或 capability 缺失返回 typed rejection。重复 shortcut 必须在
+registration 或 context resolution 时产生诊断，不能依赖“第一个注册者获胜”。
 
 ## 9. Mode 与 interactive tool
 
@@ -438,6 +518,40 @@ compiled binding 是默认门禁。动态/无法编译的 binding 必须有局�
 | Layout | Presentation layout store | user/workspace | split、dock、float、active tab |
 | Control transient | Avalonia/Host | visual lifetime | hover、pointer capture、temporary validation |
 
+### 11.1 Document Host
+
+Document 是 Application-owned session，不是 Tab、ViewModel 或 filesystem path。最小 snapshot：
+
+```text
+DocumentId + document type + project/session scope
+load/access state
+revision + saved revision + dirty
+display identity + optional canonical location
+capabilities: save/save-as/reload/close/undo/redo
+fault/validation summary
+```
+
+规则：
+
+- 一个 document 可以有零到多个 view；关闭一个 tab/view 不自动关闭 document；
+- restore layout 只恢复 view placement，不凭布局文件创造 document truth；document 不可用时显示可恢复 placeholder；
+- close document 必须走 save/discard/cancel 协议，Save 失败保持 document 与 dirty state；
+- undo/redo history 显式归属 `DocumentId`；跨 document 操作要么由更高层 transaction owner 原子协调，
+  要么明确拒绝，不能按“第一个 touched object”猜 history；
+- focus、selection、filter、tree expansion、viewport camera 和 layout 默认不增加内容 revision/dirty；
+- 第一阶段只实现 `SceneDocumentSession` 的完整垂直切片。出现第二个真实 document type 前，
+  不建立通用 document-factory/asset-editor registry。
+
+### 11.2 Selection 与 view-local state
+
+当前R0没有Application selection service或产品consumer；旧string id/context内存岛已删除。未来R1/R2只有在
+Document/World或asset owner能签发typed scoped identity、existence/revision与close invalidation后，才发布primary
+selection和去掉“已选祖先之下重复子项”的top-level selection。Hover、文本caret、当前filter row、dock active tab
+等UI-local selection仍由Presentation/panel instance拥有，不进入undo/dirty。
+
+View 只能持有 document/session handle 与 immutable snapshot，不能持有可变 Engine object。Selection changed
+是 invalidation，不是把控件引用或对象指针广播给 extension 的数据通道。
+
 禁止：
 
 - 把 Dock split 写入 scene；
@@ -471,6 +585,27 @@ Avalonia control 创建、binding、layout、input 和 visual tree 操作只发�
 - 不为不可见 item 创建 control；
 - 高速日志有界并聚合重复项；
 - layout/build-replace/command execution 分别有 diagnostics，避免只看“界面卡了”。
+
+### 12.4 Snapshot 一致性与异步提交
+
+Event 只表示“某个 owner 的 revision 可能变化”，subscriber 必须重新读取 latest immutable snapshot；
+event payload 不携带 live ViewModel、Control、Engine object 或可变 collection。Host 对每个 subscriber
+独立调用和诊断，单个 extension 抛错不能改变已完成业务操作的 typed result，也不能阻止健康 subscriber。
+
+异步 operation/result 至少携带：
+
+```text
+operation id
+project session id
+document id + expected revision
+provider/module generation
+engine/runtime epoch
+cancellation/supersession generation
+```
+
+结果回到 owner thread 后先验证全部 identity/revision，再原子发布 snapshot。过期结果安静丢弃并记录可聚合
+diagnostic，不覆盖新会话。Dispatcher update 使用 latest-wins/coalescing；callback 期间不得重入同一 mutable
+owner。这个局部 invalidation 模型已覆盖当前需求，因此不增加通用全局 event bus 或 Redux-like store。
 
 ## 13. Inspector 与 property handle
 
@@ -510,6 +645,29 @@ begin/edit/commit/cancel command route
 
 这使前端框架不拥有文件 IO；它只发出用户 intent 并显示 Application service 的结果。
 
+### 14.1 Settings 与恢复
+
+Dock layout、recent project、theme、shortcut override 和 panel preference 统一由一个 versioned Settings owner
+管理，但按独立 key/record 保存，避免一个损坏文件拖垮全部设置。写入使用同目录 temp、flush、atomic replace；
+读取失败保留损坏文件到 quarantine 并恢复 safe default，同时发布可操作 diagnostic。
+
+Layout 只保存 stable panel/document-view id、placement 与 schema version。缺失 extension 使用 placeholder
+保留原 placement；用户可以 reset/migrate/remove placeholder。保存失败不能静默，clean shutdown 与显式
+Save Layout 都必须观察结果。
+
+### 14.2 Task supervisor
+
+Task handle 同时拥有真实 cancellation source，而不是只改变 UI 状态。Snapshot 包括 queued/running/
+completed/failed/cancelled、progress phase、开始/结束时间、owner scope、generation/revision 和有界日志摘要。
+terminal task 采用数量/时间双重 retention，顺序确定；Project close、module retire 与 shutdown 会 cancel 并
+await owner-scope task，超时进入明确 fault policy。UI 不直接保存裸 `Task`。
+
+### 14.3 Fault domain
+
+panel、module generation、provider、worker process 和 engine/runtime session 是独立 fault domain。Host 在每个
+extension callback 边界捕获并附加 owner/context，继续必要 cleanup；重复失败按 policy 退避、禁用或要求
+restart。进程内 extension 只属于 trusted tier，`AssemblyLoadContext` 解决 unload/versioning，不提供安全隔离。
+
 ## 15. 生命周期与 reload
 
 Host 统一观察以下逻辑阶段：
@@ -544,7 +702,10 @@ Code-first 当前把 `OnCreate/OnEnable/OnShown/OnActivated/OnGui/OnLayoutChange
 - KeepAlive close 不销毁 persistent panel local state，但必须停止 active input/task/timer；
 - `Visible` frame request 只在 Shown 时调度；`Active` frame request 同时要求 Shown 与 Active；
 - terminal dispose 释放 content-owned subscription、popup、task、dispatcher callback 和 generation lease；
-- callback 失败不短路 Host `finally` cleanup；
+- 每个 extension callback 是独立 fault boundary；失败不短路同阶段其他 owner 或 Host `finally` cleanup；
+- startup、project switch、reload 与 shutdown 是可取消 async operation；UI thread 禁止 `.Result`、`.Wait()`、
+  `GetAwaiter().GetResult()`，window close 使用 request-stop/await/close-complete 协议；
+- native/render shutdown 位于受监督 task 和 presentation detach 之后的可靠 `finally` barrier；
 - Avalonia/XAML/custom control 默认 restart-required Tier 0，直到 resource/type/static registry cleanup 有重复 canary 证明；
 - Code-first 没有 extension-owned Avalonia type/resource，但仍需通过 scope、task、subscription 和 ALC leak gate；
 - `AssemblyLoadContext` 不是安全沙箱；不可信扩展需要进程边界。
@@ -562,8 +723,26 @@ Code-first 当前把 `OnCreate/OnEnable/OnShown/OnActivated/OnGui/OnLayoutChange
 - keyed reconcile、control identity/focus/IME preservation 属于未实现 target，只有进入独立实现 Slice 后才列为通过能力；
 - Avalonia compiled binding、content lease cleanup 和 scoped resource；
 - property handle revision mismatch、validation、undo/redo 和 cancel；
+- multi-command undo/redo/rollback 在任意 apply/revert 位置抛错时保持原子，补偿失败进入显式 fault；
 - interactive tool input capture、accept/cancel、document transition；
+- 一个 panel callback 抛错时健康 panel 继续运行，Host cleanup exact-once；
+- 默认 panel factory/attach/show 抛错时 Shell 仍启动并显示可恢复 placeholder；
+- KeepAlive/RecreateOnOpen 在 factory/attach 失败后都驱逐并释放失败 instance；
+- stale project/document/provider/runtime generation 的异步结果不会覆盖 latest snapshot；
+- project open/create/restore 可取消、single-flight，并且慢请求不会覆盖较新的成功会话；
+- layout 缺失 panel、schema migration、损坏文件 quarantine 和 atomic-save failure；
+- task cancellation 真实传递到 operation，terminal retention 有界；
 - Project close/reload 后 registry、task、subscription、Control 和 generation lease 归零。
+
+使用 Avalonia Headless 覆盖真实 control tree，而不是只做 XAML source-string 断言：
+
+- Dock tab 选择/关闭与 Hierarchy expand/collapse 的键盘路径；
+- focus-visible、text/IME shortcut arbitration 和 automation name/role/state；
+- compiled binding error、light/dark ThemeVariant 与 layout restore；
+- virtualized list 在大 snapshot 下的 realized control 上限。
+
+native composition、Windows child surface、DPI/resize/device-loss 继续作为独立 Windows integration smoke，
+不能用 Headless 假装已经覆盖。
 
 ### 16.2 体验 smoke
 
@@ -594,7 +773,8 @@ open project
 
 - Workbench Bar 与 title 投影现有 selection/task/diagnostic snapshot 和明确的 project/document 占位；
 - Shell-owned `Default` / `Compact` preset 编排默认 panel composition，保存布局继续优先；
-- UI Style、Frame Debugger 与折叠 Diagnostics 保持注册和可恢复，但不默认实例化；
+- 历史 F1 曾让 UI Style、Frame Debugger 与折叠 Diagnostics 保持注册；ADR-0007 的 R0 后续已将
+  UI Style 改为 compiled Avalonia，并在接通真实 render lane 前移除 Frame Debugger 入口；
 - disabled action/tool state 通过 tooltip/accessibility reason 可解释；
 - Shell project launch surface 使用 compiled XAML 显示 project-open lifecycle；Project 面板只显示真实 asset 空状态，
   两者都不伪造 project/asset IO；
@@ -622,21 +802,30 @@ Ready 只在 project launch surface 显示 canonical candidate name 与“projec
 window title/context，也不提升为 `ProjectReady`。没有真实 application service 时，next action 只显示为非交互文本。
 session diagnostic 在有界滚动 surface 就地显示首项，manifest path 与 JSON pointer 分开；当前 Problems service 是
 append-only，尚无 replace-by-source 语义，因此本阶段不复制，避免同一 project-open 状态产生过期或重复问题记录。
-Project panel 不再消费 project-open source，只等待未来正式 ProjectSession 提供 asset/product snapshot。
+Project panel 不消费 project-open source；正式 `IProjectSessionService` 已存在，但当前 panel 尚未投影它并仍显示
+固定空状态。修复时先消费同一 active-project snapshot；asset/product catalog 未落地前继续显示明确的 unavailable/empty
+capability，不伪造 asset 数据。
 
-### F3：第一个 writable property
+### F3：Scene Document session + scoped transaction baseline
+
+- 建立 Application-owned `SceneDocumentSession` identity、revision/saved revision、dirty、load/access/fault state；
+- document view/tab 与 document session 分离，覆盖 restore、save/discard/cancel close；
+- transaction history 显式归属 DocumentId，并先修复 apply/revert 失败原子性；
+- Hierarchy、Inspector、Scene View 与 title 投影同一 document/session snapshot。
+
+### F4：第一个 writable property
 
 - 建立最小 typed property handle；
 - Transform 单字段 transaction、dirty、validation、undo/redo；
 - XAML Inspector 先消费，不做通用 customization registry。
 
-### F4：Interactive tool baseline
+### F5：Interactive tool baseline
 
 - Select/Move 之一验证 per-viewport input context；
 - begin/update/accept/cancel transaction；
 - viewport overlay 与 focus/shortcut arbitration。
 
-### F5：公开 Avalonia content backend
+### F6：公开 Avalonia content backend
 
 - `Asharia.Editor.Avalonia` registration 与 content lease；
 - built-in sample + Package fixture；
@@ -651,9 +840,13 @@ Project panel 不再消费 project-open source，只等待未来正式 ProjectSe
 - [Unreal Slate Overview](https://dev.epicgames.com/documentation/en-us/unreal-engine/slate-overview-for-unreal-engine)
 - [Unreal FUICommandList::CanExecuteAction](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/Slate/Framework/Commands/FUICommandList/CanExecuteAction)
 - [Unreal FTabManager](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/Slate/FTabManager)
+- [Unreal FDocumentTracker](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Editor/UnrealEd/WorkflowOrientedApp/FDocumentTracker?application_version=5.5)
+- [Unreal FScopedTransaction](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Editor/UnrealEd/FScopedTransaction)
+- [Unreal USelection](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Editor/UnrealEd/USelection)
 - [Unreal IDetailsView](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Editor/PropertyEditor/IDetailsView)
 - [Unreal IPropertyHandle](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Editor/PropertyEditor/IPropertyHandle)
 - [Unreal UInteractiveToolsContext](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/InteractiveToolsFramework/UInteractiveToolsContext)
+- [Unreal Play 与 Simulate](https://dev.epicgames.com/documentation/en-us/unreal-engine/ineditor-testing-play-and-simulate-in-unreal-engine)
 - [Unity UI Toolkit retained-mode architecture](https://docs.unity3d.com/6000.0/Documentation/Manual/ui-systems/introduction-ui-toolkit.html)
 - [Unity EditorWindow lifecycle API](https://docs.unity3d.com/6000.0/Documentation/ScriptReference/EditorWindow.html)
 - [Unity UI Toolkit layout events](https://docs.unity3d.com/2022.3/Documentation/Manual/UIE-Layout-Events.html)
@@ -662,6 +855,8 @@ Project panel 不再消费 project-open source，只等待未来正式 ProjectSe
 - [O3DE Actions and Context Modes](https://www.docs.o3de.org/docs/user-guide/action-manager/fundamentals/concepts/actions/)
 - [O3DE Action Visibility](https://www.docs.o3de.org/docs/user-guide/action-manager/fundamentals/architecture/visibility/)
 - [Godot EditorDock](https://docs.godotengine.org/en/stable/classes/class_editordock.html)
+- [Godot EditorPlugin](https://docs.godotengine.org/en/stable/classes/class_editorplugin.html)
+- [Godot EditorSelection](https://docs.godotengine.org/en/stable/classes/class_editorselection.html)
 - [Godot Inspector Dock](https://docs.godotengine.org/en/stable/tutorials/editor/inspector_dock.html)
 - [Godot EditorUndoRedoManager](https://docs.godotengine.org/en/stable/classes/class_editorundoredomanager.html)
 - [Blender Operator API](https://docs.blender.org/api/current/bpy.types.Operator.html)
@@ -671,8 +866,10 @@ Project panel 不再消费 project-open source，只等待未来正式 ProjectSe
 
 - [O3DE Action Manager source](https://github.com/o3de/o3de/tree/development/Code/Framework/AzToolsFramework/AzToolsFramework/ActionManager)
 - [O3DE Document Property Editor source](https://github.com/o3de/o3de/tree/development/Code/Framework/AzFramework/AzFramework/DocumentPropertyEditor)
+- [O3DE AtomTools DocumentSystem source](https://github.com/o3de/o3de/blob/development/Gems/Atom/Tools/AtomToolsFramework/Code/Include/AtomToolsFramework/Document/AtomToolsDocumentSystem.h)
 - [Godot editor source](https://github.com/godotengine/godot/tree/master/editor)
 - [Avalonia source](https://github.com/AvaloniaUI/Avalonia/tree/12.0.4)
+- [Bevy 官方 editor-ready UI tracking issue](https://github.com/bevyengine/bevy/issues/254)
 
 Presentation backend：
 
@@ -680,3 +877,6 @@ Presentation backend：
 - [Avalonia compiled bindings](https://docs.avaloniaui.net/docs/data-binding/compiled-bindings)
 - [Avalonia custom control choices](https://docs.avaloniaui.net/docs/custom-controls/choosing-a-custom-control-type)
 - [Avalonia threading model](https://docs.avaloniaui.net/docs/app-development/threading)
+- [Avalonia accessibility](https://docs.avaloniaui.net/docs/app-development/accessibility)
+- [Avalonia Headless testing](https://docs.avaloniaui.net/docs/testing/setting-up-the-headless-platform)
+- [Avalonia ThemeVariant](https://docs.avaloniaui.net/docs/styling/theme-variants)

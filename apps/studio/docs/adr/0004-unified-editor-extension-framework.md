@@ -1,8 +1,11 @@
 # ADR-0004：采用统一 Editor Extension Framework
 
-状态：Accepted
+状态：Superseded by [ADR-0007](0007-studio-frontend-hard-cut.md)
 
 日期：2026-07-11
+
+> 统一 public extension、Code-first、BuiltInExtensions dogfooding 和八项目宿主不再是 Studio v1
+> production target。编译期边界与 Host ownership 的理由由 ADR-0007 保留。
 
 构建、加载、generation replacement 和 last-known-good 的独立决策见 [ADR-0005](0005-managed-editor-module-build-and-reload.md)。
 

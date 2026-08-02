@@ -12,9 +12,7 @@ public static partial class StudioEditorImageProducer
     private const int MaxEditorFileCount = 65_536;
     private const long MaxEditorImageBytes = 4L * 1024 * 1024 * 1024;
     private const int CopyBufferSize = 1024 * 1024;
-    private const string DotnetSdkPublicKeyToken = "adb9793829ddae60";
     private const string CoreLibraryPublicKeyToken = "7cec85d7bea7798e";
-    private const string FrameworkReferencePublicKeyToken = "b03f5f7f11d50a3a";
     private static readonly Version StudioManagedAssemblyVersion = new(1, 0, 0, 0);
     private static readonly Version Net10FrameworkAssemblyVersion = new(10, 0, 0, 0);
     private static readonly StringComparer FileSystemPathComparer =
@@ -57,23 +55,15 @@ public static partial class StudioEditorImageProducer
         "venv",
         "virtualenv",
     };
-    private static readonly string[] EditorNativeRequiredExports =
+    private static readonly string[] ForbiddenStudioArtifactStems =
     [
-        "editor_frame_debugger_acquire_snapshot",
-        "editor_frame_debugger_release_snapshot",
-        "editor_frame_debugger_request_capture",
-        "editor_frame_debugger_request_resume",
-        "editor_frame_debugger_select_execution_event",
-        "editor_viewport_acquire_present_packet",
-        "editor_viewport_query_composition_compatibility",
-        "editor_viewport_release_compatibility_result",
-        "editor_viewport_release_present_packet",
-        "editor_viewport_shutdown",
-    ];
-    private static readonly string[] SlangRequiredExports =
-    [
-        "slang_createGlobalSession2",
-        "spGetBuildTagString",
+        "Asharia.Editor",
+        "Asharia.Runtime.Contracts",
+        "Asharia.Studio.DevelopmentHost",
+        "Asharia.Studio.DevelopmentProtocol",
+        "Asharia.Studio.EngineBridge",
+        "editor_native",
+        "slang",
     ];
     private static readonly string[] HostFxrRequiredExports =
     [
@@ -112,28 +102,11 @@ public static partial class StudioEditorImageProducer
                     file.DestinationPath);
             }
 
-            WriteNewFile(
-                Resolve(stagingRoot, ManagedBuildEnvironmentMetadataWriter.RelativePath),
-                inputs.MetadataContents);
-
-            ValidateManagedIdentity(
-                Resolve(stagingRoot, inputs.RuntimeContractDestination),
-                "Asharia.Runtime.Contracts",
-                StudioManagedAssemblyVersion,
-                expectedPublicKeyToken: string.Empty,
-                "runtimeContract");
-            ValidateManagedIdentity(
-                Resolve(stagingRoot, inputs.EditorContractDestination),
-                "Asharia.Editor",
-                StudioManagedAssemblyVersion,
-                expectedPublicKeyToken: string.Empty,
-                "editorContract");
             ValidateStagedIdentities(stagingRoot, inputs);
 
             var bindings = CreateClosedOutputBindings(
                 inputs,
-                inputs.EntryPointDestination,
-                $"{DotnetRelativeRoot}/{inputs.DotnetHostName}");
+                inputs.EntryPointDestination);
             VerifyClosedOutput(stagingRoot, bindings);
 
             EnsureTrustedOutputParent(outputParent);
@@ -196,8 +169,6 @@ public static partial class StudioEditorImageProducer
 
         if (request.PublishRoot is null
             || request.DotnetRoot is null
-            || request.RuntimeContract is null
-            || request.EditorContract is null
             || request.OutputRoot is null)
         {
             Fail(
@@ -206,27 +177,17 @@ public static partial class StudioEditorImageProducer
                 "Editor Image request paths must not be null.");
         }
 
-        if (string.IsNullOrEmpty(request.EnvironmentId)
-            || !EnvironmentIdPattern().IsMatch(request.EnvironmentId))
-        {
-            Fail(
-                "studio-distribution.editor-image.environment-invalid",
-                "environmentId",
-                "Environment id must use 1-100 lowercase letters, digits, dots, or hyphens.");
-        }
-
         if (!string.Equals(request.TargetFramework, "net10.0", StringComparison.Ordinal))
         {
             Fail(
                 "studio-distribution.editor-image.framework-unsupported",
                 "targetFramework",
-                "The current managed build environment contract requires net10.0.");
+                "The current Editor runtime contract requires net10.0.");
         }
 
         ValidateVersion(request.SdkVersion, "sdkVersion");
         ValidateVersion(request.HostFxrVersion, "hostFxrVersion");
         ValidateVersion(request.HostRuntimeVersion, "hostRuntimeVersion");
-        ValidateVersion(request.ReferencePackVersion, "referencePackVersion");
 
         var publishRoot = InspectDirectory(request.PublishRoot, "publishRoot");
         var dotnetRoot = InspectDirectory(request.DotnetRoot, "dotnetRoot");
@@ -252,6 +213,18 @@ public static partial class StudioEditorImageProducer
             StudioManagedAssemblyVersion,
             expectedPublicKeyToken: string.Empty,
             "publishRoot/Editor.dll");
+        var applicationManagedEntry = InspectFile(
+            Path.Combine(publishRoot, "Asharia.Studio.Application.dll"),
+            "publishRoot/Asharia.Studio.Application.dll");
+        ValidateManagedPortableExecutable(
+            applicationManagedEntry,
+            "publishRoot/Asharia.Studio.Application.dll");
+        ValidateManagedIdentity(
+            applicationManagedEntry,
+            "Asharia.Studio.Application",
+            StudioManagedAssemblyVersion,
+            expectedPublicKeyToken: string.Empty,
+            "publishRoot/Asharia.Studio.Application.dll");
         var editorDeps = InspectFile(
             Path.Combine(publishRoot, "Editor.deps.json"),
             "publishRoot/Editor.deps.json");
@@ -264,62 +237,6 @@ public static partial class StudioEditorImageProducer
             request.TargetFramework,
             request.HostRuntimeVersion);
 
-        var runtimeContract = InspectFile(request.RuntimeContract, "runtimeContract");
-        var editorContract = InspectFile(request.EditorContract, "editorContract");
-        EnsureDescendant(publishRoot, runtimeContract, "runtimeContract");
-        EnsureDescendant(publishRoot, editorContract, "editorContract");
-        EnsureExactPublishFile(
-            publishRoot,
-            runtimeContract,
-            "Asharia.Runtime.Contracts.dll",
-            "runtimeContract");
-        EnsureExactPublishFile(
-            publishRoot,
-            editorContract,
-            "Asharia.Editor.dll",
-            "editorContract");
-        ValidateManagedIdentity(
-            runtimeContract,
-            "Asharia.Runtime.Contracts",
-            StudioManagedAssemblyVersion,
-            expectedPublicKeyToken: string.Empty,
-            "runtimeContract");
-        ValidateManagedIdentity(
-            editorContract,
-            "Asharia.Editor",
-            StudioManagedAssemblyVersion,
-            expectedPublicKeyToken: string.Empty,
-            "editorContract");
-
-        var nativeDependencies = new List<(string SourcePath, string DestinationPath)>();
-        foreach (var dependency in RequiredNativeRuntimeDependencies())
-        {
-            var dependencyPath = InspectFile(
-                Path.Combine(publishRoot, dependency),
-                $"publishRoot/{dependency}");
-            ValidatePortableExecutable(
-                dependencyPath,
-                expectDll: true,
-                $"publishRoot/{dependency}");
-            ValidateNativeDependencyIdentity(
-                dependencyPath,
-                dependency,
-                $"publishRoot/{dependency}");
-            nativeDependencies.Add((dependencyPath, $"bin/{dependency}"));
-        }
-
-        const string dotnetHostName = "dotnet.exe";
-        var dotnetHost = InspectFile(
-            Path.Combine(dotnetRoot, dotnetHostName),
-            "dotnetRoot/dotnetHost");
-        ValidatePortableExecutable(
-            dotnetHost,
-            expectDll: false,
-            "dotnetRoot/dotnetHost");
-        ValidateProductVersion(
-            dotnetHost,
-            request.HostFxrVersion,
-            "dotnetRoot/dotnetHost");
         var sdkRoot = InspectDirectory(
             new DirectoryInfo(Path.Combine(dotnetRoot, "sdk", request.SdkVersion)),
             "sdkRoot");
@@ -333,23 +250,6 @@ public static partial class StudioEditorImageProducer
                 "Microsoft.NETCore.App",
                 request.HostRuntimeVersion)),
             "hostRuntimeRoot");
-        var referencePackRoot = InspectDirectory(
-            new DirectoryInfo(Path.Combine(
-                dotnetRoot,
-                "packs",
-                "Microsoft.NETCore.App.Ref",
-                request.ReferencePackVersion)),
-            "referencePackRoot");
-
-        var sdkEntry = InspectFile(
-            Path.Combine(sdkRoot, "dotnet.dll"),
-            "sdkRoot/dotnet.dll");
-        var sdkBundledVersions = InspectFile(
-            Path.Combine(sdkRoot, "Microsoft.NETCoreSdk.BundledVersions.props"),
-            "sdkRoot/Microsoft.NETCoreSdk.BundledVersions.props");
-        var sdkRuntimeConfig = InspectFile(
-            Path.Combine(sdkRoot, "dotnet.runtimeconfig.json"),
-            "sdkRoot/dotnet.runtimeconfig.json");
         var sdkAppHostTemplate = InspectFile(
             Path.Combine(sdkRoot, "AppHostTemplate", "apphost.exe"),
             "sdkRoot/AppHostTemplate/apphost.exe");
@@ -359,19 +259,7 @@ public static partial class StudioEditorImageProducer
         var hostRuntimeCore = InspectFile(
             Path.Combine(hostRuntimeRoot, "System.Private.CoreLib.dll"),
             "hostRuntimeRoot/System.Private.CoreLib.dll");
-        var referenceAssemblyRoot = InspectDirectory(
-            new DirectoryInfo(Path.Combine(referencePackRoot, "ref", request.TargetFramework)),
-            "referencePackRoot/ref/targetFramework");
-        var referenceSystemRuntime = InspectFile(
-            Path.Combine(referenceAssemblyRoot, "System.Runtime.dll"),
-            "referencePackRoot/ref/targetFramework/System.Runtime.dll");
-
-        ValidateManagedIdentity(
-            sdkEntry,
-            "dotnet",
-            Version.Parse(request.SdkVersion + ".0"),
-            DotnetSdkPublicKeyToken,
-            "sdkRoot/dotnet.dll");
+        var sdkAppHostTemplateFingerprint = CaptureFingerprint(sdkAppHostTemplate);
         ValidatePortableExecutable(
             sdkAppHostTemplate,
             expectDll: false,
@@ -408,37 +296,14 @@ public static partial class StudioEditorImageProducer
             hostRuntimeCore,
             request.HostRuntimeVersion,
             "hostRuntimeRoot/System.Private.CoreLib.dll");
-        ValidateManagedIdentity(
-            referenceSystemRuntime,
-            "System.Runtime",
-            Net10FrameworkAssemblyVersion,
-            FrameworkReferencePublicKeyToken,
-            "referencePackRoot/ref/targetFramework/System.Runtime.dll");
-        ValidateProductVersion(
-            referenceSystemRuntime,
-            request.ReferencePackVersion,
-            "referencePackRoot/ref/targetFramework/System.Runtime.dll");
-        ValidateSdkRuntimeEvidence(
-            sdkBundledVersions,
-            sdkRuntimeConfig,
-            request.TargetFramework,
-            request.SdkVersion,
-            request.HostRuntimeVersion);
-
         var files = new List<PlannedFile>();
         AddTree(files, publishRoot, "bin");
-        AddFile(files, dotnetHost, $"{DotnetRelativeRoot}/{dotnetHostName}");
-        AddTree(files, sdkRoot, $"{DotnetRelativeRoot}/sdk/{request.SdkVersion}");
+        RejectForbiddenStudioPublishArtifacts(files);
         AddTree(files, hostFxrRoot, $"{DotnetRelativeRoot}/host/fxr/{request.HostFxrVersion}");
         AddTree(
             files,
             hostRuntimeRoot,
             $"{DotnetRelativeRoot}/shared/Microsoft.NETCore.App/{request.HostRuntimeVersion}");
-        AddTree(
-            files,
-            referencePackRoot,
-            $"{DotnetRelativeRoot}/packs/Microsoft.NETCore.App.Ref/{request.ReferencePackVersion}");
-
         var duplicate = files
             .GroupBy(file => file.DestinationPath, LogicalPathComparer)
             .FirstOrDefault(group => group.Count() != 1);
@@ -450,25 +315,16 @@ public static partial class StudioEditorImageProducer
                 "Two Editor Image inputs resolve to the same destination path.");
         }
 
-        foreach (var dependency in nativeDependencies)
-        {
-            EnsurePlannedDestination(
-                files,
-                dependency.SourcePath,
-                dependency.DestinationPath,
-                dependency.DestinationPath);
-        }
-
-        EnsurePlannedDestination(
-            files,
-            dotnetHost,
-            $"{DotnetRelativeRoot}/{dotnetHostName}",
-            "dotnetRoot/dotnetHost");
         EnsurePlannedDestination(
             files,
             editorManagedEntry,
             "bin/Editor.dll",
             "publishRoot/Editor.dll");
+        EnsurePlannedDestination(
+            files,
+            applicationManagedEntry,
+            "bin/Asharia.Studio.Application.dll",
+            "publishRoot/Asharia.Studio.Application.dll");
         EnsurePlannedDestination(
             files,
             editorDeps,
@@ -481,26 +337,6 @@ public static partial class StudioEditorImageProducer
             "publishRoot/Editor.runtimeconfig.json");
         EnsurePlannedDestination(
             files,
-            sdkEntry,
-            $"{DotnetRelativeRoot}/sdk/{request.SdkVersion}/dotnet.dll",
-            "sdkRoot/dotnet.dll");
-        EnsurePlannedDestination(
-            files,
-            sdkBundledVersions,
-            $"{DotnetRelativeRoot}/sdk/{request.SdkVersion}/Microsoft.NETCoreSdk.BundledVersions.props",
-            "sdkRoot/Microsoft.NETCoreSdk.BundledVersions.props");
-        EnsurePlannedDestination(
-            files,
-            sdkRuntimeConfig,
-            $"{DotnetRelativeRoot}/sdk/{request.SdkVersion}/dotnet.runtimeconfig.json",
-            "sdkRoot/dotnet.runtimeconfig.json");
-        EnsurePlannedDestination(
-            files,
-            sdkAppHostTemplate,
-            $"{DotnetRelativeRoot}/sdk/{request.SdkVersion}/AppHostTemplate/apphost.exe",
-            "sdkRoot/AppHostTemplate/apphost.exe");
-        EnsurePlannedDestination(
-            files,
             hostFxrEntry,
             $"{DotnetRelativeRoot}/host/fxr/{request.HostFxrVersion}/hostfxr.dll",
             "hostFxrRoot/hostfxr.dll");
@@ -509,48 +345,19 @@ public static partial class StudioEditorImageProducer
             hostRuntimeCore,
             $"{DotnetRelativeRoot}/shared/Microsoft.NETCore.App/{request.HostRuntimeVersion}/System.Private.CoreLib.dll",
             "hostRuntimeRoot/System.Private.CoreLib.dll");
-        EnsurePlannedDestination(
-            files,
-            referenceSystemRuntime,
-            $"{DotnetRelativeRoot}/packs/Microsoft.NETCore.App.Ref/{request.ReferencePackVersion}/ref/{request.TargetFramework}/System.Runtime.dll",
-            "referencePackRoot/ref/targetFramework/System.Runtime.dll");
-
-        var runtimeContractDestination = FindPlannedDestination(
-            files,
-            runtimeContract,
-            "runtimeContract");
-        var editorContractDestination = FindPlannedDestination(
-            files,
-            editorContract,
-            "editorContract");
         var entryPointDestination = FindPlannedDestination(
             files,
             entryPoint,
             "entryPoint");
-        var metadataContents = ManagedBuildEnvironmentMetadataWriter.Write(
-            request.EnvironmentId,
-            request.TargetFramework,
-            dotnetHostName,
-            request.SdkVersion,
-            request.HostFxrVersion,
-            request.HostRuntimeVersion,
-            request.ReferencePackVersion,
-            runtimeContractDestination,
-            editorContractDestination);
-        EnsureOutputLimits(files, metadataContents.Length);
+        EnsureOutputLimits(files);
         return new ProductionInputs(
             outputRoot,
-            dotnetHostName,
             entryPointDestination,
-            runtimeContractDestination,
-            editorContractDestination,
-            nativeDependencies.Select(item => item.DestinationPath).ToArray(),
-            request.SdkVersion,
+            sdkAppHostTemplate,
+            sdkAppHostTemplateFingerprint,
             request.HostFxrVersion,
             request.HostRuntimeVersion,
-            request.ReferencePackVersion,
             request.TargetFramework,
-            metadataContents,
             files
                 .OrderBy(file => file.DestinationPath, Utf8Comparer)
                 .ToArray());
@@ -726,8 +533,37 @@ public static partial class StudioEditorImageProducer
         }
     }
 
-    private static IReadOnlyList<string> RequiredNativeRuntimeDependencies()
-        => ["editor_native.dll", "slang.dll"];
+    private static void RejectForbiddenStudioPublishArtifacts(
+        IReadOnlyList<PlannedFile> publishFiles)
+    {
+        foreach (var file in publishFiles)
+        {
+            var segments = file.DestinationPath.Split('/');
+            var fileName = segments[^1];
+            var isForbiddenStudioArtifact = ForbiddenStudioArtifactStems.Any(
+                stem => fileName.Equals(stem, StringComparison.OrdinalIgnoreCase)
+                    || fileName.StartsWith(stem + ".", StringComparison.OrdinalIgnoreCase));
+            var hasForbiddenDirectory = segments
+                .Skip(1)
+                .Take(segments.Length - 2)
+                .Any(segment => segment.Equals("managed", StringComparison.OrdinalIgnoreCase)
+                    || segment.Equals("metadata", StringComparison.OrdinalIgnoreCase)
+                    || segment.Equals("sdk", StringComparison.OrdinalIgnoreCase)
+                    || segment.Equals("packs", StringComparison.OrdinalIgnoreCase));
+            if (isForbiddenStudioArtifact
+                || hasForbiddenDirectory
+                || fileName.Equals("dotnet.exe", StringComparison.OrdinalIgnoreCase)
+                || fileName.Equals(
+                    "managed-build-environment.json",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                Fail(
+                    "studio-distribution.editor-image.forbidden-product-artifact",
+                    file.DestinationPath,
+                    $"Publish artifact '{file.DestinationPath}' has no current Studio runtime reader and must not enter the Editor Image.");
+            }
+        }
+    }
 
     private static string FindPlannedDestination(
         IEnumerable<PlannedFile> files,
@@ -766,10 +602,9 @@ public static partial class StudioEditorImageProducer
     }
 
     private static void EnsureOutputLimits(
-        IReadOnlyCollection<PlannedFile> files,
-        int metadataSize)
+        IReadOnlyCollection<PlannedFile> files)
     {
-        if (files.Count + 1 > MaxEditorFileCount)
+        if (files.Count > MaxEditorFileCount)
         {
             Fail(
                 "studio-distribution.editor-image.file-count-exceeded",
@@ -780,7 +615,7 @@ public static partial class StudioEditorImageProducer
         try
         {
             var totalSize = files.Aggregate(
-                (long)metadataSize,
+                0L,
                 (total, file) => checked(total + file.Fingerprint.Size));
             if (totalSize > MaxEditorImageBytes)
             {
@@ -804,7 +639,7 @@ public static partial class StudioEditorImageProducer
         string sourceRoot,
         string destinationRoot)
     {
-        var remainingFileCount = MaxEditorFileCount - 1 - output.Count;
+        var remainingFileCount = MaxEditorFileCount - output.Count;
         var usedBytes = output.Sum(file => file.Fingerprint.Size);
         var remainingBytes = MaxEditorImageBytes - usedBytes;
         if (remainingFileCount <= 0 || remainingBytes < 0)
@@ -839,28 +674,6 @@ public static partial class StudioEditorImageProducer
                 source.Path,
                 normalizedDestination,
                 source.Fingerprint));
-        }
-    }
-
-    private static void AddFile(
-        ICollection<PlannedFile> output,
-        string sourcePath,
-        string destinationPath,
-        SourceFingerprint? fingerprint = null)
-    {
-        var normalizedDestination = NormalizeRelativePath(destinationPath, destinationPath);
-        EnsureNoPythonProductPayload(normalizedDestination);
-        output.Add(new PlannedFile(
-            sourcePath,
-            normalizedDestination,
-            fingerprint ?? CaptureFingerprint(sourcePath)));
-        if (output.Count + 1 > MaxEditorFileCount
-            || output.Sum(file => file.Fingerprint.Size) > MaxEditorImageBytes)
-        {
-            Fail(
-                "studio-distribution.editor-image.budget-exceeded",
-                destinationPath,
-                "Editor Image input exceeded its file-count or byte budget.");
         }
     }
 
@@ -961,38 +774,27 @@ public static partial class StudioEditorImageProducer
 
     private static IReadOnlyList<StudioEditorImageFileBinding> CreateClosedOutputBindings(
         ProductionInputs inputs,
-        string entryPoint,
-        string dotnetHost)
+        string entryPoint)
     {
         var bindings = inputs.Files
             .Select(file => new StudioEditorImageFileBinding(
                 file.DestinationPath,
-                ClassifyRole(file.DestinationPath, entryPoint, dotnetHost),
+                ClassifyRole(file.DestinationPath, entryPoint),
                 ClassifyMediaType(file.DestinationPath),
                 file.Fingerprint.Size,
                 file.Fingerprint.Sha256))
-            .Append(new StudioEditorImageFileBinding(
-                ManagedBuildEnvironmentMetadataWriter.RelativePath,
-                "metadata",
-                "application/json",
-                inputs.MetadataContents.LongLength,
-                Sha256(inputs.MetadataContents)))
             .OrderBy(file => file.Path, Utf8Comparer)
             .ToArray();
         if (bindings.Length == 0
             || !bindings.Any(file => string.Equals(
                 file.Path,
                 entryPoint,
-                StringComparison.Ordinal))
-            || !bindings.Any(file => string.Equals(
-                file.Path,
-                ManagedBuildEnvironmentMetadataWriter.RelativePath,
                 StringComparison.Ordinal)))
         {
             Fail(
                 "studio-distribution.editor-image.output-incomplete",
                 string.Empty,
-                "Staged Editor Image is missing its entry point or managed environment metadata.");
+                "Staged Editor Image is missing its entry point.");
         }
 
         return bindings;
@@ -1050,11 +852,9 @@ public static partial class StudioEditorImageProducer
 
     private static string ClassifyRole(
         string relativePath,
-        string entryPoint,
-        string dotnetHost)
+        string entryPoint)
     {
-        if (string.Equals(relativePath, entryPoint, StringComparison.Ordinal)
-            || string.Equals(relativePath, dotnetHost, StringComparison.Ordinal))
+        if (string.Equals(relativePath, entryPoint, StringComparison.Ordinal))
         {
             return "executable";
         }
@@ -1154,28 +954,25 @@ public static partial class StudioEditorImageProducer
 
     }
 
-    private static void WriteNewFile(string path, byte[] contents)
-    {
-        EnsureDestinationDirectory(Path.GetDirectoryName(path)!);
-        using var output = new FileStream(
-            path,
-            FileMode.CreateNew,
-            FileAccess.Write,
-            FileShare.None);
-        output.Write(contents);
-        output.Flush(flushToDisk: false);
-    }
-
     private static void ValidateStagedIdentities(
         string stagingRoot,
         ProductionInputs inputs)
     {
-        var sdkRoot = $"{DotnetRelativeRoot}/sdk/{inputs.SdkVersion}";
-        var sdkTemplate = Resolve(stagingRoot, $"{sdkRoot}/AppHostTemplate/apphost.exe");
         var entryPoint = Resolve(stagingRoot, inputs.EntryPointDestination);
         var editorManagedEntry = Resolve(stagingRoot, "bin/Editor.dll");
-        ValidatePortableExecutable(sdkTemplate, expectDll: false, "sdkRoot/AppHostTemplate/apphost.exe");
-        ValidateBoundAppHost(entryPoint, sdkTemplate, editorManagedEntry, "entryPoint");
+        ValidatePortableExecutable(
+            inputs.SdkAppHostTemplate,
+            expectDll: false,
+            "sdkRoot/AppHostTemplate/apphost.exe");
+        ValidateBoundAppHost(
+            entryPoint,
+            inputs.SdkAppHostTemplate,
+            editorManagedEntry,
+            "entryPoint");
+        VerifySourceFingerprint(
+            inputs.SdkAppHostTemplate,
+            inputs.SdkAppHostTemplateFingerprint,
+            "sdkRoot/AppHostTemplate/apphost.exe");
 
         ValidateManagedPortableExecutable(editorManagedEntry, "publishRoot/Editor.dll");
         ValidateManagedIdentity(
@@ -1184,33 +981,23 @@ public static partial class StudioEditorImageProducer
             StudioManagedAssemblyVersion,
             expectedPublicKeyToken: string.Empty,
             "publishRoot/Editor.dll");
+        var applicationManagedEntry = Resolve(
+            stagingRoot,
+            "bin/Asharia.Studio.Application.dll");
+        ValidateManagedPortableExecutable(
+            applicationManagedEntry,
+            "publishRoot/Asharia.Studio.Application.dll");
+        ValidateManagedIdentity(
+            applicationManagedEntry,
+            "Asharia.Studio.Application",
+            StudioManagedAssemblyVersion,
+            expectedPublicKeyToken: string.Empty,
+            "publishRoot/Asharia.Studio.Application.dll");
         ValidateEditorRuntimeEvidence(
             Resolve(stagingRoot, "bin/Editor.deps.json"),
             Resolve(stagingRoot, "bin/Editor.runtimeconfig.json"),
             inputs.TargetFramework,
             inputs.HostRuntimeVersion);
-
-        foreach (var destination in inputs.NativeDependencyDestinations)
-        {
-            var dependency = Resolve(stagingRoot, destination);
-            ValidatePortableExecutable(dependency, expectDll: true, destination);
-            ValidateNativeDependencyIdentity(
-                dependency,
-                Path.GetFileName(destination),
-                destination);
-        }
-
-        var dotnetHost = Resolve(stagingRoot, $"{DotnetRelativeRoot}/{inputs.DotnetHostName}");
-        ValidatePortableExecutable(dotnetHost, expectDll: false, "dotnetRoot/dotnetHost");
-        ValidateProductVersion(dotnetHost, inputs.HostFxrVersion, "dotnetRoot/dotnetHost");
-
-        var sdkEntry = Resolve(stagingRoot, $"{sdkRoot}/dotnet.dll");
-        ValidateManagedIdentity(
-            sdkEntry,
-            "dotnet",
-            Version.Parse(inputs.SdkVersion + ".0"),
-            DotnetSdkPublicKeyToken,
-            "sdkRoot/dotnet.dll");
 
         var hostFxr = Resolve(
             stagingRoot,
@@ -1241,26 +1028,6 @@ public static partial class StudioEditorImageProducer
             inputs.HostRuntimeVersion,
             "hostRuntimeRoot/System.Private.CoreLib.dll");
 
-        var referenceSystemRuntime = Resolve(
-            stagingRoot,
-            $"{DotnetRelativeRoot}/packs/Microsoft.NETCore.App.Ref/{inputs.ReferencePackVersion}/ref/{inputs.TargetFramework}/System.Runtime.dll");
-        ValidateManagedIdentity(
-            referenceSystemRuntime,
-            "System.Runtime",
-            Net10FrameworkAssemblyVersion,
-            FrameworkReferencePublicKeyToken,
-            "referencePackRoot/ref/targetFramework/System.Runtime.dll");
-        ValidateProductVersion(
-            referenceSystemRuntime,
-            inputs.ReferencePackVersion,
-            "referencePackRoot/ref/targetFramework/System.Runtime.dll");
-
-        ValidateSdkRuntimeEvidence(
-            Resolve(stagingRoot, $"{sdkRoot}/Microsoft.NETCoreSdk.BundledVersions.props"),
-            Resolve(stagingRoot, $"{sdkRoot}/dotnet.runtimeconfig.json"),
-            inputs.TargetFramework,
-            inputs.SdkVersion,
-            inputs.HostRuntimeVersion);
     }
 
     private static void ValidateBoundAppHost(
@@ -1341,32 +1108,6 @@ public static partial class StudioEditorImageProducer
         }
     }
 
-    private static void ValidateNativeDependencyIdentity(
-        string path,
-        string fileName,
-        string location)
-    {
-        switch (fileName)
-        {
-            case "editor_native.dll":
-                ValidateRequiredExports(
-                    path,
-                    fileName,
-                    EditorNativeRequiredExports,
-                    location);
-                break;
-            case "slang.dll":
-                ValidateRequiredExports(path, fileName, SlangRequiredExports, location);
-                break;
-            default:
-                Fail(
-                    "studio-distribution.editor-image.native-identity-invalid",
-                    location,
-                    "Required native dependency has no fixed identity contract.");
-                break;
-        }
-    }
-
     private static void ValidateEditorRuntimeEvidence(
         string depsPath,
         string runtimeConfigPath,
@@ -1383,28 +1124,6 @@ public static partial class StudioEditorImageProducer
             Fail(
                 "studio-distribution.editor-image.managed-runtime-evidence-invalid",
                 "publishRoot",
-                error);
-        }
-    }
-
-    private static void ValidateSdkRuntimeEvidence(
-        string bundledVersionsPath,
-        string runtimeConfigPath,
-        string targetFramework,
-        string selectedSdkVersion,
-        string selectedRuntimeVersion)
-    {
-        if (!StudioEditorImageIdentityInspector.HasSdkRuntimeEvidence(
-                bundledVersionsPath,
-                runtimeConfigPath,
-                targetFramework,
-                selectedSdkVersion,
-                selectedRuntimeVersion,
-                out var error))
-        {
-            Fail(
-                "studio-distribution.editor-image.sdk-runtime-evidence-invalid",
-                "sdkRoot",
                 error);
         }
     }
@@ -1659,8 +1378,20 @@ public static partial class StudioEditorImageProducer
             Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant());
     }
 
-    private static string Sha256(byte[] contents) =>
-        Convert.ToHexString(SHA256.HashData(contents)).ToLowerInvariant();
+    private static void VerifySourceFingerprint(
+        string path,
+        SourceFingerprint expected,
+        string location)
+    {
+        var actual = CaptureFingerprint(path);
+        if (actual != expected)
+        {
+            Fail(
+                "studio-distribution.editor-image.source-drift",
+                location,
+                "A build-time qualification input changed during Editor Image production.");
+        }
+    }
 
     private static void EnsureDestinationDirectory(string directory)
     {
@@ -1732,9 +1463,6 @@ public static partial class StudioEditorImageProducer
         string message) =>
         new(code, location, message);
 
-    [GeneratedRegex("^[a-z0-9][a-z0-9.-]{0,99}$", RegexOptions.CultureInvariant)]
-    private static partial Regex EnvironmentIdPattern();
-
     [GeneratedRegex("^[0-9]+\\.[0-9]+\\.[0-9]+$", RegexOptions.CultureInvariant)]
     private static partial Regex StableVersionPattern();
 
@@ -1784,17 +1512,12 @@ public static partial class StudioEditorImageProducer
 
     private sealed record ProductionInputs(
         string OutputRoot,
-        string DotnetHostName,
         string EntryPointDestination,
-        string RuntimeContractDestination,
-        string EditorContractDestination,
-        IReadOnlyList<string> NativeDependencyDestinations,
-        string SdkVersion,
+        string SdkAppHostTemplate,
+        SourceFingerprint SdkAppHostTemplateFingerprint,
         string HostFxrVersion,
         string HostRuntimeVersion,
-        string ReferencePackVersion,
         string TargetFramework,
-        byte[] MetadataContents,
         IReadOnlyList<PlannedFile> Files);
 
     private sealed class ProductionFailure : Exception

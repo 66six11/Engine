@@ -7,86 +7,61 @@ namespace Editor.Tests.Shell.Views.Windowing;
 public sealed class MainWindowXamlTests
 {
     [Fact]
-    public void Status_bar_binds_latest_status_message_with_severity_classes_and_target_command()
+    public void Hard_cut_shell_uses_compiled_bindings_for_only_real_empty_states()
     {
         var xaml = LoadMainWindowXaml();
 
-        Assert.Contains("Classes=\"status-message-status\"", xaml);
-        Assert.Contains("Command=\"{Binding OpenStatusMessageTargetCommand}\"", xaml);
-        Assert.Contains("IsHitTestVisible=\"{Binding CanOpenStatusMessageTarget}\"", xaml);
-        Assert.Contains("IsVisible=\"{Binding HasStatusMessage}\"", xaml);
-        Assert.Contains("Text=\"{Binding StatusMessageText}\"", xaml);
-        Assert.Contains("TextTrimming=\"CharacterEllipsis\"", xaml);
-        Assert.Contains("TextAlignment=\"Right\"", xaml);
-        Assert.Contains("Classes.debug=\"{Binding IsStatusMessageDebug}\"", xaml);
-        Assert.Contains("Classes.success=\"{Binding IsStatusMessageSuccess}\"", xaml);
-        Assert.Contains("Classes.warning=\"{Binding IsStatusMessageWarning}\"", xaml);
-        Assert.Contains("Classes.error=\"{Binding IsStatusMessageError}\"", xaml);
-        Assert.Contains("Classes.info=\"{Binding IsStatusMessageInfo}\"", xaml);
-        Assert.Contains("EditorBrushSuccess", xaml);
-        Assert.Contains("EditorBrushWarning", xaml);
-        Assert.Contains("EditorBrushError", xaml);
-        Assert.Contains("EditorBrushInfo", xaml);
-        Assert.DoesNotContain("command" + "-feedback-status", xaml, StringComparison.Ordinal);
-        Assert.DoesNotContain("Command" + "Feedback", xaml, StringComparison.Ordinal);
+        Assert.Contains("x:DataType=\"vm:StudioShellViewModel\"", xaml);
+        Assert.Contains("IsVisible=\"{Binding IsStarting}\"", xaml);
+        Assert.Contains("IsVisible=\"{Binding IsWorkspaceEmpty}\"", xaml);
+        Assert.Contains("Text=\"{Binding StartingStateText}\"", xaml);
+        Assert.Contains("Text=\"{Binding ProjectStateText}\"", xaml);
+        Assert.Contains("Text=\"{Binding DocumentStateText}\"", xaml);
+        Assert.DoesNotContain("Dock", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("Scene", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("ProjectLaunch", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("MainWindowViewModel", xaml, StringComparison.Ordinal);
+        Assert.Contains("Background=\"#0B0F14\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Foreground=\"#E6EDF3\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Background=\"#10161D\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("BorderBrush=\"#1F2933\"", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("DynamicResource", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("StaticResource", xaml, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Main_window_does_not_construct_runtime_view_model_for_design_preview()
+    public void Hard_cut_shell_declares_stable_accessibility_metadata()
     {
         var xaml = LoadMainWindowXaml();
 
-        Assert.DoesNotContain("<Design.DataContext>", xaml);
-        Assert.DoesNotContain("<vm:MainWindowViewModel/>", xaml);
-    }
-
-    [Fact]
-    public void Workbench_bar_uses_compiled_context_bindings_and_explains_unavailable_controls()
-    {
-        var xaml = LoadMainWindowXaml();
-
-        Assert.Contains("x:DataType=\"vm:MainWindowViewModel\"", xaml);
-        Assert.Contains("Title=\"{Binding WindowTitle}\"", xaml);
-        Assert.Contains("Classes=\"workbench-bar\"", xaml);
-        Assert.Contains("Text=\"{Binding ActiveProjectDisplayName}\"", xaml);
-        Assert.Contains("DataContext=\"{Binding ProjectLaunch}\"", xaml);
-        Assert.Contains("Text=\"{Binding DocumentDisplayName}\"", xaml);
-        Assert.Contains("Text=\"{Binding SelectionSummary}\"", xaml);
-        Assert.Contains("Text=\"{Binding EditorModeText}\"", xaml);
-        Assert.Contains("Text=\"{Binding BackgroundTaskSummary}\"", xaml);
-        Assert.Contains("Text=\"{Binding DiagnosticSummary}\"", xaml);
-        Assert.Contains("ToolTip.Tip=\"{Binding ToolUnavailableReason}\"", xaml);
-        Assert.Contains("ToolTip.Tip=\"{Binding SessionUnavailableReason}\"", xaml);
-        Assert.Contains("Command=\"{Binding ApplyCompactLayoutCommand}\"", xaml);
-        Assert.Contains("Click=\"OnNewProjectClick\"", xaml);
-        Assert.Contains("Click=\"OnOpenProjectClick\"", xaml);
-        Assert.DoesNotContain(
-            "Project creation is unavailable until the project service is connected.",
-            xaml);
-        Assert.DoesNotContain(
-            "Project opening is unavailable until the project service is connected.",
-            xaml);
+        Assert.Contains("AutomationProperties.AutomationId=\"StudioShellWindow\"", xaml);
+        Assert.Contains("AutomationProperties.AutomationId=\"StudioShellStartingState\"", xaml);
+        Assert.Contains("AutomationProperties.AutomationId=\"StudioShellNoProjectState\"", xaml);
+        Assert.Contains("AutomationProperties.AutomationId=\"StudioShellNoDocumentState\"", xaml);
+        Assert.Contains("AutomationProperties.Name=\"Studio startup state\"", xaml);
+        Assert.Contains("AutomationProperties.Name=\"Project state: No Project\"", xaml);
+        Assert.Contains("AutomationProperties.Name=\"Document state: No Document\"", xaml);
+        Assert.Contains("AutomationProperties.ControlTypeOverride=\"StatusBar\"", xaml);
+        Assert.Contains("AutomationProperties.ControlTypeOverride=\"Group\"", xaml);
+        Assert.Contains("AutomationProperties.LiveSetting=\"Polite\"", xaml);
     }
 
     private static string LoadMainWindowXaml()
     {
-        return LoadSource("Shell", "Views", "Windowing", "MainWindow.axaml");
-    }
-
-    private static string LoadSource(params string[] pathParts)
-    {
         var root = FindRepositoryRoot();
-        var fullPathParts = new string[pathParts.Length + 1];
-        fullPathParts[0] = root;
-        Array.Copy(pathParts, 0, fullPathParts, 1, pathParts.Length);
-        return File.ReadAllText(Path.Combine(fullPathParts));
+        return File.ReadAllText(Path.Combine(
+            root,
+            "Shell",
+            "Views",
+            "Windowing",
+            "MainWindow.axaml"));
     }
 
     private static string FindRepositoryRoot()
     {
         var workspaceRoot = Environment.GetEnvironmentVariable("CODEX_WORKSPACE_ROOT");
         if (!string.IsNullOrWhiteSpace(workspaceRoot)
-            && File.Exists(Path.Combine(workspaceRoot, "Editor.sln")))
+            && File.Exists(Path.Combine(workspaceRoot, "Asharia.Studio.sln")))
         {
             return workspaceRoot;
         }
@@ -94,7 +69,7 @@ public sealed class MainWindowXamlTests
         var directory = new DirectoryInfo(Directory.GetCurrentDirectory());
         while (directory is not null)
         {
-            if (File.Exists(Path.Combine(directory.FullName, "Editor.sln")))
+            if (File.Exists(Path.Combine(directory.FullName, "Asharia.Studio.sln")))
             {
                 return directory.FullName;
             }
@@ -102,17 +77,6 @@ public sealed class MainWindowXamlTests
             directory = directory.Parent;
         }
 
-        directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory is not null)
-        {
-            if (File.Exists(Path.Combine(directory.FullName, "Editor.sln")))
-            {
-                return directory.FullName;
-            }
-
-            directory = directory.Parent;
-        }
-
-        throw new DirectoryNotFoundException("Could not locate Editor.sln.");
+        throw new DirectoryNotFoundException("Could not locate Asharia.Studio.sln.");
     }
 }

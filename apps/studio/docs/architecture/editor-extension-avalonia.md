@@ -1,8 +1,10 @@
 # Avalonia/XAML Editor 扩展规范
 
-状态：Target（authoring 已批准；动态加载尚未实现）
+状态：Superseded by [ADR-0007](../adr/0007-studio-frontend-hard-cut.md)
 
-更新日期：2026-07-28
+更新日期：2026-07-31
+
+> Studio v1 只保留 internal Avalonia presentation，不承诺 public Avalonia extension backend。
 
 ## 1. 目的
 
@@ -44,7 +46,7 @@ GenerationScopedFactoryHandle
 Owner Module/Generation
 ```
 
-`UiBackendId` 与 opaque `GenerationScopedFactoryHandle` 定义在 UI-neutral `Asharia.Editor`，所以 Application 可以编译引用。`Asharia.Editor.Avalonia` 只定义 typed registration extension、Control-facing factory 和 `IAvaloniaContentLease`；Presentation backend 用 handle 解析 generation registry 中的实际 Type/delegate。
+原`UiBackendId` declaration已随无consumer public SDK SCC删除；`GenerationScopedFactoryHandle`与`Asharia.Editor.Avalonia`也从未成为current contract。Application现不引用`Asharia.Editor`。未来真实第二consumer成立后，UI-neutral identity、generation owner与Presentation content lease必须重新过I0/I1。
 
 实际 `Type`、factory delegate、Control、DataTemplate 和 Avalonia resource reference 只存在于 `Asharia.Editor.Avalonia`/Presentation backend 的 generation scope。Application 不使用 `object`/reflection 绕过 UI-neutral dependency。
 
@@ -283,7 +285,7 @@ C++ renderer frame
   -> extension overlays/tools through public contract
 ```
 
-Extension 不创建或导入 native GPU resource。Viewport tool/overlay 使用 `Asharia.Editor.Viewports` contract。
+Extension 不创建或导入native GPU resource。历史`Asharia.Editor.Viewports` managed contract已因无真实session/presentation/renderer consumer而删除；未来viewport tool/overlay必须等真实owner重新通过I0/I1，本文不提供兼容合同。
 
 ## 11. Compatibility
 

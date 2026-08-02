@@ -1,8 +1,10 @@
 # Editor 扩展构建、装载与重载规范
 
-状态：Target（已批准，Project Code implicit build 子集已实现）
+状态：Superseded by [ADR-0007](../adr/0007-studio-frontend-hard-cut.md)
 
-更新日期：2026-07-26
+更新日期：2026-07-31
+
+> ProjectCode/generation/ALC/LKG 已从 Studio v1 前端关键路径移除。本文只保留历史设计证据。
 
 ## 1. 目的与权威范围
 

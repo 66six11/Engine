@@ -1,7 +1,7 @@
 # Asharia Engine 系统架构 Roadmap
 
 状态：提案，作为架构收敛与系统边界重构的主文档
-更新日期：2026-07-16
+更新日期：2026-07-31
 
 ## 1. 文档定位
 
@@ -10,7 +10,7 @@
 - Asharia Engine 的最小 Kernel、默认系统包和可选系统包分别是什么；
 - 每个系统拥有什么状态、生命周期和公共契约；
 - 什么时候应该建立用户可导入的完整 System/Feature/Integration Package，什么时候只需要包内独立 CMake target/module；
-- 当前 26 个物理 boundary manifests（其中 `packages/` 下 21 个）应怎样收敛，哪些边界绝不能因为合并目录而消失；
+- 当前 28 个物理 boundary manifests 应怎样收敛，哪些边界绝不能因为合并目录而消失；
 - 资源、世界、渲染、脚本、编辑器及后续系统如何只通过稳定数据契约协作；
 - 编辑器包管理器如何选择系统，同时让 CLI、CI、runtime 和 dedicated server 可复现同一组合；
 - 编辑器创建的项目如何用同一 package lock 与 Build Profile 完成 build、cook、stage、package、deploy 和 launch；
@@ -26,6 +26,7 @@
 | `docs/architecture/package-first.md` | 当前 package-first 与 CMake 约定 |
 | `docs/architecture/foundation-framework.md` | 目标 Kernel、Host Runtime、Foundation Systems、scope、activation、扩展和基础门禁 |
 | `docs/architecture/project-build-and-launch.md` | 项目产品构建、cook、stage、package、deploy、runtime bootstrap 与 launch session 目标设计 |
+| `docs/workflow/architecture-health.md` | 当前架构审查、能力接入窗口、Integration Gates 与 Owner Card |
 | 本文 | 目标系统框架、重构方向、迁移顺序和阶段门禁 |
 | `docs/planning/next-development-plan.md` | 近期可交付功能的 Slice 顺序 |
 | GitHub Issues / Project | 实际进度、负责人、阻塞关系与 Done evidence |
@@ -179,8 +180,9 @@ rollback 和 lifecycle；Memory、Storage、Settings、Tasks、Data、Observabil
 
 ### 4.2 当前问题
 
-截至 2026-07-13，当前仓库有 26 个 `asharia.package.json`：`packages/` 下 21 个、`engine/` 下 2 个、
-`apps/` 下 2 个、`tools/` 下 1 个。问题不是数量本身，而是三种粒度混在一起：
+截至 2026-07-31，当前仓库有 28 个 `asharia.package.json`、76 个声明 target 和 12 个
+`plannedOwnershipRoot`：`packages/` 下 22 个、`engine/` 下 3 个、`apps/` 下 2 个、`tools/` 下 1 个。
+问题不是数量本身，而是多种粒度混在一起：
 
 - 有的 source package 已接近领域核心模块，例如 `scene-core`、`resource-runtime`、`rendergraph`，但仍不是用户可安装的完整系统；
 - 有的 package 是实现适配器，例如 `window-glfw`、`shader-material-adapter`；
@@ -226,6 +228,7 @@ rollback 和 lifecycle；Memory、Storage、Settings、Tasks、Data、Observabil
 | 当前 package | 主要系统归属 | 当前角色 | 路线方向 |
 | --- | --- | --- | --- |
 | `engine/core` | Foundation | 通用基础类型与错误基线 | 保持稳定基础包 |
+| `engine/host-runtime` | Host Foundation | activation admission、typed contribution registry 与 ProcessScope V2 | 保持固定 Host Image 边界；继续补其他 scopes、完整 lease/cancel/drain |
 | `engine/platform` | Foundation & Platform | 平台抽象 | 与平台 adapters 形成清晰域 |
 | `window-glfw` | Foundation & Platform | GLFW 窗口适配 | 并入 Desktop Platform Support System 的内部 target，不单独安装 |
 | `profiling` | Observability | profiling contract / adapter | 并入完整 Observability System 的内部 target |
@@ -238,6 +241,7 @@ rollback 和 lifecycle；Memory、Storage、Settings、Tasks、Data、Observabil
 | `asset-core` | Content | asset identity/catalog contracts | 与 resource-runtime 组成 content 域 |
 | `resource-runtime` | Content | runtime handle/state baseline | 与 asset-core 形成统一 runtime contract |
 | `project-core` | Content / Host Contract | project descriptor 与 IO | 切分 project contract 与 host convenience 后再定归属 |
+| `project-bootstrap` | Project Product / Host Contract | 固定项目 reader 与 `ProcessApplicationV1` provider | 保持 Distribution-owned bootstrap；不得由 Project package 替换 |
 | `asset-pipeline` | Content 构建侧 | import/cook/publication | 作为完整 Content System 的内部 tool/cook targets；与 runtime target 保持隔离 |
 | `material-core` | Content / Rendering Contract | material runtime signature/key | 归入 Rendering (Vulkan) System；保持 runtime-safe，不引入编译器依赖 |
 | `material-instance` | Content 构建侧 | material authoring/product | 归入 Rendering (Vulkan) System 的 authoring/product targets |

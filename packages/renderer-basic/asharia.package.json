@@ -28,12 +28,13 @@
     "asharia-renderer-basic-shaders": "content-build"
   },
   "targetDependencies": {
-    "asharia-renderer-basic": ["asharia-core", "asharia-rendergraph", "asharia-shader-slang"],
+    "asharia-renderer-basic": ["asharia-core", "asharia-rendergraph"],
     "asharia-renderer-basic-vulkan": [
       "asharia-renderer-basic",
       "asharia-material-core",
       "asharia-rhi-vulkan",
-      "asharia-rhi-vulkan-rendergraph"
+      "asharia-rhi-vulkan-rendergraph",
+      "asharia-shader-slang"
     ],
     "asharia-renderer-basic-shaders": [
       "asharia-renderer-basic-triangle-vert",

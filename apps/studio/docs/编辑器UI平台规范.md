@@ -1,10 +1,10 @@
 # Studio 编辑器 UI 平台规范
 
-状态：Partial（迁移期 UI 实现规范）
+状态：Superseded（历史 UI 实现记录）
 
 更新日期：2026-07-28
 
-> 本文仍可用于当前 Dialog、Command、Shortcut、Background Task、样式和部分 Shell 行为，但其中关于 native viewport、Play Mode、provider/extension 延后以及长期分层的结论不再是目标架构。正式框架合同以 [architecture/README.md](architecture/README.md) 为入口。
+> 本文描述的 Dialog、Command、Shortcut、Dock、Background Task与旧Shell surface不再是当前production事实；R0已删除无真实consumer的实现。仅将本文作为历史研究记录，正式合同以[Studio前端硬切架构](architecture/studio-frontend-hard-cut.md)和[architecture/README.md](architecture/README.md)为准。
 
 本文定义 `apps/studio` 当前阶段的编辑器 UI 平台边界。目标是先把弹窗、后台加载反馈、快捷键、命令菜单、状态反馈和设计时预览做成稳定基础，再继续 Scene、Play Session、native bridge 或插件热更新。
 
@@ -41,7 +41,7 @@ Status debug message surface -> Background Tasks panel -> Diagnostics/Problems r
 理由：
 
 1. Scene 底层、schema、Edit World / Play World 和 native bridge 还没有足够稳定的写入合同。
-2. 已有 `PanelDescriptor`、`WorkbenchActionDescriptor`、`WorkbenchCommandRouter`、`WorkbenchShortcutRouter`、`EditorDialogHostViewModel`、`IEditorBackgroundTaskService`、`IEditorTransactionService` 和 `IEditorLifecycleEventService`，这些才是当前真实可扩展面。
+2. 本文历史列举的Panel、Workbench、Dialog、Task、Transaction与Lifecycle类型不自动构成当前可扩展面；其中Dialog Host和public DTO已确认零consumer并删除，R0没有modal能力。
 3. 弹窗、后台任务、命令反馈、事务诊断、生命周期事件、快捷键和 design preview 是后续 asset import、scene snapshot load、validation、play session 和 plugin diagnostics 都会复用的基础设施。
 
 ## 2. 当前事实
@@ -56,21 +56,21 @@ Status debug message surface -> Background Tasks panel -> Diagnostics/Problems r
 | 菜单投影 | `WorkbenchMenuItemViewModel`, `MainWindow.axaml.cs` | Current |
 | 快捷键路由 | `WorkbenchShortcutGesture`, `WorkbenchShortcutRouter` | Current |
 | 命令面板 | `CommandPaletteViewModel`, `CommandPaletteView` | Current |
-| Modal dialog | `EditorDialogRequest`, `EditorDialogHostViewModel`, `EditorDialogHostView` | Current |
-| 后台任务状态 | `IEditorBackgroundTaskService`, `EditorBackgroundTaskService` | Current |
-| 事务服务 v0 | `IEditorTransactionService`, `EditorTransactionService` | Current / UI-neutral |
-| 生命周期事件 v0 | `IEditorLifecycleEventService`, `EditorLifecycleEventService` | Current / Shell window lifecycle only |
-| 内置扩展组合 v0 | `EditorExtensionHost`, `EditorContributionBuilder`, `StudioCompositionRoot` | Current / built-in panel-action composition only |
-| Contribution ownership v0 | `PanelRegistry.RegisterOwned`, `WorkbenchActionRegistry.RegisterOwned`, `EditorExtensionHost`, `StudioCompositionSession` removal leases | Current / built-in panel-action owner tracking only |
-| Panel instance lifetime v0 | `PanelInstanceManager`, `EditorDockWorkspaceViewModel`, `EditorDockTabViewModel.ReleasePanelInstance` | Current / built-in panel content close-reset-shutdown disposal |
-| Panel lifecycle callbacks v0 | `IEditorPanelLifecycleSink`, `IEditorPanelVisibilitySink`, `IEditorPanelLayoutSink`, `PanelInstanceManager`, Dock window/workspace | Current / attach-detach、shown-hidden、active-inactive 与 post-layout |
-| Panel frame update scheduler v0 | `IEditorPanelFrameUpdateSink`, `EditorPanelFrameUpdateRequest`, `EditorPanelFrameScheduler` | Current / UI-neutral Tick(now)；Visible=Shown，Active=Shown+Active |
+| Modal dialog | public DTO、Host ViewModel/View均不存在 | Deleted / no request producer or owner Window |
+| 后台任务状态 | public/Application task状态面均不存在 | Deleted / no real work、CTS、cancel or join |
+| 事务服务 v0 | public Editing/Transactions与Application实现均不存在 | Deleted / no Document or native mutation owner |
+| 生命周期事件 v0 | public/Application event stream均不存在 | Deleted / no Window、Dock or App producer |
+| 内置扩展组合 v0 | host、module SDK与composition source均不存在 | Deleted / no loader、registry or activation owner |
+| Contribution ownership v0 | public declaration与legacy registries均不存在 | Deleted / no contribution consumer or lease owner |
+| Panel instance lifetime v0 | `PanelInstanceManager`/Dock workspace source均不存在 | Deleted / no panel content owner |
+| Panel lifecycle callbacks v0 | public callback/context与legacy PanelInstanceManager均不存在 | Deleted / no Window、Dock、Control or panel instance owner |
+| Panel frame update scheduler v0 | public frame contract与Application scheduler均不存在 | Deleted / no producer, timer or render owner |
 | Dock tab overflow v0 | `EditorDockTabStripScrollController`, `EditorDockTabStripView` | Current / view-only scroll state |
 | 状态栏反馈 | `ActivityIndicator`, `EditorStatusMessageSnapshot`, `MainWindowViewModel` summary/status properties | Current / status-debug message v0 |
 | UI 线程切回 | `IEditorUiDispatcher`, `AvaloniaEditorUiDispatcher` | Current |
-| 只读 Scene snapshot | `ISceneSnapshotProvider`, `InMemorySceneSnapshotProvider` | Current / read-only |
-| Provider contribution v0 | Application `EditorProviderHost`, legacy `SceneProviderDescriptor` adapter, `EditorProviderRoles.ActiveScene` | Current / UI-neutral runtime host with fixture-backed legacy input |
-| Diagnostic projection v0 | `IEditorDiagnosticService`, `EditorDiagnosticService`, `ConsolePanelViewModel`, `ProblemsPanelViewModel` | Current / UI-neutral latest-status, console and problems projection only |
+| 只读 Scene snapshot | public/Application/Core provider与snapshot source均不存在 | Deleted / no Document、EditWorld or read consumer |
+| Legacy provider declaration/host | `SceneProviderDescriptor`、`EditorProviderRoles`、`EditorProviderHost` | Deleted / zero production consumer and no compatibility adapter |
+| Process diagnostics/log ingress v1 | Application `IStudioDiagnosticHub` / `StudioDiagnosticHub`, `StudioAvaloniaLogSink`, `ConsolePanelViewModel`, `ProblemsPanelViewModel` | Current / App-owned bounded truth with read-only projections |
 
 当前仍不稳定或未实现：
 
@@ -82,20 +82,20 @@ Status debug message surface -> Background Tasks panel -> Diagnostics/Problems r
 | Advanced tab strategy | Planned；多行 tab、隐藏 tab 菜单、pin/preview tab 另起切片 |
 | Writable Inspector | Deferred；等 schema metadata、真实 provider、dirty-state UI 和写回 gate |
 | Scene authoring / hierarchy mutation | Deferred；等 native/scene bridge 和 edit/apply contract |
-| Feature/provider/plugin lifecycle | Partial；内置 extension/provider host 已存在，外部 plugin 与 hot reload 仍 Deferred |
+| Feature/provider/plugin lifecycle | Deferred；当前无production extension/provider host，外部 plugin 与 hot reload 也未接入 |
 | Play Session | Target / Not implemented；正式语义见 `architecture/editor-worlds-and-play-mode.md` |
 | Managed plugin hot reload | Deferred；等 contribution registry、diagnostics、ALC unload negative smoke |
 | Native C ABI | Experimental/Partial；已有 Windows viewport bridge，生产 ABI ownership 尚未成立 |
 | Avalonia native Vulkan viewport | Windows Experimental/Partial；跨平台 production 目标见 `architecture/viewport-rendering.md` |
 
-`EditorExtensionHost v0` 统一内置 panel/action/provider contribution 的声明、注册所有权和 removal lease 回收；桌面入口通过 `StudioCompositionSession` 在应用退出时释放当前 Host。这不代表 runtime enable/disable UI、provider reload、外部 plugin lifecycle、hot reload 或 native bridge 已实现。
+原`EditorExtensionHost v0`及其panel/action/provider contribution声明、注册和removal lease已随R0 hard cut删除；当前`StudioCompositionSession`只拥有最小Shell，不声明runtime enable/disable、provider reload、外部plugin lifecycle、hot reload或native bridge能力。
 
-`PanelInstanceManager v0` 接管内置 panel content 的创建、`KeepAlive` / `RecreateOnOpen` close/reset 语义、floating workspace host close、workspace/session shutdown disposal 和逻辑 attach/detach。Dock window 单独拥有 shown/hidden，workspace 单独拥有 active/inactive；presentation host 通过 post-layout 合同通知 logical size 和 render scale。这些 UI-neutral callback 不暴露 Avalonia controls、native handles 或 renderer state；provider reload/runtime lifecycle、插件重载和 native viewport ownership 仍未实现。
+原`PanelInstanceManager v0`、Dock workspace与public panel declarations均无当前source或owner；它们已在R0 hard cut中删除。未来真实panel必须由Window/Dock owner持有content、visibility、dispatcher与exactly-once detach/dispose，不恢复旧KeepAlive/Recreate DTO作兼容。
 
-`EditorPanelFrameScheduler v0` 只调度已 Shown panel content 暴露的 `IEditorPanelFrameUpdateSink`；Active mode 还要求面板是 workspace command/focus target。它支持 manual、visible、active-only mode 和可选 target FPS throttle。测试通过显式 `Tick(now)` 驱动，Presentation timer 在 UI thread 串行调用同一入口；`EditorPanelFrameContext.RequestRepaint()` 只记录 repaint request，不触发 Avalonia `Render`、native viewport presentation、renderer FPS 控制、swapchain present 或 engine simulation。
+原`EditorPanelFrameScheduler v0`与public lifecycle/frame callbacks只由self-tests维持；文档声称的Presentation timer、Window/Dock owner与panel content均已随legacy UI删除。该runtime岛现已整体删除，Application也不再依赖public Editor。未来真实panel的tick/invalidation必须与实际content、dispatcher、visibility及detach/dispose同寿命。
 
-`EditorProviderHost v0` 及其 registration/status 已由 UI-neutral `Asharia.Studio.Application.Providers` 拥有；legacy `SceneProviderDescriptor` 只由 compatibility adapter 转换。Host 仍只接管 fixture-backed active scene provider contribution 的 role 唯一性、lazy materialization、Ready/Faulted status 和注册释放；`ISceneSnapshotProvider` 仍然只有 `GetCurrentSnapshot()` / `SnapshotChanged` / `TryGetObject()`，不加入 `Connect()`、`Disconnect()`、native handle 或写回语义。
-`EditorDiagnosticService v0` owns bounded UI-neutral diagnostic records and exposes latest, recent and problem-filtered snapshots. `MainWindowViewModel` publishes command feedback into this stream and uses the latest diagnostic as status text; Console consumes all recent diagnostics and Problems consumes only `EditorDiagnosticChannel.Problem`. This is not native engine log ingestion, shell command input, persisted log storage, provider reload diagnostics, plugin diagnostics or a final Console/Problems data grid.
+Application `EditorProviderHost`、public scene snapshot/provider contracts、Core `InMemorySceneSnapshotProvider`及各自self-tests已整体删除；先前声称的compatibility adapter也不存在。当前App/composition没有registration/query入口、Document/World owner、snapshot subscription或写回语义。未来只读Scene必须由真实Project/Document open与EditWorld authoritative revision重新通过I0/I1，不能恢复这些DTO作为兼容层。
+`StudioDiagnosticHub v1` is created once by `App` and owns fixed-capacity diagnostic/log rings plus bounded subscriber slots. Records carry stable code, timestamp, origin/package, process scope/generation, operation/correlation and cursor/drop/truncation evidence. Managed status, mapped native failures and Avalonia warnings/errors enter this one truth; Console reads logs and Problems reads problem diagnostics. It does not add shell command input, persistence, arbitrary RPC, Capture/Mutate, remote control, profiler/crash infrastructure or a second UI-owned store.
 
 ## 3. 分层规则
 
@@ -163,7 +163,7 @@ Views 是 Avalonia 视觉和输入桥，不是业务 owner。
 
 - `MainWindow.axaml.cs` 负责菜单投影、快捷键桥接和 floating window host。
 - `CommandPaletteView.axaml.cs` 负责搜索框 focus、`Escape` / `Enter` 和双击执行桥接。
-- `EditorDialogHostView.axaml.cs` 负责打开后 focus 和 `Escape` cancel。
+- 历史`EditorDialogHostView.axaml.cs`曾负责focus与`Escape`桥接；该View/Host现已删除。
 
 ### 3.3 ViewModels
 
@@ -180,7 +180,7 @@ ViewModels 表达 UI 状态、轻量投影和命令，不持有 Avalonia 控件�
 
 - `MainWindowViewModel` 编排 dock、菜单、命令面板、弹窗 host 和后台任务摘要。
 - `CommandPaletteViewModel` 只保存 query、filtered items、selected item 和执行命令。
-- `EditorDialogHostViewModel` 只保存 active request、按钮投影和 completion。
+- 历史`EditorDialogHostViewModel`曾保存active request、按钮投影和completion；它不再是current production type。
 
 ### 3.4 Services
 
@@ -188,8 +188,8 @@ Services 必须先说明 owner、生命周期、线程边界和错误路径。
 
 | 类型 | 当前或未来落点 | 规则 |
 | --- | --- | --- |
-| Core abstraction | `IEditorBackgroundTaskService`、`IEditorTransactionService`、`IEditorLifecycleEventService`、`IPanelRegistry`、`IEditorSelectionService` | 只描述合同，不依赖 Avalonia 控件。 |
-| Shell service | `EditorBackgroundTaskService`、`EditorTransactionService`、`EditorLifecycleEventService`、`PanelCommandService`、`AvaloniaEditorUiDispatcher` | 负责 Shell 编排和 UI host 适配。 |
+| Core abstraction | `IPanelRegistry` | 历史合同清单；Selection/Lifecycle/Task/Transaction合同已删除。 |
+| Shell service | `PanelCommandService`、`AvaloniaEditorUiDispatcher` | 历史实现清单；Lifecycle/Task/Transaction实现已删除。 |
 | Future Infrastructure service | project settings、filesystem、layout persistence、native bridge adapter | 实现 Core 合同，不承载 Feature View。 |
 
 不要把宽泛 `EditorContext` 或 service locator 作为平台合同。需要新 service 时先写出真实 consumer，不为未来 plugin 预留空壳。
@@ -318,54 +318,15 @@ WorkbenchActionDescriptor
 
 ## 6. Dialog / Popup 合同
 
-当前 `EditorDialogHostViewModel` 支持单 active modal dialog。它适合确认、About、错误和简单 blocking decision。
+本节只保存历史研究。R0已删除无request producer与owner Window的Dialog presentation，随后删除只由self-tests和架构库存维持的public request/result/action types。当前没有single-active host、overlay、completion task、About route或modal能力。
 
-规则：
-
-1. 第一阶段只允许一个 active modal。
-2. Dialog 请求使用 `EditorDialogRequest`，结果使用 `EditorDialogResult`。
-3. Dialog host 不执行业务逻辑，只完成用户选择。
-4. Dialog overlay 优先级高于 command palette。
-5. 长任务不要用 modal dialog 承载进度，必须进 `IEditorBackgroundTaskService`。
-6. 非阻塞通知和 toast 另做独立 surface，不混入 modal dialog host。
-
-推荐下一切片：
-
-```text
-[Slice] Studio: dialog result and command failure presentation
-```
-
-范围：
-
-- 复用 dialog host 显示可恢复错误或 confirmation。
-- command failure 默认走状态/diagnostics，不弹阻塞框。
-- 只对 destructive 或必须用户决策的操作使用 modal。
+未来真实Dialog必须从destructive Document/Project decision重新通过I0/I1，并同时定义owner Window、action/system-dismiss/owner-close completion、重复request policy与headless default；普通失败仍进入唯一bounded diagnostics truth，不得从本文恢复旧DTO或fixture host。
 
 ## 7. Background Activity 合同
 
-`IEditorBackgroundTaskService` 是后台加载、导入、验证、构建、缩略图、桥接调用和未来 Play Session 准备的共同入口。
+本节只保存历史研究。R0已删除无App producer的public/Application task状态岛：旧实现不持有真实work、CTS、cancel signal或shutdown join，并无界保留terminal snapshots，因此不能作为后台任务能力。
 
-规则：
-
-1. 后台任务必须有稳定 `operationId`。
-2. ViewModel 只能消费 snapshot，不持有 worker、engine object 或 native handle。
-3. progress 可以为空，表示 indeterminate。
-4. cancellation 需要 `CanCancel`，但取消执行本身属于后续 worker contract。
-5. 任务状态变化可来自后台线程，Shell 必须通过 UI dispatcher 刷新绑定状态。
-6. 状态栏只显示摘要。完整任务列表、日志、失败详情和 retry 属于 `Background Tasks` panel。
-
-推荐下一切片：
-
-```text
-[Slice] Studio: background tasks panel
-```
-
-范围：
-
-- 新增 `Features/BackgroundTasks` 面板。
-- 显示 active/completed/failed snapshots。
-- 状态栏点击打开该面板。
-- 不实现真实 asset import、shader compile 或 native load。
+未来首个真实background operation必须同时定义owner、稳定operation ID、actual task、progress、cancellation source、terminal result、bounded retention与shutdown join，并从I0/I1形成纵向闭环；在此之前不得恢复Background Tasks面板或DTO-only service。
 
 ## 8. 状态反馈合同
 
@@ -384,7 +345,7 @@ WorkbenchActionDescriptor
 2. command failure 默认不弹 modal；只有用户必须决策时才转成 dialog。
 3. long-running command 必须创建 background task，再由 task 状态驱动 status bar 和任务面板。
 4. diagnostics 记录应可被 Console / Problems 复用，不绑定某个临时 overlay。
-5. Current diagnostic projection v0 uses one shared `IEditorDiagnosticService` per composition. Status shows the latest diagnostic message, Console shows recent diagnostics, and Problems filters to problem-channel diagnostics; native log streams, shell command execution, plugin/provider reload diagnostics and persistence remain deferred.
+5. Current diagnostics/log ingress uses the single App-owned `IStudioDiagnosticHub`. Status is a log projection, Console reads recent logs, and Problems filters the diagnostic ring by problem channel; native failures and Avalonia records use explicit typed adapters. Subprocess output has a typed mapping contract but no production launch wiring because Studio currently owns no subprocess. The completed disposable-child gate is external test infrastructure, not a product capability. Shell command execution, plugin/provider reload diagnostics, persistence and remote control remain deferred.
 
 ## 9. Design Preview 合同
 
@@ -407,7 +368,7 @@ Avalonia design preview 是当前 UI 开发的强约束，不是额外美化任�
 
 范围：
 
-- 覆盖 `ActivityIndicator`、`EditorDialogHostView`、`CommandPaletteView`、原生控件覆盖样式。
+- 历史主题范围曾覆盖`ActivityIndicator`、`EditorDialogHostView`、`CommandPaletteView`与原生控件；已删除的Dialog Host不再是current target。
 - 不做截图测试系统。
 - 不引入运行时 fake service registry。
 
@@ -421,10 +382,6 @@ Avalonia design preview 是当前 UI 开发的强约束，不是额外美化任�
 PanelDescriptor
 WorkbenchActionDescriptor
 WorkbenchCommandExecutionResult
-EditorDialogRequest / EditorDialogResult
-EditorBackgroundTaskSnapshot
-EditorTransactionServiceSnapshot
-EditorLifecycleEventSnapshot
 Status/debug message record
 Diagnostic record
 Design preview convention
@@ -450,7 +407,7 @@ Feature/provider/plugin lifecycle bus
 | Window | Shell-owned `MainWindow` / floating dock window host | 通用 WindowManager、脚本创建顶层窗口。 |
 | Menu | `WorkbenchActionDescriptor.MenuPath` 投影 | 每个 View 自己创建业务菜单入口。 |
 | Command | command id -> router -> executor -> result | 绕过 command result 的直接方法调用，或隐藏 transaction 入口。 |
-| Dialog | data-only request/result | Feature 直接创建 modal Window 或在 dialog 中执行业务。 |
+| Dialog | R0无稳定合同；真实producer/owner成立后重新设计 | 恢复旧DTO，或Feature直接创建modal Window。 |
 | Lifecycle | Shell window lifecycle snapshot | 把 feature unload、provider reload、Play Session 或 native runtime lifecycle 混入 v0。 |
 | Status overlay | task snapshot / command result / diagnostic record | 一次性做完整 notification center 或 project dashboard。 |
 
@@ -479,7 +436,7 @@ Avalonia 支持 design-time preview、XAML 编译、runtime XAML loader 和 nati
 Built-in feature modules register panels/actions.
 Trusted Shell services orchestrate dialogs, commands, shortcuts and background feedback.
 Design-time mock data improves XAML preview.
-Read-only scene snapshot provider feeds Hierarchy / Inspector.
+Bounded diagnostics/log projections read the one App-owned truth.
 Shell-owned lifecycle events record main/floating window activity.
 ```
 
@@ -506,7 +463,7 @@ Hot reload recreates Avalonia app, Shell, Dock, native viewport or renderer reso
 
 扩展窗口边界：
 
-1. Current：内置 Feature 通过 `PanelDescriptor` / `WorkbenchActionDescriptor` 注册 panel、menu 和 command。
+1. Current：无内置Feature registry、PanelDescriptor或WorkbenchActionDescriptor；最小Shell不注册panel/menu/command extension。
 2. Planned：`EditorContributionDescriptor` 或 manifest 只能声明 panel/action/status/diagnostic 贡献。
 3. Planned：扩展 panel 的第一版返回 ViewModel 或 declarative panel model，由 host 选择 Avalonia View / DataTemplate。
 4. Deferred：外部 DLL 或脚本直接 new Avalonia `Window`、`Control`、`UserControl` 或加载任意 XAML。
@@ -542,8 +499,8 @@ git diff --check
 Studio C# / XAML 改动：
 
 ```powershell
-dotnet test apps\studio\Editor.sln -c Release
-dotnet test apps\studio\Editor.sln
+dotnet build apps\studio\Asharia.Studio.sln -c Release
+dotnet test apps\studio\Asharia.Studio.sln -c Release --no-build --blame-hang --blame-hang-timeout 10m
 powershell -ExecutionPolicy Bypass -File tools\check-text-encoding.ps1
 git diff --check
 ```

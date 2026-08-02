@@ -30,6 +30,12 @@ namespace asharia::editor {
     using EditorSharedViewportRenderFrameResult =
         std::expected<EditorSharedViewportPresentPacket, EditorSharedViewportRenderFrameError>;
 
+    struct EditorSharedViewportDeviceSnapshot {
+        std::uint32_t vendorId{};
+        std::uint32_t deviceId{};
+        asharia::VulkanDeviceIdentity identity;
+    };
+
     struct EditorSharedViewportRuntimeStats {
         std::uint64_t framesRendered{};
         std::uint64_t producersCreated{};
@@ -57,7 +63,7 @@ namespace asharia::editor {
     class EditorSharedViewportRuntime final {
     public:
         [[nodiscard]] static EditorSharedViewportRuntime& instance();
-        [[nodiscard]] asharia::Result<const asharia::VulkanContext*> ensureContext();
+        [[nodiscard]] asharia::Result<EditorSharedViewportDeviceSnapshot> ensureDeviceSnapshot();
         [[nodiscard]] EditorSharedViewportRenderFrameResult
         renderSceneViewFrame(EditorSharedViewportPresentDesc desc);
         [[nodiscard]] EditorSharedViewportRenderFrameResult

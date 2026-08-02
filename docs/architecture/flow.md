@@ -199,9 +199,9 @@ flowchart TD
   descriptor 读取、source scan/discovery/snapshot、import planning 和 catalog report 生成在 `apps/editor`
   的 host 服务中组合 public package API。它不执行 importer、不写 product manifest/blob、不创建 runtime asset
   handle，也不上传 GPU 资源。
-- Scene Tree 和 Inspector 现在是默认 workbench 中的 read-only shell panel。它们消费 app-local
-  `EditorSelectionSet` 的稳定 `sceneId + EntityId` snapshot，但仍不消费 runtime scene hierarchy 或 inspector
-  data model；当前 UI 只表达 selection contract 状态，避免伪造场景数据。
+- R0 Studio已删除legacy Scene Tree/Inspector workbench与无consumer的public/Application Selection岛；当前最小Shell
+  没有selection producer、reader或snapshot数据流。C++ editor-local `EditorSelectionSet`属于独立native editor边界，
+  不构成Studio selection能力；未来必须从真实Document/World/asset owner重新建立typed scoped identity与失效路径。
 
 ## 当前 Windows Development Host 生成、验证与 normal 执行流
 
@@ -326,9 +326,8 @@ versioned summary 才得到 Bootstrap `Ready`。`PendingRestart` 与完整 `Proj
 
 ```mermaid
 flowchart LR
-    Native["msvc-release native outputs<br/>editor_native.dll + slang.dll"]
     Publish["dotnet publish<br/>EditorImage / fresh Windows x64 root"]
-    DotNet["exact .NET selection<br/>host + SDK + hostfxr + runtime + reference pack"]
+    DotNet["exact .NET selection<br/>SDK apphost template + hostfxr + runtime"]
     ImageProducer["stage-editor-image<br/>static identity qualification + copy/rehash<br/>+ closed-root verify"]
     ImageInput["closed Editor Image input<br/>typed byte bindings"]
     ProfileSource["repo-owned production Editor Host Profile<br/>canonical exact bytes"]
@@ -337,7 +336,6 @@ flowchart LR
     Packages["real installable package inputs<br/>downstream"]
     Assembler["canonical Distribution Assembler<br/>not invoked by #299"]
 
-    Native --> Publish
     Publish --> ImageProducer
     DotNet --> ImageProducer
     ImageProducer --> ImageInput
@@ -353,7 +351,10 @@ flowchart LR
 current selection、Project Open 或 Host activation。Editor Image 的资格检查不加载或执行候选输入，也不证明 ABI、
 launch behavior 或 runtime health。
 
-## Studio Project Code 隔离 SDK 构建、发布与 initial scope activation 流（#305–#322、#332–#333）
+## Retired Studio Project Code 隔离 SDK 构建、发布与 activation 流（历史证据）
+
+> R0 hard-cut 已删除整个 ProjectCode control plane、public extension SDK、空public project与Editor Image
+> `Asharia.Editor` identity。以下流程只保留为被拒绝实现的历史证据，不是当前能力或恢复模板。
 
 这是 `Asharia.Studio.Application` 的 headless Project Code control plane，不经过 Avalonia storage API；
 pinned loader 节点加载 exact 项目 assembly，resolver 只解析已索引 Type，constructor owner 才首次有意执行
@@ -534,7 +535,10 @@ flowchart TB
 - `apps/studio` 是 managed shell；Scene View 可以拥有 Avalonia composition surface 和 status ViewModel，
   但 Vulkan frame recording、external image/semaphore 创建和 native packet release 仍在 native bridge/RHI 边界。
 
-## Studio Active Project Session 流程
+## Retired Studio Active Project Session 流程（历史证据）
+
+> R0 hard-cut 已删除ProjectSession/recent store、managed/native Project bridge与presentation consumer；以下流程
+> 不是当前production路径。
 
 Studio 将“用户当前打开的项目”和 Bootstrap `ProjectOpenSession` 分开建模：后者只是启动候选与
 发行镜像验证状态，不能直接成为窗口标题、最近项目或 Scene View 的活动项目身份。
@@ -569,7 +573,14 @@ flowchart LR
 - 该最小会话尚不创建完整 Project extension scope 或 EngineHost；Bootstrap `Ready` 与活动项目
   `Ready` 仍是不同状态，后续由组合根显式协调。
 
-## Studio Avalonia Scene View Composition 流程
+## Retired Studio Avalonia Scene View Composition 流程（历史证据）
+
+> R0 hard-cut 4.31 已删除managed viewport scheduler/public contract，4.33又删除public Scene snapshot、
+> Application provider host与Core in-memory provider。当前production `App -> StudioProcessSession ->
+> StudioCompositionSession -> StudioShellViewModel`没有Document/World、Hierarchy/Inspector/Scene View、
+> provider或managed viewport边；独立C++ editor viewport/runtime与smoke不构成Studio调用链。下图只保留被拒绝的
+> pre-hard-cut实现证据，不能作为当前依赖图或能力声明。R1必须从真实open receipt、EditWorld owner、revisioned
+> read projection与close teardown重新建立纵向闭环。
 
 ```mermaid
 sequenceDiagram
@@ -615,11 +626,11 @@ sequenceDiagram
     Session->>VM: current presented/import-failed snapshot only
 ```
 
-当前约束：
+退役实现的历史约束（均非当前Studio合同）：
 
 - `Core/Models/Viewports` 不引用 Avalonia、native pointer、Vulkan handle 或 OS handle，只保存 snapshot。
-- production `ProjectSceneSessionProjection` 把活动项目映射为场景根和编辑相机组成的最小
-  `SceneSnapshot`；Hierarchy、Inspector 与 Scene View 共用该 provider，无项目时为 Empty。
+- production `ProjectSceneSessionProjection` 曾把活动项目映射为场景根和编辑相机组成的最小
+  `SceneSnapshot`；该projection与共享provider现均已删除。
 - viewport request v2 只增加 `hasScene + sceneRevision`。native producer 不读取 managed SceneObject；
   有场景时使用 renderer-owned 默认编辑相机、world-grid pass 与三条原点轴线形成可证明的真实 GPU 画面。
 - `Core/Interop/Viewports` 是 managed Core 中唯一可持有 ABI structs、`IntPtr` 和 packet release 逻辑的区域。

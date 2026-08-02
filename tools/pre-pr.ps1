@@ -41,7 +41,8 @@ function Get-ChangedFiles {
         [switch]$IncludeUntracked
     )
 
-    $gitArgs = @("diff", "--name-only", "--diff-filter=ACMRT")
+    # Deleting an obsolete path is still an architecture-sensitive change.
+    $gitArgs = @("diff", "--name-only", "--diff-filter=ACDMRT")
 
     if ($Staged) {
         $gitArgs += "--cached"
@@ -53,15 +54,15 @@ function Get-ChangedFiles {
         $gitArgs += "$BaseRef...HEAD"
     }
 
-    $files = @(& git @gitArgs)
+    $files = @(& git -c core.quotepath=false @gitArgs)
 
     if ($IncludeUntracked -and -not $Staged) {
-        $files += @(& git ls-files --others --exclude-standard)
+        $files += @(& git -c core.quotepath=false ls-files --others --exclude-standard)
     }
 
     return $files |
         Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
-        ForEach-Object { $_ -replace "\\", "/" } |
+        ForEach-Object { $_.Trim('"') -replace "\\", "/" } |
         Sort-Object -Unique
 }
 
@@ -250,22 +251,69 @@ try {
         exit 0
     }
 
+    $nativeBuildPatterns = @(
+        "^apps/editor/",
+        "^apps/sample-viewer/",
+        "^engine/",
+        "^packages/",
+        "^tools/asset-processor/",
+        "^shaders/",
+        "^CMakeLists\.txt$",
+        "^CMakePresets\.json$",
+        "^cmake/",
+        "^profiles/",
+        "^scripts/bootstrap-conan\.ps1$",
+        "^conanfile\.py$",
+        "^conan\.lock$",
+        "^\.clang-tidy$",
+        "^\.github/workflows/native-code-quality\.yml$"
+    )
     $renderingPatterns = @(
-        "^apps/",
+        "^apps/sample-viewer/",
         "^packages/rendergraph/",
         "^packages/rhi-vulkan/",
         "^packages/renderer-basic/",
         "^shaders/"
     )
-    $designPatterns = $renderingPatterns + @(
-        "^CMakeLists\.txt$",
+    $editorNativePatterns = @("^apps/editor/")
+    $studioPatterns = @("^apps/studio/")
+    $hostRuntimePatterns = @("^engine/host-runtime/", "^packages/project-bootstrap/")
+    $targetTruthPatterns = @(
+        "(^|/)asharia\.package\.json$",
+        "(^|/)CMakeLists\.txt$",
+        "^CMakePresets\.json$",
         "^cmake/",
+        "^tools/check_target_dependency_truth\.py$"
+    )
+    $designPatterns = $nativeBuildPatterns + @(
         "^scripts/",
-        "^tools/"
+        "^tools/",
+        "^docs/architecture/",
+        "^docs/planning/",
+        "^apps/studio/docs/architecture/",
+        "^apps/studio/docs/adr/"
     )
 
-    $requiresRenderingSmokes = [bool]($changedFiles | Where-Object {
+    $nonDocumentationChanges = @($changedFiles | Where-Object {
+            $_ -notmatch "\.(md|rst)$" -and $_ -notmatch "(^|/)docs/"
+        })
+    $requiresNativeBuild = [bool]($nonDocumentationChanges | Where-Object {
+            Test-MatchesAnyPattern -Path $_ -Patterns $nativeBuildPatterns
+        })
+    $requiresRenderingSmokes = [bool]($nonDocumentationChanges | Where-Object {
             Test-MatchesAnyPattern -Path $_ -Patterns $renderingPatterns
+        })
+    $requiresEditorNativeSmokes = [bool]($nonDocumentationChanges | Where-Object {
+            Test-MatchesAnyPattern -Path $_ -Patterns $editorNativePatterns
+        })
+    $requiresStudioTests = [bool]($nonDocumentationChanges | Where-Object {
+            Test-MatchesAnyPattern -Path $_ -Patterns $studioPatterns
+        })
+    $requiresHostRuntimeTests = [bool]($nonDocumentationChanges | Where-Object {
+            Test-MatchesAnyPattern -Path $_ -Patterns $hostRuntimePatterns
+        })
+    $requiresTargetTruth = [bool]($nonDocumentationChanges | Where-Object {
+            Test-MatchesAnyPattern -Path $_ -Patterns $targetTruthPatterns
         })
     $requiresDesignReview = [bool]($changedFiles | Where-Object {
             Test-MatchesAnyPattern -Path $_ -Patterns $designPatterns
@@ -300,20 +348,36 @@ try {
         $docSyncCommand += " -IncludeUntracked"
     }
     Write-Host "  $docSyncCommand"
+    Write-Host "  python -m unittest discover -s tools\tests -p `"test_*.py`""
     Write-Host "  python tools\check_package_topology.py"
+    Write-Host "  python tools\check_package_contracts.py"
     Write-Host "  git diff --check"
-    Write-Host "  cmd /c `"build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --preset clangcl-debug && cmake --build --preset clangcl-debug`""
-    $tidyCommand = "python tools\run_clang_tidy.py --changed"
-    if ($Staged) {
-        $tidyCommand += " --staged"
-    } elseif ($BaseRef -ne "HEAD") {
-        $tidyCommand += " --base-ref `"$BaseRef`""
+
+    if ($requiresNativeBuild) {
+        Write-Host ""
+        Write-Host "Native build gates:"
+        Write-Host "  cmd /c `"build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --preset clangcl-debug && cmake --build --preset clangcl-debug`""
+        $tidyCommand = "python tools\run_clang_tidy.py --changed"
+        if ($Staged) {
+            $tidyCommand += " --staged"
+        } elseif ($BaseRef -ne "HEAD") {
+            $tidyCommand += " --base-ref `"$BaseRef`""
+        }
+        if ($IncludeUntracked -and -not $Staged) {
+            $tidyCommand += " --include-untracked"
+        }
+        Write-Host "  cmd /c `"build\conan\clangcl-debug\Debug\generators\conanbuild.bat && $tidyCommand`""
+        Write-Host "  cmd /c `"build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake --preset msvc-debug && cmake --build --preset msvc-debug`""
     }
-    if ($IncludeUntracked -and -not $Staged) {
-        $tidyCommand += " --include-untracked"
+
+    if ($requiresTargetTruth) {
+        Write-Host ""
+        Write-Host "Configured target dependency truth gate:"
+        Write-Host '  python tools\check_target_dependency_truth.py --root . --prepare-query build\cmake\msvc-debug-tests'
+        Write-Host '  cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake --preset msvc-debug-tests"'
+        Write-Host '  $replyIndex = Get-ChildItem build\cmake\msvc-debug-tests\.cmake\api\v1\reply\index-*.json | Sort-Object Name -Descending | Select-Object -First 1 -ExpandProperty FullName'
+        Write-Host '  python tools\check_target_dependency_truth.py --root . --reply-index $replyIndex --configuration Debug'
     }
-    Write-Host "  cmd /c `"build\conan\clangcl-debug\Debug\generators\conanbuild.bat && $tidyCommand`""
-    Write-Host "  cmd /c `"build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake --preset msvc-debug && cmake --build --preset msvc-debug`""
 
     if ($packageTestCommands.Count -gt 0) {
         Write-Host ""
@@ -335,10 +399,31 @@ try {
         Write-Host "  Run the smoke list in docs\workflow\review.md for both clangcl-debug and msvc-debug."
     }
 
+    if ($requiresEditorNativeSmokes) {
+        Write-Host ""
+        Write-Host "Native editor smoke gate required for this change range:"
+        Write-Host "  Run the applicable editor smoke commands in docs\workflow\review.md for both clangcl-debug and msvc-debug."
+    }
+
+    if ($requiresStudioTests) {
+        Write-Host ""
+        Write-Host "Studio managed gates:"
+        Write-Host "  dotnet build apps\studio\Asharia.Studio.sln -c Release"
+        Write-Host "  dotnet test apps\studio\Tests\Editor.Tests\Editor.Tests.csproj -c Release --filter `"SceneView|ViewportNative|Composition`""
+        Write-Host "  dotnet test apps\studio\Asharia.Studio.sln -c Release --no-build --blame-hang --blame-hang-timeout 10m"
+    }
+
+    if ($requiresHostRuntimeTests) {
+        Write-Host ""
+        Write-Host "Host Runtime focused gate required:"
+        Write-Host "  Run the ProcessScope and project-bootstrap CTest commands in docs\workflow\review.md for both compilers."
+    }
+
     if ($requiresDesignReview) {
         Write-Host ""
-        Write-Host "Design review required:"
-        Write-Host "  Check package boundaries, RenderGraph/RHI separation, target dependencies, and doc sync."
+        Write-Host "Architecture/design review required:"
+        Write-Host "  Record current evidence, owner/lifetime/thread/data/error contracts, Foundation prerequisite,"
+        Write-Host "  earliest safe and latest required integration point, and vertical-slice exit evidence."
     }
 
     if ($docHints.Count -gt 0) {
@@ -362,6 +447,9 @@ try {
         }
         Invoke-CheapGate "package topology check" {
             python tools\check_package_topology.py
+        }
+        Invoke-CheapGate "package contract check" {
+            python tools\check_package_contracts.py
         }
         Invoke-CheapGate "git diff whitespace check" {
             git diff --check

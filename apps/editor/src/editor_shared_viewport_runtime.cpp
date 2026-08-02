@@ -72,7 +72,8 @@ namespace asharia::editor {
         return *runtime;
     }
 
-    asharia::Result<const asharia::VulkanContext*> EditorSharedViewportRuntime::ensureContext() {
+    asharia::Result<EditorSharedViewportDeviceSnapshot>
+    EditorSharedViewportRuntime::ensureDeviceSnapshot() {
         std::lock_guard lock{mutex_};
         if (shutdownRequested_) {
             return std::unexpected{vulkanError("Shared viewport runtime has shut down")};
@@ -82,8 +83,17 @@ namespace asharia::editor {
         if (!ensured) {
             return std::unexpected{std::move(ensured.error())};
         }
+        if (!context_) {
+            return std::unexpected{
+                vulkanError("Shared viewport context creation completed without a context")};
+        }
 
-        return &*context_;
+        const asharia::VulkanDeviceInfo& deviceInfo = context_->deviceInfo();
+        return EditorSharedViewportDeviceSnapshot{
+            .vendorId = deviceInfo.vendorId,
+            .deviceId = deviceInfo.deviceId,
+            .identity = deviceInfo.identity,
+        };
     }
 
     asharia::Result<EditorSharedViewportRenderProducer*>

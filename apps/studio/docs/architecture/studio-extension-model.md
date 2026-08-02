@@ -1,8 +1,11 @@
 # Studio 统一扩展模型
 
-状态：Target（当前 built-in host 为 Partial）
+状态：Superseded by [ADR-0007](../adr/0007-studio-frontend-hard-cut.md)
 
-更新日期：2026-07-12
+更新日期：2026-07-31
+
+> 统一 public extension、generation 与 dynamic reload 不再是 Studio v1 前置。出现第二个真实外部
+> consumer 后必须重新立 ADR，不能直接恢复本文目标。
 
 ## 1. 决策
 
@@ -30,8 +33,7 @@ Shell、Dock、platform Window、EngineHost、renderer 和 native bridge 是宿�
 - panel attach/detach、shown/hidden、active/inactive、post-layout 和 frame callback v0；
 - Code-first UI 的 node、state、event、validation 和 Avalonia adapter 垂直切片。
 - dependency-free `Asharia.Editor` 中 declaration-only 的 Panel contribution ID、descriptor、builder、同 module duplicate validation 与 immutable freeze。
-- dependency-free `Asharia.Editor.Dialogs` 中七个 UI-neutral public type；request 构造验证 invariant 并冻结 action 防御性只读快照，action ID、role、default、destructive 和 completion 语义彼此独立。
-- compatibility Dialog Host 只消费公共合同；Presentation 继续拥有 overlay、focus、action projection 和拒绝第二个 active modal 的 policy。用户 system dismiss 与未来 operation cancellation 是不同终止路径。
+- 历史`Asharia.Editor.Dialogs`七个public types与compatibility Dialog Host均已在R0删除：presentation没有真实producer/Window owner，public types随后只剩self-tests与架构库存，不能作为extension能力。
 
 当前缺口：
 
@@ -42,8 +44,7 @@ Shell、Dock、platform Window、EngineHost、renderer 和 native bridge 是宿�
 - public Panel declaration 尚未接入 factory binding、Panel registry、Dock 或 runtime display；
 - Avalonia extension bridge、ALC load/unload 和 last-known-good reload 尚未实现；
 - provider physical lifecycle、failure isolation 和 module leak diagnostics 不完整。
-- 尚无 dialog service、owner-window routing、custom content、per-platform action ordering、localization、file picker、progress、notification 或 modal queue；public action 声明顺序只保证确定性，不保证跨平台屏幕顺序。
-- legacy `Editor.Core.Models.Dialogs` 已删除，且未保留 wrapper、type forwarding 或 duplicate DTO。
+- 尚无dialog service、public DTO、owner-window routing、custom content、per-platform action ordering、localization、file picker、progress、notification或modal queue；legacy Core/public Dialog均已删除，未保留wrapper、type forwarding或duplicate DTO。
 
 当前事实用于确定迁移顺序，不改变统一模型。
 
@@ -273,7 +274,7 @@ PanelContributionDescriptor
 
 `PanelDescriptor.Func<object>` 仅是当前迁移兼容形态，不是公共 ABI。
 
-当前正式公共合同终止在 immutable declaration：`EditorModuleBuilder.Panels.Add(EditorPanelDescriptor)` 按声明顺序冻结到 `EditorModuleDeclaration.Panels`。同一 module 内 contribution ID 与 factory local ID 均唯一；Panel scope 只来自 module definition。Descriptor 的 `ContentFactory` 是 `EditorFactoryLocalId`，不包含 `Type`、delegate、`object` factory、Avalonia Control、Dock node 或 native handle。
+R0 hard-cut已删除原immutable declaration合同及其全部source/tests；当前没有`EditorModuleBuilder`、`EditorPanelDescriptor`或public extension SDK。未来出现第二个真实consumer并重立ADR时，若采用类似声明模型，仍必须保证factory只在真实generation owner内解析，不能从本文恢复旧API。
 
 未来 Host staging 在已知 generation 与 owner definition 后执行两阶段绑定：
 

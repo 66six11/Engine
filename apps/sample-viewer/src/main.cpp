@@ -100,6 +100,10 @@ namespace {
         return extent.width > 0 && extent.height > 0;
     }
 
+    asharia::WindowDesc smokeWindowDesc(std::string_view title) {
+        return asharia::WindowDesc{.title = std::string{title}, .visible = false};
+    }
+
     bool extentMatches(VkExtent2D lhs, asharia::WindowFramebufferExtent rhs) {
         return lhs.width == rhs.width && lhs.height == rhs.height;
     }
@@ -1908,8 +1912,7 @@ namespace {
             return EXIT_FAILURE;
         }
 
-        auto window = asharia::GlfwWindow::create(
-            *glfw, asharia::WindowDesc{.title = "Asharia Engine Smoke"});
+        auto window = asharia::GlfwWindow::create(*glfw, smokeWindowDesc("Asharia Engine Smoke"));
         if (!window) {
             asharia::logError(window.error().message);
             return EXIT_FAILURE;
@@ -1934,8 +1937,8 @@ namespace {
             return EXIT_FAILURE;
         }
 
-        auto window = asharia::GlfwWindow::create(
-            *glfw, asharia::WindowDesc{.title = "Asharia Engine Vulkan Smoke"});
+        auto window =
+            asharia::GlfwWindow::create(*glfw, smokeWindowDesc("Asharia Engine Vulkan Smoke"));
         if (!window) {
             asharia::logError(window.error().message);
             return EXIT_FAILURE;
@@ -1979,8 +1982,7 @@ namespace {
             return EXIT_FAILURE;
         }
 
-        auto window =
-            asharia::GlfwWindow::create(*glfw, asharia::WindowDesc{.title = std::string{title}});
+        auto window = asharia::GlfwWindow::create(*glfw, smokeWindowDesc(title));
         if (!window) {
             asharia::logError(window.error().message);
             return EXIT_FAILURE;
@@ -2075,7 +2077,7 @@ namespace {
         }
 
         auto window = asharia::GlfwWindow::create(
-            *glfw, asharia::WindowDesc{.title = "Asharia Engine Transient Image Smoke"});
+            *glfw, smokeWindowDesc("Asharia Engine Transient Image Smoke"));
         if (!window) {
             asharia::logError(window.error().message);
             return EXIT_FAILURE;
@@ -2184,8 +2186,8 @@ namespace {
             return EXIT_FAILURE;
         }
 
-        auto window = asharia::GlfwWindow::create(
-            *glfw, asharia::WindowDesc{.title = "Asharia Engine MRT Smoke"});
+        auto window =
+            asharia::GlfwWindow::create(*glfw, smokeWindowDesc("Asharia Engine MRT Smoke"));
         if (!window) {
             asharia::logError(window.error().message);
             return EXIT_FAILURE;
@@ -2302,8 +2304,8 @@ namespace {
             return EXIT_FAILURE;
         }
 
-        auto window = asharia::GlfwWindow::create(
-            *glfw, asharia::WindowDesc{.title = "Asharia Engine Resize Smoke"});
+        auto window =
+            asharia::GlfwWindow::create(*glfw, smokeWindowDesc("Asharia Engine Resize Smoke"));
         if (!window) {
             asharia::logError(window.error().message);
             return EXIT_FAILURE;
@@ -2436,8 +2438,7 @@ namespace {
         }
 
         const std::string_view title = triangleSmokeTitle(useDepth, meshKind);
-        auto window =
-            asharia::GlfwWindow::create(*glfw, asharia::WindowDesc{.title = std::string{title}});
+        auto window = asharia::GlfwWindow::create(*glfw, smokeWindowDesc(title));
         if (!window) {
             asharia::logError(window.error().message);
             return EXIT_FAILURE;
@@ -2558,7 +2559,7 @@ namespace {
         }
 
         auto window = asharia::GlfwWindow::create(
-            *glfw, asharia::WindowDesc{.title = "Asharia Engine Descriptor Layout Smoke"});
+            *glfw, smokeWindowDesc("Asharia Engine Descriptor Layout Smoke"));
         if (!window) {
             asharia::logError(window.error().message);
             return EXIT_FAILURE;
@@ -2612,7 +2613,7 @@ namespace {
         }
 
         auto window = asharia::GlfwWindow::create(
-            *glfw, asharia::WindowDesc{.title = "Asharia Engine Material Binding Smoke"});
+            *glfw, smokeWindowDesc("Asharia Engine Material Binding Smoke"));
         if (!window) {
             asharia::logError(window.error().message);
             return EXIT_FAILURE;
@@ -2667,7 +2668,7 @@ namespace {
         }
 
         auto window = asharia::GlfwWindow::create(
-            *glfw, asharia::WindowDesc{.title = "Asharia Engine Compute Dispatch Smoke"});
+            *glfw, smokeWindowDesc("Asharia Engine Compute Dispatch Smoke"));
         if (!window) {
             asharia::logError(window.error().message);
             return EXIT_FAILURE;
@@ -3027,7 +3028,7 @@ namespace {
         }
 
         auto window = asharia::GlfwWindow::create(
-            *glfw, asharia::WindowDesc{.title = "Asharia Engine Buffer Upload Smoke"});
+            *glfw, smokeWindowDesc("Asharia Engine Buffer Upload Smoke"));
         if (!window) {
             asharia::logError(window.error().message);
             return EXIT_FAILURE;
@@ -3686,7 +3687,7 @@ namespace {
         }
 
         auto window = asharia::GlfwWindow::create(
-            *glfw, asharia::WindowDesc{.title = "Asharia Engine Texture Upload Smoke"});
+            *glfw, smokeWindowDesc("Asharia Engine Texture Upload Smoke"));
         if (!window) {
             asharia::logError(window.error().message);
             return EXIT_FAILURE;
@@ -3850,8 +3851,8 @@ namespace {
             return EXIT_FAILURE;
         }
 
-        auto window = asharia::GlfwWindow::create(
-            *glfw, asharia::WindowDesc{.title = "Asharia Engine Mesh 3D Smoke"});
+        auto window =
+            asharia::GlfwWindow::create(*glfw, smokeWindowDesc("Asharia Engine Mesh 3D Smoke"));
         if (!window) {
             asharia::logError(window.error().message);
             return EXIT_FAILURE;
@@ -3961,8 +3962,8 @@ namespace {
             return EXIT_FAILURE;
         }
 
-        auto window = asharia::GlfwWindow::create(
-            *glfw, asharia::WindowDesc{.title = "Asharia Engine Draw List Smoke"});
+        auto window =
+            asharia::GlfwWindow::create(*glfw, smokeWindowDesc("Asharia Engine Draw List Smoke"));
         if (!window) {
             asharia::logError(window.error().message);
             return EXIT_FAILURE;
@@ -4873,7 +4874,7 @@ namespace {
         }
 
         auto window = asharia::GlfwWindow::create(
-            *glfw, asharia::WindowDesc{.title = "Asharia Engine RenderView Grid Readback Smoke"});
+            *glfw, smokeWindowDesc("Asharia Engine RenderView Grid Readback Smoke"));
         if (!window) {
             asharia::logError(window.error().message);
             return EXIT_FAILURE;
@@ -4996,7 +4997,7 @@ namespace {
         }
 
         auto window = asharia::GlfwWindow::create(
-            *glfw, asharia::WindowDesc{.title = "Asharia Engine Fullscreen Texture Smoke"});
+            *glfw, smokeWindowDesc("Asharia Engine Fullscreen Texture Smoke"));
         if (!window) {
             asharia::logError(window.error().message);
             return EXIT_FAILURE;
@@ -5142,7 +5143,7 @@ namespace {
         }
 
         auto window = asharia::GlfwWindow::create(
-            *glfw, asharia::WindowDesc{.title = "Asharia Engine Offscreen Viewport Smoke"});
+            *glfw, smokeWindowDesc("Asharia Engine Offscreen Viewport Smoke"));
         if (!window) {
             asharia::logError(window.error().message);
             return EXIT_FAILURE;

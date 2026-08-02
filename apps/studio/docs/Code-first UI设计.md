@@ -1,9 +1,12 @@
 # Code-first UI 设计
 
-状态：Partial（公共 UI-neutral tree、state、event、validation 与整棵 Avalonia content subtree 重建已实现；
-keyed reconcile/control reuse 尚未实现；Avalonia content backend 与统一 extension contract 仍在迁移）
+状态：Deleted legacy implementation（仅保留为被否决方案的历史记录）
 
-更新日期：2026-07-30
+更新日期：2026-07-31
+
+> 2026-07-31 R0 hard-cut 已删除 Code-first Frame Debugger、UI Style consumer、公共 DSL、Avalonia Host、
+> `UiBackendId.CodeFirst` 与专属测试；UI Style 已以 compiled Avalonia 重建，Frame Debugger 在接通真实
+> render lane 前不注册。下文只作为被否决方案的历史审计记录；其中路径与代码示例均不再存在，禁止据此恢复实现。
 
 > 本文定义统一 Editor Extension Framework 的受限 Code-first UI authoring。Studio 内置功能、项目 `Editor/`、
 > Package 和已安装插件使用同一合同。它是低频、小规模、标准工具 schema，不是 Avalonia code-only UI 的别名，
@@ -374,11 +377,13 @@ public sealed record GuiListItem(
     string Id,
     string Label,
     string? Detail = null,
-    string? IconKey = null,
-    EditorDiagnosticSeverity? Severity = null);
+    string? IconKey = null);
 ```
 
 选择状态使用 item ID，不使用 index。index 会在过滤、排序、刷新后失效。
+
+> Current-facts：Code-first UI production path 与其旧 public diagnostics enum 均已在 R0 hard-cut 删除；本段只保留
+> 历史设计理由，不能作为恢复该 API 的来源。当前 diagnostics severity 只属于 App-owned bounded hub 的完整 record contract。
 
 ## 8. 构建流程
 

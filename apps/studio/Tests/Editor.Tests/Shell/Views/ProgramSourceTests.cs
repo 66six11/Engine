@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using Editor;
 using Xunit;
 
 namespace Editor.Tests.Shell.Views;
@@ -8,18 +9,38 @@ namespace Editor.Tests.Shell.Views;
 public sealed class ProgramSourceTests
 {
     [Fact]
-    public void Studio_prefers_vulkan_rendering_before_windows_fallbacks()
+    public void Studio_returns_the_classic_desktop_lifetime_exit_code()
+    {
+        var entryPoint = typeof(App).Assembly.EntryPoint;
+
+        Assert.NotNull(entryPoint);
+        Assert.Equal(typeof(int), entryPoint.ReturnType);
+
+        var source = LoadSource("Program.cs");
+        Assert.Contains("public static int Main(string[] args)", source, StringComparison.Ordinal);
+        Assert.Contains(".StartWithClassicDesktopLifetime(args)", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Studio_uses_platform_defaults_without_phantom_native_viewport_configuration()
     {
         var source = LoadSource("Program.cs");
 
-        Assert.Contains("Win32PlatformOptions", source, StringComparison.Ordinal);
-        Assert.Contains("Win32RenderingMode.Vulkan", source, StringComparison.Ordinal);
-        Assert.Contains("Win32RenderingMode.AngleEgl", source, StringComparison.Ordinal);
-        Assert.Contains("Win32RenderingMode.Software", source, StringComparison.Ordinal);
-        Assert.True(
-            source.IndexOf("Win32RenderingMode.Vulkan", StringComparison.Ordinal)
-                < source.IndexOf("Win32RenderingMode.AngleEgl", StringComparison.Ordinal),
-            "Studio should try Vulkan before falling back to ANGLE.");
+        Assert.Contains(".UsePlatformDetect()", source, StringComparison.Ordinal);
+        Assert.Contains(".WithInterFont()", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("Win32PlatformOptions", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("Win32RenderingMode", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("Vulkan", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Studio_installs_one_owned_framework_log_sink_instead_of_trace()
+    {
+        var source = LoadSource("Program.cs");
+
+        Assert.Contains("AppBuilder.Configure<App>()", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("LogToTrace", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("WithDeveloperTools", source, StringComparison.Ordinal);
     }
 
     private static string LoadSource(params string[] pathParts)
@@ -32,7 +53,7 @@ public sealed class ProgramSourceTests
     {
         var workspaceRoot = Environment.GetEnvironmentVariable("CODEX_WORKSPACE_ROOT");
         if (!string.IsNullOrWhiteSpace(workspaceRoot)
-            && File.Exists(Path.Combine(workspaceRoot, "Editor.sln")))
+            && File.Exists(Path.Combine(workspaceRoot, "Asharia.Studio.sln")))
         {
             return workspaceRoot;
         }
@@ -40,7 +61,7 @@ public sealed class ProgramSourceTests
         var directory = new DirectoryInfo(Directory.GetCurrentDirectory());
         while (directory is not null)
         {
-            if (File.Exists(Path.Combine(directory.FullName, "Editor.sln")))
+            if (File.Exists(Path.Combine(directory.FullName, "Asharia.Studio.sln")))
             {
                 return directory.FullName;
             }
@@ -48,6 +69,6 @@ public sealed class ProgramSourceTests
             directory = directory.Parent;
         }
 
-        throw new DirectoryNotFoundException("Could not locate Editor.sln.");
+        throw new DirectoryNotFoundException("Could not locate Asharia.Studio.sln.");
     }
 }

@@ -1,29 +1,8 @@
 <Application xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="Editor.App"
-             xmlns:local="using:Editor"
-             RequestedThemeVariant="Default">
-             <!-- "Default" ThemeVariant follows system theme variant. "Dark" or "Light" are other available options. -->
-
-    <Application.DataTemplates>
-        <local:ViewLocator/>
-    </Application.DataTemplates>
-
-    <Application.Resources>
-        <ResourceDictionary>
-            <ResourceDictionary.MergedDictionaries>
-                <ResourceInclude Source="avares://Editor/UI/Styles/Tokens/DeepDarkColors.axaml" />
-                <ResourceInclude Source="avares://Editor/UI/Styles/Tokens/EditorMetrics.axaml" />
-                <ResourceInclude Source="avares://Editor/UI/Controls/Base/IconButton.axaml" />
-            </ResourceDictionary.MergedDictionaries>
-        </ResourceDictionary>
-    </Application.Resources>
-  
+             RequestedThemeVariant="Dark">
     <Application.Styles>
         <FluentTheme DensityStyle="Compact" />
-        <StyleInclude Source="avares://Avalonia.Controls.ColorPicker/Themes/Fluent/Fluent.xaml" />
-        <StyleInclude Source="avares://Editor/UI/Controls/Base/Native/Index.axaml" />
-        <StyleInclude Source="avares://Editor/UI/Controls/Tree/EditorTreeStyles.axaml" />
-        <StyleInclude Source="avares://Editor/UI/Styles/Shell/MainMenu.axaml" />
     </Application.Styles>
 </Application>

@@ -1,8 +1,11 @@
 # Studio 代码框架设计
 
-状态：Target（迁移中）
+状态：Superseded by [ADR-0007](../adr/0007-studio-frontend-hard-cut.md)
 
-更新日期：2026-07-12
+更新日期：2026-07-31
+
+> 本文记录旧八项目 Extension Framework 迁移设计。当前编译期边界、删除范围和 hard-cut 门禁见
+> [Studio 前端硬切架构](studio-frontend-hard-cut.md)。
 
 ## 1. 目的
 
@@ -15,54 +18,63 @@
 
 ## 2. 当前事实
 
-legacy production executable、Avalonia/Shell/Dock host implementation、built-in Feature 和对应回归测试仍由 `Editor.sln` 承载：
+legacy production executable、Avalonia/最小Shell和其余断开Core/UI surface仍位于root
+`Editor.csproj` 与 `Tests/Editor.Tests`；部分项目的旧 `Editor.sln` 已删除，唯一 solution 是 `Asharia.Studio.sln`：
 
 ```text
 Editor.csproj
 Tests/Editor.Tests/Editor.Tests.csproj
 ```
 
-legacy `Editor.csproj` 仍包含 Avalonia、Shell、Dock、Feature、尚未提升的 UI-neutral model/service、P/Invoke/native adapter 和 Windows DLL copy target；它不再拥有 Code-first production source，也不再拥有已提升的 service contract source。当前 legacy 主要命名空间为 `Editor.Core.*`、`Editor.Shell.*`、`Editor.UI.*` 和 `Editor.Features.*`。
+legacy `Editor.csproj` 仍包含Avalonia、最小Shell与尚未提升或待删的UI-neutral model/service；R0已删除native DLL copy target、
+viewport/Frame Debugger managed P/Invoke岛，不再拥有Code-first、Workbench、Dock或built-in Feature source。当前legacy主要命名空间为`Editor.Core.*`与`Editor.Shell.*`。
 
-迁移脚手架已经建立 `Asharia.Studio.sln`。UI-neutral `src/Asharia.Editor/Asharia.Editor.csproj` 已提供第一批 public module identity、scope/policy、definition metadata、activation/quiesce/resume、capability Epoch snapshot，以及 code-first required/optional module/capability 与 provided capability 声明合同。`EditorModuleBuilder.Build()` 把声明顺序冻结为防御性只读快照；重复、自依赖、required/optional 冲突和 Application→Project module edge 在声明期 fail-fast，跨 Package/provider graph 仍由未来 Host 验证。
+canonical `Asharia.Studio.sln` 已精确列出 6 个 production 与 7 个 test projects；R0.5新增的
+`Asharia.Studio.DevelopmentProtocol`是无runtime dependency的development-only合同项目，
+`Asharia.Studio.DevelopmentHost`包含直接读取唯一Application diagnostic/log hub的无状态投影与typed in-process Host/session；
+Debug `StudioCompositionSession`拥有并停止该Host，Editor只以Debug条件边引用它。该assembly另有尚未接App的Windows current-user
+Named Pipe adapter与真实transport tests；两者及其独立tests不进入Editor Release image。App endpoint/discovery、CLI、MCP尚未实现。
+`Asharia.Studio.Headless.Tests`只负责Avalonia 12/xUnit v3 dispatcher下的production Shell证据。R0已删除`src/Asharia.Editor`最后24个module identity/policy/builder/activation/capability/contribution/panel declaration source及9个self-test文件，因为它们没有Host/loader/registry/content consumer；随后空public project/test、App/Architecture/solution edge与distribution identity/deps/image合同也已删除，不再提供public SDK或空DLL。
 
-完整的 Code-first authoring、tree、state、events 和 validation 现已编译进 dependency-free `Asharia.Editor`；其所需的 Diagnostics、Commands 和 Panels UI-neutral 前置合同也已成为公共 API。`Asharia.Editor` 还提供 declaration-only Panel contribution contract：稳定的 contribution/backend/factory-local ID、不可变 `EditorPanelDescriptor`、`EditorModuleBuilder.Panels`、module-local duplicate validation，以及随 `Build()` 一起冻结的有序只读快照。Panel scope 只来自 `EditorModuleDefinitionContext.DefinitionId.Scope`，descriptor 不重复保存 scope。
+R0 已从 dependency-free `Asharia.Editor` 删除完整 Code-first authoring/tree/state/events/validation 与
+`UiBackendId.CodeFirst`；Shell host 和专属测试同时删除。legacy root移除后确认 command router/status projection也无
+production consumer，因此公共 command/status contract随后整体删除。declaration-only Panel/Extensions/Contributions SCC
+也已删除，不能据此恢复第二UI authoring或extension SDK。
 
-Task 4 的 service/state 迁移已完成：background task、diagnostic record/service、Frame Debug snapshot/provider、editing command、lifecycle event、selection、transaction、scene/world snapshot/provider interface、backend-neutral Viewport identity/clock/render/scheduler/state、status message，以及 Panel lifecycle/frame sink contracts 已由 `Asharia.Editor` 唯一拥有；legacy service、Feature、ViewModel 和 Avalonia View 只消费这些公共合同。UI-neutral provider registration/status/runtime host 已由 `Asharia.Studio.Application.Providers` 拥有；delegate-based `SceneProviderDescriptor` 与 fixture provider implementation 仍是 legacy compatibility seam，并只由 compatibility adapter 转换。native Frame Debug payload/bridge、Viewport composition capability/native present transport，以及 legacy `PanelDescriptor(Func<object>)`/`WorkbenchActionDescriptor` 仍不属于公共扩展 ABI。
+Task 4曾迁移background task、diagnostic、editing、lifecycle、selection、transaction、scene/world、Viewport与Panel合同；
+ADR-0007随后按production reachability逐族硬切。Frame Debug snapshot/provider public DTO及native payload/bridge因只有stub tests、
+无render-lane consumer且发行物拒绝其DLL而整体删除，不属于当前公共扩展ABI。其余旧合同继续以hard-cut文档为唯一current truth。
 
 `Asharia.Studio.EngineBridge` 已建立 managed Scene World、entity lifecycle、local Transform 与 entity display-name boundary：ABI v1 World create/destroy、entity create/destroy/is-alive、local Transform get/set 和 entity-name get/set 使用 source-generated native import，Bridge 关闭 runtime marshalling 并只传递显式 unmanaged value 或调用期 pinned UTF-8 bytes；成功后只发布不透明、不可外泄的 World owner、`Asharia.Runtime.EntityId`、`TransformValue` 与 managed `string`。全部调用必须回到创建线程，错误线程与 native failure 都不丢失 World ownership，成功销毁后 exactly-once 清空。local Transform 的 finite/unit-quaternion validation 由 native ABI 唯一拥有，managed Bridge 不复制容差算法或静默 normalize/clamp；名称使用 strict UTF-8、最多 4096 bytes、caller-owned query/copy buffer，且始终只是 mutable/non-unique display/debug text。该边界没有 finalizer-driven cleanup，因为 native World 明确要求 owner-thread destroy；当前仍没有 snapshot provider、Application/ProjectSession wiring 或 native library deployment policy。
 
-Panel declaration 的 `ContentFactory` 是 `EditorFactoryLocalId`，不是 CLR factory 或 generation handle。未来 Host 必须在 staging 时把 Package generation、owner module definition 与 local ID 绑定为 generation-scoped runtime handle；当前仍没有 Panel registry、factory binding、Dock integration、Host resolver 或 runtime display。legacy `PanelDescriptor(Func<object>)` 只留在 `Editor` compatibility implementation，不是公共 ABI。
+旧Panel declaration的`EditorFactoryLocalId`从未绑定CLR factory、generation handle或Host resolver，且legacy compatibility implementation已删除。该无consumer declaration SCC现已整体删除；未来只有真实Panel owner/第二consumer成立后，才重新定义generation-scoped factory合同。
 
-legacy `Editor` 通过 `ProjectReference` 消费这些公共合同，并继续拥有 Avalonia adapter、Dock、Shell host 和 UI dispatcher implementation。纯 Code-first 行为测试由 `Tests/Asharia.Editor.Tests` 承载，架构门禁由 `Tests/Asharia.Studio.Architecture.Tests` 承载；迁移期继续沿用现有大写 `Tests/`。
+legacy root `Editor` 当前只通过 `ProjectReference` 消费`Asharia.Studio.Application` bounded diagnostics，并继续拥有Avalonia adapter、最小Shell和UI dispatcher implementation。Code-first与断开的Dock行为测试已随实现删除；架构门禁断言两个 Code-first source root、Dock source roots与全局 `ViewLocator` 均不存在。
 
-`Asharia.Studio.Application` 已建立只依赖 `Asharia.Editor` 的 kernel project boundary。首个 static generation Host 接收显式 registration，先拒绝 duplicate definition，再一次性创建 module definition object、执行一次 `Configure` 并冻结 declaration；只有全部成功时才返回可见 Host。它不做 reflection scan、file/assembly load、ALC、service resolution 或 Presentation/native ownership。matching Application tests 与 architecture gates 执行 configure-once、metadata identity、null factory、failure atomicity 和 dependency/source vocabulary 边界。
+R0确认 `Asharia.Studio.Application.Extensions` 的static generation Host、module registry、scope transaction与activation
+只被3份专属tests实例化；ProjectCode与legacy compatibility adapter删除后没有production consumer，因此实现和tests
+已整体删除。Panel runtime叶清理后，`Asharia.Studio.Application`及其test工程也已移除对旧`Asharia.Editor`的最后
+ProjectReference；Application当前只拥有bounded diagnostics，不声明extension/panel/provider能力。
 
-`EditorModuleRegistry` 现拥有 committed scope partition map；`EditorScopeTransaction.Prepare` 捕获当前 registry snapshot，在不可见 candidate 中绑定 `EditorModuleInstanceId`，校验 definition/scope、required module、mixed module-capability cycle、Panel contribution ID、capability provider ambiguity 和 required capability provider。Project candidate 可以解析已提交的 Application definition/capability，但不能看到其他 Project scope。普通 `Commit` 在锁内比较 snapshot identity 并一次替换完整 map；stale transaction 失败且不能覆盖较新的 commit。Project Code 的 initial-registration 路径还要求目标 Project scope 在 captured snapshot 中不存在，并返回绑定 exact partition reference 的显式 registration owner；owner 关闭时用同一 registry lock compare-and-remove，幂等退役自己的 partition，并在发现 successor replacement 时 fail closed。首次激活会把 registration 所有权一次性转交给异步 activation owner；owner 先释放 module activation，再退役 exact partition。结构提交、activation lifetime、registration retirement 与 capability runtime availability 保持分离。
+R0审计确认Selection的4个public types与Application内存service没有App/Shell/Document/Scene/panel producer或reader；两侧self-tests及distribution fixture的`typeof(IEditorSelectionService)`合成锚点不是产品consumer。完整岛、self-tests与synthetic type引用现已删除且未换绑其他public type。未来selection必须从真实Document/World/asset owner、typed scoped identity、revision/existence与close invalidation重新通过I0/I1。
 
-`EditorModuleHost` 按 `ScopeInstanceId` single-flight activation，不同 Project scope 可以并发；同一 scope 只复用同一个 exact partition，Project Code 的首次激活入口还要求不存在已有 activation owner。Project Code 在转交 registration 前复核 runtime capability snapshot 与 Prepare 时的 capability ID 集合完全一致。每个 instance 记录 `Active`、`WaitingForCapability`、`Faulted` 或 `Blocked` outcome；`WaitingForCapability`/`Blocked` 是保留 owner 的 soft outcome，任何 `Faulted` 都返回 path-free typed failure，并按 activation-first 顺序清理。required failure 只传播到 dependent chain，关闭按 dependents-first、reverse registration order 释放 activation lease。legacy executable 现在同时 ProjectReference `Asharia.Editor` 与 `Asharia.Studio.Application`，并且只有 `Shell/Compatibility/LegacyEditorModuleCompatibilityAdapter` 消费旧 `IEditorExtensionModule`：adapter 把 legacy built-in 映射为有序 Application definitions，activation/disposal 交给 Application Host；Panel/Action 的旧 registry 提交暂留 adapter，legacy provider descriptor 则在此转换后提交给 Application provider host。该 adapter 在 Task 8 built-in 全面采用公共 module API 后删除。
+R0确认Background Task的public ID/state/snapshot/service与Application状态实现没有App/MainWindow producer；该实现不持有真实`Task`、worker、CTS、cancel signal或shutdown join，只在无界dictionary里保留terminal snapshots。完整岛及两侧self-tests现已删除。未来首个真实background operation必须由owner持有work、cancel/join与bounded terminal evidence后重新通过I0/I1。
 
-Selection 的合同与状态所有权已经分离：`IEditorSelectionService`、snapshot、item 和 event args 继续由 `Asharia.Editor.Selection` 作为公共 UI-neutral API 拥有；唯一 production `EditorSelectionService` 实现及其 focused behavior tests 已迁入 `Asharia.Studio.Application.Selection`。legacy Shell、Feature 和 ViewModel 通过 Application project reference 消费该实现，架构门禁禁止恢复 `Shell/Selection` owner。其余 UI-neutral service implementation 仍按 Task 5 Step 6 逐族迁移。
+R0确认Lifecycle Event的public kind/snapshot/service与Application 100项recent-event实现没有App/MainWindow/Dock producer、reader或subscription；所谓Window hook已随legacy Presentation删除。该完整岛及两侧self-tests现已删除。唯一process lifecycle由`StudioProcessSession`直接执行并产出typed receipt；未来事件面必须有真实owner transition和对称subscription后重新通过I0/I1。
 
-Background Task 采用相同边界：`IEditorBackgroundTaskService`、task ID/state/snapshot 继续由 `Asharia.Editor.Tasks` 拥有，线程安全的 `EditorBackgroundTaskService` 状态实现和 focused behavior tests 已迁入 `Asharia.Studio.Application.Tasks`。MainWindow 只通过 Application project reference 创建默认实现；任务显示仍属于 Presentation consumer，不进入 Application。
+R0确认Editing/Transactions的7个public types与Application closure-based undo/redo实现没有Document、App或native mutation producer；string target/field和closure compensation不能表达authority/revision/uncertain commit，且异常可丢history。该完整岛及self-tests现已删除。未来首个写Slice必须从typed intent、expected revision、authoritative receipt/inverse、journal cursor和savepoint重新通过I0/I1。
 
-Lifecycle Event 的公共 kind/snapshot/service contract 继续由 `Asharia.Editor.Lifecycle` 拥有；有界 recent-event history、sequence 和 UTC timestamp 的 production 实现已迁入 `Asharia.Studio.Application.Lifecycle`。MainWindow、Dock workspace 和 Window View hook 仍只通过 `IEditorLifecycleEventService` 共享状态，Avalonia lifecycle projection 留在 legacy Presentation 路径。
+Diagnostics/log 的 process identity、scope/context、record、cursor window 与 hub contract 由 `Asharia.Studio.Application.Diagnostics` 拥有；`App` 是唯一 production hub owner。diagnostic/log 分别写入预分配的 2,048/8,192 slot ring，publish 为 O(1) 且记录 cursor/drop/truncation；subscriber 有 64 个固定 slot，异常与 publisher 隔离。Avalonia 的自有 `ILogSink`、native failure mapping 与 managed command/status mapping 写入同一 hub，Console/Problems 只是只读投影。无record、hub或consumer的旧 `Asharia.Editor.Diagnostics.EditorDiagnosticSeverity` 已随 R0 SDK closure删除；public API absence gate禁止恢复第二套severity truth。
 
-Transaction 的 edit-command、ID、snapshot 和 service contract 继续由 `Asharia.Editor.Editing`/`Asharia.Editor.Transactions` 拥有；undo/redo stack、active transaction、rollback 和 failure diagnostics 的实现及完整行为测试已迁入 `Asharia.Studio.Application.Transactions`。本迁移不新增 composition 注册；当前没有 production consumer 的事实保持不变。当前实现使用普通 `List<T>` 保存有序历史，只承诺在串行 editor-command/document context 中调用，不承诺并发 thread safety；未来 production wiring 必须 marshal 到该 owner context，或通过独立设计显式增加同步合同。
+R0确认Viewport scheduling的12个public options/context/state/request/result types与Application纯planner没有App、UI/native backend或renderer frame-loop owner；4个test文件是全部consumer。该完整managed岛现已删除，且C++ editor/native smoke不作为Studio consumer。未来必须先建立真实ViewportSession、surface generation、frame lease/ack与bounded backpressure，再从I0/I1设计scheduler和monotonic timestamp合同。
 
-Diagnostics 的 severity/channel/record/service contract 继续由 `Asharia.Editor.Diagnostics` 拥有；有界 history、sequence 和过滤查询的 production 实现及 focused tests 已迁入 `Asharia.Studio.Application.Diagnostics`。该实现用私有 gate 同步普通 `List<T>` 的全部读写，在提交 record 并释放锁后才触发 `DiagnosticsChanged`；Console、Problems、Frame Debugger、Scene View、Workbench 和 MainWindow 仍通过公共接口消费，并由 Presentation dispatcher 负责 UI projection。
+R0确认Panel lifecycle/frame的9个public callback/context与Application scheduler没有Window/Dock/Control/panel instance producer；所谓Presentation `DispatcherTimer`调用链早已随legacy UI删除。完整runtime岛、专属tests和3个孤立public self-tests现已删除。未来真实panel由同一Window/Dock owner持有content、dispatcher与detach/dispose receipt；出现真实第二consumer前不重建通用scheduler。
 
-Viewport scheduling 的 options/context/state/request/reason 公共合同继续由 `Asharia.Editor.Viewports` 拥有；隐藏过滤、dirty/interactive/playback/runtime/frame-debug reason、priority 和 per-tick budget policy 已迁入 `Asharia.Studio.Application.Viewports.ViewportScheduler`。该 planner 无 UI/native/backend 依赖且不拥有 renderer frame loop；当前没有 production consumer 的事实保持不变。当前 v0 用 `DateTimeOffset` 表达可诊断的 UTC render instant，并在 last-rendered time 晚于当前 context 时立即调度以避免时钟回拨造成饥饿；它不承诺 high-resolution monotonic cadence。接入 production frame loop 前必须单独决定 `TimeProvider.GetTimestamp()`/等价 monotonic timestamp 合同，不能把 wall-clock arithmetic 当作精确帧计时。
+R0 在删除 legacy composition root 后确认 command/status projection、Workbench action registry/router、shortcut、menu、command palette 与 public `Asharia.Editor.Commands` 都没有 production consumer，因此已连同专属测试整体删除。未来 action合同必须等真实 Document/selection use case，并由当前 hard-cut ADR重新设计；不得从本文恢复旧类型。
 
-Panel frame scheduling 的 lifecycle context、update request、frame context 和 sink contract 继续由 `Asharia.Editor.Panels` 拥有；attach/active/visible/manual、target FPS、elapsed context 和 repaint-request policy 已迁入 `Asharia.Studio.Application.Panels.EditorPanelFrameScheduler`。Application scheduler 不引用 Avalonia、Dock ViewModel 或 Control；legacy Presentation 继续用在正确 dispatcher 上创建的 `DispatcherTimer` 串行调用 `Tick`，并负责 Window close 时停止 timer。当前实现因此是 Presentation-dispatched UI-context policy，不承诺跨线程并发调用；未来 monotonic cadence 约束与 Viewport scheduler 一样需要独立设计。
+R0确认`Asharia.Editor.Dialogs`七个public types在Dialog presentation删除后没有任何production consumer；三个test文件只自证DTO invariant，架构测试反而强制精确库存。该namespace现已连同self-tests删除，且没有wrapper或type forwarding。未来Dialog必须由真实request producer、owner Window、typed completion和owner-close策略重新通过I0/I1；不得从本文恢复旧DTO或compatibility host。
 
-Command status projection 已开始从 legacy Shell 拆分：`EditorCommandStatusMessageRouter` 由 `Asharia.Studio.Application.Commands` 拥有，只包装公共 `IEditorGuiCommandExecutor` 并在 inner execution 返回后发布同一个 `EditorCommandExecutionResult`。legacy `WorkbenchCommandRouter` 继续拥有 descriptor registry/executor compatibility translation，但不再定义重复的 `IWorkbenchCommandRouter`；menu 与 shortcut consumers 也只依赖公共 executor。Avalonia `KeyGesture` parsing、Dock panel callback 和 legacy `WorkbenchActionDescriptor` 仍不得进入 Application。
-
-`Asharia.Editor.Dialogs` 现拥有七个 UI-neutral public type：severity、action role、稳定 action ID、action descriptor、request、completion kind 和 result。Action ID、role、default、destructive 与 completion 是相互独立的语义；request 构造会验证全部结构 invariant，并冻结输入 action 的防御性只读快照。公开的 action 声明顺序是确定的 diagnostics/test 顺序，不承诺 Windows、Linux 或 macOS 上的屏幕排列。
-
-现有 compatibility Dialog Host 已改为消费该公共合同；Presentation 仍拥有 overlay、focus、action projection 和 single-active-modal policy，第二个 active request 会被拒绝。用户触发的 system dismiss 结果仍与未来 operation cancellation 分离。`Editor.Core.Models.Dialogs` 已删除，且没有 wrapper、type forwarding 或重复 model。当前仍没有 dialog service、owner-window routing、custom content、platform ordering、localization、file picker、progress、notification 或 modal queue。
-
-`Asharia.Editor` 已形成可供项目 `Editor/` 和 Package 扩展编译引用的稳定 assembly；legacy `Editor` 到公共 API 的依赖方向由 `ProjectReference` 和架构测试执行。剩余迁移仍需让 built-in Feature 停止使用内部 host API，并继续把后续目标 project 边界交给编译器执行。
+`Asharia.Editor` assembly/project/test/solution/image identity已在R0删除；当前没有可供项目`Editor/`或Package扩展编译引用的public SDK，也没有built-in Feature host。未来真实第二consumer必须重新通过I0-I6并建立新ADR，不能从本文目标图恢复旧合同。
 
 ## 3. 术语
 
@@ -413,7 +425,7 @@ Features/
   UiStyle/
 ```
 
-每个 Feature 提供一个或多个 `[EditorModule]`，使用与项目 extension 完全相同的 builder 和 service。Module 显式声明 Application 或 Project scope；Scene、Hierarchy、Inspector、Game View 等 built-in module 是 Project scope，不因为来源为 BuiltIn 就变成全局 singleton。它不创建 `EngineHost`、不访问 registry implementation、不修改 Dock tree。
+R0 hard-cut 后当前不存在 `[EditorModule]`、builder、Host 或 built-in Feature module；本节只保留未来能力重新通过 I0/I1 后的候选边界。若届时存在真实 consumer，built-in 与项目 extension 应使用同一套经重新批准的声明合同，Module 必须显式声明 Application 或 Project scope；Scene、Hierarchy、Inspector、Game View 等 project-owned 能力不能因为来源为 BuiltIn 就变成全局 singleton，也不能创建 `EngineHost`、访问 registry implementation 或修改 Dock tree。
 
 Distribution build 为该 assembly 生成 reserved PackageIdentity `com.asharia.studio.builtin-extensions`，version/content hash 来自 Studio distribution manifest；registry/diagnostics 中不能把 BuiltIn owner 记录为空或只记录磁盘路径。
 
@@ -584,7 +596,7 @@ Asharia.Studio.App.*
 - 新 P/Invoke 只能进入现有 Interop 兼容区，不得被 View/ViewModel 调用；
 - 不新增 `WorkbenchFeatureModule` 聚合依赖；新 Feature 应有独立 module；
 - 不为过渡期创建 static singleton/service locator；
-- 不提前把目标文档中的 `Asharia.Studio.sln` 命令描述成当前可执行事实。
+- 完整 managed gate 只使用 canonical `Asharia.Studio.sln`；不得再把 legacy `Editor.sln` 描述成全项目 solution。
 
 ## 18. 禁止模式
 
@@ -613,11 +625,11 @@ powershell -ExecutionPolicy Bypass -File tools\check-text-encoding.ps1 -Root app
 git diff --check
 ```
 
-迁移期间必须同时验证旧 executable solution 和目标 solution：
+迁移期间以 canonical solution 验证完整项目图；需要 legacy executable 的快速回归时直接运行其 test project，不维护第二份完整 solution：
 
 ```powershell
-dotnet test apps\studio\Editor.sln -c Release
-dotnet test apps\studio\Asharia.Studio.sln -c Release
+dotnet test apps\studio\Tests\Editor.Tests\Editor.Tests.csproj -c Release
+dotnet test apps\studio\Asharia.Studio.sln -c Release --no-build --blame-hang --blame-hang-timeout 10m
 ```
 
 ## 20. 相关文档

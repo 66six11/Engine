@@ -1,5 +1,13 @@
 # 颜色 Token 指南
 
+状态：Superseded（历史主题资源记录）
+
+更新日期：2026-08-01
+
+> R0已删除没有真实consumer的`UI/Styles/**`、icon/control/font registry与附加包；当前App只安装Avalonia
+> Fluent基础主题，唯一MainWindow拥有其三个固定颜色。下文路径和token均不再存在，不得据此恢复全局registry；
+> 当前合同见[Studio前端硬切架构](architecture/studio-frontend-hard-cut.md#420-r0-disconnected-app-ui-resource-closure-hard-cut-cardcurrent)。
+
 本文说明 Studio 前端 Deep Dark 颜色 token 的来源、命名和使用规则。完整 token 定义位于 `UI/Styles/Tokens/DeepDarkColors.axaml`。
 
 ## 1. 主题定位
