@@ -17,8 +17,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\apps\studio\src\Asharia.Editor\Asharia.Editor.csproj" />
-    <ProjectReference Include="..\..\apps\studio\src\Asharia.Runtime.Contracts\Asharia.Runtime.Contracts.csproj" />
     <ProjectReference Include="..\studio-distribution\Asharia.Studio.Distribution.csproj" />
   </ItemGroup>
 

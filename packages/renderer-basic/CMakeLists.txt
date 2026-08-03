@@ -316,7 +316,6 @@ target_link_libraries(asharia-renderer-basic
     INTERFACE
         asharia::core
         asharia::rendergraph
-        asharia::shader_slang
 )
 
 target_include_directories(asharia-renderer-basic-vulkan
@@ -331,6 +330,7 @@ target_link_libraries(asharia-renderer-basic-vulkan
         asharia::rhi_vulkan_rendergraph
     PRIVATE
         asharia::material_core
+        asharia::shader_slang
 )
 
 target_compile_definitions(asharia-renderer-basic

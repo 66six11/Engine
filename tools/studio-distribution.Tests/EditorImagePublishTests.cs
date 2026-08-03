@@ -23,6 +23,7 @@ public sealed class EditorImagePublishTests
         }
 
         var repositoryRoot = FindRepositoryRoot();
+        var dotnetHost = FindDotnetHost();
         var temporaryRoot = Path.Combine(
             Path.GetTempPath(),
             $"asharia-editor-profile-cli-test-{Guid.NewGuid():N}");
@@ -35,7 +36,7 @@ public sealed class EditorImagePublishTests
             {
                 StartInfo = new ProcessStartInfo
                 {
-                    FileName = inputs_.DotnetHost,
+                    FileName = dotnetHost,
                     WorkingDirectory = repositoryRoot,
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
@@ -137,11 +138,12 @@ public sealed class EditorImagePublishTests
         }
 
         var repositoryRoot = FindRepositoryRoot();
+        var dotnetHost = FindDotnetHost();
         using var process = new Process
         {
             StartInfo = new ProcessStartInfo
             {
-                FileName = inputs_.DotnetHost,
+                FileName = dotnetHost,
                 WorkingDirectory = repositoryRoot,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
@@ -165,12 +167,6 @@ public sealed class EditorImagePublishTests
             inputs_.HostFxrVersion,
             "--host-runtime-version",
             inputs_.HostRuntimeVersion,
-            "--reference-pack-version",
-            inputs_.ReferencePackVersion,
-            "--runtime-contract",
-            "x",
-            "--editor-contract",
-            "x",
             "--output-root",
             "x",
         })
@@ -189,7 +185,7 @@ public sealed class EditorImagePublishTests
     }
 
     [Fact]
-    public async Task Release_profile_publishes_the_fixed_managed_and_native_runtime_set()
+    public async Task Release_profile_publishes_and_stages_the_current_managed_app()
     {
         if (!OperatingSystem.IsWindows())
         {
@@ -197,30 +193,22 @@ public sealed class EditorImagePublishTests
         }
 
         var repositoryRoot = FindRepositoryRoot();
+        var dotnetHost = FindDotnetHost();
         var temporaryRoot = Path.Combine(
             Path.GetTempPath(),
             $"asharia-studio-publish-test-{Guid.NewGuid():N}");
-        var nativeRoot = Path.Combine(temporaryRoot, "native");
         var publishRoot = Path.Combine(temporaryRoot, "publish");
-        StudioEditorImageTestInputs.WriteNativeDll(
-            Path.Combine(nativeRoot, "apps", "editor", "editor_native.dll"),
-            "editor_native.dll",
-            StudioEditorImageTestInputs.EditorNativeRequiredExports);
-        StudioEditorImageTestInputs.WriteNativeDll(
-            Path.Combine(nativeRoot, "packages", "shader-slang", "slang.dll"),
-            "slang.dll",
-            StudioEditorImageTestInputs.SlangRequiredExports);
 
         try
         {
             Assert.Equal(
                 inputs_.SdkVersion,
-                await QuerySdkVersionAsync(inputs_.DotnetHost, repositoryRoot));
+                await QuerySdkVersionAsync(dotnetHost, repositoryRoot));
             using var process = new Process
             {
                 StartInfo = new ProcessStartInfo
                 {
-                    FileName = inputs_.DotnetHost,
+                    FileName = dotnetHost,
                     WorkingDirectory = repositoryRoot,
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
@@ -239,7 +227,6 @@ public sealed class EditorImagePublishTests
             process.StartInfo.ArgumentList.Add("Release");
             process.StartInfo.ArgumentList.Add("-p:PublishProfile=EditorImage");
             process.StartInfo.ArgumentList.Add($"-p:PublishDir={publishRoot}{Path.DirectorySeparatorChar}");
-            process.StartInfo.ArgumentList.Add($"-p:StudioNativeBuildOutputRoot={nativeRoot}");
 
             Assert.True(process.Start(), "Could not start dotnet publish.");
             var stdout = process.StandardOutput.ReadToEndAsync();
@@ -258,14 +245,25 @@ public sealed class EditorImagePublishTests
                     "Editor.dll",
                     "Editor.deps.json",
                     "Editor.runtimeconfig.json",
-                    "Asharia.Runtime.Contracts.dll",
-                    "Asharia.Editor.dll",
-                    "editor_native.dll",
-                    "slang.dll",
+                    "Asharia.Studio.Application.dll",
                 },
                 file => Assert.True(
                     File.Exists(Path.Combine(publishRoot, file)),
                     $"Published Editor Image input is missing '{file}'.{Environment.NewLine}{output}"));
+            Assert.All(
+                new[]
+                {
+                    "Asharia.Editor.dll",
+                    "Asharia.Runtime.Contracts.dll",
+                    "Asharia.Studio.DevelopmentHost.dll",
+                    "Asharia.Studio.DevelopmentProtocol.dll",
+                    "Asharia.Studio.EngineBridge.dll",
+                    "editor_native.dll",
+                    "slang.dll",
+                },
+                file => Assert.False(
+                    File.Exists(Path.Combine(publishRoot, file)),
+                    $"Published Editor Image input contains retired artifact '{file}'.{Environment.NewLine}{output}"));
 
             var dotnetRoot = Path.Combine(temporaryRoot, "dotnet");
             inputs_.CopyDotnetTo(dotnetRoot);
@@ -274,7 +272,7 @@ public sealed class EditorImagePublishTests
             {
                 StartInfo = new ProcessStartInfo
                 {
-                    FileName = inputs_.DotnetHost,
+                    FileName = dotnetHost,
                     WorkingDirectory = repositoryRoot,
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
@@ -298,12 +296,6 @@ public sealed class EditorImagePublishTests
                 inputs_.HostFxrVersion,
                 "--host-runtime-version",
                 inputs_.HostRuntimeVersion,
-                "--reference-pack-version",
-                inputs_.ReferencePackVersion,
-                "--runtime-contract",
-                Path.Combine(publishRoot, "Asharia.Runtime.Contracts.dll"),
-                "--editor-contract",
-                Path.Combine(publishRoot, "Asharia.Editor.dll"),
                 "--output-root",
                 editorImageRoot,
             })
@@ -324,7 +316,36 @@ public sealed class EditorImagePublishTests
             using var receipt = JsonDocument.Parse(receiptJson);
             Assert.Equal(Path.GetFullPath(editorImageRoot), receipt.RootElement.GetProperty("root").GetString());
             Assert.Equal("bin/Editor.exe", receipt.RootElement.GetProperty("entryPoint").GetString());
-            Assert.True(receipt.RootElement.GetProperty("files").GetArrayLength() > 0);
+            var files = receipt.RootElement.GetProperty("files")
+                .EnumerateArray()
+                .Select(file => file.GetProperty("path").GetString()!)
+                .ToArray();
+            Assert.Contains(
+                $"managed/dotnet/host/fxr/{inputs_.HostFxrVersion}/hostfxr.dll",
+                files);
+            Assert.Contains(
+                $"managed/dotnet/shared/Microsoft.NETCore.App/{inputs_.HostRuntimeVersion}/coreclr.dll",
+                files);
+            Assert.DoesNotContain("managed/dotnet/dotnet.exe", files);
+            Assert.DoesNotContain(
+                files,
+                path => path.StartsWith("managed/dotnet/sdk/", StringComparison.Ordinal)
+                    || path.StartsWith("managed/dotnet/packs/", StringComparison.Ordinal));
+            Assert.False(File.Exists(Path.Combine(
+                editorImageRoot,
+                "managed",
+                "dotnet",
+                "dotnet.exe")));
+            Assert.False(Directory.Exists(Path.Combine(
+                editorImageRoot,
+                "managed",
+                "dotnet",
+                "sdk")));
+            Assert.False(Directory.Exists(Path.Combine(
+                editorImageRoot,
+                "managed",
+                "dotnet",
+                "packs")));
             Assert.False(receipt.RootElement.TryGetProperty("Root", out _));
         }
         finally
@@ -344,16 +365,52 @@ public sealed class EditorImagePublishTests
         try
         {
             await process.WaitForExitAsync(timeout.Token);
+            return;
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (timeout.IsCancellationRequested)
         {
-            if (!process.HasExited)
+            // Continue into the bounded kill path.
+        }
+
+        if (!HasExited(process))
+        {
+            try
             {
                 process.Kill(entireProcessTree: true);
-                await process.WaitForExitAsync();
+            }
+            catch (InvalidOperationException)
+            {
+                throw new TimeoutException($"Process did not exit within {timeoutValue}.");
             }
 
-            throw;
+            using var killTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            try
+            {
+                await process.WaitForExitAsync(killTimeout.Token);
+            }
+            catch (InvalidOperationException)
+            {
+                // The process exited between Kill and the bounded wait.
+            }
+            catch (OperationCanceledException) when (killTimeout.IsCancellationRequested)
+            {
+                throw new TimeoutException(
+                    "Process did not exit within 5 seconds after it was killed.");
+            }
+        }
+
+        throw new TimeoutException($"Process did not exit within {timeoutValue}.");
+    }
+
+    private static bool HasExited(Process process)
+    {
+        try
+        {
+            return process.HasExited;
+        }
+        catch (InvalidOperationException)
+        {
+            return true;
         }
     }
 
@@ -365,6 +422,25 @@ public sealed class EditorImagePublishTests
         "Release",
         "net10.0",
         "Asharia.Studio.Distribution.dll");
+
+    private static string FindDotnetHost()
+    {
+        var explicitHost = Environment.GetEnvironmentVariable("DOTNET_HOST_PATH");
+        if (!string.IsNullOrWhiteSpace(explicitHost) && File.Exists(explicitHost))
+        {
+            return explicitHost;
+        }
+
+        var runtimeDirectory = new FileInfo(typeof(object).Assembly.Location).Directory!;
+        var dotnetRoot = runtimeDirectory.Parent!.Parent!.Parent!;
+        var candidate = Path.Combine(dotnetRoot.FullName, "dotnet.exe");
+        if (!File.Exists(candidate))
+        {
+            throw new FileNotFoundException("Could not locate the active dotnet host.", candidate);
+        }
+
+        return candidate;
+    }
 
     private static string FindRepositoryRoot()
     {

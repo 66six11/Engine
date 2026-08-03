@@ -30,7 +30,9 @@ function Get-ChangedFiles {
         [switch]$IncludeUntracked
     )
 
-    $gitArgs = @("diff", "--name-only", "--diff-filter=ACMRT")
+    # A hard cut often removes obsolete entry points or compatibility paths.
+    # Deletions must remain visible to documentation review.
+    $gitArgs = @("diff", "--name-only", "--diff-filter=ACDMRT")
 
     if ($Staged) {
         $gitArgs += "--cached"
@@ -42,14 +44,15 @@ function Get-ChangedFiles {
         $gitArgs += "$BaseRef...HEAD"
     }
 
-    $files = @(& git @gitArgs)
+    $files = @(& git -c core.quotepath=false @gitArgs)
 
     if ($IncludeUntracked -and -not $Staged -and $BaseRef -eq "HEAD") {
-        $files += @(& git ls-files --others --exclude-standard)
+        $files += @(& git -c core.quotepath=false ls-files --others --exclude-standard)
     }
 
     return $files |
         Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+        ForEach-Object { $_.Trim('"') -replace "\\", "/" } |
         Sort-Object -Unique
 }
 
@@ -70,7 +73,9 @@ try {
     }
 
     $docPatterns = @(
+        "\.(md|rst)$",
         "^docs/",
+        "^apps/studio/docs/",
         "^README\.md$",
         "^AGENTS\.md$",
         "^\.github/pull_request_template\.md$",

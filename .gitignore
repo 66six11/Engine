@@ -5,6 +5,10 @@ tools/studio-distribution/bin/
 tools/studio-distribution/obj/
 tools/studio-distribution.Tests/bin/
 tools/studio-distribution.Tests/obj/
+tools/asharia-studio-observe/bin/
+tools/asharia-studio-observe/obj/
+tools/asharia-studio-observe.Tests/bin/
+tools/asharia-studio-observe.Tests/obj/
 /.vs/
 /.idea/
 /.worktrees/

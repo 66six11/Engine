@@ -7,55 +7,15 @@ namespace Editor.Tests.Shell.Views.Windowing;
 public sealed class MainWindowSourceTests
 {
     [Fact]
-    public void Main_window_pumps_panel_frame_scheduler_while_open()
+    public void Hard_cut_window_is_only_a_retained_view()
     {
         var source = LoadSource("Shell", "Views", "Windowing", "MainWindow.axaml.cs");
 
-        Assert.Contains("DispatcherTimer panelFrameTimer_", source, StringComparison.Ordinal);
-        Assert.Contains("TimeSpan.FromMilliseconds(16)", source, StringComparison.Ordinal);
-        Assert.Contains("panelFrameTimer_.Start()", source, StringComparison.Ordinal);
-        Assert.Contains("panelFrameTimer_.Stop()", source, StringComparison.Ordinal);
-        Assert.Contains("OnPanelFrameTimerTick", source, StringComparison.Ordinal);
-        Assert.Contains("DockWorkspace.PanelFrameScheduler.Tick(DateTimeOffset.UtcNow)", source, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void Main_window_stops_panel_frame_pump_when_closing_begins()
-    {
-        var source = LoadSource("Shell", "Views", "Windowing", "MainWindow.axaml.cs");
-
-        Assert.Contains("private bool isClosing_", source, StringComparison.Ordinal);
-        Assert.Contains("StopPanelFrameTimer();", source, StringComparison.Ordinal);
-        Assert.Contains("if (isClosing_)", source, StringComparison.Ordinal);
-        Assert.Contains("private void StopPanelFrameTimer()", source, StringComparison.Ordinal);
-        Assert.Contains("OnWindowClosing", source, StringComparison.Ordinal);
-        Assert.Contains("OnPanelFrameTimerTick", source, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void Main_window_drains_native_viewport_presents_before_final_close()
-    {
-        var source = LoadSource("Shell", "Views", "Windowing", "MainWindow.axaml.cs");
-
-        Assert.Contains("ViewportNativePresentDrain.RequestShutdown();", source, StringComparison.Ordinal);
-        Assert.Contains("ViewportNativePresentDrain.HasActivePresents", source, StringComparison.Ordinal);
-        Assert.Contains("e.Cancel = true;", source, StringComparison.Ordinal);
-        Assert.Contains("await ViewportNativePresentDrain.WaitForIdleAsync", source, StringComparison.Ordinal);
-        Assert.Contains("if (!drained)", source, StringComparison.Ordinal);
-        Assert.Contains("RequestProcessExitFallback()", source, StringComparison.Ordinal);
-        Assert.Contains("nativeViewportProcessExitFallback_", source, StringComparison.Ordinal);
-        Assert.Contains("nativeViewportPresentDrainCompleted_", source, StringComparison.Ordinal);
-        Assert.Contains("Close();", source, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void Main_window_uses_one_deterministic_compact_workbench_threshold()
-    {
-        var source = LoadSource("Shell", "Views", "Windowing", "MainWindow.axaml.cs");
-
-        Assert.Contains("CompactWorkbenchWidth", source, StringComparison.Ordinal);
-        Assert.Contains("SizeChanged += OnMainWindowSizeChanged", source, StringComparison.Ordinal);
-        Assert.Contains("PseudoClasses.Set(\":compact\"", source, StringComparison.Ordinal);
+        Assert.Contains("InitializeComponent();", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("DispatcherTimer", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("P/Invoke", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("Native", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("MainWindowViewModel", source, StringComparison.Ordinal);
     }
 
     private static string LoadSource(params string[] pathParts)
@@ -71,7 +31,7 @@ public sealed class MainWindowSourceTests
     {
         var workspaceRoot = Environment.GetEnvironmentVariable("CODEX_WORKSPACE_ROOT");
         if (!string.IsNullOrWhiteSpace(workspaceRoot)
-            && File.Exists(Path.Combine(workspaceRoot, "Editor.sln")))
+            && File.Exists(Path.Combine(workspaceRoot, "Asharia.Studio.sln")))
         {
             return workspaceRoot;
         }
@@ -79,7 +39,7 @@ public sealed class MainWindowSourceTests
         var directory = new DirectoryInfo(Directory.GetCurrentDirectory());
         while (directory is not null)
         {
-            if (File.Exists(Path.Combine(directory.FullName, "Editor.sln")))
+            if (File.Exists(Path.Combine(directory.FullName, "Asharia.Studio.sln")))
             {
                 return directory.FullName;
             }
@@ -87,6 +47,6 @@ public sealed class MainWindowSourceTests
             directory = directory.Parent;
         }
 
-        throw new DirectoryNotFoundException("Could not locate Editor.sln.");
+        throw new DirectoryNotFoundException("Could not locate Asharia.Studio.sln.");
     }
 }

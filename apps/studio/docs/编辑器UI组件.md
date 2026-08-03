@@ -1,5 +1,14 @@
 # 游戏引擎编辑器 UI 能力目录
 
+状态：Historical capability inventory（不代表当前能力或接入顺序）
+
+更新日期：2026-08-01
+
+> R0当前只有Starting / No Project / No Document最小Shell。本文的P0/P1/P2标签早于ADR-0007，不能授权在
+> Document truth、owner或最早/最迟门禁之前建设控件库、Dock、panel或工具。当前顺序见
+> [Studio前端硬切架构](architecture/studio-frontend-hard-cut.md)与
+> [`architecture-health.md`](../../../docs/workflow/architecture-health.md)。
+
 优先级建议：
 
 * **P0**：编辑器基础能力，第一阶段必须有。

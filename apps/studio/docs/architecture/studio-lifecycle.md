@@ -1,8 +1,12 @@
 # Studio 生命周期
 
-状态：Target（迁移中）
+状态：Target（owner/stop/drain 原则保留；module generation/ALC 路径由 ADR-0007 后置）
 
-更新日期：2026-07-30
+更新日期：2026-08-01
+
+> 当前权威 session tree 与 hard-cut 顺序见
+> [Studio 前端硬切架构](studio-frontend-hard-cut.md)。本文涉及 dynamic extension generation、
+> pinned/collectible ALC 与 reload 的段落只保留历史设计，不属于 Studio v1。
 
 ## 1. 目的
 
@@ -12,15 +16,31 @@
 
 ## 2. 当前实现事实
 
-当前 `StudioCompositionRoot` 同步等待 extension activation，`App.OnDesktopExit` 同步等待 session disposal，并直接调用静态 native shutdown。Scene View 自己创建 `ViewportNativeBridge`，Window 自己驱动 panel timer。
+当前 `App` 唯一持有 `StudioProcessSession`，使用 Avalonia explicit shutdown；process session 异步启动并按
+`enter Stopping → lifetime CancelAsync → acquire lifecycle gate → managed composition DisposeAsync`顺序停止，cancel callback、
+gate与dispose共享一个monotonic deadline并输出immutable `StudioTeardownReceipt`。越过deadline的callback/dispose task
+只由tail observer观察，不能改写已缓存receipt；`DisposeAsync`调用的同步前段仍必须O(1)返回，deadline不能抢占任意同步阻塞。production composition只有
+`StudioCompositionSession(StudioShellViewModel)`；legacy adapter、Workbench、panel timer、UI-thread sync wait与
+phantom native teardown均已删除。MainWindow只借用DataContext并发布首次closing fact。
 
-这些路径可以支撑 v0，但无法证明：
+R0 process acceptance由目标外的`Editor.Tests`拥有：它启动构建输出中的真实`Editor.exe`，以有界轮询观察真实
+Ready Window，正常路径只发送OS Window close；随后由上述唯一App owner完成teardown，classic-desktop lifetime的
+`int`经`Program.Main`成为OS exit code。fatal、owner timeout与observer cancel不冒充normal teardown：外部owner
+kill整个process tree，再在独立5秒deadline内确认退出并释放Process。stdout/stderr并发流向`Stream.Null`，不形成
+无界capture、artifact或第二diagnostics truth；production composition没有新增subprocess owner或测试模式。
 
-- 多 Window/Viewport 的统一关闭；
-- pending present 与 compositor 使用完成；
-- device lost 后重建；
-- extension/provider/panel 失败隔离；
-- shutdown timeout 后仍被使用的 native 资源安全。
+当前 R0 仍无法完整证明：
+
+- 未引用旧public SDK/generation surface的完整删除；
+- 编码、全部managed tests、双编译器、clang-tidy与必要native smoke的R0总门禁。
+
+真实`StudioCompositionSession.DisposeAsync()`当前是O(1)且没有可自然失败或超时的native/subprocess child，因此process
+acceptance只真实证明clean shutdown到exit `0`，以及外部fatal/timeout/cancel后无孤儿进程；App内部dispose fault/timeout
+到exit `1`的映射继续由controlled owner tests证明。不得为了补一条伪端到端用例向production App注入fake child。
+
+多Window/Viewport、pending present、device-lost、native restart/stale-handle与extension/provider/panel隔离不是当前
+R0 Studio composition的已接入能力；它们必须等真实consumer Slice重新建立owner，不能用现存C++ smoke或managed fixture
+冒充本process receipt的证据。bounded diagnostics/log与Headless/accessibility baseline已经完成，但仍需随R0总门禁重跑。
 
 ## 3. 生命周期层级
 

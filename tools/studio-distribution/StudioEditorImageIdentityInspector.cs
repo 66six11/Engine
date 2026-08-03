@@ -3,8 +3,6 @@ using System.Reflection;
 using System.Reflection.PortableExecutable;
 using System.Text;
 using System.Text.Json;
-using System.Xml;
-using System.Xml.Linq;
 
 namespace Asharia.Studio.Distribution;
 
@@ -14,7 +12,6 @@ internal static class StudioEditorImageIdentityInspector
     private const int MaxPortableExecutableBytes = 64 * 1024 * 1024;
     private const int MaxManagedAssemblyBytes = 64 * 1024 * 1024;
     private const int MaxJsonBytes = 8 * 1024 * 1024;
-    private const int MaxXmlCharacters = 8 * 1024 * 1024;
     private const int AppBinarySlotSize = 1025;
     private const int DotNetSearchSlotSize = 512;
     private const byte AppRelativeSearchLocation = 1 << 1;
@@ -295,35 +292,22 @@ internal static class StudioEditorImageIdentityInspector
                     out var editor)
                 || !editorVersion.Equals("1.0.0", StringComparison.Ordinal)
                 || !HasRuntimeAsset(editor, "Editor.dll")
-                || !HasDependency(editor, "Asharia.Editor", "1.0.0")
-                || !HasDependency(editor, "Asharia.Runtime.Contracts", "1.0.0")
+                || !HasDependency(editor, "Asharia.Studio.Application", "1.0.0")
                 || !HasProjectLibrary(libraries, editorKey)
                 || !TryFindUniqueLibrary(
                     target,
-                    "Asharia.Editor",
-                    out var editorContractKey,
-                    out var editorContractVersion,
-                    out var editorContract)
-                || !editorContractVersion.Equals("1.0.0", StringComparison.Ordinal)
+                    "Asharia.Studio.Application",
+                    out var applicationKey,
+                    out var applicationVersion,
+                    out var application)
+                || !applicationVersion.Equals("1.0.0", StringComparison.Ordinal)
                 || !HasRuntimeAsset(
-                    editorContract,
-                    "Asharia.Editor.dll",
+                    application,
+                    "Asharia.Studio.Application.dll",
                     expectedAssemblyVersion: "1.0.0.0")
-                || !HasProjectLibrary(libraries, editorContractKey)
-                || !TryFindUniqueLibrary(
-                    target,
-                    "Asharia.Runtime.Contracts",
-                    out var runtimeContractKey,
-                    out var runtimeContractVersion,
-                    out var runtimeContract)
-                || !runtimeContractVersion.Equals("1.0.0", StringComparison.Ordinal)
-                || !HasRuntimeAsset(
-                    runtimeContract,
-                    "Asharia.Runtime.Contracts.dll",
-                    expectedAssemblyVersion: "1.0.0.0")
-                || !HasProjectLibrary(libraries, runtimeContractKey))
+                || !HasProjectLibrary(libraries, applicationKey))
             {
-                error = "Editor deps must bind Editor.dll and both fixed managed contract assemblies.";
+                error = "Editor deps must bind Editor.dll and Asharia.Studio.Application only.";
                 return false;
             }
 
@@ -338,87 +322,6 @@ internal static class StudioEditorImageIdentityInspector
                 or ArgumentException)
         {
             error = $"Editor managed runtime evidence is invalid ({exception.GetType().Name}).";
-            return false;
-        }
-    }
-
-    public static bool HasSdkRuntimeEvidence(
-        string bundledVersionsPath,
-        string runtimeConfigPath,
-        string targetFramework,
-        string selectedSdkVersion,
-        string selectedRuntimeVersion,
-        out string error)
-    {
-        if (!TryParseStableVersion(selectedRuntimeVersion, out var selectedRuntime))
-        {
-            error = "Selected host runtime version is invalid.";
-            return false;
-        }
-
-        try
-        {
-            using var runtimeConfig = ParseJsonFile(runtimeConfigPath);
-            EnsureNoDuplicateJsonProperties(runtimeConfig.RootElement);
-            var runtimeOptions = RequiredObject(runtimeConfig.RootElement, "runtimeOptions");
-            var framework = RequiredObject(runtimeOptions, "framework");
-            if (!RequiredString(runtimeOptions, "tfm").Equals(
-                    targetFramework,
-                    StringComparison.Ordinal)
-                || !RequiredString(framework, "name").Equals(
-                    "Microsoft.NETCore.App",
-                    StringComparison.Ordinal)
-                || !RequiredString(framework, "version").Equals(
-                    selectedRuntimeVersion,
-                    StringComparison.Ordinal))
-            {
-                error = "SDK runtimeconfig must bind the selected target framework and host runtime.";
-                return false;
-            }
-
-            var settings = new XmlReaderSettings
-            {
-                DtdProcessing = DtdProcessing.Prohibit,
-                MaxCharactersInDocument = MaxXmlCharacters,
-                XmlResolver = null,
-            };
-            using var stream = new FileStream(
-                bundledVersionsPath,
-                FileMode.Open,
-                FileAccess.Read,
-                FileShare.Read);
-            using var reader = XmlReader.Create(stream, settings);
-            var document = XDocument.Load(reader, LoadOptions.None);
-            EnsureClosedSdkEvidenceDocument(document);
-            var expectedTargetFrameworkVersion =
-                $"{selectedRuntime.Major}.{selectedRuntime.Minor}";
-            if (!SingleProperty(document, "BundledNETCoreAppTargetFrameworkVersion")
-                    .Equals(expectedTargetFrameworkVersion, StringComparison.Ordinal)
-                || !SingleProperty(document, "BundledNETCoreAppPackageVersion")
-                    .Equals(selectedRuntimeVersion, StringComparison.Ordinal)
-                || !SingleProperty(document, "NETCoreSdkVersion")
-                    .Equals(selectedSdkVersion, StringComparison.Ordinal)
-                || !SingleProperty(document, "NETCoreSdkRuntimeIdentifier")
-                    .Equals("win-x64", StringComparison.Ordinal)
-                || !SingleProperty(document, "NETCoreSdkPortableRuntimeIdentifier")
-                    .Equals("win-x64", StringComparison.Ordinal))
-            {
-                error = "SDK bundled runtime evidence does not match the selected host runtime.";
-                return false;
-            }
-
-            error = string.Empty;
-            return true;
-        }
-        catch (Exception exception) when (
-            exception is IOException
-                or UnauthorizedAccessException
-                or InvalidDataException
-                or JsonException
-                or XmlException
-                or ArgumentException)
-        {
-            error = $"SDK runtime evidence is invalid ({exception.GetType().Name}).";
             return false;
         }
     }
@@ -1645,63 +1548,6 @@ internal static class StudioEditorImageIdentityInspector
             && value.TryGetProperty("type", out var type)
             && type.ValueKind == JsonValueKind.String
             && "project".Equals(type.GetString(), StringComparison.Ordinal);
-    }
-
-    private static string SingleProperty(XDocument document, string localName)
-    {
-        var root = document.Root;
-        if (root is null || !root.Name.LocalName.Equals("Project", StringComparison.Ordinal))
-        {
-            throw new InvalidDataException("SDK bundled versions root must be Project.");
-        }
-
-        var properties = root
-            .Descendants()
-            .Where(element => element.Name.LocalName.Equals(
-                localName,
-                StringComparison.OrdinalIgnoreCase))
-            .Where(element => element.Parent?.Name.LocalName.Equals(
-                "PropertyGroup",
-                StringComparison.Ordinal) == true)
-            .ToArray();
-        if (properties.Length != 1)
-        {
-            throw new InvalidDataException($"Required SDK property '{localName}' is missing or ambiguous.");
-        }
-
-        var property = properties[0];
-        var group = property.Parent;
-        if (group is null
-            || group.Parent != root
-            || group.Attributes().Any(attribute => attribute.Name.LocalName.Equals(
-                "Condition",
-                StringComparison.OrdinalIgnoreCase))
-            || property.Attribute("Condition") is not null
-            || property.HasElements
-            || property.HasAttributes
-            || string.IsNullOrEmpty(property.Value.Trim()))
-        {
-            throw new InvalidDataException($"Required SDK property '{localName}' is missing or ambiguous.");
-        }
-
-        return property.Value.Trim();
-    }
-
-    private static void EnsureClosedSdkEvidenceDocument(XDocument document)
-    {
-        var root = document.Root;
-        if (root is null
-            || !root.Name.LocalName.Equals("Project", StringComparison.Ordinal)
-            || root.Attributes().Any(attribute => attribute.Name.LocalName.Equals(
-                "Sdk",
-                StringComparison.OrdinalIgnoreCase))
-            || root.Descendants().Any(element =>
-                element.Name.LocalName.Equals("Import", StringComparison.OrdinalIgnoreCase)
-                || element.Name.LocalName.Equals("Sdk", StringComparison.OrdinalIgnoreCase)))
-        {
-            throw new InvalidDataException(
-                "SDK bundled versions evidence must not evaluate external imports.");
-        }
     }
 
     private static bool TryParseStableVersion(string value, out Version version)

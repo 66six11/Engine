@@ -1,6 +1,8 @@
 # 审查流程规范
 
-本文档定义每次代码审查、修复和提交前必须执行的门禁。目标是让代码正确性、内部代码设计、Vulkan 同步安全、包边界、文档同步和下一步开发判断保持一致。
+本文档定义每次代码审查、修复和提交前必须执行的验证门禁。架构准入、Owner Card、最早/最迟接入窗口和
+Integration Gates 由 [`architecture-health.md`](architecture-health.md) 统一定义；本文不再用零散专项检查替代架构准入。
+目标是让代码正确性、内部代码设计、Vulkan 同步安全、包边界、文档同步和下一步开发判断保持一致。
 
 ## 适用范围
 
@@ -34,6 +36,21 @@
 2. 列出已跑命令和结果。
 3. 若提交成功，说明 commit hash。
 
+架构、系统、public contract、owner/lifecycle/thread、持久化格式、package/target、Studio/native 边界或并发变化，
+在开始编码前还必须记录：
+
+```text
+Current evidence: ...
+Owner / lifetime / thread: ...
+Data / error / budget / diagnostics: ...
+Foundation prerequisite: ...
+Integration Gate: I0-I6
+Earliest safe / latest required: ...
+Non-goals / exit evidence: ...
+```
+
+缺少这些事实时先缩小 Slice 或补审查，不用未来扩展需求猜测抽象。
+
 ## 固定门禁
 
 每次提交前必须执行：
@@ -61,6 +78,21 @@ cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --bui
 
 ClangCL build/test 与 clang-tidy 是两个独立 gate。后者读取 test preset 的 compilation database，并将
 production/test translation units 的所有 clang-tidy diagnostics 作为 error。
+
+修改任意 `asharia.package.json`、`CMakeLists.txt`、`cmake/` helper 或 target graph 时，还必须在 configure 前准备由仓库拥有的
+File API query，并用包含全部 test targets 的 configured graph 对证 manifest direct dependencies：
+
+```powershell
+python tools\check_target_dependency_truth.py --root . --prepare-query build\cmake\msvc-debug-tests
+cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake --preset msvc-debug-tests"
+$replyIndex = Get-ChildItem build\cmake\msvc-debug-tests\.cmake\api\v1\reply\index-*.json |
+    Sort-Object Name -Descending | Select-Object -First 1 -ExpandProperty FullName
+python tools\check_target_dependency_truth.py --root . --reply-index $replyIndex --configuration Debug
+```
+
+该审计是 CMake 4.2+ / codemodel 2.9+ 的架构门禁，不改变仓库日常构建的 CMake 3.28 兼容下限。它精确对证 manifest
+`targetDependencies`，只认六类 configured direct relation，并过滤 imported/generator targets；不得用旧 codemodel 的
+transitive `dependencies` 字段替代，也不得把它误报成 package-level dependency 或 shipping closure gate。
 `.github/workflows/native-code-quality.yml` 固定在包含 Visual Studio 2022 的 `windows-2022` hosted runner 上。所有变更先运行
 encoding、diff whitespace、package topology、package/factory/product/artifact contracts 和 asset boundary；只有改动命中原生源码或
 原生构建输入时，才安装 Conan/Vulkan SDK，并运行 Vulkan package boundary/safety heuristic review、两编译器 build 和 CTest。
@@ -221,10 +253,40 @@ powershell -ExecutionPolicy Bypass -File tools\pre-pr.ps1 -IncludeUntracked
 或 Studio ViewModel/XAML 时，必须跑：
 
 ```powershell
-dotnet build apps\studio\Editor.csproj -c Release
+dotnet build apps\studio\Asharia.Studio.sln -c Release
 dotnet test apps\studio\Tests\Editor.Tests\Editor.Tests.csproj -c Release --filter "SceneView|ViewportNative|Composition"
-dotnet test apps\studio\Editor.sln -c Release
+dotnet test apps\studio\Asharia.Studio.sln -c Release --no-build --blame-hang --blame-hang-timeout 10m
 ```
+
+涉及`Program`入口、App/process lifecycle、Window close或teardown exit-code时，focused反馈还必须运行真实的
+Windows disposable-child边界（它会启动当前构建输出中的`Editor.exe`，并保证timeout/cancel/fatal路径kill tree后有界reap）：
+
+```powershell
+dotnet build apps\studio\Tests\Editor.Tests\Editor.Tests.csproj -c Release --disable-build-servers
+dotnet test apps\studio\Tests\Editor.Tests\Editor.Tests.csproj -c Release --no-build --disable-build-servers --filter "FullyQualifiedName~StudioProcessAcceptanceTests|FullyQualifiedName~ProgramSourceTests|FullyQualifiedName~StudioProcessSessionTests"
+```
+
+该test owner不得进入production App，不得增加fault CLI mode、artifact/crash framework或第二diagnostics truth；focused
+结果仍不能替代下方canonical solution test。
+
+`Asharia.Studio.sln` 是唯一 managed solution，当前精确列出 7 个 production 与 8 个 test projects（含独立
+`asharia-studio-observe`与其tests）；
+独立
+`Asharia.Studio.Headless.Tests` 使用 Avalonia 12/xUnit v3 dispatcher 运行 production XAML，旧 `Editor.sln` 已删除。
+R0.5 `Asharia.Studio.DevelopmentHost`与`Asharia.Studio.DevelopmentProtocol`只允许由`Editor.csproj`的Debug条件边引用；直接使用其类型的Headless/Editor test引用也必须是Debug条件边。Editor Release dependency/publish必须在任意深度
+拒绝`Asharia.Studio.DevelopmentProtocol`与`Asharia.Studio.DevelopmentHost`。
+current-user产品endpoint只能由精确Debug参数`--development-observation=readonly`启用；环境变量、近似参数和Release参数不得旁路。
+相关改动必须用真实Windows Pipe与`%LOCALAPPDATA%/Asharia/Studio/development-sessions/<StudioInstanceId>.json`证明
+current-user protected DACL、canonical token、bounded/atomic manifest、disconnect与`manifest撤销 → Pipe stop → Host stop`，并在测试后确认
+manifest、listener与相关进程残留为0。仅凭独立server/client test或fixture manifest不能宣称产品endpoint成立。
+observe CLI生产项目只能引用DevelopmentProtocol；`list/describe/diagnostics/logs/ui-list-windows/ui-read-tree`必须验证current-user ACL、PID+process-start与handshake descriptor，
+要求显式instance，且任何输出不得含attach token。壳UI Probe的`ui.listWindows/readTree`已经以typed golden、真实Avalonia Headless semantic projection和产品Host→Pipe→typed client/CLI闭环关闭；
+projection只读显式AutomationId、必须在UI dispatcher上执行并同时具备semantic/visual traversal硬上限，Host也只在真实provider存在时广告两项capability。
+未实现的`state/ui.readElement/ui.find`不得注册unavailable stub。`asharia-studio-observe mcp`必须保持最后接入的标准`2025-06-18`、Protocol-only、stdio只读adapter：
+只复用前述六个已有typed client方法，固定`initialize → notifications/initialized → tools/list/tools/call`生命周期，只在连接初始化时协商version/capabilities；项目级`.codex/config.toml`必须省略stdio `cwd`，让Codex使用当前thread/runtime的checkout/worktree root，并由architecture gate冻结；不得用`.`或`..`引入宿主process-cwd漂移、保留`server/discover`双协议分支、shell out CLI或借adapter扩大协议面。在Git worktree中必须单独确认本worktree受信任且本树Release tool已构建；不得借用base checkout的绝对DLL或扩大父级worktrees目录信任。配置变更后的宿主验收必须通过官方MCP config reload后的下一active turn或fresh task取得ready、精确六tool catalog和一次真实只读调用；仅重启Desktop、配置存在或独立Inspector均不能替代。
+focused filter 只用于快速反馈，不能替代 solution test。real-SDK publish/stage证据位于独立
+`tools/studio-distribution.Tests` gate，不属于Application suite；即使hang deadline超时，也必须报告完整gate未通过，
+不能用排除慢测试的结果宣称全绿。
 
 涉及 frame loop、swapchain、RenderGraph、renderer 或 Vulkan adapter 时，必须跑：
 
@@ -274,6 +336,12 @@ foreach ($preset in @("clangcl-debug", "msvc-debug")) {
 ```
 
 如果某个 smoke 命令尚不存在，审查回复必须说明原因，不能默默跳过。
+
+所有 `asharia-sample-viewer --smoke-*` 图形路径，以及通过 `EditorRunMode` 启动的图形 editor smoke，都必须
+创建隐藏 GLFW 窗口，不得显示顶层窗口或取得前台焦点。sample-viewer 的 smoke 窗口必须通过唯一
+`smokeWindowDesc()`入口取得`visible=false`，editor 则由唯一`runEditor` owner依据`smokeMode`设置；隐藏模式仍
+必须走真实 Vulkan surface、swapchain、render、resize（适用时）与 teardown 路径，不能用 offscreen fixture
+或 stub 替代 production owner。两个应用无 smoke 参数的交互启动均保持可见。
 
 涉及 `apps/editor` shell、menu、panel registry、action registry、event queue 或 ImGui runtime 时，必须跑：
 
@@ -325,19 +393,19 @@ public asset-pipeline headers、asset-processor tool code、runtime texture owne
 和 sample-viewer smoke。KTX/KTX2/Basis/DDS/HDR/EXR policy 不等于 decoder implementation，不能因为
 文档提到格式就让 runtime、editor、RenderGraph、renderer 或 RHI 直接依赖具体 decoder/transcoder library。
 
-涉及 Studio 项目新建/打开、`project-core` 描述符 IO 或 editor project native bridge 时，还必须在两个
-standard debug presets 上运行项目 bridge smoke，证明新建不覆盖已有描述符、创建后可重新打开且损坏描述符
-会被拒绝：
+涉及 `project-core` 描述符 model/IO 或 Editor 资产目录的项目描述符读取路径时，还必须在两个test presets上
+构建并运行package-owned smoke，证明round-trip、duplicate/missing field与malformed input仍被正确处理：
 
 ```powershell
-foreach ($preset in @("clangcl-debug", "msvc-debug")) {
-    $exe = "build\cmake\$preset\apps\editor\asharia-editor.exe"
-    & $exe --smoke-editor-project-native
-    if ($LASTEXITCODE -ne 0) {
-        throw "$preset --smoke-editor-project-native failed with exit code $LASTEXITCODE"
-    }
+foreach ($preset in @("clangcl-debug-tests", "msvc-debug-tests")) {
+    cmake --build --preset $preset --target asharia-project-core-smoke-tests
+    ctest --test-dir "build\cmake\$preset" -C Debug `
+        -R "^asharia-project-core-smoke-tests$" --output-on-failure
 }
 ```
+
+Studio R0没有Project create/open consumer；旧`editor_project_*` native bridge及CLI smoke已删除。不得在没有真实
+managed/native owner的情况下用独立smoke重新引入该adapter。
 
 涉及 `packages/resource-runtime` runtime handle/status/product-record resolution/diagnostics 时，必须跑
 package-local tests，证明 pending / ready / failed、generation、product key mismatch 和 product record

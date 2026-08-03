@@ -257,13 +257,8 @@ class BootstrapSessionTests(unittest.TestCase):
         self.assertEqual("Ready", data["state"])
         self.assertNotIn(str(self.request.project_root), first.decode("utf-8"))
         fixture_path = (
-            Path(__file__).parents[2]
-            / "apps"
-            / "studio"
-            / "Tests"
-            / "Asharia.Studio.Application.Tests"
-            / "Projects"
-            / "Fixtures"
+            Path(__file__).parent
+            / "fixtures"
             / "bootstrap-session-ready-v1.json"
         )
         self.assertEqual(fixture_path.read_bytes(), first)

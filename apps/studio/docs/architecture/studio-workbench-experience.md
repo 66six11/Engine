@@ -1,8 +1,12 @@
 # Studio 生产工作台体验规范
 
-状态：Implemented baseline（Slice A / #338；后续 writable Inspector、tool/session 与 asset workflow 仍是 Target）
+状态：Superseded（历史visual baseline；当前合同以
+[ADR-0007](../adr/0007-studio-frontend-hard-cut.md)为准）
 
-更新日期：2026-07-28
+> R0已删除无真实consumer的Workbench、ProjectOpenSession checkpoint与project-launch presentation；本文相关
+> 描述不再是production事实。
+
+更新日期：2026-07-31
 
 跟踪：GitHub Epic #119；设计 Slice #337；首个实现 Slice #338
 
@@ -53,7 +57,9 @@ find -> inspect -> select -> edit -> preview -> validate -> commit/undo
 - Shell-owned Workbench Bar 与窗口标题已投影明确的 project/document 占位、Edit mode、selection、task 和 diagnostic 摘要；
 - 默认工作台使用 Shell-owned `Default` preset：Hierarchy 与 Project 左侧垂直分割、Scene View 居中、Inspector 右置，Diagnostics 默认折叠；
 - `Compact` preset 把 Hierarchy 与 Project 合并为 tab group，仍保留 Scene View 与 Inspector；
-- UI Style、Frame Debugger、Console 和 Problems 继续注册并可恢复，但不再由新默认布局创建；
+- Console、Problems 和 compiled Avalonia UI Style developer gallery 继续注册并可恢复，但不由默认布局创建；
+- 未接真实 render lane 的 Frame Debugger 已从 production panel/action catalog 删除；旧布局中的该未知
+  tab 会被忽略；
 - Shell-owned project launch surface 显示全部 canonical project-open 状态、候选工程、下一步与首要诊断；
 - Project compiled XAML 面板只保留 active project asset workspace 占位；搜索仍未连接 asset service；
 - `Asharia.Editor.Projects` 已定义 project-open session 的 UI-neutral snapshot，Application 已能严格解析
@@ -108,7 +114,8 @@ find -> inspect -> select -> edit -> preview -> validate -> commit/undo
 | 底部抽屉 | 打开时约 180–220 px | 默认折叠，warning/error/running task 可提示但不强制展开 |
 | Status Bar | 22–26 px | 只显示摘要、计数和可点击目标 |
 
-Scene View 是唯一默认中心 document。UI Style、Frame Debugger、设置和其他诊断工具由 Window 菜单或 Command Palette 打开，并保留用户布局持久化。
+Scene View 是唯一默认中心 document。compiled Avalonia UI Style、设置和其他已注册诊断工具由 Window 菜单或
+Command Palette 打开，并保留用户布局持久化；Frame Debugger 在接通真实 render lane 前不提供入口。
 
 ### 4.2 紧凑布局
 
@@ -155,7 +162,7 @@ diagnostic summary
 
 ### 5.2 Selection
 
-- Selection service 是跨面板唯一共享 selection truth。
+- 历史目标要求Selection service成为跨面板唯一共享truth；当前R0旧service已因无consumer删除，必须由真实Document/World/asset owner重新接入。
 - Hierarchy、Project 与 Scene View 可以发起 selection，但必须携带稳定 id 和 source。
 - Inspector 只消费 selection snapshot，不从控件树或 engine object 反查状态。
 - 面板自己的 hover、focused row、expanded node 和 keyboard anchor 不进入全局 selection。
@@ -301,29 +308,25 @@ Scene View 不直接执行 engine mutation。picking 产生 selection intent；g
 
 前端继续使用现有 Avalonia + MVVM + 自有 Dock。只有出现明确缺口且已有两个以上 consumer 时才增加共享 primitive；不引入新的通用 UI framework、第二套 Dock 或 panel-local service locator。
 
-### 12.1 UI authoring backend
+### 12.1 UI authoring
 
-工作台体验合同不要求所有面板使用同一种 authoring 方式。完整的 contribution、action、tool、state、invalidation
-和 lifecycle 合同见 [Studio 前端框架](studio-frontend-framework.md)。现有
-[Code-first UI 设计](../Code-first%20UI设计.md)和
-[Avalonia/XAML Editor 扩展规范](editor-extension-avalonia.md)继续共同生效：
+Studio v1 只有一个 production UI runtime：Avalonia retained control tree。完整 owner、state、invalidation 和
+lifecycle 合同见 [Studio 前端硬切架构](studio-frontend-hard-cut.md)。
 
-| 场景 | 首选 backend | 原因 |
+| 场景 | 首选 authoring | 原因 |
 | --- | --- | --- |
-| 低频、小规模、标准按钮/过滤/只读详情 | Code-first UI | UI-neutral、开发快，复用 Host theme、command、state 和 lifecycle |
-| 复杂长期面板、深度数据绑定、模板、动画、自定义控件 | Avalonia + compiled XAML/ViewModel | 直接使用成熟 retained UI、compiled binding 和虚拟化能力 |
-| algorithmic composition、typed code binding | code-only Avalonia + ViewModel | 与 XAML 使用同一控件运行时，不需要第二套 backend |
-| Viewport overlay、graph、timeline | 专用 Avalonia control + 公共 Editor contract | 输入、绘制和性能需求不应被塞进通用 Code-first primitive |
+| 长期 panel、表单、列表、深度 binding | compiled XAML + typed ViewModel | compiled binding、模板、虚拟化、preview 和可访问性成熟 |
+| algorithmic composition、typed code binding | code-only Avalonia + ViewModel | 与 XAML 使用同一控件树和 lifecycle |
+| Viewport overlay、graph、timeline | 专用 Avalonia/custom-drawn control | 输入、绘制和性能需求由专用控件承担 |
 
-两种 backend 的共同规则：
+共同规则：
 
-- 它们属于同一个 `EditorModule` / contribution / panel lifecycle，不是两套扩展 SDK；
-- 同一 extension 可以贡献不同 backend 的不同 panel，但单个 panel 选择一种 backend；
-- Code-first 是类似 IMGUI 的顺序 authoring API；当前 Host 把 node tree 重建为 retained Avalonia content subtree，
-  keyed reconcile 尚未实现；它不建立第二个 immediate-mode renderer；
-- XAML 与 code-only Avalonia 共享同一 content backend/lease，不自行创建 `Window`、操作 Dock 或接管 application lifetime；
-- ViewModel 与持久 mutation 继续只依赖公共 Editor service，并走 command/transaction/dirty/validation；
-- backend 选择不改变本章的 selection、focus、diagnostics、layout 和 accessibility 合同。
+- XAML 与 code-only Avalonia 是 authoring syntax，不是不同 backend；
+- built-in 在 v1 静态组合，不先经过 public extension/generation framework；
+- ViewModel 只投影 Application snapshot、提交 typed intent，不拥有 Document/Engine truth；
+- Control 不自行创建 top-level Window、操作 native runtime 或接管 process lifetime；
+- authoring 选择不改变本章的 selection、focus、diagnostics、layout 和 accessibility 合同；
+- 自有 Code-first tree/host 已由 ADR-0007 安排删除，不再新增 consumer 或 primitive。
 
 ## 13. 案例与研究决策
 
@@ -358,14 +361,15 @@ Scene View 不直接执行 engine mutation。picking 产生 selection intent；g
 
 - 新增 Shell-owned Workbench Bar；
 - 默认 Dock 改为左侧 Hierarchy + Project、中心 Scene View、右侧 Inspector、底部折叠 Diagnostics；
-- UI Style 与 Frame Debugger 从默认 layout 移出，但继续可从 Window/Command Palette 打开；
+- #338 当时将 UI Style 与 Frame Debugger 从默认 layout 移出；ADR-0007 R0 后，UI Style 已改为
+  compiled Avalonia，Frame Debugger 则从 panel/action catalog 删除；
 - 窗口标题投影 project/document/dirty 占位；
 - Workbench Bar 只显示已有状态；未实现 tool/mode command 明确 disabled；
 - 增加 design preview、ViewModel tests 和 shell smoke 断言。
 
-已运行验证：
+该历史 Slice 当时运行的验证：
 
-- Debug / Release `dotnet test apps\studio\Editor.sln`：各 508 tests passed；
+- 当时的 legacy partial solution 在 Debug / Release 通过；这不是当前完整 managed gate 的计数；
 - compiled XAML build 覆盖 MainWindow 与 Project panel；
 - 人工 smoke：默认尺寸、Hierarchy -> Workbench Bar/Inspector selection、Compact preset、disabled reason 的 accessibility projection；
 - native editor smoke 不适用于本 Slice：改动只涉及 Avalonia Studio 托管前端，没有修改 C++、native bridge 或 native editor shell。
@@ -380,11 +384,11 @@ Scene View 不直接执行 engine mutation。picking 产生 selection intent；g
 
 ```text
 launch Studio
--> see project/document context and production default panels
--> select fixture entity in Hierarchy
--> observe Inspector and Workbench Bar selection update
--> open Project and Diagnostics tabs
--> open UI Style / Frame Debugger through Window or Command Palette
+-> see explicit No Project / No Document context and production default panels
+-> observe empty Hierarchy and Inspector without fixture entities
+-> activate a project and remain No Document until a real SceneDocument exists
+-> open Project, Diagnostics, and compiled UI Style through Window or Command Palette
+-> verify Frame Debugger is absent until the real render lane is connected
 -> resize to compact width without losing the center document
 ```
 
@@ -415,8 +419,8 @@ git diff --check
 UI 实现 Slice 至少执行：
 
 ```powershell
-dotnet test apps\studio\Editor.sln -c Release
-dotnet test apps\studio\Editor.sln
+dotnet build apps\studio\Asharia.Studio.sln -c Release
+dotnet test apps\studio\Asharia.Studio.sln -c Release --no-build --blame-hang --blame-hang-timeout 10m
 powershell -ExecutionPolicy Bypass -File tools\check-text-encoding.ps1
 git diff --check
 ```

@@ -1,8 +1,10 @@
 # ADR-0005：采用隔离构建、generation reload 与 last-known-good
 
-状态：Accepted
+状态：Superseded for Studio v1 by [ADR-0007](0007-studio-frontend-hard-cut.md)
 
 日期：2026-07-11
+
+> 本文保留 generation/ALC/LKG 的历史研究；它不再属于 Studio v1 启动或前端关键路径。
 
 依赖：[ADR-0004：采用统一 Editor Extension Framework](0004-unified-editor-extension-framework.md)
 

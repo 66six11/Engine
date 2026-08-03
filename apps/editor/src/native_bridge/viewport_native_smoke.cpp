@@ -13,16 +13,22 @@
 #include <cstdint>
 #include <string_view>
 #include <thread>
+#include <type_traits>
 
 #include "asharia/core/log.hpp"
 #include "asharia/rhi_vulkan/vulkan_context.hpp"
 #include "asharia/rhi_vulkan/vulkan_error.hpp"
 
 #include "editor_shared_viewport_render_producer.hpp"
+#include "editor_shared_viewport_runtime.hpp"
 #include "native_bridge/viewport_native_api.hpp"
 
 namespace asharia::editor {
     namespace {
+
+        static_assert(
+            std::is_same_v<decltype(EditorSharedViewportRuntime::instance().ensureDeviceSnapshot()),
+                           asharia::Result<EditorSharedViewportDeviceSnapshot>>);
 
         void logNativeMessage(const void* messageUtf8, std::uint64_t messageByteLength) {
             if (messageUtf8 == nullptr || messageByteLength == 0U) {
@@ -373,7 +379,16 @@ namespace asharia::editor {
                 logError("Viewport native bridge smoke did not accept a Vulkan opaque NT request.");
                 return false;
             }
+            EditorViewportNativeCompatibilityRequest matchingRequest = makeRequest();
+            matchingRequest.hasDeviceUuid = 1U;
+            matchingRequest.deviceUuidLow = supportedResult.nativeDeviceUuidLow;
+            matchingRequest.deviceUuidHigh = supportedResult.nativeDeviceUuidHigh;
             releaseIfNeeded(supportedResult);
+
+            if (!expectCompatibilityStatus(&matchingRequest, EditorViewportNativeStatus_Success)) {
+                logError("Viewport native bridge smoke did not match its device snapshot UUID.");
+                return false;
+            }
 
             EditorViewportNativeCompatibilityRequest mismatchedRequest =
                 makeMismatchedUuidRequest();

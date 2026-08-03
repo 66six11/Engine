@@ -558,7 +558,7 @@ schema v1 明确描述**当前源码/构建边界**，不是安装 schema：
 | `plannedOwnershipRoot` | 未来 ownership/发行聚合根；可以是完整 package identity，也可以是 `engine/*` 或 `host/*` |
 | `selectable` / `catalogVisible` | 当前必须为 `false`；Package Manager 不显示或直接选择 source boundary |
 | `targetRoles` | 每个 shipping/test target 的单一实现角色；role 不等于独立安装项 |
-| `dependencies` / `targetDependencies` | package 粗边界与 target 实际边界，两者都由门禁对证 |
+| `dependencies` / `targetDependencies` | package 粗边界由 topology gate 校验已知引用与 DAG；target 实际边界由 configured direct graph gate 精确对证 |
 
 v1 的 `ownerDomain` 取值为 `foundation/platform/observability/data/content/world/rendering/editor/product`；target role
 取值为 `bootstrap/contract/runtime/adapter/backend/host/tool/content-build/compatibility/diagnostics/test`。`testTargets`
@@ -566,9 +566,30 @@ v1 的 `ownerDomain` 取值为 `foundation/platform/observability/data/content/w
 掩盖分类困难。
 
 `python tools/check_package_topology.py` 从全部 v1 manifests 生成确定排序的内存 inventory，验证 package identity、dependency
-DAG、target owner/role、`targetDependencies` 和直接 CMake target 声明；`--output build/package-topology.json` 可为审查或后续 resolver
-生成机器可读快照。生成物位于 `build/`，不提交，避免维护第二份手写事实源。当前 CMake 仍是链接和 target 创建真相；validator
-负责发现 manifest 漂移，不从 manifest 生成构建系统。installable v2、Feature Set v2 与 Project Manifest v2 author
+DAG、target owner/role、`targetDependencies` 字段完整性和直接 CMake target 声明；`--output build/package-topology.json` 可为审查或后续 resolver
+生成机器可读快照。生成物位于 `build/`，不提交，避免维护第二份手写事实源。当前 CMake 仍是链接和 target 创建真相；
+`tools/check_target_dependency_truth.py` 再把每个 v1 manifest target 的 `targetDependencies` 与一次真实、tests-on configure
+产生的 configured direct target graph 做集合对证。它读取 CMake File API codemodel 2.9+ 的
+`linkLibraries`、`interfaceLinkLibraries`、`compileDependencies`、`interfaceCompileDependencies`、
+`objectDependencies` 与 `orderDependencies`，过滤 imported/generator-provided targets 和非 target link fragments；不得退回使用
+旧 `dependencies` transitive closure 冒充 direct graph。
+
+该审计工具要求 CMake 4.2+；仓库日常 configure/build 的兼容下限仍是 CMake 3.28。两者是不同合同，若未来统一版本下限，必须作为
+独立 toolchain Slice 处理。依赖或 CMake target 变更时运行：
+
+```powershell
+python tools\check_target_dependency_truth.py --root . --prepare-query build\cmake\msvc-debug-tests
+cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake --preset msvc-debug-tests"
+$replyIndex = Get-ChildItem build\cmake\msvc-debug-tests\.cmake\api\v1\reply\index-*.json |
+    Sort-Object Name -Descending | Select-Object -First 1 -ExpandProperty FullName
+python tools\check_target_dependency_truth.py --root . --reply-index $replyIndex --configuration Debug
+```
+
+query writer 只在仓库 `<root>/build/` 内逐层创建目录，并拒绝 symlink/reparse 或非目录路径；它是可信本地工作区的维护工具，
+不是对抗恶意文件系统竞态的安全沙箱。query 必须在 configure 前准备；审计必须使用包含全部 `testTargets` 的 preset。缺 target、manifest-only edge、CMake-only edge、重名
+project target、dangling relation 或不支持的 codemodel 都 fail closed。v1 `targetDependencies` 表达跨配置不变量；不得添加只在某个
+configuration 出现的 project-target edge。若真实需求必须条件化，先增加 Debug/Release matrix evidence 并修订 manifest 合同。
+它不从 manifest 生成构建系统。installable v2、Feature Set v2 与 Project Manifest v2 author
 contracts 与 Host Profile v1 由 `python tools/check_package_contracts.py` 按 `schemas/package-runtime/` 中的 Draft 2020-12
 schemas、显式 discriminator dispatcher 与跨字段语义规则独立验证。
 

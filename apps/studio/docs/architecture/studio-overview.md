@@ -1,8 +1,11 @@
 # Studio 架构总览
 
-状态：Target（迁移中）
+状态：Superseded by [ADR-0007](../adr/0007-studio-frontend-hard-cut.md)
 
-更新日期：2026-07-29
+更新日期：2026-07-31
+
+> 本文保留旧统一扩展/八项目迁移目标的历史背景。当前权威目标见
+> [Studio 前端硬切架构](studio-frontend-hard-cut.md)。
 
 ## 1. 目的
 
@@ -18,62 +21,46 @@ Studio 不拥有 Engine truth。World、simulation、renderer、Vulkan device、
 
 ## 2. 当前实现
 
-当前 production `apps/studio` 仍由 `Editor.csproj` Avalonia host 与迁移中的 managed projects 共同组成，目录分为
-`Core`、`Shell`、`UI`、`Features`、`src` 和 `Tests`。已有 Dock、command、diagnostics、selection、transaction、
-built-in extension host、Code-first UI、Scene snapshot、panel scheduler 和 Windows Scene View GPU interop 的 v0 路径。
-`Asharia.Studio.sln` 已包含独立 `Asharia.Editor`、`Asharia.Runtime.Contracts`、
-`Asharia.Studio.Application` 与 `Asharia.Studio.EngineBridge`；Application 已拥有 static module host、UI-neutral scene provider runtime host 和只读 Editor Image inventory
-verifier，并可从 current inventory lease 投影 Distribution-bound managed build environment inventory；
-`Asharia.Runtime.Contracts` 当前把 Scene `EntityId`、float3、quaternion 与 local Transform 固定为
-8/12/16/40-byte unmanaged values，并用显式 offsets 对齐 native C ABI；这些只是项目代码可引用的稳定
-value contracts，不包含 native function import、World handle、Scene provider、Avalonia dispatcher 或文件 IO。
-EngineBridge 当前提供 Scene World ABI v1 create/destroy、owner-thread deterministic disposal、复用 `Asharia.Runtime.EntityId` 的 entity create/destroy/is-alive、逐值传递 `TransformValue` 的 local Transform get/set，以及最多 4096-byte、caller-owned buffer 的 strict UTF-8 display-name get/set；它还通过 `editor_native` project ABI 调用 native `project-core` 新建/打开 canonical `asharia.project.json`，把返回的 native-owned UTF-8 buffers 在调用期复制为 `ProjectDescriptorSnapshot` 并始终显式释放，不在 managed 层复制描述符 schema。EngineBridge 不暴露 native pointer，不使用 finalizer thread 销毁 thread-affine World，也不把名称当作 identity/path/unique key。生产组合根现已把活动 ProjectSession 投影为共享的最小 `SceneSnapshot`（场景根 + 编辑相机），供 Hierarchy、Inspector 与 Scene View 共用；该投影仍不是持久化场景、Engine World query 或完整 ProjectSession/EngineHost wiring。
-`Asharia.Editor.Projects` 已公开 UI-neutral 的 project-open session snapshot；`Asharia.Studio.Application`
-已严格解析 canonical bootstrap session v1 report，并以 typed failure 拒绝非法或非规范输入。该 parser
-不执行文件 IO、进程启动或状态归约。与该 bootstrap candidate 明确分离的最小活动会话合同
-`IProjectSessionService` 只发布 `NoProject | Ready` 和 canonical root/name/id；Application
-`ProjectSessionService` 仅在 native descriptor gateway 成功后替换 current session，失败时保留上一成功会话，
-并把 recent-project 作为 Studio preference 原子替换。启动恢复会重新通过同一 gateway 校验 recent root，
-不会把路径缓存直接提升为活动项目。正式 report provider 与 Project scope/EngineHost composition
-仍未提供。
-File/New、File/Open、窗口活动项目投影与最近项目启动恢复已接入 production Presentation。Scene View
-从共享 provider 读取 `hasScene + revision`，通过 additive viewport present request v2 交给
-`editor_native`；原生 renderer 只在有活动场景时绘制默认编辑相机下的 world grid 与原点三轴，不读取
-managed SceneObject，也不把该最小投影解释为 runtime World。
-Project Code 还能把该 projection 复验为 semantic build credential，并为 caller 已规范化的项目根
-`Editor/**/*.cs` 原子生成 implicit SDK workspace，再使用 credential-bound dotnet closure 执行隔离
-restore/build 并发布四类 raw build output；current raw-output lease 现在还能经过无执行 artifact metadata
-inspection，并原子复制成带 deterministic `artifact.json` 的 closed immutable publication，再对
-implementation/reference metadata 建立 path-free module index，并把 non-empty current index 签发为 staging
-candidate receipt，随后在任何 load 前固定选择 `Pinned + RestartRequired` host policy，并把 exact
-implementation DLL/portable PDB 固定成有界、无 module initializer 的 owned load-image 快照；最后由
-loader-owned project reservation 幂等装入 exact non-collectible ALC，并把 #313 index 对证为 exact runtime
-module Type receipt，再由独立 owner 按 exact constructor receipt 至多一次地构造 module objects。
-后继独立 owner 再逐 object 至多一次 Configure 并冻结 declaration/metadata receipt，随后纯内存投影为
-static/dynamic 共用的 shared definitions。未来 ProjectSession 显式提供 scope identity/host capabilities 后，
-现有 transaction 可准备不可见 combined structural candidate，并完成 empty-scope initial registry
-registration。registration 所有权可一次性转交给独占异步 activation owner；runtime capability snapshot
-必须与 Prepare 时的 capability ID 集合完全一致，`WaitingForCapability`/`Blocked` 保留为 soft outcome，
-`Faulted`、取消或 Host 异常按 activation-first 顺序清理。正式 ProjectSession composition、replacement、
-revision、contribution publication 与 catalog commit 尚未落地。
+当前 production `apps/studio` 仍由 `Editor.csproj` Avalonia host 与迁移中的 managed projects 共同组成。R0已删除
+legacy Dock、command、Code-first、built-in extension host与全部无production入口的`Features/**`；当前真实UI仅为
+Starting/No Project/No Document最小Shell，diagnostics由唯一bounded hub拥有。
+无request producer或Window宿主入边的旧Dialog presentation也已删除；随后仅由self-tests/架构库存维持的
+public Dialog records已整体删除，R0不具备modal能力。
+无project-selection intent或owner的Project launch presentation及其专属dispatcher/text projection也已删除；
+Application/Core/public/native Project链仍待逐格审计，不代表当前Shell能创建或打开项目。
+`Asharia.Studio.sln` 已包含独立 `Asharia.Runtime.Contracts`、`Asharia.Studio.Application`、
+`Asharia.Studio.EngineBridge`与R0.5 development-only `Asharia.Studio.DevelopmentProtocol`/`Asharia.Studio.DevelopmentHost`；
+后者包含对唯一Application diagnostic/log hub的无状态只读投影与typed in-process Host/session；仅Debug
+`StudioCompositionSession`拥有该Host。真实current-user Named Pipe adapter已通过独立transport测试，但尚未由App创建且无discovery，
+所以当前产品仍无可attach endpoint。R0最小Release入口仍只消费Application diagnostics，
+两个development assemblies都不进入Release image。
+原static module host、scene provider host与Editor Image/build-environment inventory均无production composition，
+且均已在各自依赖格删除；public Scene snapshot、Application provider host与Core in-memory provider也已整体删除。
+`Asharia.Runtime.Contracts`与`Asharia.Studio.EngineBridge`仍包含独立的Scene value/bridge合同；`Asharia.Editor`最后的
+Extensions/Contributions/Panel declaration source、空project/test/solution edge与distribution image identity均已删除。R0最小App没有消费
+这些独立边界，它们不能被描述成production能力。managed `ProjectOpenSession` parser/source/public
+records已因没有App ingress或consumer而删除；headless `tools/bootstrap_session.py`及其tool-owned canonical fixture
+继续作为独立控制面证据。
 
-当前仍为 Partial：
+active `ProjectSession`/recent store/Core descriptor gateway与其managed EngineBridge Project adapter已因没有
+App/composition owner而删除；无managed caller的native Project ABI/self-smoke随后也已删除。managed viewport、Scene provider、
+其余Editor SDK/generation surface与空public project/image closure均已删除；独立native/EngineBridge
+边界仍按自己的owner证据审计。`Core`仍有其他UI-neutral model与adapter。App-owned
+process session已经统一managed lifecycle，R0总门禁已关闭；R0.5目前只完成protocol/golden，尚无Host/Pipe/CLI/MCP。
+这些compiled disconnected surfaces不进入当前Starting/No Project/No Document control tree。
 
-- `Core` 混合 UI-neutral model、service、P/Invoke、native adapter 和部分 Avalonia vocabulary；
-- App、View、Shell 和静态 native API 分散拥有启动与关闭；
-- `WorkbenchFeatureModule` 仍聚合大多数 Feature；production 由组合根注入活动 scene provider，默认
-  fixture 只保留给独立 feature/headless 测试；
-- `Asharia.Editor` 与 `Asharia.Studio.Application` 已有独立合同和 static host 基线，但项目 `Editor/` build、
-  Package loader 与 dynamic generation 尚未形成闭环；
-- `ViewportScheduler` 未接入 production frame loop；
-- Scene View bridge 固定使用 Windows NT handle；
-- 尚无完整 Project scope/EngineHost、Edit/Play/Preview session、Game View 和 Linux/macOS backend。
+最小Shell资源闭包也已收敛：App只安装Avalonia Fluent基础主题，唯一MainWindow拥有其三种固定surface颜色；
+无consumer的`UI/**` token/icon/tree/control/font registry、16.5 MB字体与ColorPicker/CommunityToolkit/Lucide包已删除。
+这不是未来设计系统能力声明；只有真实第二consumer成立后才重新提取共享style owner。
 
 这些事实只约束迁移顺序，不是目标边界。
 
-### 2.1 当前 Editor Image inventory handoff
+### 2.1 Retired Editor Image inventory handoff（历史证据）
 
-`Asharia.Studio.Application.Bootstrap.Distribution` 当前接受外部 owner 已选择的 canonical
+> R0 已因ProjectCode删除后production consumer归零而删除该inventory/projection与专属tests。以下描述只保存
+> 被拒绝实现的历史合同，不是当前能力；未来distribution producer/consumer必须重新立owner card。
+
+历史实现中的 `Asharia.Studio.Application.Bootstrap.Distribution` 接受外部 owner 已选择的 canonical
 `EngineGenerationId` 和对应 generation root。它严格复验 Distribution manifest identity、Editor Image
 清单与每个声明文件的 size/SHA-256，拒绝 reparse escape 和产品 Python payload，成功后只签发进程内、
 可撤销的 exact Editor Image lease。
@@ -90,7 +77,12 @@ reference pack 和 `bin/` 下两份 Runtime/Editor contract 绑定成可撤销 p
 credential：它不解析 SDK XML/runtimeconfig 或 assembly identity，不运行 `dotnet`，也不扫描 PATH、global
 SDK 或 inventory 外目录。
 
-`ProjectCodeBuildEnvironmentCredentialResolver` 只接受 current projection lease。它重新 hash 每个 selected
+#### 2.1.1 Retired ProjectCode pipeline（历史证据）
+
+> R0 已因production reachability为0删除整个ProjectCode pipeline及专属tests。以下段落仅保存被拒绝方案的
+> 历史合同，不是当前实现、能力声明或恢复路线；未来必须由真实Scripting consumer重新立ADR。
+
+历史实现中的 `ProjectCodeBuildEnvironmentCredentialResolver` 只接受 current projection lease。它重新 hash 每个 selected
 file，枚举且只枚举 exact `managed/dotnet` root 以证明实际目录没有未登记增删，再用 `PEReader`/CLR metadata、
 禁用外部 import 的 SDK XML 和拒绝 duplicate/roll-forward drift 的 runtimeconfig 交叉验证 Windows x64
 dotnet/hostfxr、SDK entry、Host runtime、`Microsoft.NETCore.App.Ref/ref/net10.0` 全集与两份 Host contract。
@@ -438,7 +430,7 @@ Studio 架构同时支持 Windows、Linux 和 macOS：
 当前阶段：
 
 ```powershell
-dotnet test apps\studio\Editor.sln -c Release
+dotnet test apps\studio\Asharia.Studio.sln -c Release --blame-hang --blame-hang-timeout 10m
 powershell -ExecutionPolicy Bypass -File tools\check-text-encoding.ps1 -Root apps\studio
 git diff --check
 ```

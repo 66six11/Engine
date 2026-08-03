@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>Asharia.Studio.DevelopmentHost</AssemblyName>
+    <RootNamespace>Asharia.Studio.DevelopmentHost</RootNamespace>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Asharia.Studio.DevelopmentHost.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Asharia.Studio.Application\Asharia.Studio.Application.csproj" />
+    <ProjectReference Include="..\Asharia.Studio.DevelopmentProtocol\Asharia.Studio.DevelopmentProtocol.csproj" />
+  </ItemGroup>
+</Project>

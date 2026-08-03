@@ -143,8 +143,8 @@ Asharia Engine 当前目标仍是先做一个小而完整的 Vulkan renderer，�
   revision、catalog commit 与 collectible unload 仍需未来独立合同，所以这些文件只保留为历史设计参考。归档
   中旧 build-environment/workspace/build/artifact contract 变体及配套测试、独立设计稿也已由当前 typed receipts、
   real-chain tests 与 canonical architecture 文档替代。
-  归档中的 provider/runtime/Scene 草案也不回灌；当前 Application provider host、Runtime Scene value ABI、
-  native Scene Core 与 managed Scene Bridge 已由独立实现和测试拥有。
+  归档中的 provider/runtime/Scene 草案也不回灌；tests-only Application/public/Core scene provider/snapshot岛已删除。
+  Runtime Scene value ABI、native Scene Core与managed EngineBridge仍是独立边界，不构成当前Studio只读Scene能力。
   Studio 在 Windows 上必须优先配置 `Win32RenderingMode.Vulkan`，再回退到 `AngleEgl` / `Software`，否则 Avalonia
   composition GPU interop 可能只暴露 D3D/ANGLE 共享纹理路径，无法进入 Vulkan opaque NT image/semaphore spike。
 

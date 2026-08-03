@@ -2,8 +2,9 @@
 
 ## 状态
 
-Proposed。本文定义第一阶段可执行合同；当前 26 个 `asharia.package.json` 仍是
-`schemaVersion: 1`、`packageKind: "source-boundary"` 的仓库拓扑事实，不会在本阶段批量迁移。
+Proposed。本文定义第一阶段可执行合同；本 ADR 采用时的 26 个、以及后续新增的 source-boundary manifests 仍是
+`schemaVersion: 1`、`packageKind: "source-boundary"` 的仓库拓扑事实，不会在本阶段批量迁移。当前数量由
+`python tools/check_package_topology.py` 生成，不由本 ADR 固定；截至 2026-07-31 为 28 个。
 
 当前仓库已经实现本合同的 JSON Schema、跨字段语义校验和 synthetic fixtures；Project Manifest、Lockfile 与
 Host Profile v1 也已按独立 ADR 实现合同/校验基线；纯内存 Package Resolver v1 已支持 caller-supplied candidates 的确定性

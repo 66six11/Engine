@@ -1,8 +1,11 @@
 # 编辑世界与 Play Mode
 
-状态：Target（迁移中）
+状态：Target（以 Document-first hard cut 为实施前提）
 
-更新日期：2026-07-28
+更新日期：2026-07-31
+
+> `SceneDocument -> EditWorld -> expected-revision mutation -> receipt -> undo/save` 的首个实施合同见
+> [Studio 前端硬切架构](studio-frontend-hard-cut.md)。
 
 ## 1. 目的
 

@@ -3,7 +3,8 @@
 ## 基础选择
 
 - 平台：Windows 桌面端优先。
-- 构建系统：CMake 3.28 或更新版本。
+- 构建系统：日常 configure/build 兼容下限为 CMake 3.28；configured direct target dependency 审计使用 CMake 4.2+
+  File API codemodel 2.9+。升级统一下限必须单独评估，不由审计工具隐式抬升产品构建要求。
 - 包管理器：Conan 2.x。
 - 编译器：MSVC C++ 编译器；当前 Windows profile 固定 `compiler=msvc`、
   `compiler.version=194`、`compiler.cppstd=23`。

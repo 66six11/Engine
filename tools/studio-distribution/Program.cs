@@ -117,7 +117,6 @@ internal static class Program
 
         var known = new HashSet<string>(RequiredOptions, StringComparer.Ordinal)
         {
-            "--environment-id",
             "--target-framework",
         };
         var unknown = values.Keys.FirstOrDefault(key => !known.Contains(key));
@@ -143,11 +142,7 @@ internal static class Program
                 values["--sdk-version"],
                 values["--hostfxr-version"],
                 values["--host-runtime-version"],
-                values["--reference-pack-version"],
-                new FileInfo(values["--runtime-contract"]),
-                new FileInfo(values["--editor-contract"]),
                 new DirectoryInfo(values["--output-root"]),
-                values.GetValueOrDefault("--environment-id", "project-code-net10"),
                 values.GetValueOrDefault("--target-framework", "net10.0"));
             return true;
         }
@@ -167,9 +162,6 @@ internal static class Program
         "--sdk-version",
         "--hostfxr-version",
         "--host-runtime-version",
-        "--reference-pack-version",
-        "--runtime-contract",
-        "--editor-contract",
         "--output-root",
     ];
 
@@ -185,11 +177,7 @@ internal static class Program
             --sdk-version <x.y.z>
             --hostfxr-version <x.y.z>
             --host-runtime-version <x.y.z>
-            --reference-pack-version <x.y.z>
-            --runtime-contract <absolute path inside publish root>
-            --editor-contract <absolute path inside publish root>
             --output-root <fresh absolute path>
-            [--environment-id project-code-net10]
             [--target-framework net10.0]
         """;
 }

@@ -1,5 +1,12 @@
 # Dock 手工回归清单
 
+状态：Superseded（已删除Dock实现的历史清单）
+
+更新日期：2026-08-01
+
+> R0已删除无真实Document/panel consumer的Dock runtime、View/ViewModel与专属tests；本清单不再是当前合入门禁。
+> 未来只有真实Document/panel闭环重新引入Dock后，才按新owner与行为建立新的手工/自动化矩阵。
+
 本文记录 `apps/studio` 当前 Dock 交互在合并前需要手工确认的场景。单元测试负责 ViewModel、命中测试和排序算法的稳定性；以下场景需要真实 Avalonia 窗口、指针输入和显示器缩放环境验证。
 
 ## Tab 排序
@@ -81,4 +88,3 @@
 3. 打开多个浮窗后拖拽。
    - 跨 workspace hit-test 不应导致明显卡顿。
    - 菜单 open state 更新不应阻塞拖拽交互。
-
