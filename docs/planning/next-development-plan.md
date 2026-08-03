@@ -1,6 +1,6 @@
 # 整体路线图
 
-更新日期：2026-07-29
+更新日期：2026-08-03
 
 本文是全项目下一阶段的唯一**功能阶段路线图**；目标系统框架、package/target 收敛方向、跨系统契约和架构迁移门禁见 `docs/planning/system-architecture-roadmap.md`，Kernel、Host Runtime、Foundation Systems、scope/activation 和基础门禁见 `docs/architecture/foundation-framework.md`；每项能力的最早/最迟接入窗口、Integration Gates 和 Owner Card 见 `docs/workflow/architecture-health.md`。RenderGraph 当前语义见 `docs/rendergraph/mvp.md` 与 `docs/rendergraph/rhi-boundary.md`，可编程管线边界见 `docs/rendergraph/programmable-pipeline.md`；Editor 当前事实见 `docs/architecture/editor.md`；资产系统见 `docs/systems/asset-architecture.md`；shader/material authoring 见 `docs/systems/shader-material-authoring.md` 及 V2 specs。实际 Slice 顺序、状态、阻塞和 Done evidence 维护在 GitHub Issues / Project，不在本文重复。
 
@@ -10,7 +10,7 @@
 
 - 已有 package-first 基线：`rendergraph` 后端无关，`rhi-vulkan` 不依赖 RenderGraph，Vulkan/RG 翻译在 `rhi_vulkan_rendergraph`，`renderer_basic` 不暴露 Vulkan。
 - Vulkan 主路径已覆盖 dynamic rendering、synchronization2 barrier、descriptor/pipeline wrapper、transient image pool、buffer upload、compute dispatch、offscreen RenderView、Frame Debug replay 和 editor viewport sampled texture。
-- Editor 已具备 production workbench shell、Scene View camera/grid/debug-line、Live RG View、Frame Debugger、Asset Browser snapshot-backed catalog 和多项 smoke；Avalonia Studio 已有 Shell-owned Workbench Bar、Default/Compact layout preset、Hierarchy -> Inspector/Workbench Bar selection 联动，以及由共享 UI-neutral source 驱动的 project-open Shell launch/recovery surface；Project 面板已恢复为 active-project asset workspace 占位，bootstrap candidate 不再伪装为 active project。canonical bootstrap report parser 已落地，但尚未连接正式 report provider、project selection/action、ProjectSession 或真实 project/asset service。
+- native Dear ImGui Editor 已具备 production workbench shell、Scene View camera/grid/debug-line、Live RG View、Frame Debugger、Asset Browser snapshot-backed catalog 和多项 smoke。Avalonia Studio 已完成 R0 硬切，并在 #352 建立第一条真实 `project-core -> asharia-project-native -> EngineBridge -> Application ProjectSession -> Shell` create/open 垂直链；No Project 可进入 canonical active project，但仍为 No Document。最近项目、模板、asset catalog、SceneDocument、EditWorld、Hierarchy、Inspector 与 viewport 尚未接入该 session。
 - `asset-core` / `asset-pipeline` / `project-core` / `material-core` / `scene-core` 已是 CPU/headless 数据模型或 baseline package，但尚未形成“真实 scene object -> material/mesh/texture product -> GPU resource -> editor authoring”的完整闭环。
 - 当前风险不是缺少大系统名词，而是 route 太多：渲染、资产、scene、editor、material、play/session 必须按可验证切片合流。
 
@@ -51,6 +51,59 @@
 | Scene / Editor | 已有 scene-core entity/transform baseline、selection/dirty/state event contracts、production workbench shell、Asset Browser | scene persistence、Hierarchy/Inspector real data、transaction-backed edits、selection outline/gizmo |
 | Workflow / Project | Project fields 完整；#20 是 roadmap/docs sync 入口 | 重复 Project item 候选需单独审查，计划变更后同步 #20 |
 
+## 当前执行优先级（2026-08-03）
+
+### P0：项目可真实编辑的最小闭环
+
+下一条主线 Slice 明确定义为：
+
+> `ProjectSession Ready -> 默认 SceneDocument -> EditWorld -> 实体编辑 -> 保存重开`
+
+范围按一个可验收的纵向闭环收敛：
+
+- `ProjectSession Ready` 后创建或打开一个 `SceneDocument`；文档明确拥有 `SceneWorld/EditWorld`，关闭项目时按依赖逆序释放；
+- 新建项目原子生成默认场景；支持创建实体、修改名称与 Transform、保存，并在关闭项目后重新打开恢复同一数据；
+- Studio 先提供真实 Hierarchy、Inspector、Save 命令与 dirty 状态，不以完整 Asset Browser、停靠系统或漂亮视口替代编辑闭环；
+- `Asharia.Studio.EngineBridge` 正式接入和部署 `asharia_scene_native.dll`；Application 拥有文档/世界生命周期，Avalonia 不直接持有或操作原生句柄；
+- 成功路径与损坏场景、缺失 native、保存失败、关闭时在途操作均有 typed failure 和可测试的释放语义。
+
+验收序列必须端到端成立：
+
+```text
+创建项目
+-> 自动创建默认场景
+-> 进入 SceneDocument
+-> 创建/修改实体
+-> 保存
+-> 关闭并重新打开
+-> 数据一致
+```
+
+引擎参考边界：
+
+- Unreal 把 `UWorld` 定义为 map/Actor 的顶层 owner，并明确 Editor 中可以同时存在多个 world；Asharia 采用
+  SceneDocument-owned EditWorld，拒绝 process-global current world：<https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/Engine/UWorld>。
+- Unreal Level 与 O3DE Level 都把 create/open/save 作为实体编辑的前置文档动作；Asharia 采用“文档 Ready 后才允许实体命令”，
+  但不引入多 Level、World Partition 或 Prefab：<https://dev.epicgames.com/documentation/en-us/unreal-engine/working-with-levels-in-unreal-engine>、
+  <https://www.docs.o3de.org/docs/user-guide/editor/editor-automation/>。
+- Godot 明确 Scene Tree/Inspector 投影与 unsaved 标记必须由编辑命令维护；O3DE 的 Entity Outliner/Inspector 以选择驱动名称和
+  Transform 编辑。Asharia 采用同一 snapshot/selection/dirty 命令链，拒绝 UI 直接修改 native world：
+  <https://docs.godotengine.org/en/stable/tutorials/plugins/running_code_in_the_editor.html>、
+  <https://docs.o3de.org/docs/user-guide/editor/entity-inspector/>。
+
+### P1：项目能力解析与加载状态
+
+- 接入项目级 `asharia.packages.json` 与 `asharia.packages.lock.json`，声明默认完整 Feature Set，并能复现确定的引擎能力组合；
+- 将 `NoProject/Ready` 扩展为 `NoProject -> Opening -> ResolvingPackages -> LoadingDocument -> Ready`，并用
+  `Degraded/SafeMode` 表达缺包、场景损坏或原生模块缺失，而不是统一退化为“打开失败”。
+
+### 当前不优先
+
+- `.asmdef` 与动态程序集重载、插件市场、多种项目模板、最近项目/自动重开；
+- 完整 Asset Browser、完整停靠布局与 Play Mode。
+
+这些能力不得扩大 P0 Slice；只有在上述保存/重开闭环完成后再进入独立 Issue。
+
 ## 推荐阶段
 
 ### Phase Foundation：可扩展基础框架
@@ -79,7 +132,8 @@
 - shutdown 后 scope-owned instances、jobs、IO requests、subscriptions 和 contribution handles 清零；
 - 完整门禁满足 `docs/architecture/foundation-framework.md` F0-F3。
 
-该阶段是当前最高优先级；它不要求停止已经可验证的 bugfix/收敛工作，但阻止新增依赖 app-local glue 的大型功能面。
+该阶段仍是所有后续系统必须遵守的架构门禁，但不抢占上面的 P0 编辑闭环；P0 必须复用现有 package、Application owner
+与显式 lifecycle，不得借机扩大 app-local glue。
 
 ### Phase A：路线图与 Project 收敛
 
@@ -172,6 +226,9 @@
 
 目标：让 editor 从只读 shell 进入最小可写 scene authoring，但仍保持 command/transaction/dirty/event 边界。
 
+当前第一条 Slice 只覆盖 `ProjectSession Ready -> 默认 SceneDocument -> EditWorld -> 名称/Transform 编辑 -> 保存重开`；
+mesh/material reference、完整资产浏览、停靠布局、viewport authoring 和 Play Mode 都留给后续 Slice。
+
 范围：
 
 - 前端遵循 `apps/studio/docs/architecture/studio-frontend-framework.md` 的 contribution/backend/lifecycle
@@ -180,15 +237,17 @@
 - 新 panel 先按 authoring 决策表选择：低频、小规模 standard-tool 才使用冻结的 Code-first schema；
   compiled XAML 与 code-only Avalonia 共用同一 content backend；复杂、高频、大列表或文本编辑密集 UI
   不扩 Code-first primitive；
-- scene file save/load：entity hierarchy、transform、mesh renderer、camera/light component baseline。
+- scene file save/load：默认场景、entity identity/name 与 transform baseline。
 - Hierarchy 消费真实 scene snapshot。
-- Inspector 提供 transform/material reference 的最小可写字段。
+- Inspector 提供 entity name 与 transform 的最小可写字段。
 - 所有 mutation 走 command/transaction；dirty state 与 validation event 可观察。
+- EngineBridge 部署并封装 `asharia_scene_native.dll`，Application 的 SceneDocument 拥有原生 world；Avalonia 不接触句柄。
 
 验收：
 
-- editor 能新建、保存、加载一个最小 scene。
-- `--smoke-editor-shell` 或新增 scene authoring smoke 覆盖 select -> edit transform -> dirty -> save -> reload。
+- 新建项目自动创建默认 scene，editor 能创建实体、编辑名称/transform、保存、关闭项目并重新打开，数据一致。
+- `--smoke-editor-shell` 或新增 scene authoring smoke 覆盖 create project -> default document -> create/select entity ->
+  edit name/transform -> dirty -> save -> close -> reopen -> equal data。
 
 ### Phase F：Lighting And Postprocess Baseline
 

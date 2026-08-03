@@ -58,10 +58,9 @@ public static partial class StudioEditorImageProducer
     private static readonly string[] ForbiddenStudioArtifactStems =
     [
         "Asharia.Editor",
-        "Asharia.Runtime.Contracts",
         "Asharia.Studio.DevelopmentHost",
         "Asharia.Studio.DevelopmentProtocol",
-        "Asharia.Studio.EngineBridge",
+        "asharia_scene_native",
         "editor_native",
         "slang",
     ];
@@ -72,6 +71,11 @@ public static partial class StudioEditorImageProducer
         "hostfxr_initialize_for_runtime_config",
         "hostfxr_main_startupinfo",
         "hostfxr_set_error_writer",
+    ];
+    private static readonly string[] ProjectNativeRequiredExports =
+    [
+        "asharia_project_create_minimal",
+        "asharia_project_open",
     ];
 
     public static StudioEditorImageProductionResult Produce(
@@ -225,6 +229,42 @@ public static partial class StudioEditorImageProducer
             StudioManagedAssemblyVersion,
             expectedPublicKeyToken: string.Empty,
             "publishRoot/Asharia.Studio.Application.dll");
+        var runtimeContractsManagedEntry = InspectFile(
+            Path.Combine(publishRoot, "Asharia.Runtime.Contracts.dll"),
+            "publishRoot/Asharia.Runtime.Contracts.dll");
+        ValidateManagedPortableExecutable(
+            runtimeContractsManagedEntry,
+            "publishRoot/Asharia.Runtime.Contracts.dll");
+        ValidateManagedIdentity(
+            runtimeContractsManagedEntry,
+            "Asharia.Runtime.Contracts",
+            StudioManagedAssemblyVersion,
+            expectedPublicKeyToken: string.Empty,
+            "publishRoot/Asharia.Runtime.Contracts.dll");
+        var engineBridgeManagedEntry = InspectFile(
+            Path.Combine(publishRoot, "Asharia.Studio.EngineBridge.dll"),
+            "publishRoot/Asharia.Studio.EngineBridge.dll");
+        ValidateManagedPortableExecutable(
+            engineBridgeManagedEntry,
+            "publishRoot/Asharia.Studio.EngineBridge.dll");
+        ValidateManagedIdentity(
+            engineBridgeManagedEntry,
+            "Asharia.Studio.EngineBridge",
+            StudioManagedAssemblyVersion,
+            expectedPublicKeyToken: string.Empty,
+            "publishRoot/Asharia.Studio.EngineBridge.dll");
+        var projectNativeEntry = InspectFile(
+            Path.Combine(publishRoot, "asharia_project_native.dll"),
+            "publishRoot/asharia_project_native.dll");
+        ValidatePortableExecutable(
+            projectNativeEntry,
+            expectDll: true,
+            "publishRoot/asharia_project_native.dll");
+        ValidateRequiredExports(
+            projectNativeEntry,
+            "asharia_project_native.dll",
+            ProjectNativeRequiredExports,
+            "publishRoot/asharia_project_native.dll");
         var editorDeps = InspectFile(
             Path.Combine(publishRoot, "Editor.deps.json"),
             "publishRoot/Editor.deps.json");
@@ -325,6 +365,21 @@ public static partial class StudioEditorImageProducer
             applicationManagedEntry,
             "bin/Asharia.Studio.Application.dll",
             "publishRoot/Asharia.Studio.Application.dll");
+        EnsurePlannedDestination(
+            files,
+            runtimeContractsManagedEntry,
+            "bin/Asharia.Runtime.Contracts.dll",
+            "publishRoot/Asharia.Runtime.Contracts.dll");
+        EnsurePlannedDestination(
+            files,
+            engineBridgeManagedEntry,
+            "bin/Asharia.Studio.EngineBridge.dll",
+            "publishRoot/Asharia.Studio.EngineBridge.dll");
+        EnsurePlannedDestination(
+            files,
+            projectNativeEntry,
+            "bin/asharia_project_native.dll",
+            "publishRoot/asharia_project_native.dll");
         EnsurePlannedDestination(
             files,
             editorDeps,
@@ -993,6 +1048,42 @@ public static partial class StudioEditorImageProducer
             StudioManagedAssemblyVersion,
             expectedPublicKeyToken: string.Empty,
             "publishRoot/Asharia.Studio.Application.dll");
+        var runtimeContractsManagedEntry = Resolve(
+            stagingRoot,
+            "bin/Asharia.Runtime.Contracts.dll");
+        ValidateManagedPortableExecutable(
+            runtimeContractsManagedEntry,
+            "publishRoot/Asharia.Runtime.Contracts.dll");
+        ValidateManagedIdentity(
+            runtimeContractsManagedEntry,
+            "Asharia.Runtime.Contracts",
+            StudioManagedAssemblyVersion,
+            expectedPublicKeyToken: string.Empty,
+            "publishRoot/Asharia.Runtime.Contracts.dll");
+        var engineBridgeManagedEntry = Resolve(
+            stagingRoot,
+            "bin/Asharia.Studio.EngineBridge.dll");
+        ValidateManagedPortableExecutable(
+            engineBridgeManagedEntry,
+            "publishRoot/Asharia.Studio.EngineBridge.dll");
+        ValidateManagedIdentity(
+            engineBridgeManagedEntry,
+            "Asharia.Studio.EngineBridge",
+            StudioManagedAssemblyVersion,
+            expectedPublicKeyToken: string.Empty,
+            "publishRoot/Asharia.Studio.EngineBridge.dll");
+        var projectNativeEntry = Resolve(
+            stagingRoot,
+            "bin/asharia_project_native.dll");
+        ValidatePortableExecutable(
+            projectNativeEntry,
+            expectDll: true,
+            "publishRoot/asharia_project_native.dll");
+        ValidateRequiredExports(
+            projectNativeEntry,
+            "asharia_project_native.dll",
+            ProjectNativeRequiredExports,
+            "publishRoot/asharia_project_native.dll");
         ValidateEditorRuntimeEvidence(
             Resolve(stagingRoot, "bin/Editor.deps.json"),
             Resolve(stagingRoot, "bin/Editor.runtimeconfig.json"),

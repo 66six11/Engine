@@ -225,17 +225,21 @@ runtime manifest、build/publish validation与typed binding availability result�
 - authoritative committed revision、failed command index、forward/inverse change set；
 - scene load/save 与 content identity。
 
-### P2-2 Project IO 与 renderer/Vulkan DLL 绑定（R0已删除）
+### P2-2 Project IO 与 renderer/Vulkan DLL 绑定（R0已删除；专用adapter已接入）
 
 R0已删除无managed caller的`editor_project_*` exports/self-smoke及`editor-native -> project-core-io`边，纯Project
 IO不再进入renderer/Vulkan DLL。`asharia-editor`资产目录仍是真实Project IO consumer并继续直接依赖
-`project-core-io`；package-owned smoke而非已删adapter负责descriptor合同证据。未来只有真实Studio ProjectSession
-consumer出现且managed IO不能满足需求时，才重新评估窄native adapter。
+`project-core-io`。2026-08-03 的真实 Studio ProjectSession consumer 通过 project-core package 自有的
+`asharia-project-native` 专用 DLL 接入；它只依赖 `project-core-io`，不恢复 `editor-native -> project-core-io`
+或 Vulkan/Slang 闭包。C ABI 使用 caller-owned bounded buffer、ABI header、typed status、C compiler include smoke、
+native size/offset static assertions 与 managed layout tests；Release producer 复验 DLL name/PE/export identity。
 
-### P2-3 Project result 丢失完整 descriptor（随旧adapter撤销）
+### P2-3 Project result 丢失完整 descriptor（以canonical identity最小化）
 
-旧native result/managed snapshot只保留root/name/id的双truth风险已随整条无consumer链删除。未来真实
-ProjectSession必须直接拥有完整canonical descriptor或immutable descriptor identity/generation，不恢复旧result shape。
+旧native-owned result/managed snapshot的复制释放与双truth风险没有恢复。当前 v1 adapter 在 native
+`openAshariaProject()` 完整读取并验证 descriptor 后，只向 Application 投影 immutable canonical identity
+`root/name/projectId`；managed 侧不解析、不修改也不回写 descriptor。未来任一 consumer 需要 asset roots/cache/discovery
+字段时，必须版本化扩展 immutable descriptor snapshot 或 generation，不得让 C# 拼装第二份 JSON truth。
 
 ### P2-4 shared viewport global mutex 是未来多视口瓶颈
 

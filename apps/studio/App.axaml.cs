@@ -2,6 +2,8 @@ using System;
 using System.Collections.Immutable;
 using System.Threading.Tasks;
 using Asharia.Studio.Application.Diagnostics;
+using Asharia.Studio.Application.Projects;
+using Asharia.Studio.EngineBridge.Project;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
@@ -9,6 +11,7 @@ using Avalonia.Markup.Xaml;
 using Avalonia.Logging;
 using Editor.Shell.Diagnostics;
 using Editor.Shell.Composition;
+using Editor.Shell.Services.Projects;
 using Editor.Shell.ViewModels.Windowing;
 using Editor.Shell.Views.Windowing;
 
@@ -72,7 +75,9 @@ public partial class App : Application
     private async Task StartDesktopAsync(
         IClassicDesktopStyleApplicationLifetime desktop)
     {
-        var shellViewModel = new StudioShellViewModel();
+        var projectSession = new ProjectSession(new ProjectDescriptorBridge());
+        var projectDialogs = new MainWindowProjectDialogService();
+        var shellViewModel = new StudioShellViewModel(projectSession, projectDialogs);
         MainWindow mainWindow;
         try
         {
@@ -80,10 +85,12 @@ public partial class App : Application
             {
                 DataContext = shellViewModel,
             };
+            projectDialogs.Attach(mainWindow);
         }
         catch (Exception exception)
         {
             shellViewModel.Dispose();
+            await projectSession.DisposeAsync();
             PublishFailure(
                 "studio.lifecycle.window-create.failed",
                 "lifecycle",
@@ -98,6 +105,7 @@ public partial class App : Application
             {
                 return StudioCompositionSession.CreateAsync(
                     shellViewModel,
+                    projectSession,
                     mainWindow,
                     diagnostics_,
                     cancellationToken,

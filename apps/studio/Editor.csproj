@@ -6,6 +6,8 @@
         <ApplicationManifest>app.manifest</ApplicationManifest>
         <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+        <StudioNativeBuildPreset Condition="'$(StudioNativeBuildPreset)' == ''">msvc-debug</StudioNativeBuildPreset>
+        <StudioProjectNativeLibrary>$(MSBuildProjectDirectory)\..\..\build\cmake\$(StudioNativeBuildPreset)\packages\project-core\asharia_project_native.dll</StudioProjectNativeLibrary>
     </PropertyGroup>
 
     <ItemGroup>
@@ -21,6 +23,7 @@
 
     <ItemGroup>
       <ProjectReference Include="src\Asharia.Studio.Application\Asharia.Studio.Application.csproj" />
+      <ProjectReference Include="src\Asharia.Studio.EngineBridge\Asharia.Studio.EngineBridge.csproj" />
       <ProjectReference Include="src\Asharia.Studio.DevelopmentHost\Asharia.Studio.DevelopmentHost.csproj"
                         Condition="'$(Configuration)' == 'Debug'" />
       <ProjectReference Include="src\Asharia.Studio.DevelopmentProtocol\Asharia.Studio.DevelopmentProtocol.csproj"
@@ -33,5 +36,19 @@
         <PackageReference Include="Avalonia.Fonts.Inter" Version="12.0.4" />
         <PackageReference Include="Avalonia.Themes.Fluent" Version="12.0.4" />
     </ItemGroup>
+
+    <ItemGroup Condition="'$(OS)' == 'Windows_NT'">
+        <None Include="$(StudioProjectNativeLibrary)"
+              Link="asharia_project_native.dll"
+              CopyToOutputDirectory="PreserveNewest"
+              CopyToPublishDirectory="PreserveNewest" />
+    </ItemGroup>
+
+    <Target Name="ValidateStudioProjectNativeLibrary"
+            BeforeTargets="PrepareForBuild;Publish"
+            Condition="'$(OS)' == 'Windows_NT'">
+        <Error Condition="!Exists('$(StudioProjectNativeLibrary)')"
+               Text="The canonical Studio project adapter is missing at '$(StudioProjectNativeLibrary)'. Run Conan, configure the $(StudioNativeBuildPreset) preset, and build the asharia-project-native target first." />
+    </Target>
 
 </Project>

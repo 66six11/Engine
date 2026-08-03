@@ -52,13 +52,21 @@ public sealed class StudioEditorImageProducerTests
         Assert.Contains(
             receipt.Files,
             file => file.Path == "bin/Asharia.Studio.Application.dll");
+        Assert.Contains(
+            receipt.Files,
+            file => file.Path == "bin/Asharia.Runtime.Contracts.dll");
+        Assert.Contains(
+            receipt.Files,
+            file => file.Path == "bin/Asharia.Studio.EngineBridge.dll");
+        Assert.Contains(
+            receipt.Files,
+            file => file.Path == "bin/asharia_project_native.dll");
         Assert.DoesNotContain(
             receipt.Files,
             file => file.Path is "bin/Asharia.Editor.dll"
-                or "bin/Asharia.Runtime.Contracts.dll"
                 or "bin/Asharia.Studio.DevelopmentHost.dll"
                 or "bin/Asharia.Studio.DevelopmentProtocol.dll"
-                or "bin/Asharia.Studio.EngineBridge.dll"
+                or "bin/asharia_scene_native.dll"
                 or "bin/editor_native.dll"
                 or "bin/slang.dll");
         Assert.Contains(
@@ -392,10 +400,9 @@ public sealed class StudioEditorImageProducerTests
 
     [Theory]
     [InlineData("nested/Asharia.Editor.dll")]
-    [InlineData("nested/Asharia.Runtime.Contracts.dll")]
     [InlineData("dev/Asharia.Studio.DevelopmentHost.dll")]
     [InlineData("dev/Asharia.Studio.DevelopmentProtocol.dll")]
-    [InlineData("deep/ASHARIA.STUDIO.ENGINEBRIDGE.PDB")]
+    [InlineData("deep/ASHARIA_SCENE_NATIVE.PDB")]
     [InlineData("plugins/Editor_Native.DlL")]
     [InlineData("assets/SLANG.JsOn")]
     public void Produce_rejects_a_retired_studio_publish_artifact_at_any_depth(
@@ -421,6 +428,56 @@ public sealed class StudioEditorImageProducerTests
             diagnostic => diagnostic.Code
                     == "studio-distribution.editor-image.forbidden-product-artifact"
                 && diagnostic.Location == $"bin/{relativePath}");
+        Assert.False(Directory.Exists(fixture.OutputRoot));
+    }
+
+    [Fact]
+    public void Produce_rejects_a_project_adapter_with_missing_exports()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using var fixture = new ProducerFixture(inputs_);
+        StudioEditorImageTestInputs.WriteNativeDll(
+            Path.Combine(fixture.PublishRoot, "asharia_project_native.dll"),
+            "asharia_project_native.dll",
+            ["asharia_project_open"]);
+
+        var result = StudioEditorImageProducer.Produce(fixture.Request);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(
+            result.Diagnostics,
+            diagnostic => diagnostic.Code
+                    == "studio-distribution.editor-image.native-identity-invalid"
+                && diagnostic.Location == "publishRoot/asharia_project_native.dll");
+        Assert.False(Directory.Exists(fixture.OutputRoot));
+    }
+
+    [Fact]
+    public void Produce_rejects_the_wrong_engine_bridge_managed_identity()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using var fixture = new ProducerFixture(inputs_);
+        File.Copy(
+            Path.Combine(fixture.PublishRoot, "Asharia.Studio.Application.dll"),
+            Path.Combine(fixture.PublishRoot, "Asharia.Studio.EngineBridge.dll"),
+            overwrite: true);
+
+        var result = StudioEditorImageProducer.Produce(fixture.Request);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(
+            result.Diagnostics,
+            diagnostic => diagnostic.Code
+                    == "studio-distribution.editor-image.managed-identity-invalid"
+                && diagnostic.Location == "publishRoot/Asharia.Studio.EngineBridge.dll");
         Assert.False(Directory.Exists(fixture.OutputRoot));
     }
 

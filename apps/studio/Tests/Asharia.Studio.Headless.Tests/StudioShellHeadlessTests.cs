@@ -4,6 +4,8 @@ using Avalonia.Automation.Peers;
 using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
 using Avalonia.Threading;
+using Asharia.Studio.Application.Projects;
+using Asharia.Studio.TestSupport;
 using Editor;
 using Editor.Shell.ViewModels.Windowing;
 using Editor.Shell.Views.Windowing;
@@ -17,7 +19,7 @@ public sealed class StudioShellHeadlessTests
     public void Production_shell_realizes_starting_and_empty_states_with_stable_semantics()
     {
         Assert.IsType<App>(Avalonia.Application.Current);
-        using var viewModel = new StudioShellViewModel();
+        using var viewModel = StudioShellTestFactory.Create();
         var window = new MainWindow
         {
             DataContext = viewModel,
@@ -45,7 +47,7 @@ public sealed class StudioShellHeadlessTests
             Dispatcher.UIThread.RunJobs();
 
             var emptyWorkspace = Assert.IsType<Grid>(
-                window.FindControl<Grid>("EmptyWorkspaceState"));
+                window.FindControl<Grid>("WorkspaceState"));
             var noProject = Assert.IsType<Border>(
                 window.FindControl<Border>("NoProjectState"));
             var noDocument = Assert.IsType<Border>(
@@ -70,6 +72,55 @@ public sealed class StudioShellHeadlessTests
             Assert.Equal(
                 AutomationControlType.Group,
                 AutomationProperties.GetControlTypeOverride(noDocument));
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
+    [AvaloniaFact]
+    public void Create_button_projects_the_authoritative_project_session()
+    {
+        using var viewModel = StudioShellTestFactory.Create(
+            out var projectSession,
+            out var dialogs);
+        var window = new MainWindow
+        {
+            DataContext = viewModel,
+        };
+        dialogs.ParentDirectory = "C:\\Projects";
+        viewModel.NewProjectName = "Sample";
+        var ready = ProjectSessionSnapshot.Ready(
+            new ActiveProjectSnapshot(
+                ProjectSessionId.CreateNew(),
+                System.Guid.NewGuid(),
+                "Sample",
+                "C:\\Projects\\Sample"));
+        projectSession.CreateHandler = (_, _, _) =>
+        {
+            projectSession.Publish(ready);
+            return System.Threading.Tasks.ValueTask.FromResult(
+                ProjectSessionOperationResult.Success(
+                    ready,
+                    "Created project 'Sample'."));
+        };
+
+        try
+        {
+            window.Show();
+            viewModel.MarkReady();
+            Dispatcher.UIThread.RunJobs();
+            var create = Assert.IsType<Button>(
+                window.FindControl<Button>("CreateProjectButton"));
+
+            create.Command!.Execute(create.CommandParameter);
+            Dispatcher.UIThread.RunJobs();
+
+            Assert.False(window.FindControl<Border>("NoProjectState")!.IsVisible);
+            Assert.True(window.FindControl<Border>("ActiveProjectState")!.IsVisible);
+            Assert.Equal("Sample", viewModel.ProjectStateText);
+            Assert.Equal("C:\\Projects\\Sample", viewModel.ProjectPathText);
         }
         finally
         {

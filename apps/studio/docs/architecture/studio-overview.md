@@ -2,10 +2,19 @@
 
 状态：Superseded by [ADR-0007](../adr/0007-studio-frontend-hard-cut.md)
 
-更新日期：2026-07-31
+更新日期：2026-08-03
 
 > 本文保留旧统一扩展/八项目迁移目标的历史背景。当前权威目标见
 > [Studio 前端硬切架构](studio-frontend-hard-cut.md)。
+
+2026-08-03 当前事实：R0 后第一条 ProjectSession Slice 已按
+[ADR-0008](../adr/0008-authoritative-project-session.md) 接入。No Project Shell 现在可创建或打开 canonical
+`asharia.project.json`；`project-core` 拥有格式与最小目录，专用 `asharia-project-native` 提供 caller-owned
+buffer C ABI，`Asharia.Studio.EngineBridge` 实现 Application port，`ProjectSession` 是唯一活动项目 owner。
+成功后 Shell 仍为 No Document；最近项目、模板、asset catalog、SceneDocument、World 和 viewport 均未因此实现。
+Release image 现在真实包含并验证 `Asharia.Runtime.Contracts`、`Asharia.Studio.EngineBridge` 和
+`asharia_project_native.dll`，仍拒绝 development host/protocol、`asharia_scene_native.dll`、`editor_native.dll`
+与 `slang.dll`。
 
 ## 1. 目的
 

@@ -2,6 +2,7 @@ using System;
 using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
+using Asharia.Studio.TestSupport;
 using Editor.Shell.Composition;
 using Editor.Shell.ViewModels.Windowing;
 using Xunit;
@@ -13,7 +14,7 @@ public sealed class StudioProcessSessionTests
     [Fact]
     public async Task Start_and_stop_publish_complete_managed_teardown_evidence()
     {
-        var shellViewModel = new StudioShellViewModel();
+        var shellViewModel = StudioShellTestFactory.Create();
         var composition = new StudioCompositionSession(shellViewModel);
         var process = CreateProcess(composition);
 
@@ -138,7 +139,7 @@ public sealed class StudioProcessSessionTests
                     {
                         factoryEntered.SetResult();
                         await releaseFactory.Task;
-                        return new StudioCompositionSession(new StudioShellViewModel());
+                        return new StudioCompositionSession(StudioShellTestFactory.Create());
                     });
 
                 var startTask = process.StartAsync().AsTask();
@@ -233,7 +234,7 @@ public sealed class StudioProcessSessionTests
         using var callbackCompleted = new ManualResetEventSlim();
         using var releaseCallback = new ManualResetEventSlim();
         var process = CreateProcess(
-            new StudioCompositionSession(new StudioShellViewModel()));
+            new StudioCompositionSession(StudioShellTestFactory.Create()));
         var lifetimeCancellationField = typeof(StudioProcessSession).GetField(
             "lifetimeCancellation_",
             BindingFlags.Instance | BindingFlags.NonPublic);
@@ -309,7 +310,7 @@ public sealed class StudioProcessSessionTests
     public void Stop_rejects_invalid_timeout_before_starting_owned_teardown()
     {
         var process = CreateProcess(
-            new StudioCompositionSession(new StudioShellViewModel()));
+            new StudioCompositionSession(StudioShellTestFactory.Create()));
 
         Assert.Throws<ArgumentOutOfRangeException>(
             () => process.StopAsync(TimeSpan.FromMilliseconds(-2)));

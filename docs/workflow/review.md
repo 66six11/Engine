@@ -404,8 +404,10 @@ foreach ($preset in @("clangcl-debug-tests", "msvc-debug-tests")) {
 }
 ```
 
-Studio R0没有Project create/open consumer；旧`editor_project_*` native bridge及CLI smoke已删除。不得在没有真实
-managed/native owner的情况下用独立smoke重新引入该adapter。
+Studio R0 删除的旧 `editor_project_*` bridge 仍不得恢复。当前真实 create/open consumer 固定走
+`project-core` 自有 `asharia-project-native` -> `Asharia.Studio.EngineBridge` -> Application `ProjectSession`；相关改动必须
+同时跑 `asharia-project-core-smoke-tests`、`asharia-project-native-smoke-tests`、
+`asharia-project-native-c-header-smoke`、managed bridge/Application/Headless tests 与 Release distribution closure。
 
 涉及 `packages/resource-runtime` runtime handle/status/product-record resolution/diagnostics 时，必须跑
 package-local tests，证明 pending / ready / failed、generation、product key mismatch 和 product record

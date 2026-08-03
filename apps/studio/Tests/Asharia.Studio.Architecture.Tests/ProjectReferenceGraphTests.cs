@@ -44,7 +44,10 @@ public sealed class ProjectReferenceGraphTests
             .OfType<string>()
             .ToArray();
         Assert.Equal(
-            ["../Asharia.Runtime.Contracts/Asharia.Runtime.Contracts.csproj"],
+            [
+                "../Asharia.Runtime.Contracts/Asharia.Runtime.Contracts.csproj",
+                "../Asharia.Studio.Application/Asharia.Studio.Application.csproj",
+            ],
             bridgeReferences);
         Assert.Equal(
             "true",
@@ -210,10 +213,14 @@ public sealed class ProjectReferenceGraphTests
     }
 
     [Fact]
-    public void Legacy_workbench_command_surface_is_deleted()
+    public void Legacy_workbench_commands_stay_deleted_while_shell_owns_one_async_command()
     {
         var studioRoot = FindStudioRoot();
-        Assert.False(Directory.Exists(Path.Combine(studioRoot, "Shell", "Commands")));
+        Assert.True(File.Exists(Path.Combine(
+            studioRoot,
+            "Shell",
+            "Commands",
+            "AsyncCommand.cs")));
         Assert.False(Directory.Exists(Path.Combine(
             studioRoot,
             "src",
@@ -406,10 +413,14 @@ public sealed class ProjectReferenceGraphTests
     {
         var studioRoot = FindStudioRoot();
         var appSource = File.ReadAllText(Path.Combine(studioRoot, "App.axaml.cs"));
-        Assert.Contains("new StudioShellViewModel()", appSource, StringComparison.Ordinal);
+        Assert.Contains(
+            "new StudioShellViewModel(projectSession, projectDialogs)",
+            appSource,
+            StringComparison.Ordinal);
+        Assert.Contains("new ProjectSession(new ProjectDescriptorBridge())", appSource);
         Assert.Contains("StudioCompositionSession.CreateAsync", appSource, StringComparison.Ordinal);
         Assert.Matches(
-            @"StudioCompositionSession\.CreateAsync\(\s*shellViewModel,\s*mainWindow,\s*diagnostics_,\s*cancellationToken,",
+            @"StudioCompositionSession\.CreateAsync\(\s*shellViewModel,\s*projectSession,\s*mainWindow,\s*diagnostics_,\s*cancellationToken,",
             appSource);
         Assert.DoesNotContain("new StudioCompositionRoot", appSource, StringComparison.Ordinal);
         Assert.DoesNotContain("MainWindowViewModel", appSource, StringComparison.Ordinal);
@@ -676,6 +687,13 @@ public sealed class ProjectReferenceGraphTests
                     "src/Asharia.Studio.DevelopmentProtocol/Asharia.Studio.DevelopmentProtocol.csproj",
                     reference.Include);
                 Assert.Equal("'$(Configuration)' == 'Debug'", reference.Condition);
+            },
+            reference =>
+            {
+                Assert.Equal(
+                    "src/Asharia.Studio.EngineBridge/Asharia.Studio.EngineBridge.csproj",
+                    reference.Include);
+                Assert.Null(reference.Condition);
             });
     }
 

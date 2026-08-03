@@ -17,13 +17,18 @@ public sealed class StudioLayeringTests
     }
 
     [Fact]
-    public void Disconnected_project_presentation_is_deleted()
+    public void Project_presentation_is_limited_to_shell_commands_and_owned_dialogs()
     {
         var root = FindRepositoryRoot();
 
         Assert.False(Directory.Exists(Path.Combine(root, "Shell", "ViewModels", "Projects")));
         Assert.False(Directory.Exists(Path.Combine(root, "Shell", "Views", "Projects")));
-        Assert.False(Directory.Exists(Path.Combine(root, "Shell", "Services")));
+        Assert.True(File.Exists(Path.Combine(
+            root,
+            "Shell",
+            "Services",
+            "Projects",
+            "MainWindowProjectDialogService.cs")));
         Assert.False(Directory.Exists(Path.Combine(root, "UI", "Presentation")));
         Assert.False(File.Exists(Path.Combine(root, "Core", "Abstractions", "IEditorUiDispatcher.cs")));
         Assert.False(File.Exists(Path.Combine(root, "Core", "Services", "ImmediateEditorUiDispatcher.cs")));
@@ -86,28 +91,36 @@ public sealed class StudioLayeringTests
     }
 
     [Fact]
-    public void Disconnected_active_project_session_tail_is_deleted()
+    public void Active_project_session_is_application_owned_without_legacy_public_facades()
     {
         var root = FindRepositoryRoot();
 
         Assert.False(Directory.Exists(Path.Combine(root, "src", "Asharia.Editor", "Projects")));
-        Assert.False(Directory.Exists(
-            Path.Combine(root, "src", "Asharia.Studio.Application", "Projects")));
+        Assert.True(File.Exists(Path.Combine(
+            root,
+            "src",
+            "Asharia.Studio.Application",
+            "Projects",
+            "ProjectSession.cs")));
         Assert.False(Directory.Exists(Path.Combine(root, "Core", "Interop", "Projects")));
         Assert.False(Directory.Exists(
             Path.Combine(root, "Tests", "Asharia.Editor.Tests", "Projects")));
-        Assert.False(Directory.Exists(
-            Path.Combine(root, "Tests", "Asharia.Studio.Application.Tests", "Projects")));
+        Assert.True(File.Exists(Path.Combine(
+            root,
+            "Tests",
+            "Asharia.Studio.Application.Tests",
+            "Projects",
+            "ProjectSessionTests.cs")));
     }
 
     [Fact]
-    public void Disconnected_managed_project_bridge_tail_is_deleted()
+    public void Managed_project_bridge_is_a_real_test_covered_adapter()
     {
         var root = FindRepositoryRoot();
 
-        Assert.False(Directory.Exists(
+        Assert.True(Directory.Exists(
             Path.Combine(root, "src", "Asharia.Studio.EngineBridge", "Project")));
-        Assert.False(Directory.Exists(
+        Assert.True(Directory.Exists(
             Path.Combine(root, "Tests", "Asharia.Studio.EngineBridge.Tests", "Project")));
     }
 
@@ -311,7 +324,7 @@ public sealed class StudioLayeringTests
             "EditorNativeRuntimeCopyTests.cs")));
         Assert.DoesNotContain("editor_native.dll", projectSource, StringComparison.Ordinal);
         Assert.DoesNotContain("slang.dll", projectSource, StringComparison.Ordinal);
-        Assert.DoesNotContain("StudioNative", projectSource, StringComparison.Ordinal);
+        Assert.Contains("asharia_project_native.dll", projectSource, StringComparison.Ordinal);
         Assert.DoesNotContain("Win32PlatformOptions", programSource, StringComparison.Ordinal);
         Assert.DoesNotContain("Win32RenderingMode", programSource, StringComparison.Ordinal);
         Assert.DoesNotContain("StudioNativeTeardown", appSource, StringComparison.Ordinal);

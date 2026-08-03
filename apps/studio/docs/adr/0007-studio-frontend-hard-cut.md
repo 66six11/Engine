@@ -20,6 +20,10 @@ Editor Image只分发fresh App publish与AppRelative所需的选定hostfxr/Core 
 reference pack或ProjectCode metadata。随后只有stub/fixture tests自证、且默认绑定被发行物拒绝DLL的managed/public
 Frame Debugger岛与其scheduler专属枚举也已删除；独立C++ editor target/smoke保持不变，不能被Studio fixture替代。
 
+后续更新：2026-08-03 的 [ADR-0008](0008-authoritative-project-session.md) 在真实 App consumer、Application owner、
+专用 project-core adapter 和 Release identity closure 同时成立后，重新引入最小 create/open ProjectSession；它不撤销
+R0 对旧 facade、无 caller adapter、renderer/Vulkan Project IO 耦合和 phantom distribution 的删除结论。
+
 取代：
 
 - [ADR-0004：采用统一 Editor Extension Framework](0004-unified-editor-extension-framework.md) 中

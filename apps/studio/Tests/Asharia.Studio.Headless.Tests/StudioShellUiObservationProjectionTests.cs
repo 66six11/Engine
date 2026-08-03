@@ -8,6 +8,7 @@ using Asharia.Studio.Application.Diagnostics;
 using Asharia.Studio.DevelopmentHost.Hosting;
 using Asharia.Studio.DevelopmentHost.Transport;
 using Asharia.Studio.DevelopmentProtocol;
+using Asharia.Studio.TestSupport;
 using Avalonia.Headless.XUnit;
 using Avalonia.Threading;
 using Editor.Shell.Composition;
@@ -23,7 +24,7 @@ public sealed class StudioShellUiObservationProjectionTests
     [AvaloniaFact]
     public async Task Real_shell_projects_stable_bounded_semantics_across_state_change()
     {
-        using var viewModel = new StudioShellViewModel();
+        using var viewModel = StudioShellTestFactory.Create();
         var window = ShowWindow(viewModel);
         var projection = new StudioShellUiObservationProjection(window);
 
@@ -49,6 +50,7 @@ public sealed class StudioShellUiObservationProjectionTests
                     "StudioShellWindow",
                     "StudioShellStartingState",
                     "StudioShellNoProjectState",
+                    "StudioShellActiveProjectState",
                     "StudioShellNoDocumentState",
                 ],
                 startingTree.Value.Nodes.Select(static node => node.ElementId));
@@ -60,6 +62,7 @@ public sealed class StudioShellUiObservationProjectionTests
                 Node(startingTree.Value, "StudioShellStartingState").Role);
             Assert.True(Node(startingTree.Value, "StudioShellStartingState").IsVisible);
             Assert.False(Node(startingTree.Value, "StudioShellNoProjectState").IsVisible);
+            Assert.False(Node(startingTree.Value, "StudioShellActiveProjectState").IsVisible);
             Assert.False(Node(startingTree.Value, "StudioShellNoDocumentState").IsVisible);
 
             viewModel.MarkReady();
@@ -70,6 +73,7 @@ public sealed class StudioShellUiObservationProjectionTests
             var ready = Assert.IsType<UiTreeReadResult>(readyTree.Value);
             Assert.False(Node(ready, "StudioShellStartingState").IsVisible);
             Assert.True(Node(ready, "StudioShellNoProjectState").IsVisible);
+            Assert.False(Node(ready, "StudioShellActiveProjectState").IsVisible);
             Assert.True(Node(ready, "StudioShellNoDocumentState").IsVisible);
 
             var envelope = new ObservationResponse<UiTreeReadResult>(
@@ -92,7 +96,7 @@ public sealed class StudioShellUiObservationProjectionTests
     [AvaloniaFact]
     public async Task Read_tree_reports_typed_failure_and_explicit_truncation()
     {
-        using var viewModel = new StudioShellViewModel();
+        using var viewModel = StudioShellTestFactory.Create();
         var window = ShowWindow(viewModel);
         var projection = new StudioShellUiObservationProjection(window);
 
@@ -145,7 +149,7 @@ public sealed class StudioShellUiObservationProjectionTests
     [AvaloniaFact]
     public async Task Projection_marshals_worker_reads_and_honors_cancellation_and_window_shutdown()
     {
-        using var viewModel = new StudioShellViewModel();
+        using var viewModel = StudioShellTestFactory.Create();
         var window = ShowWindow(viewModel);
         var projection = new StudioShellUiObservationProjection(window);
 
@@ -196,7 +200,7 @@ public sealed class StudioShellUiObservationProjectionTests
             return;
         }
 
-        var viewModel = new StudioShellViewModel();
+        var viewModel = StudioShellTestFactory.Create();
         var window = ShowWindow(viewModel);
         var hub = new StudioDiagnosticHub(diagnosticCapacity: 2, logCapacity: 2);
         StudioCompositionSession? composition = null;
@@ -235,7 +239,7 @@ public sealed class StudioShellUiObservationProjectionTests
                 descriptor.Value.Capabilities,
                 capability => capability.CapabilityId == "ui.readTree");
             Assert.Equal("StudioShellWindow", Assert.Single(windows.Value!.Windows).WindowId);
-            Assert.Equal(4, tree.Value!.Nodes.Length);
+            Assert.Equal(5, tree.Value!.Nodes.Length);
 
             await composition.DisposeAsync();
             composition = null;

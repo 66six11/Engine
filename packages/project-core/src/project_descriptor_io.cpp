@@ -8,6 +8,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -22,10 +23,62 @@ namespace asharia::project {
         using namespace std::string_view_literals;
 
         inline constexpr std::uint64_t kMaxProjectDescriptorBytes = 16ULL * 1024ULL * 1024ULL;
+        inline constexpr std::string_view kForbiddenProjectNameCharacters = "<>:\"/\\|?*";
 
         [[nodiscard]] Error projectDescriptorIoError(std::string message) {
-            return Error{ErrorDomain::Project, 2, std::move(message)};
+            return Error{ErrorDomain::Project,
+                         static_cast<int>(AshariaProjectIoErrorCode::DescriptorIo),
+                         std::move(message)};
         }
+
+        [[nodiscard]] Error projectOperationError(AshariaProjectIoErrorCode code,
+                                                  std::string message) {
+            return Error{ErrorDomain::Project, static_cast<int>(code), std::move(message)};
+        }
+
+        [[nodiscard]] std::string pathText(const std::filesystem::path& path) {
+            const std::u8string utf8 = path.u8string();
+            return std::string{utf8.begin(), utf8.end()};
+        }
+
+        [[nodiscard]] bool isPortableProjectDirectoryName(std::string_view name) noexcept {
+            if (name.empty() || name.size() > 255U || name == "." || name == ".." ||
+                name.front() == ' ' || name.back() == ' ' || name.back() == '.') {
+                return false;
+            }
+
+            return std::ranges::none_of(name, [](char character) {
+                const auto value = static_cast<unsigned char>(character);
+                return value < 0x20U ||
+                       kForbiddenProjectNameCharacters.find(character) != std::string_view::npos;
+            });
+        }
+
+        class OwnedStagingDirectory {
+          public:
+            explicit OwnedStagingDirectory(std::filesystem::path path) : path_(std::move(path)) {}
+
+            OwnedStagingDirectory(const OwnedStagingDirectory&) = delete;
+            OwnedStagingDirectory& operator=(const OwnedStagingDirectory&) = delete;
+            OwnedStagingDirectory(OwnedStagingDirectory&&) = delete;
+            OwnedStagingDirectory& operator=(OwnedStagingDirectory&&) = delete;
+
+            ~OwnedStagingDirectory() {
+                if (committed_) {
+                    return;
+                }
+                std::error_code removeError;
+                std::filesystem::remove_all(path_, removeError);
+            }
+
+            void commit() noexcept {
+                committed_ = true;
+            }
+
+          private:
+            std::filesystem::path path_;
+            bool committed_{false};
+        };
 
         [[nodiscard]] bool containsName(std::span<const std::string_view> names,
                                         std::string_view name) noexcept {
@@ -405,6 +458,173 @@ namespace asharia::project {
         }
 
         return descriptor;
+    }
+
+    Result<OpenedAshariaProject> openAshariaProject(const std::filesystem::path& projectPath) {
+        std::error_code statusError;
+        const std::filesystem::file_status status = std::filesystem::status(projectPath, statusError);
+        if (statusError) {
+            return std::unexpected{projectOperationError(
+                AshariaProjectIoErrorCode::InvalidProject,
+                "Could not inspect Asharia project path '" + pathText(projectPath) +
+                    "': " + statusError.message())};
+        }
+
+        std::filesystem::path root;
+        if (std::filesystem::is_directory(status)) {
+            root = projectPath;
+        } else if (std::filesystem::is_regular_file(status) &&
+                   projectPath.filename() ==
+                       std::filesystem::path{std::string{kDefaultAshariaProjectFileName}}) {
+            root = projectPath.parent_path();
+        } else {
+            return std::unexpected{projectOperationError(
+                AshariaProjectIoErrorCode::InvalidProject,
+                "Asharia project path must be a project directory or '" +
+                    std::string{kDefaultAshariaProjectFileName} + "'.")};
+        }
+
+        std::error_code canonicalError;
+        root = std::filesystem::canonical(root, canonicalError);
+        if (canonicalError || root.empty()) {
+            return std::unexpected{projectOperationError(
+                AshariaProjectIoErrorCode::InvalidProject,
+                "Could not resolve Asharia project root '" + pathText(root) +
+                    "': " + canonicalError.message())};
+        }
+
+        const std::filesystem::path descriptorPath =
+            root / std::string{kDefaultAshariaProjectFileName};
+        auto descriptor = readAshariaProjectDescriptorFile(descriptorPath);
+        if (!descriptor) {
+            return std::unexpected{std::move(descriptor.error())};
+        }
+
+        return OpenedAshariaProject{
+            .root = std::move(root),
+            .descriptor = std::move(*descriptor),
+        };
+    }
+
+    Result<OpenedAshariaProject>
+    createMinimalAshariaProject(const MinimalAshariaProjectCreate& request) {
+        if (!isPortableProjectDirectoryName(request.projectName)) {
+            return std::unexpected{projectOperationError(
+                AshariaProjectIoErrorCode::InvalidProject,
+                "Asharia project name must be a portable directory name of at most 255 UTF-8 bytes.")};
+        }
+        if (!request.projectId) {
+            return std::unexpected{projectOperationError(
+                AshariaProjectIoErrorCode::InvalidProject,
+                "Asharia project id is invalid.")};
+        }
+
+        std::error_code canonicalError;
+        std::filesystem::path parent =
+            std::filesystem::canonical(request.parentDirectory, canonicalError);
+        if (canonicalError || parent.empty()) {
+            return std::unexpected{projectOperationError(
+                AshariaProjectIoErrorCode::IoFailure,
+                "Could not resolve Asharia project parent directory '" +
+                    pathText(request.parentDirectory) + "': " + canonicalError.message())};
+        }
+
+        std::error_code directoryError;
+        if (!std::filesystem::is_directory(parent, directoryError) || directoryError) {
+            return std::unexpected{projectOperationError(
+                AshariaProjectIoErrorCode::IoFailure,
+                "Asharia project parent is not a readable directory: '" + pathText(parent) + "'.")};
+        }
+
+        const std::filesystem::path projectRoot = parent / request.projectName;
+        std::error_code existsError;
+        if (std::filesystem::exists(projectRoot, existsError)) {
+            return std::unexpected{projectOperationError(
+                AshariaProjectIoErrorCode::AlreadyExists,
+                "Asharia project path already exists: '" + pathText(projectRoot) + "'.")};
+        }
+        if (existsError) {
+            return std::unexpected{projectOperationError(
+                AshariaProjectIoErrorCode::IoFailure,
+                "Could not inspect Asharia project path '" + pathText(projectRoot) +
+                    "': " + existsError.message())};
+        }
+
+        const std::filesystem::path stagingRoot =
+            parent / (".asharia-project-create-" + formatProjectId(request.projectId));
+        std::error_code createError;
+        if (!std::filesystem::create_directory(stagingRoot, createError)) {
+            return std::unexpected{projectOperationError(
+                createError ? AshariaProjectIoErrorCode::IoFailure
+                            : AshariaProjectIoErrorCode::Busy,
+                "Could not acquire Asharia project staging directory '" + pathText(stagingRoot) +
+                    "': " + (createError ? createError.message() : "already exists"))};
+        }
+        OwnedStagingDirectory ownedStaging{stagingRoot};
+
+        const AshariaProjectDescriptor descriptor{
+            .projectName = request.projectName,
+            .projectId = request.projectId,
+            .assetSourceRoots =
+                {
+                    AssetSourceRootDesc{
+                        .rootName = "project-assets",
+                        .directory = "Assets",
+                        .sourcePathPrefix = "Assets",
+                    },
+                },
+            .assetCacheRoot = ".asharia/cache/assets",
+            .assetDiscovery =
+                AssetDiscoveryDesc{
+                    .ignoredDirectoryNames = {".git", ".asharia"},
+                },
+        };
+        if (auto validDescriptor = validateAshariaProjectDescriptor(descriptor);
+            !validDescriptor) {
+            return std::unexpected{std::move(validDescriptor.error())};
+        }
+
+        std::filesystem::create_directories(stagingRoot / "Assets", createError);
+        if (!createError) {
+            std::filesystem::create_directories(
+                stagingRoot / ".asharia" / "cache" / "assets", createError);
+        }
+        if (createError) {
+            return std::unexpected{projectOperationError(
+                AshariaProjectIoErrorCode::IoFailure,
+                "Could not create Asharia project layout in '" + pathText(stagingRoot) +
+                    "': " + createError.message())};
+        }
+
+        const std::filesystem::path stagedDescriptor =
+            stagingRoot / std::string{kDefaultAshariaProjectFileName};
+        if (auto written = writeAshariaProjectDescriptorFile(stagedDescriptor, descriptor);
+            !written) {
+            return std::unexpected{projectOperationError(
+                AshariaProjectIoErrorCode::IoFailure,
+                std::move(written.error().message))};
+        }
+        if (auto verified = readAshariaProjectDescriptorFile(stagedDescriptor); !verified) {
+            return std::unexpected{projectOperationError(
+                AshariaProjectIoErrorCode::InvalidProject,
+                std::move(verified.error().message))};
+        }
+
+        std::filesystem::rename(stagingRoot, projectRoot, createError);
+        if (createError) {
+            std::error_code publishedExistsError;
+            const bool publishedExists =
+                std::filesystem::exists(projectRoot, publishedExistsError);
+            const auto code = publishedExists && !publishedExistsError
+                ? AshariaProjectIoErrorCode::AlreadyExists
+                : AshariaProjectIoErrorCode::IoFailure;
+            return std::unexpected{projectOperationError(
+                code,
+                "Could not publish Asharia project '" + pathText(projectRoot) +
+                    "': " + createError.message())};
+        }
+        ownedStaging.commit();
+        return openAshariaProject(projectRoot);
     }
 
 } // namespace asharia::project

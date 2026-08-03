@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Asharia.Studio.Application.Diagnostics;
+using Asharia.Studio.Application.Projects;
 #if DEBUG
 using Asharia.Studio.DevelopmentHost.Hosting;
 using Asharia.Studio.DevelopmentHost.Transport;
@@ -18,30 +19,43 @@ internal sealed class StudioCompositionSession : IAsyncDisposable
 {
     private bool isDisposed_;
     private readonly StudioShellViewModel shellViewModel_;
+    private readonly IProjectSession projectSession_;
 #if DEBUG
     private readonly StudioDevelopmentHost? developmentHost_;
     private readonly StudioDevelopmentPipeEndpoint? developmentEndpoint_;
 #endif
 
-    public StudioCompositionSession(StudioShellViewModel shellViewModel)
+    public StudioCompositionSession(
+        StudioShellViewModel shellViewModel,
+        IProjectSession projectSession)
     {
         ArgumentNullException.ThrowIfNull(shellViewModel);
+        ArgumentNullException.ThrowIfNull(projectSession);
         shellViewModel_ = shellViewModel;
+        projectSession_ = projectSession;
 #if DEBUG
         developmentHost_ = null;
         developmentEndpoint_ = null;
 #endif
     }
 
+    internal StudioCompositionSession(StudioShellViewModel shellViewModel)
+        : this(shellViewModel, shellViewModel.ProjectSession)
+    {
+    }
+
 #if DEBUG
     private StudioCompositionSession(
         StudioShellViewModel shellViewModel,
+        IProjectSession projectSession,
         StudioDevelopmentHost developmentHost,
         StudioDevelopmentPipeEndpoint? developmentEndpoint)
     {
         ArgumentNullException.ThrowIfNull(shellViewModel);
+        ArgumentNullException.ThrowIfNull(projectSession);
         ArgumentNullException.ThrowIfNull(developmentHost);
         shellViewModel_ = shellViewModel;
+        projectSession_ = projectSession;
         developmentHost_ = developmentHost;
         developmentEndpoint_ = developmentEndpoint;
     }
@@ -56,36 +70,54 @@ internal sealed class StudioCompositionSession : IAsyncDisposable
         developmentEndpoint_;
 #endif
 
-    public static ValueTask<IAsyncDisposable> CreateAsync(
+    public static async ValueTask<IAsyncDisposable> CreateAsync(
         StudioShellViewModel shellViewModel,
+        IProjectSession projectSession,
         MainWindow? mainWindow,
         IStudioDiagnosticHub diagnostics,
         CancellationToken cancellationToken,
         bool enableReadOnlyDevelopmentObservation = false)
     {
         ArgumentNullException.ThrowIfNull(shellViewModel);
+        ArgumentNullException.ThrowIfNull(projectSession);
         ArgumentNullException.ThrowIfNull(diagnostics);
         if (cancellationToken.IsCancellationRequested)
         {
             shellViewModel.Dispose();
+            await projectSession.DisposeAsync();
             cancellationToken.ThrowIfCancellationRequested();
         }
 #if DEBUG
-        return CreateDebugAsync(
+        return await CreateDebugAsync(
             shellViewModel,
+            projectSession,
             mainWindow,
             diagnostics,
             cancellationToken,
             enableReadOnlyDevelopmentObservation);
 #else
-        return ValueTask.FromResult<IAsyncDisposable>(
-            new StudioCompositionSession(shellViewModel));
+        return new StudioCompositionSession(shellViewModel, projectSession);
 #endif
     }
+
+    internal static ValueTask<IAsyncDisposable> CreateAsync(
+        StudioShellViewModel shellViewModel,
+        MainWindow? mainWindow,
+        IStudioDiagnosticHub diagnostics,
+        CancellationToken cancellationToken,
+        bool enableReadOnlyDevelopmentObservation = false) =>
+        CreateAsync(
+            shellViewModel,
+            shellViewModel.ProjectSession,
+            mainWindow,
+            diagnostics,
+            cancellationToken,
+            enableReadOnlyDevelopmentObservation);
 
 #if DEBUG
     private static async ValueTask<IAsyncDisposable> CreateDebugAsync(
         StudioShellViewModel shellViewModel,
+        IProjectSession projectSession,
         MainWindow? mainWindow,
         IStudioDiagnosticHub diagnostics,
         CancellationToken cancellationToken,
@@ -119,6 +151,7 @@ internal sealed class StudioCompositionSession : IAsyncDisposable
 
             return new StudioCompositionSession(
                 shellViewModel,
+                projectSession,
                 host,
                 endpoint);
         }
@@ -138,6 +171,7 @@ internal sealed class StudioCompositionSession : IAsyncDisposable
             }
 
             shellViewModel.Dispose();
+            await projectSession.DisposeAsync();
             if (hostStopError is not null)
             {
                 throw new AggregateException(startError, hostStopError);
@@ -193,6 +227,15 @@ internal sealed class StudioCompositionSession : IAsyncDisposable
         try
         {
             shellViewModel_.Dispose();
+        }
+        catch (Exception error)
+        {
+            failures.Add(error);
+        }
+
+        try
+        {
+            await projectSession_.DisposeAsync();
         }
         catch (Exception error)
         {

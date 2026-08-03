@@ -18,6 +18,8 @@
     </ItemGroup>
 
     <ItemGroup>
+        <Compile Include="..\Shared\StudioProjectTestDoubles.cs"
+                 Link="Support\StudioProjectTestDoubles.cs" />
         <ProjectReference Include="..\..\Editor.csproj" />
         <ProjectReference Include="..\..\src\Asharia.Studio.Application\Asharia.Studio.Application.csproj"
                           Condition="'$(Configuration)' == 'Debug'" />
