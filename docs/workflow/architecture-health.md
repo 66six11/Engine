@@ -141,8 +141,8 @@ Host owner，证明 start → run → quiesce → reverse stop。synthetic contr
 
 结论：process owner、legacy composition/Workbench/Dock/Dialog presentation source 删除、bounded diagnostics/log、真实 Headless/accessibility baseline、Code-first source hard-cut、phantom native deployment closure与managed/public Frame Debugger幻影岛删除
 、真实disposable-child exit/reap及旧Diagnostics/extension identity/callback/provider/public Dialog/lifecycle-event/task-state/managed viewport/transaction/Scene snapshot/Selection/Panel runtime、最终public SDK SCC和空project/image合同删除已形成自动化证据；R0总门禁已由
-`studio-frontend-hard-cut.md` 4.39关闭；R0.5只读Protocol/Host/current-user Pipe/typed CLI/UI Probe/MCP及其并发、部分启动失败、completed-window/monotonic cursor与writer-gate取消修正已由
-`studio-development-observability.md` 2.1→2.13关闭。下一能力格只能从当前执行顺序重新过I0→I6，仍不得新增panel framework、
+`studio-frontend-hard-cut.md` 4.39关闭；R0.5只读Protocol/Host/current-user Pipe/typed CLI/UI Probe/MCP及其并发、部分启动失败、completed-window/monotonic cursor、writer-gate取消、typed retention、owner/discovery与Codex标准生命周期互操作修正已由
+`studio-development-observability.md` 2.1→2.16关闭；官方Codex fresh app-server thread已在process cwd与worktree root刻意分离时，以thread runtime fallback取得ready、精确六tool catalog和一次真实只读调用。恢复既有失败task仍须通过官方MCP配置reload后的下一active turn或新task刷新其旧catalog，不能据此否定已关闭的fresh-thread宿主证据。下一能力格只能从当前执行顺序重新过I0→I6，仍不得新增panel framework、
 extension/reload、第二套UI authoring、新Shell service、Capture/Mutate或任意远程控制。
 
 #### P1：SceneDocument mutation 与 native session 尚未接入可靠事务

@@ -1,0 +1,21 @@
+[mcp_servers.asharia_studio_observe]
+command = "dotnet"
+# Intentionally omit cwd: Codex uses the active thread/runtime checkout or worktree root.
+# Build this Release tool in the same checkout/worktree before loading the project MCP configuration.
+args = [
+  "tools/asharia-studio-observe/bin/Release/net10.0/asharia-studio-observe.dll",
+  "mcp",
+]
+enabled = true
+required = false
+startup_timeout_sec = 10
+tool_timeout_sec = 15
+default_tools_approval_mode = "writes"
+enabled_tools = [
+  "studio_list_sessions",
+  "studio_describe_session",
+  "studio_read_diagnostics",
+  "studio_read_logs",
+  "studio_list_ui_windows",
+  "studio_read_ui_tree",
+]

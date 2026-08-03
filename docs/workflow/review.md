@@ -282,8 +282,8 @@ manifest、listener与相关进程残留为0。仅凭独立server/client test或
 observe CLI生产项目只能引用DevelopmentProtocol；`list/describe/diagnostics/logs/ui-list-windows/ui-read-tree`必须验证current-user ACL、PID+process-start与handshake descriptor，
 要求显式instance，且任何输出不得含attach token。壳UI Probe的`ui.listWindows/readTree`已经以typed golden、真实Avalonia Headless semantic projection和产品Host→Pipe→typed client/CLI闭环关闭；
 projection只读显式AutomationId、必须在UI dispatcher上执行并同时具备semantic/visual traversal硬上限，Host也只在真实provider存在时广告两项capability。
-未实现的`state/ui.readElement/ui.find`不得注册unavailable stub。`asharia-studio-observe mcp`必须保持最后接入的现代`2026-07-28`、Protocol-only、stdio只读adapter：
-只复用前述六个已有typed client方法，固定`server/discover/tools/list/tools/call`，每request验证version/capabilities，不得支持legacy initialize、shell out CLI或借adapter扩大协议面。
+未实现的`state/ui.readElement/ui.find`不得注册unavailable stub。`asharia-studio-observe mcp`必须保持最后接入的标准`2025-06-18`、Protocol-only、stdio只读adapter：
+只复用前述六个已有typed client方法，固定`initialize → notifications/initialized → tools/list/tools/call`生命周期，只在连接初始化时协商version/capabilities；项目级`.codex/config.toml`必须省略stdio `cwd`，让Codex使用当前thread/runtime的checkout/worktree root，并由architecture gate冻结；不得用`.`或`..`引入宿主process-cwd漂移、保留`server/discover`双协议分支、shell out CLI或借adapter扩大协议面。在Git worktree中必须单独确认本worktree受信任且本树Release tool已构建；不得借用base checkout的绝对DLL或扩大父级worktrees目录信任。配置变更后的宿主验收必须通过官方MCP config reload后的下一active turn或fresh task取得ready、精确六tool catalog和一次真实只读调用；仅重启Desktop、配置存在或独立Inspector均不能替代。
 focused filter 只用于快速反馈，不能替代 solution test。real-SDK publish/stage证据位于独立
 `tools/studio-distribution.Tests` gate，不属于Application suite；即使hang deadline超时，也必须报告完整gate未通过，
 不能用排除慢测试的结果宣称全绿。

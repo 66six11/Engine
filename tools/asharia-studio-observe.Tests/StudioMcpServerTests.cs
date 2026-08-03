@@ -23,26 +23,29 @@ namespace Asharia.Studio.Observe.Tests;
 public sealed class StudioMcpServerTests
 {
     [Fact]
-    public async Task Modern_discovery_and_tool_list_are_exact_bounded_read_only_surface()
+    public async Task Standard_initialize_and_tool_list_are_exact_bounded_read_only_surface()
     {
-        await using var server = StartServer();
+        await using var server = StartUninitializedServer();
 
-        var discover = await server.RequestAsync(Request(1, "server/discover"));
-        var discoverResult = discover.RootElement.GetProperty("result");
-        Assert.Equal("complete", discoverResult.GetProperty("resultType").GetString());
+        var initialize = await server.RequestAsync(InitializeRequest(1));
+        var initializeResult = initialize.RootElement.GetProperty("result");
         Assert.Equal(
-            [StudioMcpServer.ProtocolVersion],
-            discoverResult.GetProperty("supportedVersions")
-                .EnumerateArray()
-                .Select(value => value.GetString()!)
-                .ToArray());
-        Assert.False(discoverResult
+            StudioMcpServer.ProtocolVersion,
+            initializeResult.GetProperty("protocolVersion").GetString());
+        Assert.Equal(
+            "asharia-studio-observe",
+            initializeResult.GetProperty("serverInfo").GetProperty("name").GetString());
+        Assert.False(initializeResult
             .GetProperty("capabilities")
             .GetProperty("tools")
             .GetProperty("listChanged")
             .GetBoolean());
 
-        var listed = await server.RequestAsync(Request(2, "tools/list"));
+        var premature = await server.RequestAsync(Request(2, "tools/list"));
+        Assert.Equal(-32600, ErrorCode(premature));
+
+        await server.SendAsync(InitializedNotification());
+        var listed = await server.RequestAsync(Request(3, "tools/list"));
         var tools = listed.RootElement
             .GetProperty("result")
             .GetProperty("tools")
@@ -82,46 +85,42 @@ public sealed class StudioMcpServerTests
     }
 
     [Fact]
-    public async Task Protocol_failures_reject_legacy_missing_metadata_unknown_tool_and_oversize()
+    public async Task Protocol_lifecycle_negotiates_version_and_rejects_invalid_requests()
     {
-        await using var server = StartServer();
+        await using var server = StartUninitializedServer();
 
         var malformed = await server.RequestAsync("{]");
         Assert.Equal(-32700, ErrorCode(malformed));
 
-        var legacy = await server.RequestAsync(
-            "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"initialize\",\"params\":{}}");
-        Assert.Equal(-32601, ErrorCode(legacy));
-        Assert.Contains(
-            StudioMcpServer.ProtocolVersion,
-            legacy.RootElement.GetProperty("error").GetProperty("message").GetString(),
-            StringComparison.Ordinal);
+        var beforeInitialize = await server.RequestAsync(Request(2, "tools/list"));
+        Assert.Equal(-32600, ErrorCode(beforeInitialize));
 
-        var missingMetadata = await server.RequestAsync(
-            "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/list\",\"params\":{}}");
-        Assert.Equal(-32602, ErrorCode(missingMetadata));
+        var invalidInitialize = await server.RequestAsync(
+            "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"initialize\",\"params\":{}}");
+        Assert.Equal(-32602, ErrorCode(invalidInitialize));
 
-        var unsupported = await server.RequestAsync(Request(
+        var negotiated = await server.RequestAsync(InitializeRequest(
             4,
-            "server/discover",
             version: "2025-11-25"));
-        Assert.Equal(-32022, ErrorCode(unsupported));
         Assert.Equal(
             StudioMcpServer.ProtocolVersion,
-            unsupported.RootElement
-                .GetProperty("error")
-                .GetProperty("data")
-                .GetProperty("supported")[0]
+            negotiated.RootElement
+                .GetProperty("result")
+                .GetProperty("protocolVersion")
                 .GetString());
+        await server.SendAsync(InitializedNotification());
+
+        var duplicateInitialize = await server.RequestAsync(InitializeRequest(5));
+        Assert.Equal(-32600, ErrorCode(duplicateInitialize));
 
         var unknownTool = await server.RequestAsync(ToolRequest(
-            5,
+            6,
             "studio_read_state",
             "{}"));
         Assert.Equal(-32602, ErrorCode(unknownTool));
 
         var invalidArguments = await server.RequestAsync(ToolRequest(
-            6,
+            7,
             "studio_read_logs",
             "{\"maxCount\":1001}"));
         var invalidResult = invalidArguments.RootElement.GetProperty("result");
@@ -141,6 +140,52 @@ public sealed class StudioMcpServerTests
     }
 
     [Fact]
+    public async Task Standard_metadata_and_duplicate_nested_fields_fail_closed()
+    {
+        await using var server = StartUninitializedServer();
+
+        var invalidInitializeMetadata = await server.RequestAsync(
+            "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{"
+            + $"\"protocolVersion\":\"{StudioMcpServer.ProtocolVersion}\","
+            + "\"capabilities\":{},\"clientInfo\":{\"name\":\"asharia-tests\",\"version\":\"1.0\"},"
+            + "\"_meta\":\"invalid\"}}");
+        Assert.Equal(-32602, ErrorCode(invalidInitializeMetadata));
+
+        var duplicateCapabilities = await server.RequestAsync(
+            "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"initialize\",\"params\":{"
+            + $"\"protocolVersion\":\"{StudioMcpServer.ProtocolVersion}\","
+            + "\"capabilities\":{\"roots\":{},\"roots\":{}},"
+            + "\"clientInfo\":{\"name\":\"asharia-tests\",\"version\":\"1.0\"}}}");
+        Assert.Equal(-32602, ErrorCode(duplicateCapabilities));
+
+        using var initialized = await server.RequestAsync(InitializeRequest(3));
+        Assert.Equal(StudioMcpServer.ProtocolVersion, initialized.RootElement
+            .GetProperty("result")
+            .GetProperty("protocolVersion")
+            .GetString());
+
+        await server.SendAsync(
+            "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\","
+            + "\"params\":{\"_meta\":[]}}");
+        var stillAwaitingInitialized = await server.RequestAsync(Request(4, "tools/list"));
+        Assert.Equal(-32600, ErrorCode(stillAwaitingInitialized));
+
+        await server.SendAsync(InitializedNotification());
+        var invalidListMetadata = await server.RequestAsync(
+            "{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"tools/list\","
+            + "\"params\":{\"_meta\":false}}");
+        Assert.Equal(-32602, ErrorCode(invalidListMetadata));
+
+        var invalidCallMetadata = await server.RequestAsync(
+            "{\"jsonrpc\":\"2.0\",\"id\":6,\"method\":\"tools/call\",\"params\":{"
+            + "\"name\":\"studio_list_sessions\",\"arguments\":{},"
+            + "\"_meta\":{\"trace\":1,\"trace\":2}}}");
+        Assert.Equal(-32602, ErrorCode(invalidCallMetadata));
+
+        await server.StopAsync();
+    }
+
+    [Fact]
     public async Task Real_endpoint_all_six_tools_preserve_typed_partial_semantics_and_secret_redaction()
     {
         var hub = new StudioDiagnosticHub(diagnosticCapacity: 2, logCapacity: 2);
@@ -153,7 +198,7 @@ public sealed class StudioMcpServerTests
         var manifest = ObservationProtocolJson.ReadSessionManifest(
             await File.ReadAllBytesAsync(endpoint.ManifestPath)).Value!;
         var instanceId = host.StudioInstanceId.Value.ToString("D");
-        await using var server = StartServer();
+        await using var server = await StartServerAsync();
         var payloads = new List<string>();
 
         var listed = await server.RequestAsync(ToolRequest(
@@ -249,7 +294,7 @@ public sealed class StudioMcpServerTests
         var hub = new ContradictoryCursorHub();
         await using var host = CreateHost(hub);
         await using var endpoint = await StudioDevelopmentPipeEndpoint.StartAsync(host);
-        await using var server = StartServer();
+        await using var server = await StartServerAsync();
         var instanceId = host.StudioInstanceId.Value.ToString("D");
 
         var response = await server.RequestAsync(ToolRequest(
@@ -276,7 +321,7 @@ public sealed class StudioMcpServerTests
         using var source = new ControlledUiObservationSource();
         await using var host = CreateHost(hub, source);
         await using var endpoint = await StudioDevelopmentPipeEndpoint.StartAsync(host);
-        await using var server = StartServer();
+        await using var server = await StartServerAsync();
         var instanceId = host.StudioInstanceId.Value.ToString("D");
 
         await server.SendAsync(ToolRequest(
@@ -288,7 +333,7 @@ public sealed class StudioMcpServerTests
             "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/cancelled\",\"params\":{\"requestId\":1,\"reason\":\"test\"}}");
         var ping = await server.RequestAsync(Request(2, "ping"));
         Assert.Equal(2, ping.RootElement.GetProperty("id").GetInt32());
-        Assert.Equal("complete", ping.RootElement.GetProperty("result").GetProperty("resultType").GetString());
+        Assert.Empty(ping.RootElement.GetProperty("result").EnumerateObject());
         source.Release();
         Assert.True(source.Completed.Wait(TimeSpan.FromSeconds(5)));
         await server.StopAsync();
@@ -308,9 +353,14 @@ public sealed class StudioMcpServerTests
         try
         {
             await input.WaitForReadRequestAsync();
+            input.Send(InitializeRequest(0));
+            Assert.Equal(0, await output.ReadResponseIdAsync());
+            await input.WaitForReadRequestAsync();
+            input.Send(InitializedNotification());
+            await input.WaitForReadRequestAsync();
             input.Send(Request(1, "ping"));
             await Task.WhenAll(
-                output.FirstWriteEntered.WaitAsync(TimeSpan.FromSeconds(5)),
+                output.BlockedWriteEntered.WaitAsync(TimeSpan.FromSeconds(5)),
                 input.WaitForReadRequestAsync());
 
             input.Send(Request(2, "ping"));
@@ -346,7 +396,7 @@ public sealed class StudioMcpServerTests
         using var source = new ControlledUiObservationSource();
         await using var host = CreateHost(hub, source);
         await using var endpoint = await StudioDevelopmentPipeEndpoint.StartAsync(host);
-        await using var server = StartServer();
+        await using var server = await StartServerAsync();
         var instanceId = host.StudioInstanceId.Value.ToString("D");
 
         await server.SendAsync(ToolRequest(
@@ -375,9 +425,7 @@ public sealed class StudioMcpServerTests
         using (reuse)
         {
             Assert.NotNull(reuse);
-            Assert.Equal(
-                "complete",
-                reuse.RootElement.GetProperty("result").GetProperty("resultType").GetString());
+            Assert.Empty(reuse.RootElement.GetProperty("result").EnumerateObject());
         }
 
         source.Release();
@@ -392,7 +440,7 @@ public sealed class StudioMcpServerTests
         using var source = new ControlledUiObservationSource();
         await using var host = CreateHost(hub, source);
         await using var endpoint = await StudioDevelopmentPipeEndpoint.StartAsync(host);
-        await using var server = StartServer();
+        await using var server = await StartServerAsync();
         var instanceId = host.StudioInstanceId.Value.ToString("D");
 
         await server.SendAsync(ToolRequest(
@@ -423,7 +471,7 @@ public sealed class StudioMcpServerTests
         using var source = new ControlledUiObservationSource();
         await using var host = CreateHost(hub, source);
         await using var endpoint = await StudioDevelopmentPipeEndpoint.StartAsync(host);
-        await using var server = StartServer();
+        await using var server = await StartServerAsync();
         var instanceId = host.StudioInstanceId.Value.ToString("D");
         var blockedCall = ToolRequest(
             1,
@@ -470,7 +518,7 @@ public sealed class StudioMcpServerTests
         using var source = new ControlledUiObservationSource();
         await using var host = CreateHost(hub, source);
         await using var endpoint = await StudioDevelopmentPipeEndpoint.StartAsync(host);
-        await using var server = StartServer();
+        await using var server = await StartServerAsync();
         var instanceId = host.StudioInstanceId.Value.ToString("D");
 
         await server.SendAsync(ToolRequest(
@@ -488,7 +536,22 @@ public sealed class StudioMcpServerTests
         Assert.True(source.Completed.Wait(TimeSpan.FromSeconds(5)));
     }
 
-    private static McpProcess StartServer()
+    private static async Task<McpProcess> StartServerAsync()
+    {
+        var server = StartUninitializedServer();
+        try
+        {
+            await server.InitializeAsync();
+            return server;
+        }
+        catch
+        {
+            await server.DisposeAsync();
+            throw;
+        }
+    }
+
+    private static McpProcess StartUninitializedServer()
     {
         var assemblyPath = typeof(Asharia.Studio.Observe.Program).Assembly.Location;
         var process = Process.Start(new ProcessStartInfo
@@ -511,18 +574,37 @@ public sealed class StudioMcpServerTests
 
     private static string Request<TId>(
         TId id,
-        string method,
-        string version = StudioMcpServer.ProtocolVersion) =>
+        string method) =>
         JsonSerializer.Serialize(new Dictionary<string, object?>
         {
             ["jsonrpc"] = "2.0",
             ["id"] = id,
             ["method"] = method,
+            ["params"] = new Dictionary<string, object?>(),
+        });
+
+    private static string InitializeRequest<TId>(
+        TId id,
+        string version = StudioMcpServer.ProtocolVersion) =>
+        JsonSerializer.Serialize(new Dictionary<string, object?>
+        {
+            ["jsonrpc"] = "2.0",
+            ["id"] = id,
+            ["method"] = "initialize",
             ["params"] = new Dictionary<string, object?>
             {
-                ["_meta"] = Metadata(version),
+                ["protocolVersion"] = version,
+                ["capabilities"] = new { },
+                ["clientInfo"] = new
+                {
+                    name = "asharia-tests",
+                    version = "1.0",
+                },
             },
         });
+
+    private static string InitializedNotification() =>
+        "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}";
 
     private static string ToolRequest<TId>(
         TId id,
@@ -537,24 +619,11 @@ public sealed class StudioMcpServerTests
             ["method"] = "tools/call",
             ["params"] = new Dictionary<string, object?>
             {
-                ["_meta"] = Metadata(StudioMcpServer.ProtocolVersion),
                 ["name"] = name,
                 ["arguments"] = document.RootElement.Clone(),
             },
         });
     }
-
-    private static Dictionary<string, object?> Metadata(string version) =>
-        new()
-        {
-            ["io.modelcontextprotocol/protocolVersion"] = version,
-            ["io.modelcontextprotocol/clientInfo"] = new
-            {
-                name = "asharia-tests",
-                version = "1.0",
-            },
-            ["io.modelcontextprotocol/clientCapabilities"] = new { },
-        };
 
     private static int ErrorCode(JsonDocument response) =>
         response.RootElement.GetProperty("error").GetProperty("code").GetInt32();
@@ -709,6 +778,18 @@ public sealed class StudioMcpServerTests
         }
 
         internal int ExitCode => process_.ExitCode;
+
+        internal async Task InitializeAsync()
+        {
+            using var response = await RequestAsync(InitializeRequest(0));
+            Assert.Equal(
+                StudioMcpServer.ProtocolVersion,
+                response.RootElement
+                    .GetProperty("result")
+                    .GetProperty("protocolVersion")
+                    .GetString());
+            await SendAsync(InitializedNotification());
+        }
 
         internal async Task SendAsync(string message)
         {
@@ -869,13 +950,13 @@ public sealed class StudioMcpServerTests
     {
         private readonly Channel<int> responseIds_ = Channel.CreateUnbounded<int>();
         private readonly MemoryStream currentFrame_ = new();
-        private readonly TaskCompletionSource firstWriteEntered_ = new(
+        private readonly TaskCompletionSource blockedWriteEntered_ = new(
             TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly TaskCompletionSource release_ = new(
             TaskCreationOptions.RunContinuationsAsynchronously);
-        private int firstWrite_;
+        private int blockedWrite_;
 
-        internal Task FirstWriteEntered => firstWriteEntered_.Task;
+        internal Task BlockedWriteEntered => blockedWriteEntered_.Task;
 
         internal void Release() => release_.TrySetResult();
 
@@ -889,12 +970,6 @@ public sealed class StudioMcpServerTests
             ReadOnlyMemory<byte> buffer,
             CancellationToken cancellationToken = default)
         {
-            if (Interlocked.CompareExchange(ref firstWrite_, 1, 0) == 0)
-            {
-                firstWriteEntered_.TrySetResult();
-                await release_.Task.WaitAsync(cancellationToken);
-            }
-
             if (buffer.Span.SequenceEqual("\n"u8))
             {
                 using var document = JsonDocument.Parse(currentFrame_.ToArray());
@@ -903,6 +978,18 @@ public sealed class StudioMcpServerTests
                     cancellationToken);
                 currentFrame_.SetLength(0);
                 return;
+            }
+
+            using (var response = JsonDocument.Parse(buffer))
+            {
+                var responseId = response.RootElement.GetProperty("id");
+                if (responseId.ValueKind == JsonValueKind.Number
+                    && responseId.GetInt32() == 1
+                    && Interlocked.CompareExchange(ref blockedWrite_, 1, 0) == 0)
+                {
+                    blockedWriteEntered_.TrySetResult();
+                    await release_.Task.WaitAsync(cancellationToken);
+                }
             }
 
             await currentFrame_.WriteAsync(buffer, cancellationToken);

@@ -1035,6 +1035,49 @@ public sealed class ProjectReferenceGraphTests
     {
         var studioRoot = FindStudioRoot();
         var repositoryRoot = Path.GetFullPath(Path.Combine(studioRoot, "..", ".."));
+        var codexConfigPath = Path.Combine(repositoryRoot, ".codex", "config.toml");
+        Assert.True(
+            File.Exists(codexConfigPath),
+            $"Project-scoped Codex configuration is missing at {codexConfigPath}.");
+        var codexConfig = File.ReadAllText(codexConfigPath);
+        Assert.Equal(
+            1,
+            CountExact(codexConfig, "[mcp_servers.asharia_studio_observe]"));
+        Assert.Contains("command = \"dotnet\"", codexConfig, StringComparison.Ordinal);
+        Assert.Contains(
+            "\"tools/asharia-studio-observe/bin/Release/net10.0/asharia-studio-observe.dll\"",
+            codexConfig,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("cwd =", codexConfig, StringComparison.Ordinal);
+        Assert.Contains("enabled = true", codexConfig, StringComparison.Ordinal);
+        Assert.Contains("required = false", codexConfig, StringComparison.Ordinal);
+        var enabledToolsMatch = Regex.Match(
+            codexConfig,
+            "(?ms)^enabled_tools\\s*=\\s*\\[\\s*(?<body>.*?)^\\s*\\]");
+        Assert.True(
+            enabledToolsMatch.Success,
+            "Project-scoped Codex configuration has no enabled_tools array.");
+        var enabledTools = Regex.Matches(
+                enabledToolsMatch.Groups["body"].Value,
+                "\\\"(?<tool>[^\\\"]+)\\\"")
+            .Select(match => match.Groups["tool"].Value)
+            .ToArray();
+        Assert.Equal(
+            [
+                "studio_list_sessions",
+                "studio_describe_session",
+                "studio_read_diagnostics",
+                "studio_read_logs",
+                "studio_list_ui_windows",
+                "studio_read_ui_tree",
+            ],
+            enabledTools);
+        Assert.True(File.Exists(Path.Combine(
+            repositoryRoot,
+            "tools",
+            "asharia-studio-observe",
+            "Asharia.Studio.Observe.csproj")));
+
         var cliRoot = Path.Combine(repositoryRoot, "tools", "asharia-studio-observe");
         var projectPath = Path.Combine(cliRoot, "Asharia.Studio.Observe.csproj");
         Assert.True(File.Exists(projectPath), $"Observe CLI project is missing at {projectPath}.");
@@ -1121,9 +1164,10 @@ public sealed class ProjectReferenceGraphTests
         var mcpToolsSource = Assert.Single(
             sources,
             source => source.Path == "Mcp/StudioMcpTools.cs").Text;
-        Assert.Contains("ProtocolVersion = \"2026-07-28\"", mcpServerSource, StringComparison.Ordinal);
-        Assert.Contains("Legacy initialize is unsupported", mcpServerSource, StringComparison.Ordinal);
-        Assert.Contains("\"server/discover\"", mcpServerSource, StringComparison.Ordinal);
+        Assert.Contains("ProtocolVersion = \"2025-06-18\"", mcpServerSource, StringComparison.Ordinal);
+        Assert.Contains("\"initialize\"", mcpServerSource, StringComparison.Ordinal);
+        Assert.Contains("\"notifications/initialized\"", mcpServerSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"server/discover\"", mcpServerSource, StringComparison.Ordinal);
         Assert.Contains("\"tools/list\"", mcpServerSource, StringComparison.Ordinal);
         Assert.Contains("\"tools/call\"", mcpServerSource, StringComparison.Ordinal);
         Assert.Contains("MaxInflightRequests = 8", mcpServerSource, StringComparison.Ordinal);

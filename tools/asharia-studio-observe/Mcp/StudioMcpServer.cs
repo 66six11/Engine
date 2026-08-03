@@ -16,7 +16,7 @@ namespace Asharia.Studio.Observe.Mcp;
 
 internal static class StudioMcpServer
 {
-    internal const string ProtocolVersion = "2026-07-28";
+    internal const string ProtocolVersion = "2025-06-18";
     internal const int MaxInflightRequests = 8;
     internal const int MaxInputBytes = ObservationProtocolLimits.MaxRequestBytes;
     internal const int MaxOutputBytes = ObservationProtocolLimits.MaxResponseBytes;
@@ -27,7 +27,6 @@ internal static class StudioMcpServer
     private const int MethodNotFound = -32_601;
     private const int InvalidParams = -32_602;
     private const int InternalError = -32_603;
-    private const int UnsupportedProtocolVersion = -32_022;
     private static readonly JsonDocumentOptions DocumentOptions = new()
     {
         CommentHandling = JsonCommentHandling.Disallow,
@@ -60,6 +59,7 @@ internal static class StudioMcpServer
         var inflight = new ConcurrentDictionary<
             StudioMcpRequestKey,
             StudioMcpInflightRequest>();
+        var lifecycle = StudioMcpLifecycleState.AwaitingInitialize;
         try
         {
             while (!lifetime.IsCancellationRequested)
@@ -127,17 +127,67 @@ internal static class StudioMcpServer
 
                     if (isNotification)
                     {
-                        HandleNotification(root, method!, inflight);
+                        lifecycle = HandleNotification(
+                            root,
+                            method!,
+                            lifecycle,
+                            inflight);
                         continue;
                     }
 
                     if (string.Equals(method, "initialize", StringComparison.Ordinal))
                     {
+                        if (lifecycle != StudioMcpLifecycleState.AwaitingInitialize)
+                        {
+                            await writer.WriteErrorAsync(
+                                    id,
+                                    InvalidRequest,
+                                    "MCP connection is already initialized.",
+                                    data: null,
+                                    lifetime.Token)
+                                .ConfigureAwait(false);
+                            continue;
+                        }
+
+                        var initializationFailure = ValidateInitializeRequest(root);
+                        if (initializationFailure is not null)
+                        {
+                            await writer.WriteErrorAsync(
+                                    id,
+                                    InvalidParams,
+                                    initializationFailure,
+                                    data: null,
+                                    lifetime.Token)
+                                .ConfigureAwait(false);
+                            continue;
+                        }
+
+                        await writer.WriteInitializeAsync(id!.Value, lifetime.Token)
+                            .ConfigureAwait(false);
+                        lifecycle = StudioMcpLifecycleState.AwaitingInitializedNotification;
+                        continue;
+                    }
+
+                    if (lifecycle == StudioMcpLifecycleState.AwaitingInitialize)
+                    {
                         await writer.WriteErrorAsync(
                                 id,
-                                MethodNotFound,
-                                $"Legacy initialize is unsupported; use MCP {ProtocolVersion} per-request metadata.",
-                                new { supported = new[] { ProtocolVersion } },
+                                InvalidRequest,
+                                "MCP initialize must be the first request.",
+                                data: null,
+                                lifetime.Token)
+                            .ConfigureAwait(false);
+                        continue;
+                    }
+
+                    if (lifecycle == StudioMcpLifecycleState.AwaitingInitializedNotification
+                        && !string.Equals(method, "ping", StringComparison.Ordinal))
+                    {
+                        await writer.WriteErrorAsync(
+                                id,
+                                InvalidRequest,
+                                "MCP client must send notifications/initialized before tool requests.",
+                                data: null,
                                 lifetime.Token)
                             .ConfigureAwait(false);
                         continue;
@@ -228,63 +278,10 @@ internal static class StudioMcpServer
     {
         try
         {
-            var metadataFailure = ValidateMetadata(request, out var requestedVersion);
-            if (metadataFailure is not null)
-            {
-                if (metadataFailure == "unsupported")
-                {
-                    await writer.WriteErrorAsync(
-                            id,
-                            UnsupportedProtocolVersion,
-                            "Unsupported protocol version.",
-                            new
-                            {
-                                supported = new[] { ProtocolVersion },
-                                requested = requestedVersion,
-                            },
-                            requestCancellationToken,
-                            lifetimeCancellationToken)
-                        .ConfigureAwait(false);
-                }
-                else
-                {
-                    await writer.WriteErrorAsync(
-                            id,
-                            InvalidParams,
-                            metadataFailure,
-                            data: null,
-                            requestCancellationToken,
-                            lifetimeCancellationToken)
-                        .ConfigureAwait(false);
-                }
-
-                return;
-            }
-
             switch (method)
             {
-                case "server/discover":
-                    if (!HasOnlyParameters(request, "_meta"))
-                    {
-                        await writer.WriteErrorAsync(
-                                id,
-                                InvalidParams,
-                                "server/discover accepts only standard request metadata.",
-                                data: null,
-                                requestCancellationToken,
-                                lifetimeCancellationToken)
-                            .ConfigureAwait(false);
-                        return;
-                    }
-
-                    await writer.WriteDiscoverAsync(
-                            id,
-                            requestCancellationToken,
-                            lifetimeCancellationToken)
-                        .ConfigureAwait(false);
-                    return;
                 case "tools/list":
-                    if (!HasOnlyParameters(request, "_meta"))
+                    if (!HasOptionalParameters(request, "_meta"))
                     {
                         await writer.WriteErrorAsync(
                                 id,
@@ -304,12 +301,12 @@ internal static class StudioMcpServer
                         .ConfigureAwait(false);
                     return;
                 case "ping":
-                    if (!HasOnlyParameters(request, "_meta"))
+                    if (!HasOptionalParameters(request, "_meta"))
                     {
                         await writer.WriteErrorAsync(
                                 id,
                                 InvalidParams,
-                                "ping accepts only standard request metadata.",
+                                "ping accepts no operation parameters.",
                                 data: null,
                                 requestCancellationToken,
                                 lifetimeCancellationToken)
@@ -377,6 +374,7 @@ internal static class StudioMcpServer
     {
         if (!TryGetParameters(request, out var parameters)
             || !HasOnlyProperties(parameters, "_meta", "name", "arguments")
+            || !HasValidOptionalMetadata(parameters)
             || !parameters.TryGetProperty("name", out var nameElement)
             || nameElement.ValueKind != JsonValueKind.String)
         {
@@ -460,54 +458,68 @@ internal static class StudioMcpServer
         }
     }
 
-    private static void HandleNotification(
+    private static StudioMcpLifecycleState HandleNotification(
         JsonElement request,
         string method,
+        StudioMcpLifecycleState lifecycle,
         ConcurrentDictionary<StudioMcpRequestKey, StudioMcpInflightRequest> inflight)
     {
-        if (!string.Equals(method, "notifications/cancelled", StringComparison.Ordinal)
-            || !TryGetParameters(request, out var parameters)
-            || !parameters.TryGetProperty("requestId", out var requestId)
-            || !TryGetRequestKey(requestId, out var requestKey))
+        if (string.Equals(method, "notifications/initialized", StringComparison.Ordinal))
         {
-            return;
+            return lifecycle == StudioMcpLifecycleState.AwaitingInitializedNotification
+                && HasOptionalParameters(request, "_meta")
+                    ? StudioMcpLifecycleState.Operating
+                    : lifecycle;
         }
 
-        if (inflight.TryGetValue(requestKey, out var operation))
+        if (string.Equals(method, "notifications/cancelled", StringComparison.Ordinal)
+            && TryGetParameters(request, out var parameters)
+            && HasOnlyProperties(parameters, "_meta", "requestId", "reason")
+            && HasValidOptionalMetadata(parameters)
+            && parameters.TryGetProperty("requestId", out var requestId)
+            && TryGetRequestKey(requestId, out var requestKey)
+            && inflight.TryGetValue(requestKey, out var operation))
         {
             operation.Cancellation.Cancel();
         }
+
+        return lifecycle;
     }
 
-    private static string? ValidateMetadata(
-        JsonElement request,
-        out string? requestedVersion)
+    private static string? ValidateInitializeRequest(JsonElement request)
     {
-        requestedVersion = null;
         if (!TryGetParameters(request, out var parameters)
-            || !parameters.TryGetProperty("_meta", out var metadata)
-            || metadata.ValueKind != JsonValueKind.Object
-            || !metadata.TryGetProperty(
-                "io.modelcontextprotocol/protocolVersion",
-                out var version)
+            || !HasOnlyProperties(
+                parameters,
+                "_meta",
+                "protocolVersion",
+                "capabilities",
+                "clientInfo")
+            || !parameters.TryGetProperty("protocolVersion", out var version)
             || version.ValueKind != JsonValueKind.String
-            || !metadata.TryGetProperty(
-                "io.modelcontextprotocol/clientCapabilities",
-                out var capabilities)
-            || capabilities.ValueKind != JsonValueKind.Object)
+            || string.IsNullOrWhiteSpace(version.GetString())
+            || !parameters.TryGetProperty("capabilities", out var capabilities)
+            || capabilities.ValueKind != JsonValueKind.Object
+            || !HasUniqueProperties(capabilities)
+            || !parameters.TryGetProperty("clientInfo", out var clientInfo)
+            || clientInfo.ValueKind != JsonValueKind.Object
+            || !HasUniqueProperties(clientInfo)
+            || !clientInfo.TryGetProperty("name", out var name)
+            || name.ValueKind != JsonValueKind.String
+            || string.IsNullOrWhiteSpace(name.GetString())
+            || !clientInfo.TryGetProperty("version", out var clientVersion)
+            || clientVersion.ValueKind != JsonValueKind.String
+            || string.IsNullOrWhiteSpace(clientVersion.GetString()))
         {
-            return "MCP request is missing required per-request version or capability metadata.";
+            return "initialize requires protocolVersion, capabilities, and clientInfo name/version.";
         }
 
-        if (!HasUniqueProperties(metadata))
+        if (!HasValidOptionalMetadata(parameters))
         {
-            return "MCP request metadata contains duplicate fields.";
+            return "initialize _meta must be an unambiguous JSON object when present.";
         }
 
-        requestedVersion = version.GetString();
-        return string.Equals(requestedVersion, ProtocolVersion, StringComparison.Ordinal)
-            ? null
-            : "unsupported";
+        return null;
     }
 
     private static bool TryReadMessage(
@@ -578,11 +590,19 @@ internal static class StudioMcpServer
         return false;
     }
 
-    private static bool HasOnlyParameters(
+    private static bool HasOptionalParameters(
         JsonElement request,
-        params string[] allowed) =>
-        TryGetParameters(request, out var parameters)
-        && HasOnlyProperties(parameters, allowed);
+        params string[] allowed)
+    {
+        if (!request.TryGetProperty("params", out var parameters))
+        {
+            return true;
+        }
+
+        return parameters.ValueKind == JsonValueKind.Object
+            && HasOnlyProperties(parameters, allowed)
+            && HasValidOptionalMetadata(parameters);
+    }
 
     private static bool TryGetParameters(
         JsonElement request,
@@ -606,6 +626,11 @@ internal static class StudioMcpServer
             property.Name,
             StringComparer.Ordinal));
 
+    private static bool HasValidOptionalMetadata(JsonElement value) =>
+        !value.TryGetProperty("_meta", out var metadata)
+        || (metadata.ValueKind == JsonValueKind.Object
+            && HasUniqueProperties(metadata));
+
     private static bool HasUniqueProperties(JsonElement value)
     {
         var names = new HashSet<string>(StringComparer.Ordinal);
@@ -628,6 +653,13 @@ internal static class StudioMcpServer
         StudioMcpRequestIdKind Kind,
         string? StringValue,
         long IntegerValue);
+}
+
+internal enum StudioMcpLifecycleState
+{
+    AwaitingInitialize,
+    AwaitingInitializedNotification,
+    Operating,
 }
 
 internal sealed class StudioMcpInflightRequest
@@ -754,29 +786,27 @@ internal sealed class StudioMcpMessageWriter : IDisposable
         output_ = output;
     }
 
-    internal ValueTask WriteDiscoverAsync(
+    internal ValueTask WriteInitializeAsync(
         JsonElement id,
-        CancellationToken gateCancellationToken,
-        CancellationToken writeCancellationToken) =>
+        CancellationToken cancellationToken) =>
         WriteResultAsync(
             id,
             writer =>
             {
-                writer.WriteString("resultType", "complete");
-                writer.WritePropertyName("supportedVersions");
-                writer.WriteStartArray();
-                writer.WriteStringValue(StudioMcpServer.ProtocolVersion);
-                writer.WriteEndArray();
+                writer.WriteString("protocolVersion", StudioMcpServer.ProtocolVersion);
                 WriteCapabilities(writer);
+                writer.WritePropertyName("serverInfo");
+                writer.WriteStartObject();
+                writer.WriteString("name", "asharia-studio-observe");
+                writer.WriteString("title", "Asharia Studio Observe");
+                writer.WriteString("version", "1.0.0");
+                writer.WriteEndObject();
                 writer.WriteString(
                     "instructions",
                     "Read-only Asharia Studio observation. Select an explicit instance; cursors and partial/truncation fields are authoritative. No mutation, input, capture, or arbitrary RPC is available.");
-                writer.WriteNumber("ttlMs", 3_600_000);
-                writer.WriteString("cacheScope", "public");
-                WriteServerMetadata(writer);
             },
-            gateCancellationToken,
-            writeCancellationToken);
+            cancellationToken,
+            cancellationToken);
 
     internal ValueTask WriteToolListAsync(
         JsonElement id,
@@ -786,7 +816,6 @@ internal sealed class StudioMcpMessageWriter : IDisposable
             id,
             writer =>
             {
-                writer.WriteString("resultType", "complete");
                 writer.WritePropertyName("tools");
                 writer.WriteStartArray();
                 foreach (var definition in StudioMcpTools.Definitions)
@@ -808,9 +837,6 @@ internal sealed class StudioMcpMessageWriter : IDisposable
                 }
 
                 writer.WriteEndArray();
-                writer.WriteNumber("ttlMs", 3_600_000);
-                writer.WriteString("cacheScope", "public");
-                WriteServerMetadata(writer);
             },
             gateCancellationToken,
             writeCancellationToken);
@@ -821,11 +847,7 @@ internal sealed class StudioMcpMessageWriter : IDisposable
         CancellationToken writeCancellationToken) =>
         WriteResultAsync(
             id,
-            writer =>
-            {
-                writer.WriteString("resultType", "complete");
-                WriteServerMetadata(writer);
-            },
+            _ => { },
             gateCancellationToken,
             writeCancellationToken);
 
@@ -839,7 +861,6 @@ internal sealed class StudioMcpMessageWriter : IDisposable
             id,
             writer =>
             {
-                writer.WriteString("resultType", "complete");
                 writer.WritePropertyName("content");
                 writer.WriteStartArray();
                 writer.WriteStartObject();
@@ -850,7 +871,6 @@ internal sealed class StudioMcpMessageWriter : IDisposable
                 writer.WritePropertyName("structuredContent");
                 result.StructuredContent.WriteTo(writer);
                 writer.WriteBoolean("isError", result.IsError);
-                WriteServerMetadata(writer);
             });
         if (payload.Length > StudioMcpServer.MaxOutputBytes)
         {
@@ -869,7 +889,6 @@ internal sealed class StudioMcpMessageWriter : IDisposable
                 id,
                 writer =>
                 {
-                    writer.WriteString("resultType", "complete");
                     writer.WritePropertyName("content");
                     writer.WriteStartArray();
                     writer.WriteStartObject();
@@ -880,7 +899,6 @@ internal sealed class StudioMcpMessageWriter : IDisposable
                     writer.WritePropertyName("structuredContent");
                     failure.WriteTo(writer);
                     writer.WriteBoolean("isError", true);
-                    WriteServerMetadata(writer);
                 });
         }
 
@@ -1017,18 +1035,4 @@ internal sealed class StudioMcpMessageWriter : IDisposable
         writer.WriteEndObject();
     }
 
-    private static void WriteServerMetadata(Utf8JsonWriter writer)
-    {
-        writer.WritePropertyName("_meta");
-        writer.WriteStartObject();
-        writer.WritePropertyName("io.modelcontextprotocol/serverInfo");
-        writer.WriteStartObject();
-        writer.WriteString("name", "asharia-studio-observe");
-        writer.WriteString("version", "1.0.0");
-        writer.WriteString(
-            "description",
-            "Bounded read-only Asharia Studio development observation adapter.");
-        writer.WriteEndObject();
-        writer.WriteEndObject();
-    }
 }
