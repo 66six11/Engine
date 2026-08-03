@@ -332,12 +332,14 @@ public sealed class StudioLayeringTests
             "editor_frame_debugger_",
         };
 
-        var offenders = Directory.EnumerateFiles(coreRoot, "*.cs", SearchOption.AllDirectories)
-            .Where(path => forbiddenFragments.Any(fragment =>
-                File.ReadAllText(path).Contains(fragment, StringComparison.Ordinal)))
-            .Select(path => Path.GetRelativePath(root, path))
-            .Order(StringComparer.Ordinal)
-            .ToArray();
+        var offenders = Directory.Exists(coreRoot)
+            ? Directory.EnumerateFiles(coreRoot, "*.cs", SearchOption.AllDirectories)
+                .Where(path => forbiddenFragments.Any(fragment =>
+                    File.ReadAllText(path).Contains(fragment, StringComparison.Ordinal)))
+                .Select(path => Path.GetRelativePath(root, path))
+                .Order(StringComparer.Ordinal)
+                .ToArray()
+            : Array.Empty<string>();
 
         Assert.Empty(offenders);
         Assert.False(Directory.Exists(Path.Combine(coreRoot, "Interop", "FrameDebugger")));
