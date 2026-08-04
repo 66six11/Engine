@@ -38,7 +38,8 @@ automation 都通过编辑器拥有的实体/组件操作修改场景。Asharia 
    关闭顺序为停止新命令、关闭文档连接、最后清除项目状态。创建实体、修改名称/Transform 与保存均由 session 串行化。
 7. 最小 Avalonia 编辑面只投影 authoritative snapshot：Hierarchy 显示实体，Inspector 编辑所选实体的名称和 local
    Transform，工具栏提供 Create Entity 与 Save，标题显示 dirty `*`。selection 是 UI 状态，并在每次 snapshot 后按
-   stable object ID remap；它不是 native truth。
+   stable object ID remap；它不是 native truth。Debug 只读观察树用 `StudioDocumentState` 稳定语义节点投影文件名、
+   revision 与 Saved/Unsaved，MCP 不从普通视觉文本或 ViewModel 反射猜测 dirty 状态。
 8. Release Editor Image 必须精确包含 `bin/asharia_scene_native.dll`，验证 PE/DLL identity 和全部 SceneDocument exports；
    缺失、错名、嵌套、副产物或 export 不完整都 fail closed。
 
@@ -70,7 +71,8 @@ automation 都通过编辑器拥有的实体/组件操作修改场景。Asharia 
 - native document ABI lifecycle、owner-thread、stale handle、buffer sizing、mutation 与 persistence smoke；
 - Application session ownership、failure、revision、dirty、save、close/dispose tests；
 - EngineBridge ABI layout、owner lane、status/UTF-8/response-bound tests；
-- ViewModel、Avalonia Headless Hierarchy/Inspector/dirty/Save projection；
+- ViewModel、Avalonia Headless Hierarchy/Inspector/dirty/Save projection，以及 MCP `StudioDocumentState` 的
+  Saved/Unsaved 语义投影；
 - 使用真实 project/scene DLL 的创建、编辑、保存、关闭、重开端到端验收；
 - Release image required artifact/export/forbidden-shape 验证。
 

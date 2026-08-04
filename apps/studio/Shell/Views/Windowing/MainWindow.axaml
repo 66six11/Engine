@@ -1,7 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:Editor.Shell.ViewModels.Windowing"
-        xmlns:scenes="using:Asharia.Studio.Application.Scenes"
+        xmlns:dockViews="using:Editor.Shell.Views.Docking"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d"
@@ -17,9 +17,9 @@
         Height="760"
         MinWidth="900"
         MinHeight="560"
-        Background="#0B0F14"
-        Foreground="#E6EDF3">
-    <Grid Margin="20">
+        Background="{DynamicResource EditorBrushBase00}"
+        Foreground="{DynamicResource EditorBrushTextPrimary}">
+    <Grid>
         <Border x:Name="StartingState"
                 AutomationProperties.AutomationId="StudioShellStartingState"
                 AutomationProperties.Name="Studio startup state"
@@ -29,14 +29,12 @@
                 Padding="18"
                 HorizontalAlignment="Center"
                 VerticalAlignment="Center"
-                Background="#10161D"
-                BorderBrush="#1F2933"
+                Background="{DynamicResource EditorBrushSurface01}"
+                BorderBrush="{DynamicResource EditorBrushDivider}"
                 BorderThickness="1"
                 CornerRadius="6">
             <StackPanel Spacing="12">
-                <TextBlock FontSize="28"
-                           FontWeight="SemiBold"
-                           Text="Asharia Studio" />
+                <TextBlock FontSize="28" FontWeight="SemiBold" Text="Asharia Studio" />
                 <TextBlock x:Name="StartingStateText"
                            AutomationProperties.LiveSetting="Polite"
                            FontSize="18"
@@ -44,10 +42,10 @@
             </StackPanel>
         </Border>
 
-        <Grid x:Name="WorkspaceState"
-              IsVisible="{Binding IsWorkspaceVisible}">
+        <Grid x:Name="WorkspaceState" IsVisible="{Binding IsWorkspaceVisible}">
             <Grid x:Name="EmptyWorkspace"
                   IsVisible="{Binding HasNoProject}"
+                  Margin="20"
                   MaxWidth="920"
                   HorizontalAlignment="Center"
                   VerticalAlignment="Center"
@@ -59,8 +57,8 @@
                         AutomationProperties.ControlTypeOverride="Group"
                         IsVisible="{Binding HasNoProject}"
                         Padding="22"
-                        Background="#10161D"
-                        BorderBrush="#1F2933"
+                        Background="{DynamicResource EditorBrushSurface01}"
+                        BorderBrush="{DynamicResource EditorBrushDivider}"
                         BorderThickness="1"
                         CornerRadius="6">
                     <StackPanel Spacing="12">
@@ -68,7 +66,7 @@
                                    FontSize="20"
                                    FontWeight="SemiBold"
                                    Text="{Binding ProjectStateText}" />
-                        <TextBlock Foreground="#9BA7B4"
+                        <TextBlock Foreground="{DynamicResource EditorBrushTextMuted}"
                                    TextWrapping="Wrap"
                                    Text="Create a project to generate its canonical descriptor and default editable scene, or open an existing asharia.project.json." />
                         <TextBox x:Name="NewProjectNameTextBox"
@@ -86,10 +84,10 @@
                                     Content="Open Project" />
                         </StackPanel>
                         <TextBlock AutomationProperties.LiveSetting="Polite"
-                                   Foreground="#9BA7B4"
+                                   Foreground="{DynamicResource EditorBrushTextMuted}"
                                    Text="{Binding ProjectOperationStateText}" />
                         <TextBlock AutomationProperties.LiveSetting="Polite"
-                                   Foreground="#E5B567"
+                                   Foreground="{DynamicResource EditorBrushWarning}"
                                    IsVisible="{Binding HasProjectOperationMessage}"
                                    TextWrapping="Wrap"
                                    Text="{Binding ProjectOperationMessage}" />
@@ -103,8 +101,8 @@
                         AutomationProperties.ControlTypeOverride="Group"
                         IsVisible="{Binding HasNoProject}"
                         Padding="22"
-                        Background="#10161D"
-                        BorderBrush="#1F2933"
+                        Background="{DynamicResource EditorBrushSurface01}"
+                        BorderBrush="{DynamicResource EditorBrushDivider}"
                         BorderThickness="1"
                         CornerRadius="6">
                     <StackPanel Spacing="12">
@@ -112,7 +110,7 @@
                                    FontSize="20"
                                    FontWeight="SemiBold"
                                    Text="{Binding DocumentStateText}" />
-                        <TextBlock Foreground="#9BA7B4"
+                        <TextBlock Foreground="{DynamicResource EditorBrushTextMuted}"
                                    TextWrapping="Wrap"
                                    Text="A SceneDocument is opened automatically after project validation succeeds." />
                     </StackPanel>
@@ -121,19 +119,16 @@
 
             <Grid x:Name="ActiveProjectState"
                   AutomationProperties.AutomationId="StudioShellActiveProjectState"
-                  AutomationProperties.Name="Editable scene workspace"
+                  AutomationProperties.Name="Editable docked scene workspace"
                   AutomationProperties.ControlTypeOverride="Group"
                   IsVisible="{Binding HasProject}"
-                  RowDefinitions="Auto,*"
-                  RowSpacing="12">
-                <Border Padding="12"
-                        Background="#10161D"
-                        BorderBrush="#1F2933"
-                        BorderThickness="1"
-                        CornerRadius="6">
-                    <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,*,Auto" ColumnSpacing="8">
+                  RowDefinitions="Auto,*">
+                <Border Padding="6,4"
+                        Background="{DynamicResource EditorBrushBase01}"
+                        BorderBrush="{DynamicResource EditorBrushDivider}"
+                        BorderThickness="0,0,0,1">
+                    <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,*,Auto" ColumnSpacing="6">
                         <Button x:Name="CreateEntityButton"
-                                Grid.Column="0"
                                 AutomationProperties.Name="Create entity"
                                 Command="{Binding CreateEntityCommand}"
                                 Content="+ Entity" />
@@ -145,129 +140,29 @@
                         <Button Grid.Column="2"
                                 AutomationProperties.Name="Open another project"
                                 Command="{Binding OpenProjectCommand}"
-                                Content="Open Another" />
+                                Content="Open" />
                         <Button Grid.Column="3"
                                 AutomationProperties.Name="Close project"
                                 Command="{Binding CloseProjectCommand}"
                                 Content="Close" />
-                        <StackPanel Grid.Column="4" Margin="12,0" VerticalAlignment="Center">
-                            <TextBlock FontWeight="SemiBold" Text="{Binding ProjectStateText}" />
-                            <TextBlock FontSize="11" Foreground="#9BA7B4" Text="{Binding ProjectPathText}" />
-                        </StackPanel>
-                        <TextBlock Grid.Column="5"
+                        <TextBlock Grid.Column="4"
+                                   Margin="10,0"
                                    VerticalAlignment="Center"
-                                   Foreground="#9BA7B4"
+                                   FontWeight="SemiBold"
+                                   Text="{Binding ProjectStateText}" />
+                        <TextBlock x:Name="DocumentStateText"
+                                   Grid.Column="5"
+                                   AutomationProperties.AutomationId="StudioDocumentState"
+                                   AutomationProperties.Name="{Binding DocumentStateText}"
+                                   AutomationProperties.ControlTypeOverride="StatusBar"
+                                   VerticalAlignment="Center"
+                                   Foreground="{DynamicResource EditorBrushTextMuted}"
                                    Text="{Binding DocumentStateText}" />
                     </Grid>
                 </Border>
 
-                <Grid Grid.Row="1"
-                      ColumnDefinitions="240,*,320"
-                      ColumnSpacing="12">
-                    <Border x:Name="HierarchyPanel"
-                            AutomationProperties.AutomationId="StudioHierarchyPanel"
-                            AutomationProperties.Name="Scene Hierarchy"
-                            AutomationProperties.ControlTypeOverride="Group"
-                            Padding="12"
-                            Background="#10161D"
-                            BorderBrush="#1F2933"
-                            BorderThickness="1"
-                            CornerRadius="6">
-                        <Grid RowDefinitions="Auto,*" RowSpacing="10">
-                            <TextBlock FontSize="16" FontWeight="SemiBold" Text="Hierarchy" />
-                            <ListBox x:Name="HierarchyList"
-                                     Grid.Row="1"
-                                     ItemsSource="{Binding SceneEntities}"
-                                     SelectedItem="{Binding SelectedEntity}">
-                                <ListBox.ItemTemplate>
-                                    <DataTemplate x:DataType="scenes:SceneEntitySnapshot">
-                                        <TextBlock Padding="6" Text="{Binding Name}" />
-                                    </DataTemplate>
-                                </ListBox.ItemTemplate>
-                            </ListBox>
-                        </Grid>
-                    </Border>
-
-                    <Border Grid.Column="1"
-                            Padding="20"
-                            Background="#0F141B"
-                            BorderBrush="#1F2933"
-                            BorderThickness="1"
-                            CornerRadius="6">
-                        <StackPanel HorizontalAlignment="Center"
-                                    VerticalAlignment="Center"
-                                    Spacing="10">
-                            <TextBlock FontSize="22"
-                                       FontWeight="SemiBold"
-                                       Text="SceneDocument" />
-                            <TextBlock Foreground="#9BA7B4"
-                                       TextAlignment="Center"
-                                       TextWrapping="Wrap"
-                                       Text="{Binding DocumentPathText}" />
-                            <TextBlock Foreground="#9BA7B4"
-                                       Text="The authoritative EditWorld is owned behind EngineBridge." />
-                            <TextBlock Foreground="#E5B567"
-                                       IsVisible="{Binding HasProjectOperationMessage}"
-                                       TextAlignment="Center"
-                                       TextWrapping="Wrap"
-                                       Text="{Binding ProjectOperationMessage}" />
-                        </StackPanel>
-                    </Border>
-
-                    <Border x:Name="InspectorPanel"
-                            Grid.Column="2"
-                            AutomationProperties.AutomationId="StudioInspectorPanel"
-                            AutomationProperties.Name="Entity Inspector"
-                            AutomationProperties.ControlTypeOverride="Group"
-                            Padding="12"
-                            Background="#10161D"
-                            BorderBrush="#1F2933"
-                            BorderThickness="1"
-                            CornerRadius="6">
-                        <Grid>
-                            <TextBlock IsVisible="{Binding !HasSelection}"
-                                       Foreground="#9BA7B4"
-                                       HorizontalAlignment="Center"
-                                       VerticalAlignment="Center"
-                                       Text="Select an entity" />
-                            <ScrollViewer IsVisible="{Binding HasSelection}">
-                                <StackPanel Spacing="10">
-                                    <TextBlock FontSize="16" FontWeight="SemiBold" Text="Inspector" />
-                                    <TextBlock Foreground="#9BA7B4" Text="Name" />
-                                    <TextBox Text="{Binding InspectorName}" />
-                                    <Button HorizontalAlignment="Left"
-                                            Command="{Binding ApplyEntityNameCommand}"
-                                            Content="Apply Name" />
-                                    <TextBlock Margin="0,8,0,0"
-                                               FontWeight="SemiBold"
-                                               Text="Transform" />
-                                    <TextBlock Foreground="#9BA7B4" Text="Position (X / Y / Z)" />
-                                    <Grid ColumnDefinitions="*,*,*" ColumnSpacing="6">
-                                        <TextBox Grid.Column="0" Text="{Binding PositionX}" />
-                                        <TextBox Grid.Column="1" Text="{Binding PositionY}" />
-                                        <TextBox Grid.Column="2" Text="{Binding PositionZ}" />
-                                    </Grid>
-                                    <TextBlock Foreground="#9BA7B4" Text="Rotation (X / Y / Z / W)" />
-                                    <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="6">
-                                        <TextBox Grid.Column="0" Text="{Binding RotationX}" />
-                                        <TextBox Grid.Column="1" Text="{Binding RotationY}" />
-                                        <TextBox Grid.Column="2" Text="{Binding RotationZ}" />
-                                        <TextBox Grid.Column="3" Text="{Binding RotationW}" />
-                                    </Grid>
-                                    <TextBlock Foreground="#9BA7B4" Text="Scale (X / Y / Z)" />
-                                    <Grid ColumnDefinitions="*,*,*" ColumnSpacing="6">
-                                        <TextBox Grid.Column="0" Text="{Binding ScaleX}" />
-                                        <TextBox Grid.Column="1" Text="{Binding ScaleY}" />
-                                        <TextBox Grid.Column="2" Text="{Binding ScaleZ}" />
-                                    </Grid>
-                                    <Button HorizontalAlignment="Left"
-                                            Command="{Binding ApplyEntityTransformCommand}"
-                                            Content="Apply Transform" />
-                                </StackPanel>
-                            </ScrollViewer>
-                        </Grid>
-                    </Border>
-                </Grid>
+                <dockViews:EditorDockWorkspaceView Grid.Row="1"
+                                                   DataContext="{Binding DockWorkspace}" />
             </Grid>
         </Grid>
     </Grid>

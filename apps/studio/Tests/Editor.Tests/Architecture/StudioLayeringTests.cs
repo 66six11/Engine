@@ -170,20 +170,27 @@ public sealed class StudioLayeringTests
     }
 
     [Fact]
-    public void Disconnected_ui_surface_is_deleted()
+    public void Dock_visual_resources_are_narrow_and_owned()
     {
         var root = FindRepositoryRoot();
         var appXaml = File.ReadAllText(Path.Combine(root, "App.axaml"));
         var projectSource = File.ReadAllText(Path.Combine(root, "Editor.csproj"));
 
-        Assert.False(Directory.Exists(Path.Combine(root, "UI")));
+        Assert.True(Directory.Exists(Path.Combine(root, "UI", "Icons")));
+        Assert.True(Directory.Exists(Path.Combine(root, "UI", "Styles", "Tokens")));
         Assert.False(Directory.Exists(Path.Combine(root, "Assets", "Fonts")));
         Assert.False(Directory.Exists(Path.Combine(root, "Tests", "Editor.Tests", "UI")));
-        Assert.DoesNotContain("avares://Editor/UI", appXaml, StringComparison.Ordinal);
+        Assert.Contains(
+            "avares://Editor/UI/Styles/Tokens/DeepDarkColors.axaml",
+            appXaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "avares://Editor/UI/Styles/Tokens/EditorMetrics.axaml",
+            appXaml,
+            StringComparison.Ordinal);
         Assert.DoesNotContain("Avalonia.Controls.ColorPicker", projectSource, StringComparison.Ordinal);
         Assert.DoesNotContain("CommunityToolkit.Mvvm", projectSource, StringComparison.Ordinal);
         Assert.DoesNotContain("Lucide.Avalonia", projectSource, StringComparison.Ordinal);
-        Assert.DoesNotContain("UI\\", projectSource, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -210,16 +217,41 @@ public sealed class StudioLayeringTests
     }
 
     [Fact]
-    public void Legacy_dock_shell_surface_is_deleted()
+    public void Dock_shell_is_reintroduced_without_legacy_public_facades()
     {
         var root = FindRepositoryRoot();
 
-        Assert.False(Directory.Exists(Path.Combine(root, "Shell", "Docking")));
-        Assert.False(Directory.Exists(Path.Combine(root, "Shell", "ViewModels", "Docking")));
-        Assert.False(Directory.Exists(Path.Combine(root, "Shell", "Views", "Docking")));
-        Assert.False(Directory.Exists(Path.Combine(root, "Shell", "ViewModels", "Panels")));
-        Assert.False(Directory.Exists(Path.Combine(root, "Shell", "Views", "Panels")));
+        var dockRoots = new[]
+        {
+            Path.Combine(root, "Shell", "Docking"),
+            Path.Combine(root, "Shell", "ViewModels", "Docking"),
+            Path.Combine(root, "Shell", "Views", "Docking"),
+            Path.Combine(root, "Shell", "ViewModels", "Panels"),
+            Path.Combine(root, "Shell", "Views", "Panels"),
+        };
+
+        Assert.All(dockRoots, path => Assert.True(Directory.Exists(path), path));
         Assert.False(File.Exists(Path.Combine(root, "ViewLocator.cs")));
+        Assert.False(Directory.Exists(Path.Combine(root, "src", "Asharia.Editor")));
+        Assert.False(Directory.Exists(Path.Combine(root, "Core", "Models", "Panels")));
+
+        var forbiddenNamespaces = new[]
+        {
+            "Asharia.Editor",
+            "Editor.Core",
+            "Asharia.Studio.Application.Panels",
+            "Asharia.Studio.Application.Lifecycle",
+        };
+        var dockSource = dockRoots
+            .SelectMany(path => Directory.EnumerateFiles(path, "*.cs", SearchOption.AllDirectories))
+            .Select(File.ReadAllText)
+            .ToArray();
+
+        Assert.All(
+            forbiddenNamespaces,
+            forbidden => Assert.DoesNotContain(
+                dockSource,
+                source => source.Contains(forbidden, StringComparison.Ordinal)));
     }
 
     [Fact]
@@ -452,13 +484,12 @@ public sealed class StudioLayeringTests
     }
 
     [Fact]
-    public void Disconnected_callback_exception_batch_is_deleted()
+    public void Dock_callback_exception_batch_is_shell_local()
     {
         var root = FindRepositoryRoot();
         var productionRoots = new[]
         {
             Path.Combine(root, "Core"),
-            Path.Combine(root, "Shell"),
             Path.Combine(root, "src"),
         };
         var offenders = productionRoots
@@ -471,7 +502,7 @@ public sealed class StudioLayeringTests
             .Order(StringComparer.Ordinal)
             .ToArray();
 
-        Assert.False(File.Exists(Path.Combine(
+        Assert.True(File.Exists(Path.Combine(
             root,
             "Shell",
             "Lifecycle",

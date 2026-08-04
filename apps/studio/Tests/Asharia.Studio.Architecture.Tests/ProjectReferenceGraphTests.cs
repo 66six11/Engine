@@ -454,9 +454,25 @@ public sealed class ProjectReferenceGraphTests
         Assert.Contains("StudioShellStartingState", shellXaml, StringComparison.Ordinal);
         Assert.Contains("StudioShellNoProjectState", shellXaml, StringComparison.Ordinal);
         Assert.Contains("StudioShellNoDocumentState", shellXaml, StringComparison.Ordinal);
-        Assert.Contains("StudioHierarchyPanel", shellXaml, StringComparison.Ordinal);
-        Assert.Contains("StudioInspectorPanel", shellXaml, StringComparison.Ordinal);
-        Assert.DoesNotContain("Dock", shellXaml, StringComparison.Ordinal);
+        Assert.Contains("EditorDockWorkspaceView", shellXaml, StringComparison.Ordinal);
+        Assert.Contains("DataContext=\"{Binding DockWorkspace}\"", shellXaml, StringComparison.Ordinal);
+
+        var hierarchyXaml = File.ReadAllText(Path.Combine(
+            studioRoot,
+            "Shell",
+            "Views",
+            "Panels",
+            "StudioHierarchyPanelView.axaml"));
+        var inspectorXaml = File.ReadAllText(Path.Combine(
+            studioRoot,
+            "Shell",
+            "Views",
+            "Panels",
+            "StudioInspectorPanelView.axaml"));
+        Assert.Contains("StudioHierarchyPanel", hierarchyXaml, StringComparison.Ordinal);
+        Assert.Contains("StudioInspectorPanel", inspectorXaml, StringComparison.Ordinal);
+        Assert.Contains("Shell.SceneEntities", hierarchyXaml, StringComparison.Ordinal);
+        Assert.Contains("Shell.ApplyEntityTransformCommand", inspectorXaml, StringComparison.Ordinal);
 
         var headlessProject = XDocument.Load(Path.Combine(
             studioRoot,
@@ -470,6 +486,12 @@ public sealed class ProjectReferenceGraphTests
             .ToArray();
         Assert.Contains("Avalonia.Headless.XUnit", packages);
         Assert.Contains("xunit.v3", packages);
+        Assert.Contains(
+            headlessProject.Descendants("ProjectReference"),
+            reference => reference.Attribute("Include")?.Value.Replace('\\', '/').EndsWith(
+                    "src/Asharia.Studio.Application/Asharia.Studio.Application.csproj",
+                    StringComparison.Ordinal) == true
+                && reference.Attribute("Condition") is null);
         Assert.DoesNotContain("Avalonia.Headless.XUnit", XDocument.Load(Path.Combine(
             studioRoot,
             "Tests",

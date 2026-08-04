@@ -1,0 +1,60 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:views="using:Editor.Shell.Views.Docking"
+             x:Class="Editor.Shell.Views.Docking.EditorDockWindowSurfaceView"
+             x:DataType="views:EditorDockWindowSurfaceView"
+             x:Name="SurfaceRoot">
+    <UserControl.Styles>
+        <Style Selector="Border.owned-dock-window">
+            <Setter Property="Background" Value="{DynamicResource EditorBrushSurface01}" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="ClipToBounds" Value="True" />
+        </Style>
+
+        <Style Selector="Border.owned-dock-window.preview">
+            <Setter Property="Background" Value="{DynamicResource EditorBrushSurface01}" />
+            <Setter Property="Opacity" Value="0.92" />
+        </Style>
+
+        <Style Selector="Border.owned-dock-window-preview-outline">
+            <Setter Property="BorderBrush" Value="{DynamicResource EditorBrushAccent}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="IsHitTestVisible" Value="False" />
+        </Style>
+
+        <Style Selector="Border.owned-dock-content">
+            <Setter Property="Background" Value="{DynamicResource EditorBrushBase00}" />
+            <Setter Property="Padding" Value="0" />
+        </Style>
+
+        <Style Selector="Border.owned-dock-content.drag-source-window">
+            <Setter Property="Opacity" Value="0.48" />
+        </Style>
+
+        <Style Selector="Border.owned-dock-content.preview">
+            <Setter Property="Background" Value="{DynamicResource EditorBrushBase00}" />
+        </Style>
+    </UserControl.Styles>
+
+    <Grid>
+        <Border Classes.preview="{Binding IsPreview, ElementName=SurfaceRoot}"
+                Classes="owned-dock-window">
+            <Grid RowDefinitions="Auto,*">
+                <ContentControl Grid.Row="0"
+                                Content="{Binding TabStripContent, ElementName=SurfaceRoot}" />
+
+                <Border Grid.Row="1"
+                        Classes.drag-source-window="{Binding IsDragSourceWindow, ElementName=SurfaceRoot}"
+                        Classes.preview="{Binding IsPreview, ElementName=SurfaceRoot}"
+                        Classes="owned-dock-content">
+                    <ContentControl Content="{Binding BodyContent, ElementName=SurfaceRoot}" />
+                </Border>
+            </Grid>
+        </Border>
+
+        <Border Classes="owned-dock-window-preview-outline"
+                IsVisible="{Binding IsPreview, ElementName=SurfaceRoot}" />
+    </Grid>
+</UserControl>

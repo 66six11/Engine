@@ -1,0 +1,169 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- Base surfaces -->
+    <Color x:Key="EditorColorBase00">#0B0F14</Color>
+    <Color x:Key="EditorColorBase01">#0E141B</Color>
+    <Color x:Key="EditorColorSurface01">#10161D</Color>
+    <Color x:Key="EditorColorSurface02">#151D26</Color>
+    <Color x:Key="EditorColorSurface03">#1B2530</Color>
+    <Color x:Key="EditorColorSurfaceActive">#202B38</Color>
+    <Color x:Key="EditorColorSurfaceOverlay">#252F3A</Color>
+    <Color x:Key="EditorColorInputBackground">#0D131A</Color>
+    <Color x:Key="EditorColorDivider">#1F2933</Color>
+    <Color x:Key="EditorColorBorderSubtle">#26313D</Color>
+    <Color x:Key="EditorColorBorderDefault">#3A4655</Color>
+    <Color x:Key="EditorColorBorderInteractive">#536A82</Color>
+    <Color x:Key="EditorColorShadow">#000000</Color>
+
+    <!-- Text and icons -->
+    <Color x:Key="EditorColorTextPrimary">#E6EDF3</Color>
+    <Color x:Key="EditorColorTextSecondary">#A9B4C0</Color>
+    <Color x:Key="EditorColorTextMuted">#7B8794</Color>
+    <Color x:Key="EditorColorTextDisabled">#5C6A7A</Color>
+    <Color x:Key="EditorColorTextInverse">#0B0F14</Color>
+    <Color x:Key="EditorColorIconPrimary">#D7E0EA</Color>
+    <Color x:Key="EditorColorIconSecondary">#8D99A6</Color>
+    <Color x:Key="EditorColorIconDisabled">#566372</Color>
+
+    <!-- Interaction -->
+    <Color x:Key="EditorColorAccent">#4EA1FF</Color>
+    <Color x:Key="EditorColorAccentHover">#74B8FF</Color>
+    <Color x:Key="EditorColorAccentPressed">#2F7DD8</Color>
+    <Color x:Key="EditorColorFocusRing">#88C7FF</Color>
+    <Color x:Key="EditorColorSelectionActive">#2A6FA8</Color>
+    <Color x:Key="EditorColorSelectionInactive">#1D4F7A</Color>
+    <Color x:Key="EditorColorSelectionSoft">#143352</Color>
+    <Color x:Key="EditorColorSelectionText">#FFFFFF</Color>
+
+    <!-- Semantic state -->
+    <Color x:Key="EditorColorSuccess">#4CCB7F</Color>
+    <Color x:Key="EditorColorWarning">#E6B450</Color>
+    <Color x:Key="EditorColorError">#FF6B6B</Color>
+    <Color x:Key="EditorColorFatal">#FF4D8D</Color>
+    <Color x:Key="EditorColorInfo">#57C7FF</Color>
+    <Color x:Key="EditorColorDebug">#B388FF</Color>
+    <Color x:Key="EditorColorModified">#E6B450</Color>
+    <Color x:Key="EditorColorBreakpoint">#FF5A5F</Color>
+    <Color x:Key="EditorColorRunning">#4CCB7F</Color>
+    <Color x:Key="EditorColorPaused">#E6B450</Color>
+    <Color x:Key="EditorColorStopped">#7B8794</Color>
+
+    <!-- Feature surfaces -->
+    <Color x:Key="EditorColorHierarchyRowHover">#17212C</Color>
+    <Color x:Key="EditorColorInspectorSectionHeader">#131C25</Color>
+    <Color x:Key="EditorColorInspectorPropertyRow">#0F151C</Color>
+    <Color x:Key="EditorColorInspectorPropertyRowAlt">#111923</Color>
+    <Color x:Key="EditorColorInspectorModifiedProperty">#2A2337</Color>
+    <Color x:Key="EditorColorInspectorInvalidProperty">#3A1F24</Color>
+    <Color x:Key="EditorColorInspectorWarningProperty">#3A2E18</Color>
+    <Color x:Key="EditorColorAssetThumbnailBackground">#080C11</Color>
+    <Color x:Key="EditorColorStatusBarRunning">#153322</Color>
+    <Color x:Key="EditorColorProblemsInfoRow">#143352</Color>
+
+    <!-- Graph, node, and code editor -->
+    <Color x:Key="EditorColorGraphGridMajor">#27313B</Color>
+    <Color x:Key="EditorColorGraphGridMinor">#18212B</Color>
+    <Color x:Key="EditorColorNodeBackground">#151D26</Color>
+    <Color x:Key="EditorColorNodeDisabled">#151A20</Color>
+    <Color x:Key="EditorColorExecutionNode">#193552</Color>
+    <Color x:Key="EditorColorMaterialNode">#2B2342</Color>
+    <Color x:Key="EditorColorAnimationNode">#3A2A1D</Color>
+    <Color x:Key="EditorColorAudioNode">#173326</Color>
+    <Color x:Key="EditorColorPhysicsNode">#3A2E18</Color>
+    <Color x:Key="EditorColorAiNode">#143352</Color>
+    <Color x:Key="EditorColorConnectionDefault">#7B8794</Color>
+    <Color x:Key="EditorColorCodeForeground">#E6EDF3</Color>
+    <Color x:Key="EditorColorCodeKeyword">#B388FF</Color>
+    <Color x:Key="EditorColorCodeType">#57C7FF</Color>
+    <Color x:Key="EditorColorCodeFunction">#74B8FF</Color>
+    <Color x:Key="EditorColorCodeString">#9AD97A</Color>
+    <Color x:Key="EditorColorCodeNumber">#E6B450</Color>
+    <Color x:Key="EditorColorCodeComment">#6F7D8C</Color>
+    <Color x:Key="EditorColorCodeOperator">#C9D4DF</Color>
+    <Color x:Key="EditorColorCodeAttribute">#FF9F5A</Color>
+
+    <!-- Core brushes -->
+    <SolidColorBrush x:Key="EditorBrushBase00" Color="{StaticResource EditorColorBase00}" />
+    <SolidColorBrush x:Key="EditorBrushBase01" Color="{StaticResource EditorColorBase01}" />
+    <SolidColorBrush x:Key="EditorBrushSurface01" Color="{StaticResource EditorColorSurface01}" />
+    <SolidColorBrush x:Key="EditorBrushSurface02" Color="{StaticResource EditorColorSurface02}" />
+    <SolidColorBrush x:Key="EditorBrushSurface03" Color="{StaticResource EditorColorSurface03}" />
+    <SolidColorBrush x:Key="EditorBrushSurfaceActive" Color="{StaticResource EditorColorSurfaceActive}" />
+    <SolidColorBrush x:Key="EditorBrushSurfaceOverlay" Color="{StaticResource EditorColorSurfaceOverlay}" />
+    <SolidColorBrush x:Key="EditorBrushInputBackground" Color="{StaticResource EditorColorInputBackground}" />
+    <SolidColorBrush x:Key="EditorBrushDivider" Color="{StaticResource EditorColorDivider}" />
+    <SolidColorBrush x:Key="EditorBrushBorderSubtle" Color="{StaticResource EditorColorBorderSubtle}" />
+    <SolidColorBrush x:Key="EditorBrushBorderDefault" Color="{StaticResource EditorColorBorderDefault}" />
+    <SolidColorBrush x:Key="EditorBrushBorderInteractive" Color="{StaticResource EditorColorBorderInteractive}" />
+    <SolidColorBrush x:Key="EditorBrushShadow" Color="{StaticResource EditorColorShadow}" />
+
+    <!-- Text and icon brushes -->
+    <SolidColorBrush x:Key="EditorBrushTextPrimary" Color="{StaticResource EditorColorTextPrimary}" />
+    <SolidColorBrush x:Key="EditorBrushTextSecondary" Color="{StaticResource EditorColorTextSecondary}" />
+    <SolidColorBrush x:Key="EditorBrushTextMuted" Color="{StaticResource EditorColorTextMuted}" />
+    <SolidColorBrush x:Key="EditorBrushTextDisabled" Color="{StaticResource EditorColorTextDisabled}" />
+    <SolidColorBrush x:Key="EditorBrushTextInverse" Color="{StaticResource EditorColorTextInverse}" />
+    <SolidColorBrush x:Key="EditorBrushIconPrimary" Color="{StaticResource EditorColorIconPrimary}" />
+    <SolidColorBrush x:Key="EditorBrushIconSecondary" Color="{StaticResource EditorColorIconSecondary}" />
+    <SolidColorBrush x:Key="EditorBrushIconDisabled" Color="{StaticResource EditorColorIconDisabled}" />
+
+    <!-- Interaction brushes -->
+    <SolidColorBrush x:Key="EditorBrushAccent" Color="{StaticResource EditorColorAccent}" />
+    <SolidColorBrush x:Key="EditorBrushAccentHover" Color="{StaticResource EditorColorAccentHover}" />
+    <SolidColorBrush x:Key="EditorBrushAccentPressed" Color="{StaticResource EditorColorAccentPressed}" />
+    <SolidColorBrush x:Key="EditorBrushFocusRing" Color="{StaticResource EditorColorFocusRing}" />
+    <SolidColorBrush x:Key="EditorBrushSelectionActive" Color="{StaticResource EditorColorSelectionActive}" />
+    <SolidColorBrush x:Key="EditorBrushSelectionInactive" Color="{StaticResource EditorColorSelectionInactive}" />
+    <SolidColorBrush x:Key="EditorBrushSelectionSoft" Color="{StaticResource EditorColorSelectionSoft}" />
+    <SolidColorBrush x:Key="EditorBrushSelectionText" Color="{StaticResource EditorColorSelectionText}" />
+    <SolidColorBrush x:Key="EditorBrushDragTargetFill" Color="{StaticResource EditorColorAccent}" Opacity="0.20" />
+    <SolidColorBrush x:Key="EditorBrushDropPreview" Color="{StaticResource EditorColorAccent}" Opacity="0.14" />
+    <SolidColorBrush x:Key="EditorBrushOverlayScrim" Color="{StaticResource EditorColorShadow}" Opacity="0.55" />
+
+    <!-- Semantic brushes -->
+    <SolidColorBrush x:Key="EditorBrushSuccess" Color="{StaticResource EditorColorSuccess}" />
+    <SolidColorBrush x:Key="EditorBrushWarning" Color="{StaticResource EditorColorWarning}" />
+    <SolidColorBrush x:Key="EditorBrushError" Color="{StaticResource EditorColorError}" />
+    <SolidColorBrush x:Key="EditorBrushFatal" Color="{StaticResource EditorColorFatal}" />
+    <SolidColorBrush x:Key="EditorBrushInfo" Color="{StaticResource EditorColorInfo}" />
+    <SolidColorBrush x:Key="EditorBrushDebug" Color="{StaticResource EditorColorDebug}" />
+    <SolidColorBrush x:Key="EditorBrushModified" Color="{StaticResource EditorColorModified}" />
+    <SolidColorBrush x:Key="EditorBrushBreakpoint" Color="{StaticResource EditorColorBreakpoint}" />
+    <SolidColorBrush x:Key="EditorBrushRunning" Color="{StaticResource EditorColorRunning}" />
+    <SolidColorBrush x:Key="EditorBrushPaused" Color="{StaticResource EditorColorPaused}" />
+    <SolidColorBrush x:Key="EditorBrushStopped" Color="{StaticResource EditorColorStopped}" />
+
+    <!-- Feature brushes -->
+    <SolidColorBrush x:Key="EditorBrushHierarchyRowHover" Color="{StaticResource EditorColorHierarchyRowHover}" />
+    <SolidColorBrush x:Key="EditorBrushInspectorSectionHeader" Color="{StaticResource EditorColorInspectorSectionHeader}" />
+    <SolidColorBrush x:Key="EditorBrushInspectorPropertyRow" Color="{StaticResource EditorColorInspectorPropertyRow}" />
+    <SolidColorBrush x:Key="EditorBrushInspectorPropertyRowAlt" Color="{StaticResource EditorColorInspectorPropertyRowAlt}" />
+    <SolidColorBrush x:Key="EditorBrushInspectorModifiedProperty" Color="{StaticResource EditorColorInspectorModifiedProperty}" />
+    <SolidColorBrush x:Key="EditorBrushInspectorInvalidProperty" Color="{StaticResource EditorColorInspectorInvalidProperty}" />
+    <SolidColorBrush x:Key="EditorBrushInspectorWarningProperty" Color="{StaticResource EditorColorInspectorWarningProperty}" />
+    <SolidColorBrush x:Key="EditorBrushAssetThumbnailBackground" Color="{StaticResource EditorColorAssetThumbnailBackground}" />
+    <SolidColorBrush x:Key="EditorBrushStatusBarRunning" Color="{StaticResource EditorColorStatusBarRunning}" />
+    <SolidColorBrush x:Key="EditorBrushProblemsInfoRow" Color="{StaticResource EditorColorProblemsInfoRow}" />
+
+    <!-- Graph, node, and code editor brushes -->
+    <SolidColorBrush x:Key="EditorBrushGraphGridMajor" Color="{StaticResource EditorColorGraphGridMajor}" />
+    <SolidColorBrush x:Key="EditorBrushGraphGridMinor" Color="{StaticResource EditorColorGraphGridMinor}" />
+    <SolidColorBrush x:Key="EditorBrushNodeBackground" Color="{StaticResource EditorColorNodeBackground}" />
+    <SolidColorBrush x:Key="EditorBrushNodeDisabled" Color="{StaticResource EditorColorNodeDisabled}" />
+    <SolidColorBrush x:Key="EditorBrushExecutionNode" Color="{StaticResource EditorColorExecutionNode}" />
+    <SolidColorBrush x:Key="EditorBrushMaterialNode" Color="{StaticResource EditorColorMaterialNode}" />
+    <SolidColorBrush x:Key="EditorBrushAnimationNode" Color="{StaticResource EditorColorAnimationNode}" />
+    <SolidColorBrush x:Key="EditorBrushAudioNode" Color="{StaticResource EditorColorAudioNode}" />
+    <SolidColorBrush x:Key="EditorBrushPhysicsNode" Color="{StaticResource EditorColorPhysicsNode}" />
+    <SolidColorBrush x:Key="EditorBrushAiNode" Color="{StaticResource EditorColorAiNode}" />
+    <SolidColorBrush x:Key="EditorBrushConnectionDefault" Color="{StaticResource EditorColorConnectionDefault}" />
+    <SolidColorBrush x:Key="EditorBrushCodeForeground" Color="{StaticResource EditorColorCodeForeground}" />
+    <SolidColorBrush x:Key="EditorBrushCodeKeyword" Color="{StaticResource EditorColorCodeKeyword}" />
+    <SolidColorBrush x:Key="EditorBrushCodeType" Color="{StaticResource EditorColorCodeType}" />
+    <SolidColorBrush x:Key="EditorBrushCodeFunction" Color="{StaticResource EditorColorCodeFunction}" />
+    <SolidColorBrush x:Key="EditorBrushCodeString" Color="{StaticResource EditorColorCodeString}" />
+    <SolidColorBrush x:Key="EditorBrushCodeNumber" Color="{StaticResource EditorColorCodeNumber}" />
+    <SolidColorBrush x:Key="EditorBrushCodeComment" Color="{StaticResource EditorColorCodeComment}" />
+    <SolidColorBrush x:Key="EditorBrushCodeOperator" Color="{StaticResource EditorColorCodeOperator}" />
+    <SolidColorBrush x:Key="EditorBrushCodeAttribute" Color="{StaticResource EditorColorCodeAttribute}" />
+</ResourceDictionary>

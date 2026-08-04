@@ -13,7 +13,11 @@ using Asharia.Studio.Application.Projects;
 using Asharia.Studio.Application.Scenes;
 using Avalonia.Threading;
 using Editor.Shell.Commands;
+using Editor.Shell.Docking.Panels;
 using Editor.Shell.Services.Projects;
+using Editor.Shell.ViewModels.Docking;
+using Editor.Shell.ViewModels.Panels;
+using Editor.UI.Icons;
 
 namespace Editor.Shell.ViewModels.Windowing;
 
@@ -35,6 +39,7 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
     private readonly AsyncCommand saveSceneCommand_;
     private readonly AsyncCommand applyEntityNameCommand_;
     private readonly AsyncCommand applyEntityTransformCommand_;
+    private readonly EditorDockWorkspaceViewModel dockWorkspace_;
     private readonly CancellationTokenSource lifetimeCancellation_ = new();
     private StudioShellStage stage_ = StudioShellStage.Starting;
     private ProjectSessionSnapshot projectSnapshot_;
@@ -73,6 +78,7 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
         applyEntityTransformCommand_ = new AsyncCommand(
             ApplyEntityTransformAsync,
             CanEditSelection);
+        dockWorkspace_ = CreateDockWorkspace();
         projectSession_.SnapshotChanged += OnProjectSnapshotChanged;
     }
 
@@ -227,6 +233,7 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
     public ICommand SaveSceneCommand => saveSceneCommand_;
     public ICommand ApplyEntityNameCommand => applyEntityNameCommand_;
     public ICommand ApplyEntityTransformCommand => applyEntityTransformCommand_;
+    public EditorDockWorkspaceViewModel DockWorkspace => dockWorkspace_;
 
     internal IProjectSession ProjectSession => projectSession_;
 
@@ -260,8 +267,63 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
         }
         isDisposed_ = true;
         projectSession_.SnapshotChanged -= OnProjectSnapshotChanged;
+        dockWorkspace_.Dispose();
         lifetimeCancellation_.Cancel();
         RaiseProjectCommandStateChanged();
+    }
+
+    private EditorDockWorkspaceViewModel CreateDockWorkspace()
+    {
+        var panels = new PanelRegistry();
+        panels.Register(new PanelDescriptor(
+            "hierarchy",
+            "Hierarchy",
+            PanelKind.Tool,
+            EditorDockArea.Left,
+            "Window/Panels/Hierarchy",
+            DockContentCachePolicy.KeepAlive,
+            () => new StudioHierarchyPanelViewModel(this),
+            EditorIconKey.PanelHierarchy,
+            "SCENE",
+            "Scene entities",
+            "tool"));
+        panels.Register(new PanelDescriptor(
+            "project",
+            "Project",
+            PanelKind.Tool,
+            EditorDockArea.Left,
+            "Window/Panels/Project",
+            DockContentCachePolicy.KeepAlive,
+            () => new StudioProjectPanelViewModel(this),
+            EditorIconKey.PanelProject,
+            "PROJECT",
+            "Project content",
+            "tool"));
+        panels.Register(new PanelDescriptor(
+            "scene-view",
+            "Scene Document",
+            PanelKind.Document,
+            EditorDockArea.Center,
+            "Window/Panels/Scene Document",
+            DockContentCachePolicy.KeepAlive,
+            () => new StudioScenePanelViewModel(this),
+            EditorIconKey.PanelSceneView,
+            "DOC",
+            "Authoritative edit world",
+            "document"));
+        panels.Register(new PanelDescriptor(
+            "inspector",
+            "Inspector",
+            PanelKind.Tool,
+            EditorDockArea.Right,
+            "Window/Panels/Inspector",
+            DockContentCachePolicy.KeepAlive,
+            () => new StudioInspectorPanelViewModel(this),
+            EditorIconKey.PanelInspector,
+            "ENTITY",
+            "Selection context",
+            "tool"));
+        return new EditorDockWorkspaceViewModel(panels);
     }
 
     private bool CanCreateProject() =>

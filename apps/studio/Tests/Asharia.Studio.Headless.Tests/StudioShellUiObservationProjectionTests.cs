@@ -5,6 +5,8 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Asharia.Studio.Application.Diagnostics;
+using Asharia.Studio.Application.Projects;
+using Asharia.Studio.Application.Scenes;
 using Asharia.Studio.DevelopmentHost.Hosting;
 using Asharia.Studio.DevelopmentHost.Transport;
 using Asharia.Studio.DevelopmentProtocol;
@@ -24,7 +26,9 @@ public sealed class StudioShellUiObservationProjectionTests
     [AvaloniaFact]
     public async Task Real_shell_projects_stable_bounded_semantics_across_state_change()
     {
-        using var viewModel = StudioShellTestFactory.Create();
+        using var viewModel = StudioShellTestFactory.Create(
+            out var projectSession,
+            out _);
         var window = ShowWindow(viewModel);
         var projection = new StudioShellUiObservationProjection(window);
 
@@ -52,8 +56,7 @@ public sealed class StudioShellUiObservationProjectionTests
                     "StudioShellNoProjectState",
                     "StudioShellNoDocumentState",
                     "StudioShellActiveProjectState",
-                    "StudioHierarchyPanel",
-                    "StudioInspectorPanel",
+                    "StudioDocumentState",
                 ],
                 startingTree.Value.Nodes.Select(static node => node.ElementId));
             Assert.All(
@@ -61,13 +64,13 @@ public sealed class StudioShellUiObservationProjectionTests
                 node => Assert.Equal("StudioShellWindow", node.ParentElementId));
             Assert.Equal(
                 "StudioShellActiveProjectState",
-                Node(startingTree.Value, "StudioHierarchyPanel").ParentElementId);
-            Assert.Equal(
-                "StudioShellActiveProjectState",
-                Node(startingTree.Value, "StudioInspectorPanel").ParentElementId);
+                Node(startingTree.Value, "StudioDocumentState").ParentElementId);
             Assert.Equal(
                 ObservationUiRoles.Status,
                 Node(startingTree.Value, "StudioShellStartingState").Role);
+            Assert.Equal(
+                ObservationUiRoles.Status,
+                Node(startingTree.Value, "StudioDocumentState").Role);
             Assert.True(Node(startingTree.Value, "StudioShellStartingState").IsVisible);
             Assert.False(Node(startingTree.Value, "StudioShellNoProjectState").IsVisible);
             Assert.False(Node(startingTree.Value, "StudioShellActiveProjectState").IsVisible);
@@ -83,8 +86,30 @@ public sealed class StudioShellUiObservationProjectionTests
             Assert.True(Node(ready, "StudioShellNoProjectState").IsVisible);
             Assert.False(Node(ready, "StudioShellActiveProjectState").IsVisible);
             Assert.True(Node(ready, "StudioShellNoDocumentState").IsVisible);
-            Assert.False(Node(ready, "StudioHierarchyPanel").IsVisible);
-            Assert.False(Node(ready, "StudioInspectorPanel").IsVisible);
+
+            projectSession.Publish(ProjectSessionSnapshot.Ready(
+                new ActiveProjectSnapshot(
+                    ProjectSessionId.CreateNew(),
+                    Guid.NewGuid(),
+                    "Sample",
+                    "C:\\Projects\\Sample"),
+                new SceneDocumentSnapshot(
+                    Guid.NewGuid(),
+                    "C:\\Projects\\Sample\\Assets\\Scenes\\Default.asharia.scene.json",
+                    revision: 2,
+                    savedRevision: 1,
+                    entities: [])));
+            Dispatcher.UIThread.RunJobs();
+            var dirtyTree = await projection.ReadTreeAsync(Request(), CancellationToken.None);
+            Assert.True(dirtyTree.Succeeded);
+            var documentState = Node(dirtyTree.Value!, "StudioDocumentState");
+            Assert.True(documentState.IsVisible);
+            Assert.Equal(
+                "Default.asharia.scene.json · revision 2 · Unsaved",
+                documentState.Name);
+            Assert.True(Node(dirtyTree.Value!, "StudioShellActiveProjectState").IsVisible);
+            Assert.True(Node(dirtyTree.Value!, "StudioHierarchyPanel").IsVisible);
+            Assert.True(Node(dirtyTree.Value!, "StudioInspectorPanel").IsVisible);
 
             var envelope = new ObservationResponse<UiTreeReadResult>(
                 ObservationProtocolVersion.Current,
@@ -249,7 +274,7 @@ public sealed class StudioShellUiObservationProjectionTests
                 descriptor.Value.Capabilities,
                 capability => capability.CapabilityId == "ui.readTree");
             Assert.Equal("StudioShellWindow", Assert.Single(windows.Value!.Windows).WindowId);
-            Assert.Equal(7, tree.Value!.Nodes.Length);
+            Assert.Equal(6, tree.Value!.Nodes.Length);
 
             await composition.DisposeAsync();
             composition = null;

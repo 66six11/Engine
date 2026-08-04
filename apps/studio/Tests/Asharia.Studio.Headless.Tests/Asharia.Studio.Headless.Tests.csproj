@@ -22,8 +22,7 @@
                  Link="Support\StudioProjectTestDoubles.cs" />
         <ProjectReference Include="..\..\Editor.csproj" />
         <ProjectReference Include="..\..\src\Asharia.Runtime.Contracts\Asharia.Runtime.Contracts.csproj" />
-        <ProjectReference Include="..\..\src\Asharia.Studio.Application\Asharia.Studio.Application.csproj"
-                          Condition="'$(Configuration)' == 'Debug'" />
+        <ProjectReference Include="..\..\src\Asharia.Studio.Application\Asharia.Studio.Application.csproj" />
         <ProjectReference Include="..\..\src\Asharia.Studio.DevelopmentHost\Asharia.Studio.DevelopmentHost.csproj"
                           Condition="'$(Configuration)' == 'Debug'" />
         <ProjectReference Include="..\..\src\Asharia.Studio.DevelopmentProtocol\Asharia.Studio.DevelopmentProtocol.csproj"

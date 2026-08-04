@@ -1,0 +1,28 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Editor.Shell.ViewModels.Docking"
+             x:Class="Editor.Shell.Views.Docking.EditorDockSplitNodeView"
+             x:DataType="vm:EditorDockSplitNodeViewModel">
+    <UserControl.Styles>
+        <Style Selector="ContentControl.owned-dock-node-host">
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="VerticalContentAlignment" Value="Stretch" />
+        </Style>
+
+        <Style Selector="GridSplitter.owned-dock-splitter">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+
+        <Style Selector="GridSplitter.owned-dock-splitter.vertical">
+            <Setter Property="Width" Value="4" />
+            <Setter Property="Cursor" Value="SizeWestEast" />
+        </Style>
+
+        <Style Selector="GridSplitter.owned-dock-splitter.horizontal">
+            <Setter Property="Height" Value="4" />
+            <Setter Property="Cursor" Value="SizeNorthSouth" />
+        </Style>
+    </UserControl.Styles>
+
+    <ContentControl x:Name="SplitHost" />
+</UserControl>

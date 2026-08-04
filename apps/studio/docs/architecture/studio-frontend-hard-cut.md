@@ -1252,6 +1252,11 @@ Git history 是唯一旧实现备份，不创建 `Legacy/` archive。
 
 搬用前必须先换成新输入/输出合同，禁止把旧 namespace/owner 一起迁入。
 
+2026-08-04 恢复记录：#353 已建立真实 SceneDocument、Hierarchy、Inspector 与 Project panel consumer，因此
+Dock layout、hit-test、tab reorder/scroll、split 与 floating-window 算法按本节门禁选择性恢复到当前 Shell；未恢复旧
+`Asharia.Editor` public panel facade、Application frame scheduler、extension composition 或 ViewLocator。恢复后的
+panel content 仍只消费当前 `StudioShellViewModel` 对 Application SceneDocument snapshot/intent 的投影。
+
 ## 12. 实施阶段
 
 ### R0：冻结与新骨架
