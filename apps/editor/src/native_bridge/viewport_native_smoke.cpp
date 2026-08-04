@@ -125,6 +125,43 @@ namespace asharia::editor {
             };
         }
 
+        [[nodiscard]] EditorViewportNativePresentRequestV4
+        makePresentRequestV4(VkExtent2D extent, std::uint32_t kind,
+                             EditorViewportNativeId sessionId, EditorViewportNativeId targetId,
+                             std::uint64_t targetRevision, std::uint64_t requestSequence,
+                             const EditorViewportNativeDebugProxy* debugProxies,
+                             std::uint32_t debugProxyCount) {
+            return EditorViewportNativePresentRequestV4{
+                .header =
+                    EditorViewportNativeAbiHeader{
+                        .abiVersion = EDITOR_NATIVE_ABI_VERSION,
+                        .structSize = static_cast<std::uint32_t>(
+                            sizeof(EditorViewportNativePresentRequestV4)),
+                    },
+                .compatibility = makeRequest(),
+                .sessionId = sessionId,
+                .targetId = targetId,
+                .targetRevision = targetRevision,
+                .requestSequence = requestSequence,
+                .debugProxies = debugProxies,
+                .debugProxyCount = debugProxyCount,
+                .kind = kind,
+                .targetKind = EditorViewportNativeTargetKind_DocumentScene,
+                .widthPixels = extent.width,
+                .heightPixels = extent.height,
+                .reserved = 0U,
+                .camera =
+                    EditorViewportNativeCamera{
+                        .position = {0.0F, 2.0F, -6.0F},
+                        .target = {0.0F, 0.0F, 0.0F},
+                        .up = {0.0F, 1.0F, 0.0F},
+                        .verticalFovRadians = 1.04719758F,
+                        .nearPlane = 0.1F,
+                        .farPlane = 1000.0F,
+                    },
+            };
+        }
+
         void releaseIfNeeded(EditorViewportNativeCompatibilityResult result) {
             if (result.messageUtf8 != nullptr) {
                 editor_viewport_release_compatibility_result(result);
@@ -294,6 +331,13 @@ namespace asharia::editor {
             return status == EditorViewportNativeStatus_Success &&
                    stats.header.abiVersion == EDITOR_NATIVE_ABI_VERSION &&
                    stats.header.structSize == sizeof(EditorViewportNativeRuntimeStatsV6);
+        }
+
+        [[nodiscard]] bool queryRuntimeStatsV7(EditorViewportNativeRuntimeStatsV7& stats) {
+            const std::uint32_t status = editor_viewport_query_runtime_stats_v7(&stats);
+            return status == EditorViewportNativeStatus_Success &&
+                   stats.header.abiVersion == EDITOR_NATIVE_ABI_VERSION &&
+                   stats.header.structSize == sizeof(EditorViewportNativeRuntimeStatsV7);
         }
 
         [[nodiscard]] bool waitForRuntimeEpochs(std::uint64_t submitted, std::uint64_t completed,
@@ -1022,7 +1066,168 @@ namespace asharia::editor {
             return statsPassed && smokeNonBlockingRetirement(*compositionContext, request);
         }
 
+        [[nodiscard]] bool smokeGenericViewportSessions() {
+            static_assert(sizeof(EditorViewportNativeId) == 16U);
+            static_assert(sizeof(EditorViewportNativeCamera) == 48U);
+            static_assert(sizeof(EditorViewportNativeDebugProxy) == 56U);
+            static_assert(sizeof(EditorViewportNativePresentRequestV4) == 192U);
+
+            EditorViewportNativeRuntimeStatsV7 statsBefore{};
+            if (!queryRuntimeStatsV7(statsBefore) || statsBefore.outstandingPackets != 0U) {
+                logError("Viewport V4 smoke did not begin from an idle slot set.");
+                return false;
+            }
+
+            const std::array<EditorViewportNativeDebugProxy, 1> sceneProxies{
+                EditorViewportNativeDebugProxy{
+                    .objectId = EditorViewportNativeId{.low = 301U, .high = 1U},
+                    .position = {1.0F, 2.0F, 3.0F},
+                    .rotation = {0.0F, 0.0F, 0.0F, 1.0F},
+                    .scale = {1.0F, 2.0F, 1.0F},
+                },
+            };
+            EditorViewportNativePresentRequestV4 invalidRequest = makePresentRequestV4(
+                VkExtent2D{.width = 640U, .height = 360U}, 99U,
+                EditorViewportNativeId{.low = 100U, .high = 1U},
+                EditorViewportNativeId{.low = 200U, .high = 1U}, 100U, 10U, sceneProxies.data(),
+                static_cast<std::uint32_t>(sceneProxies.size()));
+            EditorViewportNativePresentPacket invalidPacket{};
+            if (editor_viewport_create_present_slot_v4(&invalidRequest, &invalidPacket) !=
+                    EditorViewportNativeStatus_InvalidArgument ||
+                invalidPacket.status != EditorViewportNativeStatus_InvalidArgument) {
+                releaseIfNeeded(invalidPacket);
+                logError("Viewport V4 smoke accepted an unknown render kind.");
+                return false;
+            }
+            invalidRequest.kind = EditorViewportNativeRenderKind_Scene;
+            invalidRequest.debugProxyCount = 257U;
+            invalidPacket = {};
+            if (editor_viewport_create_present_slot_v4(&invalidRequest, &invalidPacket) !=
+                    EditorViewportNativeStatus_InvalidArgument ||
+                invalidPacket.status != EditorViewportNativeStatus_InvalidArgument) {
+                releaseIfNeeded(invalidPacket);
+                logError("Viewport V4 smoke accepted an unbounded debug proxy request.");
+                return false;
+            }
+
+            auto compositionContext = VulkanContext::create(VulkanContextDesc{
+                .applicationName = "Generic viewport session composition smoke",
+                .requiredInstanceExtensions = {},
+                .createSurface = {},
+                .enableValidation = false,
+                .debugLabels = VulkanDebugLabelMode::Optional,
+                .requireVulkan14 = true,
+                .externalInterop =
+                    VulkanExternalInteropOptions{
+                        .opaqueWin32Semaphore = true,
+                    },
+            });
+            if (!compositionContext) {
+                logError(compositionContext.error().message);
+                return false;
+            }
+
+            const EditorViewportNativeId sceneSession{.low = 101U, .high = 1U};
+            const EditorViewportNativeId sceneTarget{.low = 201U, .high = 1U};
+            EditorViewportNativePresentRequestV4 sceneRequest = makePresentRequestV4(
+                VkExtent2D{.width = 640U, .height = 360U}, EditorViewportNativeRenderKind_Scene,
+                sceneSession, sceneTarget, 101U, 11U, sceneProxies.data(),
+                static_cast<std::uint32_t>(sceneProxies.size()));
+            const EditorViewportNativeId gameSession{.low = 102U, .high = 1U};
+            const EditorViewportNativeId gameTarget{.low = 202U, .high = 1U};
+            EditorViewportNativePresentRequestV4 gameRequest = makePresentRequestV4(
+                VkExtent2D{.width = 320U, .height = 180U}, EditorViewportNativeRenderKind_Game,
+                gameSession, gameTarget, 102U, 12U, nullptr, 0U);
+            EditorViewportNativePresentPacket sceneSlot{};
+            EditorViewportNativePresentPacket gameSlot{};
+            EditorViewportNativeRuntimeStatsV7 statsAfterScene{};
+            const bool sceneMapped =
+                editor_viewport_create_present_slot_v4(&sceneRequest, &sceneSlot) ==
+                    EditorViewportNativeStatus_Success &&
+                sceneSlot.nativePacket != nullptr && queryRuntimeStatsV7(statsAfterScene) &&
+                statsAfterScene.sceneFramesRendered == statsBefore.sceneFramesRendered + 1U &&
+                statsAfterScene.lastSessionId.low == sceneSession.low &&
+                statsAfterScene.lastTargetId.low == sceneTarget.low &&
+                statsAfterScene.lastTargetRevision == 101U &&
+                statsAfterScene.lastRequestSequence == 11U &&
+                statsAfterScene.lastRenderKind == EditorViewportNativeRenderKind_Scene &&
+                statsAfterScene.lastDebugProxyCount == 1U &&
+                statsAfterScene.lastDebugWorldLineCount == 6U &&
+                statsAfterScene.lastWorldGridEnabled == 1U;
+            const bool createdBoth =
+                sceneMapped &&
+                editor_viewport_create_present_slot_v4(&gameRequest, &gameSlot) ==
+                    EditorViewportNativeStatus_Success &&
+                gameSlot.nativePacket != nullptr && sceneSlot.nativePacket != gameSlot.nativePacket;
+            if (!createdBoth) {
+                releaseIfNeeded(sceneSlot);
+                releaseIfNeeded(gameSlot);
+                logError("Viewport V4 smoke did not create independent Scene and Game slots.");
+                return false;
+            }
+
+            EditorViewportNativeRuntimeStatsV7 statsAfterPair{};
+            const bool pairMapped =
+                queryRuntimeStatsV7(statsAfterPair) &&
+                statsAfterPair.sceneFramesRendered == statsBefore.sceneFramesRendered + 1U &&
+                statsAfterPair.gameFramesRendered == statsBefore.gameFramesRendered + 1U &&
+                statsAfterPair.lastSessionId.low == gameSession.low &&
+                statsAfterPair.lastTargetId.low == gameTarget.low &&
+                statsAfterPair.lastRequestSequence == 12U &&
+                statsAfterPair.lastRenderKind == EditorViewportNativeRenderKind_Game &&
+                statsAfterPair.lastDebugProxyCount == 0U;
+            const bool pairCompleted = completeCompositionCycle(*compositionContext, sceneSlot) &&
+                                       completeCompositionCycle(*compositionContext, gameSlot);
+            releaseIfNeeded(sceneSlot);
+            releaseIfNeeded(gameSlot);
+            if (!pairMapped || !pairCompleted ||
+                !waitForRuntimeEpochs(statsBefore.frameEpochsSubmitted + 2U,
+                                      statsBefore.frameEpochsCompleted + 2U, 0U, 0U)) {
+                logError("Viewport V4 smoke did not preserve independent session routing.");
+                return false;
+            }
+
+            const EditorViewportNativeId previewSession{.low = 103U, .high = 1U};
+            const EditorViewportNativeId previewTarget{.low = 203U, .high = 1U};
+            EditorViewportNativePresentRequestV4 previewRequest = makePresentRequestV4(
+                VkExtent2D{.width = 256U, .height = 256U}, EditorViewportNativeRenderKind_Preview,
+                previewSession, previewTarget, 103U, 13U, sceneProxies.data(),
+                static_cast<std::uint32_t>(sceneProxies.size()));
+            EditorViewportNativePresentPacket previewSlot{};
+            if (editor_viewport_create_present_slot_v4(&previewRequest, &previewSlot) !=
+                    EditorViewportNativeStatus_Success ||
+                !completeCompositionCycle(*compositionContext, previewSlot)) {
+                releaseIfNeeded(previewSlot);
+                logError("Viewport V4 smoke did not render a Preview slot.");
+                return false;
+            }
+            EditorViewportNativeRuntimeStatsV7 statsAfterPreview{};
+            const bool previewMapped =
+                queryRuntimeStatsV7(statsAfterPreview) &&
+                statsAfterPreview.previewFramesRendered == statsBefore.previewFramesRendered + 1U &&
+                statsAfterPreview.lastTargetRevision == 103U &&
+                statsAfterPreview.lastRequestSequence == 13U &&
+                statsAfterPreview.lastSessionId.low == previewSession.low &&
+                statsAfterPreview.lastTargetId.low == previewTarget.low &&
+                statsAfterPreview.lastRenderKind == EditorViewportNativeRenderKind_Preview &&
+                statsAfterPreview.lastDebugProxyCount == 1U;
+            releaseIfNeeded(previewSlot);
+            if (!previewMapped ||
+                !waitForRuntimeEpochs(statsBefore.frameEpochsSubmitted + 3U,
+                                      statsBefore.frameEpochsCompleted + 3U, 0U, 0U)) {
+                logError("Viewport V4 smoke did not preserve Preview request metadata.");
+                return false;
+            }
+            return true;
+        }
+
         [[nodiscard]] bool smokeShutdownOrdering() {
+            EditorViewportNativeRuntimeStatsV4 statsBeforeRequest{};
+            if (!queryRuntimeStatsV4(statsBeforeRequest) ||
+                statsBeforeRequest.outstandingPackets != 0U) {
+                logError("Viewport native bridge smoke did not begin shutdown from idle.");
+                return false;
+            }
             EditorViewportNativePresentPacket shutdownPendingPacket{};
             EditorViewportNativePresentRequest shutdownPendingRequest =
                 makePresentRequest(VkExtent2D{.width = 160U, .height = 90U});
@@ -1035,7 +1240,7 @@ namespace asharia::editor {
                 shutdownPendingPacket.imageHandle != nullptr &&
                 shutdownPendingPacket.waitSemaphoreHandle != nullptr &&
                 shutdownPendingPacket.signalSemaphoreHandle != nullptr &&
-                shutdownPendingPacket.frameIndex == 12U;
+                shutdownPendingPacket.frameIndex == statsBeforeRequest.framesRendered + 1U;
             if (!shutdownPendingPacketAvailable) {
                 logPresentPacketMessage(shutdownPendingPacket);
                 releaseIfNeeded(shutdownPendingPacket);
@@ -1046,8 +1251,10 @@ namespace asharia::editor {
 
             EditorViewportNativeRuntimeStatsV3 statsV3BeforeShutdown{};
             if (!queryRuntimeStatsV3(statsV3BeforeShutdown) ||
-                statsV3BeforeShutdown.frameEpochsSubmitted != 12U ||
-                statsV3BeforeShutdown.frameEpochsCompleted != 11U ||
+                statsV3BeforeShutdown.frameEpochsSubmitted !=
+                    statsBeforeRequest.frameEpochsSubmitted + 1U ||
+                statsV3BeforeShutdown.frameEpochsCompleted !=
+                    statsBeforeRequest.frameEpochsCompleted ||
                 statsV3BeforeShutdown.frameEpochsPending != 1U ||
                 statsV3BeforeShutdown.outstandingPackets != 1U) {
                 releaseIfNeeded(shutdownPendingPacket);
@@ -1058,9 +1265,11 @@ namespace asharia::editor {
             EditorViewportNativeRuntimeStatsV4 statsV4BeforeShutdown{};
             if (!queryRuntimeStatsV4(statsV4BeforeShutdown) ||
                 statsV4BeforeShutdown.rendererCreations != 1U ||
-                statsV4BeforeShutdown.packetsCreated != 10U ||
-                statsV4BeforeShutdown.frameEpochsSubmitted != 12U ||
-                statsV4BeforeShutdown.frameEpochsCompleted != 11U ||
+                statsV4BeforeShutdown.packetsCreated != statsBeforeRequest.packetsCreated + 1U ||
+                statsV4BeforeShutdown.frameEpochsSubmitted !=
+                    statsBeforeRequest.frameEpochsSubmitted + 1U ||
+                statsV4BeforeShutdown.frameEpochsCompleted !=
+                    statsBeforeRequest.frameEpochsCompleted ||
                 statsV4BeforeShutdown.frameEpochsPending != 1U ||
                 statsV4BeforeShutdown.outstandingPackets != 1U) {
                 releaseIfNeeded(shutdownPendingPacket);
@@ -1110,7 +1319,7 @@ namespace asharia::editor {
         const SharedViewportRuntimeShutdown shutdownOnExit;
         return smokeCompatibilityContract() && smokeFirstPacketAndBackpressure() &&
                smokeSameSizeLegacyReuse() && smokeResizeChurn() && smokeReusableSlots() &&
-               smokeShutdownOrdering();
+               smokeGenericViewportSessions() && smokeShutdownOrdering();
     }
 
 } // namespace asharia::editor

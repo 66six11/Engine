@@ -1,6 +1,6 @@
 # Studio native boundary 审查
 
-状态：Current audit（R0 边界已切离；SceneDocument native consumer 由 ADR-0009 建立）
+状态：Current audit（SceneDocument consumer 已建立；#359 建立 viewport foundation，presentation/session teardown 风险仍开放）
 
 更新日期：2026-08-04
 
@@ -22,9 +22,10 @@ process singleton
 旧 ABI 不具备兼容保留价值。新前端可以先绕开它；恢复真实 Scene/Viewport 时应 hard-cut 到显式 session、
 typed generational handle、immutable snapshot、bounded lease 和统一 error contract。
 
-R0 Studio现已实际绕开：App/composition/publish均无viewport/frame-debug native consumer，managed viewport bridge、
-deployment copy与phantom native receipt已删除，Editor Image拒绝`editor_native.dll`/`slang.dll`。以下P1条目审计的是
-仍由独立C++ editor target/smoke持有的实现风险，不代表当前Studio产品能力，也不得用其smoke替代未来接入门禁。
+R0 Studio 删除了旧 App/composition/publish viewport consumer 与 deployment copy。#359 后 Application 已有新的
+UI-neutral `ViewportSession`，EngineBridge 已有 V4 request / typed frame lease，但 App/Shell/publish 仍未消费或部署
+`editor_native.dll`。以下 P1 条目同时审计新的 foundation 与仍由独立 C++ runtime 持有的风险；native smoke 只能证明
+render/lease 边界，不能替代下一步 Avalonia presentation 接入门禁。
 
 ## 2. 阻断级问题
 
@@ -177,15 +178,19 @@ process-exit quarantine 只是可诊断终极回退。
 - reusable-slot failure 也返回 ErrorInfo；
 - 注入 DeviceLost 的测试必须观察 `Faulted`、epoch change、旧 lease drain 与可控 recreate。
 
-### P1-8 viewport request 没有真实 scene/camera 数据
+### P1-8 viewport request 没有 production render snapshot（camera/debug foundation 已由 #359 修复）
 
-证据：
+历史证据：
 
 - request 只有 `hasScene + sceneRevision`；
 - panel ID/kind 在 native bridge 硬编码；
 - shared viewport producer 使用默认相机与固定轴。
 
-revision 不是 render data。修复要求：
+#359 当前事实：V4 request 已携 session/target/revision/sequence、真实 camera snapshot 与最多 256 个来自
+`SceneDocumentSnapshot` 的 `{objectId, Transform}` debug proxies；native producer 将 Scene/Game/Preview 映射到同一
+RenderView path，Scene View 使用这些 Transform 生成调试轴，且双 session/slot smoke 验证 metadata 真被消费。
+
+Transform proxies 足以证明当前编辑场景可驱动真实 GPU 画面，但不是 production mesh/material render data。因此剩余要求：
 
 - request 携 immutable `RenderSceneSnapshotHandle` 与 camera/view packet；
 - request/result 同时携 session/project/document/viewport generation、frame sequence 和 revision；
@@ -347,8 +352,9 @@ ErrorInfo {
 2. **ABI foundation**：真正 C header、session/handle/error；C include、双端 size/offset、catch-all、
    bad-alloc/fault injection、duplicate/stale handle smoke。
 3. **Scene slice**：owner lane、mutation batch、immutable snapshot；验证 revision conflict、failure、undo/save。
-4. **Viewport slice**：render snapshot + camera -> bounded frame lease -> Avalonia complete；验证 1000 次
-   create/close/reopen、query-vs-stop stress、resize/DPI/dock、consumer abandon、device lost、handle exact close。
+4. **Viewport slice**：#359 已完成 `SceneDocument -> UI-neutral session -> camera/bounded Transform proxies ->
+   typed frame lease -> native Scene/Game/Preview` foundation；下一 Slice 接 Avalonia complete/surface generation，再验证
+   1000 次 create/close/reopen、query-vs-stop stress、resize/DPI/dock、consumer abandon、device lost、handle exact close。
 5. **Frame Debugger**：最后接入同一 session/render lane；capture identity 必须与 presented frame 一致。
 
 关键验收项：

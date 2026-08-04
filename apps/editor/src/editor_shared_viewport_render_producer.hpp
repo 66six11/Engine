@@ -2,9 +2,11 @@
 
 #include <vulkan/vulkan.h>
 
+#include <array>
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string_view>
 #include <vector>
 
@@ -26,6 +28,13 @@ namespace asharia {
 
 namespace asharia::editor {
 
+    struct EditorSharedViewportDebugProxy {
+        std::array<std::uint64_t, 2> objectId{};
+        std::array<float, 3> position{};
+        std::array<float, 4> rotation{0.0F, 0.0F, 0.0F, 1.0F};
+        std::array<float, 3> scale{1.0F, 1.0F, 1.0F};
+    };
+
     struct EditorSharedViewportPresentDesc {
         std::string_view panelId;
         EditorViewportKind kind{EditorViewportKind::Scene};
@@ -34,6 +43,12 @@ namespace asharia::editor {
             EditorSharedViewportExternalImageHandleFamily::VulkanOpaqueNt};
         bool hasScene{};
         std::uint64_t sceneRevision{};
+        std::array<std::uint64_t, 2> sessionId{};
+        std::array<std::uint64_t, 2> targetId{};
+        std::uint64_t requestSequence{};
+        bool hasCamera{};
+        EditorViewportCamera camera;
+        std::span<const EditorSharedViewportDebugProxy> debugProxies;
     };
 
     struct EditorSharedViewportPresentPacket {
@@ -61,7 +76,16 @@ namespace asharia::editor {
         std::uint64_t frameEpochsCompleted{};
         std::uint64_t frameEpochsPending{};
         std::uint64_t sceneFramesRendered{};
+        std::uint64_t gameFramesRendered{};
+        std::uint64_t previewFramesRendered{};
         std::uint64_t lastSceneRevision{};
+        std::uint64_t lastRequestSequence{};
+        std::array<std::uint64_t, 2> lastSessionId{};
+        std::array<std::uint64_t, 2> lastTargetId{};
+        EditorViewportKind lastRenderKind{EditorViewportKind::Scene};
+        std::uint32_t lastDebugProxyCount{};
+        std::uint64_t lastDebugWorldLineCount{};
+        bool lastWorldGridEnabled{};
     };
 
     struct EditorSharedViewportPacketState final {

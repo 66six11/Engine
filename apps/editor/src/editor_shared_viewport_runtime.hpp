@@ -52,7 +52,16 @@ namespace asharia::editor {
         std::uint64_t rendererCreations{};
         std::uint64_t packetBackpressureHits{};
         std::uint64_t sceneFramesRendered{};
+        std::uint64_t gameFramesRendered{};
+        std::uint64_t previewFramesRendered{};
         std::uint64_t lastSceneRevision{};
+        std::uint64_t lastRequestSequence{};
+        std::array<std::uint64_t, 2> lastSessionId{};
+        std::array<std::uint64_t, 2> lastTargetId{};
+        EditorViewportKind lastRenderKind{EditorViewportKind::Scene};
+        std::uint32_t lastDebugProxyCount{};
+        std::uint64_t lastDebugWorldLineCount{};
+        bool lastWorldGridEnabled{};
         std::size_t maxOutstandingPackets{};
         std::size_t outstandingPackets{};
         bool hasContext{};
