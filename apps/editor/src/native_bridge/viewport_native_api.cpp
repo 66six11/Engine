@@ -1,12 +1,18 @@
 ﻿#include "native_bridge/viewport_native_api.hpp"
 
+#include <algorithm>
 #include <array>
 #include <bit>
+#include <cmath>
 #include <cstddef>
 #include <cstring>
+#include <exception>
 #include <memory>
 #include <new>
+#include <numbers>
+#include <span>
 #include <string_view>
+#include <vector>
 
 #include "asharia/rhi_vulkan/vulkan_context.hpp"
 
@@ -71,6 +77,13 @@ namespace {
         };
     }
 
+    [[nodiscard]] EditorViewportNativeAbiHeader runtimeStatsV7Header() {
+        return EditorViewportNativeAbiHeader{
+            .abiVersion = EDITOR_NATIVE_ABI_VERSION,
+            .structSize = static_cast<std::uint32_t>(sizeof(EditorViewportNativeRuntimeStatsV7)),
+        };
+    }
+
     [[nodiscard]] bool
     hasSupportedRequestHeader(const EditorViewportNativeCompatibilityRequest& request) {
         return request.header.abiVersion == EDITOR_NATIVE_ABI_VERSION &&
@@ -91,6 +104,13 @@ namespace {
                hasSupportedRequestHeader(request.compatibility);
     }
 
+    [[nodiscard]] bool
+    hasSupportedPresentRequestV4Header(const EditorViewportNativePresentRequestV4& request) {
+        return request.header.abiVersion == EDITOR_NATIVE_ABI_VERSION &&
+               request.header.structSize >= sizeof(EditorViewportNativePresentRequestV4) &&
+               hasSupportedRequestHeader(request.compatibility);
+    }
+
     [[nodiscard]] bool hasSupportedPresentSlotRenderRequestHeader(
         const EditorViewportNativePresentSlotRenderRequest& request) {
         return request.header.abiVersion == EDITOR_NATIVE_ABI_VERSION &&
@@ -107,6 +127,97 @@ namespace {
     hasSupportedHandleTypes(const EditorViewportNativeCompatibilityRequest& request) {
         return request.imageHandleType == EditorViewportNativeHandleType_VulkanOpaqueNt &&
                request.semaphoreHandleType == EditorViewportNativeHandleType_VulkanOpaqueNt;
+    }
+
+    [[nodiscard]] constexpr bool hasValue(EditorViewportNativeId nativeId) {
+        return nativeId.low != 0U || nativeId.high != 0U;
+    }
+
+    [[nodiscard]] bool finite3(std::span<const float, 3> values) {
+        return std::isfinite(values[0]) && std::isfinite(values[1]) && std::isfinite(values[2]);
+    }
+
+    [[nodiscard]] bool validCamera(const EditorViewportNativeCamera& camera) {
+        if (!finite3(camera.position) || !finite3(camera.target) || !finite3(camera.up) ||
+            !std::isfinite(camera.verticalFovRadians) || !std::isfinite(camera.nearPlane) ||
+            !std::isfinite(camera.farPlane) || camera.verticalFovRadians <= 0.0F ||
+            camera.verticalFovRadians >= std::numbers::pi_v<float> || camera.nearPlane <= 0.0F ||
+            camera.farPlane <= camera.nearPlane) {
+            return false;
+        }
+
+        const auto lengthSquared = [](const auto& values) {
+            return (values[0] * values[0]) + (values[1] * values[1]) + (values[2] * values[2]);
+        };
+        const std::array<float, 3> direction{
+            camera.target[0] - camera.position[0],
+            camera.target[1] - camera.position[1],
+            camera.target[2] - camera.position[2],
+        };
+        constexpr float kMinimumLengthSquared = 1.0e-8F;
+        return lengthSquared(direction) > kMinimumLengthSquared &&
+               lengthSquared(camera.up) > kMinimumLengthSquared;
+    }
+
+    [[nodiscard]] bool validDebugProxy(const EditorViewportNativeDebugProxy& proxy) {
+        if (!hasValue(proxy.objectId) || !finite3(proxy.position) || !finite3(proxy.scale)) {
+            return false;
+        }
+        float rotationLengthSquared{};
+        for (float value : proxy.rotation) {
+            if (!std::isfinite(value)) {
+                return false;
+            }
+            rotationLengthSquared += value * value;
+        }
+        return std::abs(rotationLengthSquared - 1.0F) <= 1.0e-3F;
+    }
+
+    [[nodiscard]] bool validPresentRequestV4(const EditorViewportNativePresentRequestV4& request) {
+        constexpr std::uint32_t kMaximumDebugProxyCount = 256U;
+        if (!hasValue(request.sessionId) || !hasValue(request.targetId) ||
+            request.targetRevision == 0U || request.requestSequence == 0U ||
+            request.widthPixels == 0U || request.heightPixels == 0U || request.reserved != 0U ||
+            request.kind > EditorViewportNativeRenderKind_Preview ||
+            request.targetKind != EditorViewportNativeTargetKind_DocumentScene ||
+            request.debugProxyCount > kMaximumDebugProxyCount ||
+            (request.debugProxyCount != 0U && request.debugProxies == nullptr) ||
+            !validCamera(request.camera)) {
+            return false;
+        }
+        if (request.debugProxyCount == 0U) {
+            return true;
+        }
+        const std::span<const EditorViewportNativeDebugProxy> debugProxies{request.debugProxies,
+                                                                           request.debugProxyCount};
+        return std::ranges::all_of(debugProxies, [](const EditorViewportNativeDebugProxy& proxy) {
+            return validDebugProxy(proxy);
+        });
+    }
+
+    [[nodiscard]] asharia::editor::EditorViewportKind viewportKind(std::uint32_t kind) {
+        switch (kind) {
+        case EditorViewportNativeRenderKind_Scene:
+            return asharia::editor::EditorViewportKind::Scene;
+        case EditorViewportNativeRenderKind_Game:
+            return asharia::editor::EditorViewportKind::Game;
+        case EditorViewportNativeRenderKind_Preview:
+            return asharia::editor::EditorViewportKind::Preview;
+        default:
+            return asharia::editor::EditorViewportKind::Scene;
+        }
+    }
+
+    [[nodiscard]] asharia::editor::EditorViewportCamera
+    viewportCamera(const EditorViewportNativeCamera& camera) {
+        asharia::editor::EditorViewportCamera result;
+        std::ranges::copy(camera.position, result.position.begin());
+        std::ranges::copy(camera.target, result.target.begin());
+        std::ranges::copy(camera.up, result.up.begin());
+        result.verticalFovRadians = camera.verticalFovRadians;
+        result.nearPlane = camera.nearPlane;
+        result.farPlane = camera.farPlane;
+        return result;
     }
 
     void clearCompatibilityResult(EditorViewportNativeCompatibilityResult* result,
@@ -371,6 +482,12 @@ namespace {
                 },
             .hasScene = hasScene,
             .sceneRevision = sceneRevision,
+            .sessionId = {},
+            .targetId = {},
+            .requestSequence = 0U,
+            .hasCamera = false,
+            .camera = {},
+            .debugProxies = {},
         };
         auto present =
             reusableSlot
@@ -387,6 +504,78 @@ namespace {
             return writePresentPacketFailure(packet, status, error.error.message);
         }
 
+        return writePresentPacketSuccess(packet, *present);
+    }
+
+    [[nodiscard]] std::uint32_t
+    createPresentSlotV4(const EditorViewportNativePresentRequestV4& request,
+                        EditorViewportNativePresentPacket* packet) {
+        if (!hasSupportedHandleTypes(request.compatibility)) {
+            clearPresentPacket(packet, EditorViewportNativeStatus_UnsupportedHandleType);
+            return EditorViewportNativeStatus_UnsupportedHandleType;
+        }
+
+        const auto deviceSnapshot =
+            asharia::editor::EditorSharedViewportRuntime::instance().ensureDeviceSnapshot();
+        if (!deviceSnapshot) {
+            return writePresentPacketFailure(packet, EditorViewportNativeStatus_Unavailable,
+                                             deviceSnapshot.error().message);
+        }
+        if (!matchesRequestedDevice(request.compatibility, deviceSnapshot->identity)) {
+            return writePresentPacketFailure(
+                packet, EditorViewportNativeStatus_DeviceMismatch,
+                "Avalonia compositor device does not match the Vulkan viewport device.");
+        }
+
+        std::vector<asharia::editor::EditorSharedViewportDebugProxy> debugProxies;
+        try {
+            debugProxies.reserve(request.debugProxyCount);
+            if (request.debugProxyCount != 0U) {
+                const std::span<const EditorViewportNativeDebugProxy> requestProxies{
+                    request.debugProxies, request.debugProxyCount};
+                for (const EditorViewportNativeDebugProxy& proxy : requestProxies) {
+                    debugProxies.push_back(asharia::editor::EditorSharedViewportDebugProxy{
+                        .objectId = {proxy.objectId.low, proxy.objectId.high},
+                        .position = {proxy.position[0], proxy.position[1], proxy.position[2]},
+                        .rotation = {proxy.rotation[0], proxy.rotation[1], proxy.rotation[2],
+                                     proxy.rotation[3]},
+                        .scale = {proxy.scale[0], proxy.scale[1], proxy.scale[2]},
+                    });
+                }
+            }
+        } catch (const std::bad_alloc&) {
+            return writePresentPacketFailure(packet, EditorViewportNativeStatus_InternalError,
+                                             "Viewport debug proxy allocation failed.");
+        }
+
+        const asharia::editor::EditorSharedViewportPresentDesc desc{
+            .panelId = "viewport-session/native",
+            .kind = viewportKind(request.kind),
+            .extent =
+                asharia::editor::EditorExtent2D{
+                    .width = request.widthPixels,
+                    .height = request.heightPixels,
+                },
+            .hasScene = true,
+            .sceneRevision = request.targetRevision,
+            .sessionId = {request.sessionId.low, request.sessionId.high},
+            .targetId = {request.targetId.low, request.targetId.high},
+            .requestSequence = request.requestSequence,
+            .hasCamera = true,
+            .camera = viewportCamera(request.camera),
+            .debugProxies = debugProxies,
+        };
+        auto present =
+            asharia::editor::EditorSharedViewportRuntime::instance().createPresentSlot(desc);
+        if (!present) {
+            const asharia::editor::EditorSharedViewportRenderFrameError& error = present.error();
+            const std::uint32_t status =
+                error.kind ==
+                        asharia::editor::EditorSharedViewportRenderFrameErrorKind::Backpressure
+                    ? EditorViewportNativeStatus_Unavailable
+                    : EditorViewportNativeStatus_RenderFailed;
+            return writePresentPacketFailure(packet, status, error.error.message);
+        }
         return writePresentPacketSuccess(packet, *present);
     }
 
@@ -525,6 +714,12 @@ editor_viewport_render_present_slot_v3(const EditorViewportNativePresentSlotRend
                                      },
                                  .hasScene = request->hasScene != 0U,
                                  .sceneRevision = request->sceneRevision,
+                                 .sessionId = {},
+                                 .targetId = {},
+                                 .requestSequence = 0U,
+                                 .hasCamera = false,
+                                 .camera = {},
+                                 .debugProxies = {},
                              });
     if (!present) {
         const asharia::editor::EditorSharedViewportRenderFrameError& error = present.error();
@@ -534,6 +729,35 @@ editor_viewport_render_present_slot_v3(const EditorViewportNativePresentSlotRend
     }
 
     return writePresentPacketSuccess(packet, *present);
+}
+
+std::uint32_t EDITOR_NATIVE_CALL
+editor_viewport_create_present_slot_v4(const EditorViewportNativePresentRequestV4* request,
+                                       EditorViewportNativePresentPacket* packet) {
+    if (request == nullptr || packet == nullptr) {
+        clearPresentPacket(packet, EditorViewportNativeStatus_InvalidArgument);
+        return EditorViewportNativeStatus_InvalidArgument;
+    }
+    if (!hasSupportedPresentRequestV4Header(*request)) {
+        clearPresentPacket(packet, EditorViewportNativeStatus_UnsupportedAbi);
+        return EditorViewportNativeStatus_UnsupportedAbi;
+    }
+    if (!validPresentRequestV4(*request)) {
+        clearPresentPacket(packet, EditorViewportNativeStatus_InvalidArgument);
+        return EditorViewportNativeStatus_InvalidArgument;
+    }
+    try {
+        return createPresentSlotV4(*request, packet);
+    } catch (const std::bad_alloc&) {
+        return writePresentPacketFailure(packet, EditorViewportNativeStatus_InternalError,
+                                         "Viewport request allocation failed.");
+    } catch (const std::exception& exception) {
+        return writePresentPacketFailure(packet, EditorViewportNativeStatus_InternalError,
+                                         exception.what());
+    } catch (...) {
+        return writePresentPacketFailure(packet, EditorViewportNativeStatus_InternalError,
+                                         "Viewport request failed with an unknown exception.");
+    }
 }
 
 void EDITOR_NATIVE_CALL
@@ -713,6 +937,58 @@ editor_viewport_query_runtime_stats_v6(EditorViewportNativeRuntimeStatsV6* stats
         .packetBackpressureHits = runtimeStats.packetBackpressureHits,
         .sceneFramesRendered = runtimeStats.sceneFramesRendered,
         .lastSceneRevision = runtimeStats.lastSceneRevision,
+        .hasContext = runtimeStats.hasContext ? 1U : 0U,
+        .hasRenderProducer = runtimeStats.hasRenderProducer ? 1U : 0U,
+        .shutdownRequested = runtimeStats.shutdownRequested ? 1U : 0U,
+    };
+    return EditorViewportNativeStatus_Success;
+}
+
+std::uint32_t EDITOR_NATIVE_CALL
+editor_viewport_query_runtime_stats_v7(EditorViewportNativeRuntimeStatsV7* stats) {
+    if (stats == nullptr) {
+        return EditorViewportNativeStatus_InvalidArgument;
+    }
+
+    const asharia::editor::EditorSharedViewportRuntimeStats runtimeStats =
+        asharia::editor::EditorSharedViewportRuntime::instance().stats();
+    *stats = EditorViewportNativeRuntimeStatsV7{
+        .header = runtimeStatsV7Header(),
+        .framesRendered = runtimeStats.framesRendered,
+        .producersCreated = runtimeStats.producersCreated,
+        .packetsCreated = runtimeStats.packetsCreated,
+        .outstandingPackets = static_cast<std::uint64_t>(runtimeStats.outstandingPackets),
+        .externalImagesAcquired = runtimeStats.externalImagesAcquired,
+        .externalImagesCreated = runtimeStats.externalImagesCreated,
+        .externalImagesReused = runtimeStats.externalImagesReused,
+        .externalImagesReleased = runtimeStats.externalImagesReleased,
+        .externalImagesAvailable = runtimeStats.externalImagesAvailable,
+        .externalImagesLeased = runtimeStats.externalImagesLeased,
+        .frameEpochsSubmitted = runtimeStats.frameEpochsSubmitted,
+        .frameEpochsCompleted = runtimeStats.frameEpochsCompleted,
+        .frameEpochsPending = runtimeStats.frameEpochsPending,
+        .rendererCreations = runtimeStats.rendererCreations,
+        .maxOutstandingPackets = static_cast<std::uint64_t>(runtimeStats.maxOutstandingPackets),
+        .packetBackpressureHits = runtimeStats.packetBackpressureHits,
+        .sceneFramesRendered = runtimeStats.sceneFramesRendered,
+        .gameFramesRendered = runtimeStats.gameFramesRendered,
+        .previewFramesRendered = runtimeStats.previewFramesRendered,
+        .lastTargetRevision = runtimeStats.lastSceneRevision,
+        .lastRequestSequence = runtimeStats.lastRequestSequence,
+        .lastSessionId =
+            EditorViewportNativeId{
+                .low = runtimeStats.lastSessionId[0],
+                .high = runtimeStats.lastSessionId[1],
+            },
+        .lastTargetId =
+            EditorViewportNativeId{
+                .low = runtimeStats.lastTargetId[0],
+                .high = runtimeStats.lastTargetId[1],
+            },
+        .lastDebugWorldLineCount = runtimeStats.lastDebugWorldLineCount,
+        .lastRenderKind = static_cast<std::uint32_t>(runtimeStats.lastRenderKind),
+        .lastDebugProxyCount = runtimeStats.lastDebugProxyCount,
+        .lastWorldGridEnabled = runtimeStats.lastWorldGridEnabled ? 1U : 0U,
         .hasContext = runtimeStats.hasContext ? 1U : 0U,
         .hasRenderProducer = runtimeStats.hasRenderProducer ? 1U : 0U,
         .shutdownRequested = runtimeStats.shutdownRequested ? 1U : 0U,

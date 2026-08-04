@@ -1,8 +1,8 @@
 # Viewport 渲染架构
 
-状态：Target（presentation/scheduling 原则保留；native ABI 与 session owner 需 hard cut）
+状态：Current foundation / Target presentation（#359 建立 session、frame lease 与 native request；Avalonia presentation 尚未接入）
 
-更新日期：2026-07-31
+更新日期：2026-08-04
 
 > 当前 native blocker、显式 session/generational handle 和新 C ABI 门禁见
 > [Studio native boundary 审查](studio-native-boundary-audit.md)。本文不能被解释为批准保留 process singleton、
@@ -14,9 +14,25 @@
 
 ## 2. 当前实现事实
 
-R0 hard cut后的Studio没有Scene/Game/Preview View、managed native bridge、composition surface、ViewportSession、presentation或frame lease owner；root publish也不部署`editor_native.dll`。先前Windows `CompositionDrawingSurface`/双槽/present-session路径已作为无production入口的legacy surface删除。
+R0 hard cut 删除了旧 managed viewport scheduler、composition surface 和没有 production consumer 的 DTO。
+#359 从当前 `SceneDocumentSnapshot` 重新建立最小基础：
 
-随后仅由tests消费的`Asharia.Editor.Viewports` 12个managed types与Application纯scheduler也已删除。C++ `asharia-editor` shared viewport runtime与native smokes仍作为独立native package证据存在，但它们不被Studio App/Shell消费，不能证明managed viewport能力。以下章节是未来target model，必须从真实consumer和owner重新通过I0/I1，不能用于恢复旧ABI、DTO或presentation路径。
+- `Asharia.Studio.Application.Viewports.ViewportSession` 是 UI-neutral、多实例 owner；它保存 session ID、
+  `Scene/Game/Preview` render kind、document target、camera、单调 request sequence、单个 in-flight request 和
+  合并后的 invalidation reasons；
+- Scene document revision 更新时，session 截取最多 256 个 `{objectId, Transform}` debug proxies；超过上限只
+  设置 truncated metadata，不建立无界跨 ABI 队列；
+- `Asharia.Studio.EngineBridge.Viewports.ViewportBridge` 把 immutable request 同步复制到 V4 C ABI，并返回
+  `ViewportFrameLease`；raw image/semaphore handles 只在 EngineBridge 内部可见，Application 不接触句柄；
+- native V4 request 消费 session/target/revision/sequence、camera、render kind 与 proxy array，统一映射到
+  `BasicRenderViewKind::Scene/Game/Preview`；真实 Vulkan smoke 覆盖两个并发 session/slot、三种 view kind 与
+  Scene Transform 轴线；旧 V1–V3 exports 保持不变；
+- `ViewportSession.CompleteRender` 只接受当前 sequence 与 target revision；文档在 frame in-flight 期间推进时，
+  旧 completion 只释放资源，不成为 current frame。
+
+当前仍没有 Avalonia `ViewportPresentation`、composition import、surface generation、调度器、输入或 Studio
+Scene View consumer；root publish 也仍不部署 `editor_native.dll`。因此本 Slice 证明的是可复用 render-session
+和 native frame 边界，不等同于“Scene View 已可见”。下一 Slice 才把一个 Scene View presentation 绑定到该合同。
 
 ## 3. 三种不同对象
 
@@ -24,7 +40,9 @@ R0 hard cut后的Studio没有Scene/Game/Preview View、managed native bridge、c
 
 ### ViewportSession
 
-逻辑编辑器 viewport，拥有 ID、world target、camera、render mode、overlay、input mode 和 scheduling policy。它不拥有 Window 或 Avalonia Control。
+逻辑编辑器 viewport。当前实现拥有 ID、document target、camera、render kind、request sequence、bounded debug
+proxies 与 on-demand invalidation state；未来 presentation Slice 再增加 overlay intent、input mode 与更完整的
+render policy。它不拥有 Window、Avalonia Control、native handle 或 GPU resource。
 
 ### ViewportPresentation
 
@@ -39,15 +57,19 @@ presentation 持有明确生命周期的 present slot；slot 的 compositor comp
 ## 4. Viewport identity
 
 ```text
-ViewportId
-ViewportRole: Scene | Game | AssetPreview | Thumbnail | Debug
-WorldSessionId
-CameraState
-RenderMode
-EditorOverlaySet
+ViewportSessionId
+RenderViewKind: Scene | Game | Preview
+ViewTarget: DocumentScene(sceneId, revision)
+CameraSnapshot
+RequestSequence
+InvalidationReasons
+BoundedDebugProxies
+
+future presentation-owned:
+SurfaceGeneration
 InputRoutingMode
 RenderPolicy
-SurfaceGeneration
+OverlayIntent
 ```
 
 多个 Viewport 可以共享 World 和 Vulkan device，但 camera、render target、presentation、generation 和 in-flight state 独立。
@@ -143,22 +165,35 @@ quarantine 总量有界，不能因连续 resize 建立无界资源队列。
 
 ## 9. EngineInterop frame lease
 
-`ViewportFrameLease` 是平台 GPU 资源跨 native/presentation 边界的唯一容器。
+`ViewportFrameLease` 是平台 GPU 资源跨 native/presentation 边界的唯一托管容器。#359 的当前 lease
+公开 session/target/sequence、extent、format、memory size 与 frame index；native packet 和 image/semaphore
+handles 保持 EngineBridge-internal，并由 `Complete()` / `Dispose()` exact-once 归还 native runtime。
+
+当前没有 Avalonia consumer，因此 completion 只表达“放弃并释放尚未导入的 frame”。下一 Slice 接入
+composition 后，presentation adapter 必须在 compositor release 完成后调用同一 ownership boundary，且不能把
+raw handle 投影到 ViewModel 或 Application。
 
 最小字段：
 
 ```text
-LeaseId
-EngineEpoch
-ViewportId
-SurfaceGeneration
-FrameSequence
+ViewportSessionId
+TargetId + TargetRevision
+RequestSequence
 Extent
 Format
+MemorySize
+FrameIndex
+
+EngineBridge-internal:
+NativePacket
+ImageHandle
+WaitSemaphoreHandle
+SignalSemaphoreHandle
+
+future presentation-owned:
+EngineEpoch
+SurfaceGeneration
 ColorSpace
-ImageDescriptor
-WaitSynchronizationDescriptor
-SignalSynchronizationDescriptor
 OwnershipPolicy
 ```
 
@@ -329,8 +364,20 @@ Scene View input 先进入 editor tool/router，再形成 camera、selection、g
   <https://github.com/AvaloniaUI/Avalonia/tree/12.0.4/samples/GpuInterop>
 - Unreal Engine `FSceneViewport`（buffered frames 与 resize/resource 更新边界）：
   <https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/Engine/FSceneViewport>
-- Godot `SubViewportContainer`（容器尺寸驱动 viewport 尺寸）：
+- Unreal Engine `FEditorViewportClient` 与 `FPreviewScene`（viewport client、scene owner 与 preview world 分离）：
+  <https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Editor/UnrealEd/FEditorViewportClient>、
+  <https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/Engine/FPreviewScene>
+- O3DE Atom Scene / Render Pipeline / View（同一 scene 可服务多个 pipeline/view）：
+  <https://docs.o3de.org/docs/atom-guide/dev-guide/rpi/working-with-scene-and-rendering-pipeline/>
+- O3DE Atom Tools viewport（editor tool 复用 viewport interaction/presentation owner）：
+  <https://www.docs.o3de.org/docs/user-guide/interactivity/editor/atom-tools-framework/viewport/>
+- Godot `SubViewport` 与 `SubViewportContainer`（viewport resource 与 UI container 分离、显式 update mode）：
+  <https://docs.godotengine.org/en/stable/classes/class_subviewport.html>、
   <https://github.com/godotengine/godot/blob/master/scene/gui/subviewport_container.cpp>
+- Unity Game View / Scene View / Preview Scene Stage（少量稳定 render kind，material/animation preview 共享 preview
+  world 语义，不扩张 renderer kind）：
+  <https://docs.unity3d.com/Manual/GameView.html>、
+  <https://docs.unity3d.com/ScriptReference/SceneManagement.PreviewSceneStage.html>
 - Unity Scene View（默认只在必要时重绘，显式 `RepaintAll` 触发更新）：
   <https://issuetracker.unity3d.com/issues/mesh-disappears-when-drawmesh-is-called-from-the-editorwindow>
 - Unity `SceneViewState.alwaysRefresh`（固定间隔刷新是显式选项）：

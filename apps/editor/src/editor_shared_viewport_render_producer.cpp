@@ -36,6 +36,80 @@ namespace asharia::editor {
             },
         };
 
+        [[nodiscard]] constexpr std::array<float, 3> add(std::array<float, 3> lhs,
+                                                         std::array<float, 3> rhs) {
+            return {lhs[0] + rhs[0], lhs[1] + rhs[1], lhs[2] + rhs[2]};
+        }
+
+        [[nodiscard]] constexpr std::array<float, 3> multiply(std::array<float, 3> value,
+                                                              float scalar) {
+            return {value[0] * scalar, value[1] * scalar, value[2] * scalar};
+        }
+
+        [[nodiscard]] constexpr std::array<float, 3> cross(std::array<float, 3> lhs,
+                                                           std::array<float, 3> rhs) {
+            return {
+                (lhs[1] * rhs[2]) - (lhs[2] * rhs[1]),
+                (lhs[2] * rhs[0]) - (lhs[0] * rhs[2]),
+                (lhs[0] * rhs[1]) - (lhs[1] * rhs[0]),
+            };
+        }
+
+        [[nodiscard]] constexpr std::array<float, 3> rotate(std::array<float, 4> rotation,
+                                                            std::array<float, 3> value) {
+            const std::array<float, 3> imaginary{rotation[0], rotation[1], rotation[2]};
+            const std::array<float, 3> twiceCross = multiply(cross(imaginary, value), 2.0F);
+            return add(value, add(multiply(twiceCross, rotation[3]), cross(imaginary, twiceCross)));
+        }
+
+        void appendDebugProxyAxis(std::vector<BasicDebugWorldLine>& lines,
+                                  const EditorSharedViewportDebugProxy& proxy,
+                                  std::array<float, 3> axis, float scale,
+                                  std::array<float, 4> color) {
+            lines.push_back(BasicDebugWorldLine{
+                .start = proxy.position,
+                .end = add(proxy.position, rotate(proxy.rotation, multiply(axis, scale))),
+                .color = color,
+            });
+        }
+
+        void appendDebugProxyAxes(std::vector<BasicDebugWorldLine>& lines,
+                                  const EditorSharedViewportDebugProxy& proxy) {
+            appendDebugProxyAxis(lines, proxy, {1.0F, 0.0F, 0.0F}, proxy.scale[0],
+                                 {0.92F, 0.18F, 0.18F, 1.0F});
+            appendDebugProxyAxis(lines, proxy, {0.0F, 1.0F, 0.0F}, proxy.scale[1],
+                                 {0.24F, 0.82F, 0.32F, 1.0F});
+            appendDebugProxyAxis(lines, proxy, {0.0F, 0.0F, 1.0F}, proxy.scale[2],
+                                 {0.22F, 0.42F, 0.94F, 1.0F});
+        }
+
+        void recordRenderedViewStats(EditorSharedViewportRenderProducerStats& stats,
+                                     EditorSharedViewportPresentDesc desc) {
+            if (desc.hasScene) {
+                switch (desc.kind) {
+                case EditorViewportKind::Scene:
+                    ++stats.sceneFramesRendered;
+                    break;
+                case EditorViewportKind::Game:
+                    ++stats.gameFramesRendered;
+                    break;
+                case EditorViewportKind::Preview:
+                    ++stats.previewFramesRendered;
+                    break;
+                }
+                stats.lastSceneRevision = desc.sceneRevision;
+            }
+            stats.lastRequestSequence = desc.requestSequence;
+            stats.lastSessionId = desc.sessionId;
+            stats.lastTargetId = desc.targetId;
+            stats.lastRenderKind = desc.kind;
+            stats.lastDebugProxyCount = static_cast<std::uint32_t>(desc.debugProxies.size());
+            stats.lastDebugWorldLineCount = desc.hasScene && desc.kind == EditorViewportKind::Scene
+                                                ? 3U + (desc.debugProxies.size() * 3U)
+                                                : 0U;
+            stats.lastWorldGridEnabled = desc.hasScene && desc.kind == EditorViewportKind::Scene;
+        }
+
         [[nodiscard]] Result<void> checkVk(VkResult result, std::string_view context) {
             if (result == VK_SUCCESS) {
                 return {};
@@ -210,9 +284,12 @@ namespace asharia::editor {
                 .deltaSeconds = 1.0F / 60.0F,
                 .renderScale = 1.0F,
             };
-            view.viewName = desc.panelId.empty() ? "Studio Scene View" : desc.panelId;
+            view.viewName = desc.panelId.empty() ? "Studio Viewport" : desc.panelId;
+            std::vector<BasicDebugWorldLine> debugLines;
             if (desc.hasScene) {
-                const EditorViewportCamera camera = defaultEditorSceneViewCamera(desc.extent);
+                const EditorViewportCamera camera =
+                    desc.hasCamera ? editorViewportCameraForExtent(desc.camera, desc.extent)
+                                   : defaultEditorSceneViewCamera(desc.extent);
                 view.camera = BasicRenderViewCamera{
                     .view = camera.view,
                     .projection = camera.projection,
@@ -221,11 +298,18 @@ namespace asharia::editor {
                     .nearPlane = camera.nearPlane,
                     .farPlane = camera.farPlane,
                 };
+                if (desc.kind == EditorViewportKind::Scene) {
+                    debugLines.assign(kMinimalSceneAxes.begin(), kMinimalSceneAxes.end());
+                    debugLines.reserve(debugLines.size() + (desc.debugProxies.size() * 3U));
+                    for (const EditorSharedViewportDebugProxy& proxy : desc.debugProxies) {
+                        appendDebugProxyAxes(debugLines, proxy);
+                    }
+                }
                 view.overlay = BasicRenderViewOverlayDesc{
-                    .enabled = true,
+                    .enabled = desc.kind == EditorViewportKind::Scene,
                     .worldGrid =
                         BasicRenderViewWorldGridDesc{
-                            .enabled = true,
+                            .enabled = desc.kind == EditorViewportKind::Scene,
                             .planeY = 0.0F,
                             .minorSpacing = 1.0F,
                             .majorSpacing = 10.0F,
@@ -234,7 +318,7 @@ namespace asharia::editor {
                             .opacity = 0.72F,
                             .color = {0.36F, 0.39F, 0.44F, 1.0F},
                         },
-                    .debugWorldLines = std::span<const BasicDebugWorldLine>{kMinimalSceneAxes},
+                    .debugWorldLines = std::span<const BasicDebugWorldLine>{debugLines},
                 };
             }
 
@@ -413,10 +497,7 @@ namespace asharia::editor {
 
         ++stats_.framesRendered;
         ++stats_.packetsCreated;
-        if (desc.hasScene) {
-            ++stats_.sceneFramesRendered;
-            stats_.lastSceneRevision = desc.sceneRevision;
-        }
+        recordRenderedViewStats(stats_, desc);
         return state;
     }
 
@@ -445,10 +526,7 @@ namespace asharia::editor {
 
         ++stats_.framesRendered;
         ++stats_.packetsCreated;
-        if (desc.hasScene) {
-            ++stats_.sceneFramesRendered;
-            stats_.lastSceneRevision = desc.sceneRevision;
-        }
+        recordRenderedViewStats(stats_, desc);
         return state;
     }
 
@@ -493,10 +571,7 @@ namespace asharia::editor {
         }
 
         ++stats_.framesRendered;
-        if (desc.hasScene) {
-            ++stats_.sceneFramesRendered;
-            stats_.lastSceneRevision = desc.sceneRevision;
-        }
+        recordRenderedViewStats(stats_, desc);
         return {};
     }
 

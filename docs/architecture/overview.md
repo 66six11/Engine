@@ -87,8 +87,10 @@ Asharia Engine 当前目标仍是先做一个小而完整的 Vulkan renderer，�
   project + scene adapters -> asharia_project_native + asharia_scene_native`。ProjectSession 只有在 canonical descriptor
   与默认 SceneDocument 都打开后才发布 Ready；EngineBridge 用 dedicated owner lane 封装 native document handle，Shell
   只发送 command 并投影 authoritative snapshot。当前 UI 提供单文档 Hierarchy、名称/local Transform Inspector、Create
-  Entity、Save 与 dirty；不录制 Vulkan command、不拥有 native handle/GPU resource，也未接入 viewport、Dock、Asset
-  Browser、undo/redo 或 Play Mode。精确发布边界要求 project/scene 两个 native DLL 及 SceneDocument exports。
+  Entity、Save 与 dirty。Application 已新增 UI-neutral、多实例 `ViewportSession`，EngineBridge 已新增 V4 request 与
+  exact-once `ViewportFrameLease`，但 Shell 尚无可见 Scene View、Avalonia composition import 或 viewport scheduling，
+  发布边界也尚未加入 `editor_native.dll`。Studio 不录制 Vulkan command、不拥有 native handle/GPU resource；Dock、Asset
+  Browser、undo/redo 与 Play Mode 仍未接入。精确发布边界当前只要求 project/scene 两个 native DLL 与 SceneDocument exports。
 
   <details>
   <summary>Retired Studio Project Code / viewport 设计记录（非当前产品事实）</summary>
@@ -174,16 +176,19 @@ Asharia Engine 当前目标仍是先做一个小而完整的 Vulkan renderer，�
   registration 和 delayed retirement。Scene View panel 只提交 `EditorViewportRequest`；
   `EditorViewportCoordinator` 才把 keyed request 转换成 sampled RenderView target、keyed diagnostics snapshot
   和 ImGui texture publication。
-- `apps/studio` 的 viewport 状态分三层所有权：`Core/Models/Viewports` 保存不可变 status snapshot；
-  `Core/Interop/Viewports` 负责把 Avalonia compositor device id/handle capability 转成 native ABI request，并负责释放
-  native present packet；`Features/SceneView` 持有 `SceneViewCompositionHost`、`CompositionDrawingSurface` 和
-  `SceneViewCompositionPresenter`，只导入 native opaque NT image/semaphore handle 到 Avalonia composition。
+- `Asharia.Studio.Application.Viewports.ViewportSession` 拥有 UI-neutral session/target/camera/sequence/invalidation
+  状态；每个实例只允许一个 frame in flight，document revision 在途推进时旧 completion 不成为 current。
+- `Asharia.Studio.EngineBridge.Viewports.ViewportBridge` 是 managed V4 ABI 边界；它同步复制最多 256 个
+  `{objectId, Transform}` debug proxies，并以 `ViewportFrameLease` exact-once 归还 native packet。raw external
+  image/semaphore handles 只在 EngineBridge 内部可见。当前没有 Avalonia composition owner；后续 presentation
+  adapter 必须消费 EngineBridge 能力，不能让 Shell/ViewModel 或 Application 取得句柄。
 - `Asharia.Studio.Application` 的 Editor Image inventory lease 是只读 Application 层产品策略：实现使用 .NET BCL
   文件 API；Avalonia `IStorageProvider` 只拥有用户文件选择、bookmark 与平台权限 UI，native Core File IO 继续只服务
   C++ engine/runtime 的低层 IO 与事务。
 - native shared viewport runtime 仍由 C++ `apps/editor` / `rhi-vulkan` / `renderer_basic_vulkan` 侧拥有 Vulkan
-  image、semaphore、RenderView recording 和 deferred GPU lifetime。managed Studio 只能观察 packet metadata，
-  不能关闭、重用或延迟销毁 Vulkan resource。
+  image、semaphore、RenderView recording 和 deferred GPU lifetime。V4 request 将 Scene/Game/Preview、camera、
+  session/target/revision/sequence 与 bounded Transform proxies 映射到同一 renderer path；managed Studio 只能观察
+  lease metadata 并通过 EngineBridge 完成 lease，不能直接关闭、重用或延迟销毁 Vulkan resource。
 
 销毁顺序：
 

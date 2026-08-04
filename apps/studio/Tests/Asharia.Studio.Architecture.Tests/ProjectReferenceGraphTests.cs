@@ -1,5 +1,7 @@
 using Asharia.Studio.Application.Diagnostics;
+using Asharia.Studio.Application.Viewports;
 using Asharia.Studio.EngineBridge.Scene;
+using Asharia.Studio.EngineBridge.Viewports;
 using System;
 using System.IO;
 using System.Linq;
@@ -310,25 +312,37 @@ public sealed class ProjectReferenceGraphTests
     }
 
     [Fact]
-    public void Disconnected_managed_viewport_scheduler_surface_is_deleted()
+    public void Viewport_foundation_is_application_owned_without_the_legacy_public_surface()
     {
         var studioRoot = FindStudioRoot();
         var publicRoot = Path.Combine(studioRoot, "src", "Asharia.Editor", "Viewports");
         var applicationRoot = Path.Combine(studioRoot, "src", "Asharia.Studio.Application", "Viewports");
         var publicTestRoot = Path.Combine(studioRoot, "Tests", "Asharia.Editor.Tests", "Viewports");
-        var applicationTestRoot = Path.Combine(
+        var bridgeRoot = Path.Combine(
             studioRoot,
-            "Tests",
-            "Asharia.Studio.Application.Tests",
+            "src",
+            "Asharia.Studio.EngineBridge",
             "Viewports");
 
         Assert.False(Directory.Exists(publicRoot), $"Public viewport source remains at {publicRoot}.");
-        Assert.False(Directory.Exists(applicationRoot), $"Application viewport source remains at {applicationRoot}.");
         Assert.False(Directory.Exists(publicTestRoot), $"Public viewport tests remain at {publicTestRoot}.");
-        Assert.False(
-            Directory.Exists(applicationTestRoot),
-            $"Application viewport tests remain at {applicationTestRoot}.");
-
+        Assert.True(Directory.Exists(applicationRoot));
+        Assert.True(Directory.Exists(bridgeRoot));
+        Assert.Equal("Asharia.Studio.Application", typeof(ViewportSession).Assembly.GetName().Name);
+        Assert.Equal("Asharia.Studio.EngineBridge", typeof(ViewportBridge).Assembly.GetName().Name);
+        Assert.DoesNotContain(
+            Directory.EnumerateFiles(applicationRoot, "*.cs", SearchOption.AllDirectories),
+            path => Path.GetFileName(path).Contains("Scheduler", StringComparison.Ordinal));
+        Assert.All(
+            Directory.EnumerateFiles(applicationRoot, "*.cs", SearchOption.AllDirectories),
+            path =>
+            {
+                var source = File.ReadAllText(path);
+                Assert.DoesNotContain("Avalonia", source, StringComparison.Ordinal);
+                Assert.DoesNotContain("IntPtr", source, StringComparison.Ordinal);
+                Assert.DoesNotContain("DllImport", source, StringComparison.Ordinal);
+                Assert.DoesNotContain("LibraryImport", source, StringComparison.Ordinal);
+            });
     }
 
     [Fact]

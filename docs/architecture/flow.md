@@ -205,7 +205,9 @@ flowchart TD
   `App/Shell -> Application ProjectSession -> EngineBridge project + scene adapters -> project/scene native ABI`；Shell
   只选择路径、发命令和投影 snapshot，不解析 descriptor/scene JSON，也不持有 native handle。Release image 精确包含
   project/scene 两个 native DLL；`editor_native` 与 Slang 不进入。当前已有单 SceneDocument、Hierarchy、名称/local
-  Transform Inspector、Create Entity、Save 与 dirty，尚无 viewport、Dock、Asset Browser、undo/redo 或 Play Mode。
+  Transform Inspector、Create Entity、Save 与 dirty；另有尚未接入 Shell/publish 的 UI-neutral `ViewportSession`、
+  EngineBridge V4 frame lease 与 native Scene/Game/Preview request。当前仍无可见 viewport、Avalonia presentation、Dock、
+  Asset Browser、undo/redo 或 Play Mode。
 - Editor panels 仍由 `EditorPanelRegistry::drawPanels(EditorFrameContext)` 适配每帧能力，但内置
   panel 的 `draw()` 实现会先收敛为 panel-local context，再把最小能力传给 helper。Scene View panel
   不创建 Vulkan objects、不注册 descriptor、不录 command buffer。
@@ -604,14 +606,52 @@ flowchart LR
 - 当前没有 recent store、自动恢复、多模板、Project extension scope、asset catalog、EngineHost、undo/redo 或 Play；
   Bootstrap `Ready` 与活动项目/文档 `Ready` 仍是不同状态。
 
+## 当前 Studio Viewport foundation 流程
+
+#359 只建立可复用的 render-session/native 边界，不建立 Avalonia Scene View：
+
+```mermaid
+sequenceDiagram
+    participant Consumer as Future Scene/Game/Preview consumer
+    participant Session as Application ViewportSession
+    participant Bridge as EngineBridge ViewportBridge
+    participant Native as editor_native V4 ABI
+    participant Runtime as Shared viewport runtime
+    participant Renderer as renderer_basic_vulkan
+
+    Consumer->>Session: synchronize SceneDocument snapshot / camera / extent
+    Session->>Session: coalesce invalidation; admit one in-flight sequence
+    Session-->>Consumer: immutable ViewportRenderRequest
+    Consumer->>Bridge: CreatePresentSlot(request, compatibility)
+    Bridge->>Native: session + target + revision + sequence + camera + bounded proxies
+    Native->>Runtime: create fixed-extent slot (max four lanes)
+    Runtime->>Renderer: record Scene / Game / Preview RenderView
+    Renderer-->>Bridge: native packet metadata + EngineBridge-internal handles
+    Bridge-->>Consumer: ViewportFrameLease metadata
+    Consumer->>Bridge: Complete / Dispose exactly once
+    Bridge->>Native: release packet
+    Consumer->>Session: CompleteRender(sequence, revision, succeeded)
+```
+
+- 每个 `ViewportSession` 有独立 session ID、camera、sequence、pending reasons 与 in-flight state；多个 viewport
+  可以指向同一 SceneDocument，但不能共享可变 camera 或 completion state。
+- 当前 target 只有 `DocumentScene`，render kind 只有 `Scene | Game | Preview`。Material Preview 与 Animation Preview
+  后续都组合 Preview world/target，不新增 renderer kind。
+- Application request 不含 Avalonia、OS/Vulkan handle 或 mutable World pointer；Transform proxy array 是当前 Scene View
+  的有界调试表示，不是最终 mesh/material render snapshot。
+- native V4 与旧 V1–V3 additive coexist；V7 diagnostics smoke 证明两个并发 session/slot、三种 render kind、camera/
+  identity/revision/sequence/proxy count 被真实消费。runtime 仍是 process-lifetime singleton，此风险没有被本 Slice
+  伪装为已解决。
+- 下一 Slice 增加单 Scene View `ViewportPresentation`、composition capability/import、surface generation 与 drain；
+  Dock move/float 只能重绑 presentation，不能销毁 `ViewportSession`。
+
 ## Retired Studio Avalonia Scene View Composition 流程（历史证据）
 
 > R0 hard-cut 4.31 已删除managed viewport scheduler/public contract，4.33又删除public Scene snapshot、
-> Application provider host与Core in-memory provider。当前production `App -> StudioProcessSession ->
-> StudioCompositionSession -> StudioShellViewModel`没有Document/World、Hierarchy/Inspector/Scene View、
-> provider或managed viewport边；独立C++ editor viewport/runtime与smoke不构成Studio调用链。下图只保留被拒绝的
-> pre-hard-cut实现证据，不能作为当前依赖图或能力声明。R1必须从真实open receipt、EditWorld owner、revisioned
-> read projection与close teardown重新建立纵向闭环。
+> Application provider host与Core in-memory provider。当前 production 已有 authoritative SceneDocument 与新的
+> Viewport foundation，但仍没有下图中的 `SceneViewPresentationSession`、Avalonia import 或旧 Core DTO。下图只保留
+> 被拒绝的 pre-hard-cut presentation 证据，不能作为当前依赖图或能力声明；新 presentation 必须接上上节的
+> `ViewportSession -> ViewportBridge -> ViewportFrameLease`，不能恢复旧 provider/scheduler 表面。
 
 ```mermaid
 sequenceDiagram
@@ -712,7 +752,9 @@ sequenceDiagram
   stats expose epoch diagnostics, v4 stats expose renderer creation reuse
   diagnostics, v5 stats expose `maxOutstandingPackets` plus
   `packetBackpressureHits`, and v6 stats expose consumed scene-frame count plus
-  last scene revision while v1/v2/v3/v4/v5 stats remain unchanged.
+  last scene revision；v7 再记录 Scene/Game/Preview frame counts 以及最后一次
+  session/target/revision/sequence/render-kind/debug-proxy count、Scene world-grid 开关与实际 debug world-line count，
+  同时保持 v1–v6 不变。
 - Scene View 是单 viewport、双 slot 的 latest-wins slice：相同在途观察去重，变化的
   Bounds 只保留最新 request；Busy/Unavailable 通过 1–16 ms 有界退避或 slot
   retirement completion 主动重试，不写入 Problems。
