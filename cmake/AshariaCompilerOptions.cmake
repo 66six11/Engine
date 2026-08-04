@@ -12,6 +12,7 @@ set(ASHARIA_CXX23_FALLBACK_OPTIONS)
 if(CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
     list(APPEND ASHARIA_WARNING_OPTIONS
         /EHsc
+        /utf-8
         /W4
         /Zc:__cplusplus
     )

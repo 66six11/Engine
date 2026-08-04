@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using Asharia.Studio.Application.Diagnostics;
 using Asharia.Studio.Application.Projects;
 using Asharia.Studio.EngineBridge.Project;
+using Asharia.Studio.EngineBridge.Scene;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
@@ -75,7 +76,9 @@ public partial class App : Application
     private async Task StartDesktopAsync(
         IClassicDesktopStyleApplicationLifetime desktop)
     {
-        var projectSession = new ProjectSession(new ProjectDescriptorBridge());
+        var projectSession = new ProjectSession(
+            new ProjectDescriptorBridge(),
+            new SceneDocumentBridge());
         var projectDialogs = new MainWindowProjectDialogService();
         var shellViewModel = new StudioShellViewModel(projectSession, projectDialogs);
         MainWindow mainWindow;

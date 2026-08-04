@@ -4,7 +4,11 @@
 R0.5 只读开发态观测面已由[对应 Slice 1→8](studio-development-observability.md#210-r05-slice-8-modern-read-only-stdio-mcp-adapter-cardclosed-evidence)关闭；后续 R1 仍受
 [ADR-0007](../adr/0007-studio-frontend-hard-cut.md)约束）
 
-更新日期：2026-08-02
+更新日期：2026-08-04
+
+> 2026-08-04 进展：R1 首个 writable vertical Slice 已由
+> [ADR-0009](../adr/0009-authoritative-scene-document.md) 关闭。下文 R0 审计表保留当时证据；凡写“SceneDocument
+> 尚未开始/待 R1”的历史行，当前状态均以 ADR-0009 为准，不得反向解释为现状。
 
 ## 1. 结论与范围
 
@@ -102,10 +106,9 @@ Studio 当前存在整体架构问题，适合无兼容硬切；但不需要推�
 binding 与稳定 AutomationId/name/role。独立 Headless test project 使用 Avalonia 12 所需的 xUnit v3 dispatcher，
 不污染仍由 xUnit v2 承载的 legacy tests。
 
-这不是完整 cutover。root `Editor.csproj`、旧 generation/extension public surface
-与错误 transaction 模型仍存在；
-R1 SceneDocument 闭环也尚未开始。后续不得把
-owner 子 Slice 的完成解释为 R0 或目标架构已经完成。
+这不是完整 cutover。旧 generation/extension public surface 与完整 transaction/undo 模型仍未进入 production；
+R1 SceneDocument 的最小 create/edit/save/reopen 闭环已由 ADR-0009 完成，但后续不得把这一 owner Slice 解释为完整
+Workbench、Dock、Asset、Viewport 或 Play 架构已经完成。
 
 ProjectCode 删除后，原先由 2,093-file executable-distribution fixture主导并曾在124秒 deadline超时的
 Application suite已缩短为197/197、约1秒；solution全量6个test assembly均在显式120秒预算内通过。
@@ -119,14 +122,14 @@ Application suite已缩短为197/197、约1秒；solution全量6个test assembly
 | --- | --- | --- |
 | 建设优先级 | `Asharia.Editor` 75 个 C# source file；Application 12 个；production Document owner 为 0 | ProjectCode/distribution/Application Extensions/ProjectOpenSession/active ProjectSession、Frame Debugger与孤立public Diagnostics已删除；旧public SDK与其他断开 surface仍待切除 |
 | composition owner（R0 hard-cut） | `App -> StudioProcessSession -> StudioCompositionSession(StudioShellViewModel)` 是唯一图；旧 root、aggregate Workbench 与 MainWindow god VM 已删除 | production 与 compiled legacy owner 图均不再存在；旧 public/editor 项目 surface 仍待后续 Slice 删除 |
-| 假 truth（R0 已切除） | 原 `ProjectSceneSessionProjection` 根据 active project 生成 `Untitled Scene` 与 `Main Camera` | 当前无 Document 时显式为空；真实 SceneDocument 仍待 R1 |
+| 假 truth（R0 已切除） | 原 `ProjectSceneSessionProjection` 根据 active project 生成 `Untitled Scene` 与 `Main Camera` | 旧 fixture 保持删除；ADR-0009 只投影真实 SceneDocument snapshot |
 | 错误写模型 | `IEditorEditCommand.Apply/Revert` 同步修改 editor-side state；descriptor 的 target/field/old/new 全是 string | 无法表达 native authority、revision、atomic batch 和 uncertain commit |
 | 全局 transaction | 一个 active transaction、两个 process-level `List` stack；undo/redo 先 pop 再执行 | 无 Document scope，失败可丢 history 并留下部分 mutation |
 | Shell god owner（R0 source hard-cut 已完成） | 原 MainWindow ViewModel 789 行、Dock workspace 1955 行、compatibility adapter 488 行；ViewModel constructor 创建 service、Dock、router、dialog、menu 和 layout | 三个 source owner 与断开的 Dock runtime 均已删除；R0 Shell 保持一个 O(1) 状态 owner |
 | 第二套 UI（R0 source hard-cut 已完成） | 原两个 Code-first consumer、公共 DSL、Host、state、event、backend 常量和专属测试均已删除；UI Style 使用 compiled Avalonia | 架构门禁断言 public/Shell 两个 Code-first source root 与 ViewLocator 映射均不存在 |
 | native 全局状态 | 独立C++ viewport仍是process singleton + raw pointer token + 永久shutdown flag；R0 managed static drain已删除 | C++ target自身的multi-session、restart与stale handle仍不可证明，但不是当前Studio产品能力 |
-| scene ABI 缺口 | native World 是创建线程 owner，ABI v1 只有逐 entity/name/local-transform 操作，无 hierarchy、bulk snapshot、expected revision 或 atomic batch | managed compensation 不能伪造可靠 Document transaction |
-| 部署断裂（R0 已切离） | EngineBridge仍声明`asharia_scene_native` P/Invoke，但root App不再引用EngineBridge，也不复制native DLL；Editor Image拒绝该phantom闭包 | 当前Studio没有real scene path；未来首次SceneDocument adapter必须先建立统一native runtime manifest与部署验证 |
+| scene ABI 缺口（#353 已关闭最小面） | 旧 World ABI 仍只有逐实体操作；新增 Document ABI 提供 stable ID、bulk snapshot、expected revision、save 与 generation-safe handle | managed compensation 仍被禁止；未来 undo/batch 必须扩展同一 authoritative boundary |
+| 部署断裂（#353 已关闭） | root App 真实消费 EngineBridge，Editor Image 精确复制并验证 `asharia_scene_native.dll` 与 Document exports | Scene native 已是受验证产品依赖，不再是 phantom closure |
 
 ### 2.2 Managed 代码审查定位
 
@@ -1205,7 +1208,7 @@ import failure 仍 release 并降级；drain timeout 阻止 EngineHost destroy�
 
 | ID | 当前证据 | 风险 | 所需合同 | 阻断 |
 | --- | --- | --- | --- | --- |
-| N1 | dormant EngineBridge仍import `asharia_scene_native`，但root App不引用EngineBridge且Editor Image拒绝native DLL | 当前无Scene产品能力；若直接复用该adapter会在部署时失败 | 首次real Scene adapter必须先有统一native runtime manifest、build/publish validation | real Document read |
+| N1（#353 已关闭） | EngineBridge 已由 root App 真实消费，Editor Image 精确部署并验证 `asharia_scene_native.dll` Document exports | Scene native 是受验证产品依赖；缺失/错位/export 不完整 fail closed | 继续由 ADR-0009 的 owner lane、typed availability 与 distribution gates 约束 | real Document read/write/save |
 | N2 | World 由创建线程拥有；managed API 是逐调用同步方法 | UI thread 调用/销毁顺序不可靠 | dedicated engine dispatcher、create/use/destroy 同线程 | Document/World lifetime |
 | N3 | native `EntityId` 只在 World 内有效 | reload/undo/save 后 identity 漂移 | persistent `SceneObjectId` + WorldSession/EngineEpoch 映射 | Selection/Document |
 | N4 | ABI v1 无 hierarchy、component enumeration、bulk snapshot/delta | N 次 P/Invoke、无法建立一致 snapshot | revisioned packed rows + UTF-8 string table | Hierarchy/Inspector |
@@ -1248,6 +1251,11 @@ Git history 是唯一旧实现备份，不创建 `Legacy/` archive。
 - 已证明行为正确且不依赖旧 owner 的测试 fixture。
 
 搬用前必须先换成新输入/输出合同，禁止把旧 namespace/owner 一起迁入。
+
+2026-08-04 恢复记录：#353 已建立真实 SceneDocument、Hierarchy、Inspector 与 Project panel consumer，因此
+Dock layout、hit-test、tab reorder/scroll、split 与 floating-window 算法按本节门禁选择性恢复到当前 Shell；未恢复旧
+`Asharia.Editor` public panel facade、Application frame scheduler、extension composition 或 ViewLocator。恢复后的
+panel content 仍只消费当前 `StudioShellViewModel` 对 Application SceneDocument snapshot/intent 的投影。
 
 ## 12. 实施阶段
 

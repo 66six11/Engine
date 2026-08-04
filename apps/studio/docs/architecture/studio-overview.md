@@ -2,19 +2,20 @@
 
 状态：Superseded by [ADR-0007](../adr/0007-studio-frontend-hard-cut.md)
 
-更新日期：2026-08-03
+更新日期：2026-08-04
 
 > 本文保留旧统一扩展/八项目迁移目标的历史背景。当前权威目标见
 > [Studio 前端硬切架构](studio-frontend-hard-cut.md)。
 
-2026-08-03 当前事实：R0 后第一条 ProjectSession Slice 已按
+2026-08-04 当前事实：R0 后第一条 ProjectSession Slice 已按
 [ADR-0008](../adr/0008-authoritative-project-session.md) 接入。No Project Shell 现在可创建或打开 canonical
 `asharia.project.json`；`project-core` 拥有格式与最小目录，专用 `asharia-project-native` 提供 caller-owned
 buffer C ABI，`Asharia.Studio.EngineBridge` 实现 Application port，`ProjectSession` 是唯一活动项目 owner。
-成功后 Shell 仍为 No Document；最近项目、模板、asset catalog、SceneDocument、World 和 viewport 均未因此实现。
-Release image 现在真实包含并验证 `Asharia.Runtime.Contracts`、`Asharia.Studio.EngineBridge` 和
-`asharia_project_native.dll`，仍拒绝 development host/protocol、`asharia_scene_native.dll`、`editor_native.dll`
-与 `slang.dll`。
+第二条 Slice 已按 [ADR-0009](../adr/0009-authoritative-scene-document.md) 建立 authoritative SceneDocument：成功
+create/open project 后自动创建或打开默认场景，Hierarchy/Inspector 可创建实体并编辑名称/local Transform，Save 与 dirty
+来自 native revision/savepoint，关闭项目后重开恢复一致数据。Release image 现在真实包含并验证
+`Asharia.Runtime.Contracts`、`Asharia.Studio.EngineBridge`、`asharia_project_native.dll` 和精确路径的
+`asharia_scene_native.dll`，仍拒绝 development host/protocol、`editor_native.dll` 与 `slang.dll`。
 
 ## 1. 目的
 
@@ -30,33 +31,23 @@ Studio 不拥有 Engine truth。World、simulation、renderer、Vulkan device、
 
 ## 2. 当前实现
 
-当前 production `apps/studio` 仍由 `Editor.csproj` Avalonia host 与迁移中的 managed projects 共同组成。R0已删除
-legacy Dock、command、Code-first、built-in extension host与全部无production入口的`Features/**`；当前真实UI仅为
-Starting/No Project/No Document最小Shell，diagnostics由唯一bounded hub拥有。
+当前 production `apps/studio` 由 `Editor.csproj` Avalonia host 与分层 managed projects 共同组成。R0已删除 legacy Dock、
+Code-first、built-in extension host 与无 production 入口的旧 `Features/**`；当前真实 UI 是 Starting/No Project 和
+单 SceneDocument 最小编辑 Shell，diagnostics 仍由唯一 bounded hub 拥有。
 无request producer或Window宿主入边的旧Dialog presentation也已删除；随后仅由self-tests/架构库存维持的
 public Dialog records已整体删除，R0不具备modal能力。
-无project-selection intent或owner的Project launch presentation及其专属dispatcher/text projection也已删除；
-Application/Core/public/native Project链仍待逐格审计，不代表当前Shell能创建或打开项目。
+新的 Shell 直接把 folder/file picker intent 交给 Application `ProjectSession`，不恢复被删除的 Project launch facade。
 `Asharia.Studio.sln` 已包含独立 `Asharia.Runtime.Contracts`、`Asharia.Studio.Application`、
 `Asharia.Studio.EngineBridge`与R0.5 development-only `Asharia.Studio.DevelopmentProtocol`/`Asharia.Studio.DevelopmentHost`；
 后者包含对唯一Application diagnostic/log hub的无状态只读投影与typed in-process Host/session；仅Debug
 `StudioCompositionSession`拥有该Host。真实current-user Named Pipe adapter已通过独立transport测试，但尚未由App创建且无discovery，
 所以当前产品仍无可attach endpoint。R0最小Release入口仍只消费Application diagnostics，
 两个development assemblies都不进入Release image。
-原static module host、scene provider host与Editor Image/build-environment inventory均无production composition，
-且均已在各自依赖格删除；public Scene snapshot、Application provider host与Core in-memory provider也已整体删除。
-`Asharia.Runtime.Contracts`与`Asharia.Studio.EngineBridge`仍包含独立的Scene value/bridge合同；`Asharia.Editor`最后的
-Extensions/Contributions/Panel declaration source、空project/test/solution edge与distribution image identity均已删除。R0最小App没有消费
-这些独立边界，它们不能被描述成production能力。managed `ProjectOpenSession` parser/source/public
-records已因没有App ingress或consumer而删除；headless `tools/bootstrap_session.py`及其tool-owned canonical fixture
-继续作为独立控制面证据。
-
-active `ProjectSession`/recent store/Core descriptor gateway与其managed EngineBridge Project adapter已因没有
-App/composition owner而删除；无managed caller的native Project ABI/self-smoke随后也已删除。managed viewport、Scene provider、
-其余Editor SDK/generation surface与空public project/image closure均已删除；独立native/EngineBridge
-边界仍按自己的owner证据审计。`Core`仍有其他UI-neutral model与adapter。App-owned
-process session已经统一managed lifecycle，R0总门禁已关闭；R0.5目前只完成protocol/golden，尚无Host/Pipe/CLI/MCP。
-这些compiled disconnected surfaces不进入当前Starting/No Project/No Document control tree。
+旧 static module host、scene provider fixture、Project launch facade 与 disconnected Editor SDK surface 保持删除。当前 scene
+能力从 `scene-core SceneDocument -> SceneDocument C ABI -> EngineBridge owner lane -> Application ProjectSession -> Shell`
+重新建立，不复用旧 provider/snapshot 岛。managed viewport、extension generation、recent project、asset catalog、Dock、Play
+Mode 仍未进入 production composition。R0.5 read-only development observation 只投影当前真实 control tree，不拥有或修改
+SceneDocument。
 
 最小Shell资源闭包也已收敛：App只安装Avalonia Fluent基础主题，唯一MainWindow拥有其三种固定surface颜色；
 无consumer的`UI/**` token/icon/tree/control/font registry、16.5 MB字体与ColorPicker/CommunityToolkit/Lucide包已删除。

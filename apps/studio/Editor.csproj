@@ -8,6 +8,7 @@
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
         <StudioNativeBuildPreset Condition="'$(StudioNativeBuildPreset)' == ''">msvc-debug</StudioNativeBuildPreset>
         <StudioProjectNativeLibrary>$(MSBuildProjectDirectory)\..\..\build\cmake\$(StudioNativeBuildPreset)\packages\project-core\asharia_project_native.dll</StudioProjectNativeLibrary>
+        <StudioSceneNativeLibrary>$(MSBuildProjectDirectory)\..\..\build\cmake\$(StudioNativeBuildPreset)\packages\scene-core\asharia_scene_native.dll</StudioSceneNativeLibrary>
     </PropertyGroup>
 
     <ItemGroup>
@@ -42,6 +43,10 @@
               Link="asharia_project_native.dll"
               CopyToOutputDirectory="PreserveNewest"
               CopyToPublishDirectory="PreserveNewest" />
+        <None Include="$(StudioSceneNativeLibrary)"
+              Link="asharia_scene_native.dll"
+              CopyToOutputDirectory="PreserveNewest"
+              CopyToPublishDirectory="PreserveNewest" />
     </ItemGroup>
 
     <Target Name="ValidateStudioProjectNativeLibrary"
@@ -49,6 +54,8 @@
             Condition="'$(OS)' == 'Windows_NT'">
         <Error Condition="!Exists('$(StudioProjectNativeLibrary)')"
                Text="The canonical Studio project adapter is missing at '$(StudioProjectNativeLibrary)'. Run Conan, configure the $(StudioNativeBuildPreset) preset, and build the asharia-project-native target first." />
+        <Error Condition="!Exists('$(StudioSceneNativeLibrary)')"
+               Text="The canonical Studio scene adapter is missing at '$(StudioSceneNativeLibrary)'. Run Conan, configure the $(StudioNativeBuildPreset) preset, and build the asharia-scene-native target first." />
     </Target>
 
 </Project>

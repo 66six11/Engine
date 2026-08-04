@@ -20,21 +20,29 @@ public sealed class MainWindowXamlTests
         Assert.Contains("Text=\"{Binding ProjectStateText}\"", xaml);
         Assert.Contains("Command=\"{Binding CreateProjectCommand}\"", xaml);
         Assert.Contains("Command=\"{Binding OpenProjectCommand}\"", xaml);
+        Assert.Contains("Command=\"{Binding CreateEntityCommand}\"", xaml);
+        Assert.Contains("Command=\"{Binding SaveSceneCommand}\"", xaml);
         Assert.Contains("Text=\"{Binding DocumentStateText}\"", xaml);
-        Assert.DoesNotContain("Dock", xaml, StringComparison.Ordinal);
-        Assert.DoesNotContain("Scene", xaml, StringComparison.Ordinal);
+        Assert.Contains("DataContext=\"{Binding DockWorkspace}\"", xaml);
+        Assert.Contains("EditorDockWorkspaceView", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("ProjectLaunch", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("MainWindowViewModel", xaml, StringComparison.Ordinal);
-        Assert.Contains("Background=\"#0B0F14\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("Foreground=\"#E6EDF3\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("Background=\"#10161D\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("BorderBrush=\"#1F2933\"", xaml, StringComparison.Ordinal);
-        Assert.DoesNotContain("DynamicResource", xaml, StringComparison.Ordinal);
-        Assert.DoesNotContain("StaticResource", xaml, StringComparison.Ordinal);
+        Assert.Contains("DynamicResource EditorBrushBase00", xaml, StringComparison.Ordinal);
+
+        var hierarchyXaml = LoadPanelXaml("StudioHierarchyPanelView.axaml");
+        Assert.Contains("x:DataType=\"vm:StudioHierarchyPanelViewModel\"", hierarchyXaml);
+        Assert.Contains("ItemsSource=\"{Binding Shell.SceneEntities}\"", hierarchyXaml);
+        Assert.Contains("SelectedItem=\"{Binding Shell.SelectedEntity}\"", hierarchyXaml);
+
+        var inspectorXaml = LoadPanelXaml("StudioInspectorPanelView.axaml");
+        Assert.Contains("x:DataType=\"vm:StudioInspectorPanelViewModel\"", inspectorXaml);
+        Assert.Contains("Text=\"{Binding Shell.InspectorName}\"", inspectorXaml);
+        Assert.Contains("Command=\"{Binding Shell.ApplyEntityNameCommand}\"", inspectorXaml);
+        Assert.Contains("Command=\"{Binding Shell.ApplyEntityTransformCommand}\"", inspectorXaml);
     }
 
     [Fact]
-    public void Hard_cut_shell_declares_stable_accessibility_metadata()
+    public void Docked_shell_declares_stable_accessibility_metadata()
     {
         var xaml = LoadMainWindowXaml();
 
@@ -43,6 +51,12 @@ public sealed class MainWindowXamlTests
         Assert.Contains("AutomationProperties.AutomationId=\"StudioShellNoProjectState\"", xaml);
         Assert.Contains("AutomationProperties.AutomationId=\"StudioShellNoDocumentState\"", xaml);
         Assert.Contains("AutomationProperties.AutomationId=\"StudioShellActiveProjectState\"", xaml);
+        Assert.Contains(
+            "AutomationProperties.AutomationId=\"StudioHierarchyPanel\"",
+            LoadPanelXaml("StudioHierarchyPanelView.axaml"));
+        Assert.Contains(
+            "AutomationProperties.AutomationId=\"StudioInspectorPanel\"",
+            LoadPanelXaml("StudioInspectorPanelView.axaml"));
         Assert.Contains("AutomationProperties.Name=\"New project name\"", xaml);
         Assert.Contains("AutomationProperties.Name=\"Create project\"", xaml);
         Assert.Contains("AutomationProperties.Name=\"Open project\"", xaml);
@@ -63,6 +77,17 @@ public sealed class MainWindowXamlTests
             "Views",
             "Windowing",
             "MainWindow.axaml"));
+    }
+
+    private static string LoadPanelXaml(string fileName)
+    {
+        var root = FindRepositoryRoot();
+        return File.ReadAllText(Path.Combine(
+            root,
+            "Shell",
+            "Views",
+            "Panels",
+            fileName));
     }
 
     private static string FindRepositoryRoot()

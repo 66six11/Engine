@@ -5,6 +5,7 @@ using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
 using Avalonia.Threading;
 using Asharia.Studio.Application.Projects;
+using Asharia.Studio.Application.Scenes;
 using Asharia.Studio.TestSupport;
 using Editor;
 using Editor.Shell.ViewModels.Windowing;
@@ -80,7 +81,7 @@ public sealed class StudioShellHeadlessTests
     }
 
     [AvaloniaFact]
-    public void Create_button_projects_the_authoritative_project_session()
+    public async System.Threading.Tasks.Task Create_button_projects_the_authoritative_project_session()
     {
         using var viewModel = StudioShellTestFactory.Create(
             out var projectSession,
@@ -96,7 +97,13 @@ public sealed class StudioShellHeadlessTests
                 ProjectSessionId.CreateNew(),
                 System.Guid.NewGuid(),
                 "Sample",
-                "C:\\Projects\\Sample"));
+                "C:\\Projects\\Sample"),
+            new SceneDocumentSnapshot(
+                System.Guid.NewGuid(),
+                "C:\\Projects\\Sample\\Assets\\Scenes\\Default.asharia.scene.json",
+                revision: 1,
+                savedRevision: 1,
+                entities: []));
         projectSession.CreateHandler = (_, _, _) =>
         {
             projectSession.Publish(ready);
@@ -115,10 +122,17 @@ public sealed class StudioShellHeadlessTests
                 window.FindControl<Button>("CreateProjectButton"));
 
             create.Command!.Execute(create.CommandParameter);
+            using var timeout = new System.Threading.CancellationTokenSource(
+                System.TimeSpan.FromSeconds(2));
+            while (viewModel.IsProjectOperationRunning)
+            {
+                Dispatcher.UIThread.RunJobs();
+                await System.Threading.Tasks.Task.Delay(10, timeout.Token);
+            }
             Dispatcher.UIThread.RunJobs();
 
             Assert.False(window.FindControl<Border>("NoProjectState")!.IsVisible);
-            Assert.True(window.FindControl<Border>("ActiveProjectState")!.IsVisible);
+            Assert.True(window.FindControl<Grid>("ActiveProjectState")!.IsVisible);
             Assert.Equal("Sample", viewModel.ProjectStateText);
             Assert.Equal("C:\\Projects\\Sample", viewModel.ProjectPathText);
         }

@@ -1,8 +1,8 @@
 # Studio native boundary 审查
 
-状态：Current audit（R0 Studio managed/deployment边已切离；独立C++ session/C ABI hard-cut待真实consumer Slice）
+状态：Current audit（R0 边界已切离；SceneDocument native consumer 由 ADR-0009 建立）
 
-更新日期：2026-08-01
+更新日期：2026-08-04
 
 目标架构和实施顺序见 [Studio 前端硬切架构](studio-frontend-hard-cut.md)。本文只记录
 `apps/studio <-> apps/editor/packages/scene-core` 的当前事实、触发条件、风险和新合同门禁。
@@ -192,17 +192,15 @@ revision 不是 render data。修复要求：
 - mutable `World*` 不穿过 renderer/thread boundary；
 - 无真实 snapshot 时呈现明确 empty/unavailable，不画 production fixture。
 
-### P1-9 scene native DLL 不是当前 Studio runtime dependency
+### P1-9 scene native DLL runtime dependency（已由 #353 关闭）
 
-证据：
+当前 production `ProjectSession` 在 descriptor 成功后通过 EngineBridge 打开默认 SceneDocument；EngineBridge 为每个连接
+建立 dedicated owner lane，并通过新增 SceneDocument ABI 使用 generation-safe handle、expected revision、bulk snapshot、save
+与 caller-owned buffer。root `Editor.csproj` 精确复制 `asharia_scene_native.dll`，distribution producer 验证 PE/DLL identity、
+固定路径和七个 document exports，并拒绝同 stem 副产物或嵌套位置。
 
-- `packages/scene-core/CMakeLists.txt:37-63` 生成 `asharia_scene_native`；
-- `SceneNativeLibraryApi.cs:105-165` import `asharia_scene_native`；
-- root `Editor.csproj` 当前不复制任何native DLL，也不引用`EngineBridge`；
-- production 暂无 `SceneWorld.Create()` consumer，所以问题尚被 tests 掩盖。
-
-因此R0不把`asharia_scene_native`加入发行物。第一处real SceneDocument Slice若选择该adapter，必须先建立统一native
-runtime manifest、build/publish validation与typed binding availability result；在此前把DLL“补齐”只会制造新phantom dependency。
+旧 World ABI 仍可用于 package smoke，但不是 writable document contract；Avalonia 不引用 native import，也不持有句柄。
+设计与拒绝项见 [ADR-0009](../adr/0009-authoritative-scene-document.md)。
 
 ## 3. 重要设计缺口
 

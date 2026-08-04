@@ -2,9 +2,15 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "asharia/scene/scene_document_native_api.h"
 #include "asharia/scene/world_native_api.h"
 
 int main(void) {
+    AshariaSceneNativeDocumentHandle document = {0U, 0U};
+    if (document.index != 0U || document.generation != 0U) {
+        return EXIT_FAILURE;
+    }
+
     AshariaSceneNativeWorldCreateRequest request;
     request.header.abiVersion = ASHARIA_SCENE_NATIVE_ABI_VERSION;
     request.header.structSize = (uint32_t)sizeof(request);

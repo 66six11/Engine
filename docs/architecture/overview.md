@@ -52,11 +52,12 @@ Asharia Engine 当前目标仍是先做一个小而完整的 Vulkan renderer，�
 - `packages/archive`：`ArchiveValue` 和 JSON IO facade；不把第三方 JSON 类型扩散到上层 API。
 - `packages/cpp-binding`：C++ object/member 与 schema field 的读写绑定。
 - `packages/persistence`：组合 schema、archive 和 binding，提供 save/load/default/migration。
-- `packages/scene-core`：`asharia::scene_core` 提供 headless World、runtime `EntityId` 和 local `Transform`
-  baseline；`asharia::scene_native` 是只依赖该 runtime target 的 shared C ABI adapter，当前发布版本化的
-  opaque World create/destroy、generation-safe entity 生命周期、finite/unit-quaternion local Transform 与
-  UTF-8 display/debug name get/set。所有操作要求 owner thread；adapter 尚不提供 hierarchy/world Transform、
-  change notification、managed interop 或 renderer/editor 集成。
+- `packages/scene-core`：`asharia::scene_core` 提供 headless World、runtime `EntityId` 和 local `Transform` baseline，
+  以及拥有 World、stable scene/object ID、revision/savepoint 的 `SceneDocument`。scene IO 通过 `archive` strict JSON
+  facade 读写固定 schema，并以 sibling staging 保存；`asharia::scene_native` 同时保留 package-level World smoke ABI，
+  并发布 production SceneDocument ABI：generation-safe opaque token、owner-thread 操作、expected revision、bulk snapshot、
+  create/name/Transform/save 与 caller-owned UTF-8 buffer。它尚不提供 hierarchy/world Transform、component reflection、
+  undo/redo、render extraction 或 Play World。
 - `packages/project-core`：最小 Asharia project descriptor，当前只描述 project identity、asset source roots
   和 asset discovery ignore policy；不拥有 cook/package profiles、editor workspace 或 runtime state。
 - `packages/asset-core`：asset GUID、type、handle/reference、metadata、product/cache/dependency/catalog
@@ -82,11 +83,18 @@ Asharia Engine 当前目标仍是先做一个小而完整的 Vulkan renderer，�
 - `apps/editor`：Dear ImGui editor host。它组合 `window-glfw`、`rhi-vulkan`、`renderer_basic_vulkan` 和
   ImGui backend，拥有 shell、panel/action/event、viewport coordination、texture registry、Frame Debug 和
   editor smokes；未来 `packages/systems/editor` 内部 `editor_domain` 只能接收 backend-neutral editor state。
-- `apps/studio`：Avalonia managed Studio shell。`Core/Models/Viewports` 只拥有 UI-neutral viewport id、
-  extent、composition capability 和 native-present snapshot；`Core/Interop/Viewports` 拥有 ABI structs、
-  P/Invoke entry points 和 native packet release bridge；`Features/SceneView` 拥有 Avalonia composition
-  probing、drawing surface host 和 external image/semaphore import。Studio 不录制 Vulkan commands，不拥有
-  native GPU resource，只通过 `editor_native` ABI 请求 native-owned present packet 并在 managed import/update 后释放。
+- `apps/studio`：Avalonia managed Studio shell。当前产品链是 `App/Shell -> Application ProjectSession -> EngineBridge
+  project + scene adapters -> asharia_project_native + asharia_scene_native`。ProjectSession 只有在 canonical descriptor
+  与默认 SceneDocument 都打开后才发布 Ready；EngineBridge 用 dedicated owner lane 封装 native document handle，Shell
+  只发送 command 并投影 authoritative snapshot。当前 UI 提供单文档 Hierarchy、名称/local Transform Inspector、Create
+  Entity、Save 与 dirty；不录制 Vulkan command、不拥有 native handle/GPU resource，也未接入 viewport、Dock、Asset
+  Browser、undo/redo 或 Play Mode。精确发布边界要求 project/scene 两个 native DLL 及 SceneDocument exports。
+
+  <details>
+  <summary>Retired Studio Project Code / viewport 设计记录（非当前产品事实）</summary>
+
+  以下段落保存被 R0 hard cut 删除或后置的旧 Project Code、generation 与 viewport 设计证据，不构成当前实现：
+
   `Asharia.Studio.Application.Bootstrap.Distribution` 只从外部 owner 已选择的 exact
   `EngineGenerationId` 与 generation root 复验 Editor Image inventory，并签发进程内可撤销 lease；它不负责
   generation selection、完整 Distribution health、repair/install/update 或项目 package graph。current Editor
@@ -144,9 +152,11 @@ Asharia Engine 当前目标仍是先做一个小而完整的 Vulkan renderer，�
   中旧 build-environment/workspace/build/artifact contract 变体及配套测试、独立设计稿也已由当前 typed receipts、
   real-chain tests 与 canonical architecture 文档替代。
   归档中的 provider/runtime/Scene 草案也不回灌；tests-only Application/public/Core scene provider/snapshot岛已删除。
-  Runtime Scene value ABI、native Scene Core与managed EngineBridge仍是独立边界，不构成当前Studio只读Scene能力。
+  Runtime Scene value ABI、native Scene Core与managed EngineBridge仍是独立边界，不构成当时Studio只读Scene能力。
   Studio 在 Windows 上必须优先配置 `Win32RenderingMode.Vulkan`，再回退到 `AngleEgl` / `Software`，否则 Avalonia
   composition GPU interop 可能只暴露 D3D/ANGLE 共享纹理路径，无法进入 Vulkan opaque NT image/semaphore spike。
+
+  </details>
 
 ## 所有权模型
 

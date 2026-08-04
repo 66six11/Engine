@@ -1,0 +1,61 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Editor.Shell.ViewModels.Docking"
+             xmlns:views="using:Editor.Shell.Views.Docking"
+             x:Class="Editor.Shell.Views.Docking.EditorDockTabStripView"
+             x:DataType="vm:EditorDockWindowViewModel">
+    <UserControl.Styles>
+        <Style Selector="ScrollViewer.owned-dock-tab-scroll-host">
+            <Setter Property="MinHeight" Value="{DynamicResource EditorDockTabHeight}" />
+            <Setter Property="Background" Value="{DynamicResource EditorBrushBase01}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource EditorBrushDivider}" />
+            <Setter Property="BorderThickness" Value="0,1,0,1" />
+        </Style>
+
+        <Style Selector="ItemsControl.owned-dock-tabs.owned-dock-tab-well">
+            <Setter Property="MinHeight" Value="{DynamicResource EditorDockTabHeight}" />
+        </Style>
+
+        <Style Selector="Border.owned-dock-tab-overflow-affordance">
+            <Setter Property="Width" Value="8" />
+            <Setter Property="Background" Value="{DynamicResource EditorBrushAccent}" />
+            <Setter Property="IsHitTestVisible" Value="True" />
+            <Setter Property="IsVisible" Value="False" />
+        </Style>
+    </UserControl.Styles>
+
+    <Grid ClipToBounds="True"
+          IsVisible="{Binding HasTabs}">
+        <ScrollViewer x:Name="DockTabStripScrollViewer"
+                      Classes="owned-dock-tab-scroll-host"
+                      HorizontalScrollBarVisibility="Hidden"
+                      VerticalScrollBarVisibility="Disabled">
+            <ItemsControl x:Name="DockTabStripItems"
+                          Classes="owned-dock-tabs owned-dock-tab-well"
+                          IsVisible="{Binding HasTabs}"
+                          ItemsSource="{Binding TabStripItems}">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <StackPanel Orientation="Horizontal" />
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:EditorDockTabStripItemViewModel">
+                        <views:EditorDockTabItemView />
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+
+        <Border x:Name="LeftOverflowAffordance"
+                Classes="owned-dock-tab-overflow-affordance"
+                HorizontalAlignment="Left"
+                PointerEntered="OnLeftOverflowAffordancePointerEntered"
+                PointerExited="OnOverflowAffordancePointerExited" />
+        <Border x:Name="RightOverflowAffordance"
+                Classes="owned-dock-tab-overflow-affordance"
+                HorizontalAlignment="Right"
+                PointerEntered="OnRightOverflowAffordancePointerEntered"
+                PointerExited="OnOverflowAffordancePointerExited" />
+    </Grid>
+</UserControl>

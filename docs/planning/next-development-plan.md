@@ -1,6 +1,6 @@
 # 整体路线图
 
-更新日期：2026-08-03
+更新日期：2026-08-04
 
 本文是全项目下一阶段的唯一**功能阶段路线图**；目标系统框架、package/target 收敛方向、跨系统契约和架构迁移门禁见 `docs/planning/system-architecture-roadmap.md`，Kernel、Host Runtime、Foundation Systems、scope/activation 和基础门禁见 `docs/architecture/foundation-framework.md`；每项能力的最早/最迟接入窗口、Integration Gates 和 Owner Card 见 `docs/workflow/architecture-health.md`。RenderGraph 当前语义见 `docs/rendergraph/mvp.md` 与 `docs/rendergraph/rhi-boundary.md`，可编程管线边界见 `docs/rendergraph/programmable-pipeline.md`；Editor 当前事实见 `docs/architecture/editor.md`；资产系统见 `docs/systems/asset-architecture.md`；shader/material authoring 见 `docs/systems/shader-material-authoring.md` 及 V2 specs。实际 Slice 顺序、状态、阻塞和 Done evidence 维护在 GitHub Issues / Project，不在本文重复。
 
@@ -10,7 +10,7 @@
 
 - 已有 package-first 基线：`rendergraph` 后端无关，`rhi-vulkan` 不依赖 RenderGraph，Vulkan/RG 翻译在 `rhi_vulkan_rendergraph`，`renderer_basic` 不暴露 Vulkan。
 - Vulkan 主路径已覆盖 dynamic rendering、synchronization2 barrier、descriptor/pipeline wrapper、transient image pool、buffer upload、compute dispatch、offscreen RenderView、Frame Debug replay 和 editor viewport sampled texture。
-- native Dear ImGui Editor 已具备 production workbench shell、Scene View camera/grid/debug-line、Live RG View、Frame Debugger、Asset Browser snapshot-backed catalog 和多项 smoke。Avalonia Studio 已完成 R0 硬切，并在 #352 建立第一条真实 `project-core -> asharia-project-native -> EngineBridge -> Application ProjectSession -> Shell` create/open 垂直链；No Project 可进入 canonical active project，但仍为 No Document。最近项目、模板、asset catalog、SceneDocument、EditWorld、Hierarchy、Inspector 与 viewport 尚未接入该 session。
+- native Dear ImGui Editor 已具备 production workbench shell、Scene View camera/grid/debug-line、Live RG View、Frame Debugger、Asset Browser snapshot-backed catalog 和多项 smoke。Avalonia Studio 已完成 R0 硬切；#352 建立真实 ProjectSession，当前 #353 分支进一步接通 `SceneDocument -> EditWorld -> Hierarchy/Inspector -> dirty/save/reopen`，并在这些真实 panel 出现后从 Git history 选择性恢复 Dock layout、tab、split、drag/drop 与 floating-window 算法。最近项目、模板、asset catalog、viewport 与 Play Mode 尚未接入该 session。
 - `asset-core` / `asset-pipeline` / `project-core` / `material-core` / `scene-core` 已是 CPU/headless 数据模型或 baseline package，但尚未形成“真实 scene object -> material/mesh/texture product -> GPU resource -> editor authoring”的完整闭环。
 - 当前风险不是缺少大系统名词，而是 route 太多：渲染、资产、scene、editor、material、play/session 必须按可验证切片合流。
 
@@ -91,6 +91,24 @@
   <https://docs.godotengine.org/en/stable/tutorials/plugins/running_code_in_the_editor.html>、
   <https://docs.o3de.org/docs/user-guide/editor/entity-inspector/>。
 
+### P0.5：受限 Code-first authoring 试点
+
+Code-first 不进入当前 Hierarchy/Inspector：前者是大列表，后者包含密集文本与数值编辑，两者继续使用 compiled XAML。
+在 P0 编辑闭环与真实 Dock consumer 收口后，立即建立独立 Slice，先恢复最小内部 Code-first kernel 与 Avalonia host，
+首个 consumer 是只读、低频、有界的 `Document Diagnostics Summary`：投影当前 Project/Document identity、revision、
+dirty/savepoint、scene native availability 与最近少量 diagnostics，并提供 presentation-only 的 Copy Summary action。
+
+该试点的门禁：
+
+- 只保留首个 consumer 所需的 section、text、status、key/value row 与 action；不恢复旧 28-kind DSL、通用 layout/style API；
+- stable key、duplicate-key validation、每 dispatcher turn 最多一次 rebuild、attach/detach/dispose 与 Headless semantics 都有测试；
+- 不支持 editable text、虚拟化列表、raw Avalonia control 嵌入、frame tick、插件加载或 public `Asharia.Editor` facade；
+- 完整 Console/Problems、Hierarchy、Inspector、Scene View 仍使用 compiled XAML 或专用 Avalonia control；
+- P1 package resolution summary 作为第二个内部 consumer；两个 consumer 都稳定后才冻结可复用 schema，出现第二个真实外部 consumer 前不提升为 public extension API。
+
+该接入点由 [ADR-0010](../../apps/studio/docs/adr/0010-limited-code-first-authoring.md) 提议；它区分 Avalonia
+code-only control composition 与 Asharia 的受限 Code-first schema，不把两者误建模为同一能力。
+
 ### P1：项目能力解析与加载状态
 
 - 接入项目级 `asharia.packages.json` 与 `asharia.packages.lock.json`，声明默认完整 Feature Set，并能复现确定的引擎能力组合；
@@ -100,7 +118,7 @@
 ### 当前不优先
 
 - `.asmdef` 与动态程序集重载、插件市场、多种项目模板、最近项目/自动重开；
-- 完整 Asset Browser、完整停靠布局与 Play Mode。
+- 完整 Asset Browser、Dock 布局持久化/全局命令与 Play Mode。
 
 这些能力不得扩大 P0 Slice；只有在上述保存/重开闭环完成后再进入独立 Issue。
 
@@ -226,17 +244,18 @@
 
 目标：让 editor 从只读 shell 进入最小可写 scene authoring，但仍保持 command/transaction/dirty/event 边界。
 
-当前第一条 Slice 只覆盖 `ProjectSession Ready -> 默认 SceneDocument -> EditWorld -> 名称/Transform 编辑 -> 保存重开`；
-mesh/material reference、完整资产浏览、停靠布局、viewport authoring 和 Play Mode 都留给后续 Slice。
+当前第一条 Slice 覆盖 `ProjectSession Ready -> 默认 SceneDocument -> EditWorld -> 名称/Transform 编辑 -> 保存重开`，
+并用恢复后的最小 Dock 承载真实 Hierarchy、Scene、Inspector 与 Project panel；mesh/material reference、完整资产浏览、
+Dock layout persistence、viewport authoring 和 Play Mode 都留给后续 Slice。
 
 范围：
 
 - 前端遵循 `apps/studio/docs/architecture/studio-frontend-framework.md` 的 contribution/backend/lifecycle
   合同和 `apps/studio/docs/architecture/studio-workbench-experience.md` 的默认体验：Scene View 保持中心
   document，Hierarchy/Project 负责查找与选择，Inspector 负责检查与编辑，底部 Diagnostics 按需展开；
-- 新 panel 先按 authoring 决策表选择：低频、小规模 standard-tool 才使用冻结的 Code-first schema；
-  compiled XAML 与 code-only Avalonia 共用同一 content backend；复杂、高频、大列表或文本编辑密集 UI
-  不扩 Code-first primitive；
+- 当前 Hierarchy/Inspector 使用 compiled XAML；P0.5 之后的新 panel 再按 authoring 决策表选择：低频、
+  小规模 standard-tool 才使用经真实 consumer 验证的 Code-first schema；compiled XAML 与 code-only Avalonia
+  共用同一 content backend；复杂、高频、大列表或文本编辑密集 UI 不扩 Code-first primitive；
 - scene file save/load：默认场景、entity identity/name 与 transform baseline。
 - Hierarchy 消费真实 scene snapshot。
 - Inspector 提供 entity name 与 transform 的最小可写字段。

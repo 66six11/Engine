@@ -12,4 +12,10 @@ public enum SceneNativeStatus : uint
     InvalidTransform = 7,
     InvalidUtf8 = 8,
     BufferTooSmall = 9,
+    InvalidScene = 10,
+    RevisionConflict = 11,
+    IoFailure = 12,
+    StaleHandle = 13,
+    InvalidObject = 14,
+    DuplicateObject = 15,
 }

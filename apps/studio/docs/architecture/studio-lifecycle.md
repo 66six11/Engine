@@ -1,8 +1,8 @@
 # Studio 生命周期
 
-状态：Target（owner/stop/drain 原则保留；module generation/ALC 路径由 ADR-0007 后置）
+状态：Current baseline + Target（Project/SceneDocument owner 已落地；generation/ALC 路径后置）
 
-更新日期：2026-08-01
+更新日期：2026-08-04
 
 > 当前权威 session tree 与 hard-cut 顺序见
 > [Studio 前端硬切架构](studio-frontend-hard-cut.md)。本文涉及 dynamic extension generation、
@@ -19,9 +19,11 @@
 当前 `App` 唯一持有 `StudioProcessSession`，使用 Avalonia explicit shutdown；process session 异步启动并按
 `enter Stopping → lifetime CancelAsync → acquire lifecycle gate → managed composition DisposeAsync`顺序停止，cancel callback、
 gate与dispose共享一个monotonic deadline并输出immutable `StudioTeardownReceipt`。越过deadline的callback/dispose task
-只由tail observer观察，不能改写已缓存receipt；`DisposeAsync`调用的同步前段仍必须O(1)返回，deadline不能抢占任意同步阻塞。production composition只有
-`StudioCompositionSession(StudioShellViewModel)`；legacy adapter、Workbench、panel timer、UI-thread sync wait与
-phantom native teardown均已删除。MainWindow只借用DataContext并发布首次closing fact。
+只由tail observer观察，不能改写已缓存receipt；`DisposeAsync`调用的同步前段仍必须O(1)返回，deadline不能抢占任意同步阻塞。
+production composition graph 只有 `StudioCompositionSession -> StudioShellViewModel -> ProjectSession`；ProjectSession
+串行项目和文档命令，EngineBridge 为每个 SceneDocument 持有 dedicated native owner lane。关闭项目或 composition 时先
+停止新命令并关闭 SceneDocument lane，再清除活动项目。legacy adapter、Workbench、panel timer与 UI-thread sync wait
+保持删除。MainWindow只借用DataContext并发布首次closing fact。
 
 R0 process acceptance由目标外的`Editor.Tests`拥有：它启动构建输出中的真实`Editor.exe`，以有界轮询观察真实
 Ready Window，正常路径只发送OS Window close；随后由上述唯一App owner完成teardown，classic-desktop lifetime的
@@ -29,18 +31,12 @@ Ready Window，正常路径只发送OS Window close；随后由上述唯一App o
 kill整个process tree，再在独立5秒deadline内确认退出并释放Process。stdout/stderr并发流向`Stream.Null`，不形成
 无界capture、artifact或第二diagnostics truth；production composition没有新增subprocess owner或测试模式。
 
-当前 R0 仍无法完整证明：
+SceneDocument owner/thread/stale-handle/close 顺序由 native smoke、EngineBridge tests 与真实 DLL 端到端
+create/edit/save/reopen 验收覆盖。process acceptance 继续证明 clean shutdown 到 exit `0`，以及外部 fatal/timeout/cancel
+后无孤儿进程；App 内部 dispose fault/timeout 到 exit `1` 的映射由 controlled owner tests 证明。
 
-- 未引用旧public SDK/generation surface的完整删除；
-- 编码、全部managed tests、双编译器、clang-tidy与必要native smoke的R0总门禁。
-
-真实`StudioCompositionSession.DisposeAsync()`当前是O(1)且没有可自然失败或超时的native/subprocess child，因此process
-acceptance只真实证明clean shutdown到exit `0`，以及外部fatal/timeout/cancel后无孤儿进程；App内部dispose fault/timeout
-到exit `1`的映射继续由controlled owner tests证明。不得为了补一条伪端到端用例向production App注入fake child。
-
-多Window/Viewport、pending present、device-lost、native restart/stale-handle与extension/provider/panel隔离不是当前
-R0 Studio composition的已接入能力；它们必须等真实consumer Slice重新建立owner，不能用现存C++ smoke或managed fixture
-冒充本process receipt的证据。bounded diagnostics/log与Headless/accessibility baseline已经完成，但仍需随R0总门禁重跑。
+多 Window/Viewport、pending present、device-lost、native restart 与 extension/provider/panel 隔离不是当前 Studio
+composition 的已接入能力；它们必须等真实 consumer Slice 重新建立 owner，不能借用 SceneDocument lane 冒充能力。
 
 ## 3. 生命周期层级
 

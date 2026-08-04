@@ -154,10 +154,10 @@ package 用来承载可选能力：
 - `cpp-binding` 提供 C++ object/member 与 schema field 的读写绑定。
 - `persistence` 组合 schema、archive 和 binding，提供 save/load/default/migration。
 - `scene-core` 的 `asharia::scene_core` 提供 headless World、runtime EntityId 和 local Transform baseline；
-  `asharia::scene_native` shared adapter 当前提供 C11-compatible、versioned opaque World 生命周期与
-  generation-safe entity create/destroy/is-alive、finite/unit-quaternion local Transform 与 UTF-8
-  display/debug name get/set。adapter 只私有依赖 runtime target，不公开 C++ STL/exception、
-  hierarchy/world Transform、managed bridge 或 render integration。
+  `asharia::scene_core_io` 提供拥有 World/stable ID/revision/savepoint 的 SceneDocument 与 strict JSON IO。
+  `asharia::scene_native` shared adapter 当前同时提供 C11-compatible World smoke ABI 和 production Document ABI；
+  后者使用 generation-safe token、owner thread、expected revision、bulk snapshot/save 与 caller-owned UTF-8 buffer。
+  adapter 不公开 C++ STL/exception、hierarchy/world Transform、component reflection、render integration 或 raw handle 给 UI。
 - `project-core` 提供最小 Asharia project descriptor。当前只保存 project identity、asset source roots、
   asset cache root policy 和 discovery ignore policy；不保存 target profiles、asset profiles、
   package/export 设置、editor workspace 或 runtime/GPU state。

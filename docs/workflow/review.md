@@ -409,6 +409,13 @@ Studio R0 删除的旧 `editor_project_*` bridge 仍不得恢复。当前真实 
 同时跑 `asharia-project-core-smoke-tests`、`asharia-project-native-smoke-tests`、
 `asharia-project-native-c-header-smoke`、managed bridge/Application/Headless tests 与 Release distribution closure。
 
+涉及 Studio SceneDocument、Hierarchy/Inspector mutation、dirty/save、scene ABI 或 `scene-core` 持久化时，必须同时跑
+`asharia-scene-document-smoke-tests`、`asharia-scene-document-native-smoke-tests`、
+`asharia-scene-native-c-smoke-tests`、managed solution tests，以及 `Editor.Tests` 中使用真实 project/scene DLL 的
+`StudioSceneEditingAcceptanceTests`。该验收固定覆盖“创建项目 -> 默认场景 -> 创建/修改实体 -> 保存 -> 关闭 -> 重开
+数据一致”。Release distribution closure 必须精确包含 `bin/asharia_scene_native.dll` 并验证全部 SceneDocument exports；
+缺失、错名、嵌套或同 stem 副产物都必须失败。
+
 涉及 `packages/resource-runtime` runtime handle/status/product-record resolution/diagnostics 时，必须跑
 package-local tests，证明 pending / ready / failed、generation、product key mismatch 和 product record
 诊断矩阵没有漂移：

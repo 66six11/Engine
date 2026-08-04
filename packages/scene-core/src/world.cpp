@@ -39,6 +39,7 @@ namespace asharia {
     } // namespace
 
     Result<EntityId> World::createEntity(std::string_view name) {
+        std::string preparedName{name};
         std::uint32_t slotIndex = 0U;
         if (!freeSlots_.empty()) {
             slotIndex = freeSlots_.back();
@@ -57,7 +58,7 @@ namespace asharia {
 
         EntitySlot& slot = slots_[slotIndex];
         slot.alive = true;
-        slot.name = std::string{name};
+        slot.name = std::move(preparedName);
         slot.transform = TransformComponent{};
         ++aliveEntityCount_;
 

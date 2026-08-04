@@ -1,0 +1,26 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Editor.Shell.ViewModels.Panels"
+             x:Class="Editor.Shell.Views.Panels.StudioProjectPanelView"
+             x:DataType="vm:StudioProjectPanelViewModel"
+             AutomationProperties.AutomationId="StudioProjectPanel"
+             AutomationProperties.Name="Project"
+             AutomationProperties.ControlTypeOverride="Group">
+    <ScrollViewer>
+        <StackPanel Margin="10" Spacing="8">
+            <TextBlock FontWeight="SemiBold" Text="{Binding Shell.ProjectStateText}" />
+            <TextBlock FontSize="11"
+                       Foreground="{DynamicResource EditorBrushTextMuted}"
+                       TextWrapping="Wrap"
+                       Text="{Binding Shell.ProjectPathText}" />
+            <TextBlock Margin="0,8,0,0"
+                       Foreground="{DynamicResource EditorBrushTextMuted}"
+                       TextWrapping="Wrap"
+                       Text="Asset browsing will attach here after the document editing closure." />
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button Command="{Binding Shell.OpenProjectCommand}" Content="Open" />
+                <Button Command="{Binding Shell.CloseProjectCommand}" Content="Close" />
+            </StackPanel>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

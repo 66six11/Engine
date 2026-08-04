@@ -1,0 +1,49 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Editor.Shell.ViewModels.Panels"
+             x:Class="Editor.Shell.Views.Panels.StudioInspectorPanelView"
+             x:DataType="vm:StudioInspectorPanelViewModel"
+             AutomationProperties.AutomationId="StudioInspectorPanel"
+             AutomationProperties.Name="Entity Inspector"
+             AutomationProperties.ControlTypeOverride="Group">
+    <Grid Margin="8">
+        <TextBlock IsVisible="{Binding !Shell.HasSelection}"
+                   Foreground="{DynamicResource EditorBrushTextMuted}"
+                   HorizontalAlignment="Center"
+                   VerticalAlignment="Center"
+                   Text="Select an entity" />
+        <ScrollViewer IsVisible="{Binding Shell.HasSelection}">
+            <StackPanel Spacing="8">
+                <TextBlock FontSize="13" FontWeight="SemiBold" Text="Entity" />
+                <TextBlock Foreground="{DynamicResource EditorBrushTextMuted}" Text="Name" />
+                <TextBox Text="{Binding Shell.InspectorName}" />
+                <Button HorizontalAlignment="Left"
+                        Command="{Binding Shell.ApplyEntityNameCommand}"
+                        Content="Apply Name" />
+                <TextBlock Margin="0,8,0,0" FontWeight="SemiBold" Text="Transform" />
+                <TextBlock Foreground="{DynamicResource EditorBrushTextMuted}" Text="Position (X / Y / Z)" />
+                <Grid ColumnDefinitions="*,*,*" ColumnSpacing="4">
+                    <TextBox Grid.Column="0" Text="{Binding Shell.PositionX}" />
+                    <TextBox Grid.Column="1" Text="{Binding Shell.PositionY}" />
+                    <TextBox Grid.Column="2" Text="{Binding Shell.PositionZ}" />
+                </Grid>
+                <TextBlock Foreground="{DynamicResource EditorBrushTextMuted}" Text="Rotation (X / Y / Z / W)" />
+                <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="4">
+                    <TextBox Grid.Column="0" Text="{Binding Shell.RotationX}" />
+                    <TextBox Grid.Column="1" Text="{Binding Shell.RotationY}" />
+                    <TextBox Grid.Column="2" Text="{Binding Shell.RotationZ}" />
+                    <TextBox Grid.Column="3" Text="{Binding Shell.RotationW}" />
+                </Grid>
+                <TextBlock Foreground="{DynamicResource EditorBrushTextMuted}" Text="Scale (X / Y / Z)" />
+                <Grid ColumnDefinitions="*,*,*" ColumnSpacing="4">
+                    <TextBox Grid.Column="0" Text="{Binding Shell.ScaleX}" />
+                    <TextBox Grid.Column="1" Text="{Binding Shell.ScaleY}" />
+                    <TextBox Grid.Column="2" Text="{Binding Shell.ScaleZ}" />
+                </Grid>
+                <Button HorizontalAlignment="Left"
+                        Command="{Binding Shell.ApplyEntityTransformCommand}"
+                        Content="Apply Transform" />
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</UserControl>

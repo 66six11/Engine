@@ -2,6 +2,7 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Asharia.Studio.Application.Projects;
+using Asharia.Studio.Application.Scenes;
 using Asharia.Studio.TestSupport;
 using Editor.Shell.ViewModels.Windowing;
 using Xunit;
@@ -111,7 +112,13 @@ public sealed class StudioShellViewModelTests
                 ProjectSessionId.CreateNew(),
                 Guid.NewGuid(),
                 name,
-                root));
+                root),
+            new SceneDocumentSnapshot(
+                Guid.NewGuid(),
+                $"{root}\\Assets\\Scenes\\Default.asharia.scene.json",
+                revision: 1,
+                savedRevision: 1,
+                entities: []));
 
     private static async Task WaitUntilAsync(Func<bool> condition)
     {

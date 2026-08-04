@@ -1,0 +1,23 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Editor.Shell.ViewModels.Panels"
+             xmlns:scenes="using:Asharia.Studio.Application.Scenes"
+             x:Class="Editor.Shell.Views.Panels.StudioHierarchyPanelView"
+             x:DataType="vm:StudioHierarchyPanelViewModel"
+             AutomationProperties.AutomationId="StudioHierarchyPanel"
+             AutomationProperties.Name="Scene Hierarchy"
+             AutomationProperties.ControlTypeOverride="Group">
+    <Grid Margin="8" RowDefinitions="Auto,*" RowSpacing="6">
+        <TextBlock FontSize="13" FontWeight="SemiBold" Text="Entities" />
+        <ListBox x:Name="HierarchyList"
+                 Grid.Row="1"
+                 ItemsSource="{Binding Shell.SceneEntities}"
+                 SelectedItem="{Binding Shell.SelectedEntity}">
+            <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="scenes:SceneEntitySnapshot">
+                    <TextBlock Padding="6,4" Text="{Binding Name}" />
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+    </Grid>
+</UserControl>

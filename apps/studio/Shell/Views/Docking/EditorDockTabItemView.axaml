@@ -1,0 +1,207 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:icons="using:Editor.UI.Icons"
+             xmlns:vm="using:Editor.Shell.ViewModels.Docking"
+             x:Class="Editor.Shell.Views.Docking.EditorDockTabItemView"
+             x:DataType="vm:EditorDockTabStripItemViewModel"
+             IsHitTestVisible="{Binding IsInteractiveTab}">
+    <UserControl.Styles>
+        <Style Selector="Border.owned-dock-tab">
+            <Setter Property="MinWidth" Value="{DynamicResource EditorDockTabMinWidth}" />
+            <Setter Property="MaxWidth" Value="{DynamicResource EditorDockTabMaxWidth}" />
+            <Setter Property="Height" Value="{DynamicResource EditorDockTabHeight}" />
+            <Setter Property="Background" Value="{DynamicResource EditorBrushBase01}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource EditorBrushDivider}" />
+            <Setter Property="BorderThickness" Value="0,0,1,0" />
+            <Setter Property="Cursor" Value="Hand" />
+        </Style>
+
+        <Style Selector="Border.owned-dock-tab:pointerover">
+            <Setter Property="Background" Value="{DynamicResource EditorBrushSurface03}" />
+        </Style>
+
+        <Style Selector="Border.owned-dock-tab.active">
+            <Setter Property="Background" Value="{DynamicResource EditorBrushSurfaceActive}" />
+        </Style>
+
+        <Style Selector="Border.owned-dock-tab.drag-source">
+            <Setter Property="Opacity" Value="0.36" />
+            <Setter Property="Background" Value="{DynamicResource EditorBrushBase00}" />
+            <Setter Property="Cursor" Value="Arrow" />
+        </Style>
+
+        <Style Selector="Border.owned-dock-tab.placeholder">
+            <Setter Property="Opacity" Value="1" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="CornerRadius" Value="0" />
+            <Setter Property="Cursor" Value="Arrow" />
+        </Style>
+
+        <Style Selector="Border.owned-dock-tab.placeholder.active">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+        </Style>
+
+        <Style Selector="Border.owned-dock-tab.placeholder.drag-source">
+            <Setter Property="Opacity" Value="1" />
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+
+        <Style Selector="Border.owned-dock-tab.placeholder Grid.owned-dock-tab-content">
+            <Setter Property="Opacity" Value="0" />
+        </Style>
+
+        <Style Selector="Border.owned-dock-tab.preview">
+            <Setter Property="Background" Value="{DynamicResource EditorBrushSurfaceActive}" />
+            <Setter Property="Cursor" Value="Arrow" />
+        </Style>
+
+        <Style Selector="Border.owned-dock-tab-top-indicator">
+            <Setter Property="Height" Value="2" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="VerticalAlignment" Value="Top" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Opacity" Value="0" />
+            <Setter Property="IsHitTestVisible" Value="False" />
+        </Style>
+
+        <Style Selector="Border.owned-dock-tab-top-indicator.focused">
+            <Setter Property="Background" Value="{DynamicResource EditorBrushAccentHover}" />
+            <Setter Property="Opacity" Value="1" />
+        </Style>
+
+        <Style Selector="Border.owned-dock-tab-top-indicator.inactive">
+            <Setter Property="Background" Value="{DynamicResource EditorBrushBorderDefault}" />
+            <Setter Property="Opacity" Value="1" />
+        </Style>
+
+        <Style Selector="Grid.owned-dock-tab-content">
+            <Setter Property="Margin" Value="{DynamicResource EditorDockTabPadding}" />
+        </Style>
+
+        <Style Selector="Border.owned-dock-tab.placeholder.preview Grid.owned-dock-tab-content">
+            <Setter Property="Opacity" Value="1" />
+        </Style>
+
+        <Style Selector="Border.owned-dock-tab.source-ghost">
+            <Setter Property="Opacity" Value="0" />
+            <Setter Property="Cursor" Value="Arrow" />
+        </Style>
+
+        <Style Selector="Border.owned-dock-tab.preview.drag-source">
+            <Setter Property="Opacity" Value="1" />
+            <Setter Property="Background" Value="{DynamicResource EditorBrushSurfaceActive}" />
+        </Style>
+
+        <Style Selector="icons|EditorIconView.owned-dock-tab-icon-slot">
+            <Setter Property="Width" Value="{DynamicResource EditorDockTabIconSize}" />
+            <Setter Property="Height" Value="{DynamicResource EditorDockTabIconSize}" />
+            <Setter Property="IconBrush" Value="{DynamicResource EditorBrushIconSecondary}" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="IsVisible" Value="False" />
+        </Style>
+
+        <Style Selector="TextBlock.owned-dock-tab-title">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextPrimary}" />
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeDefault}" />
+            <Setter Property="FontWeight" Value="Normal" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <Style Selector="Button.owned-dock-tab-close">
+            <Setter Property="Width" Value="{DynamicResource EditorDockTabCloseButtonSize}" />
+            <Setter Property="Height" Value="{DynamicResource EditorDockTabCloseButtonSize}" />
+            <Setter Property="MinWidth" Value="{DynamicResource EditorDockTabCloseButtonSize}" />
+            <Setter Property="MinHeight" Value="{DynamicResource EditorDockTabCloseButtonSize}" />
+            <Setter Property="Padding" Value="{DynamicResource EditorDockTabCloseButtonPadding}" />
+            <Setter Property="Opacity" Value="0" />
+            <Setter Property="IsHitTestVisible" Value="False" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="IsTabStop" Value="False" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="CornerRadius" Value="3" />
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushIconSecondary}" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Cursor" Value="Arrow" />
+        </Style>
+
+        <Style Selector="Button.owned-dock-tab-close TextBlock">
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeSmall}" />
+            <Setter Property="FontWeight" Value="Normal" />
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <Style Selector="Button.owned-dock-tab-close icons|EditorIconView">
+            <Setter Property="IconBrush" Value="{DynamicResource EditorBrushIconSecondary}" />
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <Style Selector="Border.owned-dock-tab:pointerover Button.owned-dock-tab-close">
+            <Setter Property="Opacity" Value="1" />
+            <Setter Property="IsHitTestVisible" Value="True" />
+            <Setter Property="Focusable" Value="True" />
+            <Setter Property="IsTabStop" Value="True" />
+        </Style>
+
+        <Style Selector="Button.owned-dock-tab-close:pointerover">
+            <Setter Property="Background" Value="{DynamicResource EditorBrushSurfaceOverlay}" />
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextPrimary}" />
+        </Style>
+
+        <Style Selector="Button.owned-dock-tab-close:pointerover icons|EditorIconView">
+            <Setter Property="IconBrush" Value="{DynamicResource EditorBrushTextPrimary}" />
+        </Style>
+
+        <Style Selector="Button.owned-dock-tab-close:pressed">
+            <Setter Property="Background" Value="{DynamicResource EditorBrushSurfaceActive}" />
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextPrimary}" />
+        </Style>
+
+        <Style Selector="Button.owned-dock-tab-close:pressed icons|EditorIconView">
+            <Setter Property="IconBrush" Value="{DynamicResource EditorBrushTextPrimary}" />
+        </Style>
+    </UserControl.Styles>
+
+    <Border Classes.active="{Binding Tab.IsActive}"
+            Classes.drag-source="{Binding Tab.IsDragSource}"
+            Classes.placeholder="{Binding IsPlaceholder}"
+            Classes.preview="{Binding IsPreview}"
+            Classes.source-ghost="{Binding IsSourceGhost}"
+            Classes="owned-dock-tab">
+        <Grid>
+            <Border Classes.focused="{Binding IsSelectedInFocusedWindow}"
+                    Classes.inactive="{Binding IsSelectedInInactiveWindow}"
+                    Classes="owned-dock-tab-top-indicator" />
+
+            <Grid ColumnDefinitions="Auto,*,Auto"
+                  Classes="owned-dock-tab-content"
+                  ColumnSpacing="6">
+                <icons:EditorIconView Grid.Column="0"
+                                      Classes="owned-dock-tab-icon-slot"
+                                      IconKey="{Binding Tab.IconKey}"
+                                      IconSize="{DynamicResource EditorDockTabIconSize}"
+                                      StrokeWidth="2" />
+
+                <TextBlock Grid.Column="1"
+                           Classes="owned-dock-tab-title"
+                           Text="{Binding Tab.Title}" />
+
+                <Button Grid.Column="2"
+                        Classes="owned-dock-tab-close"
+                        Click="OnCloseButtonClick">
+                    <icons:EditorIconView IconKey="studio.ui.close"
+                                          IconSize="12"
+                                          StrokeWidth="2" />
+                </Button>
+            </Grid>
+        </Grid>
+    </Border>
+</UserControl>

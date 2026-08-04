@@ -1,0 +1,37 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Editor.Shell.ViewModels.Panels"
+             x:Class="Editor.Shell.Views.Panels.StudioScenePanelView"
+             x:DataType="vm:StudioScenePanelViewModel"
+             AutomationProperties.AutomationId="StudioSceneDocumentPanel"
+             AutomationProperties.Name="Scene Document"
+             AutomationProperties.ControlTypeOverride="Group">
+    <Grid Background="{DynamicResource EditorBrushBase00}">
+        <StackPanel HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    MaxWidth="620"
+                    Spacing="10">
+            <TextBlock FontSize="22" FontWeight="SemiBold" Text="SceneDocument" />
+            <TextBlock Foreground="{DynamicResource EditorBrushTextMuted}"
+                       TextAlignment="Center"
+                       TextWrapping="Wrap"
+                       Text="{Binding Shell.DocumentPathText}" />
+            <TextBlock Foreground="{DynamicResource EditorBrushTextMuted}"
+                       TextAlignment="Center"
+                       Text="The authoritative EditWorld is owned behind EngineBridge." />
+            <StackPanel HorizontalAlignment="Center" Orientation="Horizontal" Spacing="8">
+                <Button AutomationProperties.Name="Create entity"
+                        Command="{Binding Shell.CreateEntityCommand}"
+                        Content="+ Entity" />
+                <Button AutomationProperties.Name="Save scene"
+                        Command="{Binding Shell.SaveSceneCommand}"
+                        Content="Save" />
+            </StackPanel>
+            <TextBlock Foreground="{DynamicResource EditorBrushWarning}"
+                       IsVisible="{Binding Shell.HasProjectOperationMessage}"
+                       TextAlignment="Center"
+                       TextWrapping="Wrap"
+                       Text="{Binding Shell.ProjectOperationMessage}" />
+        </StackPanel>
+    </Grid>
+</UserControl>

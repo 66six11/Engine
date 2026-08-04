@@ -10,12 +10,20 @@ endif()
 include("${ASHARIA_REPOSITORY_ROOT}/cmake/AshariaPackage.cmake")
 asharia_package_init()
 asharia_require_package_target(asharia::core engine/core)
+asharia_require_package_target(asharia::archive packages/archive)
 
 add_library(asharia-scene-core STATIC
     src/world.cpp
 )
 
 add_library(asharia::scene_core ALIAS asharia-scene-core)
+
+add_library(asharia-scene-core-io STATIC
+    src/scene_document.cpp
+    src/scene_document_io.cpp
+)
+
+add_library(asharia::scene_core_io ALIAS asharia-scene-core-io)
 
 set_target_properties(asharia-scene-core
     PROPERTIES
@@ -34,7 +42,22 @@ target_link_libraries(asharia-scene-core
 
 asharia_configure_target(asharia-scene-core)
 
+target_include_directories(asharia-scene-core-io
+    PUBLIC
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+)
+
+target_link_libraries(asharia-scene-core-io
+    PUBLIC
+        asharia::scene_core
+    PRIVATE
+        asharia::archive
+)
+
+asharia_configure_target(asharia-scene-core-io)
+
 add_library(asharia-scene-native SHARED
+    src/scene_document_native_api.cpp
     src/world_native_api.cpp
 )
 
@@ -53,6 +76,7 @@ target_include_directories(asharia-scene-native
 target_link_libraries(asharia-scene-native
     PRIVATE
         asharia::scene_core
+        asharia::scene_core_io
 )
 
 target_compile_definitions(asharia-scene-native
@@ -78,6 +102,35 @@ if(ASHARIA_BUILD_TESTS)
   asharia_configure_target(asharia-scene-core-smoke-tests)
 
   add_test(NAME asharia-scene-core-smoke-tests COMMAND asharia-scene-core-smoke-tests)
+
+  add_executable(asharia-scene-document-smoke-tests
+      tests/scene_document_smoke_tests.cpp
+  )
+
+  target_link_libraries(asharia-scene-document-smoke-tests
+      PRIVATE
+          asharia::scene_core_io
+  )
+
+  asharia_configure_target(asharia-scene-document-smoke-tests)
+
+  add_test(NAME asharia-scene-document-smoke-tests COMMAND asharia-scene-document-smoke-tests)
+
+  add_executable(asharia-scene-document-native-smoke-tests
+      tests/scene_document_native_smoke_tests.cpp
+  )
+
+  target_link_libraries(asharia-scene-document-native-smoke-tests
+      PRIVATE
+          asharia::scene_native
+  )
+
+  asharia_configure_target(asharia-scene-document-native-smoke-tests)
+
+  add_test(
+      NAME asharia-scene-document-native-smoke-tests
+      COMMAND asharia-scene-document-native-smoke-tests
+  )
 
   add_executable(asharia-scene-native-lifecycle-smoke-tests
       tests/scene_native_lifecycle_smoke_tests.cpp

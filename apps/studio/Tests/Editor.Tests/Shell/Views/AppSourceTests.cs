@@ -18,7 +18,9 @@ public sealed class AppSourceTests
         Assert.Contains("await processSession.StopAsync", source, StringComparison.Ordinal);
         Assert.Contains("LastTeardownReceipt", source, StringComparison.Ordinal);
         Assert.Contains("IStudioDiagnosticHub diagnostics_", source, StringComparison.Ordinal);
-        Assert.Contains("new ProjectSession(new ProjectDescriptorBridge())", source, StringComparison.Ordinal);
+        Assert.Contains("new ProjectSession(", source, StringComparison.Ordinal);
+        Assert.Contains("new ProjectDescriptorBridge()", source, StringComparison.Ordinal);
+        Assert.Contains("new SceneDocumentBridge()", source, StringComparison.Ordinal);
         Assert.Contains("new StudioShellViewModel(projectSession, projectDialogs)", source, StringComparison.Ordinal);
         Assert.Contains("projectDialogs.Attach(mainWindow)", source, StringComparison.Ordinal);
         Assert.Contains("StudioCompositionSession.CreateAsync", source, StringComparison.Ordinal);
@@ -43,12 +45,23 @@ public sealed class AppSourceTests
 
         var appXaml = LoadSource("App.axaml");
         Assert.DoesNotContain("ViewLocator", appXaml, StringComparison.Ordinal);
-        Assert.DoesNotContain("Application.DataTemplates", appXaml, StringComparison.Ordinal);
+        Assert.Contains("Application.DataTemplates", appXaml, StringComparison.Ordinal);
+        Assert.Contains("EditorDockSplitNodeViewModel", appXaml, StringComparison.Ordinal);
+        Assert.Contains("EditorDockWindowNodeViewModel", appXaml, StringComparison.Ordinal);
+        Assert.Contains("StudioHierarchyPanelViewModel", appXaml, StringComparison.Ordinal);
+        Assert.Contains("StudioInspectorPanelViewModel", appXaml, StringComparison.Ordinal);
         Assert.Contains("RequestedThemeVariant=\"Dark\"", appXaml, StringComparison.Ordinal);
         Assert.Contains("<FluentTheme DensityStyle=\"Compact\" />", appXaml, StringComparison.Ordinal);
-        Assert.DoesNotContain("ResourceInclude", appXaml, StringComparison.Ordinal);
+        Assert.Contains("ResourceInclude", appXaml, StringComparison.Ordinal);
         Assert.DoesNotContain("StyleInclude", appXaml, StringComparison.Ordinal);
-        Assert.DoesNotContain("avares://Editor/UI", appXaml, StringComparison.Ordinal);
+        Assert.Contains(
+            "avares://Editor/UI/Styles/Tokens/DeepDarkColors.axaml",
+            appXaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "avares://Editor/UI/Styles/Tokens/EditorMetrics.axaml",
+            appXaml,
+            StringComparison.Ordinal);
     }
 
     private static string LoadSource(params string[] pathParts)
