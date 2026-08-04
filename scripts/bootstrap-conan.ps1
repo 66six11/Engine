@@ -1,3 +1,18 @@
+param(
+    [ValidateSet(
+        "windows-msvc-debug",
+        "windows-msvc-release",
+        "windows-clangcl-debug",
+        "windows-clangcl-release"
+    )]
+    [string[]] $Profiles = @(
+        "windows-msvc-debug",
+        "windows-msvc-release",
+        "windows-clangcl-debug",
+        "windows-clangcl-release"
+    )
+)
+
 $ErrorActionPreference = "Stop"
 
 $root = Split-Path -Parent $PSScriptRoot
@@ -8,20 +23,13 @@ if (Test-Path -LiteralPath $generatedPreset) {
     Remove-Item -LiteralPath $generatedPreset -Force
 }
 
-$profiles = @(
-    "windows-msvc-debug",
-    "windows-msvc-release",
-    "windows-clangcl-debug",
-    "windows-clangcl-release"
-)
-
 $lockfile = Join-Path $root "conan.lock"
 $lockfileArgs = @()
 if (Test-Path -LiteralPath $lockfile) {
     $lockfileArgs = @("--lockfile=$lockfile")
 }
 
-foreach ($profile in $profiles) {
+foreach ($profile in $Profiles) {
     $profilePath = "profiles/$profile"
     Write-Host "==> conan install $profile"
     conan install . --profile:host=$profilePath --profile:build=$profilePath @lockfileArgs --build=missing

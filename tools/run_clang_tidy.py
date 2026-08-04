@@ -15,20 +15,6 @@ from typing import Iterable, Sequence
 
 
 _SOURCE_EXTENSIONS = frozenset({".cc", ".cpp", ".cxx"})
-_HEADER_EXTENSIONS = frozenset(
-    {".h", ".hh", ".hpp", ".hxx", ".inl", ".ipp"}
-)
-_FULL_TIDY_INPUTS = frozenset(
-    {
-        ".clang-tidy",
-        "CMakeLists.txt",
-        "CMakePresets.json",
-        "conan.lock",
-        "conanfile.py",
-        "scripts/bootstrap-conan.ps1",
-    }
-)
-_FULL_TIDY_ROOTS = ("cmake/", "profiles/")
 
 
 class TidySelectionError(RuntimeError):
@@ -41,7 +27,6 @@ class TidySelection:
 
     translation_units: tuple[Path, ...]
     full: bool
-    reasons: tuple[str, ...] = ()
 
 
 def _resolved_path(path: Path) -> Path:
@@ -114,23 +99,12 @@ def load_project_translation_units(
     return tuple(sorted(translation_units, key=lambda path: str(path).casefold()))
 
 
-def _requires_full_tidy(relative_path: Path) -> bool:
-    normalized = relative_path.as_posix()
-    if normalized in _FULL_TIDY_INPUTS:
-        return True
-    if relative_path.name == "CMakeLists.txt":
-        return True
-    if relative_path.suffix.casefold() in _HEADER_EXTENSIONS:
-        return True
-    return normalized.startswith(_FULL_TIDY_ROOTS)
-
-
 def select_changed_translation_units(
     source_root: Path,
     available_translation_units: Sequence[Path],
     changed_files: Iterable[str],
 ) -> TidySelection:
-    """Select exact changed TUs, falling back to all when impact is broader."""
+    """Select only changed source files present in the compilation database."""
 
     resolved_source_root = _resolved_path(source_root)
     available = {
@@ -146,18 +120,6 @@ def select_changed_translation_units(
             key=lambda path: path.as_posix().casefold(),
         )
     )
-
-    full_reasons = tuple(
-        path.as_posix()
-        for path in relative_changes
-        if _requires_full_tidy(path)
-    )
-    if full_reasons:
-        return TidySelection(
-            tuple(available_translation_units),
-            full=True,
-            reasons=full_reasons,
-        )
 
     selected: list[Path] = []
     missing: list[str] = []
@@ -436,19 +398,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         if not selection.translation_units:
             print("clang-tidy: no changed project translation units.")
             return 0
-        if selection.full and selection.reasons:
-            print(
-                "clang-tidy: changed selection expanded to the full project "
-                "because of: " + ", ".join(selection.reasons),
-                flush=True,
-            )
-        else:
-            mode = "full" if selection.full else "changed"
-            print(
-                f"clang-tidy: {mode} selection contains "
-                f"{len(selection.translation_units)} translation unit(s).",
-                flush=True,
-            )
+        mode = "full" if selection.full else "changed"
+        print(
+            f"clang-tidy: {mode} selection contains "
+            f"{len(selection.translation_units)} translation unit(s).",
+            flush=True,
+        )
         result = _run_tidy(
             build_directory=build_directory,
             source_root=source_root,

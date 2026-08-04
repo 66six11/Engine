@@ -63,21 +63,20 @@ python tools\check_package_topology.py
 python tools\check_package_contracts.py
 git diff --check
 python tools\review-vulkan-cpp.py . --exclude apps/studio --exclude apps/editor/src/native_bridge --exclude-glob "apps/editor/src/editor_shared_viewport*" --fail-on warning
-cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --preset clangcl-debug && cmake --build --preset clangcl-debug"
-cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --build --preset clangcl-debug --target asharia-tidy"
-cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake --preset msvc-debug && cmake --build --preset msvc-debug"
+cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake --preset msvc-debug-tests && cmake --build --preset msvc-debug-tests && ctest --preset msvc-debug-tests --output-on-failure"
+cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && python tools\run_clang_tidy.py --build-dir build\cmake\msvc-debug-tests --changed --include-untracked"
 ```
 
-完整 native test gate 必须先 bootstrap Conan，然后运行两个独立 test tree：
+完整 native test gate 必须先 bootstrap Conan，然后运行 MSVC test tree 与 changed tidy：
 
 ```powershell
 cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake --preset msvc-debug-tests && cmake --build --preset msvc-debug-tests && ctest --preset msvc-debug-tests --output-on-failure"
-cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --preset clangcl-debug-tests && cmake --build --preset clangcl-debug-tests && ctest --preset clangcl-debug-tests --output-on-failure"
-cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --build --preset clangcl-debug-tests --target asharia-tidy"
+cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && python tools\run_clang_tidy.py --build-dir build\cmake\msvc-debug-tests --changed --include-untracked"
 ```
 
-ClangCL build/test 与 clang-tidy 是两个独立 gate。后者读取 test preset 的 compilation database，并将
-production/test translation units 的所有 clang-tidy diagnostics 作为 error。
+MSVC build/test 与 clang-tidy 是两个独立 gate。后者读取 MSVC test preset 的 compilation database，只选择发生变化且存在于 database 的
+`.cc/.cpp/.cxx`，并将所选 translation units 的所有 clang-tidy diagnostics 作为 error。头文件和构建输入不会触发全量 tidy；
+只修改这些文件时由 MSVC build/CTest 与仓库合同检查覆盖。ClangCL 保留为下方高风险专项验证的本地按需 gate，不在 hosted CI 默认构建。
 
 修改任意 `asharia.package.json`、`CMakeLists.txt`、`cmake/` helper 或 target graph 时，还必须在 configure 前准备由仓库拥有的
 File API query，并用包含全部 test targets 的 configured graph 对证 manifest direct dependencies：
@@ -95,14 +94,14 @@ python tools\check_target_dependency_truth.py --root . --reply-index $replyIndex
 transitive `dependencies` 字段替代，也不得把它误报成 package-level dependency 或 shipping closure gate。
 `.github/workflows/native-code-quality.yml` 固定在包含 Visual Studio 2022 的 `windows-2022` hosted runner 上。所有变更先运行
 encoding、diff whitespace、package topology、package/factory/product/artifact contracts 和 asset boundary；只有改动命中原生源码或
-原生构建输入时，才安装 Conan/Vulkan SDK，并运行 Vulkan package boundary/safety heuristic review、两编译器 build 和 CTest。
+原生构建输入时，才安装 Conan/Vulkan SDK、只 bootstrap `windows-msvc-debug`，并运行 Vulkan package boundary/safety heuristic review、MSVC build 和 CTest。
 原生构建输入包括 `engine/`、`packages/`、`apps/editor/`、`apps/sample-viewer/`、`tools/asset-processor/`、`shaders/`，
 CMake/Conan/profile/bootstrap 配置、`.clang-tidy` 和该 workflow 本身；这些目录下的 Markdown、reStructuredText 与嵌套
 `docs/` 仅视作文档，不触发编译。`workflow_dispatch` 始终执行完整原生构建。Package topology 从 source-boundary
 manifests 生成 inventory 并对证直接 CMake target；Vulkan review 脚本只产生需要人工确认的保守提示；CI 以
-`--fail-on warning` 阻止 warning/error，info 不阻塞。ClangCL hosted build 使用 preset 的正常并行度；随后独立 tidy step
-以两个并发进程运行，避免静态分析超过 runner 内存。Hosted CI 不运行 GPU/window smokes；下方相关 smoke matrix 仍是 local pre-commit gate，并且需要使用
-两个 standard debug presets 运行。
+`--fail-on warning` 阻止 warning/error，info 不阻塞。独立 tidy step 读取 MSVC test compilation database，并以两个并发进程
+只分析相对事件基线变化的 translation units，避免静态分析超过 runner 内存。Hosted CI 不构建 ClangCL，也不运行 GPU/window smokes；
+下方相关 smoke matrix 仍是 local high-risk gate，并且在其明确要求时使用两个 standard debug presets 运行。
 
 涉及 Project Manifest/Lock、Engine Distribution、Host Profile、Effective Session、Host Composition、Source Build 或 package artifact
 handoff 时，除全量 Python tests 外，开发中至少先运行以下 focused chain；提交前仍执行上面的完整门禁：

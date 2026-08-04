@@ -77,7 +77,12 @@ class RunClangTidyTests(unittest.TestCase):
         selection = run_clang_tidy.select_changed_translation_units(
             root,
             (first, second),
-            ("src/second.cpp", "docs/readme.md"),
+            (
+                "src/second.cpp",
+                "include/project/public.hpp",
+                "packages/example/CMakeLists.txt",
+                "docs/readme.md",
+            ),
         )
 
         self.assertFalse(selection.full)
@@ -96,7 +101,7 @@ class RunClangTidyTests(unittest.TestCase):
                 ("src/untracked.cpp",),
             )
 
-    def test_changed_header_expands_selection_to_full_database(self) -> None:
+    def test_changed_header_is_not_selected_as_a_translation_unit(self) -> None:
         root = Path("repository").resolve()
         translation_units = (
             root / "src" / "first.cpp",
@@ -109,14 +114,10 @@ class RunClangTidyTests(unittest.TestCase):
             ("include/project/public.hpp",),
         )
 
-        self.assertTrue(selection.full)
-        self.assertEqual(translation_units, selection.translation_units)
-        self.assertEqual(
-            ("include/project/public.hpp",),
-            selection.reasons,
-        )
+        self.assertFalse(selection.full)
+        self.assertEqual((), selection.translation_units)
 
-    def test_changed_cmake_input_expands_selection_to_full_database(self) -> None:
+    def test_changed_build_input_does_not_expand_selection(self) -> None:
         root = Path("repository").resolve()
         translation_units = (root / "src" / "main.cpp",)
 
@@ -126,11 +127,8 @@ class RunClangTidyTests(unittest.TestCase):
             ("packages/example/CMakeLists.txt",),
         )
 
-        self.assertTrue(selection.full)
-        self.assertEqual(
-            ("packages/example/CMakeLists.txt",),
-            selection.reasons,
-        )
+        self.assertFalse(selection.full)
+        self.assertEqual((), selection.translation_units)
 
     def test_non_native_change_is_a_successful_empty_selection(self) -> None:
         root = Path("repository").resolve()

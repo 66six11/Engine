@@ -40,8 +40,8 @@
 - [ ] `powershell -ExecutionPolicy Bypass -File tools\check-text-encoding.ps1`
 - [ ] `powershell -ExecutionPolicy Bypass -File tools\check-doc-sync.ps1`
 - [ ] `git diff --check`
-- [ ] `clangcl-debug` 构建
-- [ ] `msvc-debug` 构建
+- [ ] `msvc-debug-tests` 构建与 CTest
+- [ ] changed translation units clang-tidy
 - [ ] 相关 smoke 命令
 
 ## 设计审查
