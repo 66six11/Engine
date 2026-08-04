@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Diagnostics;
 using System.Security;
 using System.Text;
@@ -16,6 +17,11 @@ public sealed class StudioEditorImageInputCollection
 public sealed class StudioEditorImageTestInputs : IDisposable
 {
     internal const string StagedEditorMainMarker = "ASHARIA_STAGED_EDITOR_MAIN_OK";
+    private static readonly string[] ProjectNativeRequiredExports =
+    [
+        "asharia_project_create_minimal",
+        "asharia_project_open",
+    ];
 
     public StudioEditorImageTestInputs()
     {
@@ -100,6 +106,13 @@ public sealed class StudioEditorImageTestInputs : IDisposable
             "src",
             "Asharia.Studio.Application",
             "Asharia.Studio.Application.csproj");
+        var engineBridge = Path.Combine(
+            repositoryRoot,
+            "apps",
+            "studio",
+            "src",
+            "Asharia.Studio.EngineBridge",
+            "Asharia.Studio.EngineBridge.csproj");
         var project = $$"""
             <Project Sdk="Microsoft.NET.Sdk">
               <PropertyGroup>
@@ -115,6 +128,7 @@ public sealed class StudioEditorImageTestInputs : IDisposable
               </PropertyGroup>
               <ItemGroup>
                 <ProjectReference Include="{{SecurityElement.Escape(application)}}" />
+                <ProjectReference Include="{{SecurityElement.Escape(engineBridge)}}" />
               </ItemGroup>
             </Project>
             """;
@@ -138,7 +152,193 @@ public sealed class StudioEditorImageTestInputs : IDisposable
             "Release",
             "-o",
             PublishRoot);
+        WriteNativeDll(
+            Path.Combine(PublishRoot, "asharia_project_native.dll"),
+            "asharia_project_native.dll",
+            ProjectNativeRequiredExports);
     }
+
+    internal static void WriteNativeDll(
+        string path,
+        string dllName,
+        IReadOnlyCollection<string> exports)
+    {
+        const int peOffset = 0x80;
+        const int optionalHeaderSize = 0xf0;
+        const int fileAlignment = 0x200;
+        const int sectionAlignment = 0x1000;
+        const int textRawOffset = 0x200;
+        const int textRva = 0x1000;
+        const int exportRawOffset = 0x400;
+        const int exportRva = 0x2000;
+        const int exportRawSize = 0x400;
+
+        var names = exports
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        if (names.Length == 0 || names.Any(name => !IsPortableAscii(name)))
+        {
+            throw new ArgumentException(
+                "At least one portable ASCII export is required.",
+                nameof(exports));
+        }
+
+        var contents = new byte[exportRawOffset + exportRawSize];
+        contents[0] = (byte)'M';
+        contents[1] = (byte)'Z';
+        WriteUInt32(contents, 0x3c, peOffset);
+        contents[peOffset] = (byte)'P';
+        contents[peOffset + 1] = (byte)'E';
+        var coff = peOffset + 4;
+        WriteUInt16(contents, coff, 0x8664);
+        WriteUInt16(contents, coff + 2, 2);
+        WriteUInt16(contents, coff + 16, optionalHeaderSize);
+        WriteUInt16(contents, coff + 18, 0x2022);
+
+        var optional = coff + 20;
+        WriteUInt16(contents, optional, 0x20b);
+        contents[optional + 2] = 14;
+        WriteUInt32(contents, optional + 4, fileAlignment);
+        WriteUInt32(contents, optional + 8, exportRawSize);
+        WriteUInt32(contents, optional + 20, textRva);
+        WriteUInt64(contents, optional + 24, 0x0000000180000000);
+        WriteUInt32(contents, optional + 32, sectionAlignment);
+        WriteUInt32(contents, optional + 36, fileAlignment);
+        WriteUInt16(contents, optional + 40, 6);
+        WriteUInt16(contents, optional + 48, 6);
+        WriteUInt32(contents, optional + 56, 0x3000);
+        WriteUInt32(contents, optional + 60, fileAlignment);
+        WriteUInt16(contents, optional + 68, 3);
+        WriteUInt16(contents, optional + 70, 0x0160);
+        WriteUInt64(contents, optional + 72, 0x100000);
+        WriteUInt64(contents, optional + 80, 0x1000);
+        WriteUInt64(contents, optional + 88, 0x100000);
+        WriteUInt64(contents, optional + 96, 0x1000);
+        WriteUInt32(contents, optional + 108, 16);
+
+        var sectionHeaders = optional + optionalHeaderSize;
+        WriteSectionHeader(
+            contents,
+            sectionHeaders,
+            ".text",
+            1,
+            textRva,
+            fileAlignment,
+            textRawOffset,
+            0x60000020);
+        WriteSectionHeader(
+            contents,
+            sectionHeaders + 40,
+            ".edata",
+            exportRawSize,
+            exportRva,
+            exportRawSize,
+            exportRawOffset,
+            0x40000040);
+        contents[textRawOffset] = 0xc3;
+
+        var cursor = 40;
+        var functionsOffset = cursor;
+        cursor += checked(names.Length * sizeof(uint));
+        var namesOffset = cursor;
+        cursor += checked(names.Length * sizeof(uint));
+        var ordinalsOffset = cursor;
+        cursor += checked(names.Length * sizeof(ushort));
+        var dllNameOffset = cursor;
+        cursor = WriteAscii(contents, exportRawOffset + cursor, dllName) - exportRawOffset;
+        var exportNameOffsets = new int[names.Length];
+        for (var index = 0; index < names.Length; ++index)
+        {
+            exportNameOffsets[index] = cursor;
+            cursor = WriteAscii(contents, exportRawOffset + cursor, names[index]) - exportRawOffset;
+        }
+
+        if (cursor > exportRawSize)
+        {
+            throw new InvalidOperationException(
+                "Synthetic export table exceeds its bounded section.");
+        }
+
+        var exportDirectory = exportRawOffset;
+        WriteUInt32(contents, exportDirectory + 12, exportRva + dllNameOffset);
+        WriteUInt32(contents, exportDirectory + 16, 1);
+        WriteUInt32(contents, exportDirectory + 20, names.Length);
+        WriteUInt32(contents, exportDirectory + 24, names.Length);
+        WriteUInt32(contents, exportDirectory + 28, exportRva + functionsOffset);
+        WriteUInt32(contents, exportDirectory + 32, exportRva + namesOffset);
+        WriteUInt32(contents, exportDirectory + 36, exportRva + ordinalsOffset);
+        for (var index = 0; index < names.Length; ++index)
+        {
+            WriteUInt32(
+                contents,
+                exportRawOffset + functionsOffset + index * 4,
+                textRva);
+            WriteUInt32(
+                contents,
+                exportRawOffset + namesOffset + index * 4,
+                exportRva + exportNameOffsets[index]);
+            WriteUInt16(
+                contents,
+                exportRawOffset + ordinalsOffset + index * 2,
+                index);
+        }
+
+        WriteUInt32(contents, optional + 112, exportRva);
+        WriteUInt32(contents, optional + 116, cursor);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllBytes(path, contents);
+    }
+
+    private static bool IsPortableAscii(string value) =>
+        !string.IsNullOrEmpty(value)
+        && value.All(character => character is >= '!' and <= '~');
+
+    private static void WriteSectionHeader(
+        byte[] contents,
+        int offset,
+        string name,
+        int virtualSize,
+        int virtualAddress,
+        int rawSize,
+        int rawOffset,
+        uint characteristics)
+    {
+        Encoding.ASCII.GetBytes(name).CopyTo(contents, offset);
+        WriteUInt32(contents, offset + 8, virtualSize);
+        WriteUInt32(contents, offset + 12, virtualAddress);
+        WriteUInt32(contents, offset + 16, rawSize);
+        WriteUInt32(contents, offset + 20, rawOffset);
+        WriteUInt32(contents, offset + 36, characteristics);
+    }
+
+    private static int WriteAscii(byte[] contents, int offset, string value)
+    {
+        var bytes = Encoding.ASCII.GetBytes(value);
+        bytes.CopyTo(contents, offset);
+        contents[offset + bytes.Length] = 0;
+        return offset + bytes.Length + 1;
+    }
+
+    private static void WriteUInt16(byte[] contents, int offset, int value) =>
+        BinaryPrimitives.WriteUInt16LittleEndian(
+            contents.AsSpan(offset, sizeof(ushort)),
+            checked((ushort)value));
+
+    private static void WriteUInt32(byte[] contents, int offset, int value) =>
+        BinaryPrimitives.WriteUInt32LittleEndian(
+            contents.AsSpan(offset, sizeof(uint)),
+            checked((uint)value));
+
+    private static void WriteUInt32(byte[] contents, int offset, uint value) =>
+        BinaryPrimitives.WriteUInt32LittleEndian(
+            contents.AsSpan(offset, sizeof(uint)),
+            value);
+
+    private static void WriteUInt64(byte[] contents, int offset, long value) =>
+        BinaryPrimitives.WriteUInt64LittleEndian(
+            contents.AsSpan(offset, sizeof(ulong)),
+            checked((ulong)value));
 
     private void CreateMinimalDotnetInput(
         string installedDotnetRoot,

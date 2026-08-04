@@ -14,5 +14,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Asharia.Runtime.Contracts\Asharia.Runtime.Contracts.csproj" />
+    <ProjectReference Include="..\Asharia.Studio.Application\Asharia.Studio.Application.csproj" />
   </ItemGroup>
 </Project>

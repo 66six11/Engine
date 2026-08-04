@@ -7,15 +7,19 @@ namespace Editor.Tests.Shell.Views.Windowing;
 public sealed class MainWindowXamlTests
 {
     [Fact]
-    public void Hard_cut_shell_uses_compiled_bindings_for_only_real_empty_states()
+    public void Project_shell_uses_compiled_bindings_for_real_session_states()
     {
         var xaml = LoadMainWindowXaml();
 
         Assert.Contains("x:DataType=\"vm:StudioShellViewModel\"", xaml);
         Assert.Contains("IsVisible=\"{Binding IsStarting}\"", xaml);
-        Assert.Contains("IsVisible=\"{Binding IsWorkspaceEmpty}\"", xaml);
+        Assert.Contains("IsVisible=\"{Binding IsWorkspaceVisible}\"", xaml);
+        Assert.Contains("IsVisible=\"{Binding HasNoProject}\"", xaml);
+        Assert.Contains("IsVisible=\"{Binding HasProject}\"", xaml);
         Assert.Contains("Text=\"{Binding StartingStateText}\"", xaml);
         Assert.Contains("Text=\"{Binding ProjectStateText}\"", xaml);
+        Assert.Contains("Command=\"{Binding CreateProjectCommand}\"", xaml);
+        Assert.Contains("Command=\"{Binding OpenProjectCommand}\"", xaml);
         Assert.Contains("Text=\"{Binding DocumentStateText}\"", xaml);
         Assert.DoesNotContain("Dock", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("Scene", xaml, StringComparison.Ordinal);
@@ -38,6 +42,10 @@ public sealed class MainWindowXamlTests
         Assert.Contains("AutomationProperties.AutomationId=\"StudioShellStartingState\"", xaml);
         Assert.Contains("AutomationProperties.AutomationId=\"StudioShellNoProjectState\"", xaml);
         Assert.Contains("AutomationProperties.AutomationId=\"StudioShellNoDocumentState\"", xaml);
+        Assert.Contains("AutomationProperties.AutomationId=\"StudioShellActiveProjectState\"", xaml);
+        Assert.Contains("AutomationProperties.Name=\"New project name\"", xaml);
+        Assert.Contains("AutomationProperties.Name=\"Create project\"", xaml);
+        Assert.Contains("AutomationProperties.Name=\"Open project\"", xaml);
         Assert.Contains("AutomationProperties.Name=\"Studio startup state\"", xaml);
         Assert.Contains("AutomationProperties.Name=\"Project state: No Project\"", xaml);
         Assert.Contains("AutomationProperties.Name=\"Document state: No Document\"", xaml);

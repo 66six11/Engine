@@ -246,6 +246,9 @@ public sealed class EditorImagePublishTests
                     "Editor.deps.json",
                     "Editor.runtimeconfig.json",
                     "Asharia.Studio.Application.dll",
+                    "Asharia.Runtime.Contracts.dll",
+                    "Asharia.Studio.EngineBridge.dll",
+                    "asharia_project_native.dll",
                 },
                 file => Assert.True(
                     File.Exists(Path.Combine(publishRoot, file)),
@@ -254,10 +257,9 @@ public sealed class EditorImagePublishTests
                 new[]
                 {
                     "Asharia.Editor.dll",
-                    "Asharia.Runtime.Contracts.dll",
                     "Asharia.Studio.DevelopmentHost.dll",
                     "Asharia.Studio.DevelopmentProtocol.dll",
-                    "Asharia.Studio.EngineBridge.dll",
+                    "asharia_scene_native.dll",
                     "editor_native.dll",
                     "slang.dll",
                 },

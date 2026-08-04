@@ -18,10 +18,12 @@ public sealed class AppSourceTests
         Assert.Contains("await processSession.StopAsync", source, StringComparison.Ordinal);
         Assert.Contains("LastTeardownReceipt", source, StringComparison.Ordinal);
         Assert.Contains("IStudioDiagnosticHub diagnostics_", source, StringComparison.Ordinal);
-        Assert.Contains("new StudioShellViewModel()", source, StringComparison.Ordinal);
+        Assert.Contains("new ProjectSession(new ProjectDescriptorBridge())", source, StringComparison.Ordinal);
+        Assert.Contains("new StudioShellViewModel(projectSession, projectDialogs)", source, StringComparison.Ordinal);
+        Assert.Contains("projectDialogs.Attach(mainWindow)", source, StringComparison.Ordinal);
         Assert.Contains("StudioCompositionSession.CreateAsync", source, StringComparison.Ordinal);
         Assert.Matches(
-            @"StudioCompositionSession\.CreateAsync\(\s*shellViewModel,\s*mainWindow,\s*diagnostics_,\s*cancellationToken,",
+            @"StudioCompositionSession\.CreateAsync\(\s*shellViewModel,\s*projectSession,\s*mainWindow,\s*diagnostics_,\s*cancellationToken,",
             source);
         Assert.Contains("await Task.Yield()", source, StringComparison.Ordinal);
         Assert.Contains("shellViewModel.MarkReady()", source, StringComparison.Ordinal);

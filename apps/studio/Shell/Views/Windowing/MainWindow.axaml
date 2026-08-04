@@ -45,8 +45,8 @@
                            Text="{Binding StartingStateText}" />
             </Border>
 
-            <Grid x:Name="EmptyWorkspaceState"
-                  IsVisible="{Binding IsWorkspaceEmpty}"
+            <Grid x:Name="WorkspaceState"
+                  IsVisible="{Binding IsWorkspaceVisible}"
                   ColumnDefinitions="*,*"
                   ColumnSpacing="16">
                 <Border x:Name="NoProjectState"
@@ -57,10 +57,69 @@
                         Background="#10161D"
                         BorderBrush="#1F2933"
                         BorderThickness="1"
-                        CornerRadius="6">
-                    <TextBlock x:Name="NoProjectStateText"
-                               FontSize="18"
-                               Text="{Binding ProjectStateText}" />
+                        CornerRadius="6"
+                        IsVisible="{Binding HasNoProject}">
+                    <StackPanel Spacing="12">
+                        <TextBlock x:Name="NoProjectStateText"
+                                   FontSize="18"
+                                   FontWeight="SemiBold"
+                                   Text="{Binding ProjectStateText}" />
+                        <TextBlock Foreground="#9BA7B4"
+                                   TextWrapping="Wrap"
+                                   Text="Create a canonical project or open an existing asharia.project.json descriptor." />
+                        <TextBox x:Name="NewProjectNameTextBox"
+                                 AutomationProperties.Name="New project name"
+                                 Text="{Binding NewProjectName}"
+                                 PlaceholderText="Project name" />
+                        <StackPanel Orientation="Horizontal"
+                                    Spacing="8">
+                            <Button x:Name="CreateProjectButton"
+                                    AutomationProperties.Name="Create project"
+                                    Command="{Binding CreateProjectCommand}"
+                                    Content="Create Project" />
+                            <Button x:Name="OpenProjectButton"
+                                    AutomationProperties.Name="Open project"
+                                    Command="{Binding OpenProjectCommand}"
+                                    Content="Open Project" />
+                        </StackPanel>
+                        <TextBlock AutomationProperties.LiveSetting="Polite"
+                                   Foreground="#9BA7B4"
+                                   Text="{Binding ProjectOperationStateText}" />
+                        <TextBlock AutomationProperties.LiveSetting="Polite"
+                                   Foreground="#E5B567"
+                                   IsVisible="{Binding HasProjectOperationMessage}"
+                                   TextWrapping="Wrap"
+                                   Text="{Binding ProjectOperationMessage}" />
+                    </StackPanel>
+                </Border>
+
+                <Border x:Name="ActiveProjectState"
+                        AutomationProperties.AutomationId="StudioShellActiveProjectState"
+                        AutomationProperties.Name="Active project state"
+                        AutomationProperties.ControlTypeOverride="Group"
+                        Padding="18"
+                        Background="#10161D"
+                        BorderBrush="#1F2933"
+                        BorderThickness="1"
+                        CornerRadius="6"
+                        IsVisible="{Binding HasProject}">
+                    <StackPanel Spacing="12">
+                        <TextBlock FontSize="18"
+                                   FontWeight="SemiBold"
+                                   Text="{Binding ProjectStateText}" />
+                        <TextBlock Foreground="#9BA7B4"
+                                   TextWrapping="Wrap"
+                                   Text="{Binding ProjectPathText}" />
+                        <Button AutomationProperties.Name="Open another project"
+                                HorizontalAlignment="Left"
+                                Command="{Binding OpenProjectCommand}"
+                                Content="Open Another Project" />
+                        <TextBlock AutomationProperties.LiveSetting="Polite"
+                                   Foreground="#E5B567"
+                                   IsVisible="{Binding HasProjectOperationMessage}"
+                                   TextWrapping="Wrap"
+                                   Text="{Binding ProjectOperationMessage}" />
+                    </StackPanel>
                 </Border>
 
                 <Border x:Name="NoDocumentState"

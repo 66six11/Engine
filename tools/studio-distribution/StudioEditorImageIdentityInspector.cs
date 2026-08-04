@@ -293,6 +293,7 @@ internal static class StudioEditorImageIdentityInspector
                 || !editorVersion.Equals("1.0.0", StringComparison.Ordinal)
                 || !HasRuntimeAsset(editor, "Editor.dll")
                 || !HasDependency(editor, "Asharia.Studio.Application", "1.0.0")
+                || !HasDependency(editor, "Asharia.Studio.EngineBridge", "1.0.0")
                 || !HasProjectLibrary(libraries, editorKey)
                 || !TryFindUniqueLibrary(
                     target,
@@ -305,9 +306,35 @@ internal static class StudioEditorImageIdentityInspector
                     application,
                     "Asharia.Studio.Application.dll",
                     expectedAssemblyVersion: "1.0.0.0")
-                || !HasProjectLibrary(libraries, applicationKey))
+                || !HasProjectLibrary(libraries, applicationKey)
+                || !TryFindUniqueLibrary(
+                    target,
+                    "Asharia.Studio.EngineBridge",
+                    out var engineBridgeKey,
+                    out var engineBridgeVersion,
+                    out var engineBridge)
+                || !engineBridgeVersion.Equals("1.0.0", StringComparison.Ordinal)
+                || !HasRuntimeAsset(
+                    engineBridge,
+                    "Asharia.Studio.EngineBridge.dll",
+                    expectedAssemblyVersion: "1.0.0.0")
+                || !HasDependency(engineBridge, "Asharia.Studio.Application", "1.0.0")
+                || !HasDependency(engineBridge, "Asharia.Runtime.Contracts", "1.0.0")
+                || !HasProjectLibrary(libraries, engineBridgeKey)
+                || !TryFindUniqueLibrary(
+                    target,
+                    "Asharia.Runtime.Contracts",
+                    out var runtimeContractsKey,
+                    out var runtimeContractsVersion,
+                    out var runtimeContracts)
+                || !runtimeContractsVersion.Equals("1.0.0", StringComparison.Ordinal)
+                || !HasRuntimeAsset(
+                    runtimeContracts,
+                    "Asharia.Runtime.Contracts.dll",
+                    expectedAssemblyVersion: "1.0.0.0")
+                || !HasProjectLibrary(libraries, runtimeContractsKey))
             {
-                error = "Editor deps must bind Editor.dll and Asharia.Studio.Application only.";
+                error = "Editor deps must bind the ProjectSession managed runtime closure.";
                 return false;
             }
 

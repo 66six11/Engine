@@ -3,6 +3,7 @@ using System;
 using System.Runtime.Versioning;
 using System.Threading;
 using System.Threading.Tasks;
+using Asharia.Studio.TestSupport;
 using Asharia.Studio.Application.Diagnostics;
 using Asharia.Studio.DevelopmentHost.Hosting;
 using Asharia.Studio.DevelopmentHost.Transport;
@@ -20,7 +21,7 @@ public sealed class StudioCompositionSessionDevelopmentHostTests
     {
         var hub = new StudioDiagnosticHub(diagnosticCapacity: 2, logCapacity: 2);
         var owned = await StudioCompositionSession.CreateAsync(
-            new StudioShellViewModel(),
+            StudioShellTestFactory.Create(),
             mainWindow: null,
             hub,
             CancellationToken.None);
@@ -49,7 +50,7 @@ public sealed class StudioCompositionSessionDevelopmentHostTests
     {
         var hub = new StudioDiagnosticHub(diagnosticCapacity: 2, logCapacity: 2);
         var owned = await StudioCompositionSession.CreateAsync(
-            new StudioShellViewModel(),
+            StudioShellTestFactory.Create(),
             mainWindow: null,
             hub,
             CancellationToken.None,
@@ -71,7 +72,7 @@ public sealed class StudioCompositionSessionDevelopmentHostTests
     public async Task Canceled_product_composition_does_not_create_a_host_or_endpoint()
     {
         var hub = new StudioDiagnosticHub(diagnosticCapacity: 2, logCapacity: 2);
-        var shell = new StudioShellViewModel();
+        var shell = StudioShellTestFactory.Create();
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
         try
@@ -94,7 +95,7 @@ public sealed class StudioCompositionSessionDevelopmentHostTests
     [Fact]
     public async Task Host_creation_failure_disposes_the_unpublished_shell_owner()
     {
-        var shell = new StudioShellViewModel();
+        var shell = StudioShellTestFactory.Create();
 
         await Assert.ThrowsAsync<InvalidOperationException>(async () =>
             await StudioCompositionSession.CreateAsync(

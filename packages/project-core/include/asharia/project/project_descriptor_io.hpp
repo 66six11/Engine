@@ -9,6 +9,28 @@
 
 namespace asharia::project {
 
+    enum class AshariaProjectIoErrorCode : int {
+        InvalidProject = 1,
+        DescriptorIo = 2,
+        AlreadyExists = 3,
+        Busy = 4,
+        IoFailure = 5,
+    };
+
+    struct OpenedAshariaProject {
+        std::filesystem::path root;
+        AshariaProjectDescriptor descriptor;
+
+        [[nodiscard]] friend bool operator==(const OpenedAshariaProject&,
+                                             const OpenedAshariaProject&) = default;
+    };
+
+    struct MinimalAshariaProjectCreate {
+        std::filesystem::path parentDirectory;
+        std::string projectName;
+        ProjectId projectId{};
+    };
+
     [[nodiscard]] Result<std::string>
     writeAshariaProjectDescriptorText(const AshariaProjectDescriptor& descriptor);
     [[nodiscard]] VoidResult
@@ -19,5 +41,10 @@ namespace asharia::project {
     readAshariaProjectDescriptorText(std::string_view text);
     [[nodiscard]] Result<AshariaProjectDescriptor>
     readAshariaProjectDescriptorFile(const std::filesystem::path& path);
+
+    [[nodiscard]] Result<OpenedAshariaProject>
+    openAshariaProject(const std::filesystem::path& projectPath);
+    [[nodiscard]] Result<OpenedAshariaProject>
+    createMinimalAshariaProject(const MinimalAshariaProjectCreate& request);
 
 } // namespace asharia::project
