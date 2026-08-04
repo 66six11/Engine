@@ -1,10 +1,16 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
+using System.Globalization;
+using System.IO;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Input;
+using Asharia.Runtime;
 using Asharia.Studio.Application.Projects;
+using Asharia.Studio.Application.Scenes;
 using Avalonia.Threading;
 using Editor.Shell.Commands;
 using Editor.Shell.Services.Projects;
@@ -24,11 +30,28 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
     private readonly IStudioProjectDialogService projectDialogs_;
     private readonly AsyncCommand createProjectCommand_;
     private readonly AsyncCommand openProjectCommand_;
+    private readonly AsyncCommand closeProjectCommand_;
+    private readonly AsyncCommand createEntityCommand_;
+    private readonly AsyncCommand saveSceneCommand_;
+    private readonly AsyncCommand applyEntityNameCommand_;
+    private readonly AsyncCommand applyEntityTransformCommand_;
     private readonly CancellationTokenSource lifetimeCancellation_ = new();
     private StudioShellStage stage_ = StudioShellStage.Starting;
     private ProjectSessionSnapshot projectSnapshot_;
+    private SceneEntitySnapshot? selectedEntity_;
     private string newProjectName_ = "MyProject";
     private string projectOperationMessage_ = string.Empty;
+    private string inspectorName_ = string.Empty;
+    private string positionX_ = "0";
+    private string positionY_ = "0";
+    private string positionZ_ = "0";
+    private string rotationX_ = "0";
+    private string rotationY_ = "0";
+    private string rotationZ_ = "0";
+    private string rotationW_ = "1";
+    private string scaleX_ = "1";
+    private string scaleY_ = "1";
+    private string scaleZ_ = "1";
     private bool isProjectOperationRunning_;
     private bool isDisposed_;
 
@@ -43,6 +66,13 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
         projectSnapshot_ = projectSession.Current;
         createProjectCommand_ = new AsyncCommand(CreateProjectAsync, CanCreateProject);
         openProjectCommand_ = new AsyncCommand(OpenProjectAsync, CanRunProjectOperation);
+        closeProjectCommand_ = new AsyncCommand(CloseProjectAsync, CanEditDocument);
+        createEntityCommand_ = new AsyncCommand(CreateEntityAsync, CanEditDocument);
+        saveSceneCommand_ = new AsyncCommand(SaveSceneAsync, CanSaveDocument);
+        applyEntityNameCommand_ = new AsyncCommand(ApplyEntityNameAsync, CanEditSelection);
+        applyEntityTransformCommand_ = new AsyncCommand(
+            ApplyEntityTransformAsync,
+            CanEditSelection);
         projectSession_.SnapshotChanged += OnProjectSnapshotChanged;
     }
 
@@ -60,7 +90,13 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
             }
 
             var project = projectSnapshot_.Project?.ProjectName ?? "No Project";
-            return $"No Document - {project} - Asharia Studio";
+            var document = projectSnapshot_.Document;
+            if (document is null)
+            {
+                return $"No Document - {project} - Asharia Studio";
+            }
+            var dirty = document.IsDirty ? "*" : string.Empty;
+            return $"{dirty}{Path.GetFileName(document.Path)} - {project} - Asharia Studio";
         }
     }
 
@@ -72,6 +108,14 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
 
     public bool HasNoProject => !projectSnapshot_.IsReady;
 
+    public bool HasDocument => projectSnapshot_.Document is not null;
+
+    public bool HasNoDocument => projectSnapshot_.Document is null;
+
+    public bool IsDocumentDirty => projectSnapshot_.Document?.IsDirty == true;
+
+    public bool HasSelection => SelectedEntity is not null;
+
     public string StartingStateText => "Starting";
 
     public string ProjectStateText =>
@@ -80,7 +124,32 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
     public string ProjectPathText =>
         projectSnapshot_.Project?.RootPath ?? string.Empty;
 
-    public string DocumentStateText => "No Document";
+    public string DocumentStateText => projectSnapshot_.Document is { } document
+        ? $"{Path.GetFileName(document.Path)} · revision {document.Revision} · " +
+          (document.IsDirty ? "Unsaved" : "Saved")
+        : "No Document";
+
+    public string DocumentPathText => projectSnapshot_.Document?.Path ?? string.Empty;
+
+    public IReadOnlyList<SceneEntitySnapshot> SceneEntities =>
+        projectSnapshot_.Document?.Entities ?? [];
+
+    public SceneEntitySnapshot? SelectedEntity
+    {
+        get => selectedEntity_;
+        set
+        {
+            if (Equals(selectedEntity_, value))
+            {
+                return;
+            }
+            selectedEntity_ = value;
+            LoadInspector(value);
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(HasSelection));
+            RaiseProjectCommandStateChanged();
+        }
+    }
 
     public string NewProjectName
     {
@@ -91,12 +160,28 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
             {
                 return;
             }
-
             newProjectName_ = value;
             OnPropertyChanged();
             createProjectCommand_.RaiseCanExecuteChanged();
         }
     }
+
+    public string InspectorName
+    {
+        get => inspectorName_;
+        set => SetField(ref inspectorName_, value);
+    }
+
+    public string PositionX { get => positionX_; set => SetField(ref positionX_, value); }
+    public string PositionY { get => positionY_; set => SetField(ref positionY_, value); }
+    public string PositionZ { get => positionZ_; set => SetField(ref positionZ_, value); }
+    public string RotationX { get => rotationX_; set => SetField(ref rotationX_, value); }
+    public string RotationY { get => rotationY_; set => SetField(ref rotationY_, value); }
+    public string RotationZ { get => rotationZ_; set => SetField(ref rotationZ_, value); }
+    public string RotationW { get => rotationW_; set => SetField(ref rotationW_, value); }
+    public string ScaleX { get => scaleX_; set => SetField(ref scaleX_, value); }
+    public string ScaleY { get => scaleY_; set => SetField(ref scaleY_, value); }
+    public string ScaleZ { get => scaleZ_; set => SetField(ref scaleZ_, value); }
 
     public bool IsProjectOperationRunning
     {
@@ -107,7 +192,6 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
             {
                 return;
             }
-
             isProjectOperationRunning_ = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(ProjectOperationStateText));
@@ -127,7 +211,6 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
             {
                 return;
             }
-
             projectOperationMessage_ = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(HasProjectOperationMessage));
@@ -138,8 +221,12 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
         !string.IsNullOrWhiteSpace(ProjectOperationMessage);
 
     public ICommand CreateProjectCommand => createProjectCommand_;
-
     public ICommand OpenProjectCommand => openProjectCommand_;
+    public ICommand CloseProjectCommand => closeProjectCommand_;
+    public ICommand CreateEntityCommand => createEntityCommand_;
+    public ICommand SaveSceneCommand => saveSceneCommand_;
+    public ICommand ApplyEntityNameCommand => applyEntityNameCommand_;
+    public ICommand ApplyEntityTransformCommand => applyEntityTransformCommand_;
 
     internal IProjectSession ProjectSession => projectSession_;
 
@@ -151,7 +238,6 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
             throw new InvalidOperationException(
                 $"Studio shell cannot enter Ready from '{stage_}'.");
         }
-
         SetStage(StudioShellStage.Ready);
     }
 
@@ -162,7 +248,6 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
         {
             return;
         }
-
         _ = lifetimeCancellation_.CancelAsync();
         SetStage(StudioShellStage.Stopping);
     }
@@ -173,7 +258,6 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
         {
             return;
         }
-
         isDisposed_ = true;
         projectSession_.SnapshotChanged -= OnProjectSnapshotChanged;
         lifetimeCancellation_.Cancel();
@@ -184,9 +268,13 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
         CanRunProjectOperation() && !string.IsNullOrWhiteSpace(NewProjectName);
 
     private bool CanRunProjectOperation() =>
-        !isDisposed_
-        && stage_ == StudioShellStage.Ready
-        && !IsProjectOperationRunning;
+        !isDisposed_ && stage_ == StudioShellStage.Ready && !IsProjectOperationRunning;
+
+    private bool CanEditDocument() => CanRunProjectOperation() && HasDocument;
+
+    private bool CanSaveDocument() => CanEditDocument() && IsDocumentDirty;
+
+    private bool CanEditSelection() => CanEditDocument() && HasSelection;
 
     private async Task CreateProjectAsync()
     {
@@ -210,6 +298,53 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
         });
     }
 
+    private Task CloseProjectAsync() =>
+        RunProjectOperationAsync(async token =>
+            await projectSession_.CloseProjectAsync(token));
+
+    private async Task CreateEntityAsync()
+    {
+        await RunProjectOperationAsync(async token =>
+            await projectSession_.CreateEntityAsync("Entity", token));
+        SelectedEntity = SceneEntities.LastOrDefault();
+    }
+
+    private Task SaveSceneAsync() =>
+        RunProjectOperationAsync(async token =>
+            await projectSession_.SaveSceneAsync(token));
+
+    private Task ApplyEntityNameAsync()
+    {
+        var selected = SelectedEntity;
+        return selected is null
+            ? Task.CompletedTask
+            : RunProjectOperationAsync(async token =>
+                await projectSession_.SetEntityNameAsync(
+                    selected.ObjectId,
+                    InspectorName,
+                    token));
+    }
+
+    private Task ApplyEntityTransformAsync()
+    {
+        var selected = SelectedEntity;
+        if (selected is null)
+        {
+            return Task.CompletedTask;
+        }
+        if (!TryReadTransform(out var transform))
+        {
+            ProjectOperationMessage =
+                "Transform fields must be finite invariant-culture numbers with a unit quaternion.";
+            return Task.CompletedTask;
+        }
+        return RunProjectOperationAsync(async token =>
+            await projectSession_.SetEntityTransformAsync(
+                selected.ObjectId,
+                transform,
+                token));
+    }
+
     private async Task RunProjectOperationAsync(
         Func<CancellationToken, ValueTask<ProjectSessionOperationResult?>> operation)
     {
@@ -222,7 +357,6 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
             {
                 return;
             }
-
             ApplyProjectSnapshot(result.Current);
             ProjectOperationMessage = result.Message;
         }
@@ -249,7 +383,6 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
             ApplyProjectSnapshot(snapshot);
             return;
         }
-
         Dispatcher.UIThread.Post(() =>
         {
             if (!isDisposed_)
@@ -261,13 +394,91 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
 
     private void ApplyProjectSnapshot(ProjectSessionSnapshot snapshot)
     {
+        var selectedObjectId = selectedEntity_?.ObjectId;
         projectSnapshot_ = snapshot;
+        var nextSelection = selectedObjectId is { } id
+            ? snapshot.Document?.Entities.FirstOrDefault(entity => entity.ObjectId == id)
+            : null;
+        if (!Equals(selectedEntity_, nextSelection))
+        {
+            selectedEntity_ = nextSelection;
+            LoadInspector(nextSelection);
+            OnPropertyChanged(nameof(SelectedEntity));
+            OnPropertyChanged(nameof(HasSelection));
+        }
         OnPropertyChanged(nameof(WindowTitle));
         OnPropertyChanged(nameof(HasProject));
         OnPropertyChanged(nameof(HasNoProject));
+        OnPropertyChanged(nameof(HasDocument));
+        OnPropertyChanged(nameof(HasNoDocument));
+        OnPropertyChanged(nameof(IsDocumentDirty));
         OnPropertyChanged(nameof(ProjectStateText));
         OnPropertyChanged(nameof(ProjectPathText));
+        OnPropertyChanged(nameof(DocumentStateText));
+        OnPropertyChanged(nameof(DocumentPathText));
+        OnPropertyChanged(nameof(SceneEntities));
+        RaiseProjectCommandStateChanged();
     }
+
+    private void LoadInspector(SceneEntitySnapshot? entity)
+    {
+        var transform = entity?.Transform ?? TransformValue.Identity;
+        inspectorName_ = entity?.Name ?? string.Empty;
+        positionX_ = Format(transform.Position.X);
+        positionY_ = Format(transform.Position.Y);
+        positionZ_ = Format(transform.Position.Z);
+        rotationX_ = Format(transform.Rotation.X);
+        rotationY_ = Format(transform.Rotation.Y);
+        rotationZ_ = Format(transform.Rotation.Z);
+        rotationW_ = Format(transform.Rotation.W);
+        scaleX_ = Format(transform.Scale.X);
+        scaleY_ = Format(transform.Scale.Y);
+        scaleZ_ = Format(transform.Scale.Z);
+        OnPropertyChanged(nameof(InspectorName));
+        OnPropertyChanged(nameof(PositionX));
+        OnPropertyChanged(nameof(PositionY));
+        OnPropertyChanged(nameof(PositionZ));
+        OnPropertyChanged(nameof(RotationX));
+        OnPropertyChanged(nameof(RotationY));
+        OnPropertyChanged(nameof(RotationZ));
+        OnPropertyChanged(nameof(RotationW));
+        OnPropertyChanged(nameof(ScaleX));
+        OnPropertyChanged(nameof(ScaleY));
+        OnPropertyChanged(nameof(ScaleZ));
+    }
+
+    private bool TryReadTransform(out TransformValue transform)
+    {
+        transform = default;
+        if (!TryParse(PositionX, out var px) || !TryParse(PositionY, out var py) ||
+            !TryParse(PositionZ, out var pz) || !TryParse(RotationX, out var rx) ||
+            !TryParse(RotationY, out var ry) || !TryParse(RotationZ, out var rz) ||
+            !TryParse(RotationW, out var rw) || !TryParse(ScaleX, out var sx) ||
+            !TryParse(ScaleY, out var sy) || !TryParse(ScaleZ, out var sz))
+        {
+            return false;
+        }
+        var lengthSquared = rx * rx + ry * ry + rz * rz + rw * rw;
+        if (Math.Abs(lengthSquared - 1.0f) > 1.0e-3f)
+        {
+            return false;
+        }
+        transform = new TransformValue(
+            new Float3(px, py, pz),
+            new Quaternion(rx, ry, rz, rw),
+            new Float3(sx, sy, sz));
+        return true;
+    }
+
+    private static bool TryParse(string text, out float value) =>
+        float.TryParse(
+            text,
+            NumberStyles.Float,
+            CultureInfo.InvariantCulture,
+            out value) && float.IsFinite(value);
+
+    private static string Format(float value) =>
+        value.ToString("G9", CultureInfo.InvariantCulture);
 
     private void SetStage(StudioShellStage stage)
     {
@@ -283,15 +494,28 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
     {
         createProjectCommand_.RaiseCanExecuteChanged();
         openProjectCommand_.RaiseCanExecuteChanged();
+        closeProjectCommand_.RaiseCanExecuteChanged();
+        createEntityCommand_.RaiseCanExecuteChanged();
+        saveSceneCommand_.RaiseCanExecuteChanged();
+        applyEntityNameCommand_.RaiseCanExecuteChanged();
+        applyEntityTransformCommand_.RaiseCanExecuteChanged();
     }
 
-    private void ThrowIfDisposed()
+    private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(isDisposed_, this);
+
+    private void SetField(
+        ref string field,
+        string value,
+        [CallerMemberName] string? propertyName = null)
     {
-        ObjectDisposedException.ThrowIf(isDisposed_, this);
+        if (string.Equals(field, value, StringComparison.Ordinal))
+        {
+            return;
+        }
+        field = value;
+        OnPropertyChanged(propertyName);
     }
 
-    private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
-    {
+    private void OnPropertyChanged([CallerMemberName] string? propertyName = null) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
-    }
 }

@@ -18,7 +18,9 @@ public sealed class AppSourceTests
         Assert.Contains("await processSession.StopAsync", source, StringComparison.Ordinal);
         Assert.Contains("LastTeardownReceipt", source, StringComparison.Ordinal);
         Assert.Contains("IStudioDiagnosticHub diagnostics_", source, StringComparison.Ordinal);
-        Assert.Contains("new ProjectSession(new ProjectDescriptorBridge())", source, StringComparison.Ordinal);
+        Assert.Contains("new ProjectSession(", source, StringComparison.Ordinal);
+        Assert.Contains("new ProjectDescriptorBridge()", source, StringComparison.Ordinal);
+        Assert.Contains("new SceneDocumentBridge()", source, StringComparison.Ordinal);
         Assert.Contains("new StudioShellViewModel(projectSession, projectDialogs)", source, StringComparison.Ordinal);
         Assert.Contains("projectDialogs.Attach(mainWindow)", source, StringComparison.Ordinal);
         Assert.Contains("StudioCompositionSession.CreateAsync", source, StringComparison.Ordinal);

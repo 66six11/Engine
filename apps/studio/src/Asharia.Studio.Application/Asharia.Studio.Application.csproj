@@ -9,4 +9,8 @@
   <ItemGroup>
     <InternalsVisibleTo Include="Asharia.Studio.Application.Tests" />
   </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Asharia.Runtime.Contracts\Asharia.Runtime.Contracts.csproj" />
+  </ItemGroup>
 </Project>

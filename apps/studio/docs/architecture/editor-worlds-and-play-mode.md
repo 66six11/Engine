@@ -1,8 +1,8 @@
 # 编辑世界与 Play Mode
 
-状态：Target（以 Document-first hard cut 为实施前提）
+状态：Current baseline + Target（SceneDocument 最小闭环已落地，Play/Preview/Undo 仍为目标）
 
-更新日期：2026-07-31
+更新日期：2026-08-04
 
 > `SceneDocument -> EditWorld -> expected-revision mutation -> receipt -> undo/save` 的首个实施合同见
 > [Studio 前端硬切架构](studio-frontend-hard-cut.md)。
@@ -13,9 +13,13 @@
 
 ## 2. 当前实现事实
 
-当前 Studio 已有 fixture-backed scene snapshot、Hierarchy/Inspector 只读投影、Scene View composition spike，以及 EngineBridge 的 owner-thread Scene World lifetime、entity create/destroy/is-alive、local Transform get/set 与 bounded UTF-8 display-name get/set baseline。名称不承担 identity、path 或 uniqueness。尚无正式 project/document/world session、entity query/snapshot projection、transactional document mutation bridge、Play state machine 或 Game View。
+当前 Studio 已有正式 `ProjectSession -> SceneDocument -> World` owner 链。`SceneDocument` 维护 stable scene/object ID、
+authoritative revision、saved revision、dirty 与 strict JSON persistence；EngineBridge 在专用 owner lane 上封装 generation-safe
+native handle，Application 只消费 snapshot 和 expected-revision command。Hierarchy/Inspector 已能创建实体、修改名称与 local
+Transform、保存，并通过关闭项目后重开验证数据一致。
 
-因此本文描述 Target 合同。任何实现不得把 fixture provider 或 ViewModel 状态升级为 engine truth。
+当前 mutation 仍是单命令原子操作，没有 undo/redo history、hierarchy parenting、component reflection、Play state machine、
+Preview World 或 Game View。因此下文除上述已落地基线外仍描述 Target 合同；ViewModel 状态不得升级为 engine truth。
 
 ## 3. Domain 关系
 
@@ -57,7 +61,7 @@ flowchart TB
 - 当前 authoritative revision；
 - dirty state；
 - validation/save state；
-- undo/redo history；
+- 后续 undo/redo history（当前未实现）；
 - 对 `EditWorldSession` 的逻辑引用。
 
 `EditWorldSession` 是 native engine 中的可编辑 world。SceneDocument 不暴露其 native pointer。
@@ -85,9 +89,9 @@ sequenceDiagram
 
 - entity/component/property/asset/document 使用 stable ID；
 - mutation 必须携带 expected revision；
-- engine mutation 成功后才提交 undo entry 和 dirty state；
-- Undo/Redo 经过同一 engine command boundary；
-- mutation 失败保持 transaction stack 和 document state 不变；
+- engine mutation 成功后才推进 authoritative revision 和 dirty state；未来实现 history 时才提交 undo entry；
+- Undo/Redo 必须经过同一 engine command boundary，当前不得由 managed compensation 伪造；
+- mutation 失败保持 document state 不变；未来 transaction stack 也必须遵循这一规则；
 - snapshot、index 和 revision 原子发布；
 - 旧 revision 不得覆盖新 revision。
 

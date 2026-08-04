@@ -1,6 +1,8 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Asharia.Runtime;
+using Asharia.Studio.Application.Scenes;
 
 namespace Asharia.Studio.Application.Projects;
 
@@ -69,33 +71,64 @@ public sealed record ProjectSessionSnapshot
 {
     private ProjectSessionSnapshot(
         ProjectSessionState state,
-        ActiveProjectSnapshot? project)
+        ActiveProjectSnapshot? project,
+        SceneDocumentSnapshot? document)
     {
-        if ((state == ProjectSessionState.Ready) != (project is not null))
+        if (state == ProjectSessionState.Ready &&
+            (project is null || document is null))
         {
             throw new ArgumentException(
-                "Only a ready project session may contain an active project.",
+                "Only a ready project session may contain an active project and scene document.",
                 nameof(project));
+        }
+        if (state == ProjectSessionState.NoProject &&
+            (project is not null || document is not null))
+        {
+            throw new ArgumentException(
+                "A project-free session must not contain a scene document.",
+                nameof(document));
         }
 
         State = state;
         Project = project;
+        Document = document;
     }
 
     public static ProjectSessionSnapshot NoProject { get; } =
-        new(ProjectSessionState.NoProject, project: null);
+        new(ProjectSessionState.NoProject, project: null, document: null);
 
     public ProjectSessionState State { get; }
 
     public ActiveProjectSnapshot? Project { get; }
 
+    public SceneDocumentSnapshot? Document { get; }
+
     public bool IsReady => State == ProjectSessionState.Ready;
 
-    public static ProjectSessionSnapshot Ready(ActiveProjectSnapshot project)
+    public static ProjectSessionSnapshot Ready(
+        ActiveProjectSnapshot project,
+        SceneDocumentSnapshot document)
     {
         ArgumentNullException.ThrowIfNull(project);
-        return new ProjectSessionSnapshot(ProjectSessionState.Ready, project);
+        ArgumentNullException.ThrowIfNull(document);
+        return new ProjectSessionSnapshot(ProjectSessionState.Ready, project, document);
     }
+}
+
+public enum ProjectSessionFailureKind
+{
+    InvalidInput,
+    InvalidProject,
+    InvalidScene,
+    AlreadyExists,
+    Busy,
+    RevisionConflict,
+    InvalidObject,
+    InvalidTransform,
+    IoFailure,
+    NativeUnavailable,
+    NoProject,
+    InternalError,
 }
 
 public sealed record ProjectSessionOperationResult
@@ -104,7 +137,7 @@ public sealed record ProjectSessionOperationResult
         bool succeeded,
         ProjectSessionSnapshot current,
         string message,
-        ProjectDescriptorFailureKind? failureKind)
+        ProjectSessionFailureKind? failureKind)
     {
         if (string.IsNullOrWhiteSpace(message))
         {
@@ -131,7 +164,7 @@ public sealed record ProjectSessionOperationResult
 
     public string Message { get; }
 
-    public ProjectDescriptorFailureKind? FailureKind { get; }
+    public ProjectSessionFailureKind? FailureKind { get; }
 
     public static ProjectSessionOperationResult Success(
         ProjectSessionSnapshot current,
@@ -140,14 +173,14 @@ public sealed record ProjectSessionOperationResult
 
     public static ProjectSessionOperationResult Failed(
         ProjectSessionSnapshot current,
-        ProjectDescriptorFailure failure)
+        ProjectSessionFailureKind failureKind,
+        string message)
     {
-        ArgumentNullException.ThrowIfNull(failure);
         return new ProjectSessionOperationResult(
             succeeded: false,
             current,
-            failure.Message,
-            failure.Kind);
+            message,
+            failureKind);
     }
 }
 
@@ -164,5 +197,25 @@ public interface IProjectSession : IAsyncDisposable
 
     ValueTask<ProjectSessionOperationResult> OpenProjectAsync(
         string projectPath,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<ProjectSessionOperationResult> CloseProjectAsync(
+        CancellationToken cancellationToken = default);
+
+    ValueTask<ProjectSessionOperationResult> CreateEntityAsync(
+        string name,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<ProjectSessionOperationResult> SetEntityNameAsync(
+        Guid objectId,
+        string name,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<ProjectSessionOperationResult> SetEntityTransformAsync(
+        Guid objectId,
+        TransformValue transform,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<ProjectSessionOperationResult> SaveSceneAsync(
         CancellationToken cancellationToken = default);
 }

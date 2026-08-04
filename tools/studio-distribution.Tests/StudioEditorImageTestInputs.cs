@@ -22,6 +22,16 @@ public sealed class StudioEditorImageTestInputs : IDisposable
         "asharia_project_create_minimal",
         "asharia_project_open",
     ];
+    private static readonly string[] SceneNativeRequiredExports =
+    [
+        "asharia_scene_document_open_default",
+        "asharia_scene_document_close",
+        "asharia_scene_document_snapshot",
+        "asharia_scene_document_create_entity",
+        "asharia_scene_document_set_entity_name",
+        "asharia_scene_document_set_entity_transform",
+        "asharia_scene_document_save",
+    ];
 
     public StudioEditorImageTestInputs()
     {
@@ -156,6 +166,10 @@ public sealed class StudioEditorImageTestInputs : IDisposable
             Path.Combine(PublishRoot, "asharia_project_native.dll"),
             "asharia_project_native.dll",
             ProjectNativeRequiredExports);
+        WriteNativeDll(
+            Path.Combine(PublishRoot, "asharia_scene_native.dll"),
+            "asharia_scene_native.dll",
+            SceneNativeRequiredExports);
     }
 
     internal static void WriteNativeDll(

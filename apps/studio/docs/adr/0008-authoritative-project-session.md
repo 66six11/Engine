@@ -54,14 +54,15 @@ ProjectOpenSession、active ProjectSession、managed/native adapter 和无 calle
 
 ## 后果
 
-- Studio 从 No Project 进入真实 canonical ProjectSession，但仍保持 No Document；下一 Slice 可以在该 session scope 下
-  建立 SceneDocument，而不能绕过它创建 World。
-- 下一 Slice 的固定验收边界是 `ProjectSession Ready -> 默认 SceneDocument -> EditWorld -> 创建/修改实体 -> Save ->
-  关闭项目 -> 重开数据一致`。SceneDocument 拥有 world，EngineBridge 封装并部署 `asharia_scene_native.dll`，Avalonia
-  只消费 snapshot 和命令，不持有原生句柄。
+- 本 ADR 交付时 Studio 从 No Project 进入真实 canonical ProjectSession，但仍保持 No Document；该后继缺口已由
+  [ADR-0009](0009-authoritative-scene-document.md) 关闭。SceneDocument 仍必须在 session scope 下拥有 World，不能绕过
+  ProjectSession 创建。
+- ADR-0009 已完成 `ProjectSession Ready -> 默认 SceneDocument -> EditWorld -> 创建/修改实体 -> Save -> 关闭项目 ->
+  重开数据一致`，并由 EngineBridge 封装和部署 `asharia_scene_native.dll`；Avalonia 只消费 snapshot 和命令。
 - 项目 package manifest/lock、细分加载状态与 Degraded/SafeMode 紧随其后；多模板、最近项目、完整 Asset Browser、
   完整停靠布局和 Play Mode 不得进入上述 P0 Slice。
-- EngineBridge/Runtime.Contracts 重新成为 Release managed closure 的真实依赖，但 `asharia_scene_native.dll` 仍不是产品依赖。
+- EngineBridge/Runtime.Contracts 重新成为 Release managed closure 的真实依赖；`asharia_scene_native.dll` 从 ADR-0009
+  起也是精确验证的产品依赖。
 - project-core 的新创建 API 和 C ABI 成为版本化合同，变更时必须同步 native static assertions、C header smoke、managed
   layout tests、distribution export validation 和文档。
 

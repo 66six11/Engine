@@ -325,6 +325,7 @@ public sealed class StudioLayeringTests
         Assert.DoesNotContain("editor_native.dll", projectSource, StringComparison.Ordinal);
         Assert.DoesNotContain("slang.dll", projectSource, StringComparison.Ordinal);
         Assert.Contains("asharia_project_native.dll", projectSource, StringComparison.Ordinal);
+        Assert.Contains("asharia_scene_native.dll", projectSource, StringComparison.Ordinal);
         Assert.DoesNotContain("Win32PlatformOptions", programSource, StringComparison.Ordinal);
         Assert.DoesNotContain("Win32RenderingMode", programSource, StringComparison.Ordinal);
         Assert.DoesNotContain("StudioNativeTeardown", appSource, StringComparison.Ordinal);

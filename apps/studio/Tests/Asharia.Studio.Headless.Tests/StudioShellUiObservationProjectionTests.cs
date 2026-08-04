@@ -50,13 +50,21 @@ public sealed class StudioShellUiObservationProjectionTests
                     "StudioShellWindow",
                     "StudioShellStartingState",
                     "StudioShellNoProjectState",
-                    "StudioShellActiveProjectState",
                     "StudioShellNoDocumentState",
+                    "StudioShellActiveProjectState",
+                    "StudioHierarchyPanel",
+                    "StudioInspectorPanel",
                 ],
                 startingTree.Value.Nodes.Select(static node => node.ElementId));
             Assert.All(
-                startingTree.Value.Nodes.Skip(1),
+                startingTree.Value.Nodes.Skip(1).Take(4),
                 node => Assert.Equal("StudioShellWindow", node.ParentElementId));
+            Assert.Equal(
+                "StudioShellActiveProjectState",
+                Node(startingTree.Value, "StudioHierarchyPanel").ParentElementId);
+            Assert.Equal(
+                "StudioShellActiveProjectState",
+                Node(startingTree.Value, "StudioInspectorPanel").ParentElementId);
             Assert.Equal(
                 ObservationUiRoles.Status,
                 Node(startingTree.Value, "StudioShellStartingState").Role);
@@ -75,6 +83,8 @@ public sealed class StudioShellUiObservationProjectionTests
             Assert.True(Node(ready, "StudioShellNoProjectState").IsVisible);
             Assert.False(Node(ready, "StudioShellActiveProjectState").IsVisible);
             Assert.True(Node(ready, "StudioShellNoDocumentState").IsVisible);
+            Assert.False(Node(ready, "StudioHierarchyPanel").IsVisible);
+            Assert.False(Node(ready, "StudioInspectorPanel").IsVisible);
 
             var envelope = new ObservationResponse<UiTreeReadResult>(
                 ObservationProtocolVersion.Current,
@@ -239,7 +249,7 @@ public sealed class StudioShellUiObservationProjectionTests
                 descriptor.Value.Capabilities,
                 capability => capability.CapabilityId == "ui.readTree");
             Assert.Equal("StudioShellWindow", Assert.Single(windows.Value!.Windows).WindowId);
-            Assert.Equal(5, tree.Value!.Nodes.Length);
+            Assert.Equal(7, tree.Value!.Nodes.Length);
 
             await composition.DisposeAsync();
             composition = null;

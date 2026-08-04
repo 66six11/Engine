@@ -409,7 +409,7 @@ public sealed class ProjectReferenceGraphTests
     }
 
     [Fact]
-    public void App_uses_only_the_hard_cut_shell_and_headless_has_an_isolated_dispatcher()
+    public void App_composes_the_scene_document_shell_and_headless_has_an_isolated_dispatcher()
     {
         var studioRoot = FindStudioRoot();
         var appSource = File.ReadAllText(Path.Combine(studioRoot, "App.axaml.cs"));
@@ -417,7 +417,9 @@ public sealed class ProjectReferenceGraphTests
             "new StudioShellViewModel(projectSession, projectDialogs)",
             appSource,
             StringComparison.Ordinal);
-        Assert.Contains("new ProjectSession(new ProjectDescriptorBridge())", appSource);
+        Assert.Contains("new ProjectSession(", appSource);
+        Assert.Contains("new ProjectDescriptorBridge()", appSource);
+        Assert.Contains("new SceneDocumentBridge()", appSource);
         Assert.Contains("StudioCompositionSession.CreateAsync", appSource, StringComparison.Ordinal);
         Assert.Matches(
             @"StudioCompositionSession\.CreateAsync\(\s*shellViewModel,\s*projectSession,\s*mainWindow,\s*diagnostics_,\s*cancellationToken,",
@@ -452,8 +454,9 @@ public sealed class ProjectReferenceGraphTests
         Assert.Contains("StudioShellStartingState", shellXaml, StringComparison.Ordinal);
         Assert.Contains("StudioShellNoProjectState", shellXaml, StringComparison.Ordinal);
         Assert.Contains("StudioShellNoDocumentState", shellXaml, StringComparison.Ordinal);
+        Assert.Contains("StudioHierarchyPanel", shellXaml, StringComparison.Ordinal);
+        Assert.Contains("StudioInspectorPanel", shellXaml, StringComparison.Ordinal);
         Assert.DoesNotContain("Dock", shellXaml, StringComparison.Ordinal);
-        Assert.DoesNotContain("Scene", shellXaml, StringComparison.Ordinal);
 
         var headlessProject = XDocument.Load(Path.Combine(
             studioRoot,
@@ -754,7 +757,7 @@ public sealed class ProjectReferenceGraphTests
     }
 
     [Fact]
-    public void Application_project_is_a_dependency_free_net10_library()
+    public void Application_project_depends_only_on_runtime_value_contracts()
     {
         var studioRoot = FindStudioRoot();
         var projectPath = Path.Combine(
@@ -771,7 +774,9 @@ public sealed class ProjectReferenceGraphTests
             .Order(StringComparer.Ordinal)
             .ToArray();
 
-        Assert.Empty(references);
+        Assert.Equal(
+            ["../Asharia.Runtime.Contracts/Asharia.Runtime.Contracts.csproj"],
+            references);
         Assert.Empty(project.Descendants("PackageReference"));
         Assert.Equal("net10.0", RequiredProperty(project, "TargetFramework"));
         Assert.Equal("Asharia.Studio.Application", RequiredProperty(project, "AssemblyName"));

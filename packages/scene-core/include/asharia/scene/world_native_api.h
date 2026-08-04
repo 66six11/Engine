@@ -36,6 +36,12 @@ enum {
     AshariaSceneNativeStatus_InvalidTransform = 7U,
     AshariaSceneNativeStatus_InvalidUtf8 = 8U,
     AshariaSceneNativeStatus_BufferTooSmall = 9U,
+    AshariaSceneNativeStatus_InvalidScene = 10U,
+    AshariaSceneNativeStatus_RevisionConflict = 11U,
+    AshariaSceneNativeStatus_IoFailure = 12U,
+    AshariaSceneNativeStatus_StaleHandle = 13U,
+    AshariaSceneNativeStatus_InvalidObject = 14U,
+    AshariaSceneNativeStatus_DuplicateObject = 15U,
 };
 
 typedef struct AshariaSceneNativeAbiHeader {

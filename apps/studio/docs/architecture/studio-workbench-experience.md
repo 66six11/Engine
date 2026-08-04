@@ -5,8 +5,11 @@
 
 > R0已删除无真实consumer的Workbench、ProjectOpenSession checkpoint与project-launch presentation；本文相关
 > 描述不再是production事实。
+>
+> 2026-08-04：ADR-0009 已建立不依赖旧 Workbench 的最小真实编辑面：单 SceneDocument、Hierarchy、Inspector、
+> Create Entity、Save 与 dirty。Dock、Project/Asset panel、Scene View、Diagnostics panels、undo/redo 和多文档仍是后续范围。
 
-更新日期：2026-07-31
+更新日期：2026-08-04
 
 跟踪：GitHub Epic #119；设计 Slice #337；首个实现 Slice #338
 
@@ -48,33 +51,22 @@ find -> inspect -> select -> edit -> preview -> validate -> commit/undo
 
 ## 3. 当前实现事实与缺口
 
-2026-07-29 的源码与运行态审计确认：
+2026-08-04 的 production 源码与运行态事实：
 
-- `Editor.csproj` 已使用 Avalonia、compiled binding、CommunityToolkit.Mvvm 和现有图标能力；
-- Shell 已有 Main Menu、Dock、Status Bar、Command Palette 和 Dialog；
-- Dock 已支持 tabs、splits、floating、drop guide 和布局持久化；
-- Application/Core 已有 selection、transaction、dirty、diagnostics 和 scene snapshot 基础；
-- Shell-owned Workbench Bar 与窗口标题已投影明确的 project/document 占位、Edit mode、selection、task 和 diagnostic 摘要；
-- 默认工作台使用 Shell-owned `Default` preset：Hierarchy 与 Project 左侧垂直分割、Scene View 居中、Inspector 右置，Diagnostics 默认折叠；
-- `Compact` preset 把 Hierarchy 与 Project 合并为 tab group，仍保留 Scene View 与 Inspector；
-- Console、Problems 和 compiled Avalonia UI Style developer gallery 继续注册并可恢复，但不由默认布局创建；
-- 未接真实 render lane 的 Frame Debugger 已从 production panel/action catalog 删除；旧布局中的该未知
-  tab 会被忽略；
-- Shell-owned project launch surface 显示全部 canonical project-open 状态、候选工程、下一步与首要诊断；
-- Project compiled XAML 面板只保留 active project asset workspace 占位；搜索仍未连接 asset service；
-- `Asharia.Editor.Projects` 已定义 project-open session 的 UI-neutral snapshot，Application 已能严格解析
-  canonical bootstrap report，并通过共享内存 source 把 snapshot 注入 Shell-owned project launch surface；
-  当前仍没有正式 report provider，也未启用 project action；
-- Hierarchy 到 Inspector 与 Workbench Bar 的 selection 同步和 Command Palette 已可工作。
+- `Editor.csproj` 使用 Avalonia、compiled binding 与 CommunityToolkit.Mvvm；
+- Shell 只有项目 ingress 和单 SceneDocument 三列编辑面，没有恢复旧 Dock/Workbench；
+- Hierarchy 投影 authoritative entity snapshot；Inspector 编辑所选 stable object ID 的名称与 local Transform；
+- Create Entity、Save、dirty 标记与关闭重开恢复经过 Application/EngineBridge/native Document 真实链；
+- selection 仅由 ViewModel 按 stable ID remap，不成为 engine truth；
+- Project/Asset panel、Scene View、Console/Problems panel、Command Palette、Dock、多文档、undo/redo 和 Play Mode 尚未实现。
 
 当前缺口：
 
-1. Shell 已有 project-open 状态投影，但 project selection/report provider、正式 ProjectSession 和
-   `find asset -> inspect/use` 仍要等待真实 project/asset service。
-2. Inspector 主要是只读属性表，read-only、dirty、invalid、locked 等状态仍需随 writable property Slice 完成。
-3. Scene View 缺少面板内工具栏和轻量 overlay；backend 失败仍会占用主要视区。
-4. 同一诊断可同时以 Scene View 消息、Console 行和 Status 文本出现，仍需收敛 primary feedback 与重复聚合。
-5. Workbench Bar 的 Play、viewport tool 与 project action 仍按现有能力保持 disabled；只有相应 service/command 落地后才能启用。
+1. Project package manifest/lock、细分 loading/degraded 状态和 asset workspace 仍待真实 service。
+2. Inspector 只覆盖名称与 local Transform；component reflection、validation rows、undo/redo 与 multi-selection 未实现。
+3. Scene View、render lane、工具栏和 overlay 未实现。
+4. Console/Problems/Status 的诊断呈现仍要从同一 bounded hub 重建。
+5. Dock、多文档、Play 和 viewport tools 只有相应 owner/command 落地后才能启用。
 
 这些缺口优先通过现有系统的组合、状态投影和少量 Shell surface 解决；不以抽象通用 UI 框架作为前置条件。
 
@@ -384,12 +376,12 @@ lifecycle 合同见 [Studio 前端硬切架构](studio-frontend-hard-cut.md)。
 
 ```text
 launch Studio
--> see explicit No Project / No Document context and production default panels
--> observe empty Hierarchy and Inspector without fixture entities
--> activate a project and remain No Document until a real SceneDocument exists
--> open Project, Diagnostics, and compiled UI Style through Window or Command Palette
--> verify Frame Debugger is absent until the real render lane is connected
--> resize to compact width without losing the center document
+-> create or open a canonical project
+-> automatically create or open Default.asharia.scene.json
+-> create/select an entity in Hierarchy
+-> edit name and local Transform in Inspector
+-> observe dirty, save, close project, reopen
+-> verify authoritative data is unchanged
 ```
 
 ### Slice B 及以后

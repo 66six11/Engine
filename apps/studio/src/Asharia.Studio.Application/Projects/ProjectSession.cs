@@ -1,22 +1,30 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Asharia.Runtime;
+using Asharia.Studio.Application.Scenes;
 
 namespace Asharia.Studio.Application.Projects;
 
 public sealed class ProjectSession : IProjectSession
 {
-    private readonly IProjectDescriptorGateway gateway_;
+    private readonly IProjectDescriptorGateway projectGateway_;
+    private readonly ISceneDocumentGateway sceneGateway_;
     private readonly SemaphoreSlim operationGate_ = new(1, 1);
     private readonly CancellationTokenSource lifetimeCancellation_ = new();
     private readonly object snapshotGate_ = new();
     private ProjectSessionSnapshot current_ = ProjectSessionSnapshot.NoProject;
+    private ISceneDocumentConnection? activeDocument_;
     private int disposeStarted_;
 
-    public ProjectSession(IProjectDescriptorGateway gateway)
+    public ProjectSession(
+        IProjectDescriptorGateway projectGateway,
+        ISceneDocumentGateway sceneGateway)
     {
-        ArgumentNullException.ThrowIfNull(gateway);
-        gateway_ = gateway;
+        ArgumentNullException.ThrowIfNull(projectGateway);
+        ArgumentNullException.ThrowIfNull(sceneGateway);
+        projectGateway_ = projectGateway;
+        sceneGateway_ = sceneGateway;
     }
 
     public event EventHandler? SnapshotChanged;
@@ -39,13 +47,13 @@ public sealed class ProjectSession : IProjectSession
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(parentDirectory);
         ArgumentException.ThrowIfNullOrWhiteSpace(projectName);
-        return ExecuteAsync(
-            token => gateway_.CreateMinimalProjectAsync(
+        return OpenProjectCoreAsync(
+            token => projectGateway_.CreateMinimalProjectAsync(
                 parentDirectory,
                 projectName,
                 Guid.NewGuid(),
                 token),
-            snapshot => $"Created project '{snapshot.ProjectName}'.",
+            descriptor => $"Created project '{descriptor.ProjectName}' and opened its default scene.",
             cancellationToken);
     }
 
@@ -54,11 +62,112 @@ public sealed class ProjectSession : IProjectSession
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(projectPath);
-        return ExecuteAsync(
-            token => gateway_.OpenProjectAsync(projectPath, token),
-            snapshot => $"Opened project '{snapshot.ProjectName}'.",
+        return OpenProjectCoreAsync(
+            token => projectGateway_.OpenProjectAsync(projectPath, token),
+            descriptor => $"Opened project '{descriptor.ProjectName}' and its default scene.",
             cancellationToken);
     }
+
+    public async ValueTask<ProjectSessionOperationResult> CloseProjectAsync(
+        CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        using var linkedCancellation = CreateLinkedCancellation(cancellationToken);
+        await operationGate_.WaitAsync(linkedCancellation.Token).ConfigureAwait(false);
+        try
+        {
+            ThrowIfDisposed();
+            linkedCancellation.Token.ThrowIfCancellationRequested();
+            var document = activeDocument_;
+            if (document is null)
+            {
+                return ProjectSessionOperationResult.Success(
+                    Current,
+                    "No project is open.");
+            }
+
+            await document.DisposeAsync().ConfigureAwait(false);
+            activeDocument_ = null;
+            Publish(ProjectSessionSnapshot.NoProject);
+            return ProjectSessionOperationResult.Success(
+                ProjectSessionSnapshot.NoProject,
+                "Closed the active scene document and project.");
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            return ProjectSessionOperationResult.Failed(
+                Current,
+                ProjectSessionFailureKind.InternalError,
+                DiagnosticMessage(exception, "The active scene document could not be closed."));
+        }
+        finally
+        {
+            operationGate_.Release();
+        }
+    }
+
+    public ValueTask<ProjectSessionOperationResult> CreateEntityAsync(
+        string name,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(name);
+        return EditSceneAsync(
+            (document, snapshot) => document.CreateEntityAsync(
+                Guid.NewGuid(),
+                name,
+                snapshot.Revision,
+                CancellationToken.None),
+            "Created a scene entity.",
+            cancellationToken);
+    }
+
+    public ValueTask<ProjectSessionOperationResult> SetEntityNameAsync(
+        Guid objectId,
+        string name,
+        CancellationToken cancellationToken = default)
+    {
+        if (objectId == Guid.Empty)
+        {
+            throw new ArgumentException("Scene object id must not be empty.", nameof(objectId));
+        }
+        ArgumentNullException.ThrowIfNull(name);
+        return EditSceneAsync(
+            (document, snapshot) => document.SetEntityNameAsync(
+                objectId,
+                name,
+                snapshot.Revision,
+                CancellationToken.None),
+            "Updated the scene entity name.",
+            cancellationToken);
+    }
+
+    public ValueTask<ProjectSessionOperationResult> SetEntityTransformAsync(
+        Guid objectId,
+        TransformValue transform,
+        CancellationToken cancellationToken = default)
+    {
+        if (objectId == Guid.Empty)
+        {
+            throw new ArgumentException("Scene object id must not be empty.", nameof(objectId));
+        }
+        return EditSceneAsync(
+            (document, snapshot) => document.SetEntityTransformAsync(
+                objectId,
+                transform,
+                snapshot.Revision,
+                CancellationToken.None),
+            "Updated the scene entity Transform.",
+            cancellationToken);
+    }
+
+    public ValueTask<ProjectSessionOperationResult> SaveSceneAsync(
+        CancellationToken cancellationToken = default) =>
+        EditSceneAsync(
+            (document, snapshot) => document.SaveAsync(
+                snapshot.Revision,
+                CancellationToken.None),
+            "Saved the active scene.",
+            cancellationToken);
 
     public async ValueTask DisposeAsync()
     {
@@ -69,31 +178,42 @@ public sealed class ProjectSession : IProjectSession
 
         await lifetimeCancellation_.CancelAsync().ConfigureAwait(false);
         await operationGate_.WaitAsync().ConfigureAwait(false);
-        operationGate_.Release();
+        try
+        {
+            var document = activeDocument_;
+            activeDocument_ = null;
+            lock (snapshotGate_)
+            {
+                current_ = ProjectSessionSnapshot.NoProject;
+            }
+            if (document is not null)
+            {
+                await document.DisposeAsync().ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            operationGate_.Release();
+            operationGate_.Dispose();
+            lifetimeCancellation_.Dispose();
+        }
     }
 
-    private async ValueTask<ProjectSessionOperationResult> ExecuteAsync(
-        Func<CancellationToken, ValueTask<ProjectDescriptorOperationResult>> operation,
+    private async ValueTask<ProjectSessionOperationResult> OpenProjectCoreAsync(
+        Func<CancellationToken, ValueTask<ProjectDescriptorOperationResult>> projectOperation,
         Func<ProjectDescriptorSnapshot, string> successMessage,
         CancellationToken cancellationToken)
     {
-        ObjectDisposedException.ThrowIf(
-            Volatile.Read(ref disposeStarted_) != 0,
-            this);
-        using var linkedCancellation = CancellationTokenSource.CreateLinkedTokenSource(
-            cancellationToken,
-            lifetimeCancellation_.Token);
+        ThrowIfDisposed();
+        using var linkedCancellation = CreateLinkedCancellation(cancellationToken);
         await operationGate_.WaitAsync(linkedCancellation.Token).ConfigureAwait(false);
         try
         {
-            ObjectDisposedException.ThrowIf(
-                Volatile.Read(ref disposeStarted_) != 0,
-                this);
-
-            ProjectDescriptorOperationResult result;
+            ThrowIfDisposed();
+            ProjectDescriptorOperationResult projectResult;
             try
             {
-                result = await operation(linkedCancellation.Token).ConfigureAwait(false);
+                projectResult = await projectOperation(linkedCancellation.Token).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (linkedCancellation.IsCancellationRequested)
             {
@@ -101,41 +221,194 @@ public sealed class ProjectSession : IProjectSession
             }
             catch (Exception exception)
             {
-                result = ProjectDescriptorOperationResult.Failed(
-                    new ProjectDescriptorFailure(
-                        ProjectDescriptorFailureKind.InternalError,
-                        string.IsNullOrWhiteSpace(exception.Message)
-                            ? "The project adapter failed without a diagnostic."
-                            : exception.Message));
+                return ProjectSessionOperationResult.Failed(
+                    Current,
+                    ProjectSessionFailureKind.InternalError,
+                    DiagnosticMessage(exception, "The project adapter failed without a diagnostic."));
             }
 
             linkedCancellation.Token.ThrowIfCancellationRequested();
-            if (!result.Succeeded)
+            if (!projectResult.Succeeded)
+            {
+                var failure = projectResult.Failure!;
+                return ProjectSessionOperationResult.Failed(
+                    Current,
+                    MapProjectFailure(failure.Kind),
+                    failure.Message);
+            }
+
+            var descriptor = projectResult.Project!;
+            SceneDocumentOpenResult sceneResult;
+            try
+            {
+                sceneResult = await sceneGateway_.OpenDefaultAsync(
+                    descriptor.RootPath,
+                    Guid.NewGuid(),
+                    linkedCancellation.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (linkedCancellation.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception)
             {
                 return ProjectSessionOperationResult.Failed(
                     Current,
-                    result.Failure!);
+                    ProjectSessionFailureKind.InternalError,
+                    DiagnosticMessage(exception, "The scene document adapter failed without a diagnostic."));
             }
 
-            var descriptor = result.Project!;
+            if (!sceneResult.Succeeded)
+            {
+                var failure = sceneResult.Failure!;
+                return ProjectSessionOperationResult.Failed(
+                    Current,
+                    MapSceneFailure(failure.Kind),
+                    failure.Message);
+            }
+
+            var nextDocument = sceneResult.Connection!;
+            if (linkedCancellation.IsCancellationRequested)
+            {
+                await nextDocument.DisposeAsync().ConfigureAwait(false);
+                linkedCancellation.Token.ThrowIfCancellationRequested();
+            }
+
+            var previousDocument = activeDocument_;
+            if (previousDocument is not null)
+            {
+                try
+                {
+                    await previousDocument.DisposeAsync().ConfigureAwait(false);
+                }
+                catch (Exception exception)
+                {
+                    await nextDocument.DisposeAsync().ConfigureAwait(false);
+                    activeDocument_ = null;
+                    Publish(ProjectSessionSnapshot.NoProject);
+                    return ProjectSessionOperationResult.Failed(
+                        ProjectSessionSnapshot.NoProject,
+                        ProjectSessionFailureKind.InternalError,
+                        DiagnosticMessage(
+                            exception,
+                            "The previous scene document could not be closed during project replacement."));
+                }
+            }
+
+            activeDocument_ = nextDocument;
             var next = ProjectSessionSnapshot.Ready(
                 new ActiveProjectSnapshot(
                     ProjectSessionId.CreateNew(),
                     descriptor.ProjectId,
                     descriptor.ProjectName,
-                    descriptor.RootPath));
-            lock (snapshotGate_)
-            {
-                current_ = next;
-            }
-            SnapshotChanged?.Invoke(this, EventArgs.Empty);
-            return ProjectSessionOperationResult.Success(
-                next,
-                successMessage(descriptor));
+                    descriptor.RootPath),
+                sceneResult.Document!);
+            Publish(next);
+            return ProjectSessionOperationResult.Success(next, successMessage(descriptor));
         }
         finally
         {
             operationGate_.Release();
         }
     }
+
+    private async ValueTask<ProjectSessionOperationResult> EditSceneAsync(
+        Func<ISceneDocumentConnection, SceneDocumentSnapshot,
+            ValueTask<SceneDocumentOperationResult>> operation,
+        string successMessage,
+        CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+        using var linkedCancellation = CreateLinkedCancellation(cancellationToken);
+        await operationGate_.WaitAsync(linkedCancellation.Token).ConfigureAwait(false);
+        try
+        {
+            ThrowIfDisposed();
+            linkedCancellation.Token.ThrowIfCancellationRequested();
+            var before = Current;
+            var document = activeDocument_;
+            if (document is null || before.Project is null || before.Document is null)
+            {
+                return ProjectSessionOperationResult.Failed(
+                    before,
+                    ProjectSessionFailureKind.NoProject,
+                    "No editable scene document is open.");
+            }
+
+            SceneDocumentOperationResult result;
+            try
+            {
+                // Once an edit enters the native owner lane, it runs to an authoritative result.
+                result = await operation(document, before.Document).ConfigureAwait(false);
+            }
+            catch (Exception exception)
+            {
+                return ProjectSessionOperationResult.Failed(
+                    Current,
+                    ProjectSessionFailureKind.InternalError,
+                    DiagnosticMessage(exception, "The scene edit failed without a diagnostic."));
+            }
+
+            var next = ProjectSessionSnapshot.Ready(before.Project, result.Current);
+            Publish(next);
+            if (!result.Succeeded)
+            {
+                var failure = result.Failure!;
+                return ProjectSessionOperationResult.Failed(
+                    next,
+                    MapSceneFailure(failure.Kind),
+                    failure.Message);
+            }
+            return ProjectSessionOperationResult.Success(next, successMessage);
+        }
+        finally
+        {
+            operationGate_.Release();
+        }
+    }
+
+    private void Publish(ProjectSessionSnapshot snapshot)
+    {
+        lock (snapshotGate_)
+        {
+            current_ = snapshot;
+        }
+        SnapshotChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private CancellationTokenSource CreateLinkedCancellation(CancellationToken cancellationToken) =>
+        CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken,
+            lifetimeCancellation_.Token);
+
+    private void ThrowIfDisposed() =>
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref disposeStarted_) != 0, this);
+
+    private static string DiagnosticMessage(Exception exception, string fallback) =>
+        string.IsNullOrWhiteSpace(exception.Message) ? fallback : exception.Message;
+
+    private static ProjectSessionFailureKind MapProjectFailure(
+        ProjectDescriptorFailureKind kind) => kind switch
+        {
+            ProjectDescriptorFailureKind.InvalidInput => ProjectSessionFailureKind.InvalidInput,
+            ProjectDescriptorFailureKind.InvalidProject => ProjectSessionFailureKind.InvalidProject,
+            ProjectDescriptorFailureKind.AlreadyExists => ProjectSessionFailureKind.AlreadyExists,
+            ProjectDescriptorFailureKind.Busy => ProjectSessionFailureKind.Busy,
+            ProjectDescriptorFailureKind.IoFailure => ProjectSessionFailureKind.IoFailure,
+            ProjectDescriptorFailureKind.NativeUnavailable => ProjectSessionFailureKind.NativeUnavailable,
+            _ => ProjectSessionFailureKind.InternalError,
+        };
+
+    private static ProjectSessionFailureKind MapSceneFailure(
+        SceneDocumentFailureKind kind) => kind switch
+        {
+            SceneDocumentFailureKind.InvalidInput => ProjectSessionFailureKind.InvalidInput,
+            SceneDocumentFailureKind.InvalidScene => ProjectSessionFailureKind.InvalidScene,
+            SceneDocumentFailureKind.RevisionConflict => ProjectSessionFailureKind.RevisionConflict,
+            SceneDocumentFailureKind.InvalidObject => ProjectSessionFailureKind.InvalidObject,
+            SceneDocumentFailureKind.InvalidTransform => ProjectSessionFailureKind.InvalidTransform,
+            SceneDocumentFailureKind.IoFailure => ProjectSessionFailureKind.IoFailure,
+            SceneDocumentFailureKind.NativeUnavailable => ProjectSessionFailureKind.NativeUnavailable,
+            _ => ProjectSessionFailureKind.InternalError,
+        };
 }

@@ -20,9 +20,13 @@ public sealed class MainWindowXamlTests
         Assert.Contains("Text=\"{Binding ProjectStateText}\"", xaml);
         Assert.Contains("Command=\"{Binding CreateProjectCommand}\"", xaml);
         Assert.Contains("Command=\"{Binding OpenProjectCommand}\"", xaml);
+        Assert.Contains("Command=\"{Binding CreateEntityCommand}\"", xaml);
+        Assert.Contains("Command=\"{Binding SaveSceneCommand}\"", xaml);
         Assert.Contains("Text=\"{Binding DocumentStateText}\"", xaml);
+        Assert.Contains("ItemsSource=\"{Binding SceneEntities}\"", xaml);
+        Assert.Contains("StudioHierarchyPanel", xaml, StringComparison.Ordinal);
+        Assert.Contains("StudioInspectorPanel", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("Dock", xaml, StringComparison.Ordinal);
-        Assert.DoesNotContain("Scene", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("ProjectLaunch", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("MainWindowViewModel", xaml, StringComparison.Ordinal);
         Assert.Contains("Background=\"#0B0F14\"", xaml, StringComparison.Ordinal);
@@ -43,6 +47,8 @@ public sealed class MainWindowXamlTests
         Assert.Contains("AutomationProperties.AutomationId=\"StudioShellNoProjectState\"", xaml);
         Assert.Contains("AutomationProperties.AutomationId=\"StudioShellNoDocumentState\"", xaml);
         Assert.Contains("AutomationProperties.AutomationId=\"StudioShellActiveProjectState\"", xaml);
+        Assert.Contains("AutomationProperties.AutomationId=\"StudioHierarchyPanel\"", xaml);
+        Assert.Contains("AutomationProperties.AutomationId=\"StudioInspectorPanel\"", xaml);
         Assert.Contains("AutomationProperties.Name=\"New project name\"", xaml);
         Assert.Contains("AutomationProperties.Name=\"Create project\"", xaml);
         Assert.Contains("AutomationProperties.Name=\"Open project\"", xaml);

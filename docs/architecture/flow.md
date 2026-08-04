@@ -26,14 +26,15 @@ flowchart TD
     Reflection["packages/reflection"]
     Serialization["packages/serialization"]
     SceneCore["packages/scene-core"]
+    SceneCoreIo["packages/scene-core<br/>asharia::scene_core_io"]
     SceneNative["packages/scene-core<br/>asharia::scene_native C ABI adapter"]
     ProjectCore["packages/project-core"]
     ProjectCoreIo["packages/project-core<br/>asharia::project_core_io"]
     ProjectNative["packages/project-core<br/>asharia::project_native C ABI"]
     ProjectBootstrap["packages/project-bootstrap<br/>reader + ProcessApplicationV1 provider"]
     Studio["apps/studio<br/>Avalonia Shell + composition"]
-    StudioApplication["Studio.Application<br/>ProjectSession"]
-    StudioBridge["Studio.EngineBridge<br/>project adapter"]
+    StudioApplication["Studio.Application<br/>ProjectSession + SceneDocument ports"]
+    StudioBridge["Studio.EngineBridge<br/>project + scene adapters"]
     AssetCore["packages/asset-core"]
     AssetCoreIo["packages/asset-core<br/>asharia::asset_core_io"]
     AssetPipeline["packages/asset-pipeline"]
@@ -66,7 +67,10 @@ flowchart TD
     Serialization --> Core
     Serialization --> Reflection
     SceneCore --> Core
+    SceneCoreIo --> SceneCore
+    SceneCoreIo --> Archive
     SceneNative --> SceneCore
+    SceneNative --> SceneCoreIo
     ProjectCore --> Core
     ProjectCoreIo --> ProjectCore
     ProjectCoreIo --> Archive
@@ -76,6 +80,7 @@ flowchart TD
     Studio --> StudioApplication
     Studio --> StudioBridge
     StudioBridge -.P/Invoke.-> ProjectNative
+    StudioBridge -.P/Invoke.-> SceneNative
     AssetCore --> Core
     AssetCoreIo --> AssetCore
     AssetCoreIo --> Archive
@@ -161,13 +166,12 @@ flowchart TD
 - `profiling` 提供后端无关 CPU scope、frame profile 和 JSONL 输出；当前只由 sample-viewer benchmark 使用。
 - `schema`、`archive`、`cpp-binding` 和 `persistence` 是新的 schema-first persistence 路线；
   `reflection` / `serialization` 仍作为过渡兼容路径由 sample-viewer smoke 覆盖。
-- `scene-core`、`asset-core` 和 `material-core` 目前是 CPU/headless 数据模型 package，不依赖 renderer、RHI 或 editor；
-  同 package 的 `asharia::scene_native` 是只依赖 `asharia::scene_core` 的 shared adapter，当前 C ABI 只提供
-  version/struct-size 校验后的 opaque World、generation-safe entity 生命周期、validated local Transform 与
-  UTF-8 display/debug name get/set，并强制所有操作由创建线程调用。它尚不公开 hierarchy/world Transform、
-  change notification、managed binding 或 render extraction。
-  Studio 发行的 `Asharia.Runtime.Contracts` 只固定与该 C ABI 对应的 unmanaged `EntityId`、float3、quaternion
-  与 local Transform value layout；它没有 native function imports、World lifetime 或 Scene provider 行为。
+- `scene-core`、`asset-core` 和 `material-core` 是 CPU/headless 数据模型 package，不依赖 renderer、RHI 或 editor。
+  `asharia::scene_core_io` 组合 World、stable document/object ID、revision/savepoint 与 archive strict JSON；同 package
+  的 `asharia::scene_native` 同时提供 package World smoke ABI 和 production SceneDocument ABI。Document ABI 使用
+  generation-safe token、owner-thread operation、expected revision、bulk snapshot、save 与 caller-owned UTF-8 buffer；
+  EngineBridge 在 dedicated owner lane 上调用它。它尚不公开 hierarchy/world Transform、component reflection、undo/redo
+  或 render extraction。
   `.ameta` 文本 IO 位于可选 `asharia::asset_core_io` target，只额外依赖 `archive` strict JSON facade。
 - `project-core` 拥有最小 project descriptor model；`asharia::project_core_io` 通过 `archive` strict JSON facade
   读写 `asharia.project.json`，并以 sibling staging + directory rename 创建最小 `Assets/` 与 cache 布局，拒绝覆盖
@@ -198,10 +202,10 @@ flowchart TD
   `packages/systems/editor` 内部 `editor_domain` target 只能保留 backend-neutral editor state，不能继承 ImGui、Vulkan、renderer 或 importer
   execution 依赖。
 - `apps/studio` 是 Avalonia managed Studio shell，不属于 C++ CMake target graph。当前真实产品链为
-  `App/Shell -> Application ProjectSession -> EngineBridge -> asharia_project_native -> project_core_io`；Shell 只选择
-  路径、发命令和投影 snapshot，descriptor JSON 与项目目录只由 project-core 拥有。Studio 尚无 SceneDocument、
-  World、Hierarchy/Inspector 或 viewport native consumer，`asharia_scene_native`、`editor_native` 与 Slang 不进入
-  Release image。
+  `App/Shell -> Application ProjectSession -> EngineBridge project + scene adapters -> project/scene native ABI`；Shell
+  只选择路径、发命令和投影 snapshot，不解析 descriptor/scene JSON，也不持有 native handle。Release image 精确包含
+  project/scene 两个 native DLL；`editor_native` 与 Slang 不进入。当前已有单 SceneDocument、Hierarchy、名称/local
+  Transform Inspector、Create Entity、Save 与 dirty，尚无 viewport、Dock、Asset Browser、undo/redo 或 Play Mode。
 - Editor panels 仍由 `EditorPanelRegistry::drawPanels(EditorFrameContext)` 适配每帧能力，但内置
   panel 的 `draw()` 实现会先收敛为 panel-local context，再把最小能力传给 helper。Scene View panel
   不创建 Vulkan objects、不注册 descriptor、不录 command buffer。
@@ -209,9 +213,9 @@ flowchart TD
   descriptor 读取、source scan/discovery/snapshot、import planning 和 catalog report 生成在 `apps/editor`
   的 host 服务中组合 public package API。它不执行 importer、不写 product manifest/blob、不创建 runtime asset
   handle，也不上传 GPU 资源。
-- R0 Studio已删除legacy Scene Tree/Inspector workbench与无consumer的public/Application Selection岛；当前最小Shell
-  没有selection producer、reader或snapshot数据流。C++ editor-local `EditorSelectionSet`属于独立native editor边界，
-  不构成Studio selection能力；未来必须从真实Document/World/asset owner重新建立typed scoped identity与失效路径。
+- R0 删除的 legacy Scene Tree/Inspector workbench 与无 consumer Selection 岛保持删除。ADR-0009 的最小 Shell 从
+  authoritative SceneDocument snapshot 重建 selection：ViewModel 只保存 stable object ID，并在 snapshot 更新时 remap/
+  清除；它不复用 C++ editor-local `EditorSelectionSet`，也不把 selection 升级为 engine truth。
 
 ## 当前 Windows Development Host 生成、验证与 normal 执行流
 
@@ -542,49 +546,63 @@ flowchart TB
 - `apps/editor` 是 editor host 和 smoke harness；它拥有 ImGui backend lifecycle、panel/action/event
   state 和 ImGui texture descriptor lifetime。它可以在 host integration 层录制 ImGui draw data
   到 swapchain，但 editor panel 不能录制 Vulkan commands。
-- `apps/studio` 是 managed shell；当前只拥有 canonical ProjectSession create/open 与 No Document 投影。未来
+- `apps/studio` 是 managed shell；当前拥有 canonical ProjectSession 和单 authoritative SceneDocument 编辑投影。未来
   Scene View 可以拥有 Avalonia composition surface 和 status ViewModel，但 Vulkan frame recording、external
   image/semaphore 创建和 native packet release 仍必须留在 native bridge/RHI 边界。
 
-## 当前 Studio Active ProjectSession 流程
+## 当前 Studio ProjectSession 与 SceneDocument 流程
 
-Studio 将活动 `ProjectSession` 与 Bootstrap/发行镜像状态分开建模。只有 project-core 完整验证过的 descriptor
-identity 可以成为窗口标题和项目状态；Bootstrap candidate、路径选择和 dialog 返回值都不是活动项目事实。
+Studio 将活动 `ProjectSession` 与 Bootstrap/发行镜像状态分开建模。只有 project-core 完整验证过的 descriptor 和
+scene-core 打开的 authoritative SceneDocument 同时成立，session 才进入 Ready；Bootstrap candidate、路径选择和
+dialog 返回值都不是活动项目或文档事实。
 
 ```mermaid
 flowchart LR
     Picker["Avalonia folder/file picker"]
     VM["StudioShellViewModel"]
     Session["Application ProjectSession"]
-    Port["IProjectDescriptorGateway"]
-    Bridge["EngineBridge ProjectDescriptorBridge"]
-    Native["asharia_project_native<br/>caller-owned buffer ABI"]
-    Core["project_core_io<br/>canonical descriptor + staging create"]
-    Active["ProjectSessionSnapshot.Ready"]
+    ProjectPort["IProjectDescriptorGateway"]
+    ProjectBridge["EngineBridge ProjectDescriptorBridge"]
+    ProjectNative["asharia_project_native<br/>caller-owned buffer ABI"]
+    ProjectCore["project_core_io<br/>canonical descriptor + staging create"]
+    ScenePort["ISceneDocumentGateway"]
+    SceneBridge["EngineBridge SceneDocumentBridge<br/>dedicated owner lane"]
+    SceneNativeDoc["asharia_scene_native<br/>Document ABI"]
+    SceneCoreDoc["scene_core_io<br/>Document owns World + JSON"]
+    Active["ProjectSessionSnapshot.Ready<br/>project + document"]
 
     Picker -->|"selected local path"| VM
     VM -->|"async create / open"| Session
-    Session --> Port
-    Port --> Bridge
-    Bridge --> Native
-    Native --> Core
-    Core -->|"validated root / name / projectId"| Native
-    Native --> Bridge
-    Bridge --> Session
-    Session -->|"success only"| Active
+    Session --> ProjectPort
+    ProjectPort --> ProjectBridge
+    ProjectBridge --> ProjectNative
+    ProjectNative --> ProjectCore
+    ProjectCore -->|"validated root / name / projectId"| ProjectNative
+    ProjectNative --> ProjectBridge
+    ProjectBridge --> Session
+    Session -->|"open/create default scene"| ScenePort
+    ScenePort --> SceneBridge
+    SceneBridge --> SceneNativeDoc
+    SceneNativeDoc --> SceneCoreDoc
+    SceneCoreDoc -->|"authoritative snapshot"| SceneNativeDoc
+    SceneNativeDoc --> SceneBridge
+    SceneBridge --> Session
+    Session -->|"both success only"| Active
     Active --> VM
 ```
 
-- `ProjectSession` 串行 create/open，只在 native descriptor 创建或打开成功后替换活动项目；失败保留原会话。
+- `ProjectSession` 串行 create/open 和 document commands，只在 native descriptor 与默认 SceneDocument 都成功后发布 Ready；
+  document open 失败不会留下半 Ready 会话。
 - Create 在用户选择的父目录创建新的 canonical 项目并立即打开；Open 接受项目目录或
   `asharia.project.json`。已有目标、损坏描述符、IO/ABI/binding failure 都是 typed fail-closed result。
-- Avalonia dialog service 只返回本地路径；`StudioShellViewModel` 发起操作并在 UI dispatcher 上投影 snapshot，
-  不解析 JSON、不持有 native pointer。
+- Avalonia dialog service 只返回本地路径；`StudioShellViewModel` 发起操作并投影 snapshot，不解析 JSON、不持有 native
+  pointer。Hierarchy/Inspector mutations 携 expected revision，成功后以重新读取的 authoritative snapshot 更新 dirty/selection。
 - `App` 创建 gateway、ProjectSession、dialog 和 ViewModel；`StudioCompositionSession` 在 Shell 之后 cancel + await
   ProjectSession。测试组合显式注入 doubles，不读取用户偏好或创建生产 service。
-- `ActiveProjectSnapshot` 只表达已验证的项目身份与路径，不持有 Avalonia 对象、原生指针或 runtime 对象。
-- 当前没有 recent store、自动恢复、模板、Project extension scope、asset catalog、SceneDocument 或 EngineHost；
-  Bootstrap `Ready` 与活动项目 `Ready` 仍是不同状态。
+- `ActiveProjectSnapshot` 与 `SceneDocumentSnapshot` 只表达已验证的 identity/value，不持有 Avalonia 对象、原生指针或
+  runtime 对象。关闭顺序先关闭 document connection/owner lane，再清除 active project。
+- 当前没有 recent store、自动恢复、多模板、Project extension scope、asset catalog、EngineHost、undo/redo 或 Play；
+  Bootstrap `Ready` 与活动项目/文档 `Ready` 仍是不同状态。
 
 ## Retired Studio Avalonia Scene View Composition 流程（历史证据）
 

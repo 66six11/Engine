@@ -60,7 +60,6 @@ public static partial class StudioEditorImageProducer
         "Asharia.Editor",
         "Asharia.Studio.DevelopmentHost",
         "Asharia.Studio.DevelopmentProtocol",
-        "asharia_scene_native",
         "editor_native",
         "slang",
     ];
@@ -76,6 +75,16 @@ public static partial class StudioEditorImageProducer
     [
         "asharia_project_create_minimal",
         "asharia_project_open",
+    ];
+    private static readonly string[] SceneNativeRequiredExports =
+    [
+        "asharia_scene_document_open_default",
+        "asharia_scene_document_close",
+        "asharia_scene_document_snapshot",
+        "asharia_scene_document_create_entity",
+        "asharia_scene_document_set_entity_name",
+        "asharia_scene_document_set_entity_transform",
+        "asharia_scene_document_save",
     ];
 
     public static StudioEditorImageProductionResult Produce(
@@ -265,6 +274,18 @@ public static partial class StudioEditorImageProducer
             "asharia_project_native.dll",
             ProjectNativeRequiredExports,
             "publishRoot/asharia_project_native.dll");
+        var sceneNativeEntry = InspectFile(
+            Path.Combine(publishRoot, "asharia_scene_native.dll"),
+            "publishRoot/asharia_scene_native.dll");
+        ValidatePortableExecutable(
+            sceneNativeEntry,
+            expectDll: true,
+            "publishRoot/asharia_scene_native.dll");
+        ValidateRequiredExports(
+            sceneNativeEntry,
+            "asharia_scene_native.dll",
+            SceneNativeRequiredExports,
+            "publishRoot/asharia_scene_native.dll");
         var editorDeps = InspectFile(
             Path.Combine(publishRoot, "Editor.deps.json"),
             "publishRoot/Editor.deps.json");
@@ -380,6 +401,11 @@ public static partial class StudioEditorImageProducer
             projectNativeEntry,
             "bin/asharia_project_native.dll",
             "publishRoot/asharia_project_native.dll");
+        EnsurePlannedDestination(
+            files,
+            sceneNativeEntry,
+            "bin/asharia_scene_native.dll",
+            "publishRoot/asharia_scene_native.dll");
         EnsurePlannedDestination(
             files,
             editorDeps,
@@ -598,6 +624,14 @@ public static partial class StudioEditorImageProducer
             var isForbiddenStudioArtifact = ForbiddenStudioArtifactStems.Any(
                 stem => fileName.Equals(stem, StringComparison.OrdinalIgnoreCase)
                     || fileName.StartsWith(stem + ".", StringComparison.OrdinalIgnoreCase));
+            var isUnexpectedSceneNativeArtifact =
+                (fileName.Equals("asharia_scene_native", StringComparison.OrdinalIgnoreCase)
+                 || fileName.StartsWith(
+                     "asharia_scene_native.",
+                     StringComparison.OrdinalIgnoreCase))
+                && !file.DestinationPath.Equals(
+                    "bin/asharia_scene_native.dll",
+                    StringComparison.OrdinalIgnoreCase);
             var hasForbiddenDirectory = segments
                 .Skip(1)
                 .Take(segments.Length - 2)
@@ -606,6 +640,7 @@ public static partial class StudioEditorImageProducer
                     || segment.Equals("sdk", StringComparison.OrdinalIgnoreCase)
                     || segment.Equals("packs", StringComparison.OrdinalIgnoreCase));
             if (isForbiddenStudioArtifact
+                || isUnexpectedSceneNativeArtifact
                 || hasForbiddenDirectory
                 || fileName.Equals("dotnet.exe", StringComparison.OrdinalIgnoreCase)
                 || fileName.Equals(
@@ -1084,6 +1119,18 @@ public static partial class StudioEditorImageProducer
             "asharia_project_native.dll",
             ProjectNativeRequiredExports,
             "publishRoot/asharia_project_native.dll");
+        var sceneNativeEntry = Resolve(
+            stagingRoot,
+            "bin/asharia_scene_native.dll");
+        ValidatePortableExecutable(
+            sceneNativeEntry,
+            expectDll: true,
+            "publishRoot/asharia_scene_native.dll");
+        ValidateRequiredExports(
+            sceneNativeEntry,
+            "asharia_scene_native.dll",
+            SceneNativeRequiredExports,
+            "publishRoot/asharia_scene_native.dll");
         ValidateEditorRuntimeEvidence(
             Resolve(stagingRoot, "bin/Editor.deps.json"),
             Resolve(stagingRoot, "bin/Editor.runtimeconfig.json"),
