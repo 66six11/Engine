@@ -5,8 +5,10 @@
 #define WIN32_LEAN_AND_MEAN
 #include <array>
 #include <exception>
+#include <filesystem>
 #include <memory>
 #include <span>
+#include <string_view>
 #include <utility>
 #include <windows.h>
 
@@ -18,6 +20,32 @@ namespace asharia::editor {
     namespace {
 
         constexpr VkFormat kSharedViewportFormat = VK_FORMAT_B8G8R8A8_UNORM;
+
+        [[nodiscard]] std::filesystem::path viewportShaderDirectory() {
+            std::array<wchar_t, 32768> executablePath{};
+            const DWORD length = GetModuleFileNameW(nullptr, executablePath.data(),
+                                                    static_cast<DWORD>(executablePath.size()));
+            if (length != 0U && length < executablePath.size()) {
+                const std::filesystem::path packagedDirectory =
+                    std::filesystem::path{std::wstring_view{executablePath.data(), length}}
+                        .parent_path() /
+                    "shaders" / "renderer-basic";
+#if defined(NDEBUG)
+                return packagedDirectory;
+#else
+                if (std::filesystem::exists(packagedDirectory)) {
+                    return packagedDirectory;
+                }
+#endif
+            }
+
+#if defined(NDEBUG)
+            return {};
+#else
+            // Debug native smoke executables run directly from the CMake tree.
+            return ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR;
+#endif
+        }
         constexpr std::array<BasicDebugWorldLine, 3> kMinimalSceneAxes{
             BasicDebugWorldLine{
                 .start = {0.0F, 0.0F, 0.0F},
@@ -459,10 +487,15 @@ namespace asharia::editor {
         producer.allocator_ = context.allocator();
         producer.graphicsQueue_ = context.graphicsQueue();
         producer.graphicsQueueFamily_ = context.graphicsQueueFamily();
+        const std::filesystem::path shaderDirectory = viewportShaderDirectory();
+        if (shaderDirectory.empty()) {
+            return std::unexpected{
+                vulkanError("Could not resolve the packaged shared viewport shader directory")};
+        }
         auto renderer = BasicFullscreenTextureRenderer::create(BasicFullscreenTextureRendererDesc{
             .device = producer.device_,
             .allocator = producer.allocator_,
-            .shaderDirectory = ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR,
+            .shaderDirectory = shaderDirectory,
         });
         if (!renderer) {
             return std::unexpected{std::move(renderer.error())};

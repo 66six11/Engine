@@ -32,6 +32,27 @@ public sealed class StudioEditorImageTestInputs : IDisposable
         "asharia_scene_document_set_entity_transform",
         "asharia_scene_document_save",
     ];
+    private static readonly string[] ViewportNativeRequiredExports =
+    [
+        "editor_viewport_create_present_slot_v4",
+        "editor_viewport_release_present_packet",
+        "editor_viewport_shutdown",
+    ];
+    private static readonly string[] ViewportShaderFiles =
+    [
+        "debug_line.frag.reflection.json",
+        "debug_line.frag.spv",
+        "debug_line.vert.reflection.json",
+        "debug_line.vert.spv",
+        "descriptor_layout.frag.reflection.json",
+        "descriptor_layout.frag.spv",
+        "descriptor_layout.vert.reflection.json",
+        "descriptor_layout.vert.spv",
+        "world_grid.frag.reflection.json",
+        "world_grid.frag.spv",
+        "world_grid.vert.reflection.json",
+        "world_grid.vert.spv",
+    ];
 
     public StudioEditorImageTestInputs()
     {
@@ -123,6 +144,13 @@ public sealed class StudioEditorImageTestInputs : IDisposable
             "src",
             "Asharia.Studio.EngineBridge",
             "Asharia.Studio.EngineBridge.csproj");
+        var presentation = Path.Combine(
+            repositoryRoot,
+            "apps",
+            "studio",
+            "src",
+            "Asharia.Studio.Presentation.Avalonia",
+            "Asharia.Studio.Presentation.Avalonia.csproj");
         var project = $$"""
             <Project Sdk="Microsoft.NET.Sdk">
               <PropertyGroup>
@@ -139,6 +167,7 @@ public sealed class StudioEditorImageTestInputs : IDisposable
               <ItemGroup>
                 <ProjectReference Include="{{SecurityElement.Escape(application)}}" />
                 <ProjectReference Include="{{SecurityElement.Escape(engineBridge)}}" />
+                <ProjectReference Include="{{SecurityElement.Escape(presentation)}}" />
               </ItemGroup>
             </Project>
             """;
@@ -170,6 +199,21 @@ public sealed class StudioEditorImageTestInputs : IDisposable
             Path.Combine(PublishRoot, "asharia_scene_native.dll"),
             "asharia_scene_native.dll",
             SceneNativeRequiredExports);
+        WriteNativeDll(
+            Path.Combine(PublishRoot, "editor_native.dll"),
+            "editor_native.dll",
+            ViewportNativeRequiredExports);
+        var shaderRoot = Path.Combine(PublishRoot, "shaders", "renderer-basic");
+        Directory.CreateDirectory(shaderRoot);
+        foreach (var fileName in ViewportShaderFiles)
+        {
+            File.WriteAllText(
+                Path.Combine(shaderRoot, fileName),
+                fileName.EndsWith(".json", StringComparison.Ordinal)
+                    ? "{}\n"
+                    : "SPIR-V fixture\n",
+                new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+        }
     }
 
     internal static void WriteNativeDll(

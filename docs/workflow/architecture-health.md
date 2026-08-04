@@ -145,6 +145,11 @@ Host owner，证明 start → run → quiesce → reverse stop。synthetic contr
 `studio-development-observability.md` 2.1→2.16关闭；官方Codex fresh app-server thread已在process cwd与worktree root刻意分离时，以thread runtime fallback取得ready、精确六tool catalog和一次真实只读调用。恢复既有失败task仍须通过官方MCP配置reload后的下一active turn或新task刷新其旧catalog，不能据此否定已关闭的fresh-thread宿主证据。下一能力格只能从当前执行顺序重新过I0→I6，仍不得新增panel framework、
 extension/reload、第二套UI authoring、新Shell service、Capture/Mutate或任意远程控制。
 
+2026-08-04 当前更新：后续 #352/#353 已恢复 authoritative ProjectSession/SceneDocument 编辑闭环，#359/#361 又从
+UI-neutral `ViewportSession` 和 EngineBridge lease 接入一个专用 Avalonia Scene View consumer。Release image 因而有明确 reader
+与 lifecycle owner，现要求 `Runtime.Contracts`、`EngineBridge`、`Presentation.Avalonia`、project/scene/viewport native 与精确
+viewport shader bundle；R0 当时“拒绝这些无 consumer artifact”的删除证据保留为历史事实，不再代表当前产品 closure。
+
 #### P1：SceneDocument mutation 与 native session 尚未接入可靠事务
 
 - 原`EditorTransactionService`在Undo/Redo成功前移动history，且只有string descriptor/closure compensation；该无consumer

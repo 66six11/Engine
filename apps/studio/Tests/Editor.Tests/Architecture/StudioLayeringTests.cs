@@ -320,12 +320,24 @@ public sealed class StudioLayeringTests
     }
 
     [Fact]
-    public void Disconnected_managed_viewport_native_closure_is_deleted()
+    public void Retired_viewport_closure_stays_deleted_while_the_new_adapter_is_deployed()
     {
         var root = FindRepositoryRoot();
         var projectSource = File.ReadAllText(Path.Combine(root, "Editor.csproj"));
         var programSource = File.ReadAllText(Path.Combine(root, "Program.cs"));
         var appSource = File.ReadAllText(Path.Combine(root, "App.axaml.cs"));
+        var scenePanelXaml = File.ReadAllText(Path.Combine(
+            root,
+            "Shell",
+            "Views",
+            "Panels",
+            "StudioScenePanelView.axaml"));
+        var viewportControlSource = File.ReadAllText(Path.Combine(
+            root,
+            "src",
+            "Asharia.Studio.Presentation.Avalonia",
+            "Viewports",
+            "ViewportCompositionControl.cs"));
 
         Assert.False(Directory.Exists(Path.Combine(root, "Core", "Interop", "Viewports")));
         Assert.False(Directory.Exists(Path.Combine(root, "Core", "Models", "Viewports")));
@@ -354,10 +366,22 @@ public sealed class StudioLayeringTests
             "Editor.Tests",
             "Build",
             "EditorNativeRuntimeCopyTests.cs")));
-        Assert.DoesNotContain("editor_native.dll", projectSource, StringComparison.Ordinal);
+        Assert.Contains("editor_native.dll", projectSource, StringComparison.Ordinal);
+        Assert.Contains(
+            "Asharia.Studio.Presentation.Avalonia",
+            projectSource,
+            StringComparison.Ordinal);
+        Assert.Contains("shaders\\renderer-basic", projectSource, StringComparison.Ordinal);
         Assert.DoesNotContain("slang.dll", projectSource, StringComparison.Ordinal);
         Assert.Contains("asharia_project_native.dll", projectSource, StringComparison.Ordinal);
         Assert.Contains("asharia_scene_native.dll", projectSource, StringComparison.Ordinal);
+        Assert.Contains(
+            "<presentation:ViewportCompositionControl",
+            scenePanelXaml,
+            StringComparison.Ordinal);
+        Assert.Contains("Session=\"{Binding Session}\"", scenePanelXaml, StringComparison.Ordinal);
+        Assert.Contains("#SceneViewport.IsDegraded", scenePanelXaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("DispatcherTimer", viewportControlSource, StringComparison.Ordinal);
         Assert.DoesNotContain("Win32PlatformOptions", programSource, StringComparison.Ordinal);
         Assert.DoesNotContain("Win32RenderingMode", programSource, StringComparison.Ordinal);
         Assert.DoesNotContain("StudioNativeTeardown", appSource, StringComparison.Ordinal);

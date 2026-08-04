@@ -7,4 +7,6 @@ internal interface IViewportNativeApi
         out ViewportNativePresentPacket packet);
 
     void ReleasePresentPacket(ViewportNativePresentPacket packet);
+
+    void Shutdown();
 }

@@ -1,6 +1,6 @@
 # Viewport 渲染架构
 
-状态：Current foundation / Target presentation（#359 建立 session、frame lease 与 native request；Avalonia presentation 尚未接入）
+状态：Current first presentation / Target multi-viewport（#359 建立 foundation；#361 接入首个 Avalonia Scene View）
 
 更新日期：2026-08-04
 
@@ -15,7 +15,7 @@
 ## 2. 当前实现事实
 
 R0 hard cut 删除了旧 managed viewport scheduler、composition surface 和没有 production consumer 的 DTO。
-#359 从当前 `SceneDocumentSnapshot` 重新建立最小基础：
+#359 从当前 `SceneDocumentSnapshot` 重新建立最小基础，#361 在不恢复旧 owner 的前提下接入首个生产 consumer：
 
 - `Asharia.Studio.Application.Viewports.ViewportSession` 是 UI-neutral、多实例 owner；它保存 session ID、
   `Scene/Game/Preview` render kind、document target、camera、单调 request sequence、单个 in-flight request 和
@@ -29,10 +29,22 @@ R0 hard cut 删除了旧 managed viewport scheduler、composition surface 和没
   Scene Transform 轴线；旧 V1–V3 exports 保持不变；
 - `ViewportSession.CompleteRender` 只接受当前 sequence 与 target revision；文档在 frame in-flight 期间推进时，
   旧 completion 只释放资源，不成为 current frame。
+- `Asharia.Studio.Presentation.Avalonia.Viewports.ViewportCompositionControl` 是专用 Avalonia presentation adapter；
+  它探测 compositor Vulkan opaque NT image/semaphore 能力与 device identity，在 UI/compositor 线程导入资源并串行
+  更新一个 `CompositionDrawingSurface`，不把 raw handle 投影到 ViewModel、Dock 或 Application；
+- `StudioScenePanelViewModel` 在 `ProjectSession Ready` 后创建一个逻辑 Scene `ViewportSession`，同一 SceneDocument
+  只同步 revision，项目关闭才关闭 session；compiled XAML 与现有 Dock 仍是 panel owner；
+- 当前 consumer 只有 dirty-only/on-demand：attach、有效 extent/DPI、expose 和 SceneDocument revision 才请求帧，
+  没有 idle timer 或全局 scheduler；每个 control 同时最多一个 managed frame chain；
+- process-owned `ViewportPresentationLifetime` 在 create/open/close project 前暂停新 frame admission 并等待在途
+  import/lease 释放；进程关闭时永久停止 admission，随后按 session close、`editor_viewport_shutdown`、SceneDocument/
+  ProjectSession dispose 的顺序收口。该 owner 不是 static registry；
+- Release Studio 部署 `Asharia.Studio.Presentation.Avalonia.dll`、`editor_native.dll` 与精确 12 个
+  renderer-basic shader/reflection 文件。Release native 只从产品可执行文件旁的 `shaders/renderer-basic` 解析 shader，
+  不读取 build tree，也不要求 Vulkan SDK 或 validation layer。
 
-当前仍没有 Avalonia `ViewportPresentation`、composition import、surface generation、调度器、输入或 Studio
-Scene View consumer；root publish 也仍不部署 `editor_native.dll`。因此本 Slice 证明的是可复用 render-session
-和 native frame 边界，不等同于“Scene View 已可见”。下一 Slice 才把一个 Scene View presentation 绑定到该合同。
+当前 Slice 只实现 Windows opaque NT interop 的一个 Scene View。多 Viewport 公平调度、camera/input、Dock float 验收、
+Preview consumer、device-lost recovery 与跨平台 backend 仍属于下文目标，不得把首个 consumer 扩张成第二套 renderer 路径。
 
 ## 3. 三种不同对象
 
@@ -46,7 +58,8 @@ render policy。它不拥有 Window、Avalonia Control、native handle 或 GPU r
 
 ### ViewportPresentation
 
-ViewportSession 与一个 Avalonia composition surface 的临时绑定。Dock move/float/reattach 只替换 presentation。
+ViewportSession 与一个 Avalonia composition surface 的临时绑定。当前由专用
+`ViewportCompositionControl` 实现；Dock move/float/reattach 只替换 presentation，不替换逻辑 session。
 
 ### Native render target/frame
 
@@ -165,13 +178,13 @@ quarantine 总量有界，不能因连续 resize 建立无界资源队列。
 
 ## 9. EngineInterop frame lease
 
-`ViewportFrameLease` 是平台 GPU 资源跨 native/presentation 边界的唯一托管容器。#359 的当前 lease
+`ViewportFrameLease` 是平台 GPU 资源跨 native/presentation 边界的唯一托管容器。当前 lease
 公开 session/target/sequence、extent、format、memory size 与 frame index；native packet 和 image/semaphore
 handles 保持 EngineBridge-internal，并由 `Complete()` / `Dispose()` exact-once 归还 native runtime。
 
-当前没有 Avalonia consumer，因此 completion 只表达“放弃并释放尚未导入的 frame”。下一 Slice 接入
-composition 后，presentation adapter 必须在 compositor release 完成后调用同一 ownership boundary，且不能把
-raw handle 投影到 ViewModel 或 Application。
+首个 Avalonia consumer 在 `UpdateWithSemaphoresAsync` 完成并释放 imported wrappers 后调用 `Complete()`；
+stale、detach、import 或 render failure 走 `Dispose()`/abandon。两条路径都回到同一 exact-once ownership boundary，
+raw handle 只通过 EngineBridge friend contract 进入该专用 adapter。
 
 最小字段：
 
@@ -222,19 +235,20 @@ ShutdownCancelled
 
 ```mermaid
 sequenceDiagram
-    participant Pump as StudioFramePump
-    participant Scheduler as Future viewport scheduler
+    participant Event as Scene/extent/DPI/expose
+    participant Control as ViewportCompositionControl
+    participant Session as ViewportSession
     participant Native as NativeViewportRuntime
-    participant Adapter as AvaloniaPresentationAdapter
     participant Compositor as Avalonia Compositor
 
-    Pump->>Scheduler: BuildPlan(now, states)
-    Scheduler->>Native: RequestFrame(viewport, generation)
-    Native-->>Adapter: ViewportFrameLease
-    Adapter->>Compositor: Import image and synchronization
-    Compositor-->>Adapter: Presentation completion
-    Adapter->>Native: CompleteFrame(lease, result)
-    Native-->>Scheduler: Metrics/status
+    Event->>Control: Invalidate latest generation
+    Control->>Session: TryBeginRender(extent)
+    Control->>Native: CreatePresentSlotV4(request, device identity)
+    Native-->>Control: ViewportFrameLease
+    Control->>Compositor: Import image/semaphores + update surface
+    Compositor-->>Control: Update completion
+    Control->>Native: Complete/abandon lease
+    Control->>Session: CompleteRender(sequence, revision)
 ```
 
 UI thread 不等待 Vulkan fence。没有可证明的同步路径时，该 backend 必须拒绝 presentation，而不是猜测资源已经可读。
@@ -311,11 +325,11 @@ Scene View input 先进入 editor tool/router，再形成 camera、selection、g
 - imported wrapper 的异步释放没有确认完成时，slot 进入进程期 quarantine；
   wrapper 与 native packet 都保持存活，native runtime 延迟 shutdown，不能假定
   `DisposeAsync` 可重试或提前销毁共享 Vulkan resource；
-- 应用关闭先同步通知所有已注册 presentation 进入 Draining，再等待这些任务，不能只
-  统计当时恰好运行中的 frame task；
-- 关闭等待超过诊断阈值进入显式 process-exit fallback：停止提交、保留仍在途的
-  managed/native resource、不调用 native runtime teardown，再由进程终止统一回收；
-  该路径单独标记，不能伪装为正常 drain 成功；
+- 当前项目切换通过 process-owned lifetime pause 新 frame admission，并等待已 admission 的 frame/import/lease；
+  最外层 pause 恢复时通知已 attach 的 presentation 重新检查 dirty work，避免项目切换期间的 invalidation 丢失。
+  进程关闭使用同一 owner 的永久 stop。它不使用 static presentation registry，也不能由 ViewModel 绕过；
+- 未来增加超时 fallback 时，必须停止提交、保留仍在途的 managed/native resource、不调用 native runtime teardown，
+  再由进程终止统一回收；该路径必须单独标记，不能伪装为正常 drain 成功；
 - native viewport runtime owner 使用 process-lifetime storage；正常路径仍由显式
   `shutdown()` 释放 producer/context，fallback 路径则避免 CRT 在 quarantine packet
   尚存时隐式析构 Vulkan device；

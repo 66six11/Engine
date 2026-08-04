@@ -11,6 +11,7 @@ using System.Windows.Input;
 using Asharia.Runtime;
 using Asharia.Studio.Application.Projects;
 using Asharia.Studio.Application.Scenes;
+using Asharia.Studio.Presentation.Avalonia.Viewports;
 using Avalonia.Threading;
 using Editor.Shell.Commands;
 using Editor.Shell.Docking.Panels;
@@ -40,6 +41,7 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
     private readonly AsyncCommand applyEntityNameCommand_;
     private readonly AsyncCommand applyEntityTransformCommand_;
     private readonly EditorDockWorkspaceViewModel dockWorkspace_;
+    private readonly ViewportPresentationLifetime viewportPresentationLifetime_;
     private readonly CancellationTokenSource lifetimeCancellation_ = new();
     private StudioShellStage stage_ = StudioShellStage.Starting;
     private ProjectSessionSnapshot projectSnapshot_;
@@ -68,6 +70,7 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
         ArgumentNullException.ThrowIfNull(projectDialogs);
         projectSession_ = projectSession;
         projectDialogs_ = projectDialogs;
+        viewportPresentationLifetime_ = new ViewportPresentationLifetime();
         projectSnapshot_ = projectSession.Current;
         createProjectCommand_ = new AsyncCommand(CreateProjectAsync, CanCreateProject);
         openProjectCommand_ = new AsyncCommand(OpenProjectAsync, CanRunProjectOperation);
@@ -237,6 +240,9 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
 
     internal IProjectSession ProjectSession => projectSession_;
 
+    internal ViewportPresentationLifetime ViewportPresentationLifetime =>
+        viewportPresentationLifetime_;
+
     public void MarkReady()
     {
         ThrowIfDisposed();
@@ -345,7 +351,8 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
             var parent = await projectDialogs_.SelectProjectParentDirectoryAsync(token);
             return parent is null
                 ? null
-                : await projectSession_.CreateProjectAsync(parent, NewProjectName, token);
+                : await ExecuteWithPresentationDrainAsync(
+                    () => projectSession_.CreateProjectAsync(parent, NewProjectName, token));
         });
     }
 
@@ -356,13 +363,15 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
             var descriptor = await projectDialogs_.SelectProjectDescriptorAsync(token);
             return descriptor is null
                 ? null
-                : await projectSession_.OpenProjectAsync(descriptor, token);
+                : await ExecuteWithPresentationDrainAsync(
+                    () => projectSession_.OpenProjectAsync(descriptor, token));
         });
     }
 
     private Task CloseProjectAsync() =>
         RunProjectOperationAsync(async token =>
-            await projectSession_.CloseProjectAsync(token));
+            await ExecuteWithPresentationDrainAsync(
+                () => projectSession_.CloseProjectAsync(token)));
 
     private async Task CreateEntityAsync()
     {
@@ -435,6 +444,15 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
         {
             IsProjectOperationRunning = false;
         }
+    }
+
+    private async ValueTask<ProjectSessionOperationResult>
+        ExecuteWithPresentationDrainAsync(
+            Func<ValueTask<ProjectSessionOperationResult>> operation)
+    {
+        await using var pause =
+            await viewportPresentationLifetime_.PauseAndDrainAsync();
+        return await operation();
     }
 
     private void OnProjectSnapshotChanged(object? sender, EventArgs e)

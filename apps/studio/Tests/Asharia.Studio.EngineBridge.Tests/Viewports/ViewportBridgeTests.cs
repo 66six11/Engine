@@ -137,6 +137,17 @@ public sealed class ViewportBridgeTests
     }
 
     [Fact]
+    public void Runtime_shutdown_is_forwarded_exactly_once()
+    {
+        var api = new StubViewportNativeApi();
+        var bridge = new ViewportRuntimeBridge(api);
+
+        bridge.Shutdown();
+
+        Assert.Equal(1, api.ShutdownCalls);
+    }
+
+    [Fact]
     public void Managed_layout_matches_the_native_viewport_v4_contract()
     {
         Assert.Equal(8, Marshal.SizeOf<ViewportNativeAbiHeader>());
@@ -189,6 +200,8 @@ public sealed class ViewportBridgeTests
 
         public int ReleaseCalls { get; private set; }
 
+        public int ShutdownCalls { get; private set; }
+
         public ViewportNativeStatus CreatePresentSlotV4(
             in ViewportNativePresentRequestV4 request,
             out ViewportNativePresentPacket packet)
@@ -235,5 +248,7 @@ public sealed class ViewportBridgeTests
                 message_ = 0;
             }
         }
+
+        public void Shutdown() => ShutdownCalls++;
     }
 }
