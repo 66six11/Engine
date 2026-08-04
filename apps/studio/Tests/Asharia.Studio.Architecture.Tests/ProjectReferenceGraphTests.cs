@@ -733,6 +733,13 @@ public sealed class ProjectReferenceGraphTests
                     "src/Asharia.Studio.EngineBridge/Asharia.Studio.EngineBridge.csproj",
                     reference.Include);
                 Assert.Null(reference.Condition);
+            },
+            reference =>
+            {
+                Assert.Equal(
+                    "src/Asharia.Studio.Presentation.Avalonia/Asharia.Studio.Presentation.Avalonia.csproj",
+                    reference.Include);
+                Assert.Null(reference.Condition);
             });
     }
 
@@ -1085,6 +1092,7 @@ public sealed class ProjectReferenceGraphTests
                 "src/Asharia.Studio.DevelopmentHost/Asharia.Studio.DevelopmentHost.csproj",
                 "src/Asharia.Studio.DevelopmentProtocol/Asharia.Studio.DevelopmentProtocol.csproj",
                 "src/Asharia.Studio.EngineBridge/Asharia.Studio.EngineBridge.csproj",
+                "src/Asharia.Studio.Presentation.Avalonia/Asharia.Studio.Presentation.Avalonia.csproj",
             ],
             projectPaths);
     }

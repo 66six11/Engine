@@ -10,6 +10,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Asharia.Studio.EngineBridge.Tests" />
+    <InternalsVisibleTo Include="Asharia.Studio.Presentation.Avalonia" />
   </ItemGroup>
 
   <ItemGroup>

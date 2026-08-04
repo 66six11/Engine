@@ -60,7 +60,6 @@ public static partial class StudioEditorImageProducer
         "Asharia.Editor",
         "Asharia.Studio.DevelopmentHost",
         "Asharia.Studio.DevelopmentProtocol",
-        "editor_native",
         "slang",
     ];
     private static readonly string[] HostFxrRequiredExports =
@@ -85,6 +84,27 @@ public static partial class StudioEditorImageProducer
         "asharia_scene_document_set_entity_name",
         "asharia_scene_document_set_entity_transform",
         "asharia_scene_document_save",
+    ];
+    private static readonly string[] ViewportNativeRequiredExports =
+    [
+        "editor_viewport_create_present_slot_v4",
+        "editor_viewport_release_present_packet",
+        "editor_viewport_shutdown",
+    ];
+    private static readonly string[] ViewportShaderFiles =
+    [
+        "debug_line.frag.reflection.json",
+        "debug_line.frag.spv",
+        "debug_line.vert.reflection.json",
+        "debug_line.vert.spv",
+        "descriptor_layout.frag.reflection.json",
+        "descriptor_layout.frag.spv",
+        "descriptor_layout.vert.reflection.json",
+        "descriptor_layout.vert.spv",
+        "world_grid.frag.reflection.json",
+        "world_grid.frag.spv",
+        "world_grid.vert.reflection.json",
+        "world_grid.vert.spv",
     ];
 
     public static StudioEditorImageProductionResult Produce(
@@ -262,6 +282,18 @@ public static partial class StudioEditorImageProducer
             StudioManagedAssemblyVersion,
             expectedPublicKeyToken: string.Empty,
             "publishRoot/Asharia.Studio.EngineBridge.dll");
+        var presentationManagedEntry = InspectFile(
+            Path.Combine(publishRoot, "Asharia.Studio.Presentation.Avalonia.dll"),
+            "publishRoot/Asharia.Studio.Presentation.Avalonia.dll");
+        ValidateManagedPortableExecutable(
+            presentationManagedEntry,
+            "publishRoot/Asharia.Studio.Presentation.Avalonia.dll");
+        ValidateManagedIdentity(
+            presentationManagedEntry,
+            "Asharia.Studio.Presentation.Avalonia",
+            StudioManagedAssemblyVersion,
+            expectedPublicKeyToken: string.Empty,
+            "publishRoot/Asharia.Studio.Presentation.Avalonia.dll");
         var projectNativeEntry = InspectFile(
             Path.Combine(publishRoot, "asharia_project_native.dll"),
             "publishRoot/asharia_project_native.dll");
@@ -286,6 +318,24 @@ public static partial class StudioEditorImageProducer
             "asharia_scene_native.dll",
             SceneNativeRequiredExports,
             "publishRoot/asharia_scene_native.dll");
+        var viewportNativeEntry = InspectFile(
+            Path.Combine(publishRoot, "editor_native.dll"),
+            "publishRoot/editor_native.dll");
+        ValidatePortableExecutable(
+            viewportNativeEntry,
+            expectDll: true,
+            "publishRoot/editor_native.dll");
+        ValidateRequiredExports(
+            viewportNativeEntry,
+            "editor_native.dll",
+            ViewportNativeRequiredExports,
+            "publishRoot/editor_native.dll");
+        var viewportShaderEntries = ViewportShaderFiles.ToDictionary(
+            fileName => fileName,
+            fileName => InspectFile(
+                Path.Combine(publishRoot, "shaders", "renderer-basic", fileName),
+                $"publishRoot/shaders/renderer-basic/{fileName}"),
+            StringComparer.Ordinal);
         var editorDeps = InspectFile(
             Path.Combine(publishRoot, "Editor.deps.json"),
             "publishRoot/Editor.deps.json");
@@ -398,6 +448,11 @@ public static partial class StudioEditorImageProducer
             "publishRoot/Asharia.Studio.EngineBridge.dll");
         EnsurePlannedDestination(
             files,
+            presentationManagedEntry,
+            "bin/Asharia.Studio.Presentation.Avalonia.dll",
+            "publishRoot/Asharia.Studio.Presentation.Avalonia.dll");
+        EnsurePlannedDestination(
+            files,
             projectNativeEntry,
             "bin/asharia_project_native.dll",
             "publishRoot/asharia_project_native.dll");
@@ -406,6 +461,19 @@ public static partial class StudioEditorImageProducer
             sceneNativeEntry,
             "bin/asharia_scene_native.dll",
             "publishRoot/asharia_scene_native.dll");
+        EnsurePlannedDestination(
+            files,
+            viewportNativeEntry,
+            "bin/editor_native.dll",
+            "publishRoot/editor_native.dll");
+        foreach (var (fileName, shaderEntry) in viewportShaderEntries)
+        {
+            EnsurePlannedDestination(
+                files,
+                shaderEntry,
+                $"bin/shaders/renderer-basic/{fileName}",
+                $"publishRoot/shaders/renderer-basic/{fileName}");
+        }
         EnsurePlannedDestination(
             files,
             editorDeps,
@@ -632,6 +700,14 @@ public static partial class StudioEditorImageProducer
                 && !file.DestinationPath.Equals(
                     "bin/asharia_scene_native.dll",
                     StringComparison.OrdinalIgnoreCase);
+            var isUnexpectedViewportNativeArtifact =
+                (fileName.Equals("editor_native", StringComparison.OrdinalIgnoreCase)
+                 || fileName.StartsWith(
+                     "editor_native.",
+                     StringComparison.OrdinalIgnoreCase))
+                && !file.DestinationPath.Equals(
+                    "bin/editor_native.dll",
+                    StringComparison.OrdinalIgnoreCase);
             var hasForbiddenDirectory = segments
                 .Skip(1)
                 .Take(segments.Length - 2)
@@ -639,8 +715,15 @@ public static partial class StudioEditorImageProducer
                     || segment.Equals("metadata", StringComparison.OrdinalIgnoreCase)
                     || segment.Equals("sdk", StringComparison.OrdinalIgnoreCase)
                     || segment.Equals("packs", StringComparison.OrdinalIgnoreCase));
+            var isUnexpectedViewportShader =
+                file.DestinationPath.StartsWith(
+                    "bin/shaders/renderer-basic/",
+                    StringComparison.OrdinalIgnoreCase)
+                && !ViewportShaderFiles.Contains(fileName, StringComparer.Ordinal);
             if (isForbiddenStudioArtifact
                 || isUnexpectedSceneNativeArtifact
+                || isUnexpectedViewportNativeArtifact
+                || isUnexpectedViewportShader
                 || hasForbiddenDirectory
                 || fileName.Equals("dotnet.exe", StringComparison.OrdinalIgnoreCase)
                 || fileName.Equals(
@@ -1107,6 +1190,18 @@ public static partial class StudioEditorImageProducer
             StudioManagedAssemblyVersion,
             expectedPublicKeyToken: string.Empty,
             "publishRoot/Asharia.Studio.EngineBridge.dll");
+        var presentationManagedEntry = Resolve(
+            stagingRoot,
+            "bin/Asharia.Studio.Presentation.Avalonia.dll");
+        ValidateManagedPortableExecutable(
+            presentationManagedEntry,
+            "publishRoot/Asharia.Studio.Presentation.Avalonia.dll");
+        ValidateManagedIdentity(
+            presentationManagedEntry,
+            "Asharia.Studio.Presentation.Avalonia",
+            StudioManagedAssemblyVersion,
+            expectedPublicKeyToken: string.Empty,
+            "publishRoot/Asharia.Studio.Presentation.Avalonia.dll");
         var projectNativeEntry = Resolve(
             stagingRoot,
             "bin/asharia_project_native.dll");
@@ -1131,6 +1226,22 @@ public static partial class StudioEditorImageProducer
             "asharia_scene_native.dll",
             SceneNativeRequiredExports,
             "publishRoot/asharia_scene_native.dll");
+        var viewportNativeEntry = Resolve(stagingRoot, "bin/editor_native.dll");
+        ValidatePortableExecutable(
+            viewportNativeEntry,
+            expectDll: true,
+            "publishRoot/editor_native.dll");
+        ValidateRequiredExports(
+            viewportNativeEntry,
+            "editor_native.dll",
+            ViewportNativeRequiredExports,
+            "publishRoot/editor_native.dll");
+        foreach (var fileName in ViewportShaderFiles)
+        {
+            _ = InspectFile(
+                Resolve(stagingRoot, $"bin/shaders/renderer-basic/{fileName}"),
+                $"publishRoot/shaders/renderer-basic/{fileName}");
+        }
         ValidateEditorRuntimeEvidence(
             Resolve(stagingRoot, "bin/Editor.deps.json"),
             Resolve(stagingRoot, "bin/Editor.runtimeconfig.json"),

@@ -94,6 +94,8 @@ set_target_properties(editor-native
         OUTPUT_NAME editor_native
 )
 
+add_dependencies(editor-native asharia-renderer-basic-shaders)
+
 target_include_directories(editor-native
     PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/src"

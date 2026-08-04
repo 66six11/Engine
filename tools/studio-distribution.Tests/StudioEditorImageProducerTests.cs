@@ -60,16 +60,24 @@ public sealed class StudioEditorImageProducerTests
             file => file.Path == "bin/Asharia.Studio.EngineBridge.dll");
         Assert.Contains(
             receipt.Files,
+            file => file.Path == "bin/Asharia.Studio.Presentation.Avalonia.dll");
+        Assert.Contains(
+            receipt.Files,
             file => file.Path == "bin/asharia_project_native.dll");
         Assert.Contains(
             receipt.Files,
             file => file.Path == "bin/asharia_scene_native.dll");
+        Assert.Contains(
+            receipt.Files,
+            file => file.Path == "bin/editor_native.dll");
+        Assert.Contains(
+            receipt.Files,
+            file => file.Path == "bin/shaders/renderer-basic/world_grid.vert.spv");
         Assert.DoesNotContain(
             receipt.Files,
             file => file.Path is "bin/Asharia.Editor.dll"
                 or "bin/Asharia.Studio.DevelopmentHost.dll"
                 or "bin/Asharia.Studio.DevelopmentProtocol.dll"
-                or "bin/editor_native.dll"
                 or "bin/slang.dll");
         Assert.Contains(
             receipt.Files,
@@ -481,6 +489,58 @@ public sealed class StudioEditorImageProducerTests
             diagnostic => diagnostic.Code
                     == "studio-distribution.editor-image.native-identity-invalid"
                 && diagnostic.Location == "publishRoot/asharia_scene_native.dll");
+        Assert.False(Directory.Exists(fixture.OutputRoot));
+    }
+
+    [Fact]
+    public void Produce_rejects_a_viewport_adapter_with_missing_lifecycle_exports()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using var fixture = new ProducerFixture(inputs_);
+        StudioEditorImageTestInputs.WriteNativeDll(
+            Path.Combine(fixture.PublishRoot, "editor_native.dll"),
+            "editor_native.dll",
+            ["editor_viewport_create_present_slot_v4"]);
+
+        var result = StudioEditorImageProducer.Produce(fixture.Request);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(
+            result.Diagnostics,
+            diagnostic => diagnostic.Code
+                    == "studio-distribution.editor-image.native-identity-invalid"
+                && diagnostic.Location == "publishRoot/editor_native.dll");
+        Assert.False(Directory.Exists(fixture.OutputRoot));
+    }
+
+    [Fact]
+    public void Produce_rejects_an_undeclared_renderer_basic_shader()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using var fixture = new ProducerFixture(inputs_);
+        var relativePath = "shaders/renderer-basic/undeclared.spv";
+        File.WriteAllText(
+            Path.Combine(
+                fixture.PublishRoot,
+                relativePath.Replace('/', Path.DirectorySeparatorChar)),
+            "undeclared shader");
+
+        var result = StudioEditorImageProducer.Produce(fixture.Request);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(
+            result.Diagnostics,
+            diagnostic => diagnostic.Code
+                    == "studio-distribution.editor-image.forbidden-product-artifact"
+                && diagnostic.Location == $"bin/{relativePath}");
         Assert.False(Directory.Exists(fixture.OutputRoot));
     }
 

@@ -141,8 +141,10 @@ build\cmake\msvc-debug\tools\asset-processor\asharia-asset-processor.exe execute
 
 固定 Studio 的发行输入不再由测试手写 metadata，也不由 Python 构建路径生成。当前 v1 是 Windows x64
 release contract。使用标准 `dotnet publish` 与 `EditorImage.pubxml` 生成 release-orchestrator-owned、全新且不复用的
-Studio publish 目录；`dotnet publish` 不负责清理旧 `PublishDir`。R0 Studio 无 native runtime consumer，
-因此该步骤没有 Conan/CMake 前置，也不复制 `editor_native.dll`/`slang.dll`。
+Studio publish 目录；`dotnet publish` 不负责清理旧 `PublishDir`。当前 Studio 的 Project、SceneDocument 与 Scene View
+都有 native consumer，因此必须先按本文规则运行 Conan，并构建所选 `msvc-release` preset。publish 精确复制
+`asharia_project_native.dll`、`asharia_scene_native.dll`、`editor_native.dll` 与 12 个 renderer-basic shader/reflection 文件；
+仍不复制 `slang.dll`、Vulkan SDK 或 validation layer。
 完整可复制命令、required file set、参数、输出布局、receipt 与失败恢复见
 `tools/studio-distribution/README.md`。
 

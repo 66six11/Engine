@@ -4,6 +4,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using Asharia.Studio.Application.Diagnostics;
 using Asharia.Studio.Application.Projects;
+using Asharia.Studio.EngineBridge.Viewports;
+using Asharia.Studio.Presentation.Avalonia.Viewports;
 #if DEBUG
 using Asharia.Studio.DevelopmentHost.Hosting;
 using Asharia.Studio.DevelopmentHost.Transport;
@@ -20,6 +22,8 @@ internal sealed class StudioCompositionSession : IAsyncDisposable
     private bool isDisposed_;
     private readonly StudioShellViewModel shellViewModel_;
     private readonly IProjectSession projectSession_;
+    private readonly ViewportPresentationLifetime viewportPresentationLifetime_;
+    private readonly ViewportRuntimeBridge viewportRuntime_;
 #if DEBUG
     private readonly StudioDevelopmentHost? developmentHost_;
     private readonly StudioDevelopmentPipeEndpoint? developmentEndpoint_;
@@ -33,6 +37,8 @@ internal sealed class StudioCompositionSession : IAsyncDisposable
         ArgumentNullException.ThrowIfNull(projectSession);
         shellViewModel_ = shellViewModel;
         projectSession_ = projectSession;
+        viewportPresentationLifetime_ = shellViewModel.ViewportPresentationLifetime;
+        viewportRuntime_ = new ViewportRuntimeBridge();
 #if DEBUG
         developmentHost_ = null;
         developmentEndpoint_ = null;
@@ -56,6 +62,8 @@ internal sealed class StudioCompositionSession : IAsyncDisposable
         ArgumentNullException.ThrowIfNull(developmentHost);
         shellViewModel_ = shellViewModel;
         projectSession_ = projectSession;
+        viewportPresentationLifetime_ = shellViewModel.ViewportPresentationLifetime;
+        viewportRuntime_ = new ViewportRuntimeBridge();
         developmentHost_ = developmentHost;
         developmentEndpoint_ = developmentEndpoint;
     }
@@ -190,7 +198,7 @@ internal sealed class StudioCompositionSession : IAsyncDisposable
         }
 
         isDisposed_ = true;
-        var failures = new List<Exception>(capacity: 3);
+        var failures = new List<Exception>(capacity: 5);
 #if DEBUG
         if (developmentEndpoint_ is not null)
         {
@@ -226,7 +234,25 @@ internal sealed class StudioCompositionSession : IAsyncDisposable
 #endif
         try
         {
+            await viewportPresentationLifetime_.StopAndDrainAsync();
+        }
+        catch (Exception error)
+        {
+            failures.Add(error);
+        }
+
+        try
+        {
             shellViewModel_.Dispose();
+        }
+        catch (Exception error)
+        {
+            failures.Add(error);
+        }
+
+        try
+        {
+            viewportRuntime_.Shutdown();
         }
         catch (Exception error)
         {

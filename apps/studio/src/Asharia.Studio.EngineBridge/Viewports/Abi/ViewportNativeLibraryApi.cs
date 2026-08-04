@@ -18,6 +18,8 @@ internal sealed class ViewportNativeLibraryApi : IViewportNativeApi
 
     public void ReleasePresentPacket(ViewportNativePresentPacket packet) =>
         ViewportNativeEntryPoints.ReleasePresentPacket(packet);
+
+    public void Shutdown() => ViewportNativeEntryPoints.Shutdown();
 }
 
 internal static partial class ViewportNativeEntryPoints
@@ -33,4 +35,8 @@ internal static partial class ViewportNativeEntryPoints
     [LibraryImport(LibraryName, EntryPoint = "editor_viewport_release_present_packet")]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     internal static partial void ReleasePresentPacket(ViewportNativePresentPacket packet);
+
+    [LibraryImport(LibraryName, EntryPoint = "editor_viewport_shutdown")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    internal static partial void Shutdown();
 }
