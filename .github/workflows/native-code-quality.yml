@@ -20,6 +20,7 @@ jobs:
     runs-on: windows-2022
     outputs:
       native_build_required: ${{ steps.classify_changes.outputs.native_build_required }}
+      tidy_base_ref: ${{ steps.classify_changes.outputs.tidy_base_ref }}
 
     steps:
       - name: Checkout
@@ -31,9 +32,20 @@ jobs:
         id: classify_changes
         shell: pwsh
         run: |
+          $headSha = (git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+
           if ($env:GITHUB_EVENT_NAME -eq 'workflow_dispatch') {
             $changedFiles = @()
             $nativeBuildRequired = $true
+            $parentSha = git rev-parse --verify 'HEAD^' 2> $null
+            if ($LASTEXITCODE -eq 0) {
+              $tidyBaseRef = "$($parentSha.Trim())..$headSha"
+            } else {
+              $tidyBaseRef = $headSha
+            }
           } else {
             if ($env:GITHUB_EVENT_NAME -eq 'pull_request') {
               git fetch origin $env:GITHUB_BASE_REF --depth=1
@@ -41,14 +53,18 @@ jobs:
                 exit $LASTEXITCODE
               }
               $changedFiles = @(git diff --name-only --diff-filter=ACDMRT "origin/$env:GITHUB_BASE_REF...HEAD")
+              $tidyBaseRef = '${{ github.event.pull_request.base.sha }}'
             } elseif ('${{ github.event.before }}' -and '${{ github.event.before }}' -notmatch '^0+$') {
               $changedFiles = @(git diff --name-only --diff-filter=ACDMRT '${{ github.event.before }}..${{ github.sha }}')
+              $tidyBaseRef = '${{ github.event.before }}..${{ github.sha }}'
             } else {
-              git rev-parse --verify 'HEAD^' *> $null
+              $parentSha = git rev-parse --verify 'HEAD^' 2> $null
               if ($LASTEXITCODE -eq 0) {
-                $changedFiles = @(git diff --name-only --diff-filter=ACDMRT 'HEAD^..HEAD')
+                $tidyBaseRef = "$($parentSha.Trim())..$headSha"
+                $changedFiles = @(git diff --name-only --diff-filter=ACDMRT $tidyBaseRef)
               } else {
                 $changedFiles = @(git diff-tree --name-only --diff-filter=ACDMRT --root --no-commit-id -r HEAD)
+                $tidyBaseRef = $headSha
               }
             }
             if ($LASTEXITCODE -ne 0) {
@@ -101,9 +117,11 @@ jobs:
 
           $outputValue = $nativeBuildRequired.ToString().ToLowerInvariant()
           "native_build_required=$outputValue" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "tidy_base_ref=$tidyBaseRef" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
           "### Native build classification" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
           "- Required: ``$outputValue``" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          "- clang-tidy base: ``$tidyBaseRef``" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
           if ($env:GITHUB_EVENT_NAME -eq 'workflow_dispatch') {
             "- Reason: manual dispatch always requests a full native build." | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
           } elseif ($nativeBuildRequired) {
@@ -164,7 +182,7 @@ jobs:
         run: powershell -ExecutionPolicy Bypass -File tools\check-asset-boundaries.ps1
 
   build_and_test:
-    name: Build and test native code
+    name: Build and test native code with MSVC
     needs: quality_gates
     if: needs.quality_gates.outputs.native_build_required == 'true'
     runs-on: windows-2022
@@ -172,6 +190,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -212,16 +232,14 @@ jobs:
 
       - name: Bootstrap Conan
         shell: pwsh
-        run: powershell -ExecutionPolicy Bypass -File scripts\bootstrap-conan.ps1
+        run: powershell -ExecutionPolicy Bypass -File scripts\bootstrap-conan.ps1 -Profiles windows-msvc-debug
 
       - name: Build and test with MSVC
         shell: cmd
         run: build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake --preset msvc-debug-tests && cmake --build --preset msvc-debug-tests && ctest --preset msvc-debug-tests --output-on-failure
 
-      - name: Build and test with ClangCL
+      - name: Run clang-tidy on changed translation units
         shell: cmd
-        run: build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --preset clangcl-debug-tests && cmake --build --preset clangcl-debug-tests && ctest --preset clangcl-debug-tests --output-on-failure
-
-      - name: Run clang-tidy
-        shell: cmd
-        run: build\conan\clangcl-debug\Debug\generators\conanbuild.bat && python tools\run_clang_tidy.py --build-dir build\cmake\clangcl-debug-tests --jobs 2
+        env:
+          TIDY_BASE_REF: ${{ needs.quality_gates.outputs.tidy_base_ref }}
+        run: build\conan\msvc-debug\Debug\generators\conanbuild.bat && python tools\run_clang_tidy.py --build-dir build\cmake\msvc-debug-tests --changed --base-ref "%TIDY_BASE_REF%" --jobs 2

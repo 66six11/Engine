@@ -15,6 +15,7 @@
 ## Build system
 
 - **Conan must run before CMake.** Run `.\scripts\bootstrap-conan.ps1` first — it generates toolchain files under `build/conan/` that CMake presets depend on.
+- `bootstrap-conan.ps1` defaults to all four repository profiles; hosted CI passes `-Profiles windows-msvc-debug` so it prepares only the compiler/profile that CI builds.
 - **`build/conan/` and `build/cmake/` stay separate.** VS may delete `build/cmake/` on cache clean; if you delete `build/conan/`, toolchain files are lost and you must re-bootstrap.
 - **`conan.lock` is committed.** `bootstrap-conan.ps1` automatically passes it to `conan install` to pin dependencies (glfw, glm, vulkan-headers, vulkan-memory-allocator).
 - **PowerShell builds need the Conan environment bat.** Use:
@@ -22,8 +23,8 @@
   cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake --preset msvc-debug && cmake --build --preset msvc-debug"
   ```
   The `conanbuild.bat` sets VS compiler env vars required by Ninja+MSVC. From "Developer PowerShell for VS 2022" you can skip it.
-- **Two-compiler workflow:** `msvc-*` presets are the daily compiler and `clangcl-*` presets are the second-compiler gate. Compilation never runs `clang-tidy` implicitly.
-- **Run clang-tidy separately:** configure and build a ClangCL preset first, then use `cmake --build --preset clangcl-debug --target asharia-tidy` for the full repository or `python tools/run_clang_tidy.py --changed --include-untracked` for changed translation units. Changed headers and build inputs deliberately expand to the full compilation database.
+- **Compiler workflow:** `msvc-*` presets are the daily compiler and the only compiler built in hosted CI. `clangcl-*` remains available for explicit local second-compiler verification. Compilation never runs `clang-tidy` implicitly.
+- **Run clang-tidy separately:** use `python tools/run_clang_tidy.py --build-dir build/cmake/msvc-debug-tests --changed --include-untracked` after configuring the MSVC test preset. Changed mode analyzes only changed `.cc/.cpp/.cxx` files present in the compilation database; headers and build inputs do not expand the selection.
 
 ## Encoding — critical
 
@@ -76,9 +77,8 @@
 ```
 powershell -ExecutionPolicy Bypass -File tools\check-text-encoding.ps1
 git diff --check
-cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --preset clangcl-debug && cmake --build --preset clangcl-debug"
-cmd /c "build\conan\clangcl-debug\Debug\generators\conanbuild.bat && cmake --build --preset clangcl-debug --target asharia-tidy"
-cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake --preset msvc-debug && cmake --build --preset msvc-debug"
+cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake --preset msvc-debug-tests && cmake --build --preset msvc-debug-tests && ctest --preset msvc-debug-tests --output-on-failure"
+cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && python tools\run_clang_tidy.py --build-dir build\cmake\msvc-debug-tests --changed --include-untracked"
 ```
 
 For frame-loop/swapchain/render-graph changes, also run all smoke commands on both MSVC and ClangCL builds.
