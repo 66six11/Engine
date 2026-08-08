@@ -201,13 +201,18 @@ flowchart TD
   selection value contracts；未来
   `packages/systems/editor` 内部 `editor_domain` target 只能保留 backend-neutral editor state，不能继承 ImGui、Vulkan、renderer 或 importer
   execution 依赖。
-- `apps/studio` 是 Avalonia managed Studio shell，不属于 C++ CMake target graph。当前真实产品链为
-  `App/Shell -> Application ProjectSession -> EngineBridge project + scene adapters -> project/scene native ABI`；Shell
-  只选择路径、发命令和投影 snapshot，不解析 descriptor/scene JSON，也不持有 native handle。Release image 精确包含
-  project/scene 两个 native DLL；`editor_native` 与 Slang 不进入。当前已有单 SceneDocument、Hierarchy、名称/local
-  Transform Inspector、Create Entity、Save 与 dirty；另有尚未接入 Shell/publish 的 UI-neutral `ViewportSession`、
-  EngineBridge V4 frame lease 与 native Scene/Game/Preview request。当前仍无可见 viewport、Avalonia presentation、Dock、
-  Asset Browser、undo/redo 或 Play Mode。
+- `apps/studio` 是 Avalonia managed Studio shell，不属于 C++ CMake target graph。Project/document 产品链为
+  `App/Shell -> Application ProjectSession -> EngineBridge project + scene adapters -> project/scene native ABI`；Scene View
+  产品链为 `StudioScenePanelView -> ViewportCompositionControl -> Application ViewportSession -> EngineBridge V5 stream
+  -> editor_native bounded scheduler -> process-level viewport RenderThread -> shared viewport producer -> renderer_basic_vulkan`。
+  V1–V4 frame exports 已硬切删除；Vulkan context、producer、queue submit、retirement 与 shutdown 只由 native owner thread
+  执行。Shell 只选择路径、发命令和投影 snapshot；
+  ViewModel、Dock 与 Application 不解析 descriptor/scene JSON，也不持有 native/GPU handle。Windows composition root 优先
+  选择 Avalonia Vulkan compositor，由专用 presentation adapter 导入 opaque NT image/semaphore；AngleEgl/Software 只保留
+  Studio 非渲染功能并让 Scene View 明确降级。Release image 精确包含 project/scene/editor 三个 native DLL 与 12 个
+  renderer-basic shader/reflection 文件，不携带 Slang、Vulkan SDK 或 validation layer。当前已有单 SceneDocument、Hierarchy、
+  名称/local Transform Inspector、Create Entity、Save、dirty、现有 Dock 中的一个可见 Scene View 与 on-demand revision/resize
+  更新；仍无 Asset Browser、undo/redo、Play Mode、第二 Viewport、通用 fair scheduler、camera/input 或 preview consumer。
 - Editor panels 仍由 `EditorPanelRegistry::drawPanels(EditorFrameContext)` 适配每帧能力，但内置
   panel 的 `draw()` 实现会先收敛为 panel-local context，再把最小能力传给 helper。Scene View panel
   不创建 Vulkan objects、不注册 descriptor、不录 command buffer。
@@ -606,52 +611,108 @@ flowchart LR
 - 当前没有 recent store、自动恢复、多模板、Project extension scope、asset catalog、EngineHost、undo/redo 或 Play；
   Bootstrap `Ready` 与活动项目/文档 `Ready` 仍是不同状态。
 
-## 当前 Studio Viewport foundation 流程
+## 当前 Studio Viewport 与 native RenderThread 流程
 
-#359 只建立可复用的 render-session/native 边界，不建立 Avalonia Scene View：
+#359 建立 render-session/native 边界，#361 接入首个 Avalonia Scene View；ADR-0011 将其硬切为 V5 异步
+stream，并由同进程 `editor_native.dll` 内唯一 shared viewport RenderThread 调度：
 
 ```mermaid
 sequenceDiagram
-    participant Consumer as Future Scene/Game/Preview consumer
+    participant Consumer as Avalonia ViewportCompositionControl
     participant Session as Application ViewportSession
     participant Bridge as EngineBridge ViewportBridge
-    participant Native as editor_native V4 ABI
-    participant Runtime as Shared viewport runtime
+    participant Native as editor_native V5 stream ABI
+    participant Scheduler as Bounded latest-wins scheduler
+    participant Owner as Native viewport RenderThread
     participant Renderer as renderer_basic_vulkan
+    participant Compositor as Avalonia Compositor
 
-    Consumer->>Session: synchronize SceneDocument snapshot / camera / extent
-    Session->>Session: coalesce invalidation; admit one in-flight sequence
+    Consumer->>Consumer: sample commit-time panel PixelSize; advance geometry generation
+    Consumer->>Session: synchronize snapshot/camera; set logical == allocation == panel PixelSize
+    Session->>Session: publish latest immutable request
     Session-->>Consumer: immutable ViewportRenderRequest
-    Consumer->>Bridge: CreatePresentSlot(request, compatibility)
+    Consumer->>Bridge: SubmitLatest(stream, request)
     Bridge->>Native: session + target + revision + sequence + camera + bounded proxies
-    Native->>Runtime: create fixed-extent slot (max four lanes)
-    Runtime->>Renderer: record Scene / Game / Preview RenderView
-    Renderer-->>Bridge: native packet metadata + EngineBridge-internal handles
-    Bridge-->>Consumer: ViewportFrameLease metadata
-    Consumer->>Bridge: Complete / Dispose exactly once
-    Bridge->>Native: release packet
-    Consumer->>Session: CompleteRender(sequence, revision, succeeded)
+    Native->>Scheduler: replace the single pending-latest request
+    Scheduler->>Owner: dispatch when one of three full slots is available
+    Owner->>Renderer: render the exact panel extent into an exact-sized external image
+    Renderer-->>Scheduler: publish the single ready frame
+    Consumer->>Bridge: TryTakeReady(stream)
+    Bridge-->>Consumer: self-described ViewportFrameLease + persistent slot identity
+    Consumer->>Consumer: revalidate exact extent + geometry generation + identity/sequence
+    Consumer->>Compositor: import; update stable drawing surface and visual placement atomically
+    alt rejected before compositor submission
+        Consumer->>Bridge: CompleteFrame(NotSubmittedToConsumer)
+    else UpdateWithSemaphoresAsync completed
+        Consumer->>Consumer: revalidate; mark current sequence presented
+        Consumer->>Bridge: CompleteFrame(ConsumerAccessed)
+    else submission/disposal result ambiguous
+        Consumer->>Consumer: quarantine wrappers + lease
+    end
+    Bridge->>Native: editor_viewport_complete_frame_v5(stream, slot, completionKind)
+    Native->>Scheduler: Presented -> Completing
+    alt NotSubmittedToConsumer
+        Owner->>Owner: poll producer fence
+    else ConsumerAccessed
+        Owner->>Owner: empty queue wait(consumer-done semaphore) + retirement fence
+        Compositor-->>Owner: signal consumer-done semaphore after GPU access
+        Owner->>Owner: poll producer + consumer-release fences
+    end
+    Owner->>Scheduler: Completing -> Available after required fences
+    Consumer->>Session: mark presented sequence/revision
 ```
 
-- 每个 `ViewportSession` 有独立 session ID、camera、sequence、pending reasons 与 in-flight state；多个 viewport
-  可以指向同一 SceneDocument，但不能共享可变 camera 或 completion state。
+- 每个 `ViewportSession` 有独立 session ID、camera、sequence 与 pending reasons；多个 viewport 可以指向同一
+  SceneDocument，但不能共享可变 camera 或 presentation state。
 - 当前 target 只有 `DocumentScene`，render kind 只有 `Scene | Game | Preview`。Material Preview 与 Animation Preview
   后续都组合 Preview world/target，不新增 renderer kind。
-- Application request 不含 Avalonia、OS/Vulkan handle 或 mutable World pointer；Transform proxy array 是当前 Scene View
-  的有界调试表示，不是最终 mesh/material render snapshot。
-- native V4 与旧 V1–V3 additive coexist；V7 diagnostics smoke 证明两个并发 session/slot、三种 render kind、camera/
-  identity/revision/sequence/proxy count 被真实消费。runtime 仍是 process-lifetime singleton，此风险没有被本 Slice
-  伪装为已解决。
-- 下一 Slice 增加单 Scene View `ViewportPresentation`、composition capability/import、surface generation 与 drain；
-  Dock move/float 只能重绑 presentation，不能销毁 `ViewportSession`。
+- Application request 不含 Avalonia、OS/Vulkan handle 或 mutable World pointer；进入 native mailbox 前，借用的
+  string/span/proxy 字段会复制为 owning immutable `RenderFramePacket`。Transform proxy array 是当前 Scene View 的
+  有界调试表示，不是最终 mesh/material render snapshot。
+- native V5 request 是 144-byte self-contained input，ready frame 是 152-byte self-described output；V1–V4 frame
+  exports 与 managed fallback 均已删除。V5 smoke 证明 burst request 只留下最新 sequence、ready 被占用时不覆盖、
+  steady-state 最多三个 distinct full slots，第四个请求等待 slot 回收。ABI 保留 logical/allocation 双 extent；Studio
+  presentation 对每个 request 使用相同 panel `PixelSize`，并在 surface commit 前再次复验相等。caller 或 managed pump 不是 Vulkan owner。
+- additive `editor_viewport_query_render_thread_stats` 只向 smoke/diagnostics 暴露 dispatch count、render-queue
+  bound/depth/backpressure、lifecycle 与 caller/owner thread-difference 证据；它读取 published snapshot，不导出
+  `std::thread::id` 或让 managed consumer 调度 owner thread。
+- shared runtime 是进程级 owner，最多创建一条 native RenderThread。Vulkan context、producer、RenderGraph/command
+  recording、graphics queue submit、frame epoch/packet retirement 和 context shutdown 全部留在该线程；mailbox mutex
+  只保护有界 render/control/release queue、生命周期条件和 published diagnostics snapshot，不跨 Vulkan 工作。
+- 每个 stream 最多一个 executing、一个 pending-latest、一个 ready frame；pending submit 原子替换旧 pending，
+  不把 resize event 当 FIFO 命令。steady-state slot 上限为 3，全局 outstanding 上限为 4；resize 时先把不匹配的旧 stream
+  移出 active/desired 集合并开始逐流 retirement，再让 latest exact generation 竞争释放出的 lane。shutdown 进入 Draining 后
+  停止新 submit，但继续完成 close/retirement。
+- #361 已增加单 Scene View `ViewportCompositionControl`、composition capability/import、单调 presentation
+  admission 与 process-owned drain；Dock move/float 只能重绑 presentation，不能销毁 `ViewportSession`。
+- production composition session 在 shell 启动期间于后台启动 compatibility warm-up，且不阻塞 ready，使同一 native RenderThread 提前创建
+  Vulkan device/context；shutdown 在销毁 runtime 前等待该 task，真实 compositor identity 仍由 frame request 复验。
+- Bounds/DPI 以 `ceil(Bounds * RenderScaling)` 采样 panel `PixelSize`，同时作为 logical/allocation extent；每次 physical extent
+  变化推进 geometry generation，并立即把旧 visual 置为不可见。attach 持久复用一张 drawing surface，但旧 surface 不得 crop/stretch
+  到新 Bounds；A→B→A 也只有新的 A generation exact frame 才能恢复可见。旧 revision/epoch、geometry generation 或倒退 sequence
+  在提交前被拒绝。
+- external image/export/import、RenderGraph target、render area、viewport、scissor 与 camera 全部使用同一 exact panel extent。
+  drawing-surface image 与 visual size/opacity 在同一 compositor transaction 更新。每个 stream 独占 managed work fence，尺寸变化
+  立即 retire 不匹配 stream，retirement 只等待该流 pump/presentations；新 desired pump 不被旧流退役绑在同一个全局 task 上。
+  `IsRealtime=true` 即使 scene/camera 静止也由 `RequestCompositionUpdate` 每个 commit 最多重挂一次，目标 exact surface-update
+  `>=60 FPS`；`false` 不自动重挂，只消费 dirty invalidation。两者都不使用 UI timer。
+- V5 completion hard cut 只有 `editor_viewport_complete_frame_v5(stream, slot, completionKind)`。未进入
+  `UpdateWithSemaphoresAsync` 的 frame 报告 `NotSubmittedToConsumer`；update 已完成的 frame 报告
+  `ConsumerAccessed`，并在 native RenderThread 上提交空 queue wait，把 compositor consumer-done semaphore 转为
+  retirement fence。producer 与 consumer proof 都完成后，同一个 full slot 才重新 Available。
+- thread startup/device/queue failure 返回 typed error并让 Scene View 进入 degraded/unavailable，绝不回退 UI/caller
+  thread 执行 Vulkan。lease release 由 managed worker 等待，UI dispatcher 不阻塞；compositor submission、imported
+  wrapper disposal 或 native release 结果歧义时，资源进入有界 process-lifetime quarantine，不按
+  `NotSubmittedToConsumer` 猜测。正常关闭按 managed presentation drain → priority lease release → native mailbox drain → owner-thread retirement →
+  owner-thread producer/context destroy → thread exit → caller 无锁 join 收口。
 
 ## Retired Studio Avalonia Scene View Composition 流程（历史证据）
 
 > R0 hard-cut 4.31 已删除managed viewport scheduler/public contract，4.33又删除public Scene snapshot、
-> Application provider host与Core in-memory provider。当前 production 已有 authoritative SceneDocument 与新的
-> Viewport foundation，但仍没有下图中的 `SceneViewPresentationSession`、Avalonia import 或旧 Core DTO。下图只保留
-> 被拒绝的 pre-hard-cut presentation 证据，不能作为当前依赖图或能力声明；新 presentation 必须接上上节的
-> `ViewportSession -> ViewportBridge -> ViewportFrameLease`，不能恢复旧 provider/scheduler 表面。
+> Application provider host与Core in-memory provider。当前 production 已有 authoritative SceneDocument、
+> `ViewportSession -> ViewportBridge -> ViewportFrameLease` 与新的 `ViewportCompositionControl`；但没有下图中的
+> `SceneViewPresentationSession` 或旧 Core DTO。下图只保留被拒绝的 pre-hard-cut presentation 证据，不能作为
+> 当前依赖图或能力声明，也不能据此恢复旧 provider/scheduler 表面。
 
 ```mermaid
 sequenceDiagram
@@ -693,7 +754,7 @@ sequenceDiagram
     Avalonia-->>Session: compositor release completion
     Session->>Session: return slot to current pool or drain stale slot
     Session->>Bridge: ReleasePresentPacket on resize/detach/shutdown
-    Bridge->>Native: editor_viewport_release_present_packet
+    Bridge->>Native: removed one-argument release export (historical only)
     Session->>VM: current presented/import-failed snapshot only
 ```
 
@@ -755,8 +816,9 @@ sequenceDiagram
   last scene revision；v7 再记录 Scene/Game/Preview frame counts 以及最后一次
   session/target/revision/sequence/render-kind/debug-proxy count、Scene world-grid 开关与实际 debug world-line count，
   同时保持 v1–v6 不变。
-- Scene View 是单 viewport、双 slot 的 latest-wins slice：相同在途观察去重，变化的
-  Bounds 只保留最新 request；Busy/Unavailable 通过 1–16 ms 有界退避或 slot
+- retired `SceneViewPresentationSession` 曾被设计成单 viewport、双 slot 的 latest-wins slice（不是当前合同）：
+  相同在途观察去重，变化的
+  Bounds 只保留最新 request；Busy/Backpressure 通过 1–16 ms 有界退避或 slot
   retirement completion 主动重试，不写入 Problems。
 - capability probe 只在 attach/DataContext 重建时执行。若 probe 成功但布局尺寸尚无效，
   首个有效 Bounds 复用缓存 capability 完成 presentation 配置；Unsupported/失败状态
@@ -764,9 +826,12 @@ sequenceDiagram
 - `ViewportNativePresentDrain` 在应用关闭第一阶段调用已注册 presentation 的 detach，
   因而空闲持久 slot 也进入等待集合。Scene View host 先移除 child visual，等待
   presentation drain 后再在 UI dispatcher dispose composition surface。
-- 单个 composition surface 只允许一个在途 update；尝试尺寸不进入最后成功状态。
-  update 失败时 visual 恢复最后成功帧的原始尺寸，连续失败也不会回退到从未成功的尺寸。
-- imported wrapper release 与 native packet release 是两个有序阶段。前一阶段未确认时
+- 当前 `ViewportCompositionControl` 每次 attach 持久拥有一张 composition surface；每个 fixed-extent native stream 有独立 managed
+  pump/work fence。每个 composition commit 最多发布一条 latest request 和一条 latest surface update；只有
+  allocation == logical == commit-time panel `PixelSize` 且 geometry generation 仍 current 的 frame 能更新 surface。尺寸改变后旧
+  surface 立即隐藏，superseded work 只完成安全退役，不推进当前 presentation 状态。
+- imported wrapper release 与 native packet release 是两个有序阶段；后者在 managed worker 上等待而不阻塞 UI。
+  前一阶段未确认时
   不重复假设 `IAsyncDisposable` 可重试，而是把 wrapper 与仍 outstanding 的 native
   packet 保留到进程结束；native shutdown 因 outstanding packet 延迟销毁 Vulkan context。
   应用关闭超过 5 秒进入显式 process-exit fallback：不再执行 native runtime teardown，
@@ -1178,6 +1243,10 @@ asharia-editor --smoke-editor-frame-debugger
 ```
 
 ## 当前 Frame Loop 流程
+
+本节描述 `sample-viewer`/C++ editor window 的 `VulkanFrameLoop` 单线程 swapchain 路径。Studio offscreen Scene View
+不经过该主循环；它使用上文 `editor_native` process-level viewport RenderThread。当前没有独立 RHI Thread，也没有
+多线程 command recording。
 
 ```mermaid
 flowchart TD

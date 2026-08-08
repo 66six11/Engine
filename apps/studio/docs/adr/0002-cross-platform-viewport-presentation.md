@@ -20,9 +20,12 @@ Studio 需要可 Dock、float、多实例的 Scene/Game/Preview Viewport，并�
 嵌入式 Viewport 默认采用 native offscreen render + external GPU resource + Avalonia composition。
 
 - Windows backend 使用 capability-confirmed Win32/NT external memory/synchronization。
+- Windows Studio composition root 优先请求 Avalonia Vulkan compositor；若宿主不具备 Vulkan compositor，
+  允许回退到 AngleEgl/Software，使项目、Hierarchy 和 Inspector 等非渲染功能继续可用，Scene View 则进入
+  明确的 Unsupported/DeviceMismatch 降级状态。
 - Linux backend 使用 capability-confirmed opaque FD/DMA-BUF 和 semaphore path。
 - macOS backend 使用 MoltenVK/Metal 的 IOSurface/Metal texture 与 `MTLSharedEvent` 路径。
-- 平台资源只通过 `Asharia.Studio.EngineInterop.ViewportFrameLease` 跨边界。
+- 平台资源只通过 `Asharia.Studio.EngineBridge.Viewports.ViewportFrameLease` 跨边界。
 - Scene、Embedded Game、Editor Window Game 和 Preview View 使用该路径。
 - Standalone Game 使用 native WSI `VkSurfaceKHR`/swapchain，不经过 Avalonia。
 
@@ -39,6 +42,13 @@ Rejected as production。可用于 fallback/debug smoke，但带宽、延迟和 
 ### Native swapchain per editor viewport
 
 Rejected as default。Window/swapchain ownership会与 Dock/float 生命周期耦合，也难以支持 Avalonia overlay。保留给 Standalone Game。
+
+### 为首个 Windows Scene View 增加 D3D shared texture 路径
+
+Deferred。Avalonia 的 GPU interop sample 同时展示 Vulkan opaque NT handle 与 D3D11 shared texture，
+但 Asharia 当前 native producer 是 Vulkan，首个闭环直接选择同 API compositor，避免在同一 Slice 引入第二套
+image/synchronization/ownership 合同。未来只有在明确要求 Angle/D3D compositor 下仍能渲染时才增加转换或第二 backend；
+在此之前，非 Vulkan compositor 只提供可诊断的安全降级。
 
 ## Consequences
 
@@ -74,5 +84,7 @@ Negative：
 
 - Avalonia custom rendering：<https://docs.avaloniaui.net/docs/graphics-animation/custom-rendering>
 - Avalonia GPU interop：<https://docs.avaloniaui.net/api/avalonia/rendering/composition/icompositiongpuinterop>
+- Avalonia 12.0.4 GPU interop sample（Windows 显式选择 Vulkan compositor）：
+  <https://github.com/AvaloniaUI/Avalonia/blob/12.0.4/samples/GpuInterop/Program.cs>
 - Vulkan external synchronization：<https://docs.vulkan.org/spec/latest/chapters/synchronization.html>
 - Vulkan Metal objects：<https://docs.vulkan.org/refpages/latest/refpages/source/VK_EXT_metal_objects.html>

@@ -52,8 +52,8 @@ python -m unittest discover -s tools/tests -p "test_*.py"
 | 保留 | package manifests/resolver/lock/composition、ProcessScope、RenderGraph/RHI/Vulkan 硬边界、CPU/headless data/content/world baseline | 已有明确 owner 与自动化证据 |
 | 保留并执行 | manifest 与 configured CMake direct graph 对证；Studio R0/R0.5只读基线 | 28 manifests / 76 targets / 149 direct edges 已由 tests-on codemodel 证明；Studio owner/diagnostics/Host/Pipe/CLI/MCP已有真实纵向证据 |
 | 修复 | managed evaluated ProjectReference/public-consumer closure、Platform/Foundation services、runtime resource ownership | 合同方向正确，但 current 实现或门禁不完整；Studio bounded diagnostics的并发commit/cursor修正已关闭 |
-| 无兼容硬切 | Studio legacy composition、同步 async lifecycle、editor-side closure transaction、native viewport process singleton/raw token | 当前临时路径已经成为 production owner，继续适配会固化错误中心 |
-| 延期 | dynamic native unload、managed generation reload、通用插件 SDK、全面 ECS、render thread、bindless/多队列、外部 registry | 尚无稳定 owner、真实第二 consumer 或性能证据 |
+| 无兼容硬切 | Studio legacy composition、同步 async lifecycle、editor-side closure transaction、native viewport V1–V4 raw-token compatibility contract | V1–V4 frame exports 已硬切删除；不得为新 V5 production consumer 恢复旧入口或兼容层 |
+| 延期 | dynamic native unload、managed generation reload、通用插件 SDK、全面 ECS、通用 runtime RenderThread/RHIThread 与 large job graph、bindless/多队列、外部 registry | 尚无稳定 owner、真实第二 consumer 或性能证据；Studio viewport 已有作用域受限的 native owner thread，不代表通用 runtime threading 已成立 |
 
 ### 2.2 当前 Findings
 
@@ -162,18 +162,21 @@ viewport shader bundle；R0 当时“拒绝这些无 consumer artifact”的删�
 结论：旧closure transaction已删除。第一条真实写闭环必须是 typed mutation batch → authoritative receipt → revision/dirty →
 undo/redo → savepoint。
 
-#### P1：native viewport 边界不是可重启、可诊断的 session
+#### P1：native viewport 边界仍不是可重启、显式分代的 session
 
-- `EditorSharedViewportRuntime::instance()` 通过永久分配实现 process singleton：
-  `apps/editor/src/editor_shared_viewport_runtime.cpp:64-72`；
-- owner 持有 Vulkan context、producer、raw packet set 和永久 `shutdownRequested_`：
-  `apps/editor/src/editor_shared_viewport_runtime.hpp:63-108`；
-- `stats()` 会轮询 retirement，并可能销毁 context，因此“读状态”带有生命周期副作用：
-  `apps/editor/src/editor_shared_viewport_runtime.cpp:396-448`；
+- `EditorSharedViewportRuntime::instance()` 仍通过永久分配实现 process singleton；第一次 device/render/release
+  请求可启动唯一 RenderThread，`editor_viewport_shutdown()` 之后 runtime 永久进入 draining/terminal 状态；
+- Vulkan context、producer、outstanding/retiring packet 与析构只由 RenderThread 访问。V5 stream 请求复制 owning
+  packet 进入有界 render/control/release mailbox；ABI 已有显式 stream lifecycle，但仍没有 process-level native
+  session handle、generation 或 device epoch；
+- `stats()` 现在只读取 owner 发布的 diagnostic snapshot，加上有界 live queue/lifecycle/atomic counter；它不
+  启动或 join RenderThread、不轮询 retirement，也不创建、退休或销毁 Vulkan 资源：
+  `apps/editor/src/editor_shared_viewport_runtime.cpp:397-421`；
 - exported ABI 直接进入可能分配、加锁和构造 C++ error/string 的实现，没有统一 `noexcept`/catch 边界；异常不能跨 C ABI。
 
-结论：目标是显式 `NativeSessionHandle + epoch + owner thread + bounded lease`。查询只读 snapshot 不得创建、退休或销毁资源。
-旧 raw token 直接删除，不建立长期兼容 adapter。
+结论：owner thread、V5 stream lifecycle 与 bounded mailbox 基线已经成立；下一次 contract hard-cut 目标是显式
+`NativeSessionHandle + epoch + bounded lease`。查询继续保持只读 snapshot；V1–V4 frame exports 已删除，
+不得重新建立 compatibility path。
 
 #### P1：两个 Editor host 仍同时进入默认构建
 
@@ -307,7 +310,7 @@ F0 current facts
 | minimal Build/Cook/Stage/Standalone | 一个真实 Data/Content/World/Render vertical slice 后 | Scripting 和 Phase 10 大量系统固化 Editor-only 假设前 | 应早于广泛插件/系统波次；不要等全部 Editor 功能完成 |
 | Scripting implementation | schema、World safe point、capability、Host scope、standalone closure 后 | 首个 script-authored gameplay/asset rule 前 | 先窄 facade，再做 .NET adapter；不先做 hot reload |
 | Physics/Animation/Audio | F3 + World/Resource/frame schedule 成立，且有真实产品 Slice | Gameplay Feature 开始依赖该能力前 | 按 vertical wave 逐个进入，不建空系统框架 |
-| render thread/large job graph | immutable extraction、cancel/drain 和 profile 证据后 | 已测 CPU/back-pressure 证明单线程不达标时 | Tasks baseline 早，平行执行晚 |
+| 通用 runtime RenderThread/RHIThread 与 large job graph | immutable extraction、cancel/drain 和 profile 证据后 | 已测 CPU/back-pressure 证明单线程不达标时 | Studio viewport 已有作用域受限的 native owner thread；通用 runtime Tasks baseline 早，平行执行晚 |
 | dynamic reload / external packages | first-party add/update/remove 和 restart-required 路径稳定后 | 只有真实外部 consumer 才构成需求 | Phase 11；当前删除 speculative framework |
 | bindless/async compute/multi-queue | material/resource lifetime 与 GPU timeline 稳定且 profile 证明需要 | 目标硬件/内容规模要求时 | deferred |
 

@@ -38,7 +38,8 @@ namespace asharia::editor {
     struct EditorSharedViewportPresentDesc {
         std::string_view panelId;
         EditorViewportKind kind{EditorViewportKind::Scene};
-        EditorExtent2D extent;
+        EditorExtent2D logicalExtent;
+        EditorExtent2D allocationExtent;
         EditorSharedViewportExternalImageHandleFamily imageHandleFamily{
             EditorSharedViewportExternalImageHandleFamily::VulkanOpaqueNt};
         bool hasScene{};
@@ -57,7 +58,7 @@ namespace asharia::editor {
         void* waitSemaphoreHandle{};
         void* signalSemaphoreHandle{};
         VkFormat format{VK_FORMAT_UNDEFINED};
-        VkExtent2D extent{};
+        VkExtent2D allocationExtent{};
         std::uint64_t memorySizeBytes{};
         std::uint64_t frameIndex{};
     };
@@ -83,6 +84,7 @@ namespace asharia::editor {
         std::array<std::uint64_t, 2> lastSessionId{};
         std::array<std::uint64_t, 2> lastTargetId{};
         EditorViewportKind lastRenderKind{EditorViewportKind::Scene};
+        VkExtent2D lastRenderExtent{};
         std::uint32_t lastDebugProxyCount{};
         std::uint64_t lastDebugWorldLineCount{};
         bool lastWorldGridEnabled{};
@@ -98,7 +100,9 @@ namespace asharia::editor {
         ~EditorSharedViewportPacketState();
 
         [[nodiscard]] EditorSharedViewportPresentPacket toPresentPacket();
+        [[nodiscard]] Result<void> submitConsumerReleaseWait(VkQueue graphicsQueue);
         [[nodiscard]] Result<bool> retireCompletedGpuWork();
+        [[nodiscard]] bool hasPendingGpuWork() const noexcept;
         void abandonPendingGpuWork() noexcept;
 
         static void closeHandle(void*& handle);
@@ -107,7 +111,10 @@ namespace asharia::editor {
         VkCommandPool commandPool{VK_NULL_HANDLE};
         VkCommandBuffer commandBuffer{VK_NULL_HANDLE};
         VkFence fence{VK_NULL_HANDLE};
+        VkFence consumerReleaseFence{VK_NULL_HANDLE};
         bool submitted{false};
+        bool consumerReleasePending{false};
+        bool consumerReleaseSubmitted{false};
         bool reusable{false};
         bool waitForCompositionRelease{false};
         EditorSharedViewportFrameEpochLease frameEpoch;
@@ -121,6 +128,7 @@ namespace asharia::editor {
         void* waitSemaphoreHandle{};
         void* signalSemaphoreHandle{};
         std::uint64_t frameIndex{};
+        VkExtent2D renderExtent{};
     };
 
     class EditorSharedViewportRenderProducer final {

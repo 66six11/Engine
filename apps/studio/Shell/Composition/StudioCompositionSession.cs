@@ -24,6 +24,7 @@ internal sealed class StudioCompositionSession : IAsyncDisposable
     private readonly IProjectSession projectSession_;
     private readonly ViewportPresentationLifetime viewportPresentationLifetime_;
     private readonly ViewportRuntimeBridge viewportRuntime_;
+    private readonly Task<ViewportFrameFailure?> viewportWarmUpTask_;
 #if DEBUG
     private readonly StudioDevelopmentHost? developmentHost_;
     private readonly StudioDevelopmentPipeEndpoint? developmentEndpoint_;
@@ -32,6 +33,14 @@ internal sealed class StudioCompositionSession : IAsyncDisposable
     public StudioCompositionSession(
         StudioShellViewModel shellViewModel,
         IProjectSession projectSession)
+        : this(shellViewModel, projectSession, startViewportWarmUp: true)
+    {
+    }
+
+    private StudioCompositionSession(
+        StudioShellViewModel shellViewModel,
+        IProjectSession projectSession,
+        bool startViewportWarmUp)
     {
         ArgumentNullException.ThrowIfNull(shellViewModel);
         ArgumentNullException.ThrowIfNull(projectSession);
@@ -39,6 +48,9 @@ internal sealed class StudioCompositionSession : IAsyncDisposable
         projectSession_ = projectSession;
         viewportPresentationLifetime_ = shellViewModel.ViewportPresentationLifetime;
         viewportRuntime_ = new ViewportRuntimeBridge();
+        viewportWarmUpTask_ = startViewportWarmUp
+            ? viewportRuntime_.WarmUpAsync()
+            : Task.FromResult<ViewportFrameFailure?>(null);
 #if DEBUG
         developmentHost_ = null;
         developmentEndpoint_ = null;
@@ -46,7 +58,7 @@ internal sealed class StudioCompositionSession : IAsyncDisposable
     }
 
     internal StudioCompositionSession(StudioShellViewModel shellViewModel)
-        : this(shellViewModel, shellViewModel.ProjectSession)
+        : this(shellViewModel, shellViewModel.ProjectSession, startViewportWarmUp: false)
     {
     }
 
@@ -64,6 +76,7 @@ internal sealed class StudioCompositionSession : IAsyncDisposable
         projectSession_ = projectSession;
         viewportPresentationLifetime_ = shellViewModel.ViewportPresentationLifetime;
         viewportRuntime_ = new ViewportRuntimeBridge();
+        viewportWarmUpTask_ = viewportRuntime_.WarmUpAsync();
         developmentHost_ = developmentHost;
         developmentEndpoint_ = developmentEndpoint;
     }
@@ -244,6 +257,15 @@ internal sealed class StudioCompositionSession : IAsyncDisposable
         try
         {
             shellViewModel_.Dispose();
+        }
+        catch (Exception error)
+        {
+            failures.Add(error);
+        }
+
+        try
+        {
+            _ = await viewportWarmUpTask_;
         }
         catch (Exception error)
         {

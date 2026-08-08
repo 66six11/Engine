@@ -504,7 +504,7 @@ public sealed class StudioEditorImageProducerTests
         StudioEditorImageTestInputs.WriteNativeDll(
             Path.Combine(fixture.PublishRoot, "editor_native.dll"),
             "editor_native.dll",
-            ["editor_viewport_create_present_slot_v4"]);
+            ["editor_viewport_open_stream_v5"]);
 
         var result = StudioEditorImageProducer.Produce(fixture.Request);
 

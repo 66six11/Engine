@@ -22,15 +22,18 @@ public sealed class ProgramSourceTests
     }
 
     [Fact]
-    public void Studio_uses_platform_defaults_without_phantom_native_viewport_configuration()
+    public void Studio_prefers_the_vulkan_compositor_with_safe_windows_fallbacks()
     {
         var source = LoadSource("Program.cs");
 
         Assert.Contains(".UsePlatformDetect()", source, StringComparison.Ordinal);
         Assert.Contains(".WithInterFont()", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("Win32PlatformOptions", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("Win32RenderingMode", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("Vulkan", source, StringComparison.Ordinal);
+        Assert.Contains("Win32PlatformOptions", source, StringComparison.Ordinal);
+        AssertInOrder(
+            source,
+            "Win32RenderingMode.Vulkan",
+            "Win32RenderingMode.AngleEgl",
+            "Win32RenderingMode.Software");
     }
 
     [Fact]
@@ -47,6 +50,17 @@ public sealed class ProgramSourceTests
     {
         var root = FindRepositoryRoot();
         return File.ReadAllText(Path.Combine(new[] { root }.Concat(pathParts).ToArray()));
+    }
+
+    private static void AssertInOrder(string source, params string[] fragments)
+    {
+        var previous = -1;
+        foreach (var fragment in fragments)
+        {
+            var current = source.IndexOf(fragment, StringComparison.Ordinal);
+            Assert.True(current > previous, $"Expected '{fragment}' after the preceding mode.");
+            previous = current;
+        }
     }
 
     private static string FindRepositoryRoot()

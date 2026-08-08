@@ -16,6 +16,15 @@ sealed class Program
     {
         return AppBuilder.Configure<App>()
             .UsePlatformDetect()
+            .With(new Win32PlatformOptions
+            {
+                RenderingMode =
+                [
+                    Win32RenderingMode.Vulkan,
+                    Win32RenderingMode.AngleEgl,
+                    Win32RenderingMode.Software,
+                ],
+            })
             .WithInterFont();
     }
 }

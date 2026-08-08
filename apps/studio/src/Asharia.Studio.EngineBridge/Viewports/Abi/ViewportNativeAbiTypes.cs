@@ -17,6 +17,7 @@ internal enum ViewportNativeStatus : uint
     RenderFailed = 7,
     DeviceLost = 8,
     InternalError = 9,
+    Backpressure = 10,
 }
 
 internal enum ViewportNativeHandleType : uint
@@ -30,6 +31,27 @@ internal enum ViewportNativeImageFormat : uint
     Unknown = 0,
     Rgba8Unorm = 1,
     Bgra8Unorm = 2,
+}
+
+internal enum ViewportNativePresentCompletionKind : uint
+{
+    NotSubmittedToConsumer = 0,
+    ConsumerAccessed = 1,
+}
+
+internal enum ViewportNativeStreamLifecycle : uint
+{
+    Open = 0,
+    Closing = 1,
+    Closed = 2,
+    Faulted = 3,
+}
+
+[Flags]
+internal enum ViewportNativePresentRequestV5Flags : uint
+{
+    None = 0,
+    HasLogicalExtent = 1U << 0,
 }
 
 [StructLayout(LayoutKind.Sequential)]
@@ -80,6 +102,19 @@ internal readonly record struct ViewportNativeCompatibilityRequest(
     uint HasDeviceUuid);
 
 [StructLayout(LayoutKind.Sequential)]
+internal readonly record struct ViewportNativeCompatibilityResult(
+    ViewportNativeAbiHeader Header,
+    uint Status,
+    uint ProducedImageHandleType,
+    uint ProducedSemaphoreHandleType,
+    uint NativeDeviceVendorId,
+    uint NativeDeviceId,
+    ulong NativeDeviceUuidLow,
+    ulong NativeDeviceUuidHigh,
+    nint MessageUtf8,
+    ulong MessageByteLength);
+
+[StructLayout(LayoutKind.Sequential)]
 internal readonly record struct ViewportNativeCamera(
     Float3 Position,
     Float3 Target,
@@ -103,9 +138,15 @@ internal readonly record struct ViewportNativeDebugProxy(
     TransformValue Transform);
 
 [StructLayout(LayoutKind.Sequential)]
-internal readonly record struct ViewportNativePresentRequestV4(
+internal readonly record struct ViewportNativeStreamHandleV5(
     ViewportNativeAbiHeader Header,
-    ViewportNativeCompatibilityRequest Compatibility,
+    uint Status,
+    uint Reserved,
+    ulong StreamId);
+
+[StructLayout(LayoutKind.Sequential)]
+internal readonly record struct ViewportNativePresentRequestV5(
+    ViewportNativeAbiHeader Header,
     ViewportNativeId SessionId,
     ViewportNativeId TargetId,
     ulong TargetRevision,
@@ -116,79 +157,47 @@ internal readonly record struct ViewportNativePresentRequestV4(
     uint TargetKind,
     uint WidthPixels,
     uint HeightPixels,
-    uint Reserved,
-    ViewportNativeCamera Camera);
+    uint Flags,
+    ViewportNativeCamera Camera,
+    uint LogicalWidthPixels,
+    uint LogicalHeightPixels);
 
 [StructLayout(LayoutKind.Sequential)]
-internal readonly record struct ViewportNativePresentPacket(
+internal readonly record struct ViewportNativeReadyFrameV5(
     ViewportNativeAbiHeader Header,
     uint Status,
-    nint NativePacket,
+    uint HasFrame,
+    ulong StreamId,
+    nint NativeSlot,
     nint ImageHandle,
     nint WaitSemaphoreHandle,
     nint SignalSemaphoreHandle,
     uint WidthPixels,
     uint HeightPixels,
     uint Format,
+    uint Reserved,
     ulong MemorySizeBytes,
     ulong FrameIndex,
-    nint MessageUtf8,
-    ulong MessageByteLength)
-{
-    public static ViewportNativePresentPacket ForCall() => new(
-        ViewportNativeAbiHeader.Current<ViewportNativePresentPacket>(),
-        (uint)ViewportNativeStatus.Unavailable,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        (uint)ViewportNativeImageFormat.Unknown,
-        0,
-        0,
-        0,
-        0);
+    ViewportNativeId SessionId,
+    ViewportNativeId TargetId,
+    ulong TargetRevision,
+    ulong RequestSequence,
+    uint Kind,
+    uint TargetKind,
+    uint LogicalWidthPixels,
+    uint LogicalHeightPixels);
 
-    internal static ViewportNativePresentPacket Success(
-        nint nativePacket,
-        nint imageHandle,
-        nint waitSemaphoreHandle,
-        nint signalSemaphoreHandle,
-        uint widthPixels,
-        uint heightPixels,
-        ViewportNativeImageFormat format,
-        ulong memorySizeBytes,
-        ulong frameIndex) => new(
-            ViewportNativeAbiHeader.Current<ViewportNativePresentPacket>(),
-            (uint)ViewportNativeStatus.Success,
-            nativePacket,
-            imageHandle,
-            waitSemaphoreHandle,
-            signalSemaphoreHandle,
-            widthPixels,
-            heightPixels,
-            (uint)format,
-            memorySizeBytes,
-            frameIndex,
-            0,
-            0);
-
-    internal static ViewportNativePresentPacket Failure(
-        ViewportNativeStatus status,
-        nint messageUtf8,
-        ulong messageByteLength) => new(
-            ViewportNativeAbiHeader.Current<ViewportNativePresentPacket>(),
-            (uint)status,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            (uint)ViewportNativeImageFormat.Unknown,
-            0,
-            0,
-            messageUtf8,
-            messageByteLength);
-}
+[StructLayout(LayoutKind.Sequential)]
+internal readonly record struct ViewportNativeStreamPollV5(
+    ViewportNativeAbiHeader Header,
+    uint Status,
+    uint Lifecycle,
+    uint HasPendingLatest,
+    uint HasReadyFrame,
+    uint RenderExecuting,
+    uint SlotCount,
+    uint PresentedSlotCount,
+    uint Reserved,
+    ulong SubmittedRequests,
+    ulong CoalescedRequests,
+    ulong RenderedFrames);

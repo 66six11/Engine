@@ -15,7 +15,7 @@ public sealed class ViewportSession
     private ViewportCameraSnapshot camera_;
     private ViewportDebugProxySnapshot[] debugProxies_;
     private int totalDebugProxyCount_;
-    private ViewportExtent? lastExtent_;
+    private ViewportRenderSize? lastRenderSize_;
     private ViewportInvalidationReason pendingReasons_ = ViewportInvalidationReason.InitialFrame;
     private ulong lastSequence_;
     private ulong inFlightSequence_;
@@ -119,11 +119,11 @@ public sealed class ViewportSession
         }
     }
 
-    public bool TryBeginRender(ViewportExtent extent, out ViewportRenderRequest request)
+    public bool TryBeginRender(ViewportRenderSize renderSize, out ViewportRenderRequest request)
     {
-        if (!extent.IsRenderable)
+        if (!renderSize.LogicalExtent.IsRenderable || !renderSize.AllocationExtent.IsRenderable)
         {
-            throw new ArgumentOutOfRangeException(nameof(extent));
+            throw new ArgumentOutOfRangeException(nameof(renderSize));
         }
 
         lock (gate_)
@@ -133,9 +133,9 @@ public sealed class ViewportSession
             {
                 return false;
             }
-            if (lastExtent_ != extent)
+            if (lastRenderSize_ != renderSize)
             {
-                lastExtent_ = extent;
+                lastRenderSize_ = renderSize;
                 pendingReasons_ |= ViewportInvalidationReason.ExtentChanged;
             }
             if (pendingReasons_ == ViewportInvalidationReason.None)
@@ -156,7 +156,7 @@ public sealed class ViewportSession
                 targetKind_,
                 targetId_,
                 targetRevision_,
-                extent,
+                renderSize,
                 camera_,
                 reasons,
                 debugProxies_,
@@ -164,6 +164,73 @@ public sealed class ViewportSession
             return true;
         }
     }
+
+    public bool TryPublishLatest(ViewportRenderSize renderSize, out ViewportRenderRequest request)
+    {
+        if (!renderSize.LogicalExtent.IsRenderable || !renderSize.AllocationExtent.IsRenderable)
+        {
+            throw new ArgumentOutOfRangeException(nameof(renderSize));
+        }
+
+        lock (gate_)
+        {
+            request = null!;
+            if (isClosed_)
+            {
+                return false;
+            }
+            if (lastRenderSize_ != renderSize)
+            {
+                lastRenderSize_ = renderSize;
+                pendingReasons_ |= ViewportInvalidationReason.ExtentChanged;
+            }
+            if (pendingReasons_ == ViewportInvalidationReason.None)
+            {
+                return false;
+            }
+
+            var sequence = checked(++lastSequence_);
+            var reasons = pendingReasons_;
+            pendingReasons_ = ViewportInvalidationReason.None;
+            request = new ViewportRenderRequest(
+                sessionId_,
+                sequence,
+                kind_,
+                targetKind_,
+                targetId_,
+                targetRevision_,
+                renderSize,
+                camera_,
+                reasons,
+                debugProxies_,
+                totalDebugProxyCount_);
+            return true;
+        }
+    }
+
+    public bool MarkPublishedFramePresented(ulong sequence, ulong targetRevision)
+    {
+        lock (gate_)
+        {
+            return !isClosed_ && sequence != 0 && sequence <= lastSequence_ &&
+                   targetRevision == targetRevision_;
+        }
+    }
+
+    public void RetryPublishedFrame(ViewportRenderRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        lock (gate_)
+        {
+            if (!isClosed_ && request.TargetRevision == targetRevision_)
+            {
+                pendingReasons_ |= request.Reasons;
+            }
+        }
+    }
+
+    public bool TryBeginRender(ViewportExtent extent, out ViewportRenderRequest request) =>
+        TryBeginRender(new ViewportRenderSize(extent, extent), out request);
 
     public bool CompleteRender(ulong sequence, ulong targetRevision, bool succeeded)
     {
@@ -205,7 +272,8 @@ public sealed class ViewportSession
         ViewportInvalidationReason.TargetChanged |
         ViewportInvalidationReason.CameraChanged |
         ViewportInvalidationReason.ExtentChanged |
-        ViewportInvalidationReason.Exposed;
+        ViewportInvalidationReason.Exposed |
+        ViewportInvalidationReason.Realtime;
 
     private static (ViewportDebugProxySnapshot[] Proxies, int TotalCount)
         CaptureDebugProxies(SceneDocumentSnapshot document)

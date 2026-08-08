@@ -112,7 +112,8 @@ namespace asharia::editor {
         }
 
         void recordRenderedViewStats(EditorSharedViewportRenderProducerStats& stats,
-                                     EditorSharedViewportPresentDesc desc) {
+                                     EditorSharedViewportPresentDesc desc,
+                                     const EditorSharedViewportPacketState& state) {
             if (desc.hasScene) {
                 switch (desc.kind) {
                 case EditorViewportKind::Scene:
@@ -131,6 +132,7 @@ namespace asharia::editor {
             stats.lastSessionId = desc.sessionId;
             stats.lastTargetId = desc.targetId;
             stats.lastRenderKind = desc.kind;
+            stats.lastRenderExtent = state.renderExtent;
             stats.lastDebugProxyCount = static_cast<std::uint32_t>(desc.debugProxies.size());
             stats.lastDebugWorldLineCount = desc.hasScene && desc.kind == EditorViewportKind::Scene
                                                 ? 3U + (desc.debugProxies.size() * 3U)
@@ -197,7 +199,8 @@ namespace asharia::editor {
                     .device = device,
                     .allocator = allocator,
                     .format = kSharedViewportFormat,
-                    .extent = VkExtent2D{.width = desc.extent.width, .height = desc.extent.height},
+                    .extent = VkExtent2D{.width = desc.allocationExtent.width,
+                                         .height = desc.allocationExtent.height},
                     .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
                     .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
                 });
@@ -286,7 +289,13 @@ namespace asharia::editor {
                 .imageView = targetImage.imageView(),
                 .imageIndex = 0U,
                 .format = targetImage.format(),
-                .extent = targetImage.extent(),
+                // The external image is a grow-only allocation during interactive resize.
+                // Render only the logical top-left viewport; Studio sizes the composition visual
+                // to the allocation and clips it at the control boundary, avoiding image stretch.
+                .extent = VkExtent2D{
+                    .width = desc.logicalExtent.width,
+                    .height = desc.logicalExtent.height,
+                },
                 .clearColor = VkClearColorValue{{0.12F, 0.12F, 0.13F, 1.0F}},
                 .frameLoop = nullptr,
             };
@@ -301,10 +310,13 @@ namespace asharia::editor {
                 .image = targetImage.image(),
                 .imageView = targetImage.imageView(),
                 .format = targetImage.format(),
-                .extent = targetImage.extent(),
+                // The VkImage keeps its grow-only allocation extent, while rendering, camera
+                // projection, viewport, and scissor all use the current panel's logical extent.
+                .extent = frame.extent,
                 .aspectMask = targetImage.aspectMask(),
                 .finalUsage = BasicRenderViewTargetFinalUsage::SampledTexture,
             };
+            state.renderExtent = view.target.extent;
             view.viewKind = *viewKind;
             view.frameParams = BasicRenderViewFrameParams{
                 .frameIndex = frameIndex,
@@ -316,8 +328,8 @@ namespace asharia::editor {
             std::vector<BasicDebugWorldLine> debugLines;
             if (desc.hasScene) {
                 const EditorViewportCamera camera =
-                    desc.hasCamera ? editorViewportCameraForExtent(desc.camera, desc.extent)
-                                   : defaultEditorSceneViewCamera(desc.extent);
+                    desc.hasCamera ? editorViewportCameraForExtent(desc.camera, desc.logicalExtent)
+                                   : defaultEditorSceneViewCamera(desc.logicalExtent);
                 view.camera = BasicRenderViewCamera{
                     .view = camera.view,
                     .projection = camera.projection,
@@ -406,7 +418,7 @@ namespace asharia::editor {
     } // namespace
 
     EditorSharedViewportPacketState::~EditorSharedViewportPacketState() {
-        if (submitted) {
+        if (hasPendingGpuWork()) {
             logError("Shared viewport packet destruction was attempted before GPU completion.");
             frameEpoch.abandon();
             std::terminate();
@@ -419,39 +431,114 @@ namespace asharia::editor {
         if (device != VK_NULL_HANDLE && fence != VK_NULL_HANDLE) {
             vkDestroyFence(device, fence, nullptr);
         }
+        if (device != VK_NULL_HANDLE && consumerReleaseFence != VK_NULL_HANDLE) {
+            vkDestroyFence(device, consumerReleaseFence, nullptr);
+        }
         if (device != VK_NULL_HANDLE && commandPool != VK_NULL_HANDLE) {
             vkDestroyCommandPool(device, commandPool, nullptr);
         }
     }
 
+    Result<void> EditorSharedViewportPacketState::submitConsumerReleaseWait(VkQueue graphicsQueue) {
+        if (consumerReleasePending) {
+            return std::unexpected{
+                vulkanError("Shared viewport consumer release wait was already requested")};
+        }
+
+        // From this point forward destruction is unsafe until a successful
+        // consumer-done wait fence proves that the external reader released
+        // the shared image. Failures deliberately leave this state pending so
+        // the runtime quarantines the packet instead of returning its image to
+        // the cross-packet pool.
+        consumerReleasePending = true;
+        if (device == VK_NULL_HANDLE || graphicsQueue == VK_NULL_HANDLE ||
+            signalSemaphore.handle() == VK_NULL_HANDLE) {
+            return std::unexpected{
+                vulkanError("Shared viewport packet cannot wait for consumer release")};
+        }
+
+        VkFenceCreateInfo fenceInfo{};
+        fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+        auto result = checkVk(vkCreateFence(device, &fenceInfo, nullptr, &consumerReleaseFence),
+                              "Failed to create shared viewport consumer release fence");
+        if (!result) {
+            return std::unexpected{std::move(result.error())};
+        }
+
+        VkSemaphoreSubmitInfo waitInfo{};
+        waitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
+        waitInfo.semaphore = signalSemaphore.handle();
+        waitInfo.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+
+        VkSubmitInfo2 submitInfo{};
+        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
+        submitInfo.waitSemaphoreInfoCount = 1U;
+        submitInfo.pWaitSemaphoreInfos = &waitInfo;
+
+        result = checkVk(vkQueueSubmit2(graphicsQueue, 1U, &submitInfo, consumerReleaseFence),
+                         "Failed to submit shared viewport consumer release wait");
+        if (!result) {
+            return std::unexpected{std::move(result.error())};
+        }
+
+        consumerReleaseSubmitted = true;
+        return {};
+    }
+
     Result<bool> EditorSharedViewportPacketState::retireCompletedGpuWork() {
-        if (!submitted) {
-            return true;
-        }
-        if (device == VK_NULL_HANDLE || fence == VK_NULL_HANDLE) {
-            return std::unexpected{
-                vulkanError("Shared viewport present slot has no submission fence")};
-        }
-
-        const VkResult status = vkGetFenceStatus(device, fence);
-        if (status == VK_NOT_READY) {
-            return false;
-        }
-        if (status != VK_SUCCESS) {
-            return std::unexpected{
-                vulkanError("Failed to query shared viewport present slot fence", status)};
-        }
-
-        frameEpoch.complete();
-        submitted = false;
-        for (VulkanTransientImageResource& resource : transientImages) {
-            auto released = transientImagePool.releaseCompleted(resource);
-            if (!released) {
-                return std::unexpected{std::move(released.error())};
+        if (submitted) {
+            if (device == VK_NULL_HANDLE || fence == VK_NULL_HANDLE) {
+                return std::unexpected{
+                    vulkanError("Shared viewport present slot has no submission fence")};
             }
+
+            const VkResult status = vkGetFenceStatus(device, fence);
+            if (status == VK_NOT_READY) {
+                return false;
+            }
+            if (status != VK_SUCCESS) {
+                return std::unexpected{
+                    vulkanError("Failed to query shared viewport present slot fence", status)};
+            }
+
+            frameEpoch.complete();
+            submitted = false;
+            for (VulkanTransientImageResource& resource : transientImages) {
+                auto released = transientImagePool.releaseCompleted(resource);
+                if (!released) {
+                    return std::unexpected{std::move(released.error())};
+                }
+            }
+            transientImages.clear();
         }
-        transientImages.clear();
+
+        if (consumerReleasePending) {
+            if (!consumerReleaseSubmitted || device == VK_NULL_HANDLE ||
+                consumerReleaseFence == VK_NULL_HANDLE) {
+                return std::unexpected{
+                    vulkanError("Shared viewport consumer release completion cannot be confirmed")};
+            }
+
+            const VkResult status = vkGetFenceStatus(device, consumerReleaseFence);
+            if (status == VK_NOT_READY) {
+                return false;
+            }
+            if (status != VK_SUCCESS) {
+                return std::unexpected{
+                    vulkanError("Failed to query shared viewport consumer release fence", status)};
+            }
+
+            vkDestroyFence(device, consumerReleaseFence, nullptr);
+            consumerReleaseFence = VK_NULL_HANDLE;
+            consumerReleaseSubmitted = false;
+            consumerReleasePending = false;
+        }
+
         return true;
+    }
+
+    bool EditorSharedViewportPacketState::hasPendingGpuWork() const noexcept {
+        return submitted || consumerReleasePending;
     }
 
     void EditorSharedViewportPacketState::abandonPendingGpuWork() noexcept {
@@ -466,7 +553,7 @@ namespace asharia::editor {
             .waitSemaphoreHandle = waitSemaphoreHandle,
             .signalSemaphoreHandle = signalSemaphoreHandle,
             .format = targetImage.format(),
-            .extent = targetImage.extent(),
+            .allocationExtent = targetImage.extent(),
             .memorySizeBytes = targetImage.memorySizeBytes(),
             .frameIndex = frameIndex,
         };
@@ -530,7 +617,7 @@ namespace asharia::editor {
 
         ++stats_.framesRendered;
         ++stats_.packetsCreated;
-        recordRenderedViewStats(stats_, desc);
+        recordRenderedViewStats(stats_, desc, *state);
         return state;
     }
 
@@ -559,7 +646,7 @@ namespace asharia::editor {
 
         ++stats_.framesRendered;
         ++stats_.packetsCreated;
-        recordRenderedViewStats(stats_, desc);
+        recordRenderedViewStats(stats_, desc, *state);
         return state;
     }
 
@@ -572,7 +659,8 @@ namespace asharia::editor {
                 vulkanError("Shared viewport present packet is not a reusable slot")};
         }
         const VkExtent2D extent = state.imageLease.image().extent();
-        if (extent.width != desc.extent.width || extent.height != desc.extent.height) {
+        if (extent.width != desc.allocationExtent.width ||
+            extent.height != desc.allocationExtent.height) {
             return std::unexpected{
                 vulkanError("Shared viewport present slot extent cannot change in place")};
         }
@@ -604,7 +692,7 @@ namespace asharia::editor {
         }
 
         ++stats_.framesRendered;
-        recordRenderedViewStats(stats_, desc);
+        recordRenderedViewStats(stats_, desc, state);
         return {};
     }
 

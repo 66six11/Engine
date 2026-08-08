@@ -1,13 +1,21 @@
 ﻿#pragma once
 
 #include <array>
+#include <atomic>
+#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <expected>
+#include <future>
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <string>
+#include <thread>
+#include <unordered_map>
 #include <unordered_set>
+#include <vector>
 
 #include "asharia/core/result.hpp"
 #include "asharia/rhi_vulkan/vulkan_context.hpp"
@@ -17,8 +25,14 @@
 namespace asharia::editor {
 
     enum class EditorSharedViewportRenderFrameErrorKind {
+        Unavailable,
         RenderFailed,
         Backpressure,
+    };
+
+    enum class EditorSharedViewportPresentCompletionKind {
+        NotSubmittedToConsumer,
+        ConsumerAccessed,
     };
 
     struct EditorSharedViewportRenderFrameError {
@@ -30,10 +44,50 @@ namespace asharia::editor {
     using EditorSharedViewportRenderFrameResult =
         std::expected<EditorSharedViewportPresentPacket, EditorSharedViewportRenderFrameError>;
 
+    using EditorSharedViewportStreamId = std::uint64_t;
+
+    struct EditorSharedViewportReadyFrame {
+        EditorSharedViewportPresentPacket present;
+        std::array<std::uint64_t, 2> sessionId{};
+        std::array<std::uint64_t, 2> targetId{};
+        std::uint64_t targetRevision{};
+        std::uint64_t requestSequence{};
+        EditorViewportKind kind{EditorViewportKind::Scene};
+        EditorExtent2D logicalExtent;
+    };
+
+    enum class EditorSharedViewportStreamLifecycle {
+        Open,
+        Closing,
+        Closed,
+        Faulted,
+    };
+
+    struct EditorSharedViewportStreamSnapshot {
+        EditorSharedViewportStreamLifecycle lifecycle{
+            EditorSharedViewportStreamLifecycle::Open};
+        bool hasPendingLatest{};
+        bool hasReadyFrame{};
+        bool renderExecuting{};
+        std::size_t slotCount{};
+        std::size_t presentedSlotCount{};
+        std::uint64_t submittedRequests{};
+        std::uint64_t coalescedRequests{};
+        std::uint64_t renderedFrames{};
+    };
+
     struct EditorSharedViewportDeviceSnapshot {
         std::uint32_t vendorId{};
         std::uint32_t deviceId{};
         asharia::VulkanDeviceIdentity identity;
+    };
+
+    enum class EditorSharedViewportRuntimeLifecycle {
+        Starting,
+        Running,
+        Draining,
+        Stopped,
+        Faulted,
     };
 
     struct EditorSharedViewportRuntimeStats {
@@ -59,6 +113,7 @@ namespace asharia::editor {
         std::array<std::uint64_t, 2> lastSessionId{};
         std::array<std::uint64_t, 2> lastTargetId{};
         EditorViewportKind lastRenderKind{EditorViewportKind::Scene};
+        VkExtent2D lastRenderExtent{};
         std::uint32_t lastDebugProxyCount{};
         std::uint64_t lastDebugWorldLineCount{};
         bool lastWorldGridEnabled{};
@@ -67,42 +122,196 @@ namespace asharia::editor {
         bool hasContext{};
         bool hasRenderProducer{};
         bool shutdownRequested{};
+        std::uint64_t renderQueueBackpressureHits{};
+        std::uint64_t renderThreadDispatches{};
+        std::size_t maxQueuedRenderCommands{};
+        std::size_t maxObservedQueuedRenderCommands{};
+        std::size_t queuedRenderCommands{};
+        std::thread::id renderThreadId;
+        EditorSharedViewportRuntimeLifecycle lifecycle{
+            EditorSharedViewportRuntimeLifecycle::Starting};
+        bool renderThreadRunning{};
+        bool renderThreadJoined{};
     };
 
     class EditorSharedViewportRuntime final {
     public:
         [[nodiscard]] static EditorSharedViewportRuntime& instance();
         [[nodiscard]] asharia::Result<EditorSharedViewportDeviceSnapshot> ensureDeviceSnapshot();
+        [[nodiscard]] asharia::Result<EditorSharedViewportStreamId> openStream();
+        [[nodiscard]] asharia::Result<void>
+        submitLatest(EditorSharedViewportStreamId streamId,
+                     EditorSharedViewportPresentDesc desc);
+        [[nodiscard]] asharia::Result<std::optional<EditorSharedViewportReadyFrame>>
+        tryTakeReady(EditorSharedViewportStreamId streamId);
+        [[nodiscard]] asharia::Result<void>
+        completeFrame(EditorSharedViewportStreamId streamId, void* nativeSlot,
+                      EditorSharedViewportPresentCompletionKind completionKind);
+        [[nodiscard]] asharia::Result<void>
+        releaseSlotImport(EditorSharedViewportStreamId streamId, void* nativeSlot);
+        [[nodiscard]] asharia::Result<void> requestCloseStream(
+            EditorSharedViewportStreamId streamId);
+        [[nodiscard]] asharia::Result<EditorSharedViewportStreamSnapshot>
+        pollStream(EditorSharedViewportStreamId streamId);
+        [[nodiscard]] asharia::Result<void> destroyClosedStream(
+            EditorSharedViewportStreamId streamId);
         [[nodiscard]] EditorSharedViewportRenderFrameResult
         renderSceneViewFrame(EditorSharedViewportPresentDesc desc);
         [[nodiscard]] EditorSharedViewportRenderFrameResult
         createPresentSlot(EditorSharedViewportPresentDesc desc);
         [[nodiscard]] EditorSharedViewportRenderFrameResult
         renderPresentSlot(void* nativeSlot, EditorSharedViewportPresentDesc desc);
-        void releasePresentPacket(void* nativePacket);
+        [[nodiscard]] asharia::Result<void>
+        releasePresentPacket(void* nativePacket,
+                             EditorSharedViewportPresentCompletionKind completionKind);
         void shutdown();
         [[nodiscard]] EditorSharedViewportRuntimeStats stats();
 
     private:
+        struct RenderFramePacket {
+            std::string panelId;
+            EditorViewportKind kind{EditorViewportKind::Scene};
+            EditorExtent2D logicalExtent;
+            EditorExtent2D allocationExtent;
+            EditorSharedViewportExternalImageHandleFamily imageHandleFamily{
+                EditorSharedViewportExternalImageHandleFamily::VulkanOpaqueNt};
+            bool hasScene{};
+            std::uint64_t sceneRevision{};
+            std::array<std::uint64_t, 2> sessionId{};
+            std::array<std::uint64_t, 2> targetId{};
+            std::uint64_t requestSequence{};
+            bool hasCamera{};
+            EditorViewportCamera camera;
+            std::vector<EditorSharedViewportDebugProxy> debugProxies;
+
+            [[nodiscard]] static RenderFramePacket copyOf(EditorSharedViewportPresentDesc desc);
+            [[nodiscard]] EditorSharedViewportPresentDesc view() const;
+        };
+
         struct RetiringPacket {
             std::unique_ptr<EditorSharedViewportPacketState> state;
             bool quarantined{};
         };
 
+        enum class StreamSlotPhase {
+            Available,
+            Ready,
+            Presented,
+            Completing,
+            Retired,
+        };
+
+        struct StreamSlot {
+            void* nativeSlot{};
+            StreamSlotPhase phase{StreamSlotPhase::Available};
+            EditorSharedViewportPresentCompletionKind completionKind{
+                EditorSharedViewportPresentCompletionKind::NotSubmittedToConsumer};
+            bool importExposed{};
+            bool importReleased{true};
+            bool consumerAccessed{};
+            std::uint64_t requestSequence{};
+        };
+
+        struct StreamReadyFrame {
+            std::size_t slotIndex{};
+            EditorSharedViewportReadyFrame frame;
+        };
+
+        struct StreamState {
+            mutable std::mutex mutex;
+            std::optional<EditorExtent2D> allocationExtent;
+            std::optional<RenderFramePacket> pendingLatest;
+            std::optional<StreamReadyFrame> readyFrame;
+            std::vector<StreamSlot> slots;
+            bool renderExecuting{};
+            bool closeRequested{};
+            bool closed{};
+            bool faulted{};
+            std::uint64_t submittedRequests{};
+            std::uint64_t coalescedRequests{};
+            std::uint64_t renderedFrames{};
+        };
+
+        EditorSharedViewportRuntime();
+
+        [[nodiscard]] asharia::Result<EditorSharedViewportDeviceSnapshot>
+        ensureDeviceSnapshotOnRenderThread();
+        [[nodiscard]] EditorSharedViewportRenderFrameResult
+        renderSceneViewFrameOnRenderThread(const RenderFramePacket& packet);
+        [[nodiscard]] EditorSharedViewportRenderFrameResult
+        createPresentSlotOnRenderThread(const RenderFramePacket& packet);
+        [[nodiscard]] EditorSharedViewportRenderFrameResult
+        renderPresentSlotOnRenderThread(void* nativeSlot, const RenderFramePacket& packet);
+        [[nodiscard]] asharia::Result<void> releasePresentPacketOnRenderThread(
+            void* nativePacket, EditorSharedViewportPresentCompletionKind completionKind);
+
         [[nodiscard]] asharia::Result<EditorSharedViewportRenderProducer*>
-        ensureRenderProducerLocked();
-        [[nodiscard]] std::optional<asharia::VulkanContext> takeContextForShutdownIfIdleLocked();
-        [[nodiscard]] asharia::Result<void> retireCompletedPresentSlotsLocked();
-        void pollRetiringPacketsLocked();
-        void retainRetiringPacketLocked(std::unique_ptr<EditorSharedViewportPacketState> state,
-                                        bool quarantined);
-        [[nodiscard]] std::size_t retiringPacketCountLocked() const;
-        [[nodiscard]] std::optional<std::size_t> availableFrameResourceIndexLocked() const;
+        ensureRenderProducerOnRenderThread();
+        [[nodiscard]] asharia::Result<void> retireCompletedPresentSlotsOnRenderThread();
+        [[nodiscard]] bool pollRetiringPacketsOnRenderThread();
+        void
+        retainRetiringPacketOnRenderThread(std::unique_ptr<EditorSharedViewportPacketState> state,
+                                           bool quarantined);
+        [[nodiscard]] std::size_t retiringPacketCountOnRenderThread() const;
+        [[nodiscard]] std::optional<std::size_t> availableFrameResourceIndexOnRenderThread() const;
+        [[nodiscard]] bool hasPollableRetirementOnRenderThread() const;
+        [[nodiscard]] bool hasQuarantinedRetirementOnRenderThread() const;
+        [[nodiscard]] bool tryFinishShutdownOnRenderThread();
+        [[nodiscard]] bool dispatchOneStreamWorkOnRenderThread();
+        [[nodiscard]] static bool streamHasWorkLocked(const StreamState& stream,
+                                                      bool canAllocateSlot);
+        [[nodiscard]] bool processStreamCompletionsOnRenderThread(StreamState& stream);
+        [[nodiscard]] bool processStreamCloseOnRenderThread(StreamState& stream);
+        [[nodiscard]] bool renderPendingStreamFrameOnRenderThread(StreamState& stream);
+        [[nodiscard]] bool hasStreamWork() const;
+        [[nodiscard]] std::shared_ptr<StreamState> findStream(
+            EditorSharedViewportStreamId streamId) const;
+        void beginShutdownOnRenderThread();
+        void publishRuntimeStatsOnRenderThread();
+        void renderThreadMain();
+        void renderThreadLoop();
+        [[nodiscard]] std::packaged_task<void()> waitForNextWorkOnRenderThread();
+        [[nodiscard]] asharia::Result<void> ensureRenderThreadStarted();
+        void joinRenderThreadIfTerminal();
+
+        [[nodiscard]] bool enqueueRenderWork(std::packaged_task<void()> work);
+        [[nodiscard]] bool enqueueControlWork(std::packaged_task<void()> work);
+        [[nodiscard]] bool enqueueReleaseWork(std::packaged_task<void()> work);
+        [[nodiscard]] bool isOnRenderThread() const noexcept;
 
         static constexpr std::size_t kMaxOutstandingPackets = 4U;
         static constexpr std::size_t kMaxOutstandingLegacyPackets = 1U;
+        static constexpr std::size_t kMaxStreamSlots = 3U;
+        static constexpr std::size_t kMaxQueuedRenderCommands = 4U;
+        static constexpr std::size_t kMaxQueuedControlCommands = 4U;
+        static constexpr std::size_t kMaxQueuedReleaseCommands = kMaxOutstandingPackets;
 
-        mutable std::mutex mutex_;
+        mutable std::mutex queueMutex_;
+        std::condition_variable queueReady_;
+        std::condition_variable queueSpaceAvailable_;
+        std::condition_variable lifecycleChanged_;
+        std::deque<std::packaged_task<void()>> renderQueue_;
+        std::deque<std::packaged_task<void()>> controlQueue_;
+        std::deque<std::packaged_task<void()>> releaseQueue_;
+        bool releaseAdmissionClosed_{};
+        std::atomic<bool> shutdownRequestedByCaller_{};
+        std::atomic<EditorSharedViewportRuntimeLifecycle> lifecycle_{
+            EditorSharedViewportRuntimeLifecycle::Starting};
+        std::atomic<std::uint64_t> renderQueueBackpressureHits_{};
+        std::atomic<std::size_t> maxObservedQueuedRenderCommands_{};
+        std::atomic<std::size_t> outstandingPacketCount_{};
+        mutable std::mutex publishedStateMutex_;
+        EditorSharedViewportRuntimeStats publishedStats_;
+        std::optional<EditorSharedViewportDeviceSnapshot> publishedDeviceSnapshot_;
+        mutable std::mutex threadMutex_;
+        std::thread renderThread_;
+        std::thread::id renderThreadId_;
+        mutable std::mutex streamsMutex_;
+        std::unordered_map<EditorSharedViewportStreamId, std::shared_ptr<StreamState>> streams_;
+        std::atomic<EditorSharedViewportStreamId> nextStreamId_{1U};
+
+        // These objects are render-thread-owned. Vulkan calls and object
+        // destruction must never move back to a C ABI caller thread.
         std::optional<asharia::VulkanContext> context_;
         std::optional<EditorSharedViewportRenderProducer> renderProducer_;
         std::unordered_set<EditorSharedViewportPacketState*> outstandingPackets_;
@@ -113,7 +322,9 @@ namespace asharia::editor {
         std::uint64_t packetsCreated_{};
         std::uint64_t packetBackpressureHits_{};
         std::uint64_t nextFrameIndex_{};
+        std::uint64_t renderThreadDispatches_{};
         bool shutdownRequested_{};
+        bool terminalQuarantine_{};
     };
 
 } // namespace asharia::editor

@@ -239,10 +239,17 @@ same-frame presentation is required and measured.
 ### Studio external presentation boundary
 
 The Avalonia Studio Scene View uses the same native renderer through a separate external-presentation path. Interactive
-panel resize is event-driven and latest-request-wins: the composition visual follows the current panel bounds immediately,
-while ready frames advance monotonically and converge on the newest pixel extent. Two presentation slots are allocated on
-demand, and native frame resources are retired only after fence completion; failed consumer release is quarantined within
-the fixed resource budget instead of blocking the UI thread. The detailed contracts are maintained in
+panel resize is event-driven: the composition visual follows the current panel bounds immediately, while the managed
+`ViewportSession` publishes the latest immutable request without waiting for an older frame to complete. The V5 native stream
+keeps at most one executing request, one latest pending replacement and one ready frame per viewport, with at most three
+persistent full presentation slots. Each slot keeps its external image, producer/consumer semaphores, command resources and
+retirement proof together across frames. Each physical panel extent advances a geometry generation and uses that exact
+`PixelSize` for both logical and allocation extents. The old surface is hidden and mismatched streams begin retirement
+immediately; a frame can update the surface only when allocation, logical and commit-time panel extents plus the geometry
+generation all match. This prevents crop/stretch and A→B→A revival of an old snapshot. Native frame resources return to the
+available set only after producer completion and, when submitted to the compositor, consumer completion. Ambiguous completion
+is quarantined within the fixed resource budget instead of blocking the UI thread. `IsRealtime=true` keeps producing exact
+frames for a static scene, while `false` is dirty-only. The detailed contracts are maintained in
 [`apps/studio/docs/architecture/viewport-rendering.md`](../../apps/studio/docs/architecture/viewport-rendering.md) and
 [`apps/studio/docs/adr/0006-viewport-interactive-resize.md`](../../apps/studio/docs/adr/0006-viewport-interactive-resize.md).
 

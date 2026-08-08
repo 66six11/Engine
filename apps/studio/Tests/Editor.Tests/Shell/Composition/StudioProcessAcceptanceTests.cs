@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using Editor.Shell.Composition;
 using Xunit;
 
 namespace Editor.Tests.Shell.Composition;
@@ -19,6 +20,8 @@ public sealed class StudioProcessAcceptanceTests
     private static readonly TimeSpan kReadyTimeout = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan kExitTimeout = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan kKillTimeout = TimeSpan.FromSeconds(5);
+    private const string GpuAcceptanceEnvironmentVariable =
+        "ASHARIA_RUN_STUDIO_GPU_ACCEPTANCE";
 
     [Fact]
     public async Task Production_editor_clean_close_returns_zero_after_real_managed_teardown()
@@ -96,6 +99,52 @@ public sealed class StudioProcessAcceptanceTests
         Assert.NotEqual(0, receipt.ExitCode);
         Assert.True(receipt.TerminationRequested);
         Assert.True(receipt.ExitConfirmed);
+    }
+
+    [Fact]
+    [Trait("Category", "StudioGpuAcceptance")]
+    public void Realtime_scene_viewport_and_panel_resize_sustain_at_least_60_fps()
+    {
+        if (!OperatingSystem.IsWindows() ||
+            !string.Equals(
+                Environment.GetEnvironmentVariable(GpuAcceptanceEnvironmentVariable),
+                "1",
+                StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        var executablePath = Path.Combine(AppContext.BaseDirectory, "Editor.exe");
+        if (!File.Exists(executablePath))
+        {
+            throw new FileNotFoundException(
+                "The Studio GPU acceptance test requires the built Editor apphost.",
+                executablePath);
+        }
+
+        using var process = new Process
+        {
+            StartInfo = new ProcessStartInfo
+            {
+                FileName = executablePath,
+                WorkingDirectory = Path.GetDirectoryName(executablePath)!,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            },
+        };
+        process.StartInfo.ArgumentList.Add(StudioViewportCadenceSmoke.CommandLineSwitch);
+        Assert.True(process.Start());
+        if (!process.WaitForExit(milliseconds: 35_000))
+        {
+            process.Kill(entireProcessTree: true);
+            process.WaitForExit(milliseconds: 5_000);
+            throw new TimeoutException(
+                "The Studio viewport cadence smoke did not finish within 35 seconds.");
+        }
+
+        Assert.True(
+            process.ExitCode == 0,
+            $"Studio viewport cadence smoke exited with {process.ExitCode}.");
     }
 
     private enum ProcessAcceptanceStatus

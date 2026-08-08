@@ -34,8 +34,16 @@ public sealed class StudioEditorImageTestInputs : IDisposable
     ];
     private static readonly string[] ViewportNativeRequiredExports =
     [
-        "editor_viewport_create_present_slot_v4",
-        "editor_viewport_release_present_packet",
+        "editor_viewport_query_composition_compatibility",
+        "editor_viewport_release_compatibility_result",
+        "editor_viewport_open_stream_v5",
+        "editor_viewport_submit_latest_v5",
+        "editor_viewport_try_take_ready_v5",
+        "editor_viewport_complete_frame_v5",
+        "editor_viewport_release_slot_import_v5",
+        "editor_viewport_close_stream_v5",
+        "editor_viewport_poll_stream_v5",
+        "editor_viewport_destroy_stream_v5",
         "editor_viewport_shutdown",
     ];
     private static readonly string[] ViewportShaderFiles =

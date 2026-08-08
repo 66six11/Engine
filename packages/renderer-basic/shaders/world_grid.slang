@@ -86,9 +86,10 @@ float4 worldGridFragmentMain(WorldGridVertexOutput input) : SV_Target0 {
     const float adaptiveMajorSpacing = max(gWorldGrid.gridLodSettings.w, lodSpacing);
     const float opacity = saturate(gWorldGrid.gridSettings.w);
 
-    const float minorAlpha = max(
-        gridLineAlpha(gridCoord, lodSpacing, 1.15) * (1.0 - lodBlend),
-        gridLineAlpha(gridCoord, lodNextSpacing, 1.2) * lodBlend);
+    const float minorAlpha = lerp(
+        gridLineAlpha(gridCoord, lodSpacing, 1.15),
+        gridLineAlpha(gridCoord, lodNextSpacing, 1.2),
+        lodBlend);
     const float majorAlpha = gridLineAlpha(gridCoord, adaptiveMajorSpacing, 1.35);
     const float xAxisAlpha = axisLineAlpha(worldPosition.z, 1.7);
     const float zAxisAlpha = axisLineAlpha(worldPosition.x, 1.7);
@@ -98,10 +99,12 @@ float4 worldGridFragmentMain(WorldGridVertexOutput input) : SV_Target0 {
     const float3 xAxisColor = float3(0.84, 0.22, 0.18);
     const float3 zAxisColor = float3(0.22, 0.42, 0.92);
 
-    float alpha = minorAlpha * 0.48;
+    const float minorCoverage = minorAlpha * 0.48;
+    const float majorCoverage = majorAlpha * 0.68;
+    float alpha = minorCoverage;
     float3 color = minorColor;
-    if (majorAlpha > alpha) {
-        alpha = majorAlpha * 0.68;
+    if (majorCoverage > minorCoverage) {
+        alpha = majorCoverage;
         color = majorColor;
     }
     if (xAxisAlpha > alpha) {

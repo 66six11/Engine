@@ -18,6 +18,17 @@ public sealed class ViewportPresentationLifetime : IAsyncDisposable
 
     internal event EventHandler? Resumed;
 
+    internal bool IsAcceptingFrames
+    {
+        get
+        {
+            lock (gate_)
+            {
+                return !isStopping_ && pauseCount_ == 0;
+            }
+        }
+    }
+
     internal bool TryBeginFrame(out IDisposable admission)
     {
         lock (gate_)
@@ -50,8 +61,9 @@ public sealed class ViewportPresentationLifetime : IAsyncDisposable
         ICompositionImportedGpuSemaphore? signalSemaphore)
     {
         ArgumentNullException.ThrowIfNull(lease);
-        // A failed Avalonia wrapper disposal has no safe retry contract. Retain both sides for
-        // process exit so the outstanding native packet also prevents Vulkan context teardown.
+        // An ambiguous compositor submission, failed Avalonia wrapper disposal, or failed native
+        // release has no safe retry contract. Retain both sides for process exit so ownership is
+        // never guessed during Vulkan teardown.
         lock (gate_)
         {
             for (var index = 0; index < quarantinedFrames_.Length; index++)

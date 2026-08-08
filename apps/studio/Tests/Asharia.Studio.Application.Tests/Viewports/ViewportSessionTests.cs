@@ -19,7 +19,10 @@ public sealed class ViewportSessionTests
             document,
             ViewportCameraSnapshot.DefaultScene);
 
-        var started = session.TryBeginRender(new ViewportExtent(1280, 720), out var request);
+        var renderSize = new ViewportRenderSize(
+            new ViewportExtent(1277, 719),
+            new ViewportExtent(1280, 720));
+        var started = session.TryBeginRender(renderSize, out var request);
 
         Assert.True(started);
         Assert.Equal(1UL, request.Sequence);
@@ -27,7 +30,9 @@ public sealed class ViewportSessionTests
         Assert.Equal(document.Revision, request.TargetRevision);
         Assert.Equal(ViewportRenderKind.Scene, request.Kind);
         Assert.Equal(ViewportTargetKind.DocumentScene, request.TargetKind);
-        Assert.Equal(new ViewportExtent(1280, 720), request.Extent);
+        Assert.Equal(renderSize, request.RenderSize);
+        Assert.Equal(renderSize.LogicalExtent, request.LogicalExtent);
+        Assert.Equal(renderSize.AllocationExtent, request.AllocationExtent);
         Assert.Equal(ViewportCameraSnapshot.DefaultScene, request.Camera);
         Assert.True(request.Reasons.HasFlag(ViewportInvalidationReason.InitialFrame));
         Assert.True(request.Reasons.HasFlag(ViewportInvalidationReason.ExtentChanged));
@@ -36,6 +41,52 @@ public sealed class ViewportSessionTests
         Assert.True(request.DebugProxiesTruncated);
         Assert.Equal(document.Entities[0].ObjectId, request.DebugProxies[0].ObjectId);
         Assert.Equal(document.Entities[0].Transform, request.DebugProxies[0].Transform);
+    }
+
+    [Fact]
+    public void Exact_extent_change_invalidates_projection()
+    {
+        var session = new ViewportSession(
+            ViewportSessionId.Create(),
+            ViewportRenderKind.Scene,
+            Document(revision: 1, entityCount: 0),
+            ViewportCameraSnapshot.DefaultScene);
+        var firstExtent = new ViewportExtent(641, 481);
+        var secondExtent = new ViewportExtent(642, 481);
+        var firstSize = new ViewportRenderSize(
+            firstExtent,
+            firstExtent);
+        var secondSize = new ViewportRenderSize(
+            secondExtent,
+            secondExtent);
+
+        Assert.True(session.TryBeginRender(firstSize, out var first));
+        Assert.True(session.CompleteRender(first.Sequence, first.TargetRevision, succeeded: true));
+        Assert.True(session.TryBeginRender(secondSize, out var second));
+
+        Assert.Equal(2UL, second.Sequence);
+        Assert.Equal(secondSize, second.RenderSize);
+        Assert.True(second.Reasons.HasFlag(ViewportInvalidationReason.ExtentChanged));
+    }
+
+    [Fact]
+    public void Realtime_invalidation_produces_one_latest_frame_request()
+    {
+        var session = new ViewportSession(
+            ViewportSessionId.Create(),
+            ViewportRenderKind.Scene,
+            Document(revision: 1, entityCount: 0),
+            ViewportCameraSnapshot.DefaultScene);
+        var size = new ViewportRenderSize(
+            new ViewportExtent(640, 360),
+            new ViewportExtent(640, 384));
+
+        Assert.True(session.TryPublishLatest(size, out _));
+        session.Invalidate(ViewportInvalidationReason.Realtime);
+        session.Invalidate(ViewportInvalidationReason.Realtime);
+        Assert.True(session.TryPublishLatest(size, out var realtime));
+        Assert.Equal(ViewportInvalidationReason.Realtime, realtime.Reasons);
+        Assert.False(session.TryPublishLatest(size, out _));
     }
 
     [Fact]
@@ -184,6 +235,47 @@ public sealed class ViewportSessionTests
 
         Assert.True(session.Current.IsClosed);
         Assert.False(session.TryBeginRender(new ViewportExtent(1, 1), out _));
+    }
+
+    [Fact]
+    public void V5_publish_does_not_wait_for_an_older_frame_completion()
+    {
+        var session = new ViewportSession(
+            ViewportSessionId.Create(),
+            ViewportRenderKind.Scene,
+            Document(revision: 1, entityCount: 0),
+            ViewportCameraSnapshot.DefaultScene);
+        var size = new ViewportRenderSize(
+            new ViewportExtent(640, 360),
+            new ViewportExtent(640, 368));
+
+        Assert.True(session.TryPublishLatest(size, out var first));
+        session.Invalidate(ViewportInvalidationReason.Exposed);
+        Assert.True(session.TryPublishLatest(size, out var second));
+
+        Assert.Equal(first.Sequence + 1U, second.Sequence);
+        Assert.False(session.Current.IsFrameInFlight);
+        Assert.True(session.MarkPublishedFramePresented(second.Sequence, second.TargetRevision));
+    }
+
+    [Fact]
+    public void V5_rejected_publish_restores_its_invalidation_reasons()
+    {
+        var session = new ViewportSession(
+            ViewportSessionId.Create(),
+            ViewportRenderKind.Scene,
+            Document(revision: 1, entityCount: 0),
+            ViewportCameraSnapshot.DefaultScene);
+        var size = new ViewportRenderSize(
+            new ViewportExtent(640, 360),
+            new ViewportExtent(640, 368));
+
+        Assert.True(session.TryPublishLatest(size, out var rejected));
+        session.RetryPublishedFrame(rejected);
+        Assert.True(session.TryPublishLatest(size, out var retry));
+
+        Assert.Equal(rejected.Reasons, retry.Reasons);
+        Assert.Equal(rejected.Sequence + 1U, retry.Sequence);
     }
 
     [Fact]

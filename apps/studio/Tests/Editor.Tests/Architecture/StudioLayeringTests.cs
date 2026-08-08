@@ -338,6 +338,12 @@ public sealed class StudioLayeringTests
             "Asharia.Studio.Presentation.Avalonia",
             "Viewports",
             "ViewportCompositionControl.cs"));
+        var viewportStreamFenceSource = File.ReadAllText(Path.Combine(
+            root,
+            "src",
+            "Asharia.Studio.Presentation.Avalonia",
+            "Viewports",
+            "ViewportStreamWorkFence.cs"));
 
         Assert.False(Directory.Exists(Path.Combine(root, "Core", "Interop", "Viewports")));
         Assert.False(Directory.Exists(Path.Combine(root, "Core", "Models", "Viewports")));
@@ -381,9 +387,64 @@ public sealed class StudioLayeringTests
             StringComparison.Ordinal);
         Assert.Contains("Session=\"{Binding Session}\"", scenePanelXaml, StringComparison.Ordinal);
         Assert.Contains("#SceneViewport.IsDegraded", scenePanelXaml, StringComparison.Ordinal);
+        Assert.Contains(
+            "AutomationProperties.ControlTypeOverride=\"Group\"",
+            scenePanelXaml,
+            StringComparison.Ordinal);
         Assert.DoesNotContain("DispatcherTimer", viewportControlSource, StringComparison.Ordinal);
-        Assert.DoesNotContain("Win32PlatformOptions", programSource, StringComparison.Ordinal);
-        Assert.DoesNotContain("Win32RenderingMode", programSource, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "Dispatcher.UIThread.Post(PublishLatestFrame",
+            viewportControlSource,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("CompositionSurfacePair", viewportControlSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("PromoteStagingSurfaceAsync", viewportControlSource, StringComparison.Ordinal);
+        Assert.Contains("surface.UpdateWithSemaphoresAsync", viewportControlSource, StringComparison.Ordinal);
+        Assert.Contains("WaitForReadyFrameAsync", viewportControlSource, StringComparison.Ordinal);
+        Assert.Contains("WaitForStreamClosedAsync", viewportControlSource, StringComparison.Ordinal);
+        Assert.Contains(
+            "stream.WorkFence.BeginRetirement(",
+            viewportControlSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "public Task PumpTask { get; private set; } = Task.CompletedTask;",
+            viewportStreamFenceSource,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("private Task frameTask_", viewportControlSource, StringComparison.Ordinal);
+        Assert.Contains(
+            "public bool IsRetiring { get; private set; }",
+            viewportStreamFenceSource,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("Console.Error.WriteLine(", viewportControlSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("await Task.Delay(1);", viewportControlSource, StringComparison.Ordinal);
+        Assert.Equal(
+            2,
+            viewportControlSource.Split(
+                "await Task.Delay(1).ConfigureAwait(false);",
+                StringSplitOptions.None).Length - 1);
+        Assert.Contains(
+            "!ReferenceEquals(stream.WorkFence.PumpTask, observedPump)",
+            viewportControlSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "stream.WorkFence.IsRetiring || !ReferenceEquals(desiredStream_, stream)",
+            viewportControlSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "ViewportInvalidationReason.Realtime",
+            viewportControlSource,
+            StringComparison.Ordinal);
+        Assert.Equal(
+            2,
+            viewportControlSource.Split(
+                "RequestCompositionUpdate(",
+                StringSplitOptions.None).Length - 1);
+        Assert.Equal(
+            1,
+            viewportControlSource.Split(
+                "RequestCompositionBatchCommitAsync()",
+                StringSplitOptions.None).Length - 1);
+        Assert.Contains("Win32PlatformOptions", programSource, StringComparison.Ordinal);
+        Assert.Contains("Win32RenderingMode.Vulkan", programSource, StringComparison.Ordinal);
         Assert.DoesNotContain("StudioNativeTeardown", appSource, StringComparison.Ordinal);
         Assert.DoesNotContain("OutstandingNativeOperationCount", appSource, StringComparison.Ordinal);
     }

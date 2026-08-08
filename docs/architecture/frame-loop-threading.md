@@ -1,19 +1,22 @@
 # Frame Loop 与线程设计
 
-研究日期：2026-05-08
+研究日期：2026-05-08；最近更新：2026-08-05
 
 本文定义 Asharia Engine 从当前单线程 frame loop 演进到 worker pool、RenderThread 和多线程 command recording
-时必须保持的边界。当前仓库仍以单线程 smoke host 为准；本文中的多线程部分是分阶段设计，不代表已经实现。
+时必须保持的边界。`sample-viewer` 与 C++ editor 的 window/swapchain frame loop 仍以单线程 smoke host 为准；
+Studio shared viewport 已落地一条范围受限的 native RenderThread owner 路径。除该明确列出的 Slice 外，本文中的
+多线程阶段仍是设计，不代表完整 runtime frame loop、RHI Thread 或多线程 command recording 已经实现。
 
 ## 设计依据
 
 - Godot 支持多线程，但 SceneTree 不是线程安全的；Server API 更适合从线程访问，直接 GPU 操作可能因为与 RenderingServer 同步而产生 stall。
-- Unreal 把渲染流水线拆成 GameThread、RenderThread 和 RHIThread，通常允许渲染端落后或领先一个受控帧；GameThread 和 RenderThread 之间通过渲染命令和代理数据通信。
+- Unreal 把渲染流水线拆成 GameThread、RenderThread 和 RHIThread；GameThread 与 RenderThread 之间通过拥有明确
+  生命周期的渲染命令和代理数据通信，不能让 RenderThread 解引用随时可变的 gameplay/editor object。
 - Unity Job System 把并行边界放在数据任务上，使用 worker threads、work stealing 和 safety system 避免 race condition。
 - Bevy ECS 根据 system 的数据访问关系自动并行；需要顺序时显式 chain。
 - Vulkan host threading 允许多线程录制 command buffer，但同一个 command pool、descriptor pool 的相关操作需要外部同步；Khronos sample 建议 per-frame/per-thread pools。
 
-## 当前单线程基线
+## 当前 window/swapchain 单线程基线
 
 当前真实路径仍保持：
 
@@ -35,6 +38,9 @@ main thread
 
 这个阶段的目标是稳定 RenderGraph、resource state、transient allocation、descriptor/pipeline cache 和
 deferred destruction。除 shader build tool 和未来 asset import 外，不为了“看起来多线程”拆分 frame loop。
+
+这条基线描述 `VulkanFrameLoop` 驱动的 window/swapchain host，不描述 Studio 的 offscreen external-image Viewport。
+Studio 的当前差异只在下文“Studio shared viewport owner Slice”中定义。
 
 ## 线程所有权规则
 
@@ -101,6 +107,58 @@ RHI/GPU:           execute submitted work
 第一版允许 one-frame-lag，但必须可配置关闭，方便调试 latency 和 data race。RenderFramePacket 必须是
 不可变快照，包含 camera、view、draw items、material/resource handles、debug flags 和 frame constants。
 
+#### 已落地的 Studio shared viewport owner Slice
+
+Studio 没有等待完整 runtime frame loop 迁移，而是在 `editor_native.dll` 的
+`EditorSharedViewportRuntime` 内建立一条进程级 shared viewport RenderThread。它服务 Scene、Game 与 Preview
+request，并独占该 runtime 的 Vulkan context、render producer、RenderGraph/command recording、graphics queue
+submit、present-slot state、GPU epoch polling、retirement 与 shutdown。Avalonia panel、managed
+`ViewportPresentationLifetime` 和单个 `ViewportSession` 都不是 renderer owner，也不得各建线程。
+
+production 已硬切到 V5 stream ABI。caller 把借用字段复制为 owning `RenderFramePacket`，`submit_latest_v5` 原位覆盖
+每 stream 唯一 pending request 并立即返回；RenderThread 在 ready cell 为空且 slot 可推进时消费。`try_take_ready_v5`
+同样不等待 GPU，ready frame 通过 producer-finished semaphore 把完成依赖交给 compositor。旧 V1–V4 frame exports
+不再导出，managed 没有 fallback；所有 Vulkan/producer 操作和析构仍只发生在 native RenderThread。
+
+production `StudioCompositionSession` 会在后台 managed worker 上先调用 compatibility query，提前把 device/context
+创建工作投递给同一 RenderThread。该 warm-up 不创建第二个 owner、不阻塞 shell ready，并在 shutdown 调用 runtime
+teardown 前完成；frame request 仍使用真实 Avalonia compositor identity 做最终 compatibility 复验。
+
+跨线程 `RenderFramePacket` 是发布后不可变的 owning value，至少包含：
+
+```text
+panel/session/target identity
+target revision / request sequence
+render kind
+logical extent / allocation extent
+camera snapshot
+bounded debug-proxy array
+presence flags / external-image handle family
+```
+
+`target kind` 不作为独立 packet 字段扩张：当前 C ABI 只接受 `DocumentScene`，在复制前验证并归一化；packet 保存
+session/target identity 与 render kind。
+
+packet 可以拥有 `std::string`、`std::vector` 和纯值字段；不得保留 C ABI caller 的 `std::span`、
+`std::string_view`、managed pointer、Avalonia object、`SceneDocument`/World pointer 或可变 editor object。
+RenderThread 内部可以从 owning packet 临时构造借用 view，但该 view 不得越过当前 dispatch。
+
+control/release mailbox 与 V5 stream scheduler 都有固定上限。互斥只保护队列、stream 状态与 diagnostic snapshot，
+不跨越 Vulkan record/submit、GPU wait 或 retirement。每 stream 最多 executing 1、pending latest 1、ready 1、persistent
+full slot 3；全局 frame-resource 上限为 4。Studio exact resize 在 extent/generation 改变时立即 retire 不匹配 stream，
+避免旧流三槽长期占满预算，并让 latest exact generation 竞争 retirement 释放的 lane；总量仍不突破该上限。
+
+full slot 一体持有 image、producer-finished/consumer-available semaphore pair、fence、command pool/buffer 与 frame resource。
+`NotSubmittedToConsumer` 清除该帧的 consumer wait；`ConsumerAccessed` 要求下一次复用在 GPU submit 中等待 compositor
+signal。stream close 时，managed 先 dispose persistent imports 并发送 `release_slot_import_v5`；native 再以 producer fence
+和必要的 consumer-release fence 驱动 retirement。attach 内单张 drawing surface 与 detach `Processed` 仍不能替代 GPU
+completion proof，producer-fence-only image reuse 继续被拒绝。
+
+RenderThread 启动或执行失败时，production fallback 是 typed failure 与 Studio viewport degraded/unavailable；禁止
+退回 Avalonia UI 或任意 caller thread 直接执行 Vulkan。无法安全确认 compositor/GPU 完成的 external resource
+进入有界 quarantine，保留 renderer/context 到进程终止兜底。若未来增加显式 smoke/debug 单线程模式，它也必须
+在进程内保持唯一 owner，不能成为第二条 production 路径。
+
 ### 阶段 3：多线程 command recording
 
 RenderThread 编译 graph 后，只把适合并行的 draw ranges 或 pass work items 分给 worker：
@@ -163,6 +221,14 @@ render/resource retirement。
 
 - 主线程和 RenderThread 只通过 bounded queue、double/triple buffered packet 或 explicit fence 交互。
 - `RenderFramePacket` 发布后不可变；热重载通过下一帧 packet 生效。
+- Studio shared viewport 的 mailbox mutex 只保护 queue/snapshot；Vulkan context、producer、packet retirement 与
+  resource destruction 只由 native RenderThread 访问。release work 必须拥有最高优先级和保留容量，不能丢弃或被
+  render backlog 阻塞；control 其次，render saturation 返回 backpressure。
+- Studio compositor submission 前拒绝的 packet 只能以 `NotSubmittedToConsumer` release；submission 成功后必须以
+  `ConsumerAccessed` release。submission、imported wrapper disposal 或 native release 结果歧义时，packet 与 image
+  lease 进入有界 process-lifetime quarantine，不能提交一个永远不会 signal 的 consumer wait，也不能猜测为未访问。
+- Studio external image retirement 不允许 host-side semaphore wait 或 render-loop queue/device idle。consumer-done
+  semaphore 由 owner thread 的空 queue submit 转为可轮询 fence，未完成 packet 保持完整资源所有权。
 - worker task 失败返回 structured error；owner 线程决定 fallback resource 或终止 smoke。
 - GPU resource destroy 不在提交帧立即执行，进入 deferred destruction 并等待 frame fence。
 - 任何临时 `vkDeviceWaitIdle` 必须写注释说明是 shutdown、debug probe 还是 MVP 简化路径。
@@ -175,7 +241,14 @@ render/resource retirement。
   到异步或多 present queue 的形式证明。未来放宽同步回收前必须引入
   `VK_EXT_swapchain_maintenance1` present fences 或等价的 spec-backed completion proof：
   https://docs.vulkan.org/guide/latest/swapchain_semaphore_reuse.html
-- shutdown 顺序：停止接收新任务，drain worker，停止 render thread，等待 GPU idle，销毁 frame resources，销毁 long-lived resources，销毁 device/context。
+- 通用 shutdown 顺序：停止接收新任务，drain worker，停止 render thread，等待 GPU idle，销毁 frame resources，
+  销毁 long-lived resources，销毁 device/context。
+- Studio shared viewport 的跨 compositor shutdown 更严格：停止 request admission → drain managed
+  import/commit → release 或 quarantine frame lease → drain native mailbox → RenderThread 完成有界 retirement →
+  仅在 shutdown 路径做必要的 idle wait → RenderThread 销毁 frame resources、producer 与 context → thread exit →
+  caller 不持 queue/runtime lock join。
+  quarantine 未能证明安全时不提前拆 context；对象留在 process-lifetime storage，RenderThread 可以在不析构这些
+  对象的情况下 exit/join，最终由 OS 终止进程兜底。
 
 ## 文档与代码审查门禁
 
@@ -188,9 +261,13 @@ render/resource retirement。
 ## 参考资料
 
 - Godot thread-safe APIs: https://docs.godotengine.org/en/stable/tutorials/performance/thread_safe_apis.html
-- Unreal parallel rendering overview: https://dev.epicgames.com/documentation/en-us/unreal-engine/parallel-rendering-overview-for-unreal-engine
+- Godot RenderingServer: https://docs.godotengine.org/en/stable/classes/class_renderingserver.html
+- Unreal threaded rendering: https://dev.epicgames.com/documentation/unreal-engine/threaded-rendering-in-unreal-engine
+- Unreal parallel rendering overview: https://dev.epicgames.com/documentation/en-us/unreal-engine/parallel-rendering-overview
 - Unreal low latency frame syncing: https://dev.epicgames.com/documentation/en-us/unreal-engine/low-latency-frame-syncing
 - Unity Job System overview: https://docs.unity3d.com/Manual/JobSystemOverview.html
 - Bevy ECS quick start: https://bevy.org/learn/quick-start/getting-started/ecs/
 - Vulkan Guide threading: https://docs.vulkan.org/guide/latest/threading.html
+- Vulkan `vkQueueSubmit` external synchronization: https://docs.vulkan.org/refpages/latest/refpages/source/vkQueueSubmit.html
 - Khronos command buffer usage and multi-threaded recording sample: https://docs.vulkan.org/samples/latest/samples/performance/command_buffer_usage/README.html
+- Avalonia 12.0.4 Vulkan GPU interop sample: https://github.com/AvaloniaUI/Avalonia/blob/12.0.4/samples/GpuInterop/VulkanDemo/VulkanSwapchain.cs

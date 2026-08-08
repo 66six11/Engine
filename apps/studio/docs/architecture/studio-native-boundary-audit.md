@@ -1,8 +1,8 @@
 # Studio native boundary 审查
 
-状态：Current audit（SceneDocument consumer 已建立；#359 建立 viewport foundation，presentation/session teardown 风险仍开放）
+状态：Current audit（SceneDocument consumer 与 V5 async viewport stream 已建立；device epoch/recovery 仍开放）
 
-更新日期：2026-08-04
+更新日期：2026-08-08
 
 目标架构和实施顺序见 [Studio 前端硬切架构](studio-frontend-hard-cut.md)。本文只记录
 `apps/studio <-> apps/editor/packages/scene-core` 的当前事实、触发条件、风险和新合同门禁。
@@ -19,13 +19,18 @@ process singleton
 + C ABI failure/size/ownership contract 不完整
 ```
 
-旧 ABI 不具备兼容保留价值。新前端可以先绕开它；恢复真实 Scene/Viewport 时应 hard-cut 到显式 session、
-typed generational handle、immutable snapshot、bounded lease 和统一 error contract。
+V5 ABI 现在承担 production presentation consumer：显式 stream handle、immutable latest request、bounded full-slot
+lease、异步 ready acquire 与 close/poll/destroy。V1–V4 frame exports 已删除，不提供 managed 或 deployment fallback。
+后续多 Viewport fairness 与 device recovery 仍需引入 device epoch 和统一 recovery contract。
 
-R0 Studio 删除了旧 App/composition/publish viewport consumer 与 deployment copy。#359 后 Application 已有新的
-UI-neutral `ViewportSession`，EngineBridge 已有 V4 request / typed frame lease，但 App/Shell/publish 仍未消费或部署
-`editor_native.dll`。以下 P1 条目同时审计新的 foundation 与仍由独立 C++ runtime 持有的风险；native smoke 只能证明
-render/lease 边界，不能替代下一步 Avalonia presentation 接入门禁。
+R0 Studio 删除了旧 App/composition/publish viewport consumer 与 deployment copy。#359 重建 UI-neutral
+`ViewportSession`；#361 已让 App/Shell/Release publish 成为真实 consumer，
+部署 `editor_native.dll` 与 renderer-basic shader closure，并通过专用 `ViewportCompositionControl` 和
+process-owned `ViewportPresentationLifetime` 完成 Avalonia import/presentation/drain。native
+`EditorSharedViewportRuntime` 现在拥有一条 process-level RenderThread 和 V5 bounded latest-wins scheduler；每个 stream
+最多一个 executing、一个 pending latest、一个 ready frame 与三个持久 full slots。这关闭了“同步 caller 等帧”、
+“每帧重建 presentation resource”和“caller 线程直接拥有 Vulkan”三个旧事实，但尚未解决 process singleton、
+device epoch/recovery 或跨 stream weighted fairness。
 
 ## 2. 阻断级问题
 
@@ -141,15 +146,21 @@ C++ 异常跨 C/P/Invoke boundary 会终止进程或产生未定义行为。修�
 
 证据：
 
-- `editor_shared_viewport_runtime.cpp:64-72` 有意 heap-leak singleton；
-- `:380-388` 把 shutdown flag 永久置 true；
-- `:429-442` 只有 outstanding/retiring 全空时才释放 context；
-- 历史managed `ViewportNativePresentDrain` 与bridge已在R0删除；当前不可重启事实只属于独立C++ runtime；
+- `EditorSharedViewportRuntime::instance()` 仍是 process-lifetime singleton；
+- 第一次 device/render/release 请求可启动唯一 RenderThread，`editor_viewport_shutdown()` 使 runtime 进入
+  永久 Draining/Stopped/Faulted 路径，不能在同进程重新创建；
+- Vulkan context、producer、outstanding/retiring packet 与 shutdown 析构已收口到 RenderThread，但 ABI 仍没有
+  explicit runtime/session handle 或 device epoch；
+- managed `ViewportPresentationLifetime` 和 `ViewportRuntimeBridge` 现在负责 production drain/shutdown 顺序，
+  但它们不把 process singleton 变成可重启 native session。
 
 影响：
 
-- 同进程 close/reopen Project、device recovery 或第二个 session 无法可靠重建；
-- shutdown owner 与 timeout/quarantine 分散；
+- Project close/reopen 只能在不停止 process-level native runtime 的前提下重建 logical
+  `ViewportSession`；调用 native shutdown 后的 device recovery 或 runtime restart 仍要求重启进程；
+- 多 logical session 可共享当前 runtime，但没有显式 native session lifetime、generation 或公平调度合同；
+- process shutdown owner 已集中到 `StudioCompositionSession`，但 native session timeout/recovery 与 quarantine
+  receipt 仍没有统一合同；
 - terminal packet 可能只能留到进程退出。
 
 修复要求：
@@ -163,13 +174,13 @@ Created -> Running -> Stopping -> Stopped
 Stopping 期间 release/ack 仍有效；只有 `Stopped` 才能 destroy。每次 create 有新的 session/device epoch。
 process-exit quarantine 只是可诊断终极回退。
 
-### P1-7 `DeviceLost` 只存在于 enum，错误被抹平
+### P1-7 `DeviceLost` ABI 值尚未由 runtime 产生
 
 证据：
 
 - viewport ABI 定义 `DeviceLost`；
-- runtime error kind 只有 render failed/backpressure；
-- `viewport_native_api.cpp:380-387,529-533` 把 Vulkan failure 归约为 generic RenderFailed。
+- runtime error kind 已有 `Unavailable`/`RenderFailed`/`Backpressure`，但仍没有 `DeviceLost`；
+- `mapRenderFrameStatus(...)` 只能映射上述三类，Vulkan failure 仍归约为 generic `RenderFailed`。
 
 修复要求：
 
@@ -186,7 +197,7 @@ process-exit quarantine 只是可诊断终极回退。
 - panel ID/kind 在 native bridge 硬编码；
 - shared viewport producer 使用默认相机与固定轴。
 
-#359 当前事实：V4 request 已携 session/target/revision/sequence、真实 camera snapshot 与最多 256 个来自
+#359 后续由 V5 保留的当前事实：request 携 session/target/revision/sequence、真实 camera snapshot 与最多 256 个来自
 `SceneDocumentSnapshot` 的 `{objectId, Transform}` debug proxies；native producer 将 Scene/Game/Preview 映射到同一
 RenderView path，Scene View 使用这些 Transform 生成调试轴，且双 session/slot smoke 验证 metadata 真被消费。
 
@@ -244,15 +255,20 @@ native size/offset static assertions 与 managed layout tests；Release producer
 `root/name/projectId`；managed 侧不解析、不修改也不回写 descriptor。未来任一 consumer 需要 asset roots/cache/discovery
 字段时，必须版本化扩展 immutable descriptor snapshot 或 generation，不得让 C# 拼装第二份 JSON truth。
 
-### P2-4 shared viewport global mutex 是未来多视口瓶颈
+### P2-4 shared viewport mailbox 仍缺 per-session 公平调度
 
-当前全局 mutex 覆盖 record/queue submit。正确性上可以暂时接受，但多 viewport 应转为 bounded
-MPSC intent queue + single render consumer，不要直接并行 Vulkan queue。
+owner-thread Slice 已把 Vulkan context create、record/queue submit、fence polling、retirement 与析构移出
+mutex。`queueMutex_` 只保护有界 render/control/release mailbox 与 lifecycle condition；单一
+RenderThread 仍是 Vulkan queue 的唯一 consumer。V5 已按 stream 提供 pending-latest 覆盖和 ready-frame acquire；
+当前缺口是多个 active stream 之间没有 deadline、weight 或 round-robin fairness 合同。未来多 Viewport 应在同一
+owner thread 内增加有界 cross-stream admission/scheduling，不应直接并行操作 Vulkan queue。
 
-### P2-5 retirement overflow 不能 `std::terminate`
+### P2-5 retirement overflow 已改为 terminal quarantine，仍缺 session recovery
 
-固定四 lane 是合理上限，但产品路径 overflow 应 latch session fatal fault、停止新 submit 并进入 recovery，
-不能终止进程。
+当前固定 retirement 容量溢出不再调用 `std::terminate`。owner thread 会记录错误、latch
+`terminalQuarantine_`、关闭新 admission 并请求 shutdown；GPU completion 未知的 packet 与 Vulkan context
+保留到进程退出，避免不安全析构。这个 emergency containment 符合现有 process-lifetime runtime，但还不是
+session 级 recovery；在显式 session/device epoch 合同落地前，恢复仍需要重启 Studio 进程。
 
 ## 4. 已核对且当前不应误报
 
@@ -348,13 +364,16 @@ ErrorInfo {
 
 ## 7. 实施顺序与门禁
 
-1. **Managed Project Shell**：绕开旧 viewport/scene ABI；旧 native 冻结，不扩展。
+1. **Managed Project Shell（已建立）**：Project/Scene 使用 package-owned dedicated ABI；Viewport 使用 V5 async
+   stream，不保留旧 frame compatibility path。
 2. **ABI foundation**：真正 C header、session/handle/error；C include、双端 size/offset、catch-all、
    bad-alloc/fault injection、duplicate/stale handle smoke。
-3. **Scene slice**：owner lane、mutation batch、immutable snapshot；验证 revision conflict、failure、undo/save。
-4. **Viewport slice**：#359 已完成 `SceneDocument -> UI-neutral session -> camera/bounded Transform proxies ->
-   typed frame lease -> native Scene/Game/Preview` foundation；下一 Slice 接 Avalonia complete/surface generation，再验证
-   1000 次 create/close/reopen、query-vs-stop stress、resize/DPI/dock、consumer abandon、device lost、handle exact close。
+3. **Scene slice（首个编辑闭环已建立）**：dedicated owner lane、generation-safe document handle、expected
+   revision、immutable bulk snapshot 与 save/reopen 已接通；后续真实 undo 需求再引入 atomic mutation batch/change set/savepoint。
+4. **Viewport slice（V5 当前基线）**：`SceneDocument -> UI-neutral session -> camera/bounded Transform proxies
+   -> submit latest / take ready -> persistent full-slot lease -> Avalonia composition` 已形成可见闭环；native Vulkan owner
+   thread、三槽上限、exact geometry generation、尺寸变化立即逐流 retire 与 exact close 已接入。下一次 contract Slice 集中在 device epoch/recovery、
+   cross-stream fairness，并补多 viewport、device lost 与真实交互 resize profiling。
 5. **Frame Debugger**：最后接入同一 session/render lane；capture identity 必须与 presented frame 一致。
 
 关键验收项：

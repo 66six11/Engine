@@ -87,10 +87,10 @@ Asharia Engine 当前目标仍是先做一个小而完整的 Vulkan renderer，�
   project + scene adapters -> asharia_project_native + asharia_scene_native`。ProjectSession 只有在 canonical descriptor
   与默认 SceneDocument 都打开后才发布 Ready；EngineBridge 用 dedicated owner lane 封装 native document handle，Shell
   只发送 command 并投影 authoritative snapshot。当前 UI 提供单文档 Hierarchy、名称/local Transform Inspector、Create
-  Entity、Save 与 dirty。Application 已新增 UI-neutral、多实例 `ViewportSession`，EngineBridge 已新增 V4 request 与
-  exact-once `ViewportFrameLease`，但 Shell 尚无可见 Scene View、Avalonia composition import 或 viewport scheduling，
-  发布边界也尚未加入 `editor_native.dll`。Studio 不录制 Vulkan command、不拥有 native handle/GPU resource；Dock、Asset
-  Browser、undo/redo 与 Play Mode 仍未接入。精确发布边界当前只要求 project/scene 两个 native DLL 与 SceneDocument exports。
+  Entity、Save 与 dirty。首个可见 Scene View 已按 `StudioScenePanelView -> ViewportCompositionControl -> ViewportSession
+  -> EngineBridge ViewportBridge V5 stream -> editor_native bounded scheduler -> process RenderThread -> renderer_basic_vulkan`
+  接通；Release image 部署 `editor_native.dll` 与精确 shader closure。Studio 不录制 Vulkan command，也不拥有 native
+  handle/GPU resource；完整 Dock、Asset Browser、undo/redo、Play Mode、第二 Viewport 与 viewport input 尚未接入。
 
   <details>
   <summary>Retired Studio Project Code / viewport 设计记录（非当前产品事实）</summary>
@@ -177,18 +177,28 @@ Asharia Engine 当前目标仍是先做一个小而完整的 Vulkan renderer，�
   `EditorViewportCoordinator` 才把 keyed request 转换成 sampled RenderView target、keyed diagnostics snapshot
   和 ImGui texture publication。
 - `Asharia.Studio.Application.Viewports.ViewportSession` 拥有 UI-neutral session/target/camera/sequence/invalidation
-  状态；每个实例只允许一个 frame in flight，document revision 在途推进时旧 completion 不成为 current。
-- `Asharia.Studio.EngineBridge.Viewports.ViewportBridge` 是 managed V4 ABI 边界；它同步复制最多 256 个
-  `{objectId, Transform}` debug proxies，并以 `ViewportFrameLease` exact-once 归还 native packet。raw external
-  image/semaphore handles 只在 EngineBridge 内部可见。当前没有 Avalonia composition owner；后续 presentation
-  adapter 必须消费 EngineBridge 能力，不能让 Shell/ViewModel 或 Application 取得句柄。
+  状态；它发布 latest immutable request，document revision 在途推进时旧 completion 不成为 current。
+- `Asharia.Studio.Presentation.Avalonia.Viewports.ViewportCompositionControl` 拥有 Avalonia compositor capability
+  probe、external image/semaphore import、drawing surface commit 与面板 presentation state；它通过
+  `ViewportSession`/EngineBridge 消费 frame lease，不拥有 Vulkan resource，也不把 native handle 交给 Shell/ViewModel。
+- `Asharia.Studio.EngineBridge.Viewports.ViewportBridge` 是 managed V5 stream ABI 边界；它复制最多 256 个
+  `{objectId, Transform}` debug proxies，异步 submit latest / take ready，并以
+  `ViewportFrameLease.Release(NotSubmittedToConsumer | ConsumerAccessed)` exact-once 完成持久 slot 的本轮使用。
+  raw external image/semaphore handles 只在 EngineBridge/Presentation handshake 内可见，Shell/ViewModel 与 Application
+  不取得句柄；V1–V4 frame exports 与 managed fallback 均已删除。
+- `Asharia.Studio.Presentation.Avalonia.Viewports.ViewportPresentationLifetime` 是 managed process composition 的
+  admission/drain owner；`StudioCompositionSession` 关闭时先 stop-and-drain presentation，再 dispose Shell ViewModel，
+  调用 native viewport shutdown，最后关闭 ProjectSession。
 - `Asharia.Studio.Application` 的 Editor Image inventory lease 是只读 Application 层产品策略：实现使用 .NET BCL
   文件 API；Avalonia `IStorageProvider` 只拥有用户文件选择、bookmark 与平台权限 UI，native Core File IO 继续只服务
   C++ engine/runtime 的低层 IO 与事务。
-- native shared viewport runtime 仍由 C++ `apps/editor` / `rhi-vulkan` / `renderer_basic_vulkan` 侧拥有 Vulkan
-  image、semaphore、RenderView recording 和 deferred GPU lifetime。V4 request 将 Scene/Game/Preview、camera、
-  session/target/revision/sequence 与 bounded Transform proxies 映射到同一 renderer path；managed Studio 只能观察
-  lease metadata 并通过 EngineBridge 完成 lease，不能直接关闭、重用或延迟销毁 Vulkan resource。
+- native `EditorSharedViewportRuntime` 是 process singleton，并拥有唯一 RenderThread、有界 V5 stream scheduler、
+  Vulkan context/producer、external image/semaphore、RenderView recording 与 deferred GPU lifetime。每个 stream 最多
+  一个 executing、一个 pending-latest、一个 ready frame 和三个持久 full slots；Scene/Game/Preview、camera、
+  session/target/revision/sequence 与 bounded Transform proxies 映射到同一 renderer path。managed Studio 只能观察
+  lease metadata 并通过 EngineBridge 完成本轮 slot，不能直接关闭、重用或延迟销毁 Vulkan resource。external image
+  只有 producer fence 与已声明 consumer 的 consumer-done retirement fence 均完成后才能重用；attach 内单张 managed
+  surface 保持稳定，detach removal batch `Processed` 只控制该 surface 的安全析构。
 
 销毁顺序：
 
@@ -242,23 +252,30 @@ Asharia Engine 当前目标仍是先做一个小而完整的 Vulkan renderer，�
 8. editor path 将 sampled RenderView target 注册给 ImGui texture registry；Frame Debug / Live RG View 只读
    diagnostics snapshot。
 
-Studio Avalonia composition viewport spike 的当前路径：
+Studio Avalonia composition Scene View 的当前路径：
 
-1. `SceneViewPanelView` attach 或 bounds 改变时，`SceneViewCompositionCapabilityReader` 通过
-   `ElementComposition.GetElementVisual(...)` 和 `Compositor.TryGetCompositionGpuInterop()` 探测 Avalonia
-   composition GPU interop。
-2. `SceneViewPanelViewModel` 保存 `ViewportCompositionCapabilitiesSnapshot`。新的 capability snapshot 会清除旧的
-   native-present snapshot，避免显示过期的成功状态。
-3. 只有 capability 为 `Supported` 且 viewport 有非零像素 extent 时，`ViewportNativeBridge` 才调用
-   `editor_viewport_query_composition_compatibility`，把 compositor device LUID/UUID 和 Vulkan opaque NT
-   image/semaphore handle capability 传给 native。
-4. compatibility 成功后，Scene View 请求 native present packet。native runtime 渲染一帧 Scene View 到
-   native-owned external Vulkan image，并导出 opaque NT image handle、render-complete semaphore handle 和
-   compositor-release semaphore handle。
-5. `SceneViewCompositionPresenter` 用 `ICompositionGpuInterop.ImportImage` / `ImportSemaphore` 导入 handles，并调用
-   `CompositionDrawingSurface.UpdateWithSemaphoresAsync(...)`。managed code 不等待 Win32 handle，不阻塞 UI thread。
-6. present packet 在 presenter `finally` 中释放；native acquire 失败 packet 由 bridge 转为
-   `ViewportNativePresentSnapshot` 后释放。ViewModel 只显示 status/message/format/frame metadata。
+1. production `StudioCompositionSession` 在后台启动 native compatibility warm-up，提前让唯一 RenderThread 创建
+   Vulkan device/context；它不阻塞 shell ready，shutdown 在 runtime teardown 前等待 warm-up 收口。随后
+   `StudioScenePanelView.axaml` 托管专用 `ViewportCompositionControl`。control attach 时取得 composition visual，
+   探测 `ICompositionGpuInterop` 与 native device/handle compatibility；unsupported 能力显式进入 degraded UI。
+2. Bounds/DPI 变化以 `ceil(Bounds * RenderScaling)` 计算 panel `PixelSize`，并同时作为 logical/allocation extent；每个
+   physical extent 推进 geometry generation。control 立即隐藏旧 surface、移除 active/desired 引用并异步退役不匹配 stream；
+   managed `ViewportSession` 合并 latest request，native stream 原子替换唯一 pending-latest，不排队每一次 resize event。
+3. control 调用 EngineBridge V5 submit 后运行 demand-driven pump；native 唯一 RenderThread 异步 record/submit，完成帧进入
+   stream 的唯一 ready 槽。每个 stream 最多三个持久 full slots，不为每帧重建 external image/semaphore/import。
+4. control 通过 `ICompositionGpuInterop.ImportImage` / `ImportSemaphore` 导入 lease，并在一个 composition callback 中
+   更新 attach 生命周期内稳定的 drawing surface。提交前复验 allocation == logical == commit-time panel `PixelSize`、
+   geometry generation、identity/revision 与单调 sequence；surface image 与 visual placement 在同一 compositor transaction
+   中更新。padding/crop、旧 image stretch 和 geometry 过期帧都不能进入 surface；A→B→A 也必须等待新的 A generation。
+   external image reuse 仍只由 producer/consumer GPU completion proof 授权。
+5. `RequestCompositionUpdate` 在 commit 前合并采样最新 resize 状态，并在完成帧到达后提交 surface update；它不等待 native。
+   typed `Backpressure` 在下一次 composition cadence 重试；Unavailable/device failure 显式降级。`IsRealtime=true` 即使静止也每个
+   commit 重挂下一帧并以 exact surface-update `>=60 FPS` 为最低门槛；`false` 只响应 dirty invalidation。
+6. 每轮 frame 通过 `editor_viewport_complete_frame_v5(stream, slot, completionKind)` exact-once 完成；compositor
+   submission 前拒绝用 `NotSubmittedToConsumer`，update 完成后即使用 `ConsumerAccessed`。extent/generation 改变时旧 stream
+   立即逐流 retire，新 exact stream 首帧成功后成为 active；旧 visual 在此之前保持隐藏，不以 crop/stretch 伪装同步。
+   submission、disposal 或 completion 结果歧义时对应资源进入 process-lifetime quarantine。control detach 停止 admission
+   并等待 frame/surface cleanup；process shutdown 再 drain native RenderThread 与 Vulkan owner。
 
 当前建议仍保持：
 
@@ -295,4 +312,5 @@ Studio Avalonia composition viewport spike 的当前路径：
 - `material-core` 的 descriptor/resource signature、pipeline key 和 shader reflection JSON 形成可审查合同；
   backend pipeline/cache 实现仍由 renderer/RHI 后续 slice 承担。
 - `packages/systems/editor` 内部 `editor_domain` 只保留 selection、commands、undo/redo、workspace 和 backend-neutral viewport state。
-- CPU worker、RenderThread、async compute、bindless 和 hot reload 都必须先有 ownership、fallback 和 smoke。
+- 通用 runtime CPU worker/RenderThread/RHIThread、large job graph、async compute、bindless 和 hot reload 都必须先有
+  ownership、fallback 和 smoke；Studio Scene View 已有的单 native RenderThread 仅是 viewport Vulkan owner boundary。

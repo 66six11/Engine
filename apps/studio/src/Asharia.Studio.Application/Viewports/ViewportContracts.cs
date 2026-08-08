@@ -46,6 +46,7 @@ public enum ViewportInvalidationReason : uint
     CameraChanged = 1U << 2,
     ExtentChanged = 1U << 3,
     Exposed = 1U << 4,
+    Realtime = 1U << 5,
 }
 
 public readonly record struct ViewportExtent
@@ -68,6 +69,32 @@ public readonly record struct ViewportExtent
     public uint Height { get; }
 
     internal bool IsRenderable => Width != 0 && Height != 0;
+}
+
+public readonly record struct ViewportRenderSize
+{
+    public ViewportRenderSize(ViewportExtent logicalExtent, ViewportExtent allocationExtent)
+    {
+        if (!logicalExtent.IsRenderable)
+        {
+            throw new ArgumentOutOfRangeException(nameof(logicalExtent));
+        }
+        if (!allocationExtent.IsRenderable ||
+            allocationExtent.Width < logicalExtent.Width ||
+            allocationExtent.Height < logicalExtent.Height)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(allocationExtent),
+                "Viewport allocation extent must contain the logical extent.");
+        }
+
+        LogicalExtent = logicalExtent;
+        AllocationExtent = allocationExtent;
+    }
+
+    public ViewportExtent LogicalExtent { get; }
+
+    public ViewportExtent AllocationExtent { get; }
 }
 
 public sealed record ViewportCameraSnapshot
@@ -159,7 +186,7 @@ public sealed record ViewportRenderRequest
         ViewportTargetKind targetKind,
         Guid targetId,
         ulong targetRevision,
-        ViewportExtent extent,
+        ViewportRenderSize renderSize,
         ViewportCameraSnapshot camera,
         ViewportInvalidationReason reasons,
         IEnumerable<ViewportDebugProxySnapshot> debugProxies,
@@ -171,7 +198,9 @@ public sealed record ViewportRenderRequest
         TargetKind = targetKind;
         TargetId = targetId;
         TargetRevision = targetRevision;
-        Extent = extent;
+        RenderSize = renderSize;
+        LogicalExtent = renderSize.LogicalExtent;
+        AllocationExtent = renderSize.AllocationExtent;
         Camera = camera;
         Reasons = reasons;
         DebugProxies = new ReadOnlyCollection<ViewportDebugProxySnapshot>(debugProxies.ToArray());
@@ -190,7 +219,11 @@ public sealed record ViewportRenderRequest
 
     public ulong TargetRevision { get; }
 
-    public ViewportExtent Extent { get; }
+    public ViewportRenderSize RenderSize { get; }
+
+    public ViewportExtent LogicalExtent { get; }
+
+    public ViewportExtent AllocationExtent { get; }
 
     public ViewportCameraSnapshot Camera { get; }
 

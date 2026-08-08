@@ -85,6 +85,17 @@ namespace asharia {
 
         constexpr float kBasicDebugLineClipEpsilon = 0.000001F;
 
+        [[nodiscard]] VkViewport basicCameraViewport(VkExtent2D extent) {
+            return VkViewport{
+                .x = 0.0F,
+                .y = static_cast<float>(extent.height),
+                .width = static_cast<float>(extent.width),
+                .height = -static_cast<float>(extent.height),
+                .minDepth = 0.0F,
+                .maxDepth = 1.0F,
+            };
+        }
+
 #include "basic_renderers/render_view_diagnostics.inl"
 
         template <typename Params>
@@ -1114,14 +1125,7 @@ namespace asharia {
             renderingInfo.pColorAttachments = &colorAttachment;
             renderingInfo.pDepthAttachment = &depthAttachment;
 
-            const VkViewport viewport{
-                .x = 0.0F,
-                .y = 0.0F,
-                .width = static_cast<float>(frame.extent.width),
-                .height = static_cast<float>(frame.extent.height),
-                .minDepth = 0.0F,
-                .maxDepth = 1.0F,
-            };
+            const VkViewport viewport = basicCameraViewport(frame.extent);
             const VkRect2D scissor{
                 .offset = VkOffset2D{.x = 0, .y = 0},
                 .extent = frame.extent,
@@ -1180,14 +1184,7 @@ namespace asharia {
             renderingInfo.pColorAttachments = &colorAttachment;
             renderingInfo.pDepthAttachment = &depthAttachment;
 
-            const VkViewport viewport{
-                .x = 0.0F,
-                .y = 0.0F,
-                .width = static_cast<float>(frame.extent.width),
-                .height = static_cast<float>(frame.extent.height),
-                .minDepth = 0.0F,
-                .maxDepth = 1.0F,
-            };
+            const VkViewport viewport = basicCameraViewport(frame.extent);
             const VkRect2D scissor{
                 .offset = VkOffset2D{.x = 0, .y = 0},
                 .extent = frame.extent,
@@ -1433,14 +1430,7 @@ namespace asharia {
             renderingInfo.colorAttachmentCount = 1;
             renderingInfo.pColorAttachments = &colorAttachment;
 
-            const VkViewport viewport{
-                .x = 0.0F,
-                .y = 0.0F,
-                .width = static_cast<float>(targetExtent.width),
-                .height = static_cast<float>(targetExtent.height),
-                .minDepth = 0.0F,
-                .maxDepth = 1.0F,
-            };
+            const VkViewport viewport = basicCameraViewport(targetExtent);
             const VkRect2D scissor{
                 .offset = VkOffset2D{.x = 0, .y = 0},
                 .extent = targetExtent,
@@ -1483,14 +1473,7 @@ namespace asharia {
             renderingInfo.colorAttachmentCount = 1;
             renderingInfo.pColorAttachments = &colorAttachment;
 
-            const VkViewport viewport{
-                .x = 0.0F,
-                .y = 0.0F,
-                .width = static_cast<float>(targetExtent.width),
-                .height = static_cast<float>(targetExtent.height),
-                .minDepth = 0.0F,
-                .maxDepth = 1.0F,
-            };
+            const VkViewport viewport = basicCameraViewport(targetExtent);
             const VkRect2D scissor{
                 .offset = VkOffset2D{.x = 0, .y = 0},
                 .extent = targetExtent,
