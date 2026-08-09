@@ -715,6 +715,8 @@ sequenceDiagram
 
 图中的 “publish turn” 是应用/UI 顺序，不是 physical display atomicity。Avalonia same-compositor batch 能给 surface switches 一个共享
 `Rendered` barrier，但 `SetWindowPos` 经 USER32/DWM 提交的 top-level geometry 不参与该 barrier；两者没有公开的共同 scanout fence。
+Windows-only opt-in WGC observer 位于这两个应用内阶段之后，读取 `wgc-dwm-composited-pixels`，但不位于显示器 scanout 之后。
+它只分析 WGC-delivered samples；这些样本不是无损 DWM refresh 序列，`PhysicalDisplayedEvidenceAvailable` 因而固定为 `false`。
 
 - 每个 `ViewportSession` 有独立 session ID、camera、sequence 与 pending reasons；多个 viewport 可以指向同一
   SceneDocument，但不能共享可变 camera 或 presentation state。
@@ -791,6 +793,11 @@ sequenceDiagram
   使用真实 HWND 驱动 `WM_SIZING`，并拆成不启动连续 recorder、以 first `Proposed`→final exact `Rendered` 计速的 `performance`
   lane，以及只连续记录短 ABA outer/client/workspace/panel/surface composition batches、没有 FPS claim 的 `continuous` lane。所有入口按 native resource→transaction
   phase→Avalonia surface/`Rendered`→physical display 分层；observer 缺失时明确输出 evidence unavailable。
+- 独立 Windows-only `Asharia.Studio.WindowsCapture.Tests` 通过 `ASHARIA_RUN_STUDIO_WGC_DWM_ACCEPTANCE=1` opt in，启动真实 Editor/Vulkan
+  Window smoke，并以 named-event handshake 协调 exact baseline、resize 和最终 expected Scene extent。当前 process acceptance 只门控
+  monotonic grow：WGC-delivered 样本硬拒整个 Scene blank、sentinel stretch/crop 与 Scene spill；old exact Scene 到 new HWND 的右/下
+  背景 gap 被允许但必须显式计数，最终仍需 exact 收敛。shrink WGC pixel closure 仍 pending，不得宣称通过。该入口不保证观察每次
+  DWM refresh，也不提供 LCD scanout/`PhysicalDisplayed` 证据。
 - 2026-08-09 拆分后代表性 sawtooth 120 Hz 运行完成 209/209 observed exact `Rendered` generations（106.44/s），p95
   15.26 ms、hidden 0、mismatch 0；Realtime steady 代表值为 219.43 surface-updates/s。新增 Window smoke 之前的五族 GPU process acceptance 为 47/47；
   13 个 fault stages、supersede、六个双-endpoint modes 与 flash 8/8 transaction-batch structural checks 均真实 Vulkan exit 0。
@@ -800,9 +807,9 @@ sequenceDiagram
   结构 lane 为 24/24 exact sampled batches，
   blank/stretch/crop/gap/mismatch=0，不报告 FPS。
   当前 PresentMon 复采大量丢 ETW events 且没有 CSV，
-  因而 PhysicalDisplayed 仍无当前 transaction 证据；Window smoke 也明确输出 pixel/PhysicalDisplayed evidence unavailable，待 WGC
-  逐帧关联 Scene corner sentinel、transaction/generation/extent 与 HWND RECT。PresentMon 顶层 cadence 不能排除一个中间 blank/crop/
-  stretch frame。multi-endpoint 也只证明两个 endpoint，不能外推 3–4 realtime lane。
+  因而 PhysicalDisplayed 仍无当前 transaction 证据；Window smoke 的应用内 lanes 也明确输出 pixel/PhysicalDisplayed evidence unavailable。
+  新增 WGC 项目提供独立 DWM-composited pixel gate，但不能把其 delivered samples 外推为所有 DWM refresh 或 LCD scanout。
+  PresentMon 顶层 cadence 不能排除一个中间 blank/crop/stretch/spill frame。multi-endpoint 也只证明两个 endpoint，不能外推 3–4 realtime lane。
 - native `frameIndex` 只是 render-attempt identity，失败允许留 gap；`EditorSharedViewportRuntime` 在唯一 RenderThread 上采样
   steady-clock elapsed 与上次任意 stream 成功 render delta，形成 immutable frame params。刷新率只改变采样密度，不再通过
   `frameIndex / 60` 改变 shader 时间速度。

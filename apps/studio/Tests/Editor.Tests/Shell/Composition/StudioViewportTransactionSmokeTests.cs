@@ -36,8 +36,33 @@ public sealed class StudioViewportTransactionSmokeTests
     public void Router_recognizes_window_resize_smoke()
     {
         Assert.True(Editor.Shell.Composition.StudioViewportTransactionSmoke.IsRequested(
-            [Editor.Shell.Composition.StudioViewportTransactionWindowResizeSmoke
-                .CommandLineSwitch]));
+            [
+                Editor.Shell.Composition.StudioViewportTransactionWindowResizeSmoke
+                    .CommandLineSwitch,
+                Editor.Shell.Composition.StudioViewportTransactionWindowResizeSmoke
+                    .ObserverReadyEventOptionPrefix + "Local\\Asharia.Studio.Wgc.test",
+            ]));
+    }
+
+    [Fact]
+    public void Window_resize_observer_ready_event_is_optional_and_unique()
+    {
+        const string eventName = "Local\\Asharia.Studio.Wgc.unique";
+        var prefix = Editor.Shell.Composition.StudioViewportTransactionWindowResizeSmoke
+            .ObserverReadyEventOptionPrefix;
+
+        Assert.Null(Editor.Shell.Composition.StudioViewportTransactionWindowResizeSmoke
+            .ParseObserverReadyEventName([]));
+        Assert.Equal(
+            eventName,
+            Editor.Shell.Composition.StudioViewportTransactionWindowResizeSmoke
+                .ParseObserverReadyEventName([$"{prefix}{eventName}"]));
+        Assert.Throws<ArgumentException>(() =>
+            Editor.Shell.Composition.StudioViewportTransactionWindowResizeSmoke
+                .ParseObserverReadyEventName([$"{prefix}{eventName}", $"{prefix}{eventName}"]));
+        Assert.Throws<ArgumentException>(() =>
+            Editor.Shell.Composition.StudioViewportTransactionWindowResizeSmoke
+                .ParseObserverReadyEventName([prefix]));
     }
 
     [Fact]

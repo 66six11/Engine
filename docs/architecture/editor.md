@@ -283,9 +283,12 @@ maximize/restore, programmatic Window/Bounds resize, `WM_DPICHANGED`/cross-monit
 never crop or stretch, but can show a blank Scene interval and have not reached zero-flash acceptance.
 
 The Win32 publish turn is not a physical atomicity claim. USER32/DWM top-level geometry and an Avalonia composition batch have no
-shared public scanout fence. Current structural `Rendered` evidence therefore cannot prove that no intermediate Scene-only blank,
-crop, stretch or out-of-bounds pixel frame occurred; a corner-sentinel Windows Graphics Capture (WGC), or equivalent lossless
-per-frame pixel observer, remains required. The checked Unreal public threaded-rendering contract and Unity public SceneView
+shared public scanout fence. A separate Windows-only opt-in WGC acceptance project now observes corner sentinels in
+`wgc-dwm-composited-pixels`. Current process acceptance covers monotonic grow only. It hard-fails a blank Scene, stretched or cropped
+sentinels, and Scene spill, while permitting and counting the right/bottom panel-background gap between an old exact Scene and a newer
+HWND content extent; that gap is not relabeled as an exact Scene generation. Shrink WGC pixel closure remains pending and must not be
+inferred from the grow result. WGC-delivered samples are not a lossless record of every DWM refresh and are not LCD scanout evidence, so
+`PhysicalDisplayedEvidenceAvailable` remains `false`. The checked Unreal public threaded-rendering contract and Unity public SceneView
 source/API expose no native-Window-plus-viewport physical transaction precedent, so this is an Asharia-local boundary rather than
 a copied engine API.
 
@@ -299,8 +302,9 @@ render-attempt identity (failed attempts may leave gaps), while shader/preview t
 never synthesized as `frameIndex / 60`. The 2026-08-09 pre-split combined Studio splitter run completed 90/90 unique exact generations at
 108.25/s, with proposal-to-shared-batch-`Rendered` p95 about 12.59 ms, requested-mismatch hidden duty 0, and subsequent
 Realtime steady surface-update cadence 222.84 FPS. These are application/Avalonia surface facts, not physical scanout facts;
-they are also not Win32 outer-Window pixel evidence. Physical display cadence still requires a loss-free PresentMon/ETW sample,
-while Scene flash closure additionally requires WGC/pixel evidence. The detailed contracts are maintained in
+they are also not Win32 outer-Window pixel evidence. Physical display cadence remains separate from both PresentMon top-level timing
+and WGC DWM-composited pixels. The WGC opt-in entry is implemented, but only a successful full run may be recorded as current pixel
+evidence. The detailed contracts are maintained in
 [`apps/studio/docs/architecture/viewport-rendering.md`](../../apps/studio/docs/architecture/viewport-rendering.md) and
 [`apps/studio/docs/adr/0006-viewport-interactive-resize.md`](../../apps/studio/docs/adr/0006-viewport-interactive-resize.md).
 
@@ -757,11 +761,16 @@ corner sentinel 的结构边界。各入口分开报告 native resource、transa
 blank/stretch/crop/gap/mismatch=0，不作 FPS claim。最新 ABA 性能代表值为 90 inputs/744.47 ms、50 unique exact `Rendered` /
 757.57 ms（66.00/s）、post-request transaction publish catch-up 2/2（25.44 ms，小于两个 60 Hz composition budget）、hidden=0；
 结构 lane 为 24/24 exact sampled batches，五类结构错误
-全为 0。两条 lane 仍明确输出 pixel/PhysicalDisplayed evidence unavailable。没有 observer 的层明确输出 evidence unavailable。代表性
+全为 0。两条应用内 lane 仍明确输出 pixel/PhysicalDisplayed evidence unavailable。独立 Windows-only
+`Asharia.Studio.WindowsCapture.Tests` 通过 `ASHARIA_RUN_STUDIO_WGC_DWM_ACCEPTANCE=1` opt in：它对 WGC-delivered DWM 合成样本硬拒
+blank/stretch/crop/spill，允许并计数 grow 的 old-exact-Scene→new-HWND 右/下背景 gap；当前 process acceptance 只覆盖 monotonic
+grow，shrink WGC pixel closure 仍 pending，不得宣称通过。它不保证捕获每个 DWM refresh，且始终报告
+`PhysicalDisplayedEvidenceAvailable=false`。没有 observer 的层明确输出 evidence unavailable。代表性
 owned-splitter resize 为 209/209 observed exact `Rendered` generations、106.44/s、p95
 15.26 ms、hidden 0；新增 Window smoke 之前的五族 GPU process acceptance 为 47/47，steady 为 219.43 surface-updates/s。当前 PresentMon 复采因大量 ETW
 event loss 且无 CSV 被作废，不能把这些
-应用侧数字称为 physical display；PresentMon 即使有效也只能证明顶层 cadence，不能排除 Scene-only 中间像素帧。WGC gate 仍 pending。
+应用侧数字称为 physical display；PresentMon 即使有效也只能证明顶层 cadence，不能排除 Scene-only 中间像素帧。WGC pixel evidence
+与 LCD scanout evidence 也必须继续分层。
 multi-endpoint 当前只通过两 endpoint；3–4 realtime 容量与 slow-consumer queue HOL 仍未解决。
 
 `--smoke-editor-viewport` also validates Scene View flag defaults, verifies that pending Gizmo/Select authoring flags are

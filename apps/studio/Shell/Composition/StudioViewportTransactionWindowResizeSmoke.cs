@@ -25,6 +25,8 @@ internal static partial class StudioViewportTransactionWindowResizeSmoke
     internal const string CommandLineSwitch =
         "--smoke-viewport-transaction-window-resize";
     internal const string EvidenceOptionPrefix = "--viewport-window-evidence=";
+    internal const string ObserverReadyEventOptionPrefix =
+        "--viewport-window-observer-ready-event=";
     private const int DefaultInputCount = 90;
     private const double DefaultInputHz = 120;
     private const uint kWindowMessageSizing = 0x0214;
@@ -105,6 +107,9 @@ internal static partial class StudioViewportTransactionWindowResizeSmoke
                 options.InputCount,
                 initialWindowRect,
                 scaling);
+            await WaitForExternalObserverAsync(
+                options.ObserverReadyEventName,
+                "ready");
             var initialSnapshot = control.CapturePresentationTestSnapshot();
             var measurement = control.BeginResizeMeasurement();
             await using var recorder = options.CollectsContinuousCompositionBatches
@@ -342,6 +347,11 @@ internal static partial class StudioViewportTransactionWindowResizeSmoke
                     $"renderedNonOrigin={renderedNonOrigin}.");
             }
 
+            await WaitForExternalObserverAsync(
+                options.ObserverReadyEventName,
+                "completion",
+                finalSnapshot.SurfaceExtent);
+
             Console.Out.WriteLine(
                 "viewport-transaction-window-resize-evidence " +
                 JsonSerializer.Serialize(new
@@ -500,6 +510,102 @@ internal static partial class StudioViewportTransactionWindowResizeSmoke
             };
         }).ToArray();
     }
+
+    internal static string? ParseObserverReadyEventName(
+        IReadOnlyList<string> arguments)
+    {
+        ArgumentNullException.ThrowIfNull(arguments);
+        var matches = arguments
+            .Where(argument => argument.StartsWith(
+                ObserverReadyEventOptionPrefix,
+                StringComparison.Ordinal))
+            .ToArray();
+        if (matches.Length > 1)
+        {
+            throw new ArgumentException(
+                "Window resize observer readiness accepts at most one named event.",
+                nameof(arguments));
+        }
+        if (matches.Length == 0)
+        {
+            return null;
+        }
+
+        var eventName = matches[0][ObserverReadyEventOptionPrefix.Length..];
+        if (string.IsNullOrWhiteSpace(eventName))
+        {
+            throw new ArgumentException(
+                "Window resize observer readiness requires a non-empty event name.",
+                nameof(arguments));
+        }
+        return eventName;
+    }
+
+    private static async Task WaitForExternalObserverAsync(
+        string? eventName,
+        string phase,
+        ViewportExtent? expectedSceneExtent = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(phase);
+        if (eventName is null)
+        {
+            return;
+        }
+        if (!OperatingSystem.IsWindows())
+        {
+            throw new PlatformNotSupportedException(
+                "Named Window resize observer readiness requires Windows.");
+        }
+
+        EventWaitHandle observerReady;
+        try
+        {
+            observerReady = EventWaitHandle.OpenExisting(eventName);
+        }
+        catch (WaitHandleCannotBeOpenedException exception)
+        {
+            throw new InvalidOperationException(
+                $"The external observer event '{eventName}' does not exist. " +
+                "The observer must create and retain it before launching Studio.",
+                exception);
+        }
+
+        using (observerReady)
+        {
+            WriteObserverHandshake(
+                $"{phase}-waiting",
+                eventName,
+                expectedSceneExtent);
+            var signaled = await Task.Run(() => observerReady.WaitOne(kTimeout));
+            if (!signaled)
+            {
+                throw new TimeoutException(
+                    $"The external observer did not signal '{eventName}' within " +
+                    $"{kTimeout.TotalMilliseconds:F0} ms.");
+            }
+            WriteObserverHandshake(
+                $"{phase}-signaled",
+                eventName,
+                expectedSceneExtent);
+        }
+    }
+
+    private static void WriteObserverHandshake(
+        string phase,
+        string eventName,
+        ViewportExtent? expectedSceneExtent) =>
+        Console.Out.WriteLine(
+            "viewport-transaction-window-resize-observer " +
+            JsonSerializer.Serialize(new
+            {
+                phase,
+                eventName,
+                qpc = Stopwatch.GetTimestamp(),
+                expectedSceneExtent = expectedSceneExtent is { } extent
+                    ? new { width = extent.Width, height = extent.Height }
+                    : null,
+                timeoutMs = kTimeout.TotalMilliseconds,
+            }));
 
     private static bool AreClose(Size first, Size second) =>
         Math.Abs(first.Width - second.Width) <= kLayoutEpsilon &&
@@ -1092,7 +1198,8 @@ internal static partial class StudioViewportTransactionWindowResizeSmoke
         string Pattern,
         double InputHz,
         int InputCount,
-        string Evidence)
+        string Evidence,
+        string? ObserverReadyEventName)
     {
         public bool MeasuresRenderedPerformance => Evidence == "performance";
 
@@ -1122,6 +1229,7 @@ internal static partial class StudioViewportTransactionWindowResizeSmoke
                 Read(arguments, "--viewport-window-input-count="),
                 DefaultInputCount);
             var evidence = Read(arguments, EvidenceOptionPrefix) ?? "performance";
+            var observerReadyEventName = ParseObserverReadyEventName(arguments);
             if (evidence is not ("performance" or "continuous"))
             {
                 throw new ArgumentException(
@@ -1140,7 +1248,12 @@ internal static partial class StudioViewportTransactionWindowResizeSmoke
                     nameof(arguments),
                     "Window resize input count must be 2..240.");
             }
-            return new WindowResizeOptions(pattern, inputHz, inputCount, evidence);
+            return new WindowResizeOptions(
+                pattern,
+                inputHz,
+                inputCount,
+                evidence,
+                observerReadyEventName);
         }
 
         private static string? Read(string[] arguments, string prefix) =>

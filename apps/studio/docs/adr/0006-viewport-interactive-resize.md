@@ -236,7 +236,8 @@ compositor 引用的旧 owner graph。
 
 这个次序只提供应用/UI transaction contract。`SetWindowPos`/USER32/DWM 与 Avalonia composition batch 没有一个共享的公开
 physical commit fence；即使 outer geometry、`UpdateLayout` 与 surface switch 位于同一 UI publish turn，也不能据此宣称同一扫描帧
-物理原子。零 Scene flash 的最终验收仍需带 corner sentinel 的逐帧 Windows Graphics Capture（WGC）或等价无损 pixel evidence。
+物理原子。独立 Windows-only opt-in WGC acceptance 已实现 corner-sentinel DWM-composited pixel observer；它只检查 WGC 实际交付的
+样本，不是无损 DWM refresh stream，也不是 LCD scanout evidence。
 
 Snap、maximize/restore、程序化 Window/`Bounds` resize、`WM_DPICHANGED`/跨屏 DPI 和非 Win32 top-level 不属于上述 seam，当前
 仍走 exact-only hidden fallback：新 Bounds 已公开后隐藏不匹配 front，再等新 exact surface。它禁止 crop/stretch，但允许短暂
@@ -322,7 +323,9 @@ panel 使用相同 pixel extent，不以 padding/crop 改变网格世界间距�
 - Scene exact、Game Preview fit 与 Frame Debugger immutable capture 可以作为独立 endpoint policy/participant，不共享可变 front state；
 - Snap、maximize/restore、程序化 Window/Bounds、DPI transition 与非 Win32 top-level 是明确降级的 exact-only hidden fallback，仍
   禁止 crop/stretch，但未达成零闪；
-- USER32/DWM Window geometry 与 Avalonia batch 没有 physical atomicity 保证；Win32 precommit 的 pixel/WGC evidence 仍 pending；
+- USER32/DWM Window geometry 与 Avalonia batch 没有 physical atomicity 保证；Win32 precommit 已有独立 Windows-only opt-in WGC
+  pixel gate，当前 process acceptance 只门控 monotonic grow；shrink WGC pixel closure 仍 pending，且所有 WGC evidence 都不能标记为
+  `PhysicalDisplayed`；
 - 每个成功 surface commit 都满足 allocation == logical == commit-time panel `PixelSize`；
 - Scene View 默认连续渲染；`IsRealtime=false` 则为 dirty-only，两者都由 composition commit 节奏驱动；
 - hidden dock tab 停止产帧；重新可见或新 surface attach 通过 `Exposed` 恢复一个 exact frame；
@@ -366,6 +369,13 @@ panel 使用相同 pixel extent，不以 padding/crop 改变网格世界间距�
   UI/compositor 负载，因此该通道不报告也不门控 FPS；
 - Window 两个证据通道都明确输出 `pixelEvidenceAvailable=false` 与 `physicalDisplayedEvidenceAvailable=false`。它们只能证明
   transaction/`Rendered` 时序或 composition-batch 结构，不能关闭 Scene flash 的 WGC pixel gate；
+- `Asharia.Studio.WindowsCapture.Tests` 是独立 Windows-only opt-in pixel gate。设置
+  `ASHARIA_RUN_STUDIO_WGC_DWM_ACCEPTANCE=1` 后，它启动真实 Editor/Vulkan smoke，通过 named-event handshake 在 exact baseline 后开始
+  resize，并等待最终 expected Scene extent。当前 process acceptance 只门控 monotonic grow。证据类型固定为
+  `wgc-dwm-composited-pixels`：每个 WGC-delivered grow 样本硬拒整个 Scene blank、sentinel stretch/crop 与 Scene spill；HWND content
+  先扩大而 old exact Scene 仍可见所产生的右/下背景 gap 是允许的 grow 中间例外，但必须逐样本计数并报告 magnitude，最终 Scene
+  仍须 exact 收敛。WGC 可能不交付每次 DWM refresh，且 `PhysicalDisplayedEvidenceAvailable=false`。shrink WGC pixel closure 仍
+  pending，不得从 grow gate 外推 shrink、ABA 或其他 pattern；
 - unique geometry 速率不可能超过输入速率：30 Hz lane 门控至少 95% 输入覆盖，60 Hz lane 允许 59 Hz 容差，120/240 Hz lane
   硬门控至少 60 unique exact `Rendered` generations/s；Bounds→exact submit p95 保持 `<=25 ms`，相邻 exact completion p95
   只允许 59.94 Hz/QPC 的小于 0.5 ms 采样容差（`<=25.5 ms`），max `<=100 ms`；
@@ -397,6 +407,11 @@ grow/shrink/ABA 三个 120 Hz、90-input process case 均通过 `>=60/s`。独�
 structurally exact sampled composition batches；它不声称捕获了每个 DWM frame，
 blank/stretch/crop/gap/mismatch 均为 0；该通道没有 FPS claim。两组数字仍分别止于 transaction `Rendered` 与应用侧连续 batch
 采样，`pixelEvidenceAvailable=false`、`physicalDisplayedEvidenceAvailable=false`，没有 WGC 或 physical scanout 证明。
+
+2026-08-10 的独立 monotonic-grow WGC opt-in process acceptance 收到 11 个 samples：10 exact、1 allowed grow gap，最大 gap 为
+right 30 px / bottom 8 px，observer-known drops 为 0；这组 `wgc-dwm-composited-pixels` evidence 关闭了当前 grow lane。额外 shrink
+探针的 12 个 samples 中有 2 个 sentinel missing/crop，因此不纳入本次 PASS，shrink WGC pixel closure 保持 pending。该结果也不
+改变 `PhysicalDisplayedEvidenceAvailable=false`，不能解释为 LCD scanout evidence。
 
 此前基线在回到初始 A extent 并确认新 exact generation 后，5 秒稳态完成 1120 帧（223.94 FPS；bounded window
 223.20 FPS），p95 5.08 ms、max 5.53 ms。同一次 Release smoke 随后证明 OnDemand camera change 只唤醒一个 exact frame、

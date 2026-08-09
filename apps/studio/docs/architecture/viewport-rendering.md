@@ -185,8 +185,9 @@ hidden fallback：新 Bounds 已公开后立即隐藏不匹配 front，只在新
 但允许短暂空白，因此这些路径尚未达到零闪，并且必须与 owned dock 和 `WM_SIZING` precommit 的指标分开。
 
 `SetWindowPos`/USER32/DWM 与 Avalonia composition batch 没有共享的公开 physical commit fence；“同一 UI publish turn”只描述
-应用/Avalonia 事务顺序，不等于同一扫描帧的物理原子性。Win32 Window precommit 是否完全消除 Scene-only flash 仍需带 corner
-sentinel 的逐帧 Windows Graphics Capture（WGC）或等价无损 pixel evidence 验证。
+应用/Avalonia 事务顺序，不等于同一扫描帧的物理原子性。Windows-only opt-in WGC acceptance 现已从真实 HWND 捕获
+`wgc-dwm-composited-pixels`，以 corner sentinel 检查 WGC 实际交付的 DWM 合成样本。它不承诺无损取得每个 DWM refresh，
+更不观察 LCD scanout；因此即使 pixel evidence 可用，`PhysicalDisplayedEvidenceAvailable` 仍必须为 `false`。
 
 ## Managed pump
 
@@ -272,6 +273,7 @@ stats 继续暴露 frame epochs、external image pool、renderer creation、owne
 | native producer/resource | offered/submitted/coalesced/rendered、pending/ready/executing、每流/全局 slot count、backpressure、frame epoch 与 retirement |
 | transaction identity/phase | `SessionId`/`EndpointEpoch`/`TransactionId`、participant/atomic scope、Proposal→Prepared→Published→Rendered→Completed latency、Completed/Aborted/Quarantined、unique exact generation 与 coverage |
 | Avalonia surface | `UpdateWithSemaphoresAsync` latency、每 endpoint surface identity/extent/opacity、group batch `Rendered`、requested-mismatch hidden duty、full-window/transient commit、failed/cancelled/stale presented |
+| WGC DWM-composited pixels | WGC-delivered sample count、corner sentinel shape/alignment、Scene bounds、right/bottom grow-gap count 与 magnitude、blank/stretch/crop/spill；证据类型固定为 `wgc-dwm-composited-pixels`，不得标记 `PhysicalDisplayed` |
 | physical display | 同 PID/QPC present/display-change FPS、p95/max interval、dropped/not-displayed、ETW event loss；不得由 surface 层计数推断 |
 
 `Editor.exe --smoke-studio-viewport-cadence` 只定义前台静态 Scene 的 Realtime 稳态基线：预热后使用独立 5 秒窗口，门控 exact
@@ -279,7 +281,8 @@ surface-update `>=60 FPS`、p95 `<=25 ms` 和 max `<=100 ms`。cadence 不注入
 避免一个长 smoke 的失败原因与指标窗口互相污染。
 
 以下独立 Studio GPU smoke family 已在 2026-08-09 落地。入口各自启动真实 Studio、Avalonia compositor 与 Vulkan
-shared-viewport，不再由一个长 cadence smoke 混合所有窗口；成功边界仍止于应用侧 `Rendered`，不能冒充物理 scanout：
+shared-viewport，不再由一个长 cadence smoke 混合所有窗口；这些应用内入口的成功边界止于 `Rendered`。表末另列的 Windows-only
+WGC observer 才提供 DWM-composited pixel evidence，但同样不能冒充物理 scanout：
 
 | 入口 | 当前证据、唯一职责与关键 gate |
 | --- | --- |
@@ -290,6 +293,7 @@ shared-viewport，不再由一个长 cadence smoke 混合所有窗口；成功�
 | `--smoke-viewport-multi-endpoint` | 同 compositor 两 endpoint：同文档双 Scene 与 Scene+Game ownership、all-prepared→同 batch publish、validation reject 的 0 publish、post-publish finalize ambiguity 的整组 quarantine。3–4 endpoint steady、不同速率公平、单 endpoint slow/fault/detach 后其他 endpoint 继续推进，以及 slow-consumer queue 隔离尚未通过，见下文 native blocker。 |
 | `--smoke-viewport-transaction-flash` | typed V5 diagnostic flag 把四色 corner sentinel 写入同一 native Scene external image；逐个成功 transaction 的共享 group composition batch 输出 Bounds/front/candidate/visual/surface/opacity/全部 identity，并拒绝结构上的 out-of-bounds、blank、stretch、crop、extent mismatch。它不是“每个物理显示帧”的采样，也尚未为 Win32 outer-Window precommit 提供逐帧像素证据；当前明确输出 `pixelEvidenceAvailable=false`。 |
 | `--smoke-viewport-transaction-window-resize` | 真实 Win32 HWND、Avalonia compositor 与 Vulkan external surface；以 `WM_SIZING` 驱动 last-accepted RECT precommit。`--viewport-window-evidence=performance` 不启动连续 batch recorder，以 first `Proposed`→final exact `Rendered` 计算 unique rate；grow/shrink/A→B→A 各运行 120 Hz、90 inputs 并硬门控 `>=60/s`。`continuous` 使用短 ABA 轨迹连续请求并采样 outer/client/workspace/panel/front/surface composition batches，拒绝采样中的 blank/stretch/crop/gap/mismatch，但不作 FPS claim，也不声称捕获每个 DWM frame。两个通道都输出 `pixelEvidenceAvailable=false` 与 `physicalDisplayedEvidenceAvailable=false`，不能关闭 WGC pixel gate。 |
+| `Asharia.Studio.WindowsCapture.Tests` | Windows-only、显式 opt-in 的外部像素 observer；设置 `ASHARIA_RUN_STUDIO_WGC_DWM_ACCEPTANCE=1` 后启动真实 Editor/Vulkan Window smoke，以 named-event handshake 把捕获窗口限定在 exact baseline 到最终 expected Scene extent。当前 process acceptance **只门控 monotonic grow**：每个 WGC-delivered 样本硬拒整个 Scene blank、sentinel stretch/crop 和 Scene spill；允许 HWND content 先扩大而旧 Scene 仍保持原 exact extent，由此露出的右/下 panel background 必须作为 grow gap 单独计数，不能伪装成 exact generation；最终 Scene 仍必须收敛到 child 报告的 expected extent。shrink WGC pixel closure 仍 pending，不得从 grow 结果宣称 shrink 通过。 |
 
 unique geometry 不可能快于 geometry input；因此 30 Hz lane 门控至少 95% 输入覆盖，60 Hz lane 允许 59 Hz 显示/调度容差，
 120/240 Hz lane 才硬门控至少 60 unique exact `Rendered` generations/s。所有 lane 都继续要求最终 exact、hidden=0 与无 crop/stretch。
@@ -297,14 +301,20 @@ Window `performance` lane 的计时边界专门是 first `Proposed`→final exac
 evidence serialization；`continuous` lane 的 observer 会主动请求并采集 composition batches，所以它只门控结构，不与性能 lane
 混算吞吐。
 
-每个入口把指标分为 native producer/resource、transaction identity/phase、Avalonia surface/`Rendered` 和 physical display 四层；
-没有接入某层 observer 时输出 `evidenceAvailable=false`/`null`，不能用 0 冒充证据。专用 GPU lane 仍需无 ETW event loss 的同 PID/QPC
+每个入口把指标分为 native producer/resource、transaction identity/phase、Avalonia surface/`Rendered`、WGC DWM-composited pixels
+和 physical display；没有接入某层 observer 时输出 `evidenceAvailable=false`/`null`，不能用 0 冒充证据。专用 GPU lane 仍需无 ETW event loss 的同 PID/QPC
 PresentMon/ETW 才能门控 physical display；2026-08-09 两次当前 transaction 复采分别丢失约 253k/261k ETW events 且未生成 CSV，
 因此没有被计入通过证据。
 
-Window-resize 的最终 pixel gate 仍待 WGC（或等价无损捕获）逐显示帧关联 accepted/proposed HWND `RECT`、workspace Bounds、
-front transaction/generation/extent 与 corner sentinel。PresentMon 只能证明顶层窗口 cadence，不能单独证明某个 Scene generation 已显示，
-也不能排除一个中间 blank、crop、stretch 或越界像素帧。
+Window-resize 的 WGC gate 已有独立 Windows-only opt-in test project；它关联 WGC-delivered HWND pixels、最终 expected Scene extent 与
+corner sentinel，而不把交付样本数解释为 DWM refresh 数。允许项只有 grow 时 old exact Scene 到 new HWND 的右/下背景 gap，且必须显式
+统计；整个 Scene blank、sentinel stretch/crop 与 Scene spill 仍是硬失败。PresentMon 只能证明顶层窗口 cadence，不能单独证明某个
+Scene generation 已显示，也不能排除这些 Scene-only 像素错误；WGC 同样不能证明 LCD scanout。
+
+2026-08-10 的 monotonic-grow opt-in process acceptance 共收到 11 个 WGC samples：10 exact、1 allowed grow gap，最大 gap 为
+right 30 px / bottom 8 px，observer-known drops 为 0，因此 grow lane 通过。额外 shrink 探针的 12 个 samples 中有 2 个
+sentinel missing/crop；该探针不计入 grow PASS，也没有关闭 shrink WGC pixel gate。当前不得宣称 shrink、ABA 或任意 resize pattern
+已经取得 WGC pixel acceptance。
 
 2026-08-09 的 RTX 4060 / 200 Hz 历史 exact-only Release 基线：0.77 s resize 窗口观察 90 个 Bounds generations，完成 85 个 unique
 exact generations（110.24/s，coverage 94.4%），相邻 completion p95 13.13 ms、Bounds→submit p95 5.95 ms、

@@ -1086,6 +1086,7 @@ public sealed class ProjectReferenceGraphTests
                 "Tests/Asharia.Studio.DevelopmentProtocol.Tests/Asharia.Studio.DevelopmentProtocol.Tests.csproj",
                 "Tests/Asharia.Studio.EngineBridge.Tests/Asharia.Studio.EngineBridge.Tests.csproj",
                 "Tests/Asharia.Studio.Headless.Tests/Asharia.Studio.Headless.Tests.csproj",
+                "Tests/Asharia.Studio.WindowsCapture.Tests/Asharia.Studio.WindowsCapture.Tests.csproj",
                 "Tests/Editor.Tests/Editor.Tests.csproj",
                 "src/Asharia.Runtime.Contracts/Asharia.Runtime.Contracts.csproj",
                 "src/Asharia.Studio.Application/Asharia.Studio.Application.csproj",

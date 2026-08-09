@@ -298,8 +298,11 @@ Studio Avalonia `Viewport Presentation Transaction` 的当前路径：
    成功 `Published` 后才接受新 HWND `RECT`。Snap、maximize/restore、程序化 Window/Bounds、DPI transition 与非 Win32 top-level
    不能使用这个 precommit seam，仍通过 Render-priority early admission 走 exact-only hidden fallback：禁止 crop/stretch，但明确允许
    短暂 blank，尚未达到零闪。
-   USER32/DWM geometry 与 Avalonia composition batch 没有共享 physical commit fence；同一 UI publish turn 不是物理 scanout 原子性，
-   Win32 Window path 仍等待带 Scene corner sentinel 的逐帧 WGC/pixel evidence。
+   USER32/DWM geometry 与 Avalonia composition batch 没有共享 physical commit fence；同一 UI publish turn 不是物理 scanout 原子性。
+   独立 Windows-only opt-in WGC test project 已能以 Scene corner sentinel 分析 `wgc-dwm-composited-pixels`。它只覆盖 WGC-delivered
+   DWM 合成样本，不保证取得每个 refresh，也不证明 LCD scanout；`PhysicalDisplayedEvidenceAvailable` 固定为 `false`。当前 process
+   acceptance 只门控 monotonic grow：允许并显式统计 old exact Scene 到 new HWND 的右/下背景 gap，整个 Scene blank、stretch、crop
+   或 spill 仍为硬失败。shrink WGC pixel closure 仍 pending，不得由 grow 结果宣称通过。
 7. typed `Backpressure` 在下一次 composition cadence 重试；Unavailable/device failure 显式降级。`IsRealtime=true` 即使静止也每个
    commit 重挂下一帧并以 exact surface-update `>=60 FPS` 为最低门槛；candidate commit 后才恢复 steady 预填充。`false` 只响应
    dirty invalidation。hidden dock tab/lifetime pause 停止 admission，ancestor visible、新 surface attach 或 lifetime
@@ -319,11 +322,13 @@ Studio Avalonia `Viewport Presentation Transaction` 的当前路径：
    且 25.44 ms 小于两个 60 Hz composition budget、hidden=0；连续请求的结构采样为 24/24 exact sampled batches，五类错误全为 0。
    这不是“捕获了每个 DWM frame”的声明。新增 Window smoke 之前的五族 GPU process acceptance 为 47/47；
    各入口按 native resource、transaction phase、Avalonia surface/`Rendered` 与 physical display 分层报告；没有 observer 的层输出
-   evidence unavailable；Window 两条 lane 仍明确报告 pixel/PhysicalDisplayed evidence unavailable。代表性 owned-splitter resize 完成
+   evidence unavailable；Window 两条应用内 lane 仍明确报告 pixel/PhysicalDisplayed evidence unavailable。独立
+   `Asharia.Studio.WindowsCapture.Tests` 仅在设置 `ASHARIA_RUN_STUDIO_WGC_DWM_ACCEPTANCE=1` 时启动真实 WGC pixel gate；当前只有
+   monotonic-grow process acceptance，shrink WGC pixel closure 仍 pending。代表性 owned-splitter resize 完成
    209/209 observed exact `Rendered` generations、106.44/s、p95 15.26 ms、hidden 0，
    steady 为 219.43 surface-updates/s。当前 PresentMon 采样因大量 ETW event loss 且没有 CSV 被作废；multi-endpoint 只通过两
    endpoint 的 group boundary，3–4 realtime lane 与 slow-consumer HOL 仍是 blocker。PresentMon 顶层 cadence 不能证明 Scene
-   generation/pixel exact，也不能替代待补的 WGC gate。
+   generation/pixel exact，也不能替代独立 WGC pixel gate。
 9. native runtime 在唯一 RenderThread 上拥有 steady-clock frame snapshot：frame index 是 render-attempt identity（失败允许留 gap），
    time/delta 是真实单调 render 时间而非 `ordinal / 60`。delta 以 runtime 中上一次任意 stream 成功 record 为边界；Avalonia
    cadence、GPU timeline 与 physical present 都不反向定义 editor/world time。

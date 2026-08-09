@@ -401,7 +401,7 @@ Exit evidence:
 当前只允许两类工作并行：Foundation 主线，以及缩小错误边界的 Studio hard-cut。不得再开启第三条大型功能主线。
 
 1. **Architecture facts/tooling**：删除文件和 Studio docs 门禁、manifest ↔ configured CMake direct dependency gate、
-   canonical `Asharia.Studio.sln` 已覆盖当前全部 15 个项目（7 production + 8 tests）且旧 `Editor.sln` 与空public project/test已删除；下一小 Slice补 managed evaluated
+   canonical `Asharia.Studio.sln` 已覆盖当前全部 16 个项目（7 production + 9 tests）且旧 `Editor.sln` 与空public project/test已删除；下一小 Slice补 managed evaluated
    `ProjectReference` graph 与 public-consumer closure 对证。
 2. **Studio R0 owner cutover（closed baseline）**：移除 legacy production composition 和 UI-thread sync wait；App 成为唯一 async process/session owner；
    建立唯一 bounded diagnostics ring、process clean-exit/teardown receipt、disposable-child exit-code negative、真实 Headless 壳状态
