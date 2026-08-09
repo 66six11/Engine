@@ -209,6 +209,39 @@ public sealed class StudioProcessAcceptanceTests
             },
         ];
 
+        foreach (var pattern in new[] { "grow", "shrink", "aba" })
+        {
+            yield return
+            [
+                $"window-resize-main-{pattern}-120hz-performance",
+                45_000,
+                new[]
+                {
+                    StudioViewportTransactionWindowResizeSmoke.CommandLineSwitch,
+                    $"--viewport-window-pattern={pattern}",
+                    "--viewport-window-input-hz=120",
+                    "--viewport-window-input-count=90",
+                    $"{StudioViewportTransactionWindowResizeSmoke.EvidenceOptionPrefix}" +
+                        "performance",
+                },
+            ];
+        }
+
+        yield return
+        [
+            "window-resize-main-aba-structural",
+            45_000,
+            new[]
+            {
+                StudioViewportTransactionWindowResizeSmoke.CommandLineSwitch,
+                "--viewport-window-pattern=aba",
+                "--viewport-window-input-hz=60",
+                "--viewport-window-input-count=12",
+                $"{StudioViewportTransactionWindowResizeSmoke.EvidenceOptionPrefix}" +
+                    "continuous",
+            },
+        ];
+
         foreach (var delay in new[] { 5, 15, 30, 50 })
         {
             yield return
@@ -397,6 +430,15 @@ public sealed class StudioProcessAcceptanceTests
         {
             AssertStructuredFlashEvidence(output);
         }
+        if (Array.Exists(
+                arguments,
+                static argument => string.Equals(
+                    argument,
+                    StudioViewportTransactionWindowResizeSmoke.CommandLineSwitch,
+                    StringComparison.Ordinal)))
+        {
+            AssertWindowResizeEvidence(scenario, output, arguments);
+        }
     }
 
     internal static StudioTransactionSmokeContract ResolveTransactionSmokeContract(
@@ -410,6 +452,7 @@ public sealed class StudioProcessAcceptanceTests
             StudioViewportTransactionSupersedeSmoke.CommandLineSwitch,
             StudioViewportMultiEndpointSmoke.CommandLineSwitch,
             StudioViewportTransactionFlashSmoke.CommandLineSwitch,
+            StudioViewportTransactionWindowResizeSmoke.CommandLineSwitch,
         };
         var selected = switches.Where(arguments.Contains).ToArray();
         if (selected.Length != 1)
@@ -441,6 +484,8 @@ public sealed class StudioProcessAcceptanceTests
                     "flash-structural",
                     "flash-structural",
                     "viewport-transaction-flash-structural PASS:"),
+            StudioViewportTransactionWindowResizeSmoke.CommandLineSwitch =>
+                ResolveWindowResizeContract(arguments),
             _ => throw new UnreachableException(),
         };
     }
@@ -504,6 +549,25 @@ public sealed class StudioProcessAcceptanceTests
             "multi-endpoint",
             $"multi-endpoint-{mode}",
             "viewport-multi-endpoint PASS:");
+    }
+
+    private static StudioTransactionSmokeContract ResolveWindowResizeContract(
+        IReadOnlyList<string> arguments)
+    {
+        var pattern = ReadRequiredArgument(arguments, "--viewport-window-pattern=");
+        var inputRate = ReadRequiredArgument(arguments, "--viewport-window-input-hz=");
+        var evidence = ReadRequiredArgument(
+            arguments,
+            StudioViewportTransactionWindowResizeSmoke.EvidenceOptionPrefix);
+        var performance = evidence == "performance";
+        Assert.True(performance || evidence == "continuous");
+        return new StudioTransactionSmokeContract(
+            performance
+                ? $"window-resize-main-{pattern}-{inputRate}hz-performance"
+                : $"window-resize-main-{pattern}-structural",
+            performance ? "window-resize-performance" : "window-resize-structural",
+            performance ? "window-resize-performance" : "window-resize-structural",
+            "viewport-transaction-window-resize PASS:");
     }
 
     private static string ReadRequiredArgument(
@@ -627,6 +691,138 @@ public sealed class StudioProcessAcceptanceTests
             Assert.True(batchRoot.TryGetProperty("epoch", out _));
             Assert.True(batchRoot.TryGetProperty("transaction", out _));
             Assert.True(batchRoot.TryGetProperty("generation", out _));
+        }
+    }
+
+    private static void AssertWindowResizeEvidence(
+        string scenario,
+        string output,
+        IReadOnlyList<string> arguments)
+    {
+        const string prefix = "viewport-transaction-window-resize-evidence ";
+        const string batchPrefix = "viewport-transaction-window-resize-batch ";
+        var lines = output.Split(
+            ['\r', '\n'],
+            StringSplitOptions.RemoveEmptyEntries);
+        var evidenceLine = Assert.Single(
+            lines,
+            static line => line.StartsWith(prefix, StringComparison.Ordinal));
+        using var evidence = JsonDocument.Parse(evidenceLine[prefix.Length..]);
+        var root = evidence.RootElement;
+        var pattern = ReadRequiredArgument(arguments, "--viewport-window-pattern=");
+        var evidenceLane = ReadRequiredArgument(
+            arguments,
+            StudioViewportTransactionWindowResizeSmoke.EvidenceOptionPrefix);
+        var measuresPerformance = evidenceLane == "performance";
+
+        Assert.Equal(
+            measuresPerformance ? "window-resize-performance" : "window-resize-structural",
+            root.GetProperty("scenario").GetString());
+        Assert.Equal("main", root.GetProperty("hostKind").GetString());
+        Assert.Equal(pattern, root.GetProperty("pattern").GetString());
+        Assert.Equal(
+            measuresPerformance
+                ? "transaction-rendered-performance"
+                : "continuous-composition-batch-structural",
+            root.GetProperty("evidenceKind").GetString());
+        Assert.False(root.GetProperty("pixelEvidenceAvailable").GetBoolean());
+        Assert.False(root.GetProperty("physicalDisplayedEvidenceAvailable").GetBoolean());
+
+        var win32 = root.GetProperty("win32");
+        Assert.Equal(1, win32.GetProperty("enterSizeMove").GetInt32());
+        Assert.Equal(
+            win32.GetProperty("sizingRequested").GetInt32(),
+            win32.GetProperty("sizingHandled").GetInt32());
+        Assert.Equal(1, win32.GetProperty("exitSizeMove").GetInt32());
+        Assert.True(win32.GetProperty("finalWindowRectMatches").GetBoolean(), scenario);
+
+        var performanceWindow = root.GetProperty("performanceWindow");
+        var batches = root.GetProperty("compositionBatches");
+        if (measuresPerformance)
+        {
+            Assert.Equal(JsonValueKind.Null, batches.ValueKind);
+            Assert.Equal(JsonValueKind.Object, performanceWindow.ValueKind);
+            Assert.True(
+                performanceWindow.GetProperty("firstProposedQpc").GetInt64() <
+                performanceWindow.GetProperty("finalExactRenderedQpc").GetInt64(),
+                scenario);
+            Assert.True(performanceWindow.GetProperty("durationMs").GetDouble() > 0);
+            Assert.True(performanceWindow.GetProperty("uniqueExactRendered").GetInt32() > 0);
+            Assert.True(
+                performanceWindow.GetProperty("rate").GetDouble() >=
+                performanceWindow.GetProperty("minimumRate").GetDouble(),
+                scenario);
+        }
+        else
+        {
+            Assert.Equal(JsonValueKind.Null, performanceWindow.ValueKind);
+            Assert.Equal(JsonValueKind.Object, batches.ValueKind);
+            Assert.True(batches.GetProperty("observed").GetInt32() > 0, scenario);
+            Assert.Equal(0, batches.GetProperty("invalid").GetInt32());
+            Assert.Equal(0, batches.GetProperty("blank").GetInt32());
+            Assert.Equal(0, batches.GetProperty("stretch").GetInt32());
+            Assert.Equal(0, batches.GetProperty("crop").GetInt32());
+            Assert.Equal(0, batches.GetProperty("gap").GetInt32());
+            Assert.Equal(0, batches.GetProperty("extentMismatch").GetInt32());
+            Assert.Equal(0, batches.GetProperty("clientMismatch").GetInt32());
+        }
+
+        var final = root.GetProperty("final");
+        Assert.True(final.GetProperty("exact").GetBoolean(), scenario);
+        Assert.True(final.GetProperty("rendered").GetBoolean(), scenario);
+        Assert.True(final.GetProperty("structurallyExact").GetBoolean(), scenario);
+        Assert.InRange(
+            final.GetProperty("catchUpBatches").GetInt32(),
+            1,
+            final.GetProperty("maximumCatchUpBatches").GetInt32());
+        if (measuresPerformance)
+        {
+            Assert.Equal(
+                JsonValueKind.Null,
+                final.GetProperty("continuousCompositionBatches").ValueKind);
+        }
+        else
+        {
+            Assert.True(
+                final.GetProperty("continuousCompositionBatches").GetInt32() >=
+                final.GetProperty("catchUpBatches").GetInt32(),
+                scenario);
+        }
+        Assert.True(final.GetProperty("catchUpElapsedMs").GetDouble() >= 0, scenario);
+        Assert.True(
+            final.GetProperty("catchUpElapsedMs").GetDouble() <=
+                final.GetProperty("maximumCatchUp60HzBudgetMs").GetDouble(),
+            scenario);
+
+        if (pattern == "aba")
+        {
+            Assert.True(root.GetProperty("renderedNonOrigin").GetBoolean(), scenario);
+        }
+        var visibility = root.GetProperty("visibility");
+        Assert.Equal(0, visibility.GetProperty("hiddenDurationMs").GetDouble());
+        Assert.Equal(0, visibility.GetProperty("hiddenDuty").GetDouble());
+
+        var batchLines = lines.Where(static line =>
+            line.StartsWith(batchPrefix, StringComparison.Ordinal)).ToArray();
+        if (measuresPerformance)
+        {
+            Assert.Empty(batchLines);
+        }
+        else
+        {
+            Assert.NotEmpty(batchLines);
+        }
+        foreach (var batchLine in batchLines)
+        {
+            using var batch = JsonDocument.Parse(batchLine[batchPrefix.Length..]);
+            var batchRoot = batch.RootElement;
+            Assert.True(batchRoot.GetProperty("structurallyExact").GetBoolean(), scenario);
+            Assert.False(batchRoot.GetProperty("blank").GetBoolean(), scenario);
+            Assert.False(batchRoot.GetProperty("stretch").GetBoolean(), scenario);
+            Assert.False(batchRoot.GetProperty("crop").GetBoolean(), scenario);
+            Assert.False(batchRoot.GetProperty("gap").GetBoolean(), scenario);
+            Assert.False(batchRoot.GetProperty("extentMismatch").GetBoolean(), scenario);
+            Assert.False(batchRoot.GetProperty("clientMismatch").GetBoolean(), scenario);
         }
     }
 

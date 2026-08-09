@@ -265,12 +265,29 @@ begin retirement only after the shared batch reports `Rendered`. A→B→A requi
 snapshot. Plain `GridSplitter.ShowsPreview` and drag-end debounce remain rejected because they do not produce unique exact
 geometry during the drag.
 
+Main and Floating Windows share `EditorDockPresentationLayoutHost` around their dock workspace. On Win32, its
+`EditorDockWin32PresentationResizeAdapter` has one deliberately narrow precommit scope: an ordinary decorated border drag within
+one fixed-DPI epoch. `WM_SIZING` copies the proposed screen-space `RECT`, writes the last accepted exact `RECT` back to USER32 and
+coalesces work outside WndProc. The host keeps at most one active workspace request and one queued latest, probes all visible exact
+viewport endpoints while the old HWND/layout/front remain committed, and prepares their candidate surfaces. The publish turn applies
+`SetWindowPos + TopLevel.UpdateLayout`, revalidates the actual workspace/endpoint extents and switches the same-compositor fronts;
+only a successful `Published` result advances the accepted HWND `RECT`. Pre-publish failure or an invalid interaction/DPI/chrome/
+endpoint epoch preserves or restores the old committed state. WndProc itself never waits, renders or walks the visual tree.
+
 The V5 native stream still keeps at most one executing request, one latest pending replacement and one ready frame per
 viewport, with at most three persistent full presentation slots. Each slot keeps its external image, producer/consumer
 semaphores, command resources and retirement proof together across frames. The old three-slot steady front plus the one-frame
-candidate stay within the process-wide four-resource cap; Realtime prefill resumes only after the prepared switch. Direct
-programmatic Bounds/DPI/top-level changes outside the transaction-owned dock adapter remain an explicit exact-only fallback: they hide
-the mismatched front until a new exact frame is ready, never crop or stretch, and do not count as flash-free dock acceptance.
+candidate stay within the process-wide four-resource cap; Realtime prefill resumes only after the prepared switch. Snap,
+maximize/restore, programmatic Window/Bounds resize, `WM_DPICHANGED`/cross-monitor DPI and non-Win32 top-level changes cannot use the
+`WM_SIZING` seam and remain an explicit exact-only hidden fallback: they hide the mismatched front until a new exact frame is ready,
+never crop or stretch, but can show a blank Scene interval and have not reached zero-flash acceptance.
+
+The Win32 publish turn is not a physical atomicity claim. USER32/DWM top-level geometry and an Avalonia composition batch have no
+shared public scanout fence. Current structural `Rendered` evidence therefore cannot prove that no intermediate Scene-only blank,
+crop, stretch or out-of-bounds pixel frame occurred; a corner-sentinel Windows Graphics Capture (WGC), or equivalent lossless
+per-frame pixel observer, remains required. The checked Unreal public threaded-rendering contract and Unity public SceneView
+source/API expose no native-Window-plus-viewport physical transaction precedent, so this is an Asharia-local boundary rather than
+a copied engine API.
 
 `IsRealtime=true` is the explicit default and keeps producing exact frames for a static scene at the >=60 FPS acceptance
 floor. `false` is an explicit OnDemand mode: the session emits one coalesced refresh request when target, camera, extent or
@@ -282,7 +299,8 @@ render-attempt identity (failed attempts may leave gaps), while shader/preview t
 never synthesized as `frameIndex / 60`. The 2026-08-09 pre-split combined Studio splitter run completed 90/90 unique exact generations at
 108.25/s, with proposal-to-shared-batch-`Rendered` p95 about 12.59 ms, requested-mismatch hidden duty 0, and subsequent
 Realtime steady surface-update cadence 222.84 FPS. These are application/Avalonia surface facts, not physical scanout facts;
-physical display cadence still requires a loss-free PresentMon/ETW sample. The detailed contracts are maintained in
+they are also not Win32 outer-Window pixel evidence. Physical display cadence still requires a loss-free PresentMon/ETW sample,
+while Scene flash closure additionally requires WGC/pixel evidence. The detailed contracts are maintained in
 [`apps/studio/docs/architecture/viewport-rendering.md`](../../apps/studio/docs/architecture/viewport-rendering.md) and
 [`apps/studio/docs/adr/0006-viewport-interactive-resize.md`](../../apps/studio/docs/adr/0006-viewport-interactive-resize.md).
 
@@ -733,10 +751,18 @@ Studio `Editor.exe --smoke-studio-viewport-cadence` 只承担前台静态 Scene 
 exact/hidden、bounded latest-wins、13-stage 失败 ownership、latest/stale identity 与 same-compositor 两-endpoint group atomicity；
 `--smoke-viewport-transaction-flash` 另逐个成功 transaction 的 group composition batch 检查 native
 corner sentinel 的结构边界。各入口分开报告 native resource、transaction phase、Avalonia surface/`Rendered` 与 physical display；
-没有 observer 的层明确输出 evidence unavailable。代表性 resize 为 209/209 observed exact `Rendered` generations、106.44/s、p95
-15.26 ms、hidden 0；最终 GPU process acceptance 为 47/47，steady 为 219.43 surface-updates/s。当前 PresentMon 复采因大量 ETW
+`--smoke-viewport-transaction-window-resize` 还用真实 HWND 驱动 Win32 `WM_SIZING` precommit，但把性能与连续结构证据分开：
+`performance` lane 不启动连续 recorder，以 first `Proposed`→final exact `Rendered` 门控 grow/shrink/A→B→A 三个 120 Hz、
+90-input case 均 `>=60/s`；`continuous` lane 只对短 ABA 轨迹连续请求并采样 outer/client/workspace/panel/surface composition batch，门控
+blank/stretch/crop/gap/mismatch=0，不作 FPS claim。最新 ABA 性能代表值为 90 inputs/744.47 ms、50 unique exact `Rendered` /
+757.57 ms（66.00/s）、post-request transaction publish catch-up 2/2（25.44 ms，小于两个 60 Hz composition budget）、hidden=0；
+结构 lane 为 24/24 exact sampled batches，五类结构错误
+全为 0。两条 lane 仍明确输出 pixel/PhysicalDisplayed evidence unavailable。没有 observer 的层明确输出 evidence unavailable。代表性
+owned-splitter resize 为 209/209 observed exact `Rendered` generations、106.44/s、p95
+15.26 ms、hidden 0；新增 Window smoke 之前的五族 GPU process acceptance 为 47/47，steady 为 219.43 surface-updates/s。当前 PresentMon 复采因大量 ETW
 event loss 且无 CSV 被作废，不能把这些
-应用侧数字称为 physical display。multi-endpoint 当前只通过两 endpoint；3–4 realtime 容量与 slow-consumer queue HOL 仍未解决。
+应用侧数字称为 physical display；PresentMon 即使有效也只能证明顶层 cadence，不能排除 Scene-only 中间像素帧。WGC gate 仍 pending。
+multi-endpoint 当前只通过两 endpoint；3–4 realtime 容量与 slow-consumer queue HOL 仍未解决。
 
 `--smoke-editor-viewport` also validates Scene View flag defaults, verifies that pending Gizmo/Select authoring flags are
 cleared from effective Scene View diagnostics, verifies that Scene-only authoring flags are cleared from Game/Preview,

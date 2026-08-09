@@ -619,7 +619,8 @@ stream，并由同进程 `editor_native.dll` 内唯一 shared viewport RenderThr
 ```mermaid
 sequenceDiagram
     participant Source as Endpoint policy / proposal owner
-    participant Adapter as Dock layout proposal adapter
+    participant Adapter as Dock / Win32 workspace layout adapter
+    participant Window as USER32 / Avalonia TopLevel
     participant Tx as ViewportPresentationTransactionCoordinator
     participant Consumer as Avalonia presentation endpoint owner
     participant Session as Application ViewportSession
@@ -638,6 +639,14 @@ sequenceDiagram
         Adapter->>Adapter: apply proposed GridLength; UpdateLayout; capture target PixelSize
         Adapter->>Adapter: restore committed GridLength before dispatcher yields
         Adapter-->>Source: exact targets + reversible layout mutation
+    end
+    opt Win32 fixed-DPI decorated border drag
+        Window->>Adapter: WM_ENTERSIZEMOVE; snapshot accepted RECT/scaling/insets
+        Window->>Adapter: WM_SIZING(proposed screen-space RECT)
+        Adapter-->>Window: write last accepted exact RECT; return TRUE
+        Adapter->>Adapter: coalesce latest proposal outside WndProc
+        Adapter->>Consumer: probe all visible exact workspace targets; restore committed layout
+        Adapter-->>Source: exact targets + reversible HWND/workspace mutation
     end
     Source->>Tx: Proposal(SessionId, EndpointEpoch, TransactionId, participants)
     Tx->>Consumer: PreparePresentationAsync(frozen endpoint policy)
@@ -678,8 +687,12 @@ sequenceDiagram
     opt every participant prepared and proposal is current
         Consumer-->>Tx: Prepared candidate receipt
         Tx->>Consumer: arm + validate Session/EndpointEpoch/TransactionId/policy
-        opt proposal carries dock layout mutation
-            Tx->>Adapter: apply requested GridLength in publish turn
+        opt proposal carries owned layout mutation
+            alt dock splitter proposal
+                Tx->>Adapter: apply requested GridLength in publish turn
+            else Win32 Window proposal
+                Tx->>Adapter: SetWindowPos + TopLevel.UpdateLayout in publish turn
+            end
             Adapter->>Consumer: real Bounds callbacks validate target PixelSize
         end
         alt every participant validated in the same compositor scope
@@ -692,23 +705,28 @@ sequenceDiagram
                 Tx->>Consumer: quarantine still-referenced owner graphs
             end
         else any mismatch, cancellation or stale identity before publish
-            opt dock layout was applied
-                Tx->>Adapter: restore previous committed GridLength in same UI turn
+            opt owned layout was applied
+                Tx->>Adapter: restore previous GridLength or HWND RECT in same UI turn
             end
             Tx->>Consumer: abort group; retain every old front; retire candidates
         end
     end
 ```
 
+图中的 “publish turn” 是应用/UI 顺序，不是 physical display atomicity。Avalonia same-compositor batch 能给 surface switches 一个共享
+`Rendered` barrier，但 `SetWindowPos` 经 USER32/DWM 提交的 top-level geometry 不参与该 barrier；两者没有公开的共同 scanout fence。
+
 - 每个 `ViewportSession` 有独立 session ID、camera、sequence 与 pending reasons；多个 viewport 可以指向同一
   SceneDocument，但不能共享可变 camera 或 presentation state。
 - `Viewport Presentation Transaction` 以 endpoint 为实际资源 owner；每个 participant 复验 `SessionId + EndpointEpoch + TransactionId`，
   group 共享 transaction id，而 session/epoch 绑定该 endpoint 的内容会话与 attach/compositor lifetime。统一阶段为 Proposal→Preparing→Prepared→Validated→Published→
   Rendered→Retiring→Completed；publish 前失败进入 Aborted，publish 后结果歧义进入 Quarantined。
-- Dock 只是 layout proposal adapter。Scene participant 采用 exact extent；Game Preview 可以冻结独立 fit policy；Frame Debugger
-  immutable capture 使用独立 endpoint/capture identity，不能覆盖实时 Scene/Game front。
+- Dock splitter 与 Win32 Window hook 都只是 layout proposal adapter。Main/Floating Window 的 workspace host 拥有 committed/requested
+  layout、一个 active request 与一个 queued latest；endpoint 仍拥有 surface/stream。Scene participant 采用 exact extent；Game Preview
+  可以冻结独立 fit policy；Frame Debugger immutable capture 使用独立 endpoint/capture identity，不能覆盖实时 Scene/Game front。
 - 同一 compositor scope 的所有 participant 才能共享一个 UI publish turn 和 `Rendered` barrier，从而提供 group
   all-or-nothing visible publish；跨 compositor 明确不原子，必须拆成独立 transaction。
+  Win32 outer geometry 即使在这个 UI turn 中 `SetWindowPos + UpdateLayout`，也不属于 Avalonia batch 的物理原子范围。
 - 当前 target 只有 `DocumentScene`，render kind 只有 `Scene | Game | Preview`。Material Preview 与 Animation Preview
   后续都组合 Preview world/target，不新增 renderer kind。
 - Application request 不含 Avalonia、OS/Vulkan handle 或 mutable World pointer；进入 native mailbox 前，借用的
@@ -738,9 +756,11 @@ sequenceDiagram
 - `ViewportSession` 把 target/camera/extent/exposed invalidation 合并为 latest state，并仅在 clean→dirty 时发
   `RefreshRequested`；endpoint control 在 UI Render priority 请求下一次 composition callback。owned dock splitter 只是 Scene exact
   policy 的 layout proposal adapter：它把 drag 输入合并为 latest proposal，并在同步 layout probe 中测量 target exact extent；probe
-  临时 Bounds 不发布 geometry 或 surface state，committed `GridLength` 在 dispatcher yield 前恢复。direct Bounds/DPI fallback 仍由一枚
-  Render-priority latch 在 layout boundary 提交
-  最新 exact-size native request。默认 Realtime 每个 commit 至多重挂一次，
+  临时 Bounds 不发布 geometry 或 surface state，committed `GridLength` 在 dispatcher yield 前恢复。Win32 fixed-DPI 普通装饰边框 drag
+  则由 workspace adapter 在 `WM_SIZING` 热路径回写 last-accepted `RECT`，把 proposed `RECT` 合并到 WndProc 外的 Render-priority
+  drain；host 在 HWND/layout/front 均保持 committed 时 probe/prepare，并以 active + queued-latest 推进。未被这两个 owned seam 捕获的
+  Bounds/DPI fallback 仍由一枚 Render-priority latch 在 layout boundary 提交最新 exact-size native request。默认 Realtime 每个
+  commit 至多重挂一次，
   OnDemand 只消费语义 dirty。隐藏 dock tab 或 presentation lifetime pause 停止 admission；ancestor visible、新 surface attach、
   lifetime replacement/resume 都写入 `Exposed` 后恢复一帧；closed session 是不再 invalidation 的 terminal boundary。
 - production composition session 在 shell 启动期间于后台启动 compatibility warm-up，且不阻塞 ready，使同一 native RenderThread 提前创建
@@ -752,8 +772,9 @@ sequenceDiagram
   或倒退 sequence 在提交前被拒绝。
 - 任一 participant candidate failure/cancel/stale 或 armed extent mismatch 都使 publish 前 group Aborted：保留所有旧 committed
   layout/front，dock adapter 在同一 UI turn 恢复旧 `GridLength`。same-compositor group switch batch `Rendered` 之后才由各 endpoint
-  退役 replaced stream/surface；publish 后结果歧义进入 Quarantined。非 owned splitter 的程序化 Bounds/DPI/top-level resize 仍是
-  exact-only hidden fallback：禁止 crop/stretch，但允许短暂空白，且不能计入 flash-free dock acceptance。
+  退役 replaced stream/surface；publish 后结果歧义进入 Quarantined。Win32 precommit publish 还会在同一 UI turn 应用/复验实际
+  HWND/workspace layout，成功 `Published` 后才接受新 RECT。Snap、maximize/restore、程序化 Window/Bounds、DPI transition 和非 Win32
+  top-level 仍是 exact-only hidden fallback：禁止 crop/stretch，但允许短暂空白，尚未达到零闪，且不能计入 owned precommit acceptance。
 - Scene exact 的 external image/export/import、RenderGraph target、render area、viewport、scissor 与 camera 全部使用同一 exact panel
   extent；Game Preview 使用 proposal 冻结的 target/fit mapping，Frame Debugger 使用 immutable capture identity/extent，不在 publish
   时读取实时 Scene camera。每个 stream 独占 managed work fence；candidate 与 replaced front 的 retirement 只等待所属流 pump/presentations，新 desired pump
@@ -766,13 +787,22 @@ sequenceDiagram
   `--smoke-viewport-transaction-overload`、`--smoke-viewport-transaction-faults`、
   `--smoke-viewport-transaction-supersede` 与 `--smoke-viewport-multi-endpoint` 已拆成独立真实 Studio/Avalonia/Vulkan smoke，
   `--smoke-viewport-transaction-flash` 再记录每个成功
-  transaction composition batch 的 Bounds/front/candidate/visual/surface/opacity/identity。所有入口按 native resource→transaction
+  transaction composition batch 的 Bounds/front/candidate/visual/surface/opacity/identity；`--smoke-viewport-transaction-window-resize`
+  使用真实 HWND 驱动 `WM_SIZING`，并拆成不启动连续 recorder、以 first `Proposed`→final exact `Rendered` 计速的 `performance`
+  lane，以及只连续记录短 ABA outer/client/workspace/panel/surface composition batches、没有 FPS claim 的 `continuous` lane。所有入口按 native resource→transaction
   phase→Avalonia surface/`Rendered`→physical display 分层；observer 缺失时明确输出 evidence unavailable。
 - 2026-08-09 拆分后代表性 sawtooth 120 Hz 运行完成 209/209 observed exact `Rendered` generations（106.44/s），p95
-  15.26 ms、hidden 0、mismatch 0；Realtime steady 代表值为 219.43 surface-updates/s。最终 GPU process acceptance 为 47/47；
+  15.26 ms、hidden 0、mismatch 0；Realtime steady 代表值为 219.43 surface-updates/s。新增 Window smoke 之前的五族 GPU process acceptance 为 47/47；
   13 个 fault stages、supersede、六个双-endpoint modes 与 flash 8/8 transaction-batch structural checks 均真实 Vulkan exit 0。
+  Win32 Window 性能 acceptance 另以 grow/shrink/A→B→A 三个 120 Hz、90-input case 各自门控 `>=60/s`；最新 ABA 代表运行在
+  744.47 ms 内发送 90 inputs，first `Proposed`→final exact `Rendered` 为 757.57 ms、50 unique exact generations（66.00/s），
+  post-request transaction publish catch-up 2/2（25.44 ms，小于两个 60 Hz composition budget）、hidden=0。独立 continuous ABA
+  结构 lane 为 24/24 exact sampled batches，
+  blank/stretch/crop/gap/mismatch=0，不报告 FPS。
   当前 PresentMon 复采大量丢 ETW events 且没有 CSV，
-  因而 PhysicalDisplayed 仍无当前 transaction 证据；multi-endpoint 也只证明两个 endpoint，不能外推 3–4 realtime lane。
+  因而 PhysicalDisplayed 仍无当前 transaction 证据；Window smoke 也明确输出 pixel/PhysicalDisplayed evidence unavailable，待 WGC
+  逐帧关联 Scene corner sentinel、transaction/generation/extent 与 HWND RECT。PresentMon 顶层 cadence 不能排除一个中间 blank/crop/
+  stretch frame。multi-endpoint 也只证明两个 endpoint，不能外推 3–4 realtime lane。
 - native `frameIndex` 只是 render-attempt identity，失败允许留 gap；`EditorSharedViewportRuntime` 在唯一 RenderThread 上采样
   steady-clock elapsed 与上次任意 stream 成功 render delta，形成 immutable frame params。刷新率只改变采样密度，不再通过
   `frameIndex / 60` 改变 shader 时间速度。

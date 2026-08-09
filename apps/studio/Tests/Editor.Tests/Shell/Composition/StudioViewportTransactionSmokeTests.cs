@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
+using Asharia.Studio.Application.Viewports;
 using Asharia.Studio.Presentation.Avalonia.Viewports;
 using Xunit;
 
@@ -28,6 +30,14 @@ public sealed class StudioViewportTransactionSmokeTests
     {
         Assert.True(Editor.Shell.Composition.StudioViewportTransactionSmoke.IsRequested(
             [Editor.Shell.Composition.StudioViewportMultiEndpointSmoke.CommandLineSwitch]));
+    }
+
+    [Fact]
+    public void Router_recognizes_window_resize_smoke()
+    {
+        Assert.True(Editor.Shell.Composition.StudioViewportTransactionSmoke.IsRequested(
+            [Editor.Shell.Composition.StudioViewportTransactionWindowResizeSmoke
+                .CommandLineSwitch]));
     }
 
     [Fact]
@@ -135,6 +145,157 @@ public sealed class StudioViewportTransactionSmokeTests
             pair => Assert.Equal(1, Math.Abs((long)pair.First - pair.Second)));
     }
 
+    [Theory]
+    [InlineData(30, false)]
+    [InlineData(60, false)]
+    [InlineData(120, true)]
+    [InlineData(240, true)]
+    public void Resize_completion_interval_capacity_gate_requires_overdrive_input(
+        double inputHz,
+        bool expected)
+    {
+        Assert.Equal(
+            expected,
+            Editor.Shell.Composition.StudioViewportTransactionResizeSmoke
+                .ShouldGateUniqueCompletionP95(inputHz));
+    }
+
+    [Fact]
+    public void Window_resize_rect_patterns_cover_grow_shrink_and_a_b_a()
+    {
+        var initial = new Editor.Shell.Composition
+            .StudioViewportTransactionWindowResizeSmoke.NativeRect
+        {
+            Left = 100,
+            Top = 80,
+            Right = 1380,
+            Bottom = 800,
+        };
+
+        var grow = Editor.Shell.Composition.StudioViewportTransactionWindowResizeSmoke
+            .BuildProposedRects("grow", 90, initial, renderScaling: 1.25);
+        var shrink = Editor.Shell.Composition.StudioViewportTransactionWindowResizeSmoke
+            .BuildProposedRects("shrink", 90, initial, renderScaling: 1.25);
+        var aba = Editor.Shell.Composition.StudioViewportTransactionWindowResizeSmoke
+            .BuildProposedRects("aba", 91, initial, renderScaling: 1.25);
+
+        Assert.All(grow, rectangle =>
+        {
+            Assert.Equal(initial.Left, rectangle.Left);
+            Assert.Equal(initial.Top, rectangle.Top);
+        });
+        Assert.True(grow[0].Width > initial.Width);
+        Assert.All(
+            grow.Zip(grow.Skip(1)),
+            pair => Assert.True(pair.First.Width < pair.Second.Width));
+        Assert.True(shrink[0].Width < initial.Width);
+        Assert.All(
+            shrink.Zip(shrink.Skip(1)),
+            pair => Assert.True(pair.First.Width > pair.Second.Width));
+        Assert.Equal(initial, aba[0]);
+        Assert.Equal(initial, aba[^1]);
+        Assert.Contains(aba, rectangle => rectangle.Width > initial.Width);
+    }
+
+    [Fact]
+    public void Window_resize_catch_up_counts_post_request_published_rendered_identities()
+    {
+        var sessionId = ViewportSessionId.Create();
+        var endpointId = new ViewportPresentationEndpointId("scene");
+        var extent = new ViewportExtent(1280, 720);
+        var otherExtent = new ViewportExtent(1281, 720);
+        ViewportPresentationTelemetryEvent Event(
+            ViewportPresentationTelemetryEventKind kind,
+            long timestamp,
+            ulong transaction,
+            ulong generation,
+            ViewportExtent? eventExtent = null) =>
+            new(
+                kind,
+                timestamp,
+                new ViewportPresentationTelemetryIdentity(
+                    endpointId,
+                    sessionId,
+                    Epoch: 1,
+                    new ViewportPresentationTransactionId(transaction),
+                    generation,
+                    eventExtent ?? extent));
+        var events = new[]
+        {
+            Event(ViewportPresentationTelemetryEventKind.Published, 99, 1, 1),
+            Event(ViewportPresentationTelemetryEventKind.Rendered, 105, 1, 1),
+            Event(ViewportPresentationTelemetryEventKind.Published, 100, 2, 2),
+            Event(ViewportPresentationTelemetryEventKind.Rendered, 101, 2, 2),
+            Event(ViewportPresentationTelemetryEventKind.Rendered, 102, 2, 2),
+            Event(ViewportPresentationTelemetryEventKind.Published, 110, 3, 3),
+            Event(ViewportPresentationTelemetryEventKind.Rendered, 120, 3, 3),
+            Event(ViewportPresentationTelemetryEventKind.Published, 105, 4, 4),
+            Event(ViewportPresentationTelemetryEventKind.Rendered, 106, 4, 4, otherExtent),
+            Event(ViewportPresentationTelemetryEventKind.Published, 121, 5, 5),
+            Event(ViewportPresentationTelemetryEventKind.Rendered, 122, 5, 5),
+        };
+
+        var count = Editor.Shell.Composition
+            .StudioViewportTransactionWindowResizeSmoke
+            .CountDistinctPublishedRenderedTransactions(
+                events,
+                startedAt: 100,
+                completedAt: 120);
+
+        Assert.Equal(2, count);
+    }
+
+    [Fact]
+    public void Window_resize_performance_uses_first_proposed_to_final_exact_rendered()
+    {
+        var sessionId = ViewportSessionId.Create();
+        var endpointId = new ViewportPresentationEndpointId("scene");
+        var extent = new ViewportExtent(1280, 720);
+        ViewportPresentationTelemetryEvent Event(
+            ViewportPresentationTelemetryEventKind kind,
+            long timestamp,
+            ulong transaction,
+            ulong generation) =>
+            new(
+                kind,
+                timestamp,
+                new ViewportPresentationTelemetryIdentity(
+                    endpointId,
+                    sessionId,
+                    Epoch: 1,
+                    new ViewportPresentationTransactionId(transaction),
+                    generation,
+                    extent));
+        var start = Stopwatch.GetTimestamp();
+        var firstProposed = start + Stopwatch.Frequency;
+        var finalRenderedAt = firstProposed + Stopwatch.Frequency;
+        var finalRendered = Event(
+            ViewportPresentationTelemetryEventKind.Rendered,
+            finalRenderedAt,
+            transaction: 3,
+            generation: 3);
+        var events = new[]
+        {
+            Event(ViewportPresentationTelemetryEventKind.Proposed, start - 1, 1, 1),
+            Event(ViewportPresentationTelemetryEventKind.Rendered, start, 1, 1),
+            Event(ViewportPresentationTelemetryEventKind.Proposed, firstProposed, 2, 2),
+            Event(ViewportPresentationTelemetryEventKind.Rendered, firstProposed + 1, 2, 2),
+            Event(ViewportPresentationTelemetryEventKind.Rendered, firstProposed + 2, 2, 2),
+            Event(ViewportPresentationTelemetryEventKind.Proposed, firstProposed + 3, 3, 3),
+            finalRendered,
+        };
+
+        var performance = Editor.Shell.Composition
+            .StudioViewportTransactionWindowResizeSmoke
+            .MeasureUniqueRenderedPerformance(events, start, finalRendered);
+
+        Assert.True(performance.IsValid);
+        Assert.Equal(firstProposed, performance.FirstProposedTimestamp);
+        Assert.Equal(finalRenderedAt, performance.FinalRenderedTimestamp);
+        Assert.Equal(2, performance.UniqueGenerationCount);
+        Assert.Equal(2, performance.Rate, precision: 6);
+    }
+
     [Fact]
     public void Gpu_acceptance_data_contains_the_full_resize_pattern_and_rate_matrix()
     {
@@ -151,6 +312,11 @@ public sealed class StudioViewportTransactionSmokeTests
             }
         }
         Assert.Contains("resize-pixel-boundary-120hz", scenarios);
+        foreach (var pattern in new[] { "grow", "shrink", "aba" })
+        {
+            Assert.Contains($"window-resize-main-{pattern}-120hz-performance", scenarios);
+        }
+        Assert.Contains("window-resize-main-aba-structural", scenarios);
     }
 
     [Fact]
@@ -205,6 +371,8 @@ public sealed class StudioViewportTransactionSmokeTests
             "supersede",
             "multi-endpoint",
             "flash-structural",
+            "window-resize-performance",
+            "window-resize-structural",
         };
 
         foreach (var testCase in StudioProcessAcceptanceTests.ViewportTransactionSmokeCases())

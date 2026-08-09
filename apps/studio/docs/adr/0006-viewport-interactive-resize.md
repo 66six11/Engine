@@ -1,8 +1,8 @@
 # ADR-0006：Viewport Presentation Transaction 与 V5 多槽呈现
 
-状态：Accepted / Implemented
+状态：Accepted / Implemented（Win32 bounded path；physical pixel acceptance pending）
 日期：2026-08-08
-最近修订：2026-08-09（通用 Viewport Presentation Transaction 与无闪屏 group publish）
+最近修订：2026-08-10（Win32 Window precommit 的性能/连续结构双证据通道）
 
 ## 背景
 
@@ -18,6 +18,11 @@ UI 等待 native，以及画面在多个 extent 之间跳动。
 geometry、Game Preview 的独立 fit policy，以及 Frame Debugger 的 immutable capture 都需要在“候选内容已可用”和“成为可见
 front”之间建立同一套可审计边界。因此 production 抽象是 `Viewport Presentation Transaction`；dock resize 只是向它提供
 layout proposal 的 adapter，不拥有 surface、stream 或 transaction lifecycle。
+
+相同矛盾也出现在 Studio 顶层 Window resize，但故障表现是 Scene-only flash：Window chrome 与其他 Avalonia 内容仍在，Scene
+front 因新 workspace `Bounds` 已公开、exact replacement 尚未 ready 而短暂隐藏，并不是整个 HWND 闪烁。对于 Windows 普通装饰
+边框拖动，如果 USER32 先接受 proposed `RECT`，事后同样只能在 crop、stretch 或 blank 中选择。Main Window 与 Floating Window
+因此还需要一个 bounded platform adapter，在公开新 HWND geometry 前先准备 workspace 内所有受影响的 exact Scene endpoint。
 
 此前 V4 虽然已经把 Vulkan 操作迁到唯一 native RenderThread，并修复了 consumer-done 前错误回收 image 的问题，
 但 production 路径仍是同步 create/wait/release one-shot packet。它不能证明 interactive resize 下的 latest-wins、
@@ -39,6 +44,14 @@ layout proposal 的 adapter，不拥有 surface、stream 或 transaction lifecyc
 - Unity Scene View 把 scene/camera/selection change 变成 repaint request，只有 repaint pass 才真正 render；隐藏 dock tab
   不运行持续 refresh。这是 Unity 公开源码/API 所能证明的行为。Asharia 采用这种状态/request/render 分层，但拒绝 Unity 默认
   dirty-only 与 Always Refresh 约 30 Hz，因为本项目要求前台 Realtime exact surface-update 至少 60 FPS。
+- Avalonia 12.1.0 的 `Win32Properties.AddWndProcHookCallback` 允许 top-level 注册 Win32 hook；对应 Windows backend 源码中 hook
+  先于 Avalonia 内部 WndProc 处理执行，`handled=true` 会短路后续处理。Win32 `WM_SIZING` 把可读写的 screen-space `RECT`
+  交给应用并允许返回 `TRUE` 接受修改后的矩形。这给普通装饰边框 drag 提供了 precommit seam，但没有把 USER32/DWM 与
+  Avalonia compositor 变成一个物理事务。
+- 已检查的 Unreal threaded-rendering public contract 与 Unity SceneView public source/API 都没有公开“native Window geometry 与
+  editor viewport surface 共享一个 physical commit fence”的先例。Asharia 的 Win32 workspace precommit 是由 exact Scene、
+  Avalonia/USER32 owner boundary 与 no-crop/no-stretch/no-blank 本地目标推导出的项目合同，不声称复制 Unity/Unreal API，也不
+  外推为其他引擎内部实现不存在。
 
 采用模式：immutable request、single render owner、bounded latest-wins、persistent full slot、per-endpoint ownership、
 requested/committed state、independent candidate surface 与 prepare/validate/publish/render/retire transaction。
@@ -141,7 +154,7 @@ consumer policy 与 transaction engine 分离：Scene endpoint 使用 exact exte
 capture identity 不与实时 Scene/Game front 共用可变 presentation state。Dock adapter 只把 pointer delta、min/max 和 layout rounding
 翻译成 proposal 与 `applyLayout`/`rollbackLayout` mutation。
 
-### 5. Scene exact policy 与 dock layout adapter
+### 5. Scene exact policy、dock 与 Window layout adapter
 
 `ViewportCompositionControl` 以 `ceil(Bounds * RenderScaling)` 计算 commit-time panel `PixelSize`。Studio 提交给 native 的
 `logical extent` 与 `allocation extent` 都等于这个物理像素尺寸；V5 ABI 仍保留两个字段，但 Studio presentation 不使用
@@ -191,16 +204,51 @@ producer/consumer completion 约束。steady stream 的三槽加 candidate 首�
 Realtime 预填充，成功 `Published` 后才恢复新 front 的 steady 流水；旧 front 的实际 retirement/dispose 仍由后续共享 batch
 `Rendered` barrier 门控。
 
-非 Studio 自有 splitter 发起的直接程序化 `Bounds`/DPI/top-level resize 目前仍走 exact-only 降级路径：先隐藏不匹配 front，再等
-新 exact surface；它禁止 crop/stretch，但不承诺零空白。该 fallback 必须以单独 source/metric 记录，不能用来证明 dock resize
-验收，也不能反过来放宽 dock adapter 经 transaction publish 的零隐藏契约。
+Main Window 与 Floating Window 的 dock workspace 共用 `EditorDockPresentationLayoutHost`；platform-specific ownership 只留在
+`EditorDockWin32PresentationResizeAdapter`。当前 precommit scope 严格限定为 Win32、fixed-DPI epoch、普通 decorated border drag：
+
+```text
+WM_ENTERSIZEMOVE
+  -> require every visible viewport front exact
+  -> snapshot last-accepted HWND RECT + client size + render scaling + client-to-workspace delta
+WM_SIZING(proposed screen-space RECT)
+  -> native hot path copies proposal, writes last-accepted exact RECT back, returns TRUE
+  -> post at most one coalesced DispatcherPriority.Render drain
+drain outside WndProc
+  -> project latest proposed RECT to workspace logical size
+  -> host keeps one active request + one queued latest successor
+  -> synchronously probe all currently visible exact endpoint target extents
+  -> restore committed workspace layout before the UI thread yields
+  -> prepare candidate surfaces while HWND/layout/front remain at last accepted state
+publish turn
+  -> revalidate sizing/DPI/chrome/endpoint epochs
+  -> SetWindowPos + TopLevel.UpdateLayout
+  -> validate actual HWND/workspace Bounds and all exact endpoint extents
+  -> publish all same-compositor surfaces; accept actual HWND RECT only after Published
+```
+
+WndProc hook 不遍历 visual tree、不创建 transaction object、不等待异步 prepare，也不运行 renderer；所有 projection、participant
+discovery 与 proposal allocation 都在 coalesced drain 中完成。同一 interaction 的状态仍是最多一个 active preparation/publish 加一个
+queued latest；新 `WM_SIZING` 只替换 queued successor，不取消已经进入 GPU/consumer 的 active candidate。publish 前 projector、
+DPI/chrome epoch、endpoint membership、extent 或 outer apply 失败时保持/恢复 last-accepted HWND、committed workspace 与全部旧 front；
+detach 或 interaction epoch 失效使尚未 publish 的 request 取消。publish 后歧义沿 transaction quarantine 处理，不能回滚到可能已被
+compositor 引用的旧 owner graph。
+
+这个次序只提供应用/UI transaction contract。`SetWindowPos`/USER32/DWM 与 Avalonia composition batch 没有一个共享的公开
+physical commit fence；即使 outer geometry、`UpdateLayout` 与 surface switch 位于同一 UI publish turn，也不能据此宣称同一扫描帧
+物理原子。零 Scene flash 的最终验收仍需带 corner sentinel 的逐帧 Windows Graphics Capture（WGC）或等价无损 pixel evidence。
+
+Snap、maximize/restore、程序化 Window/`Bounds` resize、`WM_DPICHANGED`/跨屏 DPI 和非 Win32 top-level 不属于上述 seam，当前
+仍走 exact-only hidden fallback：新 Bounds 已公开后隐藏不匹配 front，再等新 exact surface。它禁止 crop/stretch，但允许短暂
+blank，尚未达到零闪。该 fallback 必须以单独 source/metric 记录，不能证明 owned dock 或 `WM_SIZING` precommit 验收，也不能
+反过来放宽其零隐藏契约。
 
 ### 6. managed pump 是逐 endpoint/stream 所有权，实时帧由 compositor cadence 驱动
 
 `Bounds`、camera、document revision、exposed 或 realtime invalidation 只覆盖待发布状态。Studio dock resize 的 queued proposal
 cell 同样 latest-wins：同一 drag 的新 pointer delta 只替换尚未开始的 queued successor，不取消正在 preparation/publish 的 active
 proposal；显式 cancel、session/endpoint epoch 失效才终止尚未 publish 的 active candidate。active proposal publish 后立即开始准备
-当前最新 proposal，而不是回放中间尺寸。非自有 resize fallback 的 Bounds/DPI 变化仍通过一枚
+当前最新 proposal，而不是回放中间尺寸。未被 owned dock 或 Win32 `WM_SIZING` precommit 捕获的 resize fallback 仍通过一枚
 `DispatcherPriority.Render` latch 合并，并在 layout 的 Render dispatcher boundary 提前提交最新 exact-size native request；ready frame
 必须在后续 `RequestCompositionUpdate` callback 复验 commit-time extent/generation 后才能更新 fallback surface。非 resize invalidation 继续在
 下一次 composition commit 前最多消费一次最新状态；不使用固定 16 ms UI timer，也不把每个 Bounds event 变成 FIFO frame。
@@ -267,10 +315,14 @@ panel 使用相同 pixel extent，不以 padding/crop 改变网格世界间距�
   proposal 的 stale completion；
 - Studio 自有 dock resize 只是 layout proposal adapter；candidate exact surface 成功前不改变 committed layout 或 visible front，
   group publish 时 opacity 始终为 1；
+- Win32 fixed-DPI 普通装饰边框 drag 由 Main/Floating Window 共用的 workspace host 截获 `WM_SIZING` proposal；旧 HWND/workspace/
+  front 保持在 last accepted exact state，host 以 active + queued-latest 准备下一枚 workspace transaction，成功 publish 后才接受新 RECT；
 - candidate 失败、取消、过期或任一真实 extent 不匹配时全组保留旧 front；同一 compositor 的共享 batch `Rendered` 后才退役
   被替换 surface/stream；跨 compositor 明确不原子；
 - Scene exact、Game Preview fit 与 Frame Debugger immutable capture 可以作为独立 endpoint policy/participant，不共享可变 front state；
-- 非自有程序化 Bounds/DPI/top-level resize 是明确降级的 exact-only hidden fallback，仍禁止 crop/stretch；
+- Snap、maximize/restore、程序化 Window/Bounds、DPI transition 与非 Win32 top-level 是明确降级的 exact-only hidden fallback，仍
+  禁止 crop/stretch，但未达成零闪；
+- USER32/DWM Window geometry 与 Avalonia batch 没有 physical atomicity 保证；Win32 precommit 的 pixel/WGC evidence 仍 pending；
 - 每个成功 surface commit 都满足 allocation == logical == commit-time panel `PixelSize`；
 - Scene View 默认连续渲染；`IsRealtime=false` 则为 dirty-only，两者都由 composition commit 节奏驱动；
 - hidden dock tab 停止产帧；重新可见或新 surface attach 通过 `Exposed` 恢复一个 exact frame；
@@ -306,6 +358,14 @@ panel 使用相同 pixel extent，不以 padding/crop 改变网格世界间距�
 - `--smoke-viewport-transaction-flash` 另以 typed V5 diagnostic flag 在 native Scene surface 写四色 corner sentinel，逐 batch 检查
   Bounds/front/candidate/visual/surface/opacity/identity 以及 blank/out-of-bounds/stretch/crop；当前没有可靠 window pixel capture，输出
   `pixelEvidenceAvailable=false`，不声称 PhysicalDisplayed；
+- `--smoke-viewport-transaction-window-resize` 使用真实 Win32 HWND、真实 Avalonia compositor 与 Vulkan external surface 驱动
+  `WM_SIZING` precommit，并以 `--viewport-window-evidence=` 拆成两个互不替代的证据通道：`performance` 不启动连续 composition-batch
+  recorder，以 first `Proposed`→final exact `Rendered` 的纯 resize 窗口计算 unique generation rate；process acceptance 分别运行
+  grow/shrink/A→B→A 三个 120 Hz、90-input case，并各自硬门控 `>=60/s`。`continuous` 只用短 ABA 轨迹连续采样
+  outer/client/workspace/panel/front/surface composition batch，拒绝结构上的 blank/stretch/crop/gap/mismatch；连续 observer 会改变
+  UI/compositor 负载，因此该通道不报告也不门控 FPS；
+- Window 两个证据通道都明确输出 `pixelEvidenceAvailable=false` 与 `physicalDisplayedEvidenceAvailable=false`。它们只能证明
+  transaction/`Rendered` 时序或 composition-batch 结构，不能关闭 Scene flash 的 WGC pixel gate；
 - unique geometry 速率不可能超过输入速率：30 Hz lane 门控至少 95% 输入覆盖，60 Hz lane 允许 59 Hz 容差，120/240 Hz lane
   硬门控至少 60 unique exact `Rendered` generations/s；Bounds→exact submit p95 保持 `<=25 ms`，相邻 exact completion p95
   只允许 59.94 Hz/QPC 的小于 0.5 ms 采样容差（`<=25.5 ms`），max `<=100 ms`；
@@ -321,14 +381,22 @@ generation tracker 后，最终 Release smoke 在 0.77 s 窗口观察 90 个 Bou
 12.39 ms、requested-mismatch opacity hidden duty 43.2%，最终尺寸在额外 1/2 rendered batches 内追上。这组数据是 transaction
 request/commit 之前的性能与闪屏基线，只证明 GPU/producer 吞吐充足；43.2% hidden duty 明确不满足新验收。
 
-拆分后的代表性运行：sawtooth 120 Hz、240 次输入完成 209/209 observed exact `Rendered` generations，约 106.44/s，p95
+拆分后的 owned-splitter 代表性运行：sawtooth 120 Hz、240 次输入完成 209/209 observed exact `Rendered` generations，约 106.44/s，p95
 15.26 ms、max 31.28 ms、hidden=0、mismatch=0；pixel 120 Hz 为 77/77、107.80/s；jitter 240 Hz 为 50/50、
-105.01/s。最终 GPU process acceptance 为 47/47；overload 50+50 ms 保持 active cancel=0、pending<=2、candidate waste=0；
+105.01/s。新增 Window smoke 之前的五族 GPU process acceptance 为 47/47；overload 50+50 ms 保持 active cancel=0、pending<=2、candidate waste=0；
 13 个 fault stages、supersede、六个双-endpoint modes 与 flash 8/8 transaction-batch structural checks 均真实 Vulkan exit 0。
 5 秒 Realtime steady 的代表值为 219.43
 surface-updates/s、p95 5.36 ms。它们证明 application proposal、exact candidate、same-compositor group publish 与 Avalonia
 `Rendered`/surface-update cadence，不等于物理 scanout；当前 transaction 的 PresentMon 复采因大量 ETW event loss 且未生成 CSV
-被明确作废。
+被明确作废。这些数据也不是 Win32 outer-Window precommit 的逐帧 pixel evidence。
+
+Win32 Window `performance` 通道的最新代表性 ABA 运行在 744.47 ms 内发送 90 次输入；从 first `Proposed` 到 final exact
+`Rendered` 的验收窗口为 757.57 ms，得到 50 个 unique exact `Rendered` generations，即 66.00/s。最终 request 的
+post-request transaction publish catch-up 为 2/2，耗时 25.44 ms（小于两个 60 Hz composition budget），hidden=0；同轮
+grow/shrink/ABA 三个 120 Hz、90-input process case 均通过 `>=60/s`。独立 `continuous` ABA 结构通道采到 24/24
+structurally exact sampled composition batches；它不声称捕获了每个 DWM frame，
+blank/stretch/crop/gap/mismatch 均为 0；该通道没有 FPS claim。两组数字仍分别止于 transaction `Rendered` 与应用侧连续 batch
+采样，`pixelEvidenceAvailable=false`、`physicalDisplayedEvidenceAvailable=false`，没有 WGC 或 physical scanout 证明。
 
 此前基线在回到初始 A extent 并确认新 exact generation 后，5 秒稳态完成 1120 帧（223.94 FPS；bounded window
 223.20 FPS），p95 5.08 ms、max 5.53 ms。同一次 Release smoke 随后证明 OnDemand camera change 只唤醒一个 exact frame、
@@ -346,8 +414,13 @@ event loss 被明确作废，不能替代这轮有效数据。
 - O3DE rejected 150 ms resize debounce: https://github.com/o3de/o3de/pull/19033
 - Avalonia GPU interop sample: https://github.com/AvaloniaUI/Avalonia/blob/12.1.0/samples/GpuInterop/DrawingSurfaceDemoBase.cs
 - Avalonia 12.1 GridSplitter preview/commit source: https://github.com/AvaloniaUI/Avalonia/blob/12.1.0/src/Avalonia.Controls/GridSplitter.cs
+- Avalonia 12.1 Win32 WndProc hook property: https://github.com/AvaloniaUI/Avalonia/blob/12.1.0/src/Avalonia.Controls/Platform/Win32Properties.cs
+- Avalonia 12.1 Win32 hook dispatch order: https://github.com/AvaloniaUI/Avalonia/blob/12.1.0/src/Windows/Avalonia.Win32/WindowImpl.cs#L959-L969
 - Avalonia 12.1 Windows high-refresh fix: https://github.com/AvaloniaUI/Avalonia/pull/21643
 - Avalonia multi-image interop rationale: https://github.com/AvaloniaUI/Avalonia/discussions/15948#discussioncomment-9712534
+- Win32 `WM_SIZING`: https://learn.microsoft.com/en-us/windows/win32/winmsg/wm-sizing
+- Win32 `SetWindowPos`: https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setwindowpos
+- Win32 `WM_DPICHANGED`: https://learn.microsoft.com/en-us/windows/win32/hidpi/wm-dpichanged
 - Unity Scene View refresh source: https://github.com/Unity-Technologies/UnityCsReference/blob/01963ac2f4a49b1a86c11e812faf472e1fa51db3/Editor/Mono/SceneView/SceneView.cs
 - Unity `SceneView.RepaintAll`: https://docs.unity3d.com/6000.2/Documentation/ScriptReference/SceneView.RepaintAll.html
 - Vulkan synchronization: https://docs.vulkan.org/spec/latest/chapters/synchronization.html

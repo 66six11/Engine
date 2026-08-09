@@ -1995,6 +1995,22 @@ public sealed class ViewportCompositionControl : Control
             return CompositionCommitResult.NotSubmittedToConsumer;
         }
 
+        if (!publishesVisibleSurface)
+        {
+            // A prepared candidate is not attached to the visual tree. The Avalonia API already
+            // schedules its server job and a compositor commit, so routing it through an extra
+            // RequestCompositionUpdate callback only adds a layout/composition turn. Keep visible
+            // surface publication on the exact commit boundary below, but stage the private
+            // candidate immediately.
+            return await CommitStagedSurfaceAsync(
+                targetSurface,
+                image,
+                waitSemaphore,
+                signalSemaphore,
+                accessTracker,
+                canPresent);
+        }
+
         var commit = new PendingCompositionCommit(
             extent,
             geometryGeneration,
@@ -2029,6 +2045,57 @@ public sealed class ViewportCompositionControl : Control
         return presented
             ? CompositionCommitResult.Presented
             : CompositionCommitResult.ConsumerAccessed;
+    }
+
+    private async Task<CompositionCommitResult> CommitStagedSurfaceAsync(
+        CompositionDrawingSurface targetSurface,
+        ICompositionImportedGpuImage image,
+        ICompositionImportedGpuSemaphore waitSemaphore,
+        ICompositionImportedGpuSemaphore signalSemaphore,
+        CompositionConsumerAccessTracker accessTracker,
+        Func<bool> canPresent)
+    {
+        if (!canPresent())
+        {
+            return CompositionCommitResult.NotSubmittedToConsumer;
+        }
+
+        var update = targetSurface.UpdateWithSemaphoresAsync(
+            image,
+            waitSemaphore,
+            signalSemaphore);
+        accessTracker.MarkSubmissionStarted();
+        try
+        {
+            testHooks_?.AtSynchronousStageCore(
+                ViewportCompositionControlTestPoint.AfterSurfaceUpdateSubmitted);
+        }
+        catch
+        {
+            _ = ObserveAmbiguousStagedSurfaceUpdateAsync(update, accessTracker);
+            throw;
+        }
+
+        await update.ConfigureAwait(false);
+        accessTracker.MarkConsumerAccessed();
+        return CompositionCommitResult.ConsumerAccessed;
+    }
+
+    private static async Task ObserveAmbiguousStagedSurfaceUpdateAsync(
+        Task update,
+        CompositionConsumerAccessTracker accessTracker)
+    {
+        try
+        {
+            await update.ConfigureAwait(false);
+            accessTracker.MarkConsumerAccessed();
+        }
+        catch (Exception exception)
+        {
+            Trace.TraceError(
+                "An ambiguous staged viewport surface update faulted: {0}",
+                exception);
+        }
     }
 
     private void QueueCompositionCommit(

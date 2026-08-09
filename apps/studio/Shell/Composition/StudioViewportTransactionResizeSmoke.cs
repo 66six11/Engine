@@ -123,19 +123,25 @@ internal static class StudioViewportTransactionResizeSmoke
                 : options.InputHz < 61
                     ? 59
                     : 60;
+            // Completion spacing proves renderer capacity only when input intentionally
+            // overdrives the 60 Hz contract. At 30/60 Hz a delayed synthetic input becomes
+            // the same delayed completion gap even if Bounds -> exact stays fast, so those
+            // lanes gate coverage, aggregate rate, and the causal Bounds -> submit latency.
             // 1.5 commits at a 59.94 Hz desktop cadence is already 25.025 ms. Keep a
-            // sub-millisecond QPC/dispatcher tolerance for interval sampling while the
-            // authored Bounds -> exact surface-submit latency remains a strict 25 ms gate.
+            // sub-millisecond QPC/dispatcher tolerance for high-rate interval sampling while
+            // the authored Bounds -> exact surface-submit latency remains a strict 25 ms gate.
             var maximumP95Interval = TimeSpan.FromMilliseconds(
                 Math.Max(25.5, 1500 / options.InputHz));
             var maximumBoundsToExactSubmit = TimeSpan.FromMilliseconds(25);
+            var gateUniqueCompletionP95 = ShouldGateUniqueCompletionP95(options.InputHz);
             var rejected = checked(
                 geometryAfter.RejectedNonExactCandidates -
                 geometryBefore.RejectedNonExactCandidates);
             if (metrics.ObservedBoundsGenerations < 2 ||
                 metrics.CompletionCoverage < MinimumCoverage ||
                 metrics.UniqueExactCompletedPerSecond < expectedRate ||
-                metrics.P95UniqueCompletionInterval > maximumP95Interval ||
+                (gateUniqueCompletionP95 &&
+                    metrics.P95UniqueCompletionInterval > maximumP95Interval) ||
                 metrics.P95BoundsToExactSubmit > maximumBoundsToExactSubmit ||
                 metrics.MaximumUniqueCompletionInterval > TimeSpan.FromMilliseconds(100) ||
                 metrics.RequestedMismatchHiddenDuration != TimeSpan.Zero ||
@@ -169,6 +175,7 @@ internal static class StudioViewportTransactionResizeSmoke
                     $"coverage={metrics.CompletionCoverage:P1}, " +
                     $"p95={metrics.P95UniqueCompletionInterval.TotalMilliseconds:F2}ms, " +
                     $"max={metrics.MaximumUniqueCompletionInterval.TotalMilliseconds:F2}ms, " +
+                    $"intervalCapacityGate={gateUniqueCompletionP95}, " +
                     $"boundsToSubmitP95={metrics.P95BoundsToExactSubmit.TotalMilliseconds:F2}ms, " +
                     $"boundsToCompleteP95={metrics.P95BoundsToExactCompletion.TotalMilliseconds:F2}ms, " +
                     $"hidden={metrics.RequestedMismatchHiddenDutyCycle:P1}, " +
@@ -227,6 +234,7 @@ internal static class StudioViewportTransactionResizeSmoke
                 $"coverage={metrics.CompletionCoverage:P1}, " +
                 $"p95={metrics.P95UniqueCompletionInterval.TotalMilliseconds:F2}ms, " +
                 $"max={metrics.MaximumUniqueCompletionInterval.TotalMilliseconds:F2}ms, " +
+                $"intervalCapacityGate={gateUniqueCompletionP95}, " +
                 $"boundsToSubmitP95={metrics.P95BoundsToExactSubmit.TotalMilliseconds:F2}ms, " +
                 $"boundsToCompleteP95={metrics.P95BoundsToExactCompletion.TotalMilliseconds:F2}ms, " +
                 $"hidden={metrics.RequestedMismatchHiddenDutyCycle:P1}, " +
@@ -448,6 +456,8 @@ internal static class StudioViewportTransactionResizeSmoke
                     coverage = resize.CompletionCoverage,
                     p95IntervalMs = resize.P95UniqueCompletionInterval.TotalMilliseconds,
                     maximumIntervalMs = resize.MaximumUniqueCompletionInterval.TotalMilliseconds,
+                    outputIntervalCapacityGateApplied =
+                        ShouldGateUniqueCompletionP95(options.InputHz),
                     boundsToExactSubmitP95Ms =
                         resize.P95BoundsToExactSubmit.TotalMilliseconds,
                     boundsToExactCompletionP95Ms =
@@ -514,6 +524,15 @@ internal static class StudioViewportTransactionResizeSmoke
             $"viewport-transaction-resize phase={phase} QPC={timestamp} " +
             $"Frequency={Stopwatch.Frequency} pattern={options.Pattern} " +
             $"inputHz={options.InputHz:F2} count={options.InputCount}.");
+
+    internal static bool ShouldGateUniqueCompletionP95(double inputHz)
+    {
+        if (!double.IsFinite(inputHz) || inputHz <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(inputHz));
+        }
+        return inputHz > 60;
+    }
 
     private readonly record struct ZeroExtentRecoveryEvidence(
         bool EvidenceAvailable,
