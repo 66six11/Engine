@@ -618,7 +618,10 @@ stream，并由同进程 `editor_native.dll` 内唯一 shared viewport RenderThr
 
 ```mermaid
 sequenceDiagram
-    participant Consumer as Avalonia ViewportCompositionControl
+    participant Source as Endpoint policy / proposal owner
+    participant Adapter as Dock layout proposal adapter
+    participant Tx as ViewportPresentationTransactionCoordinator
+    participant Consumer as Avalonia presentation endpoint owner
     participant Session as Application ViewportSession
     participant Bridge as EngineBridge ViewportBridge
     participant Native as editor_native V5 stream ABI
@@ -627,43 +630,85 @@ sequenceDiagram
     participant Renderer as renderer_basic_vulkan
     participant Compositor as Avalonia Compositor
 
-    Consumer->>Consumer: sample commit-time panel PixelSize; advance geometry generation
-    Consumer->>Session: synchronize snapshot/camera; set logical == allocation == panel PixelSize
+    Source->>Source: freeze Scene exact / Game fit / Frame Debug capture policy
+    opt owned dock Scene resize
+        Source->>Adapter: splitter delta
+        Adapter->>Adapter: coalesce into latest layout proposal
+        Adapter->>Consumer: begin synchronous layout probe
+        Adapter->>Adapter: apply proposed GridLength; UpdateLayout; capture target PixelSize
+        Adapter->>Adapter: restore committed GridLength before dispatcher yields
+        Adapter-->>Source: exact targets + reversible layout mutation
+    end
+    Source->>Tx: Proposal(SessionId, EndpointEpoch, TransactionId, participants)
+    Tx->>Consumer: PreparePresentationAsync(frozen endpoint policy)
+    Consumer->>Session: synchronize snapshot/camera/capture; freeze policy-specific render target
     Session->>Session: publish latest immutable request
     Session-->>Consumer: immutable ViewportRenderRequest
     Consumer->>Bridge: SubmitLatest(stream, request)
     Bridge->>Native: session + target + revision + sequence + camera + bounded proxies
     Native->>Scheduler: replace the single pending-latest request
     Scheduler->>Owner: dispatch when one of three full slots is available
-    Owner->>Renderer: render the exact panel extent into an exact-sized external image
+    Owner->>Renderer: render or resolve the frozen endpoint target
     Renderer-->>Scheduler: publish the single ready frame
     Consumer->>Bridge: TryTakeReady(stream)
     Bridge-->>Consumer: self-described ViewportFrameLease + persistent slot identity
-    Consumer->>Consumer: revalidate exact extent + geometry generation + identity/sequence
-    Consumer->>Compositor: import; update stable drawing surface and visual placement atomically
+    Consumer->>Consumer: revalidate candidate extent + generation + identity/sequence
+    Consumer->>Compositor: import; update independent candidate drawing surface
     alt rejected before compositor submission
         Consumer->>Bridge: CompleteFrame(NotSubmittedToConsumer)
     else UpdateWithSemaphoresAsync completed
-        Consumer->>Consumer: revalidate; mark current sequence presented
+        Consumer->>Consumer: mark candidate prepared; keep front and Opacity=1 unchanged
         Consumer->>Bridge: CompleteFrame(ConsumerAccessed)
     else submission/disposal result ambiguous
         Consumer->>Consumer: quarantine wrappers + lease
+        Note over Bridge,Native: do not guess a completion kind
     end
-    Bridge->>Native: editor_viewport_complete_frame_v5(stream, slot, completionKind)
-    Native->>Scheduler: Presented -> Completing
-    alt NotSubmittedToConsumer
-        Owner->>Owner: poll producer fence
-    else ConsumerAccessed
-        Owner->>Owner: empty queue wait(consumer-done semaphore) + retirement fence
-        Compositor-->>Owner: signal consumer-done semaphore after GPU access
-        Owner->>Owner: poll producer + consumer-release fences
+    opt completion kind is known
+        Bridge->>Native: editor_viewport_complete_frame_v5(stream, slot, completionKind)
+        Native->>Scheduler: Presented -> Completing
+        alt NotSubmittedToConsumer
+            Owner->>Owner: poll producer fence
+        else ConsumerAccessed
+            Owner->>Owner: empty queue wait(consumer-done semaphore) + retirement fence
+            Compositor-->>Owner: signal consumer-done semaphore after GPU access
+            Owner->>Owner: poll producer + consumer-release fences
+        end
+        Owner->>Scheduler: Completing -> Available after required fences
     end
-    Owner->>Scheduler: Completing -> Available after required fences
-    Consumer->>Session: mark presented sequence/revision
+    opt every participant prepared and proposal is current
+        Consumer-->>Tx: Prepared candidate receipt
+        Tx->>Consumer: arm + validate Session/EndpointEpoch/TransactionId/policy
+        opt proposal carries dock layout mutation
+            Tx->>Adapter: apply requested GridLength in publish turn
+            Adapter->>Consumer: real Bounds callbacks validate target PixelSize
+        end
+        alt every participant validated in the same compositor scope
+            Tx->>Consumer: apply every visual.Surface + Size; keep Opacity=1
+            Tx->>Compositor: request one shared composition batch
+            alt group batch Rendered
+                Compositor-->>Tx: shared Rendered barrier
+                Tx->>Consumer: retire each replaced front through endpoint work fences
+            else publish/render outcome ambiguous
+                Tx->>Consumer: quarantine still-referenced owner graphs
+            end
+        else any mismatch, cancellation or stale identity before publish
+            opt dock layout was applied
+                Tx->>Adapter: restore previous committed GridLength in same UI turn
+            end
+            Tx->>Consumer: abort group; retain every old front; retire candidates
+        end
+    end
 ```
 
 - 每个 `ViewportSession` 有独立 session ID、camera、sequence 与 pending reasons；多个 viewport 可以指向同一
   SceneDocument，但不能共享可变 camera 或 presentation state。
+- `Viewport Presentation Transaction` 以 endpoint 为实际资源 owner；每个 participant 复验 `SessionId + EndpointEpoch + TransactionId`，
+  group 共享 transaction id，而 session/epoch 绑定该 endpoint 的内容会话与 attach/compositor lifetime。统一阶段为 Proposal→Preparing→Prepared→Validated→Published→
+  Rendered→Retiring→Completed；publish 前失败进入 Aborted，publish 后结果歧义进入 Quarantined。
+- Dock 只是 layout proposal adapter。Scene participant 采用 exact extent；Game Preview 可以冻结独立 fit policy；Frame Debugger
+  immutable capture 使用独立 endpoint/capture identity，不能覆盖实时 Scene/Game front。
+- 同一 compositor scope 的所有 participant 才能共享一个 UI publish turn 和 `Rendered` barrier，从而提供 group
+  all-or-nothing visible publish；跨 compositor 明确不原子，必须拆成独立 transaction。
 - 当前 target 只有 `DocumentScene`，render kind 只有 `Scene | Game | Preview`。Material Preview 与 Animation Preview
   后续都组合 Preview world/target，不新增 renderer kind。
 - Application request 不含 Avalonia、OS/Vulkan handle 或 mutable World pointer；进入 native mailbox 前，借用的
@@ -672,7 +717,8 @@ sequenceDiagram
 - native V5 request 是 144-byte self-contained input，ready frame 是 152-byte self-described output；V1–V4 frame
   exports 与 managed fallback 均已删除。V5 smoke 证明 burst request 只留下最新 sequence、ready 被占用时不覆盖、
   steady-state 最多三个 distinct full slots，第四个请求等待 slot 回收。ABI 保留 logical/allocation 双 extent；Studio
-  presentation 对每个 request 使用相同 panel `PixelSize`，并在 surface commit 前再次复验相等。caller 或 managed pump 不是 Vulkan owner。
+  Scene exact request 对 logical/allocation 使用相同 panel `PixelSize`，并在 surface commit 前再次复验相等；Game fit 与 Frame Debug
+  participant 则分别复验 proposal 中冻结的 fit target 或 capture identity/extent。caller 或 managed pump 不是 Vulkan owner。
 - additive `editor_viewport_query_render_thread_stats` 只向 smoke/diagnostics 暴露 dispatch count、render-queue
   bound/depth/backpressure、lifecycle 与 caller/owner thread-difference 证据；它读取 published snapshot，不导出
   `std::thread::id` 或让 managed consumer 调度 owner thread。
@@ -680,29 +726,53 @@ sequenceDiagram
   recording、graphics queue submit、frame epoch/packet retirement 和 context shutdown 全部留在该线程；mailbox mutex
   只保护有界 render/control/release queue、生命周期条件和 published diagnostics snapshot，不跨 Vulkan 工作。
 - 每个 stream 最多一个 executing、一个 pending-latest、一个 ready frame；pending submit 原子替换旧 pending，
-  不把 resize event 当 FIFO 命令。steady-state slot 上限为 3，全局 outstanding 上限为 4；resize 时先把不匹配的旧 stream
-  移出 active/desired 集合并开始逐流 retirement，再让 latest exact generation 竞争释放出的 lane。shutdown 进入 Draining 后
-  停止新 submit，但继续完成 close/retirement。
-- #361 已增加单 Scene View `ViewportCompositionControl`、composition capability/import、单调 presentation
+  不把 resize event 当 FIFO 命令。native registry 的 hash iteration 不参与调度：owner 按稳定 stream ID 从上次成功推进的 lane
+  之后轮转，并在任何 render 前全局优先推进 completion/close。每次 owner loop 仍只推进一个状态转换。steady-state slot 上限为 3，
+  全局 outstanding/context 上限仍为 4；这只足以覆盖四个 cold endpoint 的 first slot，不能保证需要至少两个 reusable slot 的
+  3–4 个 realtime endpoint steady 运行，也没有解决单 graphics queue 上 slow-consumer wait 的 head-of-line blocking。每个 transaction endpoint 保留旧 front
+  流并只为尚未 Published 的 candidate 生产首帧；Published 后恢复新 stream 的 steady 预填充，group switch batch `Rendered` 后才
+  允许旧 front retirement/dispose 完成。
+  shutdown 进入 Draining 后停止新 submit，但继续完成 close/retirement。
+- #361 的首个 Scene View `ViewportCompositionControl` 已扩展为 transaction participant endpoint，仍拥有 composition capability/import、单调 presentation
   admission 与 process-owned drain；Dock move/float 只能重绑 presentation，不能销毁 `ViewportSession`。
 - `ViewportSession` 把 target/camera/extent/exposed invalidation 合并为 latest state，并仅在 clean→dirty 时发
-  `RefreshRequested`；control 在 UI Render priority 请求下一次 composition callback。Bounds/DPI 另由一枚 Render-priority latch
-  在 layout boundary 提前提交最新 exact-size native request，surface 更新仍在 composition callback 复验 exact generation。默认 Realtime 每个 commit 至多重挂一次，
+  `RefreshRequested`；endpoint control 在 UI Render priority 请求下一次 composition callback。owned dock splitter 只是 Scene exact
+  policy 的 layout proposal adapter：它把 drag 输入合并为 latest proposal，并在同步 layout probe 中测量 target exact extent；probe
+  临时 Bounds 不发布 geometry 或 surface state，committed `GridLength` 在 dispatcher yield 前恢复。direct Bounds/DPI fallback 仍由一枚
+  Render-priority latch 在 layout boundary 提交
+  最新 exact-size native request。默认 Realtime 每个 commit 至多重挂一次，
   OnDemand 只消费语义 dirty。隐藏 dock tab 或 presentation lifetime pause 停止 admission；ancestor visible、新 surface attach、
   lifetime replacement/resume 都写入 `Exposed` 后恢复一帧；closed session 是不再 invalidation 的 terminal boundary。
 - production composition session 在 shell 启动期间于后台启动 compatibility warm-up，且不阻塞 ready，使同一 native RenderThread 提前创建
   Vulkan device/context；shutdown 在销毁 runtime 前等待该 task，真实 compositor identity 仍由 frame request 复验。
-- Bounds/DPI 以 `ceil(Bounds * RenderScaling)` 采样 panel `PixelSize`，同时作为 logical/allocation extent；每次 physical extent
-  变化推进 geometry generation，并立即把旧 visual 置为不可见。attach 持久复用一张 drawing surface，但旧 surface 不得 crop/stretch
-  到新 Bounds；A→B→A 也只有新的 A generation exact frame 才能恢复可见。旧 revision/epoch、geometry generation 或倒退 sequence
-  在提交前被拒绝。未 Promote candidate 禁止自动 Realtime 预填充；首个 exact surface 成功后补发一次 wake 才恢复 steady 三槽，
-  真实 content dirty 仍可 latest-wins 覆盖候选。
-- external image/export/import、RenderGraph target、render area、viewport、scissor 与 camera 全部使用同一 exact panel extent。
-  drawing-surface image 与 visual size/opacity 在同一 compositor transaction 更新。每个 stream 独占 managed work fence，尺寸变化
-  立即 retire 不匹配 stream，retirement 只等待该流 pump/presentations；新 desired pump 不被旧流退役绑在同一个全局 task 上。
-  `IsRealtime=true` 即使 scene/camera 静止也由 `RequestCompositionUpdate` 每个 commit 最多重挂一次，目标 exact surface-update
+- Scene exact extent 以 `ceil(Bounds * RenderScaling)` 表达 panel `PixelSize`，同时作为 logical/allocation extent。每个受影响 endpoint 在旧
+  committed state 仍可见时创建独立 candidate drawing surface；所有 candidate 的 `UpdateWithSemaphoresAsync` 成功后，group 才能进入
+  Prepared。coordinator arm 并复验所有 identity/policy 后，才在同一 UI/composition publish turn 应用可选 `GridLength` mutation 和全部
+  `visual.Surface`/`Size` switch，opacity 始终为 1。A→B→A 也必须为第二个 A 独立 prepare；旧 revision/epoch、geometry generation
+  或倒退 sequence 在提交前被拒绝。
+- 任一 participant candidate failure/cancel/stale 或 armed extent mismatch 都使 publish 前 group Aborted：保留所有旧 committed
+  layout/front，dock adapter 在同一 UI turn 恢复旧 `GridLength`。same-compositor group switch batch `Rendered` 之后才由各 endpoint
+  退役 replaced stream/surface；publish 后结果歧义进入 Quarantined。非 owned splitter 的程序化 Bounds/DPI/top-level resize 仍是
+  exact-only hidden fallback：禁止 crop/stretch，但允许短暂空白，且不能计入 flash-free dock acceptance。
+- Scene exact 的 external image/export/import、RenderGraph target、render area、viewport、scissor 与 camera 全部使用同一 exact panel
+  extent；Game Preview 使用 proposal 冻结的 target/fit mapping，Frame Debugger 使用 immutable capture identity/extent，不在 publish
+  时读取实时 Scene camera。每个 stream 独占 managed work fence；candidate 与 replaced front 的 retirement 只等待所属流 pump/presentations，新 desired pump
+  不被旧流退役绑在同一个全局 task 上。plain `GridSplitter.ShowsPreview` 和 drag-end debounce 都不能维持交互期间每秒至少 60 个
+  unique committed geometry generations，因此明确不采用。
+- `IsRealtime=true` 即使 scene/camera 静止也由 `RequestCompositionUpdate` 每个 commit 最多重挂一次，目标 exact surface-update
   `>=60 FPS`；`false` 不自动重挂，只消费 dirty invalidation。`RequestSequence`/`MinimumPresentableSequence` 拒绝 camera/target/exposed
   之后的旧内容帧；extent 只由 geometry generation 裁决，Realtime/extent 都不推进内容 fence。两种模式都不使用 UI timer。
+- `--smoke-studio-viewport-cadence` 只采集前台静态 Scene 的 5 秒 Realtime 稳态；`--smoke-viewport-transaction-resize`、
+  `--smoke-viewport-transaction-overload`、`--smoke-viewport-transaction-faults`、
+  `--smoke-viewport-transaction-supersede` 与 `--smoke-viewport-multi-endpoint` 已拆成独立真实 Studio/Avalonia/Vulkan smoke，
+  `--smoke-viewport-transaction-flash` 再记录每个成功
+  transaction composition batch 的 Bounds/front/candidate/visual/surface/opacity/identity。所有入口按 native resource→transaction
+  phase→Avalonia surface/`Rendered`→physical display 分层；observer 缺失时明确输出 evidence unavailable。
+- 2026-08-09 拆分后代表性 sawtooth 120 Hz 运行完成 209/209 observed exact `Rendered` generations（106.44/s），p95
+  15.26 ms、hidden 0、mismatch 0；Realtime steady 代表值为 219.43 surface-updates/s。最终 GPU process acceptance 为 47/47；
+  13 个 fault stages、supersede、六个双-endpoint modes 与 flash 8/8 transaction-batch structural checks 均真实 Vulkan exit 0。
+  当前 PresentMon 复采大量丢 ETW events 且没有 CSV，
+  因而 PhysicalDisplayed 仍无当前 transaction 证据；multi-endpoint 也只证明两个 endpoint，不能外推 3–4 realtime lane。
 - native `frameIndex` 只是 render-attempt identity，失败允许留 gap；`EditorSharedViewportRuntime` 在唯一 RenderThread 上采样
   steady-clock elapsed 与上次任意 stream 成功 render delta，形成 immutable frame params。刷新率只改变采样密度，不再通过
   `frameIndex / 60` 改变 shader 时间速度。
@@ -712,7 +782,8 @@ sequenceDiagram
   retirement fence。producer 与 consumer proof 都完成后，同一个 full slot 才重新 Available。
 - thread startup/device/queue failure 返回 typed error并让 Scene View 进入 degraded/unavailable，绝不回退 UI/caller
   thread 执行 Vulkan。lease release 由 managed worker 等待，UI dispatcher 不阻塞；compositor submission、imported
-  wrapper disposal 或 native release 结果歧义时，资源进入有界 process-lifetime quarantine，不按
+  wrapper disposal 或 native release 结果歧义时，endpoint 先在最多四个 frame 槽内保留资源，再 exact-once 转交
+  process-lifetime quarantine registry；该 registry 不声称独立的 item-count 上界，歧义 endpoint 进入 degraded，正常路径必须为 0。不按
   `NotSubmittedToConsumer` 猜测。正常关闭按 managed presentation drain → priority lease release → native mailbox drain → owner-thread retirement →
   owner-thread producer/context destroy → thread exit → caller 无锁 join 收口。
 
@@ -836,10 +907,10 @@ sequenceDiagram
 - `ViewportNativePresentDrain` 在应用关闭第一阶段调用已注册 presentation 的 detach，
   因而空闲持久 slot 也进入等待集合。Scene View host 先移除 child visual，等待
   presentation drain 后再在 UI dispatcher dispose composition surface。
-- 当前 `ViewportCompositionControl` 每次 attach 持久拥有一张 composition surface；每个 fixed-extent native stream 有独立 managed
-  pump/work fence。每个 composition commit 最多发布一条 latest request 和一条 latest surface update；只有
-  allocation == logical == commit-time panel `PixelSize` 且 geometry generation 仍 current 的 frame 能更新 surface。尺寸改变后旧
-  surface 立即隐藏，superseded work 只完成安全退役，不推进当前 presentation 状态。
+- transaction contract 之前的 `ViewportCompositionControl` 每次 attach 只持有一张 composition surface；每个 fixed-extent native stream
+  有独立 managed pump/work fence。该历史版本在尺寸改变后立即隐藏旧 surface，superseded work 只完成安全退役、不推进当前
+  presentation state。它证明 exact-only gate，但 43.2% requested-mismatch hidden duty 不满足后续 flash-free dock contract；当前
+  production 采用 front/candidate 双 surface transaction，见上方“当前 Studio Viewport”章节。
 - imported wrapper release 与 native packet release 是两个有序阶段；后者在 managed worker 上等待而不阻塞 UI。
   前一阶段未确认时
   不重复假设 `IAsyncDisposable` 可重试，而是把 wrapper 与仍 outstanding 的 native

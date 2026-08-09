@@ -19,6 +19,8 @@
 #include "asharia/core/log.hpp"
 #include "asharia/rhi_vulkan/vulkan_error.hpp"
 
+#include "editor_shared_viewport_dispatch.hpp"
+
 namespace asharia::editor {
     namespace {
 
@@ -104,6 +106,7 @@ namespace asharia::editor {
             .hasCamera = desc.hasCamera,
             .camera = desc.camera,
             .debugProxies = {},
+            .flashSentinelCorners = desc.flashSentinelCorners,
         };
         if (!desc.debugProxies.empty()) {
             packet.debugProxies.assign(desc.debugProxies.begin(), desc.debugProxies.end());
@@ -126,6 +129,7 @@ namespace asharia::editor {
             .hasCamera = hasCamera,
             .camera = camera,
             .debugProxies = debugProxies,
+            .flashSentinelCorners = flashSentinelCorners,
         };
     }
 
@@ -1287,15 +1291,20 @@ namespace asharia::editor {
 
     bool EditorSharedViewportRuntime::dispatchOneStreamWorkOnRenderThread() {
         assert(isOnRenderThread());
-        std::vector<std::shared_ptr<StreamState>> streams;
+        struct ScheduledStream final {
+            EditorSharedViewportStreamId streamId{};
+            std::shared_ptr<StreamState> state;
+        };
+
+        std::vector<ScheduledStream> streams;
         {
             std::lock_guard lock{streamsMutex_};
             streams.reserve(streams_.size());
             for (const auto& [streamId, stream] : streams_) {
-                static_cast<void>(streamId);
-                streams.push_back(stream);
+                streams.push_back(ScheduledStream{.streamId = streamId, .state = stream});
             }
         }
+        std::ranges::sort(streams, {}, &ScheduledStream::streamId);
 
         auto retired = retireCompletedPresentSlotsOnRenderThread();
         if (!retired) {
@@ -1305,19 +1314,21 @@ namespace asharia::editor {
         }
 
         const bool canAllocateSlot = availableFrameResourceIndexOnRenderThread().has_value();
-        return std::ranges::any_of(
-            streams, [this, canAllocateSlot](const std::shared_ptr<StreamState>& stream) {
-                if (processStreamCompletionsOnRenderThread(*stream) ||
-                    processStreamCloseOnRenderThread(*stream)) {
-                    return true;
-                }
+        return detail::dispatchOneStableRoundRobin(
+            std::span{streams}, lastDispatchedStreamId_,
+            [](const ScheduledStream& stream) { return stream.streamId; },
+            [this](ScheduledStream& stream) {
+                return processStreamCompletionsOnRenderThread(*stream.state) ||
+                       processStreamCloseOnRenderThread(*stream.state);
+            },
+            [this, canAllocateSlot](ScheduledStream& stream) {
                 {
-                    std::lock_guard lock{stream->mutex};
-                    if (!streamHasWorkLocked(*stream, canAllocateSlot)) {
+                    std::lock_guard lock{stream.state->mutex};
+                    if (!streamHasWorkLocked(*stream.state, canAllocateSlot)) {
                         return false;
                     }
                 }
-                return renderPendingStreamFrameOnRenderThread(*stream);
+                return renderPendingStreamFrameOnRenderThread(*stream.state);
             });
     }
 

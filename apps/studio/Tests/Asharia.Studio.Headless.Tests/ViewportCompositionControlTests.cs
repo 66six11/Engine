@@ -105,6 +105,83 @@ public sealed class ViewportCompositionControlTests
             () => state.MarkSurfaceUpdate(extent, presentedGeneration));
     }
 
+    [Fact]
+    public void Presentation_layout_probe_records_extent_without_advancing_front_geometry()
+    {
+        var frontExtent = new ViewportExtent(640, 480);
+        var probedExtent = new ViewportExtent(800, 480);
+        var geometry = new ViewportGeometryGenerationState();
+        geometry.Synchronize(frontExtent);
+        geometry.MarkSurfaceUpdate(frontExtent, geometry.CurrentGeneration);
+        var frontGeneration = geometry.CurrentGeneration;
+        var resize = new ViewportPresentationPreparationState();
+
+        var probe = resize.BeginLayoutProbe();
+        resize.ObserveLayoutProbe(probedExtent);
+
+        Assert.True(resize.TryGetLayoutProbeExtent(probe, out var captured));
+        Assert.Equal(probedExtent, captured);
+        Assert.Equal(frontExtent, geometry.CurrentExtent);
+        Assert.Equal(frontGeneration, geometry.CurrentGeneration);
+        Assert.True(geometry.HasExactSurface);
+
+        resize.EndLayoutProbe(probe);
+        Assert.False(resize.TryGetLayoutProbeExtent(probe, out _));
+    }
+
+    [Fact]
+    public void Failed_presentation_preparation_cannot_mutate_or_reactivate_front_geometry()
+    {
+        var frontExtent = new ViewportExtent(640, 480);
+        var targetExtent = new ViewportExtent(800, 480);
+        var geometry = new ViewportGeometryGenerationState();
+        geometry.Synchronize(frontExtent);
+        geometry.MarkSurfaceUpdate(frontExtent, geometry.CurrentGeneration);
+        var frontGeneration = geometry.CurrentGeneration;
+        var resize = new ViewportPresentationPreparationState();
+        var ticket = resize.BeginPreparation(targetExtent, frontGeneration);
+
+        Assert.True(resize.TryCancel(ticket));
+        Assert.False(resize.TryMarkPrepared(ticket));
+        Assert.False(resize.TryArm(ticket));
+        Assert.Equal(frontExtent, geometry.SurfaceExtent);
+        Assert.Equal(frontGeneration, geometry.SurfaceGeneration);
+        Assert.True(geometry.HasExactSurface);
+    }
+
+    [Fact]
+    public void Armed_presentation_requires_explicit_group_completion_after_exact_layout()
+    {
+        var frontExtent = new ViewportExtent(640, 480);
+        var targetExtent = new ViewportExtent(800, 480);
+        var resize = new ViewportPresentationPreparationState();
+        var exactTicket = resize.BeginPreparation(targetExtent, baseGeometryGeneration: 4);
+        Assert.True(resize.TryMarkPrepared(exactTicket));
+        Assert.True(resize.TryArm(exactTicket));
+
+        Assert.Equal(
+            ViewportPresentationLayoutDisposition.ArmedExact,
+            resize.ObserveBounds(targetExtent, out var consumedExact));
+        Assert.Equal(exactTicket, consumedExact);
+        Assert.True(resize.HasPreparation);
+        Assert.True(resize.IsArmedExtentExact(exactTicket));
+        Assert.True(resize.TryCompleteArmed(exactTicket));
+        Assert.False(resize.HasPreparation);
+
+        var mismatchTicket = resize.BeginPreparation(targetExtent, baseGeometryGeneration: 4);
+        Assert.True(resize.TryMarkPrepared(mismatchTicket));
+        Assert.True(resize.TryArm(mismatchTicket));
+        Assert.Equal(
+            ViewportPresentationLayoutDisposition.ArmedMismatch,
+            resize.ObserveBounds(frontExtent, out var consumedMismatch));
+        Assert.Equal(mismatchTicket, consumedMismatch);
+        Assert.True(resize.HasPreparation);
+        Assert.False(resize.IsArmedExtentExact(mismatchTicket));
+        Assert.False(resize.TryCompleteArmed(mismatchTicket));
+        Assert.True(resize.TryCancel(mismatchTicket));
+        Assert.False(resize.HasPreparation);
+    }
+
     [Theory]
     [InlineData(true, false, false, true)]
     [InlineData(true, true, true, true)]
@@ -156,6 +233,20 @@ public sealed class ViewportCompositionControlTests
         Assert.Throws<InvalidOperationException>(duplicateSubmission.MarkSubmissionStarted);
         duplicateSubmission.MarkConsumerAccessed();
         Assert.Throws<InvalidOperationException>(duplicateSubmission.MarkConsumerAccessed);
+    }
+
+    [Fact]
+    public void Consumer_access_without_a_final_visible_publish_cannot_mark_presented()
+    {
+        Assert.False(CompositionUpdatePresentationPolicy.CanMarkPresented(
+            CompositionUpdateCompletion.ConsumerAccessed,
+            finalCanPresent: true));
+        Assert.False(CompositionUpdatePresentationPolicy.CanMarkPresented(
+            CompositionUpdateCompletion.VisibleSurfacePublished,
+            finalCanPresent: false));
+        Assert.True(CompositionUpdatePresentationPolicy.CanMarkPresented(
+            CompositionUpdateCompletion.VisibleSurfacePublished,
+            finalCanPresent: true));
     }
 
     [Fact]
@@ -350,32 +441,39 @@ public sealed class ViewportCompositionControlTests
     public void Resize_metrics_count_each_geometry_generation_once_and_union_hidden_time()
     {
         var tracker = new ViewportGeometryDiagnosticsTracker();
+        tracker.MarkRequestedVisualHidden(false, TimestampAtMilliseconds(0));
         var token = tracker.BeginMeasurement(
             baselineGeneration: 0,
             TimestampAtMilliseconds(0));
 
+        tracker.MarkRequestedVisualHidden(true, TimestampAtMilliseconds(0));
         tracker.RecordGeneration(
             1,
             new ViewportExtent(640, 480),
             ViewportGeometryChangeSource.Bounds,
             TimestampAtMilliseconds(0));
         tracker.MarkExactSurfaceSubmitted(1, TimestampAtMilliseconds(5));
+        tracker.MarkRequestedVisualHidden(false, TimestampAtMilliseconds(5));
         tracker.MarkExactSurfaceCompleted(1, TimestampAtMilliseconds(10));
 
+        tracker.MarkRequestedVisualHidden(true, TimestampAtMilliseconds(20));
         tracker.RecordGeneration(
             2,
             new ViewportExtent(800, 480),
             ViewportGeometryChangeSource.Bounds,
             TimestampAtMilliseconds(20));
         tracker.MarkExactSurfaceSubmitted(2, TimestampAtMilliseconds(25));
+        tracker.MarkRequestedVisualHidden(false, TimestampAtMilliseconds(25));
         tracker.MarkExactSurfaceCompleted(2, TimestampAtMilliseconds(35));
 
+        tracker.MarkRequestedVisualHidden(true, TimestampAtMilliseconds(40));
         tracker.RecordGeneration(
             3,
             new ViewportExtent(640, 480),
             ViewportGeometryChangeSource.Bounds,
             TimestampAtMilliseconds(40));
         tracker.MarkExactSurfaceSubmitted(3, TimestampAtMilliseconds(45));
+        tracker.MarkRequestedVisualHidden(false, TimestampAtMilliseconds(45));
         tracker.MarkExactSurfaceCompleted(3, TimestampAtMilliseconds(50));
         tracker.MarkExactSurfaceSubmitted(3, TimestampAtMilliseconds(55));
         tracker.MarkExactSurfaceCompleted(3, TimestampAtMilliseconds(60));

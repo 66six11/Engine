@@ -3,6 +3,8 @@
 #include <vulkan/vulkan.h>
 
 #define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <algorithm>
 #include <array>
 #include <exception>
 #include <filesystem>
@@ -20,7 +22,6 @@ namespace asharia::editor {
     namespace {
 
         constexpr VkFormat kSharedViewportFormat = VK_FORMAT_B8G8R8A8_UNORM;
-
         [[nodiscard]] std::filesystem::path viewportShaderDirectory() {
             std::array<wchar_t, 32768> executablePath{};
             const DWORD length = GetModuleFileNameW(nullptr, executablePath.data(),
@@ -109,6 +110,134 @@ namespace asharia::editor {
                                  {0.24F, 0.82F, 0.32F, 1.0F});
             appendDebugProxyAxis(lines, proxy, {0.0F, 0.0F, 1.0F}, proxy.scale[2],
                                  {0.22F, 0.42F, 0.94F, 1.0F});
+        }
+
+        [[nodiscard]] bool hasFlashSentinel(EditorSharedViewportPresentDesc desc) {
+            return desc.flashSentinelCorners && desc.hasScene &&
+                   desc.kind == EditorViewportKind::Scene;
+        }
+
+        struct FlashSentinelImageTransition {
+            VkPipelineStageFlags2 sourceStage{};
+            VkAccessFlags2 sourceAccess{};
+            VkImageLayout oldLayout{VK_IMAGE_LAYOUT_UNDEFINED};
+            VkPipelineStageFlags2 destinationStage{};
+            VkAccessFlags2 destinationAccess{};
+            VkImageLayout newLayout{VK_IMAGE_LAYOUT_UNDEFINED};
+        };
+
+        void recordFlashSentinelImageBarrier(VkCommandBuffer commandBuffer, VkImage image,
+                                             FlashSentinelImageTransition transition) {
+            VkImageMemoryBarrier2 barrier{};
+            barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+            barrier.srcStageMask = transition.sourceStage;
+            barrier.srcAccessMask = transition.sourceAccess;
+            barrier.dstStageMask = transition.destinationStage;
+            barrier.dstAccessMask = transition.destinationAccess;
+            barrier.oldLayout = transition.oldLayout;
+            barrier.newLayout = transition.newLayout;
+            barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrier.image = image;
+            barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            barrier.subresourceRange.baseMipLevel = 0;
+            barrier.subresourceRange.levelCount = 1;
+            barrier.subresourceRange.baseArrayLayer = 0;
+            barrier.subresourceRange.layerCount = 1;
+
+            VkDependencyInfo dependency{};
+            dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+            dependency.imageMemoryBarrierCount = 1;
+            dependency.pImageMemoryBarriers = &barrier;
+            vkCmdPipelineBarrier2(commandBuffer, &dependency);
+        }
+
+        void recordFlashSentinel(VkCommandBuffer commandBuffer, VkImage image,
+                                 VkImageView imageView, VkExtent2D extent) {
+            recordFlashSentinelImageBarrier(
+                commandBuffer, image,
+                FlashSentinelImageTransition{
+                    .sourceStage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+                    .sourceAccess = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT,
+                    .oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                    .destinationStage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+                    .destinationAccess = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+                    .newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                });
+
+            VkRenderingAttachmentInfo colorAttachment{};
+            colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+            colorAttachment.imageView = imageView;
+            colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+            colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+            colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+
+            VkRenderingInfo rendering{};
+            rendering.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+            rendering.renderArea = VkRect2D{
+                .offset = VkOffset2D{.x = 0, .y = 0},
+                .extent = extent,
+            };
+            rendering.layerCount = 1;
+            rendering.colorAttachmentCount = 1;
+            rendering.pColorAttachments = &colorAttachment;
+
+            const std::uint32_t side = std::min({24U, extent.width, extent.height});
+            struct SentinelCorner {
+                VkClearColorValue color{};
+                VkOffset2D offset{};
+            };
+            const std::array<SentinelCorner, 4> corners{
+                SentinelCorner{
+                    .color = VkClearColorValue{{1.0F, 0.0F, 1.0F, 1.0F}},
+                    .offset = VkOffset2D{.x = 0, .y = 0},
+                },
+                SentinelCorner{
+                    .color = VkClearColorValue{{0.0F, 1.0F, 0.0F, 1.0F}},
+                    .offset =
+                        VkOffset2D{.x = static_cast<std::int32_t>(extent.width - side), .y = 0},
+                },
+                SentinelCorner{
+                    .color = VkClearColorValue{{0.0F, 1.0F, 1.0F, 1.0F}},
+                    .offset =
+                        VkOffset2D{.x = 0, .y = static_cast<std::int32_t>(extent.height - side)},
+                },
+                SentinelCorner{
+                    .color = VkClearColorValue{{1.0F, 1.0F, 0.0F, 1.0F}},
+                    .offset = VkOffset2D{.x = static_cast<std::int32_t>(extent.width - side),
+                                         .y = static_cast<std::int32_t>(extent.height - side)},
+                },
+            };
+
+            vkCmdBeginRendering(commandBuffer, &rendering);
+            for (const SentinelCorner& corner : corners) {
+                VkClearAttachment clear{};
+                clear.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+                clear.colorAttachment = 0;
+                clear.clearValue.color = corner.color;
+                const VkClearRect rect{
+                    .rect =
+                        VkRect2D{
+                            .offset = corner.offset,
+                            .extent = VkExtent2D{.width = side, .height = side},
+                        },
+                    .baseArrayLayer = 0,
+                    .layerCount = 1,
+                };
+                vkCmdClearAttachments(commandBuffer, 1, &clear, 1, &rect);
+            }
+            vkCmdEndRendering(commandBuffer);
+
+            recordFlashSentinelImageBarrier(
+                commandBuffer, image,
+                FlashSentinelImageTransition{
+                    .sourceStage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+                    .sourceAccess = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+                    .oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                    .destinationStage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+                    .destinationAccess = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT,
+                    .newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                });
         }
 
         void recordRenderedViewStats(EditorSharedViewportRenderProducerStats& stats,
@@ -368,6 +497,11 @@ namespace asharia::editor {
                     logError("Shared viewport command buffer could not end after record failure.");
                 }
                 return std::unexpected{std::move(recorded.error())};
+            }
+
+            if (hasFlashSentinel(desc)) {
+                recordFlashSentinel(state.commandBuffer, targetImage.image(),
+                                    targetImage.imageView(), view.target.extent);
             }
 
             result = checkVk(vkEndCommandBuffer(state.commandBuffer),

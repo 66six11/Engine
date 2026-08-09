@@ -44,8 +44,10 @@ GPU / Avalonia compositor
 - 最多一个 ready frame；
 - 最多三个 persistent slots。
 
-RenderThread 的 control/release queue 仍优先于 render work；stream scheduler 每次 owner loop 至多推进一个状态转换，
-避免单个 viewport 独占 owner。GPU fence 未完成时 owner 使用有界 1 ms retirement poll，不阻塞 UI caller。
+RenderThread 的 control/release queue 仍优先于 render work。stream registry 的 `unordered_map` 只负责 identity lookup；dispatcher
+先按单调 stream ID 建立稳定顺序，并从上次真正推进的 stream 之后继续轮转。每次 owner loop 至多推进一个状态转换，而且会先
+全局扫描所有 stream 的 completion/close，再扫描可 render 的 stream；因此持续 pending/realtime 的 lane 不能仅凭容器迭代顺序
+反复抢占 owner。GPU fence 未完成时 owner 使用有界 1 ms retirement poll，不阻塞 UI caller。
 
 ### Slot ownership
 
@@ -123,13 +125,18 @@ producer fence 代替 consumer completion、独立 renderer process（当前故�
 ## 当前限制
 
 - 多 stream 共用单 graphics queue；consumer wait 延迟可能造成 head-of-line blocking；
-- scheduler 当前是 owner-loop 扫描，不提供优先级权重；多 viewport 公平性需要后续压力数据；
+- stable round-robin 只消除 registry 首流偏置，不提供 deadline、权重或 slow-consumer 隔离；
+- 全局 outstanding/context 上限仍为 4。它足以证明四个 cold stream 各自取得首帧，但不能为需要至少两个 reusable slot 的
+  3–4 个 steady realtime endpoint 提供容量保证；本切片不扩大 cap/slot/context，也不宣称达到多 viewport steady 60 FPS；
 - full slot 的 imported wrapper 由 Avalonia adapter 管理，native 不接触 Avalonia API；
 - V5 目前只支持 `DocumentScene` target kind 和 Vulkan opaque NT handles。
 
 ## 验证
 
 - MSVC native V5 smoke 验证 34 次 submit 只产生 4 个 render、coalesced counter、三个 distinct slots 和 reuse；
+- deterministic scheduler probe 验证四条 render lane 按稳定 ID 轮转、持续 realtime lane 不独占，以及两步 close 与 completion
+  全部先于 render；真实 V5/Vulkan smoke 验证 cap=4 下四个 cold stream 都取得首帧，ready+pending realtime stream 不消耗其余
+  cold first-slot 容量；
 - smoke 验证 close 前 import release、Closed 后 destroy、runtime shutdown/join；
 - managed tests 验证 exact-once completion、ABI sizes、stream lifecycle 和 failure mapping；
 - CPU clock smoke 以注入 time point 验证首帧 0、5 ms 连续帧、失败 attempt 不推进成功 sample、2 s dirty-only idle gap、

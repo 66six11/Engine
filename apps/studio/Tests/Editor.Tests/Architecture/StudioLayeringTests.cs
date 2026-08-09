@@ -344,6 +344,12 @@ public sealed class StudioLayeringTests
             "Asharia.Studio.Presentation.Avalonia",
             "Viewports",
             "ViewportStreamWorkFence.cs"));
+        var transactionCoordinatorSource = File.ReadAllText(Path.Combine(
+            root,
+            "src",
+            "Asharia.Studio.Presentation.Avalonia",
+            "Viewports",
+            "ViewportPresentationTransactionCoordinator.cs"));
 
         Assert.False(Directory.Exists(Path.Combine(root, "Core", "Interop", "Viewports")));
         Assert.False(Directory.Exists(Path.Combine(root, "Core", "Models", "Viewports")));
@@ -400,7 +406,12 @@ public sealed class StudioLayeringTests
             StringComparison.Ordinal);
         Assert.DoesNotContain("CompositionSurfacePair", viewportControlSource, StringComparison.Ordinal);
         Assert.DoesNotContain("PromoteStagingSurfaceAsync", viewportControlSource, StringComparison.Ordinal);
-        Assert.Contains("surface.UpdateWithSemaphoresAsync", viewportControlSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("ExactResize", viewportControlSource, StringComparison.Ordinal);
+        Assert.Contains(".UpdateWithSemaphoresAsync(", viewportControlSource, StringComparison.Ordinal);
+        Assert.Contains("PreparePresentationAsync", viewportControlSource, StringComparison.Ordinal);
+        Assert.Contains("TryValidatePreparedPresentation", transactionCoordinatorSource, StringComparison.Ordinal);
+        Assert.Contains("ApplyPreparedPresentation", transactionCoordinatorSource, StringComparison.Ordinal);
+        Assert.Contains("RequestPresentationBatchRendered", transactionCoordinatorSource, StringComparison.Ordinal);
         Assert.Contains("WaitForReadyFrameAsync", viewportControlSource, StringComparison.Ordinal);
         Assert.Contains("WaitForStreamClosedAsync", viewportControlSource, StringComparison.Ordinal);
         Assert.Contains(
@@ -418,11 +429,14 @@ public sealed class StudioLayeringTests
             StringComparison.Ordinal);
         Assert.DoesNotContain("Console.Error.WriteLine(", viewportControlSource, StringComparison.Ordinal);
         Assert.DoesNotContain("await Task.Delay(1);", viewportControlSource, StringComparison.Ordinal);
-        Assert.Equal(
-            2,
-            viewportControlSource.Split(
-                "await Task.Delay(1).ConfigureAwait(false);",
-                StringSplitOptions.None).Length - 1);
+        Assert.Contains(
+            "await Task.Delay(1, cancellationToken).ConfigureAwait(false);",
+            viewportControlSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "await Task.Delay(1).ConfigureAwait(false);",
+            viewportControlSource,
+            StringComparison.Ordinal);
         Assert.Contains(
             "!ReferenceEquals(stream.WorkFence.PumpTask, observedPump)",
             viewportControlSource,
@@ -440,11 +454,14 @@ public sealed class StudioLayeringTests
             viewportControlSource.Split(
                 "RequestCompositionUpdate(",
                 StringSplitOptions.None).Length - 1);
-        Assert.Equal(
-            1,
-            viewportControlSource.Split(
-                "RequestCompositionBatchCommitAsync()",
-                StringSplitOptions.None).Length - 1);
+        Assert.Contains(
+            "RequestCompositionBatchCommitAsync().Processed",
+            viewportControlSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "RequestCompositionBatchCommitAsync().Rendered",
+            viewportControlSource,
+            StringComparison.Ordinal);
         Assert.Contains("Win32PlatformOptions", programSource, StringComparison.Ordinal);
         Assert.Contains("Win32RenderingMode.Vulkan", programSource, StringComparison.Ordinal);
         Assert.DoesNotContain("StudioNativeTeardown", appSource, StringComparison.Ordinal);

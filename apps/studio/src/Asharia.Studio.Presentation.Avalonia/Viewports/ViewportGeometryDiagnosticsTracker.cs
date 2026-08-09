@@ -166,7 +166,6 @@ internal sealed class ViewportGeometryDiagnosticsTracker
             };
             nextRecordIndex_ = (nextRecordIndex_ + 1) % RecordCapacity;
             recordCount_ = Math.Min(recordCount_ + 1, RecordCapacity);
-            SetHiddenLocked(isHidden: true, observedTimestamp);
         }
     }
 
@@ -180,7 +179,14 @@ internal sealed class ViewportGeometryDiagnosticsTracker
                 return;
             }
             record.FirstExactSubmittedTimestamp ??= submittedTimestamp;
-            SetHiddenLocked(isHidden: false, submittedTimestamp);
+        }
+    }
+
+    public void MarkRequestedVisualHidden(bool isHidden, long timestamp)
+    {
+        lock (gate_)
+        {
+            SetHiddenLocked(isHidden, timestamp);
         }
     }
 

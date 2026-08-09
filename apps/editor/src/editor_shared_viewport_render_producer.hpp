@@ -50,6 +50,7 @@ namespace asharia::editor {
         bool hasCamera{};
         EditorViewportCamera camera;
         std::span<const EditorSharedViewportDebugProxy> debugProxies;
+        bool flashSentinelCorners{};
     };
 
     struct EditorSharedViewportPresentPacket {

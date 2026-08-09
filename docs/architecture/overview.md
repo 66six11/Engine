@@ -178,8 +178,15 @@ Asharia Engine 当前目标仍是先做一个小而完整的 Vulkan renderer，�
   和 ImGui texture publication。
 - `Asharia.Studio.Application.Viewports.ViewportSession` 拥有 UI-neutral session/target/camera/sequence/invalidation
   状态；它发布 latest immutable request，document revision 在途推进时旧 completion 不成为 current。
-- `Asharia.Studio.Presentation.Avalonia.Viewports.ViewportCompositionControl` 拥有 Avalonia compositor capability
-  probe、external image/semaphore import、drawing surface commit 与面板 presentation state；它通过
+- `Asharia.Studio.Presentation.Avalonia.Viewports.ViewportPresentationTransactionCoordinator` 以
+  每个 participant 的 `SessionId + EndpointEpoch + TransactionId` 编排 Proposal→Preparing→Prepared→Validated→Published→Rendered→Retiring→
+  Completed/Aborted/Quarantined。同一 Avalonia compositor scope 可 group all-or-nothing visible publish；跨 compositor 明确不原子。
+- `EditorDockStagedGridSplitter`、`EditorDockSplitResizePolicy` 与 `EditorDockSplitResizeCoordinator` 只拥有 splitter drag
+  proposal、definition min/max/layout rounding、requested/committed `GridLength` 与同步 layout probe；它们是 transaction 的 layout
+  adapter，不拥有 endpoint surface/stream。这些 transient editor layout state 不进入 `SceneDocument` 或 runtime。
+- `Asharia.Studio.Presentation.Avalonia.Viewports.ViewportCompositionControl` 是 endpoint owner，拥有 Avalonia compositor capability
+  probe、external image/semaphore import、front/candidate drawing surfaces、prepared publish receipt、geometry/content gate、quarantine
+  与面板 presentation state；它通过
   `ViewportSession`/EngineBridge 消费 frame lease，不拥有 Vulkan resource，也不把 native handle 交给 Shell/ViewModel。
 - `Asharia.Studio.EngineBridge.Viewports.ViewportBridge` 是 managed V5 stream ABI 边界；它复制最多 256 个
   `{objectId, Transform}` debug proxies，异步 submit latest / take ready，并以
@@ -197,8 +204,10 @@ Asharia Engine 当前目标仍是先做一个小而完整的 Vulkan renderer，�
   一个 executing、一个 pending-latest、一个 ready frame 和三个持久 full slots；Scene/Game/Preview、camera、
   session/target/revision/sequence 与 bounded Transform proxies 映射到同一 renderer path。managed Studio 只能观察
   lease metadata 并通过 EngineBridge 完成本轮 slot，不能直接关闭、重用或延迟销毁 Vulkan resource。external image
-  只有 producer fence 与已声明 consumer 的 consumer-done retirement fence 均完成后才能重用；attach 内单张 managed
-  surface 保持稳定，detach removal batch `Processed` 只控制该 surface 的安全析构。
+  只有 producer fence 与已声明 consumer 的 consumer-done retirement fence 均完成后才能重用；attach 内 front surface 保持可见，
+  transaction preparation 使用独立 candidate surface。same-compositor group switch batch `Rendered` 后才允许各 endpoint 退役
+  replaced surface/stream；detach removal
+  batch `Processed` 控制仍归 attach 所有的全部 front/candidate surface 安全析构。
 
 销毁顺序：
 
@@ -252,40 +261,62 @@ Asharia Engine 当前目标仍是先做一个小而完整的 Vulkan renderer，�
 8. editor path 将 sampled RenderView target 注册给 ImGui texture registry；Frame Debug / Live RG View 只读
    diagnostics snapshot。
 
-Studio Avalonia composition Scene View 的当前路径：
+Studio Avalonia `Viewport Presentation Transaction` 的当前路径：
 
 1. production `StudioCompositionSession` 在后台启动 native compatibility warm-up，提前让唯一 RenderThread 创建
    Vulkan device/context；它不阻塞 shell ready，shutdown 在 runtime teardown 前等待 warm-up 收口。随后
    `StudioScenePanelView.axaml` 托管专用 `ViewportCompositionControl`。control attach 时取得 composition visual，
    探测 `ICompositionGpuInterop` 与 native device/handle compatibility；unsupported 能力显式进入 degraded UI。
-2. Bounds/DPI 变化以 `ceil(Bounds * RenderScaling)` 计算 panel `PixelSize`，并同时作为 logical/allocation extent；每个
-   physical extent 推进 geometry generation。control 立即隐藏旧 surface、移除 active/desired 引用并异步退役不匹配 stream；
-   managed `ViewportSession` 合并 latest request，native stream 原子替换唯一 pending-latest，不排队每一次 resize event。
-3. control 调用 EngineBridge V5 submit 后运行 demand-driven pump；native 唯一 RenderThread 异步 record/submit，完成帧进入
-   stream 的唯一 ready 槽。每个 stream 最多三个持久 full slots，不为每帧重建 external image/semaphore/import。
-4. control 通过 `ICompositionGpuInterop.ImportImage` / `ImportSemaphore` 导入 lease，并在一个 composition callback 中
-   更新 attach 生命周期内稳定的 drawing surface。提交前复验 allocation == logical == commit-time panel `PixelSize`、
-   geometry generation、identity/revision 与单调 sequence；surface image 与 visual placement 在同一 compositor transaction
-   中更新。padding/crop、旧 image stretch 和 geometry 过期帧都不能进入 surface；A→B→A 也必须等待新的 A generation。
-   external image reuse 仍只由 producer/consumer GPU completion proof 授权。
-5. Bounds/DPI 先由一枚 `DispatcherPriority.Render` latch 在 layout boundary 合并并提前提交最新 exact-size native request；
-   `RequestCompositionUpdate` 在 commit 前再次复验 geometry/extent，并在完成帧到达后提交 surface update；两者都不等待 native。
-   typed `Backpressure` 在下一次 composition cadence 重试；Unavailable/device failure 显式降级。`IsRealtime=true` 即使静止也每个
-   commit 重挂下一帧并以 exact surface-update `>=60 FPS` 为最低门槛；unpromoted resize candidate 只有首帧，不接受自动 Realtime
-   预填充，Promote 后才恢复 steady 流水。`false` 只响应 dirty invalidation。session clean→dirty
-   只发一个 coalesced refresh signal；hidden dock tab/lifetime pause 停止 admission，ancestor visible、新 surface attach 或 lifetime
-   replacement/resume 以 `Exposed` 恢复一帧；closed session 不再接受 UI invalidation。
-   camera/target/exposed 通过 request-sequence content fence 拒绝旧内容帧，extent 仍由 geometry generation 独占门控。
-6. 每轮 frame 通过 `editor_viewport_complete_frame_v5(stream, slot, completionKind)` exact-once 完成；compositor
-   submission 前拒绝用 `NotSubmittedToConsumer`，update 完成后即使用 `ConsumerAccessed`。extent/generation 改变时旧 stream
-   立即逐流 retire，新 exact stream 首帧成功后成为 active；旧 visual 在此之前保持隐藏，不以 crop/stretch 伪装同步。
-   submission、disposal 或 completion 结果歧义时对应资源进入 process-lifetime quarantine。control detach 停止 admission
-   并等待 frame/surface cleanup；process shutdown 再 drain native RenderThread 与 Vulkan owner。
-   resize acceptance 按唯一 geometry generation 统计 exact submitted/update-completed rate、Bounds latency、coverage 与 opacity hidden duty，
-   不用同 generation 的 steady 后续帧抬高 resize FPS；物理 display 仍由同跑 PresentMon/ETW 单独证明。
-7. native runtime 在唯一 RenderThread 上拥有 steady-clock frame snapshot：frame index 是 render-attempt identity（失败允许留 gap），
+2. Scene exact、Game Preview fit 或 Frame Debugger immutable capture 先形成 endpoint-owned proposal；身份由
+   每个 participant 的 `SessionId + EndpointEpoch + TransactionId` 绑定；group 共享 transaction id，session/epoch 按 endpoint 复验。
+   owned dock splitter 只是 Scene resize 的 layout adapter：它把 drag delta 合并为
+   latest layout proposal，不立即公开新的 `GridLength`，并在同步 probe scope
+   内临时应用 proposal 并 `UpdateLayout`；control 以 `ceil(Bounds * RenderScaling)` 捕获 target `PixelSize`，probe Bounds 不推进
+   geometry/presentation。coordinator 在 UI dispatcher yield 前恢复 committed `GridLength`，旧 exact Bounds、front surface 与
+   `Opacity=1` 保持可见。
+3. 每个 participant endpoint 为冻结的 target policy 创建独立 candidate `CompositionDrawingSurface` 与 stream。managed
+   `ViewportSession` 合并 latest request，native stream 原子替换唯一 pending-latest；唯一 RenderThread 异步 record/submit，candidate
+   只生产首帧。每个
+   stream 最多三个持久 full slots，全局仍硬限四个 frame resources，不为每帧重建 external image/semaphore/import。
+4. endpoint 通过 `ICompositionGpuInterop.ImportImage` / `ImportSemaphore` 导入 candidate lease；只有 Scene exact policy 的
+   allocation == logical == target `PixelSize`、candidate generation、identity/revision 与单调 sequence 全部匹配才调用
+   `UpdateWithSemaphoresAsync`。必须等待该 task 成功才返回 prepared handle；fault/cancel/stale 保留旧 committed layout/front，
+   candidate 按 work-fence 或 quarantine 语义收口，不能提前标记 current/presented。
+5. transaction 依次经过 Proposal→Preparing→Prepared→Validated。所有 participant 都 validated 且属于同一个 compositor scope 时，
+   coordinator 才在同一 UI/composition publish turn 应用可选 `GridLength` mutation 和全部 `visual.Surface`/`Size` switch，opacity
+   始终为 1，并共享一个 batch `Rendered` barrier；之后进入 Retiring/Completed。publish 前任一 mismatch/cancel/stale identity 使全组
+   Aborted 并保留旧 front；publish 后结果歧义进入 Quarantined。跨 compositor 必须拆分，明确不原子。Scene A→B→A 仍必须为
+   第二个 A 独立 prepare；Game fit 和 Frame Debug capture 不复用 Scene geometry state。
+6. plain `GridSplitter.ShowsPreview` 或 drag-end debounce 会让拖动期间没有 unique exact geometry，不能满足 `>=60/s`，因此不采用。
+   同一 drag 的新 proposal latest-wins 替换 queued successor，不取消正在 preparation/publish 的 active proposal；每个 successful
+   switch 后立即准备当时最新 proposal。显式 cancel 或 session/endpoint epoch 失效才终止尚未 publish 的 active candidate。非 owned splitter 的直接
+   Bounds/DPI/top-level resize 仍通过 Render-priority early admission 走 exact-only hidden fallback：禁止 crop/stretch，但明确允许短暂
+   blank，不能作为 flash-free dock acceptance 证据。
+7. typed `Backpressure` 在下一次 composition cadence 重试；Unavailable/device failure 显式降级。`IsRealtime=true` 即使静止也每个
+   commit 重挂下一帧并以 exact surface-update `>=60 FPS` 为最低门槛；candidate commit 后才恢复 steady 预填充。`false` 只响应
+   dirty invalidation。hidden dock tab/lifetime pause 停止 admission，ancestor visible、新 surface attach 或 lifetime
+   replacement/resume 以 `Exposed` 恢复一帧；closed session 不再接受 UI invalidation。camera/target/exposed 通过 request-sequence
+   content fence 拒绝旧内容帧，extent 仍由 geometry generation 独占门控。
+8. 每轮 frame 通过 `editor_viewport_complete_frame_v5(stream, slot, completionKind)` exact-once 完成；compositor submission 前拒绝
+   用 `NotSubmittedToConsumer`，update 完成后使用 `ConsumerAccessed`。submission、disposal 或 completion 结果歧义时对应资源进入
+   process-lifetime quarantine。control detach 停止 admission 并等待所有 front/candidate frame/surface cleanup；process shutdown
+   再 drain native RenderThread 与 Vulkan owner。`--smoke-studio-viewport-cadence` 只保留前台静态 Scene 的 5 秒 Realtime 稳态基线；
+   `--smoke-viewport-transaction-resize`、`--smoke-viewport-transaction-overload`、`--smoke-viewport-transaction-faults`、
+   `--smoke-viewport-transaction-supersede` 与 `--smoke-viewport-multi-endpoint` 已拆成独立真实 Studio GPU smoke，
+   `--smoke-viewport-transaction-flash` 再做 transaction-batch 结构边界
+   检查。最终 GPU process acceptance 为 47/47；它们按 native resource、transaction phase、Avalonia surface/`Rendered` 与 physical display 分层报告；没有 observer 的层输出
+   evidence unavailable。代表性 resize 完成 209/209 observed exact `Rendered` generations、106.44/s、p95 15.26 ms、hidden 0，
+   steady 为 219.43 surface-updates/s。当前 PresentMon 采样因大量 ETW event loss 且没有 CSV 被作废；multi-endpoint 只通过两
+   endpoint 的 group boundary，3–4 realtime lane 与 slow-consumer HOL 仍是 blocker。
+9. native runtime 在唯一 RenderThread 上拥有 steady-clock frame snapshot：frame index 是 render-attempt identity（失败允许留 gap），
    time/delta 是真实单调 render 时间而非 `ordinal / 60`。delta 以 runtime 中上一次任意 stream 成功 record 为边界；Avalonia
    cadence、GPU timeline 与 physical present 都不反向定义 editor/world time。
+
+参考模式的取舍记录在 [ADR-0006](../../apps/studio/docs/adr/0006-viewport-interactive-resize.md)：采用 Unreal 的 immutable render
+handoff/thread owner boundary、Unity 的 semantic invalidation→repaint 分层与 hidden tab refresh 行为、O3DE 的 viewport-size state 与
+render tick 分离及无 drag-end debounce；拒绝复制其品牌 API、模块/widget owner、固定 editor tick 或任何跨 compositor 的伪原子提交。
+`Viewport Presentation Transaction` 的 endpoint ownership、identity tuple 和 same-compositor 原子边界是这些公开事实与 Asharia
+package-first、Avalonia composition、headless/Vulkan lifetime 约束结合后的本地推论，不声称来自任一引擎的同名 API。
 
 当前建议仍保持：
 

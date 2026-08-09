@@ -217,13 +217,16 @@ namespace {
 
     [[nodiscard]] bool validPresentRequestV5(const EditorViewportNativePresentRequestV5& request) {
         constexpr std::uint32_t kMaximumDebugProxyCount = 256U;
+        constexpr std::uint32_t kKnownFlags =
+            EditorViewportNativePresentRequestV5Flags_HasLogicalExtent |
+            EditorViewportNativePresentRequestV5Flags_FlashSentinelCorners;
         const asharia::editor::EditorExtent2D logicalExtent = logicalExtentFor(request);
         if (!hasValue(request.sessionId) || !hasValue(request.targetId) ||
             request.targetRevision == 0U || request.requestSequence == 0U ||
             request.widthPixels == 0U || request.heightPixels == 0U ||
-            request.flags != EditorViewportNativePresentRequestV5Flags_HasLogicalExtent ||
-            logicalExtent.width == 0U || logicalExtent.height == 0U ||
-            logicalExtent.width > request.widthPixels ||
+            (request.flags & EditorViewportNativePresentRequestV5Flags_HasLogicalExtent) == 0U ||
+            (request.flags & ~kKnownFlags) != 0U || logicalExtent.width == 0U ||
+            logicalExtent.height == 0U || logicalExtent.width > request.widthPixels ||
             logicalExtent.height > request.heightPixels ||
             request.kind > EditorViewportNativeRenderKind_Preview ||
             request.targetKind != EditorViewportNativeTargetKind_DocumentScene ||
@@ -476,9 +479,12 @@ namespace {
             .hasCamera = true,
             .camera = viewportCamera(request.camera),
             .debugProxies = debugProxies,
+            .flashSentinelCorners =
+                (request.flags & EditorViewportNativePresentRequestV5Flags_FlashSentinelCorners) !=
+                0U,
         };
-        auto submitted = asharia::editor::EditorSharedViewportRuntime::instance().submitLatest(
-            streamId, desc);
+        auto submitted =
+            asharia::editor::EditorSharedViewportRuntime::instance().submitLatest(streamId, desc);
         return submitted ? EditorViewportNativeStatus_Success
                          : EditorViewportNativeStatus_Unavailable;
     }

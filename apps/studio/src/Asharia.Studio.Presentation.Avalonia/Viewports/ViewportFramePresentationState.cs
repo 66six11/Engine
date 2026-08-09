@@ -41,6 +41,205 @@ public readonly record struct ViewportPresentationGeometryMetrics(
         LastPresentedSize.LogicalExtent == LastPanelExtent;
 }
 
+public enum ViewportPresentationTransactionResult
+{
+    Published,
+    Committed,
+    ExtentMismatch,
+    Cancelled,
+    Invalidated,
+    RecoverableFailure,
+    Quarantined,
+}
+
+internal readonly record struct ViewportPresentationTicket(
+    ulong Value,
+    ViewportExtent TargetExtent,
+    ulong BaseGeometryGeneration,
+    ulong CandidateGeometryGeneration);
+
+internal enum ViewportPresentationLayoutDisposition
+{
+    None,
+    ProbeObserved,
+    ArmedExact,
+    ArmedMismatch,
+}
+
+internal sealed class ViewportPresentationPreparationState
+{
+    private enum PreparationState
+    {
+        None,
+        Preparing,
+        Prepared,
+        Armed,
+    }
+
+    private ulong nextTicket_;
+    private ulong layoutProbeTicket_;
+    private ViewportExtent probedExtent_;
+    private ViewportPresentationTicket preparation_;
+    private ViewportExtent observedArmedExtent_;
+    private PreparationState preparationState_;
+
+    public bool IsLayoutProbeActive => layoutProbeTicket_ != 0;
+
+    public bool HasPreparation => preparationState_ != PreparationState.None;
+
+    public ulong BeginLayoutProbe()
+    {
+        if (layoutProbeTicket_ != 0)
+        {
+            throw new InvalidOperationException("A viewport layout probe is already active.");
+        }
+        if (preparationState_ != PreparationState.None)
+        {
+            throw new InvalidOperationException(
+                "A viewport layout probe cannot begin while an exact resize is pending.");
+        }
+
+        layoutProbeTicket_ = checked(++nextTicket_);
+        probedExtent_ = default;
+        return layoutProbeTicket_;
+    }
+
+    public void ObserveLayoutProbe(ViewportExtent extent)
+    {
+        if (layoutProbeTicket_ == 0)
+        {
+            throw new InvalidOperationException("No viewport layout probe is active.");
+        }
+        probedExtent_ = extent;
+    }
+
+    public bool TryGetLayoutProbeExtent(ulong ticket, out ViewportExtent extent)
+    {
+        extent = probedExtent_;
+        return ticket != 0 && ticket == layoutProbeTicket_ &&
+               extent.Width != 0 && extent.Height != 0;
+    }
+
+    public void EndLayoutProbe(ulong ticket)
+    {
+        if (ticket == 0 || ticket != layoutProbeTicket_)
+        {
+            return;
+        }
+        layoutProbeTicket_ = 0;
+        probedExtent_ = default;
+    }
+
+    public ViewportPresentationTicket BeginPreparation(
+        ViewportExtent targetExtent,
+        ulong baseGeometryGeneration)
+    {
+        if (targetExtent.Width == 0 || targetExtent.Height == 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(targetExtent));
+        }
+        if (preparationState_ != PreparationState.None)
+        {
+            throw new InvalidOperationException("A viewport exact resize is already pending.");
+        }
+        if (layoutProbeTicket_ != 0)
+        {
+            throw new InvalidOperationException(
+                "A viewport exact resize cannot begin while a layout probe is active.");
+        }
+
+        preparation_ = new ViewportPresentationTicket(
+            checked(++nextTicket_),
+            targetExtent,
+            baseGeometryGeneration,
+            checked(baseGeometryGeneration + 1));
+        preparationState_ = PreparationState.Preparing;
+        observedArmedExtent_ = default;
+        return preparation_;
+    }
+
+    public bool TryMarkPrepared(ViewportPresentationTicket ticket)
+    {
+        if (preparationState_ != PreparationState.Preparing || preparation_ != ticket)
+        {
+            return false;
+        }
+        preparationState_ = PreparationState.Prepared;
+        return true;
+    }
+
+    public bool TryArm(ViewportPresentationTicket ticket)
+    {
+        if (preparationState_ != PreparationState.Prepared || preparation_ != ticket)
+        {
+            return false;
+        }
+        preparationState_ = PreparationState.Armed;
+        observedArmedExtent_ = default;
+        return true;
+    }
+
+    public ViewportPresentationLayoutDisposition ObserveBounds(
+        ViewportExtent extent,
+        out ViewportPresentationTicket ticket)
+    {
+        ticket = default;
+        if (layoutProbeTicket_ != 0)
+        {
+            probedExtent_ = extent;
+            return ViewportPresentationLayoutDisposition.ProbeObserved;
+        }
+        if (preparationState_ != PreparationState.Armed)
+        {
+            return ViewportPresentationLayoutDisposition.None;
+        }
+
+        ticket = preparation_;
+        observedArmedExtent_ = extent;
+        return extent == ticket.TargetExtent
+            ? ViewportPresentationLayoutDisposition.ArmedExact
+            : ViewportPresentationLayoutDisposition.ArmedMismatch;
+    }
+
+    public bool IsArmedExtentExact(ViewportPresentationTicket ticket) =>
+        preparationState_ == PreparationState.Armed &&
+        preparation_ == ticket &&
+        observedArmedExtent_ == ticket.TargetExtent;
+
+    public bool TryCompleteArmed(ViewportPresentationTicket ticket)
+    {
+        if (!IsArmedExtentExact(ticket))
+        {
+            return false;
+        }
+        preparation_ = default;
+        observedArmedExtent_ = default;
+        preparationState_ = PreparationState.None;
+        return true;
+    }
+
+    public bool TryCancel(ViewportPresentationTicket ticket)
+    {
+        if (preparationState_ == PreparationState.None || preparation_ != ticket)
+        {
+            return false;
+        }
+        preparation_ = default;
+        observedArmedExtent_ = default;
+        preparationState_ = PreparationState.None;
+        return true;
+    }
+
+    public void Reset()
+    {
+        layoutProbeTicket_ = 0;
+        probedExtent_ = default;
+        preparation_ = default;
+        observedArmedExtent_ = default;
+        preparationState_ = PreparationState.None;
+    }
+}
+
 internal sealed class ViewportGeometryGenerationState
 {
     public ViewportExtent CurrentExtent { get; private set; }
@@ -190,6 +389,21 @@ internal enum CompositionConsumerAccessState
     NotSubmittedToConsumer,
     SubmissionStarted,
     ConsumerAccessed,
+}
+
+internal enum CompositionUpdateCompletion
+{
+    NotSubmittedToConsumer,
+    ConsumerAccessed,
+    VisibleSurfacePublished,
+}
+
+internal static class CompositionUpdatePresentationPolicy
+{
+    public static bool CanMarkPresented(
+        CompositionUpdateCompletion completion,
+        bool finalCanPresent) =>
+        completion == CompositionUpdateCompletion.VisibleSurfacePublished && finalCanPresent;
 }
 
 internal sealed class CompositionConsumerAccessTracker

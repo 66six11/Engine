@@ -90,6 +90,13 @@ public sealed record ViewportRenderStreamSnapshot(
     ulong CoalescedRequests,
     ulong RenderedFrames);
 
+[Flags]
+internal enum ViewportRenderDiagnosticOverlay
+{
+    None = 0,
+    FlashSentinelCorners = 1 << 0,
+}
+
 public sealed class ViewportRenderStream : IDisposable, IAsyncDisposable
 {
     private readonly object gate_ = new();
@@ -107,7 +114,20 @@ public sealed class ViewportRenderStream : IDisposable, IAsyncDisposable
 
     public ViewportSubmitResult SubmitLatest(ViewportRenderRequest request)
     {
+        return SubmitLatest(request, ViewportRenderDiagnosticOverlay.None);
+    }
+
+    internal ViewportSubmitResult SubmitLatest(
+        ViewportRenderRequest request,
+        ViewportRenderDiagnosticOverlay diagnosticOverlay)
+    {
         ArgumentNullException.ThrowIfNull(request);
+        if ((diagnosticOverlay &
+             ~ViewportRenderDiagnosticOverlay.FlashSentinelCorners) !=
+            ViewportRenderDiagnosticOverlay.None)
+        {
+            throw new ArgumentOutOfRangeException(nameof(diagnosticOverlay));
+        }
         lock (gate_)
         {
             ObjectDisposedException.ThrowIf(destroyed_, this);
@@ -118,7 +138,7 @@ public sealed class ViewportRenderStream : IDisposable, IAsyncDisposable
                     "Viewport render stream is closing."));
             }
 
-            var submitted = bridge_.SubmitLatest(StreamId, request);
+            var submitted = bridge_.SubmitLatest(StreamId, request, diagnosticOverlay);
             if (!submitted.Succeeded)
             {
                 return submitted;

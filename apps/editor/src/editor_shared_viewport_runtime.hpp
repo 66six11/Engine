@@ -216,6 +216,7 @@ namespace asharia::editor {
             bool hasCamera{};
             EditorViewportCamera camera;
             std::vector<EditorSharedViewportDebugProxy> debugProxies;
+            bool flashSentinelCorners{};
 
             [[nodiscard]] static RenderFramePacket copyOf(EditorSharedViewportPresentDesc desc);
             [[nodiscard]] EditorSharedViewportPresentDesc view() const;
@@ -342,6 +343,9 @@ namespace asharia::editor {
         mutable std::mutex streamsMutex_;
         std::unordered_map<EditorSharedViewportStreamId, std::shared_ptr<StreamState>> streams_;
         std::atomic<EditorSharedViewportStreamId> nextStreamId_{1U};
+        // Render-thread-only cursor. Registry iteration order must never define
+        // which viewport receives the next owner-loop transition.
+        EditorSharedViewportStreamId lastDispatchedStreamId_{};
 
         // These objects are render-thread-owned. Vulkan calls and object
         // destruction must never move back to a C ABI caller thread.

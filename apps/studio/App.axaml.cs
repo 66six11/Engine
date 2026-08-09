@@ -66,7 +66,14 @@ public partial class App : Application
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
-            if (StudioViewportCadenceSmoke.IsRequested(Environment.GetCommandLineArgs()))
+            var commandLine = Environment.GetCommandLineArgs();
+            if (StudioViewportTransactionSmoke.IsRequested(commandLine))
+            {
+                startupTask_ = StudioViewportTransactionSmoke.RunAsync(desktop, commandLine);
+                base.OnFrameworkInitializationCompleted();
+                return;
+            }
+            if (StudioViewportCadenceSmoke.IsRequested(commandLine))
             {
                 startupTask_ = StudioViewportCadenceSmoke.RunAsync(desktop);
                 base.OnFrameworkInitializationCompleted();

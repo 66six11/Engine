@@ -52,6 +52,7 @@ internal enum ViewportNativePresentRequestV5Flags : uint
 {
     None = 0,
     HasLogicalExtent = 1U << 0,
+    FlashSentinelCorners = 1U << 1,
 }
 
 [StructLayout(LayoutKind.Sequential)]

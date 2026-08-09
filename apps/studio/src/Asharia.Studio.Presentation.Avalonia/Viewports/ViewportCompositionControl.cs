@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Runtime.ExceptionServices;
+using System.Threading;
 using System.Threading.Tasks;
 using Asharia.Studio.Application.Viewports;
 using Asharia.Studio.EngineBridge.Viewports;
@@ -17,6 +18,79 @@ using Vector3 = System.Numerics.Vector3;
 
 namespace Asharia.Studio.Presentation.Avalonia.Viewports;
 
+public sealed class ViewportPresentationLayoutProbe : IDisposable
+{
+    private ViewportCompositionControl? owner_;
+    private readonly ulong ticket_;
+
+    internal ViewportPresentationLayoutProbe(ViewportCompositionControl owner, ulong ticket)
+    {
+        owner_ = owner;
+        ticket_ = ticket;
+    }
+
+    public bool TryGetExactPixelExtent(out ViewportExtent extent)
+    {
+        var owner = owner_;
+        if (owner is null)
+        {
+            extent = default;
+            return false;
+        }
+        return owner.TryCapturePresentationLayoutProbe(ticket_, out extent);
+    }
+
+    public void Dispose()
+    {
+        var owner = owner_;
+        if (owner is null)
+        {
+            return;
+        }
+        owner.EndPresentationLayoutProbe(ticket_);
+        owner_ = null;
+    }
+}
+
+public sealed class ViewportPreparedPresentation : IAsyncDisposable
+{
+    private readonly TaskCompletionSource<ViewportPresentationTransactionResult> completion_ = new(
+        TaskCreationOptions.RunContinuationsAsynchronously);
+
+    internal ViewportPreparedPresentation(
+        ViewportCompositionControl owner,
+        ViewportPresentationTicket ticket)
+    {
+        Owner = owner;
+        Ticket = ticket;
+    }
+
+    public ViewportExtent TargetExtent => Ticket.TargetExtent;
+
+    public Task<ViewportPresentationTransactionResult> Completion => completion_.Task;
+
+    internal ViewportCompositionControl Owner { get; }
+
+    internal ViewportPresentationTicket Ticket { get; }
+
+    internal ulong CandidateRenderedFrames { get; set; }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (Dispatcher.UIThread.CheckAccess())
+        {
+            Owner.CancelPreparedPresentation(this);
+            return;
+        }
+        await Dispatcher.UIThread.InvokeAsync(
+            () => Owner.CancelPreparedPresentation(this),
+            DispatcherPriority.Send);
+    }
+
+    internal void Complete(ViewportPresentationTransactionResult result) =>
+        completion_.TrySetResult(result);
+}
+
 public sealed class ViewportCompositionControl : Control
 {
     private enum CompositionCommitResult
@@ -26,7 +100,7 @@ public sealed class ViewportCompositionControl : Control
         Presented,
     }
 
-    private sealed class StreamPresentationState
+    internal sealed class StreamPresentationState
     {
         public StreamPresentationState(
             ViewportRenderStream stream,
@@ -53,7 +127,7 @@ public sealed class ViewportCompositionControl : Control
         public bool IsQuarantined { get; set; }
     }
 
-    private sealed record ImportedSlot(
+    internal sealed record ImportedSlot(
         nint NativeSlot,
         ViewportFrameNativeHandles Handles,
         ICompositionImportedGpuImage Image,
@@ -65,6 +139,8 @@ public sealed class ViewportCompositionControl : Control
         public PendingCompositionCommit(
             ViewportExtent extent,
             ulong geometryGeneration,
+            CompositionDrawingSurface targetSurface,
+            bool publishesVisibleSurface,
             ICompositionImportedGpuImage image,
             ICompositionImportedGpuSemaphore waitSemaphore,
             ICompositionImportedGpuSemaphore signalSemaphore,
@@ -74,6 +150,8 @@ public sealed class ViewportCompositionControl : Control
         {
             Extent = extent;
             GeometryGeneration = geometryGeneration;
+            TargetSurface = targetSurface;
+            PublishesVisibleSurface = publishesVisibleSurface;
             Image = image;
             WaitSemaphore = waitSemaphore;
             SignalSemaphore = signalSemaphore;
@@ -85,6 +163,10 @@ public sealed class ViewportCompositionControl : Control
         public ViewportExtent Extent { get; }
 
         public ulong GeometryGeneration { get; }
+
+        public CompositionDrawingSurface TargetSurface { get; }
+
+        public bool PublishesVisibleSurface { get; }
 
         public ICompositionImportedGpuImage Image { get; }
 
@@ -98,8 +180,147 @@ public sealed class ViewportCompositionControl : Control
 
         public Func<bool> TryMarkPresented { get; }
 
-        public TaskCompletionSource<bool> Completion { get; } = new(
+        public TaskCompletionSource<CompositionUpdateCompletion> Completion { get; } = new(
             TaskCreationOptions.RunContinuationsAsynchronously);
+    }
+
+    internal sealed class PreparedPresentationOperation
+    {
+        private int cancellationDisposed_;
+
+        public PreparedPresentationOperation(
+            ViewportPreparedPresentation handle,
+            CompositionDrawingSurface surface,
+            StreamPresentationState stream,
+            ViewportSession session,
+            ViewportPresentationLifetime lifetime,
+            ulong attachmentGeneration,
+            CancellationTokenSource cancellation)
+        {
+            Handle = handle;
+            Surface = surface;
+            Stream = stream;
+            Session = session;
+            Lifetime = lifetime;
+            AttachmentGeneration = attachmentGeneration;
+            Cancellation = cancellation;
+        }
+
+        public ViewportPreparedPresentation Handle { get; }
+
+        public CompositionDrawingSurface Surface { get; }
+
+        public StreamPresentationState Stream { get; }
+
+        public ViewportSession Session { get; }
+
+        public ViewportPresentationLifetime Lifetime { get; }
+
+        public ulong AttachmentGeneration { get; }
+
+        public CancellationTokenSource Cancellation { get; }
+
+        public ViewportPresentationFrame Frame { get; set; }
+
+        public ViewportRenderSize RenderSize { get; set; }
+
+        public bool OwnsSurface { get; set; } = true;
+
+        public bool OwnsStream { get; set; } = true;
+
+        public void RequestCancellation()
+        {
+            if (Volatile.Read(ref cancellationDisposed_) == 0)
+            {
+                try
+                {
+                    Cancellation.Cancel();
+                }
+                catch (ObjectDisposedException)
+                {
+                    // Disposal can win the race after the volatile read. A disposed source is
+                    // already terminal, so there is no cancellation work left to request.
+                }
+            }
+        }
+
+        public void DisposeCancellation()
+        {
+            if (Interlocked.Exchange(ref cancellationDisposed_, 1) == 0)
+            {
+                Cancellation.Dispose();
+            }
+        }
+    }
+
+    internal sealed class PresentationPublishReceipt
+    {
+        internal PresentationPublishReceipt(
+            PreparedPresentationOperation operation,
+            CompositionSurfaceVisual visual,
+            CompositionDrawingSurface oldSurface,
+            CompositionDrawingSurface oldVisualSurface,
+            Vector oldVisualSize,
+            float oldVisualOpacity,
+            ViewportGeometryChangeSource source,
+            IReadOnlyList<StreamPresentationState> replacedStreams)
+        {
+            Operation = operation;
+            Visual = visual;
+            OldSurface = oldSurface;
+            OldVisualSurface = oldVisualSurface;
+            OldVisualSize = oldVisualSize;
+            OldVisualOpacity = oldVisualOpacity;
+            Source = source;
+            ReplacedStreams = replacedStreams;
+        }
+
+        internal PreparedPresentationOperation Operation { get; }
+
+        internal CompositionSurfaceVisual Visual { get; }
+
+        internal CompositionDrawingSurface OldSurface { get; }
+
+        internal CompositionDrawingSurface OldVisualSurface { get; }
+
+        internal Vector OldVisualSize { get; }
+
+        internal float OldVisualOpacity { get; }
+
+        internal ViewportGeometryChangeSource Source { get; }
+
+        internal IReadOnlyList<StreamPresentationState> ReplacedStreams { get; }
+
+        internal bool IsFinalized { get; set; }
+
+        internal bool IsRolledBack { get; set; }
+
+        internal bool IsRendered { get; set; }
+
+        internal bool IsQuarantined { get; set; }
+
+        internal ViewportPresentationQuarantineTransferReceipt? QuarantineTransferReceipt
+        {
+            get;
+            set;
+        }
+
+        internal string? QuarantineReason { get; set; }
+    }
+
+    internal sealed class PublicationOutcomeAmbiguousException : Exception
+    {
+        internal PublicationOutcomeAmbiguousException(
+            PresentationPublishReceipt receipt,
+            Exception innerException)
+            : base(
+                "The viewport presentation could not determine which front the compositor observed.",
+                innerException)
+        {
+            Receipt = receipt;
+        }
+
+        internal PresentationPublishReceipt Receipt { get; }
     }
 
     private readonly record struct NativeReadyWaitResult(
@@ -147,8 +368,16 @@ public sealed class ViewportCompositionControl : Control
     private readonly ViewportPresentationCadenceTracker cadenceTracker_ = new();
     private readonly ViewportGeometryGenerationState geometryState_ = new();
     private readonly ViewportGeometryDiagnosticsTracker geometryDiagnostics_ = new();
+    private readonly ViewportPresentationPreparationState presentationPreparation_ = new();
+    private readonly ViewportCompositionControlTestHooks? testHooks_;
     private readonly List<Task> retiringStreamTasks_ = new();
+    private readonly List<Task> retiringSurfaceTasks_ = new();
+    private readonly List<PresentationPublishReceipt> quarantinedPresentations_ = new();
+    private readonly List<CompositionDrawingSurface> quarantinedSurfaces_ = new();
+    private readonly List<StreamPresentationState> quarantinedStreams_ = new();
     private readonly List<Visual> visibilitySources_ = new();
+    private readonly ViewportPresentationEndpointId endpointId_ = new(
+        $"viewport-{Guid.NewGuid():N}");
     private CompositionSurfaceVisual? compositionVisual_;
     private CompositionDrawingSurface? surface_;
     private ICompositionGpuInterop? interop_;
@@ -157,6 +386,8 @@ public sealed class ViewportCompositionControl : Control
     private TopLevel? topLevel_;
     private StreamPresentationState? activeStream_;
     private StreamPresentationState? desiredStream_;
+    private PreparedPresentationOperation? preparingPresentation_;
+    private PreparedPresentationOperation? preparedPresentation_;
     private Task detachTask_;
     private ViewportPresentationState state_ = ViewportPresentationState.Detached;
     private string statusMessage_ = "Scene View is detached.";
@@ -174,16 +405,34 @@ public sealed class ViewportCompositionControl : Control
     private ulong queuedFrameTicket_;
     private ulong compositionCommitTicket_;
     private ulong generation_;
+    private long candidateSurfaceCreateAttempts_;
+    private long candidateSurfacesCreated_;
+    private long candidateStreamOpenAttempts_;
+    private long candidateStreamsOpened_;
+    private long candidateNativeSubmissions_;
+    private long candidateLeasesAcquired_;
+    private long candidateImageImportAttempts_;
+    private long candidateImagesImported_;
+    private long candidateSurfaceUpdateAttempts_;
+    private long candidateCleanupCompletions_;
 
     public ViewportCompositionControl()
-        : this(Task.CompletedTask)
+        : this(Task.CompletedTask, testHooks: null)
     {
     }
 
     internal ViewportCompositionControl(Task precedingDetach)
+        : this(precedingDetach, testHooks: null)
+    {
+    }
+
+    internal ViewportCompositionControl(
+        Task precedingDetach,
+        ViewportCompositionControlTestHooks? testHooks)
     {
         ArgumentNullException.ThrowIfNull(precedingDetach);
         detachTask_ = precedingDetach;
+        testHooks_ = testHooks;
         ClipToBounds = true;
     }
 
@@ -226,6 +475,262 @@ public sealed class ViewportCompositionControl : Control
         geometryDiagnostics_.BeginMeasurement(
             geometryState_.CurrentGeneration,
             Stopwatch.GetTimestamp());
+
+    public ViewportPresentationLayoutProbe BeginPresentationLayoutProbe()
+    {
+        Dispatcher.UIThread.VerifyAccess();
+        return new ViewportPresentationLayoutProbe(
+            this,
+            presentationPreparation_.BeginLayoutProbe());
+    }
+
+    internal ViewportPresentationTestSnapshot CapturePresentationTestSnapshot()
+    {
+        Dispatcher.UIThread.VerifyAccess();
+        var visualSurface = compositionVisual_?.Surface;
+        var displayedOperation = preparedPresentation_ is { } prepared &&
+                                 ReferenceEquals(visualSurface, prepared.Surface)
+            ? prepared
+            : quarantinedPresentations_.LastOrDefault(receipt =>
+                ReferenceEquals(visualSurface, receipt.Operation.Surface))?.Operation;
+        var visualSurfaceExtent = displayedOperation is not null
+            ? displayedOperation.RenderSize.AllocationExtent
+            : ReferenceEquals(compositionVisual_?.Surface, surface_)
+                ? lastPresentedSize_.AllocationExtent
+                : default;
+        var candidateExtent = preparedPresentation_?.Handle.TargetExtent ??
+                              preparingPresentation_?.Handle.TargetExtent ??
+                              default;
+        return new ViewportPresentationTestSnapshot(
+            preparingPresentation_ is not null,
+            preparedPresentation_ is not null,
+            retiringStreamTasks_.Count,
+            retiringSurfaceTasks_.Count,
+            quarantinedPresentations_.Count,
+            quarantinedStreams_.Count,
+            quarantinedSurfaces_.Count,
+            Lifetime?.QuarantinedFrameCount ?? 0,
+            compositionVisual_?.Opacity ?? 0,
+            compositionVisual_?.Surface,
+            compositionVisual_?.Size ?? default,
+            visualSurfaceExtent,
+            lastPresentedSize_.AllocationExtent,
+            candidateExtent,
+            geometryState_.CurrentExtent,
+            geometryState_.CurrentGeneration,
+            geometryState_.SurfaceGeneration,
+            geometryState_.HasExactSurface,
+            Interlocked.Read(ref candidateSurfaceCreateAttempts_),
+            Interlocked.Read(ref candidateSurfacesCreated_),
+            Interlocked.Read(ref candidateStreamOpenAttempts_),
+            Interlocked.Read(ref candidateStreamsOpened_),
+            Interlocked.Read(ref candidateNativeSubmissions_),
+            Interlocked.Read(ref candidateLeasesAcquired_),
+            Interlocked.Read(ref candidateImageImportAttempts_),
+            Interlocked.Read(ref candidateImagesImported_),
+            Interlocked.Read(ref candidateSurfaceUpdateAttempts_),
+            Interlocked.Read(ref candidateCleanupCompletions_));
+    }
+
+    public async Task<ViewportPreparedPresentation> PreparePresentationAsync(
+        ViewportExtent targetExtent,
+        CancellationToken cancellationToken = default)
+    {
+        Dispatcher.UIThread.VerifyAccess();
+        cancellationToken.ThrowIfCancellationRequested();
+        if (targetExtent.Width == 0 || targetExtent.Height == 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(targetExtent));
+        }
+        if (!isAttached_ || compositionVisual_ is not { } visual || interop_ is not { } interop ||
+            Session is not { } session || Lifetime is not { } lifetime ||
+            !lifetime.IsAcceptingFrames || !geometryState_.HasExactSurface ||
+            !TryGetRenderSize(out var currentSize) ||
+            currentSize.LogicalExtent != geometryState_.CurrentExtent)
+        {
+            throw new InvalidOperationException(
+                "A presentation transaction requires an attached viewport with a current visible front surface.");
+        }
+        if (targetExtent == currentSize.LogicalExtent)
+        {
+            throw new ArgumentException(
+                "The prepared presentation extent must differ from the committed front extent.",
+                nameof(targetExtent));
+        }
+        if (preparingPresentation_ is not null || preparedPresentation_ is not null)
+        {
+            throw new InvalidOperationException("A viewport presentation is already pending.");
+        }
+
+        var ticket = presentationPreparation_.BeginPreparation(
+            targetExtent,
+            geometryState_.CurrentGeneration);
+        var handle = new ViewportPreparedPresentation(this, ticket);
+        // The retained front surface is independent from its producer stream once Avalonia has
+        // consumed the imported image. Stop the obsolete producer as soon as a replacement
+        // transaction starts so its three native slots do not serialize candidate creation.
+        RetireCurrentStreams();
+        CompositionDrawingSurface? acquiredSurface = null;
+        StreamPresentationState? acquiredStream = null;
+        CancellationTokenSource? acquiredCancellation = null;
+        PreparedPresentationOperation operation;
+        Task preparation;
+        try
+        {
+            Interlocked.Increment(ref candidateSurfaceCreateAttempts_);
+            if (testHooks_ is not null)
+            {
+                await testHooks_.BeforeStageAsyncCore(
+                    ViewportCompositionControlTestPoint.BeforeSurfaceCreate,
+                    cancellationToken);
+            }
+            acquiredSurface = visual.Compositor.CreateDrawingSurface();
+            Interlocked.Increment(ref candidateSurfacesCreated_);
+            Interlocked.Increment(ref candidateStreamOpenAttempts_);
+            if (testHooks_ is not null)
+            {
+                await testHooks_.BeforeStageAsyncCore(
+                    ViewportCompositionControlTestPoint.BeforeStreamOpen,
+                    cancellationToken);
+            }
+            var opened = bridge_.OpenStream(CreateCompatibility(interop));
+            if (!opened.Succeeded)
+            {
+                throw new InvalidOperationException(opened.Failure!.Message);
+            }
+            Interlocked.Increment(ref candidateStreamsOpened_);
+
+            acquiredStream = new StreamPresentationState(
+                opened.Stream!,
+                targetExtent,
+                ticket.CandidateGeometryGeneration);
+            acquiredCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+                cancellationToken);
+            operation = new PreparedPresentationOperation(
+                handle,
+                acquiredSurface,
+                acquiredStream,
+                session,
+                lifetime,
+                generation_,
+                acquiredCancellation);
+            preparingPresentation_ = operation;
+            preparation = PreparePresentationCoreAsync(
+                operation,
+                acquiredCancellation.Token);
+            acquiredStream.WorkFence.TrackPresentation(preparation);
+        }
+        catch
+        {
+            presentationPreparation_.TryCancel(ticket);
+            preparingPresentation_ = null;
+            acquiredCancellation?.Cancel();
+            if (acquiredStream is null)
+            {
+                acquiredCancellation?.Dispose();
+                acquiredSurface?.Dispose();
+                if (acquiredSurface is not null)
+                {
+                    Interlocked.Increment(ref candidateCleanupCompletions_);
+                }
+            }
+            else
+            {
+                var retirement = RetireAcquiredPresentationAsync(
+                    acquiredStream,
+                    acquiredSurface,
+                    acquiredCancellation);
+                TrackRetiringSurfaceTask(retirement);
+            }
+            ResumeFrontPresentation();
+            throw;
+        }
+        try
+        {
+            await preparation;
+            acquiredCancellation.Token.ThrowIfCancellationRequested();
+            if (!ReferenceEquals(preparingPresentation_, operation) ||
+                !presentationPreparation_.TryMarkPrepared(ticket))
+            {
+                throw new OperationCanceledException(
+                    "The viewport presentation preparation was invalidated.",
+                    acquiredCancellation.Token);
+            }
+
+            preparingPresentation_ = null;
+            preparedPresentation_ = operation;
+            handle.CandidateRenderedFrames = operation.Stream.Stream.Poll().RenderedFrames;
+            return handle;
+        }
+        catch (Exception exception)
+        {
+            presentationPreparation_.TryCancel(ticket);
+            if (ReferenceEquals(preparingPresentation_, operation))
+            {
+                preparingPresentation_ = null;
+            }
+            QueueUncommittedPresentationRetirement(operation);
+            ResumeFrontPresentation();
+            if (exception is not (OperationCanceledException or
+                    ViewportPresentationRecoverableException) &&
+                IsCurrent(operation.AttachmentGeneration))
+            {
+                SetDegraded(
+                    ViewportPresentationState.RenderFailed,
+                    $"Viewport presentation preparation failed: {exception.Message}");
+            }
+            throw;
+        }
+        finally
+        {
+            acquiredStream.WorkFence.UntrackPresentation(preparation);
+        }
+    }
+
+    public bool ArmPreparedPresentation(ViewportPreparedPresentation prepared)
+    {
+        ArgumentNullException.ThrowIfNull(prepared);
+        Dispatcher.UIThread.VerifyAccess();
+        if (!ReferenceEquals(prepared.Owner, this) ||
+            preparedPresentation_ is not { } operation ||
+            !ReferenceEquals(operation.Handle, prepared))
+        {
+            return false;
+        }
+        if (!IsPreparedPresentationCurrent(operation))
+        {
+            presentationPreparation_.TryCancel(prepared.Ticket);
+            preparedPresentation_ = null;
+            prepared.Complete(ViewportPresentationTransactionResult.Invalidated);
+            QueueUncommittedPresentationRetirement(operation);
+            ResumeFrontPresentation();
+            return false;
+        }
+        if (!presentationPreparation_.TryArm(prepared.Ticket))
+        {
+            return false;
+        }
+        return true;
+    }
+
+    public bool CancelPreparedPresentation(ViewportPreparedPresentation prepared)
+    {
+        ArgumentNullException.ThrowIfNull(prepared);
+        Dispatcher.UIThread.VerifyAccess();
+        if (!ReferenceEquals(prepared.Owner, this) ||
+            preparedPresentation_ is not { } operation ||
+            !ReferenceEquals(operation.Handle, prepared) ||
+            !presentationPreparation_.TryCancel(prepared.Ticket))
+        {
+            return false;
+        }
+
+        preparedPresentation_ = null;
+        prepared.Complete(ViewportPresentationTransactionResult.Cancelled);
+        QueueUncommittedPresentationRetirement(operation);
+        ResumeFrontPresentation();
+        return true;
+    }
 
     public ViewportResizePresentationMetrics CaptureResizeMeasurement(
         ViewportResizeMeasurementToken token) =>
@@ -280,11 +785,26 @@ public sealed class ViewportCompositionControl : Control
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
         isAttached_ = false;
+        preparingPresentation_?.RequestCancellation();
+        var presentationOperations = new[] { preparingPresentation_, preparedPresentation_ }
+            .Where(static operation => operation is not null)
+            .Cast<PreparedPresentationOperation>()
+            .Distinct()
+            .ToArray();
+        foreach (var operation in presentationOperations)
+        {
+            operation.Handle.Complete(ViewportPresentationTransactionResult.Invalidated);
+            operation.DisposeCancellation();
+        }
+        preparingPresentation_ = null;
+        preparedPresentation_ = null;
+        presentationPreparation_.Reset();
         ClearVisibilitySubscriptions();
         isFrameQueued_ = false;
         queuedFrameUsesEarlyAdmission_ = false;
         queuedFrameTicket_++;
-        pendingCompositionCommit_?.Completion.TrySetResult(false);
+        pendingCompositionCommit_?.Completion.TrySetResult(
+            CompositionUpdateCompletion.NotSubmittedToConsumer);
         pendingCompositionCommit_ = null;
         isCompositionCommitQueued_ = false;
         compositionCommitTicket_++;
@@ -304,19 +824,48 @@ public sealed class ViewportCompositionControl : Control
         ElementComposition.SetElementChildVisual(this, null);
         var removalProcessed = visual?.Compositor.RequestCompositionBatchCommitAsync().Processed ??
             Task.CompletedTask;
-        var surface = surface_;
+        TransferQuarantinedPresentationOwnership();
+        var processOwnedSurfaces = quarantinedSurfaces_.ToHashSet();
+        var processOwnedStreams = quarantinedStreams_.ToHashSet();
+        var surfaces = presentationOperations
+            .Where(static operation => operation.OwnsSurface)
+            .Select(static operation => operation.Surface)
+            .Append(surface_)
+            .Where(static surface => surface is not null)
+            .Cast<CompositionDrawingSurface>()
+            .Where(surface => !processOwnedSurfaces.Contains(surface))
+            .Distinct()
+            .ToArray();
+        foreach (var operation in presentationOperations)
+        {
+            operation.OwnsSurface = false;
+        }
         surface_ = null;
         compositionVisual_ = null;
 
-        var streams = DistinctStreams(activeStream_, desiredStream_).ToArray();
+        var streams = DistinctStreams(activeStream_, desiredStream_)
+            .Concat(presentationOperations
+                .Where(static operation => operation.OwnsStream)
+                .Select(static operation => operation.Stream))
+            .Where(stream => !processOwnedStreams.Contains(stream))
+            .Distinct()
+            .ToArray();
+        foreach (var operation in presentationOperations)
+        {
+            operation.OwnsStream = false;
+        }
         activeStream_ = null;
         desiredStream_ = null;
+        quarantinedPresentations_.Clear();
+        quarantinedSurfaces_.Clear();
+        quarantinedStreams_.Clear();
         var retirements = retiringStreamTasks_.ToList();
+        retirements.AddRange(retiringSurfaceTasks_);
         retirements.AddRange(streams.Select(BeginRetireStream));
         SetStatus(ViewportPresentationState.Draining, "Scene View presentation is draining.");
         var admission = Lifetime?.BeginCleanup();
         detachTask_ = DrainDetachedPresentationAsync(
-            surface,
+            surfaces,
             removalProcessed,
             retirements.Distinct().ToArray(),
             admission);
@@ -328,6 +877,10 @@ public sealed class ViewportCompositionControl : Control
         base.OnPropertyChanged(change);
         if (change.Property == BoundsProperty)
         {
+            if (TryHandlePresentationLayoutChange(ViewportGeometryChangeSource.Bounds))
+            {
+                return;
+            }
             var geometryChanged = SynchronizeGeometryGeneration(
                 ViewportGeometryChangeSource.Bounds);
             UpdateVisualPlacement();
@@ -440,6 +993,10 @@ public sealed class ViewportCompositionControl : Control
         bool resetPresentationEpoch,
         bool preferEarlyAdmission = false)
     {
+        if (!preferEarlyAdmission)
+        {
+            InvalidatePendingPresentation();
+        }
         if (!isAttached_ || interop_ is null)
         {
             return;
@@ -470,9 +1027,28 @@ public sealed class ViewportCompositionControl : Control
         QueueFrame(preferEarlyAdmission);
     }
 
+    private void InvalidatePendingPresentation()
+    {
+        if (preparingPresentation_ is { } preparing)
+        {
+            presentationPreparation_.TryCancel(preparing.Handle.Ticket);
+            preparing.RequestCancellation();
+        }
+        if (preparedPresentation_ is not { } prepared)
+        {
+            return;
+        }
+
+        presentationPreparation_.TryCancel(prepared.Handle.Ticket);
+        preparedPresentation_ = null;
+        prepared.Handle.Complete(ViewportPresentationTransactionResult.Invalidated);
+        QueueUncommittedPresentationRetirement(prepared);
+    }
+
     private void QueueFrame(bool preferEarlyAdmission = false)
     {
-        if (!isAttached_ || interop_ is null || compositionVisual_ is not { } visual)
+        if (!isAttached_ || interop_ is null || compositionVisual_ is not { } visual ||
+            presentationPreparation_.HasPreparation)
         {
             return;
         }
@@ -547,7 +1123,7 @@ public sealed class ViewportCompositionControl : Control
             return;
         }
         if (!IsCurrent(publishGeneration) || !IsEffectivelyVisible || interop_ is null ||
-            surface_ is null ||
+            surface_ is null || presentationPreparation_.HasPreparation ||
             Session is not { } session || Lifetime is not { } lifetime ||
             !lifetime.IsAcceptingFrames ||
             !TryGetRenderSize(out var renderSize) ||
@@ -567,7 +1143,9 @@ public sealed class ViewportCompositionControl : Control
             HandleSubmissionFailure(streamFailure!);
             return;
         }
-        var submitted = stream.Stream.SubmitLatest(request);
+        var submitted = stream.Stream.SubmitLatest(
+            request,
+            testHooks_?.DiagnosticOverlay ?? ViewportRenderDiagnosticOverlay.None);
         if (!submitted.Succeeded)
         {
             session.RetryPublishedFrame(request);
@@ -919,10 +1497,12 @@ public sealed class ViewportCompositionControl : Control
     }
 
     private static async Task<NativeReadyWaitResult> WaitForReadyFrameAsync(
-        ViewportRenderStream stream)
+        ViewportRenderStream stream,
+        CancellationToken cancellationToken = default)
     {
         while (true)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var taken = stream.TryTakeReady();
             if (!taken.Succeeded || taken.HasFrame)
             {
@@ -938,7 +1518,7 @@ public sealed class ViewportCompositionControl : Control
             }
 
             // Never capture AvaloniaSynchronizationContext for the 1 ms native-ready poll.
-            await Task.Delay(1).ConfigureAwait(false);
+            await Task.Delay(1, cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -962,6 +1542,9 @@ public sealed class ViewportCompositionControl : Control
                 return await CommitAsync(
                     lease.AllocationExtent,
                     stream.GeometryGeneration,
+                    surface_ ?? throw new InvalidOperationException(
+                        "Viewport composition surface is no longer available."),
+                    publishesVisibleSurface: true,
                     imported.Image,
                     imported.WaitSemaphore,
                     imported.SignalSemaphore,
@@ -979,7 +1562,8 @@ public sealed class ViewportCompositionControl : Control
             }
             catch
             {
-                if (accessTracker.State == CompositionConsumerAccessState.SubmissionStarted)
+                if (accessTracker.State !=
+                    CompositionConsumerAccessState.NotSubmittedToConsumer)
                 {
                     stream.IsQuarantined = true;
                     lease.Quarantine();
@@ -994,9 +1578,231 @@ public sealed class ViewportCompositionControl : Control
         }
     }
 
+    private async Task PreparePresentationCoreAsync(
+        PreparedPresentationOperation operation,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var targetExtent = operation.Handle.TargetExtent;
+        var renderSize = new ViewportRenderSize(targetExtent, targetExtent);
+        if (!operation.Session.TryPublishLatest(renderSize, out var request))
+        {
+            throw new InvalidOperationException(
+                "The viewport session did not publish the prepared presentation request.");
+        }
+
+        var requestWasSubmitted = false;
+        var backpressureStartedAt = Stopwatch.GetTimestamp();
+        try
+        {
+            while (true)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (testHooks_ is not null)
+                {
+                    await testHooks_.BeforeStageAsyncCore(
+                        ViewportCompositionControlTestPoint.BeforeNativeSubmit,
+                        cancellationToken);
+                }
+                var submitted = operation.Stream.Stream.SubmitLatest(
+                    request,
+                    testHooks_?.DiagnosticOverlay ?? ViewportRenderDiagnosticOverlay.None);
+                if (submitted.Succeeded)
+                {
+                    requestWasSubmitted = true;
+                    Interlocked.Increment(ref candidateNativeSubmissions_);
+                    if (testHooks_ is not null)
+                    {
+                        await testHooks_.BeforeStageAsyncCore(
+                            ViewportCompositionControlTestPoint.AfterNativeSubmit,
+                            cancellationToken);
+                    }
+                    break;
+                }
+                if (submitted.Failure!.Kind != ViewportFrameFailureKind.Backpressure)
+                {
+                    throw new InvalidOperationException(submitted.Failure.Message);
+                }
+                if (Stopwatch.GetElapsedTime(backpressureStartedAt) >=
+                    TimeSpan.FromMilliseconds(250))
+                {
+                    throw new ViewportPresentationRecoverableException(
+                        "Viewport presentation remained resource-backpressured for 250 ms.");
+                }
+                await Task.Delay(TimeSpan.FromMilliseconds(1), cancellationToken);
+            }
+        }
+        catch
+        {
+            if (!requestWasSubmitted)
+            {
+                operation.Session.RetryPublishedFrame(request);
+            }
+            throw;
+        }
+
+        var wait = await WaitForReadyFrameAsync(operation.Stream.Stream, cancellationToken);
+        if (!wait.Take.Succeeded)
+        {
+            throw new InvalidOperationException(wait.Take.Failure!.Message);
+        }
+        if (!wait.Take.HasFrame)
+        {
+            throw new InvalidOperationException(
+                wait.Snapshot?.Lifecycle == ViewportRenderStreamLifecycle.Faulted
+                    ? "The prepared presentation stream faulted before publishing a frame."
+                    : "The prepared presentation stream closed before publishing a frame.");
+        }
+
+        var lease = wait.Take.Lease!;
+        Interlocked.Increment(ref candidateLeasesAcquired_);
+        operation.Stream.ExposedSlots.Add(lease.SlotIdentity);
+        var releaseLease = true;
+        try
+        {
+            if (testHooks_ is not null)
+            {
+                await testHooks_.BeforeStageAsyncCore(
+                    ViewportCompositionControlTestPoint.AfterLeaseAcquired,
+                    cancellationToken);
+            }
+            // Cancellation after TryTakeReady succeeds still owns a native lease. Keep the
+            // cancellation check inside the release guard so the slot is completed or
+            // quarantined on every path.
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!CanPreparePresentationFrame(operation, lease))
+            {
+                throw new OperationCanceledException(
+                    "The prepared presentation frame became stale before composition submission.",
+                    cancellationToken);
+            }
+
+            operation.Frame = PresentationFrame(lease);
+            operation.RenderSize = new ViewportRenderSize(
+                lease.LogicalExtent,
+                lease.AllocationExtent);
+            var result = await PresentPreparedPresentationFrameAsync(
+                operation,
+                lease,
+                cancellationToken);
+            if (result != CompositionCommitResult.ConsumerAccessed)
+            {
+                throw new OperationCanceledException(
+                    "The prepared presentation frame was not consumed by the compositor.",
+                    cancellationToken);
+            }
+
+            try
+            {
+                lease.Release(ViewportFrameCompletionKind.ConsumerAccessed);
+                releaseLease = false;
+            }
+            catch
+            {
+                operation.Stream.IsQuarantined = true;
+                lease.Quarantine();
+                operation.Stream.ImportedSlots.TryGetValue(
+                    lease.SlotIdentity,
+                    out var imported);
+                operation.Lifetime.QuarantineFrame(
+                    lease,
+                    imported?.Image,
+                    imported?.WaitSemaphore,
+                    imported?.SignalSemaphore);
+                releaseLease = false;
+                throw;
+            }
+        }
+        finally
+        {
+            if (releaseLease)
+            {
+                ReleaseNotSubmittedOrQuarantine(operation.Stream, lease, operation.Lifetime);
+            }
+        }
+    }
+
+    private async Task<CompositionCommitResult> PresentPreparedPresentationFrameAsync(
+        PreparedPresentationOperation operation,
+        ViewportFrameLease lease,
+        CancellationToken cancellationToken)
+    {
+        if (!CanPreparePresentationFrame(operation, lease) ||
+            !operation.Lifetime.TryBeginFrame(out var admission))
+        {
+            return CompositionCommitResult.NotSubmittedToConsumer;
+        }
+        using (admission)
+        {
+            Interlocked.Increment(ref candidateImageImportAttempts_);
+            if (testHooks_ is not null)
+            {
+                await testHooks_.BeforeStageAsyncCore(
+                    ViewportCompositionControlTestPoint.BeforeImageImport,
+                    cancellationToken);
+            }
+            var imported = await GetOrImportSlotAsync(
+                operation.Stream,
+                lease,
+                trackPreparedCandidate: true);
+            var accessTracker = new CompositionConsumerAccessTracker();
+            try
+            {
+                Interlocked.Increment(ref candidateSurfaceUpdateAttempts_);
+                if (testHooks_ is not null)
+                {
+                    await testHooks_.BeforeStageAsyncCore(
+                        ViewportCompositionControlTestPoint.BeforeSurfaceUpdate,
+                        cancellationToken);
+                }
+                return await CommitAsync(
+                    lease.AllocationExtent,
+                    operation.Handle.Ticket.CandidateGeometryGeneration,
+                    operation.Surface,
+                    publishesVisibleSurface: false,
+                    imported.Image,
+                    imported.WaitSemaphore,
+                    imported.SignalSemaphore,
+                    accessTracker,
+                    () => !cancellationToken.IsCancellationRequested &&
+                          CanPreparePresentationFrame(operation, lease),
+                    static () => false);
+            }
+            catch
+            {
+                if (accessTracker.State !=
+                    CompositionConsumerAccessState.NotSubmittedToConsumer)
+                {
+                    operation.Stream.IsQuarantined = true;
+                    lease.Quarantine();
+                    operation.Lifetime.QuarantineFrame(
+                        lease,
+                        imported.Image,
+                        imported.WaitSemaphore,
+                        imported.SignalSemaphore);
+                }
+                throw;
+            }
+        }
+    }
+
+    private bool CanPreparePresentationFrame(
+        PreparedPresentationOperation operation,
+        ViewportFrameLease lease) =>
+        ReferenceEquals(preparingPresentation_, operation) &&
+        IsCurrent(operation.AttachmentGeneration) &&
+        ReferenceEquals(Session, operation.Session) &&
+        ReferenceEquals(Lifetime, operation.Lifetime) &&
+        operation.Handle.Ticket.BaseGeometryGeneration == geometryState_.CurrentGeneration &&
+        geometryState_.HasExactSurface &&
+        lease.LogicalExtent == operation.Handle.TargetExtent &&
+        lease.AllocationExtent == operation.Handle.TargetExtent &&
+        CanPresentFrameContent(lease, operation.AttachmentGeneration);
+
     private async Task<ImportedSlot> GetOrImportSlotAsync(
         StreamPresentationState stream,
-        ViewportFrameLease lease)
+        ViewportFrameLease lease,
+        bool trackPreparedCandidate = false)
     {
         if (stream.ImportedSlots.TryGetValue(lease.SlotIdentity, out var existing))
         {
@@ -1017,10 +1823,32 @@ public sealed class ViewportCompositionControl : Control
             image = interop.ImportImage(
                 new PlatformHandle(lease.NativeHandles.Image, ImageHandleType),
                 CreateImageProperties(lease));
+            if (trackPreparedCandidate)
+            {
+                Interlocked.Increment(ref candidateImagesImported_);
+                if (testHooks_ is not null)
+                {
+                    await testHooks_.BeforeStageAsyncCore(
+                        ViewportCompositionControlTestPoint.AfterImageImported,
+                        CancellationToken.None);
+                }
+            }
             waitSemaphore = interop.ImportSemaphore(
                 new PlatformHandle(lease.NativeHandles.WaitSemaphore, SemaphoreHandleType));
+            if (trackPreparedCandidate && testHooks_ is not null)
+            {
+                await testHooks_.BeforeStageAsyncCore(
+                    ViewportCompositionControlTestPoint.AfterWaitSemaphoreImported,
+                    CancellationToken.None);
+            }
             signalSemaphore = interop.ImportSemaphore(
                 new PlatformHandle(lease.NativeHandles.SignalSemaphore, SemaphoreHandleType));
+            if (trackPreparedCandidate && testHooks_ is not null)
+            {
+                await testHooks_.BeforeStageAsyncCore(
+                    ViewportCompositionControlTestPoint.AfterSignalSemaphoreImported,
+                    CancellationToken.None);
+            }
             var imported = new ImportedSlot(
                 lease.SlotIdentity,
                 lease.NativeHandles,
@@ -1152,6 +1980,8 @@ public sealed class ViewportCompositionControl : Control
     private async Task<CompositionCommitResult> CommitAsync(
         ViewportExtent extent,
         ulong geometryGeneration,
+        CompositionDrawingSurface targetSurface,
+        bool publishesVisibleSurface,
         ICompositionImportedGpuImage image,
         ICompositionImportedGpuSemaphore waitSemaphore,
         ICompositionImportedGpuSemaphore signalSemaphore,
@@ -1160,8 +1990,7 @@ public sealed class ViewportCompositionControl : Control
         Func<bool> tryMarkPresented)
     {
         var visual = compositionVisual_;
-        var surface = surface_;
-        if (visual is null || surface is null || !canPresent())
+        if (visual is null || !canPresent())
         {
             return CompositionCommitResult.NotSubmittedToConsumer;
         }
@@ -1169,22 +1998,33 @@ public sealed class ViewportCompositionControl : Control
         var commit = new PendingCompositionCommit(
             extent,
             geometryGeneration,
+            targetSurface,
+            publishesVisibleSurface,
             image,
             waitSemaphore,
             signalSemaphore,
             accessTracker,
             canPresent,
             tryMarkPresented);
-        QueueCompositionCommit(commit, visual, surface);
+        QueueCompositionCommit(commit, visual);
 
-        if (!await commit.Completion.Task)
+        var completion = await commit.Completion.Task;
+        if (completion == CompositionUpdateCompletion.NotSubmittedToConsumer)
         {
             return CompositionCommitResult.NotSubmittedToConsumer;
         }
+        if (completion == CompositionUpdateCompletion.ConsumerAccessed)
+        {
+            return CompositionCommitResult.ConsumerAccessed;
+        }
         var presented = Dispatcher.UIThread.CheckAccess()
-            ? commit.TryMarkPresented()
+            ? CompositionUpdatePresentationPolicy.CanMarkPresented(
+                  completion,
+                  commit.CanPresent()) && commit.TryMarkPresented()
             : await Dispatcher.UIThread.InvokeAsync(
-                commit.TryMarkPresented,
+                () => CompositionUpdatePresentationPolicy.CanMarkPresented(
+                          completion,
+                          commit.CanPresent()) && commit.TryMarkPresented(),
                 DispatcherPriority.Render);
         return presented
             ? CompositionCommitResult.Presented
@@ -1193,13 +2033,13 @@ public sealed class ViewportCompositionControl : Control
 
     private void QueueCompositionCommit(
         PendingCompositionCommit commit,
-        CompositionSurfaceVisual visual,
-        CompositionDrawingSurface surface)
+        CompositionSurfaceVisual visual)
     {
         // Native production is latest-wins, and the composition boundary must be too. Avalonia's
         // swapchain sample performs one Present per compositor callback; submitting several
         // surface snapshots in the same callback cycle can strand release semaphores.
-        pendingCompositionCommit_?.Completion.TrySetResult(false);
+        pendingCompositionCommit_?.Completion.TrySetResult(
+            CompositionUpdateCompletion.NotSubmittedToConsumer);
         pendingCompositionCommit_ = commit;
         if (isCompositionCommitQueued_)
         {
@@ -1209,13 +2049,12 @@ public sealed class ViewportCompositionControl : Control
         isCompositionCommitQueued_ = true;
         var ticket = ++compositionCommitTicket_;
         visual.Compositor.RequestCompositionUpdate(
-            () => PublishCompositionCommit(ticket, visual, surface));
+            () => PublishCompositionCommit(ticket, visual));
     }
 
     private void PublishCompositionCommit(
         ulong ticket,
-        CompositionSurfaceVisual visual,
-        CompositionDrawingSurface surface)
+        CompositionSurfaceVisual visual)
     {
         if (ticket != compositionCommitTicket_)
         {
@@ -1230,9 +2069,11 @@ public sealed class ViewportCompositionControl : Control
             return;
         }
         if (!ReferenceEquals(compositionVisual_, visual) ||
-            !ReferenceEquals(surface_, surface))
+            (commit.PublishesVisibleSurface &&
+             !ReferenceEquals(surface_, commit.TargetSurface)))
         {
-            commit.Completion.TrySetResult(false);
+            commit.Completion.TrySetResult(
+                CompositionUpdateCompletion.NotSubmittedToConsumer);
             return;
         }
         if (!commit.CanPresent())
@@ -1243,50 +2084,80 @@ public sealed class ViewportCompositionControl : Control
             {
                 rejectedNonExactCandidates_++;
             }
-            commit.Completion.TrySetResult(false);
+            commit.Completion.TrySetResult(
+                CompositionUpdateCompletion.NotSubmittedToConsumer);
             return;
         }
 
         Task update;
         try
         {
-            update = surface.UpdateWithSemaphoresAsync(
+            update = commit.TargetSurface.UpdateWithSemaphoresAsync(
                 commit.Image,
                 commit.WaitSemaphore,
                 commit.SignalSemaphore);
             commit.AccessTracker.MarkSubmissionStarted();
-            // The bitmap and its destination rectangle are one compositor transaction. Resizing
-            // the visual before this exact-size surface update would stretch the previous bitmap
-            // for one frame during a panel resize.
-            geometryState_.MarkSurfaceUpdate(commit.Extent, commit.GeometryGeneration);
-            geometryDiagnostics_.MarkExactSurfaceSubmitted(
-                commit.GeometryGeneration,
-                Stopwatch.GetTimestamp());
-            UpdateVisualPlacement();
+            try
+            {
+                if (!commit.PublishesVisibleSurface)
+                {
+                    testHooks_?.AtSynchronousStageCore(
+                        ViewportCompositionControlTestPoint.AfterSurfaceUpdateSubmitted);
+                }
+            }
+            catch (Exception exception)
+            {
+                // The external consumer may already own the semaphores. Publish the injected
+                // ambiguity first, but continue observing Avalonia without guessing ownership.
+                commit.Completion.TrySetException(exception);
+                _ = CompleteSurfaceUpdateAsync(update, commit, visual);
+                return;
+            }
         }
         catch (Exception exception)
         {
             commit.Completion.TrySetException(exception);
             return;
         }
-        _ = CompleteSurfaceUpdateAsync(update, commit.Completion, commit.AccessTracker);
+        _ = CompleteSurfaceUpdateAsync(update, commit, visual);
     }
 
-    private static async Task CompleteSurfaceUpdateAsync(
+    private async Task CompleteSurfaceUpdateAsync(
         Task update,
-        TaskCompletionSource<bool> completion,
-        CompositionConsumerAccessTracker accessTracker)
+        PendingCompositionCommit commit,
+        CompositionSurfaceVisual visual)
     {
         try
         {
             await update.ConfigureAwait(false);
-            accessTracker.MarkConsumerAccessed();
-            completion.TrySetResult(true);
+            commit.AccessTracker.MarkConsumerAccessed();
+            await Dispatcher.UIThread.InvokeAsync(
+                () => CompleteSurfaceUpdateOnUiThread(commit, visual),
+                DispatcherPriority.Render);
         }
         catch (Exception exception)
         {
-            completion.TrySetException(exception);
+            commit.Completion.TrySetException(exception);
         }
+    }
+
+    private void CompleteSurfaceUpdateOnUiThread(
+        PendingCompositionCommit commit,
+        CompositionSurfaceVisual visual)
+    {
+        var completion = CompositionUpdateCompletion.ConsumerAccessed;
+        if (commit.PublishesVisibleSurface && commit.CanPresent() &&
+            ReferenceEquals(compositionVisual_, visual) &&
+            ReferenceEquals(surface_, commit.TargetSurface))
+        {
+            geometryState_.MarkSurfaceUpdate(commit.Extent, commit.GeometryGeneration);
+            geometryDiagnostics_.MarkExactSurfaceSubmitted(
+                commit.GeometryGeneration,
+                Stopwatch.GetTimestamp());
+            UpdateVisualPlacement();
+            completion = CompositionUpdateCompletion.VisibleSurfacePublished;
+        }
+        commit.Completion.TrySetResult(completion);
     }
 
     private static async Task DisposeImportedResourcesAsync(
@@ -1333,9 +2204,13 @@ public sealed class ViewportCompositionControl : Control
     private bool IsCurrent(ulong generation) => isAttached_ && generation_ == generation;
 
     private bool CanPresentFrame(ViewportFrameLease lease, ulong generation)
+        => !presentationPreparation_.HasPreparation &&
+           CanPresentFrameContent(lease, generation) &&
+           CanPresentAtCurrentGeometry(lease);
+
+    private bool CanPresentFrameContent(ViewportFrameLease lease, ulong generation)
     {
-        if (!IsCurrent(generation) || !IsEffectivelyVisible ||
-            !CanPresentAtCurrentGeometry(lease) || Session is not { } session ||
+        if (!IsCurrent(generation) || !IsEffectivelyVisible || Session is not { } session ||
             !session.CanPresentPublishedFrame(lease.RequestSequence, lease.TargetRevision))
         {
             return false;
@@ -1395,16 +2270,15 @@ public sealed class ViewportCompositionControl : Control
     {
         renderSize = default;
         var scaling = topLevel_?.RenderScaling ?? 0;
-        if (scaling <= 0 || Bounds.Width <= 0 || Bounds.Height <= 0)
+        if (!ViewportPhysicalExtentPolicy.TryCalculate(
+                Bounds.Width,
+                Bounds.Height,
+                scaling,
+                out var logicalExtent))
         {
             return false;
         }
 
-        var width = Math.Clamp(Math.Ceiling(Bounds.Width * scaling), 1, uint.MaxValue);
-        var height = Math.Clamp(Math.Ceiling(Bounds.Height * scaling), 1, uint.MaxValue);
-        var logicalExtent = new ViewportExtent(
-            checked((uint)width),
-            checked((uint)height));
         renderSize = new ViewportRenderSize(logicalExtent, logicalExtent);
         return true;
     }
@@ -1423,7 +2297,7 @@ public sealed class ViewportCompositionControl : Control
         // Never expose an old-size image through a new panel rectangle. Bounds and this opacity
         // mutation enter the same Avalonia commit; the exact-size surface update reenables the
         // visual in its own commit below.
-        visual.Opacity = hasExactSurface ? 1 : 0;
+        SetRequestedVisualOpacity(visual, hasExactSurface ? 1 : 0);
         if (scaling > 0 &&
             geometryState_.SurfaceExtent.Width != 0 &&
             geometryState_.SurfaceExtent.Height != 0)
@@ -1438,10 +2312,619 @@ public sealed class ViewportCompositionControl : Control
             (float)Math.Max(0, Bounds.Height));
     }
 
+    internal bool TryCapturePresentationLayoutProbe(
+        ulong ticket,
+        out ViewportExtent extent)
+    {
+        Dispatcher.UIThread.VerifyAccess();
+        if (!presentationPreparation_.IsLayoutProbeActive ||
+            !TryGetRenderSize(out var renderSize))
+        {
+            extent = default;
+            return false;
+        }
+        presentationPreparation_.ObserveLayoutProbe(renderSize.LogicalExtent);
+        return presentationPreparation_.TryGetLayoutProbeExtent(ticket, out extent);
+    }
+
+    internal void EndPresentationLayoutProbe(ulong ticket)
+    {
+        Dispatcher.UIThread.VerifyAccess();
+        presentationPreparation_.EndLayoutProbe(ticket);
+    }
+
+    private bool TryHandlePresentationLayoutChange(ViewportGeometryChangeSource source)
+    {
+        var extent = TryGetRenderSize(out var renderSize)
+            ? renderSize.LogicalExtent
+            : default;
+        var disposition = presentationPreparation_.ObserveBounds(extent, out _);
+        return disposition != ViewportPresentationLayoutDisposition.None;
+    }
+
+    internal object? PresentationAtomicScope
+    {
+        get
+        {
+            Dispatcher.UIThread.VerifyAccess();
+            return compositionVisual_?.Compositor;
+        }
+    }
+
+    internal ViewportPresentationTelemetryIdentity CreatePresentationTelemetryIdentity(
+        ViewportPresentationTransactionId transactionId,
+        ulong geometryGeneration,
+        ViewportExtent extent)
+    {
+        Dispatcher.UIThread.VerifyAccess();
+        var session = Session?.Current ?? throw new InvalidOperationException(
+            "The viewport presentation endpoint has no session identity.");
+        return new ViewportPresentationTelemetryIdentity(
+            endpointId_,
+            session.SessionId,
+            generation_,
+            transactionId,
+            geometryGeneration,
+            extent);
+    }
+
+    internal ulong NextPresentationGeometryGeneration
+    {
+        get
+        {
+            Dispatcher.UIThread.VerifyAccess();
+            return checked(geometryState_.CurrentGeneration + 1);
+        }
+    }
+
+    internal bool TryValidatePreparedPresentation(ViewportPreparedPresentation prepared)
+    {
+        ArgumentNullException.ThrowIfNull(prepared);
+        Dispatcher.UIThread.VerifyAccess();
+        return !(testHooks_?.ShouldRejectPreparedValidation() ?? false) &&
+               ReferenceEquals(prepared.Owner, this) &&
+               preparedPresentation_ is { } operation &&
+               ReferenceEquals(operation.Handle, prepared) &&
+               !operation.Cancellation.IsCancellationRequested &&
+               isAttached_ && IsEffectivelyVisible &&
+               interop_ is { IsLost: false } &&
+               operation.Lifetime.IsAcceptingFrames &&
+               compositionVisual_ is not null && surface_ is not null &&
+               topLevel_?.RenderScaling is > 0 &&
+               presentationPreparation_.IsArmedExtentExact(prepared.Ticket) &&
+               IsPreparedPresentationCurrent(operation);
+    }
+
+    internal PresentationPublishReceipt ApplyPreparedPresentation(
+        ViewportPreparedPresentation prepared,
+        ViewportGeometryChangeSource source)
+    {
+        Dispatcher.UIThread.VerifyAccess();
+        if (!TryValidatePreparedPresentation(prepared) ||
+            preparedPresentation_ is not { } operation ||
+            compositionVisual_ is not { } visual || surface_ is not { } oldSurface ||
+            topLevel_?.RenderScaling is not > 0)
+        {
+            throw new InvalidOperationException(
+                "The prepared viewport presentation is no longer publishable.");
+        }
+
+        var replacedStreams = DistinctStreams(activeStream_, desiredStream_)
+            .Where(stream => !ReferenceEquals(stream, operation.Stream))
+            .ToArray();
+        var receipt = new PresentationPublishReceipt(
+            operation,
+            visual,
+            oldSurface,
+            oldSurface,
+            visual.Size,
+            visual.Opacity,
+            source,
+            replacedStreams);
+        var targetSize = new Vector(
+            operation.Handle.TargetExtent.Width / topLevel_.RenderScaling,
+            operation.Handle.TargetExtent.Height / topLevel_.RenderScaling);
+        try
+        {
+            ViewportPresentationVisualMutation.ApplyStrong(
+                CreatePresentationVisualMutationSteps(receipt, targetSize));
+        }
+        catch (ViewportPresentationVisualMutationAmbiguousException exception)
+        {
+            QuarantinePublishedPresentation(receipt, exception.Message);
+            throw new PublicationOutcomeAmbiguousException(receipt, exception);
+        }
+        return receipt;
+    }
+
+    internal void RollbackPreparedPresentation(PresentationPublishReceipt receipt)
+    {
+        ArgumentNullException.ThrowIfNull(receipt);
+        Dispatcher.UIThread.VerifyAccess();
+        if (receipt.IsFinalized || receipt.IsRolledBack)
+        {
+            return;
+        }
+        try
+        {
+            ViewportPresentationVisualMutation.RestoreStrong(
+                CreatePresentationVisualMutationSteps(receipt, receipt.Visual.Size));
+        }
+        catch (ViewportPresentationVisualMutationAmbiguousException exception)
+        {
+            QuarantinePublishedPresentation(receipt, exception.Message);
+            throw new PublicationOutcomeAmbiguousException(receipt, exception);
+        }
+        receipt.IsRolledBack = true;
+    }
+
+    private IReadOnlyList<ViewportPresentationVisualMutationStep>
+        CreatePresentationVisualMutationSteps(
+            PresentationPublishReceipt receipt,
+            Vector targetSize) =>
+        [
+            new ViewportPresentationVisualMutationStep(
+                () =>
+                {
+                    testHooks_?.AtSynchronousStageCore(
+                        ViewportCompositionControlTestPoint.BeforeApplySurface);
+                    receipt.Visual.Surface = receipt.Operation.Surface;
+                    testHooks_?.AtSynchronousStageCore(
+                        ViewportCompositionControlTestPoint.AfterApplySurface);
+                },
+                () =>
+                {
+                    testHooks_?.AtSynchronousStageCore(
+                        ViewportCompositionControlTestPoint.BeforeRestoreSurface);
+                    receipt.Visual.Surface = receipt.OldVisualSurface;
+                }),
+            new ViewportPresentationVisualMutationStep(
+                () =>
+                {
+                    testHooks_?.AtSynchronousStageCore(
+                        ViewportCompositionControlTestPoint.BeforeApplySize);
+                    receipt.Visual.Size = targetSize;
+                    testHooks_?.AtSynchronousStageCore(
+                        ViewportCompositionControlTestPoint.AfterApplySize);
+                },
+                () =>
+                {
+                    testHooks_?.AtSynchronousStageCore(
+                        ViewportCompositionControlTestPoint.BeforeRestoreSize);
+                    receipt.Visual.Size = receipt.OldVisualSize;
+                }),
+            new ViewportPresentationVisualMutationStep(
+                () =>
+                {
+                    testHooks_?.AtSynchronousStageCore(
+                        ViewportCompositionControlTestPoint.BeforeApplyOpacity);
+                    SetRequestedVisualOpacity(receipt.Visual, 1);
+                    testHooks_?.AtSynchronousStageCore(
+                        ViewportCompositionControlTestPoint.AfterApplyOpacity);
+                },
+                () =>
+                {
+                    testHooks_?.AtSynchronousStageCore(
+                        ViewportCompositionControlTestPoint.BeforeRestoreOpacity);
+                    SetRequestedVisualOpacity(receipt.Visual, receipt.OldVisualOpacity);
+                }),
+        ];
+
+    internal Task FinalizePreparedPresentation(
+        PresentationPublishReceipt receipt,
+        Task switchRendered)
+    {
+        ArgumentNullException.ThrowIfNull(receipt);
+        ArgumentNullException.ThrowIfNull(switchRendered);
+        Dispatcher.UIThread.VerifyAccess();
+        var operation = receipt.Operation;
+        if (receipt.IsFinalized || receipt.IsRolledBack ||
+            !TryValidatePreparedPresentation(operation.Handle) ||
+            !operation.Session.MarkPublishedFramePresented(
+                operation.Frame.Sequence,
+                operation.Frame.TargetRevision) ||
+            !presentationState_.TryMarkPresented(
+                operation.AttachmentGeneration,
+                operation.Frame,
+                operation.Session.Current) ||
+            !presentationPreparation_.TryCompleteArmed(operation.Handle.Ticket))
+        {
+            throw new InvalidOperationException(
+                "The validated viewport presentation could not be finalized.");
+        }
+
+        if (!geometryState_.Synchronize(operation.Handle.TargetExtent) ||
+            geometryState_.CurrentGeneration !=
+                operation.Handle.Ticket.CandidateGeometryGeneration)
+        {
+            throw new InvalidOperationException(
+                "The viewport presentation did not advance the expected geometry generation.");
+        }
+
+        var committedAt = Stopwatch.GetTimestamp();
+        geometryDiagnostics_.RecordGeneration(
+            geometryState_.CurrentGeneration,
+            operation.Handle.TargetExtent,
+            receipt.Source,
+            committedAt);
+        geometryState_.MarkSurfaceUpdate(
+            operation.Handle.TargetExtent,
+            geometryState_.CurrentGeneration);
+        geometryDiagnostics_.MarkExactSurfaceSubmitted(
+            geometryState_.CurrentGeneration,
+            committedAt);
+
+        pendingCompositionCommit_?.Completion.TrySetResult(
+            CompositionUpdateCompletion.NotSubmittedToConsumer);
+        pendingCompositionCommit_ = null;
+        isCompositionCommitQueued_ = false;
+        compositionCommitTicket_++;
+
+        surface_ = operation.Surface;
+        operation.OwnsSurface = false;
+        activeStream_ = operation.Stream;
+        desiredStream_ = operation.Stream;
+        operation.OwnsStream = false;
+
+        lastPresentedSize_ = operation.RenderSize;
+        lastPresentedPanelExtent_ = operation.Handle.TargetExtent;
+        preparedPresentation_ = null;
+        operation.DisposeCancellation();
+        receipt.IsFinalized = true;
+        var retirement = QueueReplacedFrontRetirement(
+            receipt.OldSurface,
+            receipt.ReplacedStreams,
+            switchRendered);
+
+        SetStatus(
+            ViewportPresentationState.Ready,
+            $"Published scene revision {operation.Frame.TargetRevision}; awaiting compositor render.");
+        if (CanScheduleAutomaticRealtime() &&
+            TryInvalidateOpenSession(operation.Session, ViewportInvalidationReason.Realtime))
+        {
+            QueueFrame();
+        }
+        return retirement;
+    }
+
+    internal void MarkPreparedPresentationRendered(
+        PresentationPublishReceipt receipt,
+        long renderedAt)
+    {
+        ArgumentNullException.ThrowIfNull(receipt);
+        Dispatcher.UIThread.VerifyAccess();
+        if (!receipt.IsFinalized || receipt.IsRolledBack || receipt.IsRendered)
+        {
+            return;
+        }
+
+        receipt.IsRendered = true;
+        exactExtentPresentedFrames_++;
+        cadenceTracker_.Record(renderedAt);
+        geometryDiagnostics_.MarkExactSurfaceCompleted(
+            receipt.Operation.Handle.Ticket.CandidateGeometryGeneration,
+            renderedAt);
+        receipt.Operation.Handle.Complete(ViewportPresentationTransactionResult.Committed);
+        if (ReferenceEquals(surface_, receipt.Operation.Surface))
+        {
+            SetStatus(
+                ViewportPresentationState.Ready,
+                $"Rendered scene revision {receipt.Operation.Frame.TargetRevision}.");
+        }
+    }
+
+    internal Task RequestPresentationBatchRendered()
+    {
+        Dispatcher.UIThread.VerifyAccess();
+        var visual = compositionVisual_ ?? throw new InvalidOperationException(
+            "The viewport presentation endpoint is detached.");
+        return visual.Compositor.RequestCompositionBatchCommitAsync().Rendered;
+    }
+
+    internal void QuarantinePublishedPresentation(
+        PresentationPublishReceipt receipt,
+        string reason)
+    {
+        ArgumentNullException.ThrowIfNull(receipt);
+        Dispatcher.UIThread.VerifyAccess();
+        var operation = receipt.Operation;
+        operation.RequestCancellation();
+        receipt.IsQuarantined = true;
+        receipt.QuarantineReason ??= reason;
+        operation.Stream.IsQuarantined = true;
+        foreach (var stream in receipt.ReplacedStreams.Append(operation.Stream))
+        {
+            stream.IsQuarantined = true;
+            if (!quarantinedStreams_.Contains(stream))
+            {
+                quarantinedStreams_.Add(stream);
+            }
+        }
+        foreach (var surface in new[] { receipt.OldSurface, operation.Surface })
+        {
+            if (!quarantinedSurfaces_.Contains(surface))
+            {
+                quarantinedSurfaces_.Add(surface);
+            }
+        }
+        if (!quarantinedPresentations_.Contains(receipt))
+        {
+            quarantinedPresentations_.Add(receipt);
+        }
+        if (ReferenceEquals(preparedPresentation_, operation))
+        {
+            presentationPreparation_.TryCancel(operation.Handle.Ticket);
+            preparedPresentation_ = null;
+        }
+        operation.OwnsSurface = false;
+        operation.OwnsStream = false;
+        preparingPresentation_?.RequestCancellation();
+        isFrameQueued_ = false;
+        queuedFrameUsesEarlyAdmission_ = false;
+        queuedFrameTicket_++;
+        pendingCompositionCommit_?.Completion.TrySetResult(
+            CompositionUpdateCompletion.NotSubmittedToConsumer);
+        pendingCompositionCommit_ = null;
+        isCompositionCommitQueued_ = false;
+        compositionCommitTicket_++;
+        if (activeStream_ is not null && quarantinedStreams_.Contains(activeStream_))
+        {
+            activeStream_ = null;
+        }
+        if (desiredStream_ is not null && quarantinedStreams_.Contains(desiredStream_))
+        {
+            desiredStream_ = null;
+        }
+        TransferQuarantinedPresentationOwnership();
+        operation.Handle.Complete(ViewportPresentationTransactionResult.Quarantined);
+        SetDegraded(
+            ViewportPresentationState.RenderFailed,
+            $"Viewport presentation outcome is ambiguous and its resources were quarantined: {reason}");
+    }
+
+    private void TransferQuarantinedPresentationOwnership()
+    {
+        foreach (var receipt in quarantinedPresentations_)
+        {
+            if (receipt.QuarantineTransferReceipt is not null)
+            {
+                continue;
+            }
+
+            var streams = receipt.ReplacedStreams
+                .Append(receipt.Operation.Stream)
+                .Distinct()
+                .Cast<object>()
+                .ToArray();
+            var surfaces = new[] { receipt.OldSurface, receipt.Operation.Surface }
+                .Distinct()
+                .Cast<object>()
+                .ToArray();
+            receipt.QuarantineTransferReceipt =
+                receipt.Operation.Lifetime.ProcessQuarantineRegistry.TransferPublished(
+                    endpointId_.Value,
+                    receipt.Operation,
+                    streams,
+                    surfaces,
+                    receipt.QuarantineReason ??
+                    "The viewport publication outcome was ambiguous.");
+        }
+    }
+
+    private void SetRequestedVisualOpacity(
+        CompositionSurfaceVisual visual,
+        float opacity)
+    {
+        visual.Opacity = opacity;
+        if (ReferenceEquals(compositionVisual_, visual))
+        {
+            geometryDiagnostics_.MarkRequestedVisualHidden(
+                opacity <= 0,
+                Stopwatch.GetTimestamp());
+        }
+    }
+
+    private bool IsPreparedPresentationCurrent(PreparedPresentationOperation operation) =>
+        !operation.Cancellation.IsCancellationRequested &&
+        isAttached_ && IsEffectivelyVisible &&
+        IsCurrent(operation.AttachmentGeneration) &&
+        ReferenceEquals(Session, operation.Session) &&
+        ReferenceEquals(Lifetime, operation.Lifetime) &&
+        operation.Lifetime.IsAcceptingFrames &&
+        operation.Handle.Ticket.BaseGeometryGeneration == geometryState_.CurrentGeneration &&
+        geometryState_.HasExactSurface &&
+        operation.RenderSize.LogicalExtent == operation.Handle.TargetExtent &&
+        operation.RenderSize.AllocationExtent == operation.Handle.TargetExtent &&
+        operation.Session.CanPresentPublishedFrame(
+            operation.Frame.Sequence,
+            operation.Frame.TargetRevision) &&
+        presentationState_.CanPresent(
+            operation.AttachmentGeneration,
+            operation.Frame,
+            operation.Session.Current);
+
+    private void QueueUncommittedPresentationRetirement(
+        PreparedPresentationOperation operation)
+    {
+        operation.RequestCancellation();
+        var stream = operation.OwnsStream ? operation.Stream : null;
+        var surface = operation.OwnsSurface ? operation.Surface : null;
+        operation.OwnsStream = false;
+        operation.OwnsSurface = false;
+        if (stream is null && surface is null)
+        {
+            operation.DisposeCancellation();
+            return;
+        }
+
+        var retirement = RetireUncommittedPresentationAsync(operation, stream, surface);
+        TrackRetiringSurfaceTask(retirement);
+    }
+
+    private async Task RetireUncommittedPresentationAsync(
+        PreparedPresentationOperation operation,
+        StreamPresentationState? stream,
+        CompositionDrawingSurface? surface)
+    {
+        try
+        {
+            if (stream is not null)
+            {
+                await BeginRetireStream(stream);
+            }
+        }
+        finally
+        {
+            await DisposeSurfaceOnUiThreadAsync(surface);
+            operation.DisposeCancellation();
+            Interlocked.Increment(ref candidateCleanupCompletions_);
+        }
+    }
+
+    private async Task RetireAcquiredPresentationAsync(
+        StreamPresentationState stream,
+        CompositionDrawingSurface? surface,
+        CancellationTokenSource? cancellation)
+    {
+        try
+        {
+            await BeginRetireStream(stream);
+        }
+        finally
+        {
+            await DisposeSurfaceOnUiThreadAsync(surface);
+            cancellation?.Dispose();
+            Interlocked.Increment(ref candidateCleanupCompletions_);
+        }
+    }
+
+    private Task QueueReplacedFrontRetirement(
+        CompositionDrawingSurface oldSurface,
+        IReadOnlyList<StreamPresentationState> oldStreams,
+        Task switchRendered)
+    {
+        var retirement = RetireReplacedFrontAsync(oldSurface, oldStreams, switchRendered);
+        if (testHooks_ is not null)
+        {
+            retirement = testHooks_.WrapReplacedFrontRetirementTask(retirement);
+        }
+        TrackRetiringSurfaceTask(retirement);
+        return retirement;
+    }
+
+    private async Task RetireReplacedFrontAsync(
+        CompositionDrawingSurface oldSurface,
+        IReadOnlyList<StreamPresentationState> oldStreams,
+        Task switchRendered)
+    {
+        await switchRendered;
+        Task[] streamRetirements;
+        if (Dispatcher.UIThread.CheckAccess())
+        {
+            streamRetirements = oldStreams.Select(BeginRetireStream).ToArray();
+        }
+        else
+        {
+            streamRetirements = await Dispatcher.UIThread.InvokeAsync(
+                () => oldStreams.Select(BeginRetireStream).ToArray(),
+                DispatcherPriority.Render);
+        }
+        await Task.WhenAll(streamRetirements);
+        if (testHooks_ is not null)
+        {
+            await testHooks_.BeforeStageAsyncCore(
+                ViewportCompositionControlTestPoint.BeforeOldSurfaceDispose,
+                CancellationToken.None);
+        }
+        await DisposeSurfaceOnUiThreadAsync(oldSurface);
+    }
+
+    private void TrackRetiringSurfaceTask(Task retirement)
+    {
+        retiringSurfaceTasks_.Add(retirement);
+        _ = RemoveRetiringSurfaceTaskAsync(retirement);
+    }
+
+    private async Task RemoveRetiringSurfaceTaskAsync(Task retirement)
+    {
+        try
+        {
+            await retirement;
+        }
+        catch (Exception exception)
+        {
+            if (isAttached_)
+            {
+                await Dispatcher.UIThread.InvokeAsync(
+                    () => SetDegraded(
+                        ViewportPresentationState.RenderFailed,
+                        $"Scene View surface retirement failed: {exception.Message}"),
+                    DispatcherPriority.Background);
+            }
+        }
+        finally
+        {
+            if (Dispatcher.UIThread.CheckAccess())
+            {
+                retiringSurfaceTasks_.Remove(retirement);
+            }
+            else
+            {
+                await Dispatcher.UIThread.InvokeAsync(
+                    () => retiringSurfaceTasks_.Remove(retirement),
+                    DispatcherPriority.Background);
+            }
+        }
+    }
+
+    private static async Task DisposeSurfaceOnUiThreadAsync(
+        CompositionDrawingSurface? surface)
+    {
+        if (surface is null)
+        {
+            return;
+        }
+        if (Dispatcher.UIThread.CheckAccess())
+        {
+            surface.Dispose();
+            return;
+        }
+        await Dispatcher.UIThread.InvokeAsync(surface.Dispose, DispatcherPriority.Send);
+    }
+
+    private void ResumeFrontPresentation()
+    {
+        Dispatcher.UIThread.Post(
+            () =>
+            {
+                if (!isAttached_ || presentationPreparation_.HasPreparation)
+                {
+                    return;
+                }
+                var geometryChanged = SynchronizeGeometryGeneration(
+                    ViewportGeometryChangeSource.Bounds);
+                UpdateVisualPlacement();
+                if (Session is { } session)
+                {
+                    _ = TryInvalidateOpenSession(
+                        session,
+                        ViewportInvalidationReason.ExtentChanged);
+                }
+                InvalidatePresentation(
+                    resetPresentationEpoch: false,
+                    preferEarlyAdmission: geometryChanged);
+            },
+            DispatcherPriority.Render);
+    }
+
     private void OnScalingChanged(object? sender, EventArgs e)
     {
         if (ReferenceEquals(sender, topLevel_))
         {
+            if (TryHandlePresentationLayoutChange(ViewportGeometryChangeSource.Scaling))
+            {
+                return;
+            }
             var geometryChanged = SynchronizeGeometryGeneration(
                 ViewportGeometryChangeSource.Scaling);
             UpdateVisualPlacement();
@@ -1503,6 +2986,7 @@ public sealed class ViewportCompositionControl : Control
     }
 
     private bool CanScheduleAutomaticRealtime() =>
+        !presentationPreparation_.HasPreparation &&
         ViewportRealtimeAdmissionPolicy.ShouldInvalidate(
             IsRealtime,
             desiredStream_ is not null,
@@ -1610,6 +3094,7 @@ public sealed class ViewportCompositionControl : Control
         wasEffectivelyVisible_ = isEffectivelyVisible;
         if (!isEffectivelyVisible)
         {
+            InvalidatePendingPresentation();
             return;
         }
 
@@ -1749,7 +3234,7 @@ public sealed class ViewportCompositionControl : Control
     }
 
     private static async Task DrainDetachedPresentationAsync(
-        CompositionDrawingSurface? surface,
+        IReadOnlyList<CompositionDrawingSurface> surfaces,
         Task removalProcessed,
         IReadOnlyList<Task> retirements,
         IDisposable? admission)
@@ -1762,7 +3247,7 @@ public sealed class ViewportCompositionControl : Control
         {
             try
             {
-                if (surface is not null)
+                foreach (var surface in surfaces)
                 {
                     if (Dispatcher.UIThread.CheckAccess())
                     {

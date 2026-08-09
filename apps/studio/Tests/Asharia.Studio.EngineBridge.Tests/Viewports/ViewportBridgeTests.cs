@@ -60,6 +60,24 @@ public sealed class ViewportBridgeTests
     }
 
     [Fact]
+    public void V5_stream_maps_the_explicit_flash_sentinel_diagnostic_flag()
+    {
+        var api = new StubViewportNativeApi();
+        var stream = new ViewportBridge(api)
+            .OpenStream(ViewportDeviceCompatibility.VulkanOpaqueNt).Stream!;
+        var request = PublishRequest(ViewportRenderKind.Scene, revision: 8);
+
+        Assert.True(stream.SubmitLatest(
+            request,
+            ViewportRenderDiagnosticOverlay.FlashSentinelCorners).Succeeded);
+
+        Assert.Equal(
+            (uint)(ViewportNativePresentRequestV5Flags.HasLogicalExtent |
+                   ViewportNativePresentRequestV5Flags.FlashSentinelCorners),
+            api.Request.Flags);
+    }
+
+    [Fact]
     public void V5_stream_reuses_the_same_slot_identity_across_frames()
     {
         var api = new StubViewportNativeApi();

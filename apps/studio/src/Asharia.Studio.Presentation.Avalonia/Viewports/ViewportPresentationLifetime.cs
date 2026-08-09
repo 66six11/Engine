@@ -11,10 +11,32 @@ public sealed class ViewportPresentationLifetime : IAsyncDisposable
     private readonly object gate_ = new();
     private readonly QuarantinedFrame?[] quarantinedFrames_ =
         new QuarantinedFrame?[MaximumQuarantinedFrames];
+    private readonly ViewportPresentationProcessQuarantineRegistry processQuarantineRegistry_;
     private TaskCompletionSource<bool>? drained_;
     private int activeOperations_;
     private int pauseCount_;
     private bool isStopping_;
+
+    public ViewportPresentationLifetime()
+        : this(ViewportPresentationProcessQuarantine.Registry)
+    {
+    }
+
+    internal ViewportPresentationLifetime(
+        ViewportPresentationProcessQuarantineRegistry processQuarantineRegistry)
+    {
+        ArgumentNullException.ThrowIfNull(processQuarantineRegistry);
+        processQuarantineRegistry_ = processQuarantineRegistry;
+    }
+
+    public ViewportPresentationQuarantineDrainReceipt? LastQuarantineDrainReceipt
+    {
+        get;
+        private set;
+    }
+
+    internal ViewportPresentationProcessQuarantineRegistry ProcessQuarantineRegistry =>
+        processQuarantineRegistry_;
 
     internal event EventHandler? Resumed;
 
@@ -25,6 +47,22 @@ public sealed class ViewportPresentationLifetime : IAsyncDisposable
             lock (gate_)
             {
                 return !isStopping_ && pauseCount_ == 0;
+            }
+        }
+    }
+
+    internal int QuarantinedFrameCount
+    {
+        get
+        {
+            lock (gate_)
+            {
+                var count = 0;
+                foreach (var frame in quarantinedFrames_)
+                {
+                    count += frame is null ? 0 : 1;
+                }
+                return count;
             }
         }
     }
@@ -58,12 +96,14 @@ public sealed class ViewportPresentationLifetime : IAsyncDisposable
         ViewportFrameLease lease,
         ICompositionImportedGpuImage? image,
         ICompositionImportedGpuSemaphore? waitSemaphore,
-        ICompositionImportedGpuSemaphore? signalSemaphore)
+        ICompositionImportedGpuSemaphore? signalSemaphore,
+        string endpointId = "viewport-frame-lifetime")
     {
         ArgumentNullException.ThrowIfNull(lease);
         // An ambiguous compositor submission, failed Avalonia wrapper disposal, or failed native
         // release has no safe retry contract. Retain both sides for process exit so ownership is
         // never guessed during Vulkan teardown.
+        QuarantinedFrame? quarantined = null;
         lock (gate_)
         {
             for (var index = 0; index < quarantinedFrames_.Length; index++)
@@ -73,13 +113,23 @@ public sealed class ViewportPresentationLifetime : IAsyncDisposable
                     continue;
                 }
 
-                quarantinedFrames_[index] = new QuarantinedFrame(
+                quarantined = new QuarantinedFrame(
                     lease,
                     image,
                     waitSemaphore,
                     signalSemaphore);
-                return;
+                quarantinedFrames_[index] = quarantined;
+                break;
             }
+        }
+
+        if (quarantined is not null)
+        {
+            _ = processQuarantineRegistry_.TransferFrame(
+                endpointId,
+                quarantined,
+                "A compositor frame submission or resource release had ambiguous ownership.");
+            return;
         }
 
         throw new InvalidOperationException(
@@ -100,14 +150,24 @@ public sealed class ViewportPresentationLifetime : IAsyncDisposable
         return new Pause(this);
     }
 
-    public ValueTask StopAndDrainAsync()
+    public async ValueTask<ViewportPresentationQuarantineDrainReceipt>
+        StopAndDrainWithQuarantineReceiptAsync()
     {
+        Task drain;
         lock (gate_)
         {
             isStopping_ = true;
-            return new ValueTask(GetDrainTaskLocked());
+            drain = GetDrainTaskLocked();
         }
+
+        await drain.ConfigureAwait(false);
+        var receipt = processQuarantineRegistry_.CaptureDrainReceipt();
+        LastQuarantineDrainReceipt = receipt;
+        return receipt;
     }
+
+    public async ValueTask StopAndDrainAsync() =>
+        _ = await StopAndDrainWithQuarantineReceiptAsync().ConfigureAwait(false);
 
     public ValueTask DisposeAsync() => StopAndDrainAsync();
 

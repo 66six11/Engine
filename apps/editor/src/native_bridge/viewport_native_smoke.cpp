@@ -8,6 +8,7 @@
 
 #include "asharia/core/log.hpp"
 
+#include "editor_shared_viewport_dispatch.hpp"
 #include "editor_shared_viewport_runtime.hpp"
 #include "native_bridge/viewport_native_api.hpp"
 
@@ -17,6 +18,25 @@ namespace asharia::editor {
         struct ExpectedRenderExtent final {
             std::uint32_t width;
             std::uint32_t height;
+        };
+
+        enum class DispatchProbeKind : std::uint8_t {
+            Completion,
+            Close,
+            Render,
+        };
+
+        struct DispatchProbeStream final {
+            std::uint64_t streamId{};
+            std::uint32_t completionSteps{};
+            std::uint32_t closeSteps{};
+            std::uint32_t renderSteps{};
+            bool realtime{};
+        };
+
+        struct DispatchProbeEvent final {
+            std::uint64_t streamId{};
+            DispatchProbeKind kind{DispatchProbeKind::Render};
         };
 
         [[nodiscard]] EditorViewportNativeCompatibilityRequest makeCompatibilityRequest() {
@@ -105,6 +125,38 @@ namespace asharia::editor {
             return false;
         }
 
+        [[nodiscard]] bool waitForReadyPoll(std::uint64_t streamId,
+                                            EditorViewportNativeStreamPollV5& poll) {
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
+            while (std::chrono::steady_clock::now() < deadline) {
+                if (editor_viewport_poll_stream_v5(streamId, &poll) !=
+                    EditorViewportNativeStatus_Success) {
+                    return false;
+                }
+                if (poll.hasReadyFrame != 0U) {
+                    return true;
+                }
+                std::this_thread::yield();
+            }
+            return false;
+        }
+
+        [[nodiscard]] bool waitForNoOutstandingPackets() {
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
+            while (std::chrono::steady_clock::now() < deadline) {
+                EditorViewportNativeRuntimeStatsV8 stats{};
+                if (editor_viewport_query_runtime_stats_v8(&stats) !=
+                    EditorViewportNativeStatus_Success) {
+                    return false;
+                }
+                if (stats.outstandingPackets == 0U) {
+                    return true;
+                }
+                std::this_thread::yield();
+            }
+            return false;
+        }
+
         [[nodiscard]] bool queryCompatibility() {
             EditorViewportNativeCompatibilityRequest compatibility = makeCompatibilityRequest();
             EditorViewportNativeCompatibilityResult result{};
@@ -181,6 +233,85 @@ namespace asharia::editor {
             if (std::abs(resetSecond.timeSeconds - 0.007F) > 0.0001F ||
                 std::abs(resetSecond.deltaSeconds - 0.007F) > 0.0001F) {
                 logError("Viewport frame clock reset did not establish a fresh monotonic epoch.");
+                return false;
+            }
+            return true;
+        }
+
+        [[nodiscard]] bool smokeStableRoundRobinDispatchPolicy() {
+            std::array<DispatchProbeStream, 4> streams{
+                DispatchProbeStream{.streamId = 10U, .realtime = true},
+                DispatchProbeStream{.streamId = 20U, .renderSteps = 1U},
+                DispatchProbeStream{.streamId = 30U, .renderSteps = 1U},
+                DispatchProbeStream{.streamId = 40U, .renderSteps = 1U},
+            };
+            std::array<DispatchProbeEvent, 8> events{};
+            std::size_t eventCount{};
+            std::uint64_t cursor{};
+            const auto streamId = [](const DispatchProbeStream& stream) { return stream.streamId; };
+            const auto noPriorityWork = [](DispatchProbeStream&) { return false; };
+            const auto render = [&events, &eventCount](DispatchProbeStream& stream) {
+                if (stream.renderSteps == 0U && !stream.realtime) {
+                    return false;
+                }
+                events.at(eventCount++) = DispatchProbeEvent{
+                    .streamId = stream.streamId,
+                    .kind = DispatchProbeKind::Render,
+                };
+                if (stream.renderSteps != 0U) {
+                    --stream.renderSteps;
+                }
+                return true;
+            };
+            for (std::size_t dispatch = 0U; dispatch < streams.size(); ++dispatch) {
+                if (!detail::dispatchOneStableRoundRobin(std::span{streams}, cursor, streamId,
+                                                         noPriorityWork, render)) {
+                    logError("Viewport scheduler probe stopped before all four streams ran.");
+                    return false;
+                }
+            }
+            if (events.at(0).streamId != 10U || events.at(1).streamId != 20U ||
+                events.at(2).streamId != 30U || events.at(3).streamId != 40U) {
+                logError("Viewport scheduler probe let a realtime stream monopolize dispatch.");
+                return false;
+            }
+
+            streams = {
+                DispatchProbeStream{.streamId = 10U, .renderSteps = 1U},
+                DispatchProbeStream{.streamId = 20U, .renderSteps = 1U},
+                DispatchProbeStream{.streamId = 30U, .closeSteps = 2U},
+                DispatchProbeStream{.streamId = 40U, .completionSteps = 1U},
+            };
+            eventCount = 0U;
+            cursor = 10U;
+            const auto priority = [&events, &eventCount](DispatchProbeStream& stream) {
+                DispatchProbeKind kind{};
+                if (stream.completionSteps != 0U) {
+                    --stream.completionSteps;
+                    kind = DispatchProbeKind::Completion;
+                } else if (stream.closeSteps != 0U) {
+                    --stream.closeSteps;
+                    kind = DispatchProbeKind::Close;
+                } else {
+                    return false;
+                }
+                events.at(eventCount++) =
+                    DispatchProbeEvent{.streamId = stream.streamId, .kind = kind};
+                return true;
+            };
+            for (std::size_t dispatch = 0U; dispatch < 4U; ++dispatch) {
+                if (!detail::dispatchOneStableRoundRobin(std::span{streams}, cursor, streamId,
+                                                         priority, render)) {
+                    logError("Viewport scheduler priority probe stopped unexpectedly.");
+                    return false;
+                }
+            }
+            if (events.at(0).kind != DispatchProbeKind::Close || events.at(0).streamId != 30U ||
+                events.at(1).kind != DispatchProbeKind::Completion ||
+                events.at(1).streamId != 40U || events.at(2).kind != DispatchProbeKind::Close ||
+                events.at(2).streamId != 30U || events.at(3).kind != DispatchProbeKind::Render) {
+                logError(
+                    "Viewport scheduler rendered before global completion/close work drained.");
                 return false;
             }
             return true;
@@ -379,11 +510,134 @@ namespace asharia::editor {
             return true;
         }
 
+        // The native cap is intentionally still four. This smoke proves only
+        // that four cold streams each receive their first slot and that a
+        // ready+pending realtime stream cannot consume the other cold slots.
+        // NOLINTNEXTLINE(readability-function-cognitive-complexity)
+        [[nodiscard]] bool smokeFourStreamColdStartFairness() {
+            constexpr std::size_t kStreamCount = 4U;
+            constexpr std::uint64_t kRealtimeFirstSequence = 1'000U;
+            std::array<EditorViewportNativeStreamHandleV5, kStreamCount> streams{};
+            EditorViewportNativeCompatibilityRequest compatibility = makeCompatibilityRequest();
+            for (EditorViewportNativeStreamHandleV5& stream : streams) {
+                if (editor_viewport_open_stream_v5(&compatibility, &stream) !=
+                        EditorViewportNativeStatus_Success ||
+                    stream.status != EditorViewportNativeStatus_Success || stream.streamId == 0U) {
+                    logError("Viewport fairness smoke could not open four streams.");
+                    return false;
+                }
+            }
+
+            EditorViewportNativePresentRequestV5 first = makeFrameRequest(kRealtimeFirstSequence);
+            if (editor_viewport_submit_latest_v5(streams.at(0).streamId, &first) !=
+                EditorViewportNativeStatus_Success) {
+                return false;
+            }
+            EditorViewportNativeStreamPollV5 realtimeReady{};
+            if (!waitForReadyPoll(streams.at(0).streamId, realtimeReady)) {
+                logError("Viewport fairness smoke did not prepare the realtime stream.");
+                return false;
+            }
+
+            for (std::uint64_t sequence = kRealtimeFirstSequence + 1U;
+                 sequence <= kRealtimeFirstSequence + 8U; ++sequence) {
+                EditorViewportNativePresentRequestV5 request = makeFrameRequest(sequence);
+                if (editor_viewport_submit_latest_v5(streams.at(0).streamId, &request) !=
+                    EditorViewportNativeStatus_Success) {
+                    return false;
+                }
+            }
+            std::array<std::uint64_t, kStreamCount> expectedSequences{
+                kRealtimeFirstSequence,
+                2'001U,
+                2'002U,
+                2'003U,
+            };
+            for (std::size_t index = 1U; index < streams.size(); ++index) {
+                EditorViewportNativePresentRequestV5 request =
+                    makeFrameRequest(expectedSequences.at(index));
+                request.targetId.low += static_cast<std::uint64_t>(index);
+                if (editor_viewport_submit_latest_v5(streams.at(index).streamId, &request) !=
+                    EditorViewportNativeStatus_Success) {
+                    return false;
+                }
+            }
+
+            for (std::size_t index = 1U; index < streams.size(); ++index) {
+                EditorViewportNativeStreamPollV5 poll{};
+                if (!waitForReadyPoll(streams.at(index).streamId, poll) ||
+                    poll.renderedFrames != 1U) {
+                    logError("Viewport fairness smoke starved a cold stream first frame.");
+                    return false;
+                }
+            }
+            EditorViewportNativeStreamPollV5 realtimePoll{};
+            if (editor_viewport_poll_stream_v5(streams.at(0).streamId, &realtimePoll) !=
+                    EditorViewportNativeStatus_Success ||
+                realtimePoll.renderedFrames != 1U || realtimePoll.hasReadyFrame == 0U ||
+                realtimePoll.hasPendingLatest == 0U || realtimePoll.coalescedRequests < 7U) {
+                logError("Viewport fairness smoke lost or over-rendered realtime pending work.");
+                return false;
+            }
+
+            for (std::size_t index = 0U; index < streams.size(); ++index) {
+                EditorViewportNativeReadyFrameV5 frame{};
+                if (!waitForReadyFrame(streams.at(index).streamId, frame) ||
+                    frame.requestSequence != expectedSequences.at(index) ||
+                    !completeNotSubmitted(streams.at(index).streamId, frame.nativeSlot) ||
+                    editor_viewport_release_slot_import_v5(streams.at(index).streamId,
+                                                           frame.nativeSlot) !=
+                        EditorViewportNativeStatus_Success) {
+                    logError("Viewport fairness smoke could not release a cold stream frame.");
+                    return false;
+                }
+            }
+            // Leave the realtime successor pending while the other streams
+            // complete and close. Lifecycle work must make progress before
+            // the newly freed capacity can be used for another render.
+            for (std::size_t index = 1U; index < streams.size(); ++index) {
+                if (editor_viewport_close_stream_v5(streams.at(index).streamId) !=
+                    EditorViewportNativeStatus_Success) {
+                    return false;
+                }
+            }
+            for (std::size_t index = 1U; index < streams.size(); ++index) {
+                EditorViewportNativeStreamPollV5 closedPoll{};
+                if (!waitForPoll(streams.at(index).streamId, closedPoll,
+                                 EditorViewportNativeStreamLifecycle_Closed) ||
+                    closedPoll.renderedFrames != 1U ||
+                    editor_viewport_destroy_stream_v5(streams.at(index).streamId) !=
+                        EditorViewportNativeStatus_Success) {
+                    logError("Viewport fairness smoke let pending render work starve close.");
+                    return false;
+                }
+            }
+            if (editor_viewport_close_stream_v5(streams.at(0).streamId) !=
+                EditorViewportNativeStatus_Success) {
+                return false;
+            }
+            EditorViewportNativeStreamPollV5 realtimeClosedPoll{};
+            if (!waitForPoll(streams.at(0).streamId, realtimeClosedPoll,
+                             EditorViewportNativeStreamLifecycle_Closed) ||
+                realtimeClosedPoll.renderedFrames < 1U || realtimeClosedPoll.renderedFrames > 2U ||
+                editor_viewport_destroy_stream_v5(streams.at(0).streamId) !=
+                    EditorViewportNativeStatus_Success) {
+                logError("Viewport fairness smoke did not close the realtime stream.");
+                return false;
+            }
+            if (!waitForNoOutstandingPackets()) {
+                logError("Viewport fairness smoke did not retire all four native packets.");
+                return false;
+            }
+            return true;
+        }
+
     } // namespace
 
     bool runViewportNativeBridgeSmoke() {
-        if (!smokeMonotonicFrameClock() || !queryCompatibility() ||
-            !smokeBoundedLatestWinsStream()) {
+        if (!smokeMonotonicFrameClock() || !smokeStableRoundRobinDispatchPolicy() ||
+            !queryCompatibility() || !smokeBoundedLatestWinsStream() ||
+            !smokeFourStreamColdStartFairness()) {
             editor_viewport_shutdown();
             return false;
         }

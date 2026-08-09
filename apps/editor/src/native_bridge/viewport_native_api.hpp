@@ -44,6 +44,7 @@ enum EditorViewportNativeTargetKind : std::uint32_t {
 
 enum EditorViewportNativePresentRequestV5Flags : std::uint32_t {
     EditorViewportNativePresentRequestV5Flags_HasLogicalExtent = 1U << 0U,
+    EditorViewportNativePresentRequestV5Flags_FlashSentinelCorners = 1U << 1U,
 };
 
 enum EditorViewportNativePresentCompletionKind : std::uint32_t {

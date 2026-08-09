@@ -9,6 +9,7 @@
   <ItemGroup>
     <InternalsVisibleTo Include="Editor.Tests" />
     <InternalsVisibleTo Include="Asharia.Studio.Headless.Tests" />
+    <InternalsVisibleTo Include="Editor" />
   </ItemGroup>
 
   <ItemGroup>

@@ -66,7 +66,8 @@ public sealed class ViewportBridge
 
     internal unsafe ViewportSubmitResult SubmitLatest(
         ulong streamId,
-        ViewportRenderRequest request)
+        ViewportRenderRequest request,
+        ViewportRenderDiagnosticOverlay diagnosticOverlay)
     {
         var proxies = request.DebugProxies
             .Select(proxy => new ViewportNativeDebugProxy(
@@ -75,6 +76,11 @@ public sealed class ViewportBridge
             .ToArray();
         fixed (ViewportNativeDebugProxy* proxyPointer = proxies)
         {
+            var nativeFlags = ViewportNativePresentRequestV5Flags.HasLogicalExtent;
+            if ((diagnosticOverlay & ViewportRenderDiagnosticOverlay.FlashSentinelCorners) != 0)
+            {
+                nativeFlags |= ViewportNativePresentRequestV5Flags.FlashSentinelCorners;
+            }
             var nativeRequest = new ViewportNativePresentRequestV5(
                 ViewportNativeAbiHeader.Current<ViewportNativePresentRequestV5>(),
                 ViewportNativeId.FromGuid(request.SessionId.Value),
@@ -87,7 +93,7 @@ public sealed class ViewportBridge
                 (uint)request.TargetKind,
                 request.AllocationExtent.Width,
                 request.AllocationExtent.Height,
-                (uint)ViewportNativePresentRequestV5Flags.HasLogicalExtent,
+                (uint)nativeFlags,
                 ViewportNativeCamera.FromSnapshot(request.Camera),
                 request.LogicalExtent.Width,
                 request.LogicalExtent.Height);

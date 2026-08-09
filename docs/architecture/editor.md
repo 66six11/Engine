@@ -236,29 +236,53 @@ EditorViewportCoordinator::recordRequestedViews()
 The display is intentionally one frame delayed. This keeps panel drawing simple and avoids two-phase panel rendering until
 same-frame presentation is required and measured.
 
-### Studio external presentation boundary
+### Studio Viewport Presentation Transaction boundary
 
-The Avalonia Studio Scene View uses the same native renderer through a separate external-presentation path. Interactive
-panel resize is event-driven: the composition visual follows the current panel bounds immediately, while the managed
-`ViewportSession` publishes the latest immutable request without waiting for an older frame to complete. The V5 native stream
-keeps at most one executing request, one latest pending replacement and one ready frame per viewport, with at most three
-persistent full presentation slots. Each slot keeps its external image, producer/consumer semaphores, command resources and
-retirement proof together across frames. Each physical panel extent advances a geometry generation and uses that exact
-`PixelSize` for both logical and allocation extents. The old surface is hidden and mismatched streams begin retirement
-immediately; a frame can update the surface only when allocation, logical and commit-time panel extents plus the geometry
-generation all match. This prevents crop/stretch and A→B→A revival of an old snapshot. Native frame resources return to the
-available set only after producer completion and, when submitted to the compositor, consumer completion. Ambiguous completion
-is quarantined within the fixed resource budget instead of blocking the UI thread. Bounds/DPI changes use a coalesced
-Render-priority early-admission latch; the later composition callback remains the exact surface-commit gate. An unpromoted
-resize candidate receives only its first automatic frame, and Promote restores the steady Realtime pipeline. `IsRealtime=true` is the explicit default
-and keeps producing exact frames for a static scene at the >=60 FPS acceptance floor. `false` is an explicit OnDemand mode:
-the session emits one coalesced refresh request when target, camera, extent or exposure changes, hidden dock tabs stop frame
-admission, and re-exposure or a newly attached surface requests an exact frame. Target/camera/exposure changes also advance a
-managed content-sequence fence so an older snapshot cannot cross the surface commit; extent freshness remains owned solely by
-the exact geometry generation. Removing or replacing a session hides its old surface and retires both active and desired
-streams before the replacement can present. The runtime's frame index is a render-attempt identity (failed attempts may leave
-gaps), while shader/preview time comes from
-a monotonic runtime clock and is never synthesized as `frameIndex / 60`. The detailed contracts are maintained in
+The Avalonia Studio Scene View uses the same native renderer through a separate external-presentation path. Its production
+abstraction is a reusable `Viewport Presentation Transaction`, not a dock-only operation. Every endpoint owns
+its front/candidate surfaces, stream/import state and retirement. Each participant validates
+`SessionId + EndpointEpoch + TransactionId`: the transaction id is shared by the group, while session and epoch bind that endpoint
+to one content session and one attach/compositor lifetime; request sequence, target revision and geometry or
+capture identity provide the finer content gate.
+
+The group lifecycle is `Proposal → Preparing → Prepared → Validated → Published → Rendered → Retiring → Completed`.
+Recoverable pre-publish failure/cancellation becomes `Aborted`; an ambiguous result after publish becomes `Quarantined` with
+resource ownership retained. All participants must be prepared and validated before publish. Participants under the same
+Avalonia compositor can apply their state/layout mutation and every `visual.Surface`/`Size` switch in one UI turn and share one
+composition-batch `Rendered` barrier. Different compositors have no common commit barrier and are explicitly non-atomic; they
+must use separate transactions.
+
+Scene endpoints require an exact panel extent. Game Preview endpoints can freeze an independent fit policy in their proposal.
+Frame Debugger immutable captures use an independent endpoint and capture identity, so inspecting a frozen frame cannot replace
+the mutable Scene/Game front. The endpoint policy is therefore separate from the transaction state machine.
+
+`EditorDockStagedGridSplitter`, `EditorDockSplitResizePolicy` and `EditorDockSplitResizeCoordinator` are only a layout-proposal
+adapter. They translate drag input through min/max/layout-rounding rules, synchronously probe the prospective exact `PixelSize`,
+and restore the committed `GridLength` before yielding. The transaction coordinator prepares endpoint-owned candidate surfaces,
+then publishes the committed `GridLength` and all same-compositor surface switches together while `Opacity` remains 1. A fault,
+cancellation, stale identity or any participant mismatch aborts before publish and preserves every old front. Replaced fronts
+begin retirement only after the shared batch reports `Rendered`. A→B→A requires a new transaction and cannot revive an old
+snapshot. Plain `GridSplitter.ShowsPreview` and drag-end debounce remain rejected because they do not produce unique exact
+geometry during the drag.
+
+The V5 native stream still keeps at most one executing request, one latest pending replacement and one ready frame per
+viewport, with at most three persistent full presentation slots. Each slot keeps its external image, producer/consumer
+semaphores, command resources and retirement proof together across frames. The old three-slot steady front plus the one-frame
+candidate stay within the process-wide four-resource cap; Realtime prefill resumes only after the prepared switch. Direct
+programmatic Bounds/DPI/top-level changes outside the transaction-owned dock adapter remain an explicit exact-only fallback: they hide
+the mismatched front until a new exact frame is ready, never crop or stretch, and do not count as flash-free dock acceptance.
+
+`IsRealtime=true` is the explicit default and keeps producing exact frames for a static scene at the >=60 FPS acceptance
+floor. `false` is an explicit OnDemand mode: the session emits one coalesced refresh request when target, camera, extent or
+exposure changes, hidden dock tabs stop frame admission, and re-exposure or a newly attached surface requests an exact frame.
+Target/camera/exposure changes also advance a managed content-sequence fence so an older snapshot cannot cross the surface
+commit; extent freshness remains owned solely by the exact geometry generation. Removing or replacing a session hides its old
+surface and retires both active and desired streams before the replacement can present. The runtime's frame index is a
+render-attempt identity (failed attempts may leave gaps), while shader/preview time comes from a monotonic runtime clock and is
+never synthesized as `frameIndex / 60`. The 2026-08-09 pre-split combined Studio splitter run completed 90/90 unique exact generations at
+108.25/s, with proposal-to-shared-batch-`Rendered` p95 about 12.59 ms, requested-mismatch hidden duty 0, and subsequent
+Realtime steady surface-update cadence 222.84 FPS. These are application/Avalonia surface facts, not physical scanout facts;
+physical display cadence still requires a loss-free PresentMon/ETW sample. The detailed contracts are maintained in
 [`apps/studio/docs/architecture/viewport-rendering.md`](../../apps/studio/docs/architecture/viewport-rendering.md) and
 [`apps/studio/docs/adr/0006-viewport-interactive-resize.md`](../../apps/studio/docs/adr/0006-viewport-interactive-resize.md).
 
@@ -701,6 +725,18 @@ build\cmake\msvc-debug\apps\editor\asharia-editor.exe --smoke-editor-viewport
 build\cmake\msvc-debug\apps\editor\asharia-editor.exe --smoke-editor-viewport-resize
 build\cmake\msvc-debug\apps\editor\asharia-editor.exe --smoke-editor-frame-debugger
 ```
+
+Studio `Editor.exe --smoke-studio-viewport-cadence` 只承担前台静态 Scene 的 5 秒 Realtime 稳态基线，门控 exact surface-update
+`>=60 FPS`、p95 与 max；它不再承载 resize/fault/overload 场景。`--smoke-viewport-transaction-resize`、
+`--smoke-viewport-transaction-overload`、`--smoke-viewport-transaction-faults`、
+`--smoke-viewport-transaction-supersede` 与 `--smoke-viewport-multi-endpoint` 已是独立真实 Studio GPU smoke，分别门控 splitter
+exact/hidden、bounded latest-wins、13-stage 失败 ownership、latest/stale identity 与 same-compositor 两-endpoint group atomicity；
+`--smoke-viewport-transaction-flash` 另逐个成功 transaction 的 group composition batch 检查 native
+corner sentinel 的结构边界。各入口分开报告 native resource、transaction phase、Avalonia surface/`Rendered` 与 physical display；
+没有 observer 的层明确输出 evidence unavailable。代表性 resize 为 209/209 observed exact `Rendered` generations、106.44/s、p95
+15.26 ms、hidden 0；最终 GPU process acceptance 为 47/47，steady 为 219.43 surface-updates/s。当前 PresentMon 复采因大量 ETW
+event loss 且无 CSV 被作废，不能把这些
+应用侧数字称为 physical display。multi-endpoint 当前只通过两 endpoint；3–4 realtime 容量与 slow-consumer queue HOL 仍未解决。
 
 `--smoke-editor-viewport` also validates Scene View flag defaults, verifies that pending Gizmo/Select authoring flags are
 cleared from effective Scene View diagnostics, verifies that Scene-only authoring flags are cleared from Game/Preview,

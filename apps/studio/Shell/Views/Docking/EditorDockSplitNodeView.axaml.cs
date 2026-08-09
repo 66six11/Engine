@@ -85,12 +85,12 @@ public partial class EditorDockSplitNodeView : UserControl
         return host;
     }
 
-    private static GridSplitter CreateSplitter(
+    internal static GridSplitter CreateSplitter(
         EditorDockSplitNodeViewModel split,
         GridResizeDirection resizeDirection,
         string orientationClass)
     {
-        var splitter = new GridSplitter
+        var splitter = new EditorDockStagedGridSplitter
         {
             DataContext = split,
             ResizeDirection = resizeDirection,
@@ -107,7 +107,7 @@ public partial class EditorDockSplitNodeView : UserControl
         return new Binding(propertyName)
         {
             Source = source,
-            Mode = BindingMode.TwoWay,
+            Mode = BindingMode.OneWay,
         };
     }
 }
