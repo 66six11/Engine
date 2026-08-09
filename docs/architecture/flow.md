@@ -685,17 +685,27 @@ sequenceDiagram
   停止新 submit，但继续完成 close/retirement。
 - #361 已增加单 Scene View `ViewportCompositionControl`、composition capability/import、单调 presentation
   admission 与 process-owned drain；Dock move/float 只能重绑 presentation，不能销毁 `ViewportSession`。
+- `ViewportSession` 把 target/camera/extent/exposed invalidation 合并为 latest state，并仅在 clean→dirty 时发
+  `RefreshRequested`；control 在 UI Render priority 请求下一次 composition callback。Bounds/DPI 另由一枚 Render-priority latch
+  在 layout boundary 提前提交最新 exact-size native request，surface 更新仍在 composition callback 复验 exact generation。默认 Realtime 每个 commit 至多重挂一次，
+  OnDemand 只消费语义 dirty。隐藏 dock tab 或 presentation lifetime pause 停止 admission；ancestor visible、新 surface attach、
+  lifetime replacement/resume 都写入 `Exposed` 后恢复一帧；closed session 是不再 invalidation 的 terminal boundary。
 - production composition session 在 shell 启动期间于后台启动 compatibility warm-up，且不阻塞 ready，使同一 native RenderThread 提前创建
   Vulkan device/context；shutdown 在销毁 runtime 前等待该 task，真实 compositor identity 仍由 frame request 复验。
 - Bounds/DPI 以 `ceil(Bounds * RenderScaling)` 采样 panel `PixelSize`，同时作为 logical/allocation extent；每次 physical extent
   变化推进 geometry generation，并立即把旧 visual 置为不可见。attach 持久复用一张 drawing surface，但旧 surface 不得 crop/stretch
   到新 Bounds；A→B→A 也只有新的 A generation exact frame 才能恢复可见。旧 revision/epoch、geometry generation 或倒退 sequence
-  在提交前被拒绝。
+  在提交前被拒绝。未 Promote candidate 禁止自动 Realtime 预填充；首个 exact surface 成功后补发一次 wake 才恢复 steady 三槽，
+  真实 content dirty 仍可 latest-wins 覆盖候选。
 - external image/export/import、RenderGraph target、render area、viewport、scissor 与 camera 全部使用同一 exact panel extent。
   drawing-surface image 与 visual size/opacity 在同一 compositor transaction 更新。每个 stream 独占 managed work fence，尺寸变化
   立即 retire 不匹配 stream，retirement 只等待该流 pump/presentations；新 desired pump 不被旧流退役绑在同一个全局 task 上。
   `IsRealtime=true` 即使 scene/camera 静止也由 `RequestCompositionUpdate` 每个 commit 最多重挂一次，目标 exact surface-update
-  `>=60 FPS`；`false` 不自动重挂，只消费 dirty invalidation。两者都不使用 UI timer。
+  `>=60 FPS`；`false` 不自动重挂，只消费 dirty invalidation。`RequestSequence`/`MinimumPresentableSequence` 拒绝 camera/target/exposed
+  之后的旧内容帧；extent 只由 geometry generation 裁决，Realtime/extent 都不推进内容 fence。两种模式都不使用 UI timer。
+- native `frameIndex` 只是 render-attempt identity，失败允许留 gap；`EditorSharedViewportRuntime` 在唯一 RenderThread 上采样
+  steady-clock elapsed 与上次任意 stream 成功 render delta，形成 immutable frame params。刷新率只改变采样密度，不再通过
+  `frameIndex / 60` 改变 shader 时间速度。
 - V5 completion hard cut 只有 `editor_viewport_complete_frame_v5(stream, slot, completionKind)`。未进入
   `UpdateWithSemaphoresAsync` 的 frame 报告 `NotSubmittedToConsumer`；update 已完成的 frame 报告
   `ConsumerAccessed`，并在 native RenderThread 上提交空 queue wait，把 compositor consumer-done semaphore 转为

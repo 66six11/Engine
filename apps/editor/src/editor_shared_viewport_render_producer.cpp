@@ -266,7 +266,8 @@ namespace asharia::editor {
         recordSharedViewportFrame(VkQueue graphicsQueue, BasicFullscreenTextureRenderer& renderer,
                                   EditorSharedViewportFrameEpochTracker& frameEpochTracker,
                                   EditorSharedViewportPacketState& state,
-                                  EditorSharedViewportPresentDesc desc, std::uint64_t frameIndex) {
+                                  EditorSharedViewportPresentDesc desc,
+                                  BasicRenderViewFrameParams frameParams) {
             if (!state.frameResources) {
                 return std::unexpected{
                     vulkanError("Shared viewport present slot has no frame resources")};
@@ -289,13 +290,14 @@ namespace asharia::editor {
                 .imageView = targetImage.imageView(),
                 .imageIndex = 0U,
                 .format = targetImage.format(),
-                // The external image is a grow-only allocation during interactive resize.
-                // Render only the logical top-left viewport; Studio sizes the composition visual
-                // to the allocation and clips it at the control boundary, avoiding image stretch.
-                .extent = VkExtent2D{
-                    .width = desc.logicalExtent.width,
-                    .height = desc.logicalExtent.height,
-                },
+                // RenderGraph, render area, viewport and projection use the requested logical
+                // extent. Studio supplies the same exact physical extent for allocation and
+                // logical size; the wider native contract remains valid for non-Studio callers.
+                .extent =
+                    VkExtent2D{
+                        .width = desc.logicalExtent.width,
+                        .height = desc.logicalExtent.height,
+                    },
                 .clearColor = VkClearColorValue{{0.12F, 0.12F, 0.13F, 1.0F}},
                 .frameLoop = nullptr,
             };
@@ -310,20 +312,15 @@ namespace asharia::editor {
                 .image = targetImage.image(),
                 .imageView = targetImage.imageView(),
                 .format = targetImage.format(),
-                // The VkImage keeps its grow-only allocation extent, while rendering, camera
-                // projection, viewport, and scissor all use the current panel's logical extent.
+                // The VkImage allocation may be wider for a generic native caller, while
+                // rendering, projection, viewport and scissor use the explicit logical extent.
                 .extent = frame.extent,
                 .aspectMask = targetImage.aspectMask(),
                 .finalUsage = BasicRenderViewTargetFinalUsage::SampledTexture,
             };
             state.renderExtent = view.target.extent;
             view.viewKind = *viewKind;
-            view.frameParams = BasicRenderViewFrameParams{
-                .frameIndex = frameIndex,
-                .timeSeconds = static_cast<float>(frameIndex) / 60.0F,
-                .deltaSeconds = 1.0F / 60.0F,
-                .renderScale = 1.0F,
-            };
+            view.frameParams = frameParams;
             view.viewName = desc.panelId.empty() ? "Studio Viewport" : desc.panelId;
             std::vector<BasicDebugWorldLine> debugLines;
             if (desc.hasScene) {
@@ -410,7 +407,7 @@ namespace asharia::editor {
             state.frameEpoch = frameEpochTracker.submit();
             state.submitted = true;
             state.waitForCompositionRelease = true;
-            state.frameIndex = frameIndex;
+            state.frameIndex = frameParams.frameIndex;
 
             return {};
         }
@@ -594,7 +591,7 @@ namespace asharia::editor {
     }
 
     Result<std::unique_ptr<EditorSharedViewportPacketState>>
-    EditorSharedViewportRenderProducer::renderSceneViewFrame(std::uint64_t frameIndex,
+    EditorSharedViewportRenderProducer::renderSceneViewFrame(BasicRenderViewFrameParams frameParams,
                                                              EditorSharedViewportPresentDesc desc,
                                                              std::size_t frameResourceIndex) {
         auto state = std::make_unique<EditorSharedViewportPacketState>();
@@ -610,7 +607,7 @@ namespace asharia::editor {
         }
 
         auto rendered = recordSharedViewportFrame(graphicsQueue_, renderer_, frameEpochTracker_,
-                                                  *state, desc, frameIndex);
+                                                  *state, desc, frameParams);
         if (!rendered) {
             return std::unexpected{std::move(rendered.error())};
         }
@@ -622,7 +619,7 @@ namespace asharia::editor {
     }
 
     Result<std::unique_ptr<EditorSharedViewportPacketState>>
-    EditorSharedViewportRenderProducer::createPresentSlot(std::uint64_t frameIndex,
+    EditorSharedViewportRenderProducer::createPresentSlot(BasicRenderViewFrameParams frameParams,
                                                           EditorSharedViewportPresentDesc desc,
                                                           std::size_t frameResourceIndex) {
         auto state = std::make_unique<EditorSharedViewportPacketState>();
@@ -639,7 +636,7 @@ namespace asharia::editor {
         }
 
         auto rendered = recordSharedViewportFrame(graphicsQueue_, renderer_, frameEpochTracker_,
-                                                  *state, desc, frameIndex);
+                                                  *state, desc, frameParams);
         if (!rendered) {
             return std::unexpected{std::move(rendered.error())};
         }
@@ -653,7 +650,7 @@ namespace asharia::editor {
     Result<void>
     EditorSharedViewportRenderProducer::renderPresentSlot(EditorSharedViewportPacketState& state,
                                                           EditorSharedViewportPresentDesc desc,
-                                                          std::uint64_t frameIndex) {
+                                                          BasicRenderViewFrameParams frameParams) {
         if (!state.reusable) {
             return std::unexpected{
                 vulkanError("Shared viewport present packet is not a reusable slot")};
@@ -686,7 +683,7 @@ namespace asharia::editor {
         }
 
         auto rendered = recordSharedViewportFrame(graphicsQueue_, renderer_, frameEpochTracker_,
-                                                  state, desc, frameIndex);
+                                                  state, desc, frameParams);
         if (!rendered) {
             return std::unexpected{std::move(rendered.error())};
         }

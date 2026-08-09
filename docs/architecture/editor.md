@@ -248,8 +248,17 @@ retirement proof together across frames. Each physical panel extent advances a g
 immediately; a frame can update the surface only when allocation, logical and commit-time panel extents plus the geometry
 generation all match. This prevents crop/stretch and A→B→A revival of an old snapshot. Native frame resources return to the
 available set only after producer completion and, when submitted to the compositor, consumer completion. Ambiguous completion
-is quarantined within the fixed resource budget instead of blocking the UI thread. `IsRealtime=true` keeps producing exact
-frames for a static scene, while `false` is dirty-only. The detailed contracts are maintained in
+is quarantined within the fixed resource budget instead of blocking the UI thread. Bounds/DPI changes use a coalesced
+Render-priority early-admission latch; the later composition callback remains the exact surface-commit gate. An unpromoted
+resize candidate receives only its first automatic frame, and Promote restores the steady Realtime pipeline. `IsRealtime=true` is the explicit default
+and keeps producing exact frames for a static scene at the >=60 FPS acceptance floor. `false` is an explicit OnDemand mode:
+the session emits one coalesced refresh request when target, camera, extent or exposure changes, hidden dock tabs stop frame
+admission, and re-exposure or a newly attached surface requests an exact frame. Target/camera/exposure changes also advance a
+managed content-sequence fence so an older snapshot cannot cross the surface commit; extent freshness remains owned solely by
+the exact geometry generation. Removing or replacing a session hides its old surface and retires both active and desired
+streams before the replacement can present. The runtime's frame index is a render-attempt identity (failed attempts may leave
+gaps), while shader/preview time comes from
+a monotonic runtime clock and is never synthesized as `frameIndex / 60`. The detailed contracts are maintained in
 [`apps/studio/docs/architecture/viewport-rendering.md`](../../apps/studio/docs/architecture/viewport-rendering.md) and
 [`apps/studio/docs/adr/0006-viewport-interactive-resize.md`](../../apps/studio/docs/adr/0006-viewport-interactive-resize.md).
 
@@ -258,6 +267,10 @@ Scene View overlay state remains editor-owned until the coordinator translates i
 and blend policy, plus a data-only debug world-line span. It does not use `EditorViewportKind`,
 `EditorViewportOverlayFlags`, ImGui ids or Vulkan handles from panels. Grid, gizmo and debug draw passes must consume this
 contract in later slices instead of reading editor panel state directly.
+
+The Studio V5 request does not yet carry selection or mutable overlay intent. Those features require an explicit immutable
+view-state snapshot/revision before they can participate in the content fence; document revision or a managed invalidation bit
+must not be used as a substitute.
 
 ## 生命周期
 

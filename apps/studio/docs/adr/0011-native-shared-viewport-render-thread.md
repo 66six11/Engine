@@ -6,7 +6,7 @@
 ## 决策摘要
 
 `editor_native.dll` 的 `EditorSharedViewportRuntime` 是进程内唯一 shared viewport Vulkan owner。Scene、Game 和 Preview
-stream 共享同一 context、producer、graphics queue、renderer cache、frame epoch tracker 和 retirement。Avalonia control、
+stream 共享同一 context、producer、graphics queue、renderer cache、frame epoch tracker、单调 frame clock 和 retirement。Avalonia control、
 `ViewportSession`、EngineBridge caller 与每个 stream 都不是 renderer owner。
 
 V5 把旧同步 request/wait facade 硬切为：非阻塞 latest submit、非阻塞 ready take、显式 frame completion、显式 import release
@@ -25,7 +25,7 @@ per-stream mailbox
   pending-latest(1) / ready(1) / slots(3)
         |
 EditorSharedViewportRuntime RenderThread
-  Vulkan context + producer + record + submit + retirement + shutdown
+  Vulkan context + monotonic frame clock + producer + record + submit + retirement + shutdown
         |
 GPU / Avalonia compositor
 ```
@@ -77,6 +77,23 @@ completion；曾暴露给 managed 的 slot 还必须收到 `release_slot_import_
 stream slots 转入 retirement 后即可报告 Closed；runtime context 在 packet retirement 仍未完成时继续存活。caller 只在 Closed
 后调用 destroy，删除 stream registry identity。
 
+## 帧身份与单调时间
+
+Runtime 在 producer 创建时重置 `std::chrono::steady_clock` epoch，并在 RenderThread 真正准备 record 时生成 immutable
+`BasicRenderViewFrameParams`。record/submit 成功后才推进 last-render sample：
+
+```text
+frameIndex   = process-level render-attempt identity; failed attempts may leave gaps
+timeSeconds  = monotonic elapsed since shared producer epoch
+deltaSeconds = elapsed since the previous successful render from any shared stream; first frame is 0
+```
+
+`frameIndex`、managed `RequestSequence`、SceneDocument `TargetRevision` 和时间是四个正交概念。frame index 在调用 producer 前分配，
+用于标识一次实际 render attempt；失败不回收 identity，也不推进成功时间 sample。刷新率只改变时间采样密度，
+不能改变材质/preview 时间速度；OnDemand 空闲后恢复时 absolute time 跳到当前 elapsed，delta 记录真实 render 间隔。
+禁止恢复 `frameIndex / 60` 或固定 `1 / 60`，也禁止把 Avalonia compositor cadence、GPU timeline semaphore 或物理 present
+反向用作 host/editor 时间源。当前 delta 是 shared viewport render delta，不是 World simulation fixed-step delta。
+
 ## Runtime shutdown
 
 managed caller 不在 Avalonia dispatcher 上执行每毫秒 native poll。ready-frame 与 close-state 等待在 UI context 外轮询；只有 ready
@@ -115,6 +132,8 @@ producer fence 代替 consumer completion、独立 renderer process（当前故�
 - MSVC native V5 smoke 验证 34 次 submit 只产生 4 个 render、coalesced counter、三个 distinct slots 和 reuse；
 - smoke 验证 close 前 import release、Closed 后 destroy、runtime shutdown/join；
 - managed tests 验证 exact-once completion、ABI sizes、stream lifecycle 和 failure mapping；
+- CPU clock smoke 以注入 time point 验证首帧 0、5 ms 连续帧、失败 attempt 不推进成功 sample、2 s dirty-only idle gap、
+  reset 建立新 epoch，以及时间与 attempt identity 解耦；
 - DLL export audit 验证 V5 frame exports 存在、V4 create/release packet exports 不存在。
 
 ## 资料
@@ -122,4 +141,4 @@ producer fence 代替 consumer completion、独立 renderer process（当前故�
 - Unreal threaded rendering: https://dev.epicgames.com/documentation/en-us/unreal-engine/threaded-rendering-in-unreal-engine
 - Vulkan queue external synchronization: https://docs.vulkan.org/refpages/latest/refpages/source/vkQueueSubmit2.html
 - Vulkan threading: https://docs.vulkan.org/guide/latest/threading.html
-- Avalonia 12.0.4 Vulkan sample: https://github.com/AvaloniaUI/Avalonia/blob/12.0.4/samples/GpuInterop/VulkanDemo/VulkanSwapchain.cs
+- Avalonia 12.1.0 Vulkan sample: https://github.com/AvaloniaUI/Avalonia/blob/12.1.0/samples/GpuInterop/VulkanDemo/VulkanSwapchain.cs

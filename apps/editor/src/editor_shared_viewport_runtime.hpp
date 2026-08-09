@@ -1,7 +1,9 @@
 ﻿#pragma once
 
+#include <algorithm>
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
@@ -46,6 +48,39 @@ namespace asharia::editor {
 
     using EditorSharedViewportStreamId = std::uint64_t;
 
+    class EditorSharedViewportFrameClock final {
+    public:
+        using Clock = std::chrono::steady_clock;
+
+        explicit EditorSharedViewportFrameClock(Clock::time_point epoch = Clock::now()) noexcept
+            : epoch_(epoch) {}
+
+        void reset(Clock::time_point epoch = Clock::now()) noexcept {
+            epoch_ = epoch;
+            lastRenderedAt_.reset();
+        }
+        [[nodiscard]] BasicRenderViewFrameParams
+        frameParams(std::uint64_t frameIndex, Clock::time_point now = Clock::now()) const noexcept {
+            const Clock::time_point sampledAt = std::max(now, epoch_);
+            const Clock::time_point previous =
+                lastRenderedAt_ ? std::min(*lastRenderedAt_, sampledAt) : sampledAt;
+            return BasicRenderViewFrameParams{
+                .frameIndex = frameIndex,
+                .timeSeconds = std::chrono::duration<float>{sampledAt - epoch_}.count(),
+                .deltaSeconds = std::chrono::duration<float>{sampledAt - previous}.count(),
+                .renderScale = 1.0F,
+            };
+        }
+        void markRendered(Clock::time_point now = Clock::now()) noexcept {
+            const Clock::time_point sampledAt = std::max(now, epoch_);
+            lastRenderedAt_ = lastRenderedAt_ ? std::max(*lastRenderedAt_, sampledAt) : sampledAt;
+        }
+
+    private:
+        Clock::time_point epoch_;
+        std::optional<Clock::time_point> lastRenderedAt_;
+    };
+
     struct EditorSharedViewportReadyFrame {
         EditorSharedViewportPresentPacket present;
         std::array<std::uint64_t, 2> sessionId{};
@@ -64,8 +99,7 @@ namespace asharia::editor {
     };
 
     struct EditorSharedViewportStreamSnapshot {
-        EditorSharedViewportStreamLifecycle lifecycle{
-            EditorSharedViewportStreamLifecycle::Open};
+        EditorSharedViewportStreamLifecycle lifecycle{EditorSharedViewportStreamLifecycle::Open};
         bool hasPendingLatest{};
         bool hasReadyFrame{};
         bool renderExecuting{};
@@ -139,22 +173,21 @@ namespace asharia::editor {
         [[nodiscard]] static EditorSharedViewportRuntime& instance();
         [[nodiscard]] asharia::Result<EditorSharedViewportDeviceSnapshot> ensureDeviceSnapshot();
         [[nodiscard]] asharia::Result<EditorSharedViewportStreamId> openStream();
-        [[nodiscard]] asharia::Result<void>
-        submitLatest(EditorSharedViewportStreamId streamId,
-                     EditorSharedViewportPresentDesc desc);
+        [[nodiscard]] asharia::Result<void> submitLatest(EditorSharedViewportStreamId streamId,
+                                                         EditorSharedViewportPresentDesc desc);
         [[nodiscard]] asharia::Result<std::optional<EditorSharedViewportReadyFrame>>
         tryTakeReady(EditorSharedViewportStreamId streamId);
         [[nodiscard]] asharia::Result<void>
         completeFrame(EditorSharedViewportStreamId streamId, void* nativeSlot,
                       EditorSharedViewportPresentCompletionKind completionKind);
+        [[nodiscard]] asharia::Result<void> releaseSlotImport(EditorSharedViewportStreamId streamId,
+                                                              void* nativeSlot);
         [[nodiscard]] asharia::Result<void>
-        releaseSlotImport(EditorSharedViewportStreamId streamId, void* nativeSlot);
-        [[nodiscard]] asharia::Result<void> requestCloseStream(
-            EditorSharedViewportStreamId streamId);
+        requestCloseStream(EditorSharedViewportStreamId streamId);
         [[nodiscard]] asharia::Result<EditorSharedViewportStreamSnapshot>
         pollStream(EditorSharedViewportStreamId streamId);
-        [[nodiscard]] asharia::Result<void> destroyClosedStream(
-            EditorSharedViewportStreamId streamId);
+        [[nodiscard]] asharia::Result<void>
+        destroyClosedStream(EditorSharedViewportStreamId streamId);
         [[nodiscard]] EditorSharedViewportRenderFrameResult
         renderSceneViewFrame(EditorSharedViewportPresentDesc desc);
         [[nodiscard]] EditorSharedViewportRenderFrameResult
@@ -264,8 +297,8 @@ namespace asharia::editor {
         [[nodiscard]] bool processStreamCloseOnRenderThread(StreamState& stream);
         [[nodiscard]] bool renderPendingStreamFrameOnRenderThread(StreamState& stream);
         [[nodiscard]] bool hasStreamWork() const;
-        [[nodiscard]] std::shared_ptr<StreamState> findStream(
-            EditorSharedViewportStreamId streamId) const;
+        [[nodiscard]] std::shared_ptr<StreamState>
+        findStream(EditorSharedViewportStreamId streamId) const;
         void beginShutdownOnRenderThread();
         void publishRuntimeStatsOnRenderThread();
         void renderThreadMain();
@@ -322,6 +355,7 @@ namespace asharia::editor {
         std::uint64_t packetsCreated_{};
         std::uint64_t packetBackpressureHits_{};
         std::uint64_t nextFrameIndex_{};
+        EditorSharedViewportFrameClock frameClock_;
         std::uint64_t renderThreadDispatches_{};
         bool shutdownRequested_{};
         bool terminalQuarantine_{};

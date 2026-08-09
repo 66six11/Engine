@@ -138,8 +138,8 @@ namespace asharia::editor {
         // The aligned static storage owns the process-lifetime runtime without
         // registering a destructor. Normal shutdown still drains and joins the
         // render thread, while quarantined GPU work is left to process teardown.
-        alignas(EditorSharedViewportRuntime) static std::array<
-            std::byte, sizeof(EditorSharedViewportRuntime)>
+        alignas(EditorSharedViewportRuntime) static std::array<std::byte,
+                                                               sizeof(EditorSharedViewportRuntime)>
             runtimeStorage{};
         // This is non-allocating placement construction into the static owner.
         // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
@@ -278,9 +278,10 @@ namespace asharia::editor {
 
         {
             std::lock_guard lock{stream->mutex};
-            const auto slot = std::ranges::find_if(stream->slots, [nativeSlot](const StreamSlot& item) {
-                return item.nativeSlot == nativeSlot;
-            });
+            const auto slot =
+                std::ranges::find_if(stream->slots, [nativeSlot](const StreamSlot& item) {
+                    return item.nativeSlot == nativeSlot;
+                });
             if (slot == stream->slots.end() || slot->phase != StreamSlotPhase::Presented) {
                 return std::unexpected{
                     vulkanError("Shared viewport frame completion does not own a presented slot")};
@@ -292,8 +293,9 @@ namespace asharia::editor {
         return {};
     }
 
-    asharia::Result<void> EditorSharedViewportRuntime::releaseSlotImport(
-        EditorSharedViewportStreamId streamId, void* nativeSlot) {
+    asharia::Result<void>
+    EditorSharedViewportRuntime::releaseSlotImport(EditorSharedViewportStreamId streamId,
+                                                   void* nativeSlot) {
         if (nativeSlot == nullptr) {
             return std::unexpected{
                 vulkanError("Cannot release imports for a null shared viewport slot")};
@@ -305,9 +307,10 @@ namespace asharia::editor {
 
         {
             std::lock_guard lock{stream->mutex};
-            const auto slot = std::ranges::find_if(stream->slots, [nativeSlot](const StreamSlot& item) {
-                return item.nativeSlot == nativeSlot;
-            });
+            const auto slot =
+                std::ranges::find_if(stream->slots, [nativeSlot](const StreamSlot& item) {
+                    return item.nativeSlot == nativeSlot;
+                });
             if (slot == stream->slots.end() || !slot->importExposed) {
                 return std::unexpected{
                     vulkanError("Shared viewport slot imports were not exposed to the caller")};
@@ -348,8 +351,7 @@ namespace asharia::editor {
                 ++presentedSlotCount;
             }
         }
-        EditorSharedViewportStreamLifecycle lifecycle =
-            EditorSharedViewportStreamLifecycle::Open;
+        EditorSharedViewportStreamLifecycle lifecycle = EditorSharedViewportStreamLifecycle::Open;
         if (stream->faulted) {
             lifecycle = EditorSharedViewportStreamLifecycle::Faulted;
         } else if (stream->closed) {
@@ -734,6 +736,7 @@ namespace asharia::editor {
         }
 
         renderProducer_.emplace(std::move(*producer));
+        frameClock_.reset();
         ++producersCreated_;
         return &*renderProducer_;
     }
@@ -773,11 +776,15 @@ namespace asharia::editor {
         }
 
         const std::uint64_t frameIndex = ++nextFrameIndex_;
+        const auto sampledAt = EditorSharedViewportFrameClock::Clock::now();
+        const BasicRenderViewFrameParams frameParams =
+            frameClock_.frameParams(frameIndex, sampledAt);
         auto state =
-            (*producer)->renderSceneViewFrame(frameIndex, packet.view(), *frameResourceIndex);
+            (*producer)->renderSceneViewFrame(frameParams, packet.view(), *frameResourceIndex);
         if (!state) {
             return renderFrameFailure(std::move(state.error()));
         }
+        frameClock_.markRendered(sampledAt);
 
         EditorSharedViewportPacketState* statePtr = state->get();
         outstandingPackets_.insert(statePtr);
@@ -822,10 +829,15 @@ namespace asharia::editor {
         }
 
         const std::uint64_t frameIndex = ++nextFrameIndex_;
-        auto state = (*producer)->createPresentSlot(frameIndex, packet.view(), *frameResourceIndex);
+        const auto sampledAt = EditorSharedViewportFrameClock::Clock::now();
+        const BasicRenderViewFrameParams frameParams =
+            frameClock_.frameParams(frameIndex, sampledAt);
+        auto state =
+            (*producer)->createPresentSlot(frameParams, packet.view(), *frameResourceIndex);
         if (!state) {
             return renderFrameFailure(std::move(state.error()));
         }
+        frameClock_.markRendered(sampledAt);
 
         EditorSharedViewportPacketState* statePtr = state->get();
         outstandingPackets_.insert(statePtr);
@@ -868,10 +880,14 @@ namespace asharia::editor {
         }
 
         const std::uint64_t frameIndex = ++nextFrameIndex_;
-        auto rendered = (*producer)->renderPresentSlot(*state, packet.view(), frameIndex);
+        const auto sampledAt = EditorSharedViewportFrameClock::Clock::now();
+        const BasicRenderViewFrameParams frameParams =
+            frameClock_.frameParams(frameIndex, sampledAt);
+        auto rendered = (*producer)->renderPresentSlot(*state, packet.view(), frameParams);
         if (!rendered) {
             return renderFrameFailure(std::move(rendered.error()));
         }
+        frameClock_.markRendered(sampledAt);
 
         ++framesRendered_;
         return state->toPresentPacket();
@@ -1045,9 +1061,10 @@ namespace asharia::editor {
 
     bool EditorSharedViewportRuntime::hasPollableRetirementOnRenderThread() const {
         assert(isOnRenderThread());
-        return std::ranges::any_of(retiringPackets_, [](const RetiringPacket& packet) {
-                   return packet.state && !packet.quarantined;
-               }) ||
+        return std::ranges::any_of(retiringPackets_,
+                                   [](const RetiringPacket& packet) {
+                                       return packet.state && !packet.quarantined;
+                                   }) ||
                std::ranges::any_of(outstandingPackets_,
                                    [](const EditorSharedViewportPacketState* state) {
                                        return state->reusable && state->hasPendingGpuWork();
@@ -1062,8 +1079,7 @@ namespace asharia::editor {
                });
     }
 
-    bool EditorSharedViewportRuntime::processStreamCompletionsOnRenderThread(
-        StreamState& stream) {
+    bool EditorSharedViewportRuntime::processStreamCompletionsOnRenderThread(StreamState& stream) {
         assert(isOnRenderThread());
         std::lock_guard lock{stream.mutex};
         for (StreamSlot& slot : stream.slots) {
@@ -1140,8 +1156,7 @@ namespace asharia::editor {
             if (nativeSlot == nullptr) {
                 const bool allRetired =
                     std::ranges::all_of(stream.slots, [](const StreamSlot& slot) {
-                        return slot.nativeSlot == nullptr ||
-                               slot.phase == StreamSlotPhase::Retired;
+                        return slot.nativeSlot == nullptr || slot.phase == StreamSlotPhase::Retired;
                     });
                 if (allRetired) {
                     stream.closed = true;
@@ -1240,8 +1255,7 @@ namespace asharia::editor {
             stream.slots.push_back(StreamSlot{
                 .nativeSlot = rendered->nativePacket,
                 .phase = StreamSlotPhase::Ready,
-                .completionKind =
-                    EditorSharedViewportPresentCompletionKind::NotSubmittedToConsumer,
+                .completionKind = EditorSharedViewportPresentCompletionKind::NotSubmittedToConsumer,
                 .importExposed = false,
                 .importReleased = true,
                 .consumerAccessed = false,
@@ -1250,22 +1264,22 @@ namespace asharia::editor {
         } else {
             StreamSlot& slot = stream.slots.at(slotIndex);
             slot.phase = StreamSlotPhase::Ready;
-            slot.completionKind =
-                EditorSharedViewportPresentCompletionKind::NotSubmittedToConsumer;
+            slot.completionKind = EditorSharedViewportPresentCompletionKind::NotSubmittedToConsumer;
             slot.consumerAccessed = false;
             slot.requestSequence = packet->requestSequence;
         }
         stream.readyFrame = StreamReadyFrame{
             .slotIndex = slotIndex,
-            .frame = EditorSharedViewportReadyFrame{
-                .present = *rendered,
-                .sessionId = packet->sessionId,
-                .targetId = packet->targetId,
-                .targetRevision = packet->sceneRevision,
-                .requestSequence = packet->requestSequence,
-                .kind = packet->kind,
-                .logicalExtent = packet->logicalExtent,
-            },
+            .frame =
+                EditorSharedViewportReadyFrame{
+                    .present = *rendered,
+                    .sessionId = packet->sessionId,
+                    .targetId = packet->targetId,
+                    .targetRevision = packet->sceneRevision,
+                    .requestSequence = packet->requestSequence,
+                    .kind = packet->kind,
+                    .logicalExtent = packet->logicalExtent,
+                },
         };
         ++stream.renderedFrames;
         return true;
@@ -1324,19 +1338,17 @@ namespace asharia::editor {
                 });
             const bool hasRetirableSlot =
                 std::ranges::any_of(stream.slots, [](const StreamSlot& slot) {
-                    return slot.nativeSlot != nullptr &&
-                           slot.phase != StreamSlotPhase::Presented &&
+                    return slot.nativeSlot != nullptr && slot.phase != StreamSlotPhase::Presented &&
                            slot.phase != StreamSlotPhase::Completing &&
                            (!slot.importExposed || slot.importReleased);
                 });
-            return stream.slots.empty() || stream.readyFrame || allSlotsRetired ||
-                   hasRetirableSlot;
+            return stream.slots.empty() || stream.readyFrame || allSlotsRetired || hasRetirableSlot;
         }
         if (stream.readyFrame || !stream.pendingLatest) {
             return false;
         }
-        const auto reusableSlotCount = std::ranges::count_if(
-            stream.slots, [](const StreamSlot& slot) {
+        const auto reusableSlotCount =
+            std::ranges::count_if(stream.slots, [](const StreamSlot& slot) {
                 if (slot.phase != StreamSlotPhase::Available || slot.nativeSlot == nullptr) {
                     return false;
                 }
@@ -1344,8 +1356,7 @@ namespace asharia::editor {
                     static_cast<const EditorSharedViewportPacketState*>(slot.nativeSlot);
                 return !state->submitted && !state->consumerReleasePending;
             });
-        return reusableSlotCount >= 2 ||
-               (stream.slots.size() < kMaxStreamSlots && canAllocateSlot);
+        return reusableSlotCount >= 2 || (stream.slots.size() < kMaxStreamSlots && canAllocateSlot);
     }
 
     bool EditorSharedViewportRuntime::hasStreamWork() const {
@@ -1361,11 +1372,11 @@ namespace asharia::editor {
             }
         }
 
-        return std::ranges::any_of(streams, [canAllocateSlot](
-                                                const std::shared_ptr<StreamState>& stream) {
-            std::lock_guard lock{stream->mutex};
-            return streamHasWorkLocked(*stream, canAllocateSlot);
-        });
+        return std::ranges::any_of(streams,
+                                   [canAllocateSlot](const std::shared_ptr<StreamState>& stream) {
+                                       std::lock_guard lock{stream->mutex};
+                                       return streamHasWorkLocked(*stream, canAllocateSlot);
+                                   });
     }
 
     void EditorSharedViewportRuntime::beginShutdownOnRenderThread() {

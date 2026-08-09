@@ -31,6 +31,7 @@ internal sealed class StudioScenePanelViewModel :
     private readonly IProjectSession projectSession_;
     private ViewportSession? session_;
     private ulong viewportRevision_;
+    private bool isRealtime_ = true;
     private bool isDisposed_;
 
     public StudioScenePanelViewModel(StudioShellViewModel shell)
@@ -46,6 +47,20 @@ internal sealed class StudioScenePanelViewModel :
     public ViewportSession? Session => session_;
 
     public ulong ViewportRevision => viewportRevision_;
+
+    public bool IsRealtime
+    {
+        get => isRealtime_;
+        set
+        {
+            if (isRealtime_ == value)
+            {
+                return;
+            }
+            isRealtime_ = value;
+            OnPropertyChanged();
+        }
+    }
 
     public ViewportPresentationLifetime PresentationLifetime =>
         Shell.ViewportPresentationLifetime;

@@ -27,6 +27,11 @@ public sealed class StudioScenePanelViewModelTests
         var session = Assert.IsType<
             Asharia.Studio.Application.Viewports.ViewportSession>(panel.Session);
         Assert.Equal((ulong)1, panel.ViewportRevision);
+        Assert.True(panel.IsRealtime);
+
+        panel.IsRealtime = false;
+        Assert.False(panel.IsRealtime);
+        Assert.Same(session, panel.Session);
 
         await Task.Run(() => projectSession.Publish(Ready(sceneId, revision: 2)));
         Dispatcher.UIThread.RunJobs();
@@ -34,6 +39,7 @@ public sealed class StudioScenePanelViewModelTests
         Assert.Same(session, panel.Session);
         Assert.Equal((ulong)2, panel.ViewportRevision);
         Assert.Equal((ulong)2, session.Current.TargetRevision);
+        Assert.False(panel.IsRealtime);
     }
 
     [AvaloniaFact]

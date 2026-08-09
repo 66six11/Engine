@@ -243,6 +243,7 @@ public sealed record ViewportSessionSnapshot(
     Guid TargetId,
     ulong TargetRevision,
     ulong LastSequence,
+    ulong MinimumPresentableSequence,
     bool IsFrameInFlight,
     ViewportInvalidationReason PendingReasons,
     bool IsClosed);

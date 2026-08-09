@@ -386,6 +386,8 @@ public sealed class StudioLayeringTests
             scenePanelXaml,
             StringComparison.Ordinal);
         Assert.Contains("Session=\"{Binding Session}\"", scenePanelXaml, StringComparison.Ordinal);
+        Assert.Contains("IsRealtime=\"{Binding IsRealtime}\"", scenePanelXaml, StringComparison.Ordinal);
+        Assert.Contains("Content=\"Realtime\"", scenePanelXaml, StringComparison.Ordinal);
         Assert.Contains("#SceneViewport.IsDegraded", scenePanelXaml, StringComparison.Ordinal);
         Assert.Contains(
             "AutomationProperties.ControlTypeOverride=\"Group\"",

@@ -30,7 +30,10 @@ public readonly record struct ViewportPresentationGeometryMetrics(
     ulong ExactExtentPresentedFrames,
     ulong RejectedNonExactCandidates,
     ViewportRenderSize LastPresentedSize,
-    ViewportExtent LastPanelExtent)
+    ViewportExtent LastPanelExtent,
+    ulong CurrentGeometryGeneration,
+    ulong SurfaceGeometryGeneration,
+    bool CurrentSurfaceIsExact)
 {
     public bool LastPresentationIsExact =>
         LastPresentedSize.LogicalExtent.Width != 0 &&
@@ -53,7 +56,7 @@ internal sealed class ViewportGeometryGenerationState
         SurfaceExtent == CurrentExtent &&
         SurfaceGeneration == CurrentGeneration;
 
-    public void Synchronize(ViewportExtent extent)
+    public bool Synchronize(ViewportExtent extent)
     {
         if (extent.Width == 0 || extent.Height == 0)
         {
@@ -61,10 +64,11 @@ internal sealed class ViewportGeometryGenerationState
         }
         if (CurrentExtent == extent)
         {
-            return;
+            return false;
         }
         CurrentExtent = extent;
         CurrentGeneration = checked(CurrentGeneration + 1);
+        return true;
     }
 
     public void MarkSurfaceUpdate(ViewportExtent extent, ulong generation)
@@ -78,6 +82,13 @@ internal sealed class ViewportGeometryGenerationState
         SurfaceGeneration = generation;
     }
 
+    public void InvalidateSurface()
+    {
+        SurfaceExtent = default;
+        SurfaceGeneration = 0;
+        CurrentGeneration = checked(CurrentGeneration + 1);
+    }
+
     public void Invalidate()
     {
         CurrentExtent = default;
@@ -85,6 +96,15 @@ internal sealed class ViewportGeometryGenerationState
         SurfaceGeneration = 0;
         CurrentGeneration = checked(CurrentGeneration + 1);
     }
+}
+
+internal static class ViewportRealtimeAdmissionPolicy
+{
+    public static bool ShouldInvalidate(
+        bool isRealtime,
+        bool hasDesiredStream,
+        bool desiredStreamIsPromoted) =>
+        isRealtime && (!hasDesiredStream || desiredStreamIsPromoted);
 }
 
 internal sealed class ViewportPresentationCadenceTracker
@@ -290,6 +310,7 @@ internal sealed class ViewportFramePresentationState
         frame.TargetKind == current.TargetKind &&
         frame.TargetId == current.TargetId &&
         frame.TargetRevision == current.TargetRevision &&
+        frame.Sequence >= current.MinimumPresentableSequence &&
         frame.Sequence > lastPresentedSequence_ &&
         !current.IsClosed;
 }

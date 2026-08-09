@@ -2,11 +2,13 @@
 
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <thread>
 
 #include "asharia/core/log.hpp"
 
+#include "editor_shared_viewport_runtime.hpp"
 #include "native_bridge/viewport_native_api.hpp"
 
 namespace asharia::editor {
@@ -114,6 +116,74 @@ namespace asharia::editor {
                 result.producedSemaphoreHandleType == EditorViewportNativeHandleType_VulkanOpaqueNt;
             editor_viewport_release_compatibility_result(result);
             return compatible;
+        }
+
+        [[nodiscard]] bool smokeMonotonicFrameClock() {
+            using FrameClock = EditorSharedViewportFrameClock;
+            const FrameClock::Clock::time_point epoch{};
+            FrameClock clock{epoch};
+
+            const BasicRenderViewFrameParams first = clock.frameParams(1U, epoch);
+            if (first.frameIndex != 1U || first.timeSeconds != 0.0F || first.deltaSeconds != 0.0F) {
+                logError("Viewport frame clock did not start at a zero monotonic epoch.");
+                return false;
+            }
+            clock.markRendered(epoch);
+
+            const auto fiveMilliseconds = epoch + std::chrono::milliseconds{5};
+            const BasicRenderViewFrameParams second = clock.frameParams(2U, fiveMilliseconds);
+            if (std::abs(second.timeSeconds - 0.005F) > 0.0001F ||
+                std::abs(second.deltaSeconds - 0.005F) > 0.0001F) {
+                logError("Viewport frame clock used a nominal FPS instead of elapsed time.");
+                return false;
+            }
+            clock.markRendered(fiveMilliseconds);
+
+            const auto failedAttemptAt = epoch + std::chrono::milliseconds{10};
+            const BasicRenderViewFrameParams failedAttempt = clock.frameParams(3U, failedAttemptAt);
+            if (failedAttempt.frameIndex != 3U ||
+                std::abs(failedAttempt.deltaSeconds - 0.005F) > 0.0001F) {
+                logError("Viewport frame clock did not identify a render attempt.");
+                return false;
+            }
+
+            const auto succeededAfterFailureAt = epoch + std::chrono::milliseconds{21};
+            const BasicRenderViewFrameParams succeededAfterFailure =
+                clock.frameParams(4U, succeededAfterFailureAt);
+            if (succeededAfterFailure.frameIndex != 4U ||
+                std::abs(succeededAfterFailure.timeSeconds - 0.021F) > 0.0001F ||
+                std::abs(succeededAfterFailure.deltaSeconds - 0.016F) > 0.0001F) {
+                logError("Viewport frame clock advanced its success sample after a failed render.");
+                return false;
+            }
+            clock.markRendered(succeededAfterFailureAt);
+
+            const auto afterIdle = epoch + std::chrono::milliseconds{2021};
+            const BasicRenderViewFrameParams resumed = clock.frameParams(5U, afterIdle);
+            if (resumed.frameIndex != 5U || std::abs(resumed.timeSeconds - 2.021F) > 0.0001F ||
+                std::abs(resumed.deltaSeconds - 2.0F) > 0.0001F) {
+                logError("Viewport frame clock did not preserve elapsed time across idle.");
+                return false;
+            }
+
+            const auto resetEpoch = epoch + std::chrono::seconds{3};
+            clock.reset(resetEpoch);
+            const BasicRenderViewFrameParams resetFirst = clock.frameParams(6U, resetEpoch);
+            if (resetFirst.frameIndex != 6U || resetFirst.timeSeconds != 0.0F ||
+                resetFirst.deltaSeconds != 0.0F) {
+                logError("Viewport frame clock reset retained its previous epoch or delta.");
+                return false;
+            }
+            clock.markRendered(resetEpoch);
+
+            const auto afterReset = resetEpoch + std::chrono::milliseconds{7};
+            const BasicRenderViewFrameParams resetSecond = clock.frameParams(7U, afterReset);
+            if (std::abs(resetSecond.timeSeconds - 0.007F) > 0.0001F ||
+                std::abs(resetSecond.deltaSeconds - 0.007F) > 0.0001F) {
+                logError("Viewport frame clock reset did not establish a fresh monotonic epoch.");
+                return false;
+            }
+            return true;
         }
 
         [[nodiscard]] bool completeNotSubmitted(std::uint64_t streamId, void* nativeSlot) {
@@ -312,7 +382,8 @@ namespace asharia::editor {
     } // namespace
 
     bool runViewportNativeBridgeSmoke() {
-        if (!queryCompatibility() || !smokeBoundedLatestWinsStream()) {
+        if (!smokeMonotonicFrameClock() || !queryCompatibility() ||
+            !smokeBoundedLatestWinsStream()) {
             editor_viewport_shutdown();
             return false;
         }

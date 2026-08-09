@@ -146,11 +146,14 @@ public sealed class ViewportCompositionControl : Control
     private readonly ViewportFramePresentationState presentationState_ = new();
     private readonly ViewportPresentationCadenceTracker cadenceTracker_ = new();
     private readonly ViewportGeometryGenerationState geometryState_ = new();
+    private readonly ViewportGeometryDiagnosticsTracker geometryDiagnostics_ = new();
     private readonly List<Task> retiringStreamTasks_ = new();
+    private readonly List<Visual> visibilitySources_ = new();
     private CompositionSurfaceVisual? compositionVisual_;
     private CompositionDrawingSurface? surface_;
     private ICompositionGpuInterop? interop_;
     private ViewportPresentationLifetime? subscribedLifetime_;
+    private ViewportSession? subscribedSession_;
     private TopLevel? topLevel_;
     private StreamPresentationState? activeStream_;
     private StreamPresentationState? desiredStream_;
@@ -160,7 +163,9 @@ public sealed class ViewportCompositionControl : Control
     private bool isDegraded_;
     private bool isAttached_;
     private bool isFrameQueued_;
+    private bool queuedFrameUsesEarlyAdmission_;
     private bool isCompositionCommitQueued_;
+    private bool wasEffectivelyVisible_;
     private PendingCompositionCommit? pendingCompositionCommit_;
     private ViewportRenderSize lastPresentedSize_;
     private ViewportExtent lastPresentedPanelExtent_;
@@ -212,7 +217,23 @@ public sealed class ViewportCompositionControl : Control
         exactExtentPresentedFrames_,
         rejectedNonExactCandidates_,
         lastPresentedSize_,
-        lastPresentedPanelExtent_);
+        lastPresentedPanelExtent_,
+        geometryState_.CurrentGeneration,
+        geometryState_.SurfaceGeneration,
+        geometryState_.HasExactSurface);
+
+    public ViewportResizeMeasurementToken BeginResizeMeasurement() =>
+        geometryDiagnostics_.BeginMeasurement(
+            geometryState_.CurrentGeneration,
+            Stopwatch.GetTimestamp());
+
+    public ViewportResizePresentationMetrics CaptureResizeMeasurement(
+        ViewportResizeMeasurementToken token) =>
+        geometryDiagnostics_.Capture(
+            token,
+            geometryState_.CurrentGeneration,
+            geometryState_.HasExactSurface,
+            Stopwatch.GetTimestamp());
 
     public ViewportPresentationState State
     {
@@ -236,13 +257,15 @@ public sealed class ViewportCompositionControl : Control
     {
         base.OnAttachedToVisualTree(e);
         isAttached_ = true;
+        SynchronizeSessionSubscription();
         SynchronizeLifetimeSubscription();
+        SynchronizeVisibilitySubscriptions();
         topLevel_ = TopLevel.GetTopLevel(this);
         if (topLevel_ is not null)
         {
             topLevel_.ScalingChanged += OnScalingChanged;
         }
-        SynchronizeGeometryGeneration();
+        _ = SynchronizeGeometryGeneration(ViewportGeometryChangeSource.Attachment);
 
         var generation = ++generation_;
         presentationState_.Reset(generation);
@@ -257,14 +280,18 @@ public sealed class ViewportCompositionControl : Control
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
         isAttached_ = false;
+        ClearVisibilitySubscriptions();
         isFrameQueued_ = false;
+        queuedFrameUsesEarlyAdmission_ = false;
         queuedFrameTicket_++;
         pendingCompositionCommit_?.Completion.TrySetResult(false);
         pendingCompositionCommit_ = null;
         isCompositionCommitQueued_ = false;
         compositionCommitTicket_++;
         geometryState_.Invalidate();
+        geometryDiagnostics_.Reset();
         presentationState_.Reset(++generation_);
+        SynchronizeSessionSubscription();
         SynchronizeLifetimeSubscription();
         if (topLevel_ is not null)
         {
@@ -301,12 +328,17 @@ public sealed class ViewportCompositionControl : Control
         base.OnPropertyChanged(change);
         if (change.Property == BoundsProperty)
         {
-            SynchronizeGeometryGeneration();
+            var geometryChanged = SynchronizeGeometryGeneration(
+                ViewportGeometryChangeSource.Bounds);
             UpdateVisualPlacement();
-            InvalidatePresentation(resetPresentationEpoch: false);
+            InvalidatePresentation(
+                resetPresentationEpoch: false,
+                preferEarlyAdmission: geometryChanged);
         }
         else if (change.Property == SessionProperty)
         {
+            SynchronizeSessionSubscription();
+            _ = TryInvalidateExposedSession();
             InvalidatePresentation(resetPresentationEpoch: true);
         }
         else if (change.Property == RevisionTokenProperty)
@@ -316,21 +348,19 @@ public sealed class ViewportCompositionControl : Control
         else if (change.Property == LifetimeProperty)
         {
             SynchronizeLifetimeSubscription();
+            _ = TryInvalidateExposedSession();
             InvalidatePresentation(resetPresentationEpoch: true);
         }
         else if (change.Property == IsRealtimeProperty &&
-                 IsRealtime && Session is { } realtimeSession)
+                 CanScheduleAutomaticRealtime() &&
+                 Session is { } realtimeSession)
         {
-            realtimeSession.Invalidate(ViewportInvalidationReason.Realtime);
-            InvalidatePresentation(resetPresentationEpoch: false);
-        }
-        else if (change.Property == IsVisibleProperty)
-        {
-            if (IsVisible && Session is { } session)
+            if (TryInvalidateOpenSession(
+                    realtimeSession,
+                    ViewportInvalidationReason.Realtime))
             {
-                session.Invalidate(ViewportInvalidationReason.Exposed);
+                InvalidatePresentation(resetPresentationEpoch: false);
             }
-            InvalidatePresentation(resetPresentationEpoch: true);
         }
     }
 
@@ -392,7 +422,7 @@ public sealed class ViewportCompositionControl : Control
         }
 
         interop_ = interop;
-        if (Session is null)
+        if (Session is not { } session)
         {
             SetStatus(
                 ViewportPresentationState.WaitingForDocument,
@@ -400,10 +430,15 @@ public sealed class ViewportCompositionControl : Control
             return;
         }
         SetStatus(ViewportPresentationState.Ready, "Scene View presentation is ready.");
-        QueueFrame();
+        if (TryInvalidateExposedSession())
+        {
+            QueueFrame();
+        }
     }
 
-    private void InvalidatePresentation(bool resetPresentationEpoch)
+    private void InvalidatePresentation(
+        bool resetPresentationEpoch,
+        bool preferEarlyAdmission = false)
     {
         if (!isAttached_ || interop_ is null)
         {
@@ -412,11 +447,14 @@ public sealed class ViewportCompositionControl : Control
         if (resetPresentationEpoch)
         {
             presentationState_.Reset(++generation_);
-            if (desiredStream_ is not null && !ReferenceEquals(desiredStream_, activeStream_))
-            {
-                _ = BeginRetireStream(desiredStream_);
-            }
-            desiredStream_ = null;
+            geometryState_.InvalidateSurface();
+            geometryDiagnostics_.RecordGeneration(
+                geometryState_.CurrentGeneration,
+                geometryState_.CurrentExtent,
+                ViewportGeometryChangeSource.PresentationIdentity,
+                Stopwatch.GetTimestamp());
+            UpdateVisualPlacement();
+            RetireCurrentStreams();
         }
         if (Session is null)
         {
@@ -425,32 +463,71 @@ public sealed class ViewportCompositionControl : Control
                 "Create or open a project to display its default scene.");
             return;
         }
-        QueueFrame();
-    }
-
-    private void QueueFrame()
-    {
-        if (!isAttached_ || interop_ is null || isFrameQueued_ ||
-            compositionVisual_ is not { } visual)
+        if (!IsEffectivelyVisible)
         {
             return;
         }
+        QueueFrame(preferEarlyAdmission);
+    }
+
+    private void QueueFrame(bool preferEarlyAdmission = false)
+    {
+        if (!isAttached_ || interop_ is null || compositionVisual_ is not { } visual)
+        {
+            return;
+        }
+        var compositor = visual.Compositor;
+        if (isFrameQueued_)
+        {
+            if (preferEarlyAdmission && !queuedFrameUsesEarlyAdmission_)
+            {
+                // A pending compositor-cadence request may be promoted to the earlier Render
+                // dispatcher boundary. Both callbacks share one ticket; whichever runs first
+                // consumes the latch and the other becomes a no-op.
+                queuedFrameUsesEarlyAdmission_ = true;
+                var promotedTicket = queuedFrameTicket_;
+                Dispatcher.UIThread.Post(
+                    () => PublishLatestFrame(
+                        promotedTicket,
+                        generation_,
+                        compositor,
+                        queuedEarlyAdmission: true),
+                    DispatcherPriority.Render);
+            }
+            return;
+        }
         isFrameQueued_ = true;
+        queuedFrameUsesEarlyAdmission_ = preferEarlyAdmission;
         var ticket = ++queuedFrameTicket_;
         var generation = generation_;
-        var compositor = visual.Compositor;
-        // Bounds changes only overwrite ViewportSession state. Consume that latest state once
-        // before the next Avalonia composition commit instead of turning every layout event into
-        // a native render request. Compositor batch backpressure therefore defines the resize
-        // submission cadence without a fixed-rate UI timer.
+        if (preferEarlyAdmission)
+        {
+            // Bounds changes are coalesced by this one-shot Render-priority latch. Native can
+            // start the latest exact-size candidate before the next composition callback, while
+            // the eventual surface update still revalidates geometry at the compositor boundary.
+            Dispatcher.UIThread.Post(
+                () => PublishLatestFrame(
+                    ticket,
+                    generation_,
+                    compositor,
+                    queuedEarlyAdmission: true),
+                DispatcherPriority.Render);
+            return;
+        }
+        // Realtime and retry cadence remain compositor-paced; no fixed-rate UI timer is used.
         compositor.RequestCompositionUpdate(
-            () => PublishLatestFrame(ticket, generation, compositor));
+            () => PublishLatestFrame(
+                ticket,
+                generation,
+                compositor,
+                queuedEarlyAdmission: false));
     }
 
     private void PublishLatestFrame(
         ulong queuedTicket,
         ulong queuedGeneration,
-        Compositor queuedCompositor)
+        Compositor queuedCompositor,
+        bool queuedEarlyAdmission)
     {
         // A callback from a detached visual must not clear a newer visual's queue latch.
         if (!isFrameQueued_ || queuedFrameTicket_ != queuedTicket)
@@ -458,16 +535,18 @@ public sealed class ViewportCompositionControl : Control
             return;
         }
         isFrameQueued_ = false;
-        if (queuedGeneration != generation_ ||
+        queuedFrameUsesEarlyAdmission_ = false;
+        var publishGeneration = queuedEarlyAdmission ? generation_ : queuedGeneration;
+        if ((!queuedEarlyAdmission && queuedGeneration != generation_) ||
             compositionVisual_ is not { } visual ||
             !ReferenceEquals(visual.Compositor, queuedCompositor))
         {
             // Generation changes are state replacement, not cancellation of the latest frame.
-            // Re-arm the one-shot compositor callback for the current visual.
-            QueueFrame();
+            // Re-arm the same admission boundary for the current visual.
+            QueueFrame(queuedEarlyAdmission);
             return;
         }
-        if (!IsCurrent(queuedGeneration) || !IsEffectivelyVisible || interop_ is null ||
+        if (!IsCurrent(publishGeneration) || !IsEffectivelyVisible || interop_ is null ||
             surface_ is null ||
             Session is not { } session || Lifetime is not { } lifetime ||
             !lifetime.IsAcceptingFrames ||
@@ -495,14 +574,18 @@ public sealed class ViewportCompositionControl : Control
             HandleSubmissionFailure(submitted.Failure!);
             return;
         }
-        EnsurePumpRunning(generation_, lifetime);
-        if (IsRealtime)
+        EnsurePumpRunning(publishGeneration, lifetime);
+        if (CanScheduleAutomaticRealtime())
         {
             // RequestCompositionUpdate called from inside this callback is queued for the next
             // commit. That overlaps native production of frame N+1 with Avalonia consuming frame
             // N, so a 60 Hz compositor can sustain one scene frame per tick after warm-up.
-            session.Invalidate(ViewportInvalidationReason.Realtime);
-            QueueFrame();
+            if (TryInvalidateOpenSession(
+                    session,
+                    ViewportInvalidationReason.Realtime))
+            {
+                QueueFrame();
+            }
         }
     }
 
@@ -783,7 +866,21 @@ public sealed class ViewportCompositionControl : Control
             }
             if (result == CompositionCommitResult.Presented)
             {
-                PromoteStream(stream);
+                var promoted = PromoteStream(stream);
+                if (promoted && CanScheduleAutomaticRealtime() &&
+                    IsCurrent(generation) &&
+                    ReferenceEquals(desiredStream_, stream) &&
+                    Session is { } session)
+                {
+                    // Candidate generations submit only one frame. Resume compositor-paced
+                    // realtime production after their first exact surface update succeeds.
+                    if (TryInvalidateOpenSession(
+                            session,
+                            ViewportInvalidationReason.Realtime))
+                    {
+                        QueueFrame();
+                    }
+                }
                 SetStatus(
                     ViewportPresentationState.Ready,
                     $"Presented scene revision {lease.TargetRevision}.");
@@ -875,7 +972,10 @@ public sealed class ViewportCompositionControl : Control
                           geometryState_.CurrentGeneration == stream.GeometryGeneration &&
                           ReferenceEquals(desiredStream_, stream) &&
                           CanPresentFrame(lease, generation),
-                    () => TryMarkPresented(lease, generation));
+                    () => TryMarkPresented(
+                        lease,
+                        generation,
+                        stream.GeometryGeneration));
             }
             catch
             {
@@ -937,11 +1037,11 @@ public sealed class ViewportCompositionControl : Control
         }
     }
 
-    private void PromoteStream(StreamPresentationState stream)
+    private bool PromoteStream(StreamPresentationState stream)
     {
         if (!ReferenceEquals(desiredStream_, stream) || ReferenceEquals(activeStream_, stream))
         {
-            return;
+            return false;
         }
         var previous = activeStream_;
         activeStream_ = stream;
@@ -949,6 +1049,7 @@ public sealed class ViewportCompositionControl : Control
         {
             _ = BeginRetireStream(previous);
         }
+        return true;
     }
 
     private Task BeginRetireStream(StreamPresentationState stream)
@@ -1158,6 +1259,9 @@ public sealed class ViewportCompositionControl : Control
             // the visual before this exact-size surface update would stretch the previous bitmap
             // for one frame during a panel resize.
             geometryState_.MarkSurfaceUpdate(commit.Extent, commit.GeometryGeneration);
+            geometryDiagnostics_.MarkExactSurfaceSubmitted(
+                commit.GeometryGeneration,
+                Stopwatch.GetTimestamp());
             UpdateVisualPlacement();
         }
         catch (Exception exception)
@@ -1230,8 +1334,9 @@ public sealed class ViewportCompositionControl : Control
 
     private bool CanPresentFrame(ViewportFrameLease lease, ulong generation)
     {
-        if (!IsCurrent(generation) || !CanPresentAtCurrentGeometry(lease) ||
-            Session is not { } session)
+        if (!IsCurrent(generation) || !IsEffectivelyVisible ||
+            !CanPresentAtCurrentGeometry(lease) || Session is not { } session ||
+            !session.CanPresentPublishedFrame(lease.RequestSequence, lease.TargetRevision))
         {
             return false;
         }
@@ -1241,7 +1346,10 @@ public sealed class ViewportCompositionControl : Control
             session.Current);
     }
 
-    private bool TryMarkPresented(ViewportFrameLease lease, ulong generation)
+    private bool TryMarkPresented(
+        ViewportFrameLease lease,
+        ulong generation,
+        ulong geometryGeneration)
     {
         if (!IsCurrent(generation) || Session is not { } session ||
             !session.MarkPublishedFramePresented(lease.RequestSequence, lease.TargetRevision))
@@ -1261,7 +1369,11 @@ public sealed class ViewportCompositionControl : Control
             // extent. Consumer completion may arrive after Bounds has already advanced again.
             lastPresentedPanelExtent_ = lease.LogicalExtent;
             exactExtentPresentedFrames_++;
-            cadenceTracker_.Record(Stopwatch.GetTimestamp());
+            var presentedAt = Stopwatch.GetTimestamp();
+            cadenceTracker_.Record(presentedAt);
+            geometryDiagnostics_.MarkExactSurfaceCompleted(
+                geometryGeneration,
+                presentedAt);
         }
         return presented;
     }
@@ -1330,20 +1442,71 @@ public sealed class ViewportCompositionControl : Control
     {
         if (ReferenceEquals(sender, topLevel_))
         {
-            SynchronizeGeometryGeneration();
+            var geometryChanged = SynchronizeGeometryGeneration(
+                ViewportGeometryChangeSource.Scaling);
             UpdateVisualPlacement();
-            InvalidatePresentation(resetPresentationEpoch: false);
+            InvalidatePresentation(
+                resetPresentationEpoch: false,
+                preferEarlyAdmission: geometryChanged);
         }
     }
 
-    private void SynchronizeGeometryGeneration()
+    private bool SynchronizeGeometryGeneration(ViewportGeometryChangeSource source)
     {
         if (!TryGetRenderSize(out var currentSize))
         {
-            return;
+            if (geometryState_.CurrentExtent.Width != 0 || activeStream_ is not null ||
+                desiredStream_ is not null)
+            {
+                geometryState_.Invalidate();
+                geometryDiagnostics_.RecordGeneration(
+                    geometryState_.CurrentGeneration,
+                    default,
+                    source,
+                    Stopwatch.GetTimestamp());
+                RetireCurrentStreams();
+                // Preserve a dirty extent across a collapsed/zero-size interval. If the panel
+                // later returns to the same pixel size, ViewportSession's last render size alone
+                // would otherwise make an OnDemand session look clean while its surface is hidden.
+                if (isAttached_ && Session is { } session)
+                {
+                    _ = TryInvalidateOpenSession(
+                        session,
+                        ViewportInvalidationReason.ExtentChanged);
+                }
+                return true;
+            }
+            return false;
         }
-        geometryState_.Synchronize(currentSize.LogicalExtent);
+        if (geometryState_.Synchronize(currentSize.LogicalExtent))
+        {
+            geometryDiagnostics_.RecordGeneration(
+                geometryState_.CurrentGeneration,
+                currentSize.LogicalExtent,
+                source,
+                Stopwatch.GetTimestamp());
+            RetireCurrentStreams();
+            return true;
+        }
+        return false;
     }
+
+    private void RetireCurrentStreams()
+    {
+        var replacedStreams = DistinctStreams(activeStream_, desiredStream_).ToArray();
+        activeStream_ = null;
+        desiredStream_ = null;
+        foreach (var replacedStream in replacedStreams)
+        {
+            _ = BeginRetireStream(replacedStream);
+        }
+    }
+
+    private bool CanScheduleAutomaticRealtime() =>
+        ViewportRealtimeAdmissionPolicy.ShouldInvalidate(
+            IsRealtime,
+            desiredStream_ is not null,
+            desiredStream_ is not null && ReferenceEquals(activeStream_, desiredStream_));
 
     private void SynchronizeLifetimeSubscription()
     {
@@ -1363,9 +1526,27 @@ public sealed class ViewportCompositionControl : Control
         }
     }
 
-    private void OnPresentationLifetimeResumed(object? sender, EventArgs e)
+    private void SynchronizeSessionSubscription()
     {
-        if (!ReferenceEquals(sender, subscribedLifetime_))
+        var session = isAttached_ ? Session : null;
+        if (ReferenceEquals(subscribedSession_, session))
+        {
+            return;
+        }
+        if (subscribedSession_ is not null)
+        {
+            subscribedSession_.RefreshRequested -= OnSessionRefreshRequested;
+        }
+        subscribedSession_ = session;
+        if (subscribedSession_ is not null)
+        {
+            subscribedSession_.RefreshRequested += OnSessionRefreshRequested;
+        }
+    }
+
+    private void OnSessionRefreshRequested(object? sender, EventArgs e)
+    {
+        if (!ReferenceEquals(sender, subscribedSession_))
         {
             return;
         }
@@ -1374,13 +1555,115 @@ public sealed class ViewportCompositionControl : Control
             InvalidatePresentation(resetPresentationEpoch: false);
             return;
         }
-        Dispatcher.UIThread.Post(() =>
-        {
-            if (ReferenceEquals(sender, subscribedLifetime_))
+        Dispatcher.UIThread.Post(
+            () =>
             {
-                InvalidatePresentation(resetPresentationEpoch: false);
-            }
-        });
+                if (ReferenceEquals(sender, subscribedSession_))
+                {
+                    InvalidatePresentation(resetPresentationEpoch: false);
+                }
+            },
+            DispatcherPriority.Render);
+    }
+
+    private void SynchronizeVisibilitySubscriptions()
+    {
+        ClearVisibilitySubscriptions();
+        if (!isAttached_)
+        {
+            return;
+        }
+
+        visibilitySources_.Add(this);
+        visibilitySources_.AddRange(this.GetVisualAncestors());
+        foreach (var source in visibilitySources_)
+        {
+            source.PropertyChanged += OnVisibilitySourcePropertyChanged;
+        }
+        wasEffectivelyVisible_ = IsEffectivelyVisible;
+    }
+
+    private void ClearVisibilitySubscriptions()
+    {
+        foreach (var source in visibilitySources_)
+        {
+            source.PropertyChanged -= OnVisibilitySourcePropertyChanged;
+        }
+        visibilitySources_.Clear();
+        wasEffectivelyVisible_ = false;
+    }
+
+    private void OnVisibilitySourcePropertyChanged(
+        object? sender,
+        AvaloniaPropertyChangedEventArgs change)
+    {
+        if (!isAttached_ || change.Property != IsVisibleProperty)
+        {
+            return;
+        }
+
+        var isEffectivelyVisible = IsEffectivelyVisible;
+        if (isEffectivelyVisible == wasEffectivelyVisible_)
+        {
+            return;
+        }
+        wasEffectivelyVisible_ = isEffectivelyVisible;
+        if (!isEffectivelyVisible)
+        {
+            return;
+        }
+
+        _ = TryInvalidateExposedSession();
+        InvalidatePresentation(resetPresentationEpoch: false);
+    }
+
+    private bool TryInvalidateExposedSession() =>
+        isAttached_ && IsEffectivelyVisible && Session is { } session &&
+        TryInvalidateOpenSession(session, ViewportInvalidationReason.Exposed);
+
+    private static bool TryInvalidateOpenSession(
+        ViewportSession session,
+        ViewportInvalidationReason reason)
+    {
+        if (session.Current.IsClosed)
+        {
+            return false;
+        }
+        try
+        {
+            session.Invalidate(reason);
+            return true;
+        }
+        catch (ObjectDisposedException) when (session.Current.IsClosed)
+        {
+            // Close may race a completion continuation after the UI owner has already stopped
+            // admitting work. A closed session is a normal terminal boundary, not degradation.
+            return false;
+        }
+    }
+
+    private void OnPresentationLifetimeResumed(object? sender, EventArgs e)
+    {
+        if (!ReferenceEquals(sender, subscribedLifetime_))
+        {
+            return;
+        }
+        if (Dispatcher.UIThread.CheckAccess())
+        {
+            ResumePresentationOnUiThread(sender);
+            return;
+        }
+        Dispatcher.UIThread.Post(() => ResumePresentationOnUiThread(sender));
+    }
+
+    private void ResumePresentationOnUiThread(object? sender)
+    {
+        if (!ReferenceEquals(sender, subscribedLifetime_))
+        {
+            return;
+        }
+        _ = TryInvalidateExposedSession();
+        InvalidatePresentation(resetPresentationEpoch: false);
     }
 
     private void SetAcquireFailure(ViewportFrameFailure failure)

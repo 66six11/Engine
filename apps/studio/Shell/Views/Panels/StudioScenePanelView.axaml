@@ -16,7 +16,8 @@
             AutomationProperties.Name="Scene View"
             Session="{Binding Session}"
             RevisionToken="{Binding ViewportRevision}"
-            Lifetime="{Binding PresentationLifetime}" />
+            Lifetime="{Binding PresentationLifetime}"
+            IsRealtime="{Binding IsRealtime}" />
 
         <Border Margin="12"
                 Padding="12"
@@ -44,6 +45,9 @@
                 Background="#B0181A1F"
                 CornerRadius="3">
             <StackPanel Orientation="Horizontal" Spacing="8">
+                <ToggleButton AutomationProperties.Name="Toggle realtime scene refresh"
+                              Content="Realtime"
+                              IsChecked="{Binding IsRealtime, Mode=TwoWay}" />
                 <Button AutomationProperties.Name="Create entity"
                         Command="{Binding Shell.CreateEntityCommand}"
                         Content="+ Entity" />

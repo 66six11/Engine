@@ -146,14 +146,14 @@ namespace asharia::editor {
         create(const VulkanContext& context);
 
         [[nodiscard]] Result<std::unique_ptr<EditorSharedViewportPacketState>>
-        renderSceneViewFrame(std::uint64_t frameIndex, EditorSharedViewportPresentDesc desc,
-                             std::size_t frameResourceIndex);
+        renderSceneViewFrame(BasicRenderViewFrameParams frameParams,
+                             EditorSharedViewportPresentDesc desc, std::size_t frameResourceIndex);
         [[nodiscard]] Result<std::unique_ptr<EditorSharedViewportPacketState>>
-        createPresentSlot(std::uint64_t frameIndex, EditorSharedViewportPresentDesc desc,
-                          std::size_t frameResourceIndex);
+        createPresentSlot(BasicRenderViewFrameParams frameParams,
+                          EditorSharedViewportPresentDesc desc, std::size_t frameResourceIndex);
         [[nodiscard]] Result<void> renderPresentSlot(EditorSharedViewportPacketState& state,
                                                      EditorSharedViewportPresentDesc desc,
-                                                     std::uint64_t frameIndex);
+                                                     BasicRenderViewFrameParams frameParams);
 
         [[nodiscard]] EditorSharedViewportRenderProducerStats stats() const;
 

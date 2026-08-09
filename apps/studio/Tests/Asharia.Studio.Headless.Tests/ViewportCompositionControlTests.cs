@@ -1,8 +1,10 @@
 using System;
 using System.Diagnostics;
 using System.Threading.Tasks;
+using Asharia.Studio.Application.Scenes;
 using Asharia.Studio.Application.Viewports;
 using Asharia.Studio.Presentation.Avalonia.Viewports;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
 using Avalonia.Threading;
@@ -71,6 +73,7 @@ public sealed class ViewportCompositionControlTests
         var firstSizeAGeneration = state.CurrentGeneration;
         state.MarkSurfaceUpdate(sizeA, firstSizeAGeneration);
         Assert.True(state.HasExactSurface);
+        Assert.False(state.Synchronize(sizeA));
 
         state.Synchronize(sizeB);
         Assert.False(state.HasExactSurface);
@@ -82,6 +85,44 @@ public sealed class ViewportCompositionControlTests
 
         state.MarkSurfaceUpdate(sizeA, state.CurrentGeneration);
         Assert.True(state.HasExactSurface);
+    }
+
+    [Fact]
+    public void Invalidating_surface_identity_hides_the_current_extent_and_advances_generation()
+    {
+        var extent = new ViewportExtent(640, 480);
+        var state = new ViewportGeometryGenerationState();
+        state.Synchronize(extent);
+        state.MarkSurfaceUpdate(extent, state.CurrentGeneration);
+        var presentedGeneration = state.CurrentGeneration;
+
+        state.InvalidateSurface();
+
+        Assert.Equal(extent, state.CurrentExtent);
+        Assert.True(state.CurrentGeneration > presentedGeneration);
+        Assert.False(state.HasExactSurface);
+        Assert.Throws<InvalidOperationException>(
+            () => state.MarkSurfaceUpdate(extent, presentedGeneration));
+    }
+
+    [Theory]
+    [InlineData(true, false, false, true)]
+    [InlineData(true, true, true, true)]
+    [InlineData(true, true, false, false)]
+    [InlineData(false, false, false, false)]
+    [InlineData(false, true, true, false)]
+    public void Automatic_realtime_starts_a_candidate_or_requires_its_promotion(
+        bool isRealtime,
+        bool hasDesiredStream,
+        bool desiredStreamIsPromoted,
+        bool expected)
+    {
+        Assert.Equal(
+            expected,
+            ViewportRealtimeAdmissionPolicy.ShouldInvalidate(
+                isRealtime,
+                hasDesiredStream,
+                desiredStreamIsPromoted));
     }
 
     [Fact]
@@ -244,6 +285,30 @@ public sealed class ViewportCompositionControlTests
     }
 
     [Fact]
+    public void Frame_before_the_current_snapshot_fence_is_rejected_at_the_same_document_revision()
+    {
+        var epoch = 13UL;
+        var sessionId = ViewportSessionId.Create();
+        var targetId = Guid.NewGuid();
+        var current = Snapshot(
+            sessionId,
+            targetId,
+            revision: 8,
+            minimumPresentableSequence: 2);
+        var state = new ViewportFramePresentationState();
+        state.Reset(epoch);
+
+        Assert.False(state.CanPresent(
+            epoch,
+            Frame(sessionId, targetId, revision: 8, sequence: 1),
+            current));
+        Assert.True(state.CanPresent(
+            epoch,
+            Frame(sessionId, targetId, revision: 8, sequence: 2),
+            current));
+    }
+
+    [Fact]
     public void Presentation_cadence_gate_accepts_above_60_and_rejects_below_60_fps()
     {
         var fast = new ViewportPresentationCadenceTracker();
@@ -279,6 +344,135 @@ public sealed class ViewportCompositionControlTests
         Assert.Equal(512, metrics.WindowFrameCount);
         Assert.InRange(metrics.P95FrameInterval.TotalMilliseconds, 8.2, 8.5);
         Assert.InRange(metrics.MaximumFrameInterval.TotalMilliseconds, 99.9, 100.1);
+    }
+
+    [Fact]
+    public void Resize_metrics_count_each_geometry_generation_once_and_union_hidden_time()
+    {
+        var tracker = new ViewportGeometryDiagnosticsTracker();
+        var token = tracker.BeginMeasurement(
+            baselineGeneration: 0,
+            TimestampAtMilliseconds(0));
+
+        tracker.RecordGeneration(
+            1,
+            new ViewportExtent(640, 480),
+            ViewportGeometryChangeSource.Bounds,
+            TimestampAtMilliseconds(0));
+        tracker.MarkExactSurfaceSubmitted(1, TimestampAtMilliseconds(5));
+        tracker.MarkExactSurfaceCompleted(1, TimestampAtMilliseconds(10));
+
+        tracker.RecordGeneration(
+            2,
+            new ViewportExtent(800, 480),
+            ViewportGeometryChangeSource.Bounds,
+            TimestampAtMilliseconds(20));
+        tracker.MarkExactSurfaceSubmitted(2, TimestampAtMilliseconds(25));
+        tracker.MarkExactSurfaceCompleted(2, TimestampAtMilliseconds(35));
+
+        tracker.RecordGeneration(
+            3,
+            new ViewportExtent(640, 480),
+            ViewportGeometryChangeSource.Bounds,
+            TimestampAtMilliseconds(40));
+        tracker.MarkExactSurfaceSubmitted(3, TimestampAtMilliseconds(45));
+        tracker.MarkExactSurfaceCompleted(3, TimestampAtMilliseconds(50));
+        tracker.MarkExactSurfaceSubmitted(3, TimestampAtMilliseconds(55));
+        tracker.MarkExactSurfaceCompleted(3, TimestampAtMilliseconds(60));
+
+        var metrics = tracker.Capture(
+            token,
+            finalGeometryGeneration: 3,
+            finalGenerationHasExactSurface: true,
+            TimestampAtMilliseconds(50));
+
+        Assert.Equal(3, metrics.ObservedBoundsGenerations);
+        Assert.Equal(3, metrics.UniqueExactSubmittedGenerations);
+        Assert.Equal(3, metrics.UniqueExactCompletedGenerations);
+        Assert.Equal(1, metrics.CompletionCoverage);
+        Assert.InRange(metrics.UniqueExactCompletedPerSecond, 59.9, 60.1);
+        Assert.InRange(metrics.P95UniqueCompletionInterval.TotalMilliseconds, 24.9, 25.1);
+        Assert.InRange(metrics.MaximumUniqueCompletionInterval.TotalMilliseconds, 24.9, 25.1);
+        Assert.InRange(metrics.P95BoundsToExactSubmit.TotalMilliseconds, 4.9, 5.1);
+        Assert.InRange(metrics.P95BoundsToExactCompletion.TotalMilliseconds, 14.9, 15.1);
+        Assert.InRange(metrics.RequestedMismatchHiddenDuration.TotalMilliseconds, 14.9, 15.1);
+        Assert.InRange(metrics.RequestedMismatchHiddenDutyCycle, 0.299, 0.301);
+        Assert.True(metrics.FinalGenerationHasExactSurface);
+        Assert.True(metrics.FinalGenerationCompleted);
+        Assert.False(metrics.ContainsNonBoundsGeometryChanges);
+        Assert.False(metrics.RingOverflowed);
+    }
+
+    [Fact]
+    public void Resize_metrics_reject_a_window_mixed_with_a_scaling_generation()
+    {
+        var tracker = new ViewportGeometryDiagnosticsTracker();
+        var token = tracker.BeginMeasurement(0, TimestampAtMilliseconds(0));
+        tracker.RecordGeneration(
+            1,
+            new ViewportExtent(640, 480),
+            ViewportGeometryChangeSource.Bounds,
+            TimestampAtMilliseconds(1));
+        tracker.RecordGeneration(
+            2,
+            new ViewportExtent(1280, 960),
+            ViewportGeometryChangeSource.Scaling,
+            TimestampAtMilliseconds(2));
+        tracker.MarkExactSurfaceSubmitted(2, TimestampAtMilliseconds(3));
+        tracker.MarkExactSurfaceCompleted(2, TimestampAtMilliseconds(4));
+
+        var metrics = tracker.Capture(
+            token,
+            finalGeometryGeneration: 2,
+            finalGenerationHasExactSurface: true,
+            TimestampAtMilliseconds(4));
+
+        Assert.True(metrics.ContainsNonBoundsGeometryChanges);
+    }
+
+    [Fact]
+    public void Resize_metrics_reject_a_measurement_that_crosses_tracker_reset()
+    {
+        var tracker = new ViewportGeometryDiagnosticsTracker();
+        var token = tracker.BeginMeasurement(0, TimestampAtMilliseconds(0));
+
+        tracker.Reset();
+        tracker.RecordGeneration(
+            1,
+            new ViewportExtent(640, 480),
+            ViewportGeometryChangeSource.Bounds,
+            TimestampAtMilliseconds(1));
+        var metrics = tracker.Capture(
+            token,
+            finalGeometryGeneration: 1,
+            finalGenerationHasExactSurface: false,
+            TimestampAtMilliseconds(2));
+
+        Assert.True(metrics.TrackerResetSinceMeasurement);
+        Assert.Equal(0, metrics.ObservedBoundsGenerations);
+    }
+
+    [Fact]
+    public void Resize_metrics_report_ring_overflow_instead_of_using_a_truncated_window()
+    {
+        var tracker = new ViewportGeometryDiagnosticsTracker();
+        var token = tracker.BeginMeasurement(0, TimestampAtMilliseconds(0));
+        for (var index = 0; index <= ViewportGeometryDiagnosticsTracker.RecordCapacity; index++)
+        {
+            tracker.RecordGeneration(
+                checked((ulong)index + 1),
+                new ViewportExtent(checked((uint)index + 1), 480),
+                ViewportGeometryChangeSource.Bounds,
+                TimestampAtMilliseconds(index));
+        }
+
+        var metrics = tracker.Capture(
+            token,
+            checked((ulong)ViewportGeometryDiagnosticsTracker.RecordCapacity + 1),
+            finalGenerationHasExactSurface: false,
+            TimestampAtMilliseconds(ViewportGeometryDiagnosticsTracker.RecordCapacity + 1));
+
+        Assert.True(metrics.RingOverflowed);
     }
 
     [AvaloniaFact]
@@ -326,6 +520,350 @@ public sealed class ViewportCompositionControlTests
         }
     }
 
+    [AvaloniaFact]
+    public async Task Ancestor_reexposure_requests_a_frame_for_a_clean_on_demand_session()
+    {
+        var session = new ViewportSession(
+            ViewportSessionId.Create(),
+            ViewportRenderKind.Scene,
+            new SceneDocumentSnapshot(
+                Guid.NewGuid(),
+                "viewport-refresh-test.scene.json",
+                revision: 1,
+                savedRevision: 1,
+                entities: []),
+            ViewportCameraSnapshot.DefaultScene);
+        var size = new ViewportRenderSize(
+            new ViewportExtent(640, 480),
+            new ViewportExtent(640, 480));
+        Assert.True(session.TryPublishLatest(size, out _));
+
+        var lifetime = new ViewportPresentationLifetime();
+        var control = new ViewportCompositionControl
+        {
+            Session = session,
+            Lifetime = lifetime,
+            IsRealtime = false,
+        };
+        var host = new Border { Child = control };
+        var window = new Window
+        {
+            Width = 640,
+            Height = 480,
+            Content = host,
+        };
+
+        try
+        {
+            window.Show();
+            for (var attempt = 0;
+                 attempt < 10 && control.State == ViewportPresentationState.Detached;
+                 attempt++)
+            {
+                Dispatcher.UIThread.RunJobs();
+                await Task.Yield();
+            }
+            while (session.TryPublishLatest(size, out _))
+            {
+            }
+
+            var refreshRequests = 0;
+            session.RefreshRequested += (_, _) => refreshRequests++;
+            host.IsVisible = false;
+            Dispatcher.UIThread.RunJobs();
+            host.IsVisible = true;
+            Dispatcher.UIThread.RunJobs();
+
+            Assert.Equal(1, refreshRequests);
+            Assert.True(session.Current.PendingReasons.HasFlag(
+                ViewportInvalidationReason.Exposed));
+        }
+        finally
+        {
+            window.Close();
+            Dispatcher.UIThread.RunJobs();
+            await lifetime.StopAndDrainAsync();
+            session.Close();
+        }
+    }
+
+    [AvaloniaFact]
+    public async Task Session_swap_exposes_a_clean_on_demand_session()
+    {
+        static ViewportSession CreateSession() => new(
+            ViewportSessionId.Create(),
+            ViewportRenderKind.Scene,
+            new SceneDocumentSnapshot(
+                Guid.NewGuid(),
+                "viewport-session-swap.scene.json",
+                revision: 1,
+                savedRevision: 1,
+                entities: []),
+            ViewportCameraSnapshot.DefaultScene);
+
+        var firstSession = CreateSession();
+        var nextSession = CreateSession();
+        var size = new ViewportRenderSize(
+            new ViewportExtent(640, 480),
+            new ViewportExtent(640, 480));
+        Assert.True(firstSession.TryPublishLatest(size, out _));
+        Assert.True(nextSession.TryPublishLatest(size, out _));
+
+        var lifetime = new ViewportPresentationLifetime();
+        var control = new ViewportCompositionControl
+        {
+            Session = firstSession,
+            Lifetime = lifetime,
+            IsRealtime = false,
+        };
+        var window = new Window
+        {
+            Width = 640,
+            Height = 480,
+            Content = control,
+        };
+
+        try
+        {
+            window.Show();
+            for (var attempt = 0;
+                 attempt < 10 && control.State == ViewportPresentationState.Detached;
+                 attempt++)
+            {
+                Dispatcher.UIThread.RunJobs();
+                await Task.Yield();
+            }
+            while (firstSession.TryPublishLatest(size, out _))
+            {
+            }
+
+            var refreshRequests = 0;
+            nextSession.RefreshRequested += (_, _) => refreshRequests++;
+            control.Session = nextSession;
+            Dispatcher.UIThread.RunJobs();
+
+            Assert.Equal(1, refreshRequests);
+            Assert.True(nextSession.Current.PendingReasons.HasFlag(
+                ViewportInvalidationReason.Exposed));
+        }
+        finally
+        {
+            window.Close();
+            Dispatcher.UIThread.RunJobs();
+            await lifetime.StopAndDrainAsync();
+            firstSession.Close();
+            nextSession.Close();
+        }
+    }
+
+    [AvaloniaFact]
+    public async Task Collapsing_bounds_does_not_invalidate_a_closed_session()
+    {
+        var session = new ViewportSession(
+            ViewportSessionId.Create(),
+            ViewportRenderKind.Scene,
+            new SceneDocumentSnapshot(
+                Guid.NewGuid(),
+                "viewport-closed-resize.scene.json",
+                revision: 1,
+                savedRevision: 1,
+                entities: []),
+            ViewportCameraSnapshot.DefaultScene);
+        var lifetime = new ViewportPresentationLifetime();
+        var control = new ViewportCompositionControl
+        {
+            Session = session,
+            Lifetime = lifetime,
+            IsRealtime = false,
+        };
+        var window = new Window
+        {
+            Width = 640,
+            Height = 480,
+            Content = control,
+        };
+
+        try
+        {
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+            session.Close();
+
+            control.Arrange(new Rect(0, 0, 0, 0));
+            Dispatcher.UIThread.RunJobs();
+        }
+        finally
+        {
+            window.Close();
+            Dispatcher.UIThread.RunJobs();
+            await lifetime.StopAndDrainAsync();
+            session.Close();
+        }
+    }
+
+    [AvaloniaFact]
+    public async Task Lifetime_replacement_exposes_a_clean_on_demand_session()
+    {
+        var session = new ViewportSession(
+            ViewportSessionId.Create(),
+            ViewportRenderKind.Scene,
+            new SceneDocumentSnapshot(
+                Guid.NewGuid(),
+                "viewport-lifetime-replacement.scene.json",
+                revision: 1,
+                savedRevision: 1,
+                entities: []),
+            ViewportCameraSnapshot.DefaultScene);
+        var size = new ViewportRenderSize(
+            new ViewportExtent(640, 480),
+            new ViewportExtent(640, 480));
+        var firstLifetime = new ViewportPresentationLifetime();
+        var nextLifetime = new ViewportPresentationLifetime();
+        var control = new ViewportCompositionControl
+        {
+            Session = session,
+            Lifetime = firstLifetime,
+            IsRealtime = false,
+        };
+        var window = new Window
+        {
+            Width = 640,
+            Height = 480,
+            Content = control,
+        };
+
+        try
+        {
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+            while (session.TryPublishLatest(size, out _))
+            {
+            }
+
+            var refreshRequests = 0;
+            session.RefreshRequested += (_, _) => refreshRequests++;
+            control.Lifetime = nextLifetime;
+            Dispatcher.UIThread.RunJobs();
+
+            Assert.Equal(1, refreshRequests);
+            Assert.True(session.Current.PendingReasons.HasFlag(
+                ViewportInvalidationReason.Exposed));
+        }
+        finally
+        {
+            window.Close();
+            Dispatcher.UIThread.RunJobs();
+            await firstLifetime.StopAndDrainAsync();
+            await nextLifetime.StopAndDrainAsync();
+            session.Close();
+        }
+    }
+
+    [AvaloniaFact]
+    public async Task Ancestor_reexposure_does_not_invalidate_a_closed_session()
+    {
+        var session = new ViewportSession(
+            ViewportSessionId.Create(),
+            ViewportRenderKind.Scene,
+            new SceneDocumentSnapshot(
+                Guid.NewGuid(),
+                "viewport-closed-exposure.scene.json",
+                revision: 1,
+                savedRevision: 1,
+                entities: []),
+            ViewportCameraSnapshot.DefaultScene);
+        var lifetime = new ViewportPresentationLifetime();
+        var control = new ViewportCompositionControl
+        {
+            Session = session,
+            Lifetime = lifetime,
+            IsRealtime = false,
+        };
+        var host = new Border { Child = control };
+        var window = new Window
+        {
+            Width = 640,
+            Height = 480,
+            Content = host,
+        };
+
+        try
+        {
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+            session.Close();
+
+            host.IsVisible = false;
+            Dispatcher.UIThread.RunJobs();
+            host.IsVisible = true;
+            Dispatcher.UIThread.RunJobs();
+        }
+        finally
+        {
+            window.Close();
+            Dispatcher.UIThread.RunJobs();
+            await lifetime.StopAndDrainAsync();
+            session.Close();
+        }
+    }
+
+    [AvaloniaFact]
+    public async Task Lifetime_resume_exposes_a_clean_on_demand_session()
+    {
+        var session = new ViewportSession(
+            ViewportSessionId.Create(),
+            ViewportRenderKind.Scene,
+            new SceneDocumentSnapshot(
+                Guid.NewGuid(),
+                "viewport-lifetime-resume.scene.json",
+                revision: 1,
+                savedRevision: 1,
+                entities: []),
+            ViewportCameraSnapshot.DefaultScene);
+        var size = new ViewportRenderSize(
+            new ViewportExtent(640, 480),
+            new ViewportExtent(640, 480));
+        var lifetime = new ViewportPresentationLifetime();
+        var control = new ViewportCompositionControl
+        {
+            Session = session,
+            Lifetime = lifetime,
+            IsRealtime = false,
+        };
+        var window = new Window
+        {
+            Width = 640,
+            Height = 480,
+            Content = control,
+        };
+
+        try
+        {
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+            while (session.TryPublishLatest(size, out _))
+            {
+            }
+
+            var pause = await lifetime.PauseAndDrainAsync();
+            var refreshRequests = 0;
+            session.RefreshRequested += (_, _) => refreshRequests++;
+            await pause.DisposeAsync();
+            Dispatcher.UIThread.RunJobs();
+
+            Assert.Equal(1, refreshRequests);
+            Assert.True(session.Current.PendingReasons.HasFlag(
+                ViewportInvalidationReason.Exposed));
+        }
+        finally
+        {
+            window.Close();
+            Dispatcher.UIThread.RunJobs();
+            await lifetime.StopAndDrainAsync();
+            session.Close();
+        }
+    }
+
     private static ViewportPresentationFrame Frame(
         ViewportSessionId sessionId,
         Guid targetId,
@@ -340,13 +878,15 @@ public sealed class ViewportCompositionControlTests
     private static ViewportSessionSnapshot Snapshot(
         ViewportSessionId sessionId,
         Guid targetId,
-        ulong revision) => new(
+        ulong revision,
+        ulong minimumPresentableSequence = 1) => new(
         sessionId,
         ViewportRenderKind.Scene,
         ViewportTargetKind.DocumentScene,
         targetId,
         revision,
         LastSequence: 0,
+        MinimumPresentableSequence: minimumPresentableSequence,
         IsFrameInFlight: false,
         PendingReasons: ViewportInvalidationReason.None,
         IsClosed: false);
@@ -361,4 +901,7 @@ public sealed class ViewportCompositionControlTests
             tracker.Record(index * Stopwatch.Frequency / framesPerSecond);
         }
     }
+
+    private static long TimestampAtMilliseconds(double milliseconds) => checked(
+        (long)Math.Round(milliseconds * Stopwatch.Frequency / 1000.0));
 }

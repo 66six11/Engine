@@ -268,14 +268,24 @@ Studio Avalonia composition Scene View 的当前路径：
    geometry generation、identity/revision 与单调 sequence；surface image 与 visual placement 在同一 compositor transaction
    中更新。padding/crop、旧 image stretch 和 geometry 过期帧都不能进入 surface；A→B→A 也必须等待新的 A generation。
    external image reuse 仍只由 producer/consumer GPU completion proof 授权。
-5. `RequestCompositionUpdate` 在 commit 前合并采样最新 resize 状态，并在完成帧到达后提交 surface update；它不等待 native。
+5. Bounds/DPI 先由一枚 `DispatcherPriority.Render` latch 在 layout boundary 合并并提前提交最新 exact-size native request；
+   `RequestCompositionUpdate` 在 commit 前再次复验 geometry/extent，并在完成帧到达后提交 surface update；两者都不等待 native。
    typed `Backpressure` 在下一次 composition cadence 重试；Unavailable/device failure 显式降级。`IsRealtime=true` 即使静止也每个
-   commit 重挂下一帧并以 exact surface-update `>=60 FPS` 为最低门槛；`false` 只响应 dirty invalidation。
+   commit 重挂下一帧并以 exact surface-update `>=60 FPS` 为最低门槛；unpromoted resize candidate 只有首帧，不接受自动 Realtime
+   预填充，Promote 后才恢复 steady 流水。`false` 只响应 dirty invalidation。session clean→dirty
+   只发一个 coalesced refresh signal；hidden dock tab/lifetime pause 停止 admission，ancestor visible、新 surface attach 或 lifetime
+   replacement/resume 以 `Exposed` 恢复一帧；closed session 不再接受 UI invalidation。
+   camera/target/exposed 通过 request-sequence content fence 拒绝旧内容帧，extent 仍由 geometry generation 独占门控。
 6. 每轮 frame 通过 `editor_viewport_complete_frame_v5(stream, slot, completionKind)` exact-once 完成；compositor
    submission 前拒绝用 `NotSubmittedToConsumer`，update 完成后即使用 `ConsumerAccessed`。extent/generation 改变时旧 stream
    立即逐流 retire，新 exact stream 首帧成功后成为 active；旧 visual 在此之前保持隐藏，不以 crop/stretch 伪装同步。
    submission、disposal 或 completion 结果歧义时对应资源进入 process-lifetime quarantine。control detach 停止 admission
    并等待 frame/surface cleanup；process shutdown 再 drain native RenderThread 与 Vulkan owner。
+   resize acceptance 按唯一 geometry generation 统计 exact submitted/update-completed rate、Bounds latency、coverage 与 opacity hidden duty，
+   不用同 generation 的 steady 后续帧抬高 resize FPS；物理 display 仍由同跑 PresentMon/ETW 单独证明。
+7. native runtime 在唯一 RenderThread 上拥有 steady-clock frame snapshot：frame index 是 render-attempt identity（失败允许留 gap），
+   time/delta 是真实单调 render 时间而非 `ordinal / 60`。delta 以 runtime 中上一次任意 stream 成功 record 为边界；Avalonia
+   cadence、GPU timeline 与 physical present 都不反向定义 editor/world time。
 
 当前建议仍保持：
 
