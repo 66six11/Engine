@@ -201,13 +201,18 @@ flowchart TD
   selection value contracts；未来
   `packages/systems/editor` 内部 `editor_domain` target 只能保留 backend-neutral editor state，不能继承 ImGui、Vulkan、renderer 或 importer
   execution 依赖。
-- `apps/studio` 是 Avalonia managed Studio shell，不属于 C++ CMake target graph。当前真实产品链为
-  `App/Shell -> Application ProjectSession -> EngineBridge project + scene adapters -> project/scene native ABI`；Shell
-  只选择路径、发命令和投影 snapshot，不解析 descriptor/scene JSON，也不持有 native handle。Release image 精确包含
-  project/scene 两个 native DLL；`editor_native` 与 Slang 不进入。当前已有单 SceneDocument、Hierarchy、名称/local
-  Transform Inspector、Create Entity、Save 与 dirty；另有尚未接入 Shell/publish 的 UI-neutral `ViewportSession`、
-  EngineBridge V4 frame lease 与 native Scene/Game/Preview request。当前仍无可见 viewport、Avalonia presentation、Dock、
-  Asset Browser、undo/redo 或 Play Mode。
+- `apps/studio` 是 Avalonia managed Studio shell，不属于 C++ CMake target graph。Project/document 产品链为
+  `App/Shell -> Application ProjectSession -> EngineBridge project + scene adapters -> project/scene native ABI`；Scene View
+  产品链为 `StudioScenePanelView -> ViewportCompositionControl -> Application ViewportSession -> EngineBridge V5 stream
+  -> editor_native bounded scheduler -> process-level viewport RenderThread -> shared viewport producer -> renderer_basic_vulkan`。
+  V1–V4 frame exports 已硬切删除；Vulkan context、producer、queue submit、retirement 与 shutdown 只由 native owner thread
+  执行。Shell 只选择路径、发命令和投影 snapshot；
+  ViewModel、Dock 与 Application 不解析 descriptor/scene JSON，也不持有 native/GPU handle。Windows composition root 优先
+  选择 Avalonia Vulkan compositor，由专用 presentation adapter 导入 opaque NT image/semaphore；AngleEgl/Software 只保留
+  Studio 非渲染功能并让 Scene View 明确降级。Release image 精确包含 project/scene/editor 三个 native DLL 与 12 个
+  renderer-basic shader/reflection 文件，不携带 Slang、Vulkan SDK 或 validation layer。当前已有单 SceneDocument、Hierarchy、
+  名称/local Transform Inspector、Create Entity、Save、dirty、现有 Dock 中的一个可见 Scene View 与 on-demand revision/resize
+  更新；仍无 Asset Browser、undo/redo、Play Mode、第二 Viewport、通用 fair scheduler、camera/input 或 preview consumer。
 - Editor panels 仍由 `EditorPanelRegistry::drawPanels(EditorFrameContext)` 适配每帧能力，但内置
   panel 的 `draw()` 实现会先收敛为 panel-local context，再把最小能力传给 helper。Scene View panel
   不创建 Vulkan objects、不注册 descriptor、不录 command buffer。
@@ -606,52 +611,264 @@ flowchart LR
 - 当前没有 recent store、自动恢复、多模板、Project extension scope、asset catalog、EngineHost、undo/redo 或 Play；
   Bootstrap `Ready` 与活动项目/文档 `Ready` 仍是不同状态。
 
-## 当前 Studio Viewport foundation 流程
+## 当前 Studio Viewport 与 native RenderThread 流程
 
-#359 只建立可复用的 render-session/native 边界，不建立 Avalonia Scene View：
+#359 建立 render-session/native 边界，#361 接入首个 Avalonia Scene View；ADR-0011 将其硬切为 V5 异步
+stream，并由同进程 `editor_native.dll` 内唯一 shared viewport RenderThread 调度：
 
 ```mermaid
 sequenceDiagram
-    participant Consumer as Future Scene/Game/Preview consumer
+    participant Source as Endpoint policy / proposal owner
+    participant Adapter as Dock / shared top-level capability
+    participant WinIntegration as Windows resize integration
+    participant Window as USER32 / Avalonia TopLevel
+    participant Tx as ViewportPresentationTransactionCoordinator
+    participant Consumer as Avalonia presentation endpoint owner
     participant Session as Application ViewportSession
     participant Bridge as EngineBridge ViewportBridge
-    participant Native as editor_native V4 ABI
-    participant Runtime as Shared viewport runtime
+    participant Native as editor_native V5 stream ABI
+    participant Scheduler as Bounded latest-wins scheduler
+    participant Owner as Native viewport RenderThread
     participant Renderer as renderer_basic_vulkan
+    participant Compositor as Avalonia Compositor
 
-    Consumer->>Session: synchronize SceneDocument snapshot / camera / extent
-    Session->>Session: coalesce invalidation; admit one in-flight sequence
+    Source->>Source: freeze Scene exact / Game fit / Frame Debug capture policy
+    opt owned dock Scene resize
+        Source->>Adapter: splitter delta
+        Adapter->>Adapter: coalesce into latest layout proposal
+        Adapter->>Consumer: begin synchronous layout probe
+        Adapter->>Adapter: apply proposed GridLength; UpdateLayout; capture target PixelSize
+        Adapter->>Adapter: restore committed GridLength before dispatcher yields
+        Adapter-->>Source: exact targets + reversible layout mutation
+    end
+    opt Win32 fixed-DPI decorated border drag
+        Window->>WinIntegration: WM_ENTERSIZEMOVE; snapshot accepted RECT/scaling/insets
+        Window->>WinIntegration: WM_SIZING(proposed screen-space RECT)
+        WinIntegration-->>Window: write last accepted exact RECT; return TRUE
+        WinIntegration->>Adapter: queue projection + platform-neutral outer commit
+        Adapter->>Adapter: coalesce latest proposal outside WndProc
+        Adapter->>Consumer: probe all visible exact workspace targets; restore committed layout
+        Adapter-->>Source: exact targets + reversible outer/workspace mutation
+    end
+    Source->>Tx: Proposal(SessionId, EndpointEpoch, TransactionId, participants)
+    Tx->>Consumer: PreparePresentationAsync(frozen endpoint policy)
+    Consumer->>Session: synchronize snapshot/camera/capture; freeze policy-specific render target
+    Session->>Session: publish latest immutable request
     Session-->>Consumer: immutable ViewportRenderRequest
-    Consumer->>Bridge: CreatePresentSlot(request, compatibility)
+    Consumer->>Bridge: SubmitLatest(stream, request)
     Bridge->>Native: session + target + revision + sequence + camera + bounded proxies
-    Native->>Runtime: create fixed-extent slot (max four lanes)
-    Runtime->>Renderer: record Scene / Game / Preview RenderView
-    Renderer-->>Bridge: native packet metadata + EngineBridge-internal handles
-    Bridge-->>Consumer: ViewportFrameLease metadata
-    Consumer->>Bridge: Complete / Dispose exactly once
-    Bridge->>Native: release packet
-    Consumer->>Session: CompleteRender(sequence, revision, succeeded)
+    Native->>Scheduler: replace the single pending-latest request
+    Scheduler->>Owner: dispatch when one of three full slots is available
+    Owner->>Renderer: render or resolve the frozen endpoint target
+    Renderer-->>Scheduler: publish the single ready frame
+    Consumer->>Bridge: TryTakeReady(stream)
+    Bridge-->>Consumer: self-described ViewportFrameLease + persistent slot identity
+    Consumer->>Consumer: revalidate candidate extent + generation + identity/sequence
+    Consumer->>Compositor: import; update independent candidate drawing surface
+    alt rejected before compositor submission
+        Consumer->>Bridge: CompleteFrame(NotSubmittedToConsumer)
+    else UpdateWithSemaphoresAsync completed
+        Consumer->>Consumer: mark candidate prepared; keep front and Opacity=1 unchanged
+        Consumer->>Bridge: CompleteFrame(ConsumerAccessed)
+    else submission/disposal result ambiguous
+        Consumer->>Consumer: quarantine wrappers + lease
+        Note over Bridge,Native: do not guess a completion kind
+    end
+    opt completion kind is known
+        Bridge->>Native: editor_viewport_complete_frame_v5(stream, slot, completionKind)
+        Native->>Scheduler: Presented -> Completing
+        alt NotSubmittedToConsumer
+            Owner->>Owner: poll producer fence
+        else ConsumerAccessed
+            Owner->>Owner: empty queue wait(consumer-done semaphore) + retirement fence
+            Compositor-->>Owner: signal consumer-done semaphore after GPU access
+            Owner->>Owner: poll producer + consumer-release fences
+        end
+        Owner->>Scheduler: Completing -> Available after required fences
+    end
+    opt WM_EXITSIZEMOVE before outer commit is accepted
+        Window->>WinIntegration: close interaction epoch
+        WinIntegration->>WinIntegration: stale unaccepted commits; discard queued successor
+        Adapter->>WinIntegration: outstanding commit.IsCurrent()
+        WinIntegration-->>Adapter: false
+        Note over Consumer,Owner: active candidate work is not killed; finish then abort/retire by its work fence
+        Note over WinIntegration,Window: remain at last Published exact RECT; accepted final may lag raw final by 0-1 candidate
+    end
+    opt every participant prepared and proposal is current
+        Consumer-->>Tx: Prepared candidate receipt
+        Tx->>Consumer: arm + validate Session/EndpointEpoch/TransactionId/policy
+        opt proposal carries owned layout mutation
+            alt dock splitter proposal
+                Tx->>Adapter: apply requested GridLength in publish turn
+            else Windows capability-backed top-level proposal
+                Tx->>Adapter: apply platform-neutral outer commit
+                Adapter->>WinIntegration: commit.Apply()
+                WinIntegration->>Window: SetWindowPos
+                Adapter->>Window: TopLevel.UpdateLayout in publish turn
+            end
+            Adapter->>Consumer: real Bounds callbacks validate target PixelSize
+        end
+        alt every participant validated in the same compositor scope
+            Tx->>Consumer: ApplyPreparedPresentation for every visual.Surface + Size; keep Opacity=1
+            Tx->>Compositor: request one shared composition batch
+            Tx->>Adapter: accept outer commit after Published
+            alt group batch Rendered
+                Compositor-->>Tx: shared Rendered barrier
+                Tx->>Consumer: retire each replaced front through endpoint work fences
+            else publish/render outcome ambiguous
+                Tx->>Consumer: quarantine still-referenced owner graphs
+            end
+        else any mismatch, cancellation or stale identity before publish
+            opt owned layout was applied
+                Tx->>Adapter: restore previous GridLength or rollback current outer commit in same UI turn
+            end
+            Tx->>Consumer: abort group; retain every old front; retire candidates
+        end
+    end
 ```
 
-- 每个 `ViewportSession` 有独立 session ID、camera、sequence、pending reasons 与 in-flight state；多个 viewport
-  可以指向同一 SceneDocument，但不能共享可变 camera 或 completion state。
+图中的 `applyLayout` 先应用可选 outer/workspace mutation 并触发真实 Bounds，随后逐 participant 验证 exact extent，最后才调用
+`ApplyPreparedPresentation` 切换 surface；这些步骤属于同一 UI publish turn。Avalonia same-compositor batch 能给 surface switches 一个
+共享 `Rendered` barrier，但 `SetWindowPos` 经 USER32/DWM 提交的 top-level geometry 不参与该 barrier；拖动中两者没有公开的共同
+scanout fence，因此这仍不是 physical display atomicity。`RequestCompositionUpdate` 只安排 composition callback，batch `Rendered` 只证明
+该 Avalonia batch 已由 compositor 处理，二者都不构成 DWM 或 LCD scanout receipt。
+
+release-stop 不在 `WM_EXITSIZEMOVE` 后追赶 raw cursor final，因而消除额外 native `SetWindowPos` 所造成的 release grow gap/shrink crop；
+代价是 accepted final 允许落后 raw final 0–1 candidate。Windows-only opt-in WGC observer 位于应用内阶段之后，读取
+`wgc-dwm-composited-pixels`。release capture window 要求它实际交付的所有 samples 都匹配最后 accepted/Published exact extent，禁止
+gap/crop/stretch/blank/spill；这些 samples 不是无损 DWM refresh 序列，也不位于显示器 scanout 之后，
+`PhysicalDisplayedEvidenceAvailable` 因而固定为 `false`。
+
+该 owner/时序继续采用 Unreal 的 immutable render handoff、Unity 的 semantic invalidation→repaint 分层和 O3DE 的 size-state/render-tick
+分离；继续拒绝复制其品牌 API、widget/module owner、drag-end debounce 或跨 compositor 伪原子提交。已检查公开合同没有 native
+top-level geometry 与 editor viewport surface 的 physical transaction 先例，因此 shared capability、独立 Windows integration 与
+release-stop 是 Asharia 的 package-first/cross-platform 推论，不是外部引擎 API 的复刻。
+
+- 每个 `ViewportSession` 有独立 session ID、camera、sequence 与 pending reasons；多个 viewport 可以指向同一
+  SceneDocument，但不能共享可变 camera 或 presentation state。
+- `Viewport Presentation Transaction` 以 endpoint 为实际资源 owner；每个 participant 复验 `SessionId + EndpointEpoch + TransactionId`，
+  group 共享 transaction id，而 session/epoch 绑定该 endpoint 的内容会话与 attach/compositor lifetime。统一阶段为 Proposal→Preparing→Prepared→Validated→Published→
+  Rendered→Retiring→Completed；publish 前失败进入 Aborted，publish 后结果歧义进入 Quarantined。
+- Dock splitter 与 interactive top-level resize capability 都只是 layout proposal adapter。Main/Floating Window 的 workspace host 拥有
+  committed/requested layout、一个 active request 与一个 queued latest；endpoint 仍拥有 surface/stream。shared capability 位于
+  `Asharia.Studio.Presentation.Avalonia.Windowing`，只含 provider/factory/attachment/sink/commit 与 projection，不含 HWND、WM、USER32
+  或 P/Invoke；native hook/RECT owner 独立位于 `Asharia.Studio.Presentation.Avalonia.Windows`。Scene participant 采用 exact extent；Game
+  Preview 可以冻结独立 fit policy；Frame Debugger immutable capture 使用独立 endpoint/capture identity，不能覆盖实时 Scene/Game front。
+- 同一 compositor scope 的所有 participant 才能共享一个 UI publish turn 和 `Rendered` barrier，从而提供 group
+  all-or-nothing visible publish；跨 compositor 明确不原子，必须拆成独立 transaction。
+  Windows outer geometry 即使在这个 UI turn 中 `SetWindowPos + UpdateLayout`，也不属于 Avalonia batch 的物理原子范围。
 - 当前 target 只有 `DocumentScene`，render kind 只有 `Scene | Game | Preview`。Material Preview 与 Animation Preview
   后续都组合 Preview world/target，不新增 renderer kind。
-- Application request 不含 Avalonia、OS/Vulkan handle 或 mutable World pointer；Transform proxy array 是当前 Scene View
-  的有界调试表示，不是最终 mesh/material render snapshot。
-- native V4 与旧 V1–V3 additive coexist；V7 diagnostics smoke 证明两个并发 session/slot、三种 render kind、camera/
-  identity/revision/sequence/proxy count 被真实消费。runtime 仍是 process-lifetime singleton，此风险没有被本 Slice
-  伪装为已解决。
-- 下一 Slice 增加单 Scene View `ViewportPresentation`、composition capability/import、surface generation 与 drain；
-  Dock move/float 只能重绑 presentation，不能销毁 `ViewportSession`。
+- Application request 不含 Avalonia、OS/Vulkan handle 或 mutable World pointer；进入 native mailbox 前，借用的
+  string/span/proxy 字段会复制为 owning immutable `RenderFramePacket`。Transform proxy array 是当前 Scene View 的
+  有界调试表示，不是最终 mesh/material render snapshot。
+- native V5 request 是 144-byte self-contained input，ready frame 是 152-byte self-described output；V1–V4 frame
+  exports 与 managed fallback 均已删除。V5 smoke 证明 burst request 只留下最新 sequence、ready 被占用时不覆盖、
+  steady-state 最多三个 distinct full slots，第四个请求等待 slot 回收。ABI 保留 logical/allocation 双 extent；Studio
+  Scene exact request 对 logical/allocation 使用相同 panel `PixelSize`，并在 surface commit 前再次复验相等；Game fit 与 Frame Debug
+  participant 则分别复验 proposal 中冻结的 fit target 或 capture identity/extent。caller 或 managed pump 不是 Vulkan owner。
+- additive `editor_viewport_query_render_thread_stats` 只向 smoke/diagnostics 暴露 dispatch count、render-queue
+  bound/depth/backpressure、lifecycle 与 caller/owner thread-difference 证据；它读取 published snapshot，不导出
+  `std::thread::id` 或让 managed consumer 调度 owner thread。
+- shared runtime 是进程级 owner，最多创建一条 native RenderThread。Vulkan context、producer、RenderGraph/command
+  recording、graphics queue submit、frame epoch/packet retirement 和 context shutdown 全部留在该线程；mailbox mutex
+  只保护有界 render/control/release queue、生命周期条件和 published diagnostics snapshot，不跨 Vulkan 工作。
+- 每个 stream 最多一个 executing、一个 pending-latest、一个 ready frame；pending submit 原子替换旧 pending，
+  不把 resize event 当 FIFO 命令。native registry 的 hash iteration 不参与调度：owner 按稳定 stream ID 从上次成功推进的 lane
+  之后轮转，并在任何 render 前全局优先推进 completion/close。每次 owner loop 仍只推进一个状态转换。steady-state slot 上限为 3，
+  全局 outstanding/context 上限仍为 4；这只足以覆盖四个 cold endpoint 的 first slot，不能保证需要至少两个 reusable slot 的
+  3–4 个 realtime endpoint steady 运行，也没有解决单 graphics queue 上 slow-consumer wait 的 head-of-line blocking。每个 transaction endpoint 保留旧 front
+  流并只为尚未 Published 的 candidate 生产首帧；Published 后恢复新 stream 的 steady 预填充，group switch batch `Rendered` 后才
+  允许旧 front retirement/dispose 完成。
+  shutdown 进入 Draining 后停止新 submit，但继续完成 close/retirement。
+- #361 的首个 Scene View `ViewportCompositionControl` 已扩展为 transaction participant endpoint，仍拥有 composition capability/import、单调 presentation
+  admission 与 process-owned drain；Dock move/float 只能重绑 presentation，不能销毁 `ViewportSession`。
+- `ViewportSession` 把 target/camera/extent/exposed invalidation 合并为 latest state，并仅在 clean→dirty 时发
+  `RefreshRequested`；endpoint control 在 UI Render priority 请求下一次 composition callback。owned dock splitter 只是 Scene exact
+  policy 的 layout proposal adapter：它把 drag 输入合并为 latest proposal，并在同步 layout probe 中测量 target exact extent；probe
+  临时 Bounds 不发布 geometry 或 surface state，committed `GridLength` 在 dispatcher yield 前恢复。Windows fixed-DPI 普通装饰边框 drag
+  则由独立 Windows integration 在 `WM_SIZING` 热路径回写 last-accepted `RECT`，把 platform-neutral projection/commit 交给 shared
+  workspace host；host 在 HWND/layout/front 均保持 committed 时 probe/prepare，并以 active + queued-latest 推进。未被 owned dock 或
+  interactive top-level capability 捕获的 Bounds/DPI fallback 仍由一枚 Render-priority latch 在 layout boundary 提交最新 exact-size
+  native request。默认 Realtime 每个
+  commit 至多重挂一次，
+  OnDemand 只消费语义 dirty。隐藏 dock tab 或 presentation lifetime pause 停止 admission；ancestor visible、新 surface attach、
+  lifetime replacement/resume 都写入 `Exposed` 后恢复一帧；closed session 是不再 invalidation 的 terminal boundary。
+- production composition session 在 shell 启动期间于后台启动 compatibility warm-up，且不阻塞 ready，使同一 native RenderThread 提前创建
+  Vulkan device/context；shutdown 在销毁 runtime 前等待该 task，真实 compositor identity 仍由 frame request 复验。
+- Scene exact extent 以 `ceil(Bounds * RenderScaling)` 表达 panel `PixelSize`，同时作为 logical/allocation extent。每个受影响 endpoint 在旧
+  committed state 仍可见时创建独立 candidate drawing surface；所有 candidate 的 `UpdateWithSemaphoresAsync` 成功后，group 才能进入
+  Prepared。coordinator arm 并复验所有 identity/policy 后，才在同一 UI/composition publish turn 应用可选 `GridLength` mutation 和全部
+  `visual.Surface`/`Size` switch，opacity 始终为 1。A→B→A 也必须为第二个 A 独立 prepare；旧 revision/epoch、geometry generation
+  或倒退 sequence 在提交前被拒绝。
+- 任一 participant candidate failure/cancel/stale 或 armed extent mismatch 都使 publish 前 group Aborted：保留所有旧 committed
+  layout/front，dock adapter 在同一 UI turn 恢复旧 `GridLength`。same-compositor group switch batch `Rendered` 之后才由各 endpoint
+  退役 replaced stream/surface；publish 后结果歧义进入 Quarantined。Windows precommit publish 还会在同一 UI turn 经 shared outer
+  commit 应用/复验实际 HWND/workspace layout，成功 `Published` 后才接受新 RECT。`WM_EXITSIZEMOVE` 使尚未接受的 commit stale 并丢弃
+  queued successor；active GPU/consumer candidate 自然返回后按普通 abort/work fence 回收，Window 停在最后 Published exact RECT。
+  accepted final 相对 raw final 可落后 0–1 candidate，必须输出 lag。Snap、maximize/restore、程序化 Window/Bounds、DPI/跨屏 transition、
+  没有 capability 的非 Windows top-level 与其他 geometry source 仍是 exact-only hidden fallback：边界不变，禁止 crop/stretch，但允许
+  短暂空白，尚未达到零闪，且不能计入 owned precommit acceptance。
+- Scene exact 的 external image/export/import、RenderGraph target、render area、viewport、scissor 与 camera 全部使用同一 exact panel
+  extent；Game Preview 使用 proposal 冻结的 target/fit mapping，Frame Debugger 使用 immutable capture identity/extent，不在 publish
+  时读取实时 Scene camera。每个 stream 独占 managed work fence；candidate 与 replaced front 的 retirement 只等待所属流 pump/presentations，新 desired pump
+  不被旧流退役绑在同一个全局 task 上。plain `GridSplitter.ShowsPreview` 和 drag-end debounce 都不能维持交互期间每秒至少 60 个
+  unique committed geometry generations，因此明确不采用。
+- `IsRealtime=true` 即使 scene/camera 静止也由 `RequestCompositionUpdate` 每个 commit 最多重挂一次，目标 exact surface-update
+  `>=60 FPS`；`false` 不自动重挂，只消费 dirty invalidation。`RequestSequence`/`MinimumPresentableSequence` 拒绝 camera/target/exposed
+  之后的旧内容帧；extent 只由 geometry generation 裁决，Realtime/extent 都不推进内容 fence。两种模式都不使用 UI timer。
+- `--smoke-studio-viewport-cadence` 只采集前台静态 Scene 的 5 秒 Realtime 稳态；`--smoke-viewport-transaction-resize`、
+  `--smoke-viewport-transaction-overload`、`--smoke-viewport-transaction-faults`、
+  `--smoke-viewport-transaction-supersede` 与 `--smoke-viewport-multi-endpoint` 已拆成独立真实 Studio/Avalonia/Vulkan smoke，
+  `--smoke-viewport-transaction-flash` 再记录每个成功
+  transaction composition batch 的 Bounds/front/candidate/visual/surface/opacity/identity；`--smoke-viewport-transaction-window-resize`
+  使用真实 HWND 驱动 Windows integration 的 `WM_SIZING`，并拆成不启动连续 recorder、以 first `Proposed`→final exact `Rendered`
+  计速的 `performance` lane，以及只连续记录短 ABA outer/client/workspace/panel/surface composition batches、没有 FPS claim 的
+  `continuous` lane。release policy 还要求 `WM_EXITSIZEMOVE` 后不追赶 stale proposal，并输出 raw/accepted final 与 0–1 candidate lag。
+  所有入口按 native resource→transaction
+  phase→Avalonia surface/`Rendered`→physical display 分层；observer 缺失时明确输出 evidence unavailable。
+- 独立 Windows-only `Asharia.Studio.WindowsCapture.Tests` 通过 `ASHARIA_RUN_STUDIO_WGC_DWM_ACCEPTANCE=1` opt in，启动真实 Editor/Vulkan
+  Window smoke。drag 样本继续分类 blank/stretch/crop/gap/spill；release handshake 从 interaction epoch 关闭起要求每个 WGC-delivered
+  sample 都匹配 child 报告的 accepted/Published exact extent，不允许 release gap/crop/stretch/blank/spill。该入口不保证观察每次 DWM
+  refresh，也不提供 LCD scanout/`PhysicalDisplayed` 证据。
+- 2026-08-09 拆分后代表性 sawtooth 120 Hz 运行完成 209/209 observed exact `Rendered` generations（106.44/s），p95
+  15.26 ms、hidden 0、mismatch 0；Realtime steady 代表值为 219.43 surface-updates/s。新增 Window smoke 之前的五族 GPU process acceptance 为 47/47；
+  13 个 fault stages、supersede、六个双-endpoint modes 与 flash 8/8 transaction-batch structural checks 均真实 Vulkan exit 0。
+  release-stop 之前 `wait-final` policy 的 Win32 Window 性能 acceptance 另以 grow/shrink/A→B→A 三个 120 Hz、90-input case 各自
+  门控 `>=60/s`；其 ABA 代表运行在
+  744.47 ms 内发送 90 inputs，first `Proposed`→final exact `Rendered` 为 757.57 ms、50 unique exact generations（66.00/s），
+  post-request transaction publish catch-up 2/2（25.44 ms，小于两个 60 Hz composition budget）、hidden=0。独立 continuous ABA
+  结构 lane 为 24/24 exact sampled batches，
+  blank/stretch/crop/gap/mismatch=0，不报告 FPS；这些历史数值不作为新的 release-stop gate 的通过数据。
+  当前 PresentMon 复采大量丢 ETW events 且没有 CSV，
+  因而 PhysicalDisplayed 仍无当前 transaction 证据；Window smoke 的应用内 lanes 也明确输出 pixel/PhysicalDisplayed evidence unavailable。
+  WGC 项目提供独立 DWM-composited release exact pixel gate，但不能把其 delivered samples 外推为所有 DWM refresh 或 LCD scanout。
+  当前严格 release-stop gate 用 `SystemRelativeTime` 对齐 `release-imminent` QPC，从 `WM_EXITSIZEMOVE` 前的保守边界开始筛选；
+  grow/shrink 2/2 PASS，release 分别为 1/1 与 2/2 exact，每个 delivered sample 都匹配 completion accepted extent，
+  gap/blank/crop/stretch/accepted-extent mismatch 全为 0。两条 case 都先建立 pending raw final，再验证其 `Cancelled` 且
+  `rawFinalProposalAccepted=false`。
+  PresentMon 顶层 cadence 不能排除一个中间 blank/crop/stretch/spill frame。multi-endpoint 也只证明两个 endpoint，不能外推 3–4 realtime lane。
+- native `frameIndex` 只是 render-attempt identity，失败允许留 gap；`EditorSharedViewportRuntime` 在唯一 RenderThread 上采样
+  steady-clock elapsed 与上次任意 stream 成功 render delta，形成 immutable frame params。刷新率只改变采样密度，不再通过
+  `frameIndex / 60` 改变 shader 时间速度。
+- V5 completion hard cut 只有 `editor_viewport_complete_frame_v5(stream, slot, completionKind)`。未进入
+  `UpdateWithSemaphoresAsync` 的 frame 报告 `NotSubmittedToConsumer`；update 已完成的 frame 报告
+  `ConsumerAccessed`，并在 native RenderThread 上提交空 queue wait，把 compositor consumer-done semaphore 转为
+  retirement fence。producer 与 consumer proof 都完成后，同一个 full slot 才重新 Available。
+- thread startup/device/queue failure 返回 typed error并让 Scene View 进入 degraded/unavailable，绝不回退 UI/caller
+  thread 执行 Vulkan。lease release 由 managed worker 等待，UI dispatcher 不阻塞；compositor submission、imported
+  wrapper disposal 或 native release 结果歧义时，endpoint 先在最多四个 frame 槽内保留资源，再 exact-once 转交
+  process-lifetime quarantine registry；该 registry 不声称独立的 item-count 上界，歧义 endpoint 进入 degraded，正常路径必须为 0。不按
+  `NotSubmittedToConsumer` 猜测。正常关闭按 managed presentation drain → priority lease release → native mailbox drain → owner-thread retirement →
+  owner-thread producer/context destroy → thread exit → caller 无锁 join 收口。
 
 ## Retired Studio Avalonia Scene View Composition 流程（历史证据）
 
 > R0 hard-cut 4.31 已删除managed viewport scheduler/public contract，4.33又删除public Scene snapshot、
-> Application provider host与Core in-memory provider。当前 production 已有 authoritative SceneDocument 与新的
-> Viewport foundation，但仍没有下图中的 `SceneViewPresentationSession`、Avalonia import 或旧 Core DTO。下图只保留
-> 被拒绝的 pre-hard-cut presentation 证据，不能作为当前依赖图或能力声明；新 presentation 必须接上上节的
-> `ViewportSession -> ViewportBridge -> ViewportFrameLease`，不能恢复旧 provider/scheduler 表面。
+> Application provider host与Core in-memory provider。当前 production 已有 authoritative SceneDocument、
+> `ViewportSession -> ViewportBridge -> ViewportFrameLease` 与新的 `ViewportCompositionControl`；但没有下图中的
+> `SceneViewPresentationSession` 或旧 Core DTO。下图只保留被拒绝的 pre-hard-cut presentation 证据，不能作为
+> 当前依赖图或能力声明，也不能据此恢复旧 provider/scheduler 表面。
 
 ```mermaid
 sequenceDiagram
@@ -693,7 +910,7 @@ sequenceDiagram
     Avalonia-->>Session: compositor release completion
     Session->>Session: return slot to current pool or drain stale slot
     Session->>Bridge: ReleasePresentPacket on resize/detach/shutdown
-    Bridge->>Native: editor_viewport_release_present_packet
+    Bridge->>Native: removed one-argument release export (historical only)
     Session->>VM: current presented/import-failed snapshot only
 ```
 
@@ -755,8 +972,9 @@ sequenceDiagram
   last scene revision；v7 再记录 Scene/Game/Preview frame counts 以及最后一次
   session/target/revision/sequence/render-kind/debug-proxy count、Scene world-grid 开关与实际 debug world-line count，
   同时保持 v1–v6 不变。
-- Scene View 是单 viewport、双 slot 的 latest-wins slice：相同在途观察去重，变化的
-  Bounds 只保留最新 request；Busy/Unavailable 通过 1–16 ms 有界退避或 slot
+- retired `SceneViewPresentationSession` 曾被设计成单 viewport、双 slot 的 latest-wins slice（不是当前合同）：
+  相同在途观察去重，变化的
+  Bounds 只保留最新 request；Busy/Backpressure 通过 1–16 ms 有界退避或 slot
   retirement completion 主动重试，不写入 Problems。
 - capability probe 只在 attach/DataContext 重建时执行。若 probe 成功但布局尺寸尚无效，
   首个有效 Bounds 复用缓存 capability 完成 presentation 配置；Unsupported/失败状态
@@ -764,9 +982,12 @@ sequenceDiagram
 - `ViewportNativePresentDrain` 在应用关闭第一阶段调用已注册 presentation 的 detach，
   因而空闲持久 slot 也进入等待集合。Scene View host 先移除 child visual，等待
   presentation drain 后再在 UI dispatcher dispose composition surface。
-- 单个 composition surface 只允许一个在途 update；尝试尺寸不进入最后成功状态。
-  update 失败时 visual 恢复最后成功帧的原始尺寸，连续失败也不会回退到从未成功的尺寸。
-- imported wrapper release 与 native packet release 是两个有序阶段。前一阶段未确认时
+- transaction contract 之前的 `ViewportCompositionControl` 每次 attach 只持有一张 composition surface；每个 fixed-extent native stream
+  有独立 managed pump/work fence。该历史版本在尺寸改变后立即隐藏旧 surface，superseded work 只完成安全退役、不推进当前
+  presentation state。它证明 exact-only gate，但 43.2% requested-mismatch hidden duty 不满足后续 flash-free dock contract；当前
+  production 采用 front/candidate 双 surface transaction，见上方“当前 Studio Viewport”章节。
+- imported wrapper release 与 native packet release 是两个有序阶段；后者在 managed worker 上等待而不阻塞 UI。
+  前一阶段未确认时
   不重复假设 `IAsyncDisposable` 可重试，而是把 wrapper 与仍 outstanding 的 native
   packet 保留到进程结束；native shutdown 因 outstanding packet 延迟销毁 Vulkan context。
   应用关闭超过 5 秒进入显式 process-exit fallback：不再执行 native runtime teardown，
@@ -1178,6 +1399,10 @@ asharia-editor --smoke-editor-frame-debugger
 ```
 
 ## 当前 Frame Loop 流程
+
+本节描述 `sample-viewer`/C++ editor window 的 `VulkanFrameLoop` 单线程 swapchain 路径。Studio offscreen Scene View
+不经过该主循环；它使用上文 `editor_native` process-level viewport RenderThread。当前没有独立 RHI Thread，也没有
+多线程 command recording。
 
 ```mermaid
 flowchart TD

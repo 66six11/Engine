@@ -22,7 +22,7 @@ public sealed class ProgramSourceTests
     }
 
     [Fact]
-    public void Studio_uses_platform_defaults_without_phantom_native_viewport_configuration()
+    public void Studio_uses_platform_detection_without_hardcoded_Windows_rendering_policy()
     {
         var source = LoadSource("Program.cs");
 
@@ -30,7 +30,7 @@ public sealed class ProgramSourceTests
         Assert.Contains(".WithInterFont()", source, StringComparison.Ordinal);
         Assert.DoesNotContain("Win32PlatformOptions", source, StringComparison.Ordinal);
         Assert.DoesNotContain("Win32RenderingMode", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("Vulkan", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("OperatingSystem.IsWindows", source, StringComparison.Ordinal);
     }
 
     [Fact]

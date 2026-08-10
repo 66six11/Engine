@@ -24,6 +24,12 @@ Frame Debugger岛与其scheduler专属枚举也已删除；独立C++ editor targ
 专用 project-core adapter 和 Release identity closure 同时成立后，重新引入最小 create/open ProjectSession；它不撤销
 R0 对旧 facade、无 caller adapter、renderer/Vulkan Project IO 耦合和 phantom distribution 的删除结论。
 
+后续更新：2026-08-05 的 #361 在默认 SceneDocument、现有 Dock panel 与 Release Studio 均成为真实 consumer 后，
+重新引入 UI-neutral `ViewportSession`、窄 EngineBridge frame lease、`editor_native` deployment 与专用 Avalonia presentation；
+它不恢复旧 View-owned bridge、static drain、无 consumer DTO/facade 或第二套 Dock/renderer 路径。当前合同见
+[ADR-0002](0002-cross-platform-viewport-presentation.md) 与
+[Viewport 渲染架构](../architecture/viewport-rendering.md)。
+
 取代：
 
 - [ADR-0004：采用统一 Editor Extension Framework](0004-unified-editor-extension-framework.md) 中

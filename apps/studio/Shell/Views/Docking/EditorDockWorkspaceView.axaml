@@ -15,33 +15,35 @@
         </Style>
     </UserControl.Styles>
 
-    <Grid x:Name="DockRoot"
-          Classes="owned-dock-root"
-          ClipToBounds="False">
-        <ContentControl x:Name="DockLayout"
-                        Classes="owned-dock-node-host"
-                        Margin="4"
-                        IsVisible="{Binding HasRootNode}"
-                        Content="{Binding RootNode}" />
+    <views:EditorDockPresentationLayoutHost x:Name="PresentationLayoutHost">
+        <Grid x:Name="DockRoot"
+              Classes="owned-dock-root"
+              ClipToBounds="False">
+            <ContentControl x:Name="DockLayout"
+                            Classes="owned-dock-node-host"
+                            Margin="4"
+                            IsVisible="{Binding HasRootNode}"
+                            Content="{Binding RootNode}" />
 
-        <Canvas x:Name="DockOverlay"
-                ZIndex="20"
-                ClipToBounds="False"
-                IsHitTestVisible="False">
-            <ContentControl x:Name="DraggedDockTabPreview"
-                            IsVisible="False">
-                <ContentControl.ContentTemplate>
-                    <DataTemplate x:DataType="vm:EditorDockTabStripItemViewModel">
-                        <views:EditorDockTabItemView />
-                    </DataTemplate>
-                </ContentControl.ContentTemplate>
-            </ContentControl>
+            <Canvas x:Name="DockOverlay"
+                    ZIndex="20"
+                    ClipToBounds="False"
+                    IsHitTestVisible="False">
+                <ContentControl x:Name="DraggedDockTabPreview"
+                                IsVisible="False">
+                    <ContentControl.ContentTemplate>
+                        <DataTemplate x:DataType="vm:EditorDockTabStripItemViewModel">
+                            <views:EditorDockTabItemView />
+                        </DataTemplate>
+                    </ContentControl.ContentTemplate>
+                </ContentControl>
 
-            <views:EditorDockDropGuideView DataContext="{Binding DragState}"
-                                           Canvas.Left="{Binding GuideX}"
-                                           Canvas.Top="{Binding GuideY}"
-                                           Width="{Binding GuideWidth}"
-                                           Height="{Binding GuideHeight}" />
-        </Canvas>
-    </Grid>
+                <views:EditorDockDropGuideView DataContext="{Binding DragState}"
+                                               Canvas.Left="{Binding GuideX}"
+                                               Canvas.Top="{Binding GuideY}"
+                                               Width="{Binding GuideWidth}"
+                                               Height="{Binding GuideHeight}" />
+            </Canvas>
+        </Grid>
+    </views:EditorDockPresentationLayoutHost>
 </UserControl>

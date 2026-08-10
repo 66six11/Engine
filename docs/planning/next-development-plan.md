@@ -10,7 +10,7 @@
 
 - 已有 package-first 基线：`rendergraph` 后端无关，`rhi-vulkan` 不依赖 RenderGraph，Vulkan/RG 翻译在 `rhi_vulkan_rendergraph`，`renderer_basic` 不暴露 Vulkan。
 - Vulkan 主路径已覆盖 dynamic rendering、synchronization2 barrier、descriptor/pipeline wrapper、transient image pool、buffer upload、compute dispatch、offscreen RenderView、Frame Debug replay 和 editor viewport sampled texture。
-- native Dear ImGui Editor 已具备 production workbench shell、Scene View camera/grid/debug-line、Live RG View、Frame Debugger、Asset Browser snapshot-backed catalog 和多项 smoke。Avalonia Studio 已完成 R0 硬切；#352 建立真实 ProjectSession，#353 已接通 `SceneDocument -> EditWorld -> Hierarchy/Inspector -> dirty/save/reopen`。当前 #359 建立 UI-neutral `ViewportSession`、EngineBridge typed frame lease 和 native Scene/Game/Preview V4 request，为可见 Scene View 与后续多 viewport/material/animation preview 提供共同边界。最近项目、模板、asset catalog、可见 viewport 与 Play Mode 尚未接入该 session。
+- native Dear ImGui Editor 已具备 production workbench shell、Scene View camera/grid/debug-line、Live RG View、Frame Debugger、Asset Browser snapshot-backed catalog 和多项 smoke。Avalonia Studio 已完成 R0 硬切；#352 建立真实 ProjectSession，#353 已接通 `SceneDocument -> EditWorld -> Hierarchy/Inspector -> dirty/save/reopen`。#359 建立 UI-neutral `ViewportSession`、EngineBridge typed frame lease 和 native Scene/Game/Preview V4 request；当前 #361 正把首个 dirty-only Avalonia Scene View、composition import、drain/shutdown 与 Release deployment 接到同一边界。最近项目、模板、asset catalog、多 viewport/input/preview 与 Play Mode 尚未接入。
 - `asset-core` / `asset-pipeline` / `project-core` / `material-core` / `scene-core` 已是 CPU/headless 数据模型或 baseline package，但尚未形成“真实 scene object -> material/mesh/texture product -> GPU resource -> editor authoring”的完整闭环。
 - 当前风险不是缺少大系统名词，而是 route 太多：渲染、资产、scene、editor、material、play/session 必须按可验证切片合流。
 
@@ -48,14 +48,14 @@
 | Renderer / RenderView | 已有 Scene/Game/Preview keyed request、world grid、debug line、offscreen sampled target、多 view diagnostics、scene draw packet contract | 引入真实 mesh/material/resource-backed scene rendering 和 lighting/postprocess feature |
 | Asset / Project | 已有 project descriptor、source scan、metadata discovery、product manifest、dry-run/execute asset-processor baseline、texture product upload smoke、runtime resource handle baseline | texture/mesh importer 最小闭环、dependency invalidation、GPU resource owner 收敛 |
 | Material | 已有 CPU-only signature、descriptor contract、pipeline key hash smoke、renderer binding smoke、shader reflection adapter、CPU-only `.ashader` parser/document diagnostics、generated Slang skeleton、generated Slang compile/reflection smoke、generated entry manifest、CPU-only `.amat` minimal IO、#156 deterministic `.amat` product blob 和 #158 deterministic `.ashader` generated Slang product blob | #163 Slang compile/reflection product、material product dependency invalidation、renderer material product 消费和 editor preview |
-| Scene / Editor | 已有 scene-core entity/transform baseline、selection/dirty/state event contracts、production workbench shell、Asset Browser | scene persistence、Hierarchy/Inspector real data、transaction-backed edits、selection outline/gizmo |
+| Scene / Editor | 已有 SceneDocument-owned EditWorld、默认场景持久化、Hierarchy/Inspector、dirty/save/reopen、production workbench shell 与 viewport foundation | #361 首个可见 Scene View 收口；随后补 transaction/Undo、selection outline/gizmo |
 | Workflow / Project | Project fields 完整；#20 是 roadmap/docs sync 入口 | 重复 Project item 候选需单独审查，计划变更后同步 #20 |
 
 ## 当前执行优先级（2026-08-04）
 
 ### P0：可复用 Viewport foundation 与首个可见 Scene View
 
-#353 的项目/场景编辑闭环已经成立。当前 #359 先收敛不依赖 Avalonia 的 viewport foundation：
+#353 的项目/场景编辑闭环已经成立，#359 已收敛不依赖 Avalonia 的 viewport foundation：
 
 - `ViewportSessionId + Scene/Game/Preview + DocumentScene target + camera + request sequence`；
 - 每个 session 单 in-flight、dirty-only invalidation 合并与 stale revision completion 拒绝；
@@ -63,12 +63,29 @@
 - EngineBridge exact-once `ViewportFrameLease`，raw handles 不进入 Application/ViewModel；
 - native V4 request 与真实 Vulkan 双 session/slot、Scene/Game/Preview smoke。
 
-紧随其后的直接 Slice 是单个可见 Scene View：绑定 `ViewportPresentation`、Avalonia composition capability/import、
+当前 #361 的直接 Slice 是单个可见 Scene View：绑定 `ViewportPresentation`、Avalonia composition capability/import、
 surface generation、resize/detach/drain，并把当前 SceneDocument Transform 轴线呈现在 Studio。该 presentation 必须保留
 session 与 panel/dock 解耦，因此以后增加第二 Scene View、Game View、材质预览和动画预览时不复制 renderer 路径；材质/
 动画预览都是 `Preview` render kind + 独立 preview target/world，而不是新的 renderer kind。
 
 Code-first authoring 试点继续保留，但排在首个可见 Scene View 之后；它不阻塞 viewport 或场景闭环。
+
+### MCP 扩展门禁（不进入 #361）
+
+当前 MCP 固定为六项本机只读观测 tools。实体创建、名称/Transform 修改与 Save 以后可以成为受控 MCP 操作，但接入顺序固定为：
+
+```text
+authoritative Application command/use-case
+-> headless success/failure/revision/dirty/Undo evidence
+-> current-user Host capability + explicit Mutate grant
+-> typed CLI
+-> narrow MCP tool
+```
+
+MCP 不成为业务 owner，也不新增第二条 mutation 路径。禁止暴露 native/GPU handle、任意文件或 shell、Dock/ViewModel object、
+P/Invoke/Vulkan、runtime shutdown，或绕过 ProjectSession、expected revision、dirty/savepoint 与 Undo。写入 tool 必须有窄 schema、
+bounded result、取消、幂等 operation ID、typed receipt 与 audit；remote 默认不开放。该工作应在 SceneDocument command/transaction
+合同成熟后建独立 Slice，不能与 Scene View presentation 或 Code-first UI 试点捆绑。
 
 ### 已完成基线：项目可真实编辑的最小闭环
 

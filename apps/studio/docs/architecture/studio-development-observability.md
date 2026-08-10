@@ -615,8 +615,19 @@ newline-delimited UTF-8 JSON-RPC，stdin EOF为graceful shutdown。`server/disco
 - token 不进入 prompt/result/log；adapter 退出不影响 Studio，重启后重新验证 instance/session/generation；
 - adapter 默认只有 Observe，不能在会话中自行升级 Capture/Mutate。
 
-未来写命令至少晚于 R2 authoritative mutation 与 R3 semantic Action，并具 allowlist、scope/generation、expected
-`DocumentRevision`、operation/idempotency、typed receipt、Undo、uncertain outcome 和 audit。禁止通用 field/path/property write。
+未来写命令至少晚于 R2 authoritative mutation 与 R3 semantic Action，并具 allowlist、显式 Mutate grant、
+scope/generation、expected `DocumentRevision`、operation/idempotency、typed receipt、Undo、uncertain outcome、取消和 audit。
+MCP 只是最后接入的外部 adapter：命令必须先成为 headless Application command/use-case，再由本机 Host 和 typed CLI 证明，
+最后映射为窄 MCP tool；Studio、Application 与 native owner 不依赖 MCP。
+
+允许的未来最小写面是有界业务意图，例如 create entity、set entity name/Transform 和 save document；它们必须复用 UI
+使用的 revision/dirty/savepoint/transaction/lifecycle 路径，参数 schema 和结果不能降级为自由文本。明确禁止：
+
+- raw native/GPU handle、Vulkan/RHI 调用、native runtime shutdown 或 Dock/Control/ViewModel object；
+- 任意 filesystem path、shell/process、反射 method/property write，或绕过 ProjectSession/SceneDocument owner；
+- 绕过 dirty/Undo/expected revision、自动扩大 capability、remote 默认开放，或把授权 token/secret 放入 prompt/result/log。
+
+因此 #361 只保留现有六项 read-only MCP tools；Scene View 呈现和 MCP mutation 不在同一 Slice 中扩面。
 
 ## 10. Error 与 failure
 

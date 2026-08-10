@@ -65,6 +65,7 @@ Studio 文档分为三类，不能混用：
 - [ADR-0005：采用隔离构建、generation reload 与 last-known-good](../adr/0005-managed-editor-module-build-and-reload.md)（Superseded for Studio v1）
 - [ADR-0006：面板交互 Resize 采用连续呈现与最新尺寸收敛](../adr/0006-viewport-interactive-resize.md)
 - [ADR-0007：Studio 前端采用 Document-first 硬切重构](../adr/0007-studio-frontend-hard-cut.md)
+- [ADR-0011：Studio shared viewport 由 native 进程级 RenderThread 拥有](../adr/0011-native-shared-viewport-render-thread.md)
 
 ## Current guides
 

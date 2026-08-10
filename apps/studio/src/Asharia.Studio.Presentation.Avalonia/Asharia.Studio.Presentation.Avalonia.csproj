@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>Asharia.Studio.Presentation.Avalonia</AssemblyName>
+    <RootNamespace>Asharia.Studio.Presentation.Avalonia</RootNamespace>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Editor.Tests" />
+    <InternalsVisibleTo Include="Asharia.Studio.Headless.Tests" />
+    <InternalsVisibleTo Include="Editor" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="12.1.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Asharia.Studio.Application\Asharia.Studio.Application.csproj" />
+    <ProjectReference Include="..\Asharia.Studio.EngineBridge\Asharia.Studio.EngineBridge.csproj" />
+  </ItemGroup>
+</Project>

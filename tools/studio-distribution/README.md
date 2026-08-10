@@ -5,7 +5,7 @@
 - an Editor Image built from an isolated `dotnet publish` directory for the fixed Studio plus an exact hostfxr/runtime selection; the pinned SDK apphost template is a build-time qualification input only;
 - the repo-owned production Windows Editor Host Profile, emitted as exact canonical bytes.
 
-The current v1 Editor Image is explicitly **Windows x64** because Studio publishes a `win-x64` apphost. It requires the real top-level `Editor.exe`, `Editor.dll`, `Editor.deps.json`, `Editor.runtimeconfig.json`, and `Asharia.Studio.Application.dll`. On every normalized publish path, the producer rejects the retired `Asharia.Editor`, `Asharia.Runtime.Contracts`, `Asharia.Studio.EngineBridge`, `editor_native`, and `slang` artifact stems (including sidecars and case variants), plus reserved `managed`/`metadata`/`sdk`/`packs` build-environment directories, `dotnet.exe`, and `managed-build-environment.json`. The R0 Studio process has no reader or lifecycle owner for those artifacts.
+The current v1 Editor Image is explicitly **Windows x64** because Studio publishes a `win-x64` apphost. It requires the real top-level `Editor.exe`, `Editor.dll`, `Editor.deps.json`, `Editor.runtimeconfig.json`, `Asharia.Studio.Application.dll`, `Asharia.Runtime.Contracts.dll`, `Asharia.Studio.EngineBridge.dll`, and `Asharia.Studio.Presentation.Avalonia.dll`. It also requires the exact project, scene, and viewport native DLLs, validates their production exports, and admits exactly the 12 declared renderer-basic shader/reflection files below `shaders/renderer-basic`. On every normalized publish path, the producer still rejects the retired `Asharia.Editor`, development host/protocol, and `slang` artifact stems (including sidecars and case variants), unexpected `editor_native` sidecars or locations, extra renderer-basic shaders, reserved `managed`/`metadata`/`sdk`/`packs` build-environment directories, `dotnet.exe`, and `managed-build-environment.json`.
 
 The producer copies only selected trees, returns the complete `path + role + mediaType + size + sha256` binding set on stdout, and commits a fresh output root with one no-overwrite directory move. It does not emit the retired ProjectCode managed-build-environment projection, run Conan/CMake, discover a “latest” version, generate an `EngineGenerationId`, combine inputs into a Distribution generation, or invoke Python.
 
@@ -20,7 +20,8 @@ This is a build/release tool, not an untrusted-filesystem sandbox. Input roots a
 The caller explicitly supplies the SDK apphost-template version, hostfxr version, and host-runtime version. The producer statically verifies:
 
 - the selected SDK apphost template and the fixed `Editor.dll` with AppRelative `../managed/dotnet` binding;
-- `Editor` and `Asharia.Studio.Application` identities plus deps/runtimeconfig evidence;
+- required Studio managed identities plus deps/runtimeconfig evidence;
+- project/scene/viewport native PE identities and required exports, plus the exact viewport shader bundle;
 - required `hostfxr.dll` direct exports;
 - selected hostfxr/runtime assembly and product-version anchors.
 
@@ -37,7 +38,7 @@ dotnet test tools\studio-distribution.Tests\Asharia.Studio.Distribution.Tests.cs
 
 ## Produce an Editor Image input
 
-Use a fresh, release-orchestrator-owned publish directory. `dotnet publish` does not clean a reused `PublishDir`, so reuse is outside this contract. `EditorImage.pubxml` configures the apphost to search the sibling bundled runtime at `../managed/dotnet`; it has no Conan/CMake or native-output prerequisite.
+Use a fresh, release-orchestrator-owned publish directory. `dotnet publish` does not clean a reused `PublishDir`, so reuse is outside this contract. `EditorImage.pubxml` configures the apphost to search the sibling bundled runtime at `../managed/dotnet`. Conan plus the selected Release CMake preset must already have produced the three native adapters and renderer-basic shader bundle copied by `Editor.csproj`.
 
 ```powershell
 $releaseRoot = 'D:\Build\Asharia'

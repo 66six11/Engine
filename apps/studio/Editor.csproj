@@ -6,9 +6,15 @@
         <ApplicationManifest>app.manifest</ApplicationManifest>
         <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+        <AshariaStudioTargetsWindows Condition="'$(RuntimeIdentifier)' == '' and '$(OS)' == 'Windows_NT'">true</AshariaStudioTargetsWindows>
+        <AshariaStudioTargetsWindows Condition="'$(RuntimeIdentifier)' != '' and $([System.String]::Copy('$(RuntimeIdentifier)').StartsWith('win-'))">true</AshariaStudioTargetsWindows>
+        <DefineConstants Condition="'$(AshariaStudioTargetsWindows)' == 'true'">$(DefineConstants);ASHARIA_STUDIO_WINDOWS</DefineConstants>
+        <StudioNativeBuildPreset Condition="'$(StudioNativeBuildPreset)' == '' and '$(Configuration)' == 'Release'">msvc-release</StudioNativeBuildPreset>
         <StudioNativeBuildPreset Condition="'$(StudioNativeBuildPreset)' == ''">msvc-debug</StudioNativeBuildPreset>
         <StudioProjectNativeLibrary>$(MSBuildProjectDirectory)\..\..\build\cmake\$(StudioNativeBuildPreset)\packages\project-core\asharia_project_native.dll</StudioProjectNativeLibrary>
         <StudioSceneNativeLibrary>$(MSBuildProjectDirectory)\..\..\build\cmake\$(StudioNativeBuildPreset)\packages\scene-core\asharia_scene_native.dll</StudioSceneNativeLibrary>
+        <StudioViewportNativeLibrary>$(MSBuildProjectDirectory)\..\..\build\cmake\$(StudioNativeBuildPreset)\apps\editor\editor_native.dll</StudioViewportNativeLibrary>
+        <StudioViewportShaderDirectory>$(MSBuildProjectDirectory)\..\..\build\cmake\$(StudioNativeBuildPreset)\packages\renderer-basic\shaders</StudioViewportShaderDirectory>
     </PropertyGroup>
 
     <ItemGroup>
@@ -25,6 +31,9 @@
     <ItemGroup>
       <ProjectReference Include="src\Asharia.Studio.Application\Asharia.Studio.Application.csproj" />
       <ProjectReference Include="src\Asharia.Studio.EngineBridge\Asharia.Studio.EngineBridge.csproj" />
+      <ProjectReference Include="src\Asharia.Studio.Presentation.Avalonia\Asharia.Studio.Presentation.Avalonia.csproj" />
+      <ProjectReference Include="src\Asharia.Studio.Presentation.Avalonia.Windows\Asharia.Studio.Presentation.Avalonia.Windows.csproj"
+                        Condition="'$(AshariaStudioTargetsWindows)' == 'true'" />
       <ProjectReference Include="src\Asharia.Studio.DevelopmentHost\Asharia.Studio.DevelopmentHost.csproj"
                         Condition="'$(Configuration)' == 'Debug'" />
       <ProjectReference Include="src\Asharia.Studio.DevelopmentProtocol\Asharia.Studio.DevelopmentProtocol.csproj"
@@ -32,13 +41,13 @@
     </ItemGroup>
 
     <ItemGroup>
-        <PackageReference Include="Avalonia" Version="12.0.4" />
-        <PackageReference Include="Avalonia.Desktop" Version="12.0.4" />
-        <PackageReference Include="Avalonia.Fonts.Inter" Version="12.0.4" />
-        <PackageReference Include="Avalonia.Themes.Fluent" Version="12.0.4" />
+        <PackageReference Include="Avalonia" Version="12.1.0" />
+        <PackageReference Include="Avalonia.Desktop" Version="12.1.0" />
+        <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.0" />
+        <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.0" />
     </ItemGroup>
 
-    <ItemGroup Condition="'$(OS)' == 'Windows_NT'">
+    <ItemGroup Condition="'$(AshariaStudioTargetsWindows)' == 'true'">
         <None Include="$(StudioProjectNativeLibrary)"
               Link="asharia_project_native.dll"
               CopyToOutputDirectory="PreserveNewest"
@@ -47,15 +56,38 @@
               Link="asharia_scene_native.dll"
               CopyToOutputDirectory="PreserveNewest"
               CopyToPublishDirectory="PreserveNewest" />
+        <None Include="$(StudioViewportNativeLibrary)"
+              Link="editor_native.dll"
+              CopyToOutputDirectory="PreserveNewest"
+              CopyToPublishDirectory="PreserveNewest" />
+        <None Include="$(StudioViewportShaderDirectory)\debug_line.frag.reflection.json;
+                       $(StudioViewportShaderDirectory)\debug_line.frag.spv;
+                       $(StudioViewportShaderDirectory)\debug_line.vert.reflection.json;
+                       $(StudioViewportShaderDirectory)\debug_line.vert.spv;
+                       $(StudioViewportShaderDirectory)\descriptor_layout.frag.reflection.json;
+                       $(StudioViewportShaderDirectory)\descriptor_layout.frag.spv;
+                       $(StudioViewportShaderDirectory)\descriptor_layout.vert.reflection.json;
+                       $(StudioViewportShaderDirectory)\descriptor_layout.vert.spv;
+                       $(StudioViewportShaderDirectory)\world_grid.frag.reflection.json;
+                       $(StudioViewportShaderDirectory)\world_grid.frag.spv;
+                       $(StudioViewportShaderDirectory)\world_grid.vert.reflection.json;
+                       $(StudioViewportShaderDirectory)\world_grid.vert.spv"
+              Link="shaders\renderer-basic\%(Filename)%(Extension)"
+              CopyToOutputDirectory="PreserveNewest"
+              CopyToPublishDirectory="PreserveNewest" />
     </ItemGroup>
 
     <Target Name="ValidateStudioProjectNativeLibrary"
             BeforeTargets="PrepareForBuild;Publish"
-            Condition="'$(OS)' == 'Windows_NT'">
+            Condition="'$(AshariaStudioTargetsWindows)' == 'true'">
         <Error Condition="!Exists('$(StudioProjectNativeLibrary)')"
                Text="The canonical Studio project adapter is missing at '$(StudioProjectNativeLibrary)'. Run Conan, configure the $(StudioNativeBuildPreset) preset, and build the asharia-project-native target first." />
         <Error Condition="!Exists('$(StudioSceneNativeLibrary)')"
                Text="The canonical Studio scene adapter is missing at '$(StudioSceneNativeLibrary)'. Run Conan, configure the $(StudioNativeBuildPreset) preset, and build the asharia-scene-native target first." />
+        <Error Condition="!Exists('$(StudioViewportNativeLibrary)')"
+               Text="The Studio viewport adapter is missing at '$(StudioViewportNativeLibrary)'. Run Conan, configure the $(StudioNativeBuildPreset) preset, and build the editor-native target first." />
+        <Error Condition="!Exists('$(StudioViewportShaderDirectory)\world_grid.vert.spv')"
+               Text="The Studio viewport shader bundle is missing at '$(StudioViewportShaderDirectory)'. Build the asharia-renderer-basic-shaders target first." />
     </Target>
 
 </Project>

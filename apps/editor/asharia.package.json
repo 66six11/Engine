@@ -47,6 +47,7 @@
     "editor-native": [
       "asharia-archive",
       "asharia-renderer-basic-vulkan",
+      "asharia-renderer-basic-shaders",
       "asharia-rhi-vulkan"
     ],
     "asharia-editor-imgui-shaders": ["asharia-editor-imgui-frag"]

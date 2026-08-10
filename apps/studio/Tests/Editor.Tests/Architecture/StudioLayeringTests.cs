@@ -320,12 +320,36 @@ public sealed class StudioLayeringTests
     }
 
     [Fact]
-    public void Disconnected_managed_viewport_native_closure_is_deleted()
+    public void Retired_viewport_closure_stays_deleted_while_the_new_adapter_is_deployed()
     {
         var root = FindRepositoryRoot();
         var projectSource = File.ReadAllText(Path.Combine(root, "Editor.csproj"));
         var programSource = File.ReadAllText(Path.Combine(root, "Program.cs"));
         var appSource = File.ReadAllText(Path.Combine(root, "App.axaml.cs"));
+        var scenePanelXaml = File.ReadAllText(Path.Combine(
+            root,
+            "Shell",
+            "Views",
+            "Panels",
+            "StudioScenePanelView.axaml"));
+        var viewportControlSource = File.ReadAllText(Path.Combine(
+            root,
+            "src",
+            "Asharia.Studio.Presentation.Avalonia",
+            "Viewports",
+            "ViewportCompositionControl.cs"));
+        var viewportStreamFenceSource = File.ReadAllText(Path.Combine(
+            root,
+            "src",
+            "Asharia.Studio.Presentation.Avalonia",
+            "Viewports",
+            "ViewportStreamWorkFence.cs"));
+        var transactionCoordinatorSource = File.ReadAllText(Path.Combine(
+            root,
+            "src",
+            "Asharia.Studio.Presentation.Avalonia",
+            "Viewports",
+            "ViewportPresentationTransactionCoordinator.cs"));
 
         Assert.False(Directory.Exists(Path.Combine(root, "Core", "Interop", "Viewports")));
         Assert.False(Directory.Exists(Path.Combine(root, "Core", "Models", "Viewports")));
@@ -354,10 +378,90 @@ public sealed class StudioLayeringTests
             "Editor.Tests",
             "Build",
             "EditorNativeRuntimeCopyTests.cs")));
-        Assert.DoesNotContain("editor_native.dll", projectSource, StringComparison.Ordinal);
+        Assert.Contains("editor_native.dll", projectSource, StringComparison.Ordinal);
+        Assert.Contains(
+            "Asharia.Studio.Presentation.Avalonia",
+            projectSource,
+            StringComparison.Ordinal);
+        Assert.Contains("shaders\\renderer-basic", projectSource, StringComparison.Ordinal);
         Assert.DoesNotContain("slang.dll", projectSource, StringComparison.Ordinal);
         Assert.Contains("asharia_project_native.dll", projectSource, StringComparison.Ordinal);
         Assert.Contains("asharia_scene_native.dll", projectSource, StringComparison.Ordinal);
+        Assert.Contains(
+            "<presentation:ViewportCompositionControl",
+            scenePanelXaml,
+            StringComparison.Ordinal);
+        Assert.Contains("Session=\"{Binding Session}\"", scenePanelXaml, StringComparison.Ordinal);
+        Assert.Contains("IsRealtime=\"{Binding IsRealtime}\"", scenePanelXaml, StringComparison.Ordinal);
+        Assert.Contains("Content=\"Realtime\"", scenePanelXaml, StringComparison.Ordinal);
+        Assert.Contains("#SceneViewport.IsDegraded", scenePanelXaml, StringComparison.Ordinal);
+        Assert.Contains(
+            "AutomationProperties.ControlTypeOverride=\"Group\"",
+            scenePanelXaml,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("DispatcherTimer", viewportControlSource, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "Dispatcher.UIThread.Post(PublishLatestFrame",
+            viewportControlSource,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("CompositionSurfacePair", viewportControlSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("PromoteStagingSurfaceAsync", viewportControlSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("ExactResize", viewportControlSource, StringComparison.Ordinal);
+        Assert.Contains(".UpdateWithSemaphoresAsync(", viewportControlSource, StringComparison.Ordinal);
+        Assert.Contains("PreparePresentationAsync", viewportControlSource, StringComparison.Ordinal);
+        Assert.Contains("TryValidatePreparedPresentation", transactionCoordinatorSource, StringComparison.Ordinal);
+        Assert.Contains("ApplyPreparedPresentation", transactionCoordinatorSource, StringComparison.Ordinal);
+        Assert.Contains("RequestPresentationBatchRendered", transactionCoordinatorSource, StringComparison.Ordinal);
+        Assert.Contains("WaitForReadyFrameAsync", viewportControlSource, StringComparison.Ordinal);
+        Assert.Contains("WaitForStreamClosedAsync", viewportControlSource, StringComparison.Ordinal);
+        Assert.Contains(
+            "stream.WorkFence.BeginRetirement(",
+            viewportControlSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "public Task PumpTask { get; private set; } = Task.CompletedTask;",
+            viewportStreamFenceSource,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("private Task frameTask_", viewportControlSource, StringComparison.Ordinal);
+        Assert.Contains(
+            "public bool IsRetiring { get; private set; }",
+            viewportStreamFenceSource,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("Console.Error.WriteLine(", viewportControlSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("await Task.Delay(1);", viewportControlSource, StringComparison.Ordinal);
+        Assert.Contains(
+            "await Task.Delay(1, cancellationToken).ConfigureAwait(false);",
+            viewportControlSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "await Task.Delay(1).ConfigureAwait(false);",
+            viewportControlSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "!ReferenceEquals(stream.WorkFence.PumpTask, observedPump)",
+            viewportControlSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "stream.WorkFence.IsRetiring || !ReferenceEquals(desiredStream_, stream)",
+            viewportControlSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "ViewportInvalidationReason.Realtime",
+            viewportControlSource,
+            StringComparison.Ordinal);
+        Assert.Equal(
+            2,
+            viewportControlSource.Split(
+                "RequestCompositionUpdate(",
+                StringSplitOptions.None).Length - 1);
+        Assert.Contains(
+            "RequestCompositionBatchCommitAsync().Processed",
+            viewportControlSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "RequestCompositionBatchCommitAsync().Rendered",
+            viewportControlSource,
+            StringComparison.Ordinal);
         Assert.DoesNotContain("Win32PlatformOptions", programSource, StringComparison.Ordinal);
         Assert.DoesNotContain("Win32RenderingMode", programSource, StringComparison.Ordinal);
         Assert.DoesNotContain("StudioNativeTeardown", appSource, StringComparison.Ordinal);
@@ -546,6 +650,57 @@ public sealed class StudioLayeringTests
             "Models",
             "Scene",
             "SceneProviderDescriptor.cs")));
+        Assert.Empty(offenders);
+    }
+
+    [Fact]
+    public void Shared_dock_and_presentation_sources_are_platform_neutral()
+    {
+        var root = FindRepositoryRoot();
+        var sharedRoots = new[]
+        {
+            Path.Combine(root, "Shell", "Views", "Docking"),
+            Path.Combine(root, "src", "Asharia.Studio.Presentation.Avalonia"),
+        };
+        var explicitWindowsRoot = Path.Combine(
+            root,
+            "src",
+            "Asharia.Studio.Presentation.Avalonia.Windows");
+        var forbiddenTokens = new[]
+        {
+            "Win32",
+            "HWND",
+            "USER32",
+            "user32.dll",
+            "Win32Properties",
+            "OperatingSystem.IsWindows",
+            "System.Runtime.InteropServices",
+            "LibraryImport",
+            "DllImport",
+            "Microsoft.Win32",
+        };
+
+        Assert.All(sharedRoots, path => Assert.True(
+            Directory.Exists(path),
+            $"Shared presentation source root is missing: {path}"));
+        Assert.True(
+            Directory.Exists(explicitWindowsRoot),
+            $"The explicit Windows presentation adapter root is missing: {explicitWindowsRoot}");
+
+        var offenders = sharedRoots
+            .SelectMany(path => Directory.EnumerateFiles(path, "*.cs", SearchOption.AllDirectories))
+            .SelectMany(path =>
+            {
+                var source = File.ReadAllText(path);
+                return forbiddenTokens
+                    .Where(token =>
+                        Path.GetFileName(path).Contains(token, StringComparison.OrdinalIgnoreCase) ||
+                        source.Contains(token, StringComparison.OrdinalIgnoreCase))
+                    .Select(token => $"{Path.GetRelativePath(root, path)}: {token}");
+            })
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
         Assert.Empty(offenders);
     }
 

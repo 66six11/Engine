@@ -268,7 +268,7 @@ dotnet test apps\studio\Tests\Editor.Tests\Editor.Tests.csproj -c Release --no-b
 该test owner不得进入production App，不得增加fault CLI mode、artifact/crash framework或第二diagnostics truth；focused
 结果仍不能替代下方canonical solution test。
 
-`Asharia.Studio.sln` 是唯一 managed solution，当前精确列出 7 个 production 与 8 个 test projects（含独立
+`Asharia.Studio.sln` 是唯一 managed solution，当前精确列出 8 个 production 与 9 个 test projects（含独立
 `asharia-studio-observe`与其tests）；
 独立
 `Asharia.Studio.Headless.Tests` 使用 Avalonia 12/xUnit v3 dispatcher 运行 production XAML，旧 `Editor.sln` 已删除。

@@ -15,13 +15,16 @@ public sealed class ViewportSession
     private ViewportCameraSnapshot camera_;
     private ViewportDebugProxySnapshot[] debugProxies_;
     private int totalDebugProxyCount_;
-    private ViewportExtent? lastExtent_;
+    private ViewportRenderSize? lastRenderSize_;
     private ViewportInvalidationReason pendingReasons_ = ViewportInvalidationReason.InitialFrame;
     private ulong lastSequence_;
+    private ulong minimumPresentableSequence_ = 1;
     private ulong inFlightSequence_;
     private ulong inFlightTargetRevision_;
     private ViewportInvalidationReason inFlightReasons_;
     private bool isClosed_;
+
+    public event EventHandler? RefreshRequested;
 
     public ViewportSession(
         ViewportSessionId sessionId,
@@ -62,6 +65,7 @@ public sealed class ViewportSession
     public void SynchronizeDocument(SceneDocumentSnapshot document)
     {
         ArgumentNullException.ThrowIfNull(document);
+        var requestRefresh = false;
         lock (gate_)
         {
             ThrowIfClosed();
@@ -84,13 +88,17 @@ public sealed class ViewportSession
 
             targetRevision_ = document.Revision;
             (debugProxies_, totalDebugProxyCount_) = CaptureDebugProxies(document);
-            pendingReasons_ |= ViewportInvalidationReason.TargetChanged;
+            requestRefresh = InvalidateLocked(
+                ViewportInvalidationReason.TargetChanged,
+                advancePresentationFence: true);
         }
+        RaiseRefreshRequested(requestRefresh);
     }
 
     public void SetCamera(ViewportCameraSnapshot camera)
     {
         ArgumentNullException.ThrowIfNull(camera);
+        var requestRefresh = false;
         lock (gate_)
         {
             ThrowIfClosed();
@@ -100,8 +108,11 @@ public sealed class ViewportSession
             }
 
             camera_ = camera;
-            pendingReasons_ |= ViewportInvalidationReason.CameraChanged;
+            requestRefresh = InvalidateLocked(
+                ViewportInvalidationReason.CameraChanged,
+                advancePresentationFence: true);
         }
+        RaiseRefreshRequested(requestRefresh);
     }
 
     public void Invalidate(ViewportInvalidationReason reasons)
@@ -112,18 +123,24 @@ public sealed class ViewportSession
             throw new ArgumentOutOfRangeException(nameof(reasons), reasons, null);
         }
 
+        var requestRefresh = false;
         lock (gate_)
         {
             ThrowIfClosed();
-            pendingReasons_ |= reasons;
+            requestRefresh = InvalidateLocked(
+                reasons,
+                advancePresentationFence:
+                    (reasons & PresentationInvalidationReasons) !=
+                    ViewportInvalidationReason.None);
         }
+        RaiseRefreshRequested(requestRefresh);
     }
 
-    public bool TryBeginRender(ViewportExtent extent, out ViewportRenderRequest request)
+    public bool TryBeginRender(ViewportRenderSize renderSize, out ViewportRenderRequest request)
     {
-        if (!extent.IsRenderable)
+        if (!renderSize.LogicalExtent.IsRenderable || !renderSize.AllocationExtent.IsRenderable)
         {
-            throw new ArgumentOutOfRangeException(nameof(extent));
+            throw new ArgumentOutOfRangeException(nameof(renderSize));
         }
 
         lock (gate_)
@@ -133,10 +150,12 @@ public sealed class ViewportSession
             {
                 return false;
             }
-            if (lastExtent_ != extent)
+            if (lastRenderSize_ != renderSize)
             {
-                lastExtent_ = extent;
-                pendingReasons_ |= ViewportInvalidationReason.ExtentChanged;
+                lastRenderSize_ = renderSize;
+                _ = InvalidateLocked(
+                    ViewportInvalidationReason.ExtentChanged,
+                    advancePresentationFence: false);
             }
             if (pendingReasons_ == ViewportInvalidationReason.None)
             {
@@ -156,7 +175,7 @@ public sealed class ViewportSession
                 targetKind_,
                 targetId_,
                 targetRevision_,
-                extent,
+                renderSize,
                 camera_,
                 reasons,
                 debugProxies_,
@@ -165,8 +184,87 @@ public sealed class ViewportSession
         }
     }
 
+    public bool TryPublishLatest(ViewportRenderSize renderSize, out ViewportRenderRequest request)
+    {
+        if (!renderSize.LogicalExtent.IsRenderable || !renderSize.AllocationExtent.IsRenderable)
+        {
+            throw new ArgumentOutOfRangeException(nameof(renderSize));
+        }
+
+        lock (gate_)
+        {
+            request = null!;
+            if (isClosed_)
+            {
+                return false;
+            }
+            if (lastRenderSize_ != renderSize)
+            {
+                lastRenderSize_ = renderSize;
+                _ = InvalidateLocked(
+                    ViewportInvalidationReason.ExtentChanged,
+                    advancePresentationFence: false);
+            }
+            if (pendingReasons_ == ViewportInvalidationReason.None)
+            {
+                return false;
+            }
+
+            var sequence = checked(++lastSequence_);
+            var reasons = pendingReasons_;
+            pendingReasons_ = ViewportInvalidationReason.None;
+            request = new ViewportRenderRequest(
+                sessionId_,
+                sequence,
+                kind_,
+                targetKind_,
+                targetId_,
+                targetRevision_,
+                renderSize,
+                camera_,
+                reasons,
+                debugProxies_,
+                totalDebugProxyCount_);
+            return true;
+        }
+    }
+
+    public bool CanPresentPublishedFrame(ulong sequence, ulong targetRevision)
+    {
+        lock (gate_)
+        {
+            return CanPresentPublishedFrameLocked(sequence, targetRevision);
+        }
+    }
+
+    public bool MarkPublishedFramePresented(ulong sequence, ulong targetRevision) =>
+        CanPresentPublishedFrame(sequence, targetRevision);
+
+    public void RetryPublishedFrame(ViewportRenderRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var requestRefresh = false;
+        lock (gate_)
+        {
+            if (!isClosed_ && request.TargetRevision == targetRevision_)
+            {
+                requestRefresh = InvalidateLocked(
+                    request.Reasons,
+                    advancePresentationFence:
+                        (request.Reasons & PresentationInvalidationReasons) !=
+                        ViewportInvalidationReason.None);
+            }
+        }
+        RaiseRefreshRequested(requestRefresh);
+    }
+
+    public bool TryBeginRender(ViewportExtent extent, out ViewportRenderRequest request) =>
+        TryBeginRender(new ViewportRenderSize(extent, extent), out request);
+
     public bool CompleteRender(ulong sequence, ulong targetRevision, bool succeeded)
     {
+        var requestRefresh = false;
+        bool result;
         lock (gate_)
         {
             if (isClosed_ || sequence == 0 || sequence != inFlightSequence_ ||
@@ -175,17 +273,22 @@ public sealed class ViewportSession
                 return false;
             }
 
-            var completionIsCurrent = targetRevision == targetRevision_;
+            var completionIsCurrent =
+                CanPresentPublishedFrameLocked(sequence, targetRevision);
             if (!succeeded && completionIsCurrent)
             {
-                pendingReasons_ |= inFlightReasons_;
+                requestRefresh = InvalidateLocked(
+                    inFlightReasons_,
+                    advancePresentationFence: false);
             }
 
             inFlightSequence_ = 0;
             inFlightTargetRevision_ = 0;
             inFlightReasons_ = ViewportInvalidationReason.None;
-            return succeeded && completionIsCurrent;
+            result = succeeded && completionIsCurrent;
         }
+        RaiseRefreshRequested(requestRefresh);
+        return result;
     }
 
     public void Close()
@@ -205,6 +308,12 @@ public sealed class ViewportSession
         ViewportInvalidationReason.TargetChanged |
         ViewportInvalidationReason.CameraChanged |
         ViewportInvalidationReason.ExtentChanged |
+        ViewportInvalidationReason.Exposed |
+        ViewportInvalidationReason.Realtime;
+
+    private static readonly ViewportInvalidationReason PresentationInvalidationReasons =
+        ViewportInvalidationReason.TargetChanged |
+        ViewportInvalidationReason.CameraChanged |
         ViewportInvalidationReason.Exposed;
 
     private static (ViewportDebugProxySnapshot[] Proxies, int TotalCount)
@@ -224,9 +333,35 @@ public sealed class ViewportSession
         targetId_,
         targetRevision_,
         lastSequence_,
+        minimumPresentableSequence_,
         inFlightSequence_ != 0,
         pendingReasons_,
         isClosed_);
+
+    private bool InvalidateLocked(
+        ViewportInvalidationReason reasons,
+        bool advancePresentationFence)
+    {
+        if (advancePresentationFence)
+        {
+            minimumPresentableSequence_ = checked(lastSequence_ + 1U);
+        }
+        var wasClean = pendingReasons_ == ViewportInvalidationReason.None;
+        pendingReasons_ |= reasons;
+        return wasClean;
+    }
+
+    private bool CanPresentPublishedFrameLocked(ulong sequence, ulong targetRevision) =>
+        !isClosed_ && sequence >= minimumPresentableSequence_ &&
+        sequence <= lastSequence_ && targetRevision == targetRevision_;
+
+    private void RaiseRefreshRequested(bool requestRefresh)
+    {
+        if (requestRefresh)
+        {
+            RefreshRequested?.Invoke(this, EventArgs.Empty);
+        }
+    }
 
     private void ThrowIfClosed()
     {

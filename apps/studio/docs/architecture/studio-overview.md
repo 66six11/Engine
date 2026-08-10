@@ -13,9 +13,11 @@
 buffer C ABI，`Asharia.Studio.EngineBridge` 实现 Application port，`ProjectSession` 是唯一活动项目 owner。
 第二条 Slice 已按 [ADR-0009](../adr/0009-authoritative-scene-document.md) 建立 authoritative SceneDocument：成功
 create/open project 后自动创建或打开默认场景，Hierarchy/Inspector 可创建实体并编辑名称/local Transform，Save 与 dirty
-来自 native revision/savepoint，关闭项目后重开恢复一致数据。Release image 现在真实包含并验证
-`Asharia.Runtime.Contracts`、`Asharia.Studio.EngineBridge`、`asharia_project_native.dll` 和精确路径的
-`asharia_scene_native.dll`，仍拒绝 development host/protocol、`editor_native.dll` 与 `slang.dll`。
+来自 native revision/savepoint，关闭项目后重开恢复一致数据。第三条 Slice #359/#361 建立 UI-neutral
+`ViewportSession`、typed frame lease 和首个专用 Avalonia Scene View composition control。Release image 现在真实包含并验证
+`Asharia.Runtime.Contracts`、`Asharia.Studio.EngineBridge`、`Asharia.Studio.Presentation.Avalonia`、
+`asharia_project_native.dll`、`asharia_scene_native.dll`、`editor_native.dll` 与精确 12 个 renderer-basic shader 文件；
+仍拒绝 development host/protocol、旧 `Asharia.Editor` 与 `slang.dll`。
 
 ## 1. 目的
 

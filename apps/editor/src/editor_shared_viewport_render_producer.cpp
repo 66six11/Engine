@@ -3,10 +3,14 @@
 #include <vulkan/vulkan.h>
 
 #define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <algorithm>
 #include <array>
 #include <exception>
+#include <filesystem>
 #include <memory>
 #include <span>
+#include <string_view>
 #include <utility>
 #include <windows.h>
 
@@ -18,6 +22,31 @@ namespace asharia::editor {
     namespace {
 
         constexpr VkFormat kSharedViewportFormat = VK_FORMAT_B8G8R8A8_UNORM;
+        [[nodiscard]] std::filesystem::path viewportShaderDirectory() {
+            std::array<wchar_t, 32768> executablePath{};
+            const DWORD length = GetModuleFileNameW(nullptr, executablePath.data(),
+                                                    static_cast<DWORD>(executablePath.size()));
+            if (length != 0U && length < executablePath.size()) {
+                const std::filesystem::path packagedDirectory =
+                    std::filesystem::path{std::wstring_view{executablePath.data(), length}}
+                        .parent_path() /
+                    "shaders" / "renderer-basic";
+#if defined(NDEBUG)
+                return packagedDirectory;
+#else
+                if (std::filesystem::exists(packagedDirectory)) {
+                    return packagedDirectory;
+                }
+#endif
+            }
+
+#if defined(NDEBUG)
+            return {};
+#else
+            // Debug native smoke executables run directly from the CMake tree.
+            return ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR;
+#endif
+        }
         constexpr std::array<BasicDebugWorldLine, 3> kMinimalSceneAxes{
             BasicDebugWorldLine{
                 .start = {0.0F, 0.0F, 0.0F},
@@ -83,8 +112,137 @@ namespace asharia::editor {
                                  {0.22F, 0.42F, 0.94F, 1.0F});
         }
 
+        [[nodiscard]] bool hasFlashSentinel(EditorSharedViewportPresentDesc desc) {
+            return desc.flashSentinelCorners && desc.hasScene &&
+                   desc.kind == EditorViewportKind::Scene;
+        }
+
+        struct FlashSentinelImageTransition {
+            VkPipelineStageFlags2 sourceStage{};
+            VkAccessFlags2 sourceAccess{};
+            VkImageLayout oldLayout{VK_IMAGE_LAYOUT_UNDEFINED};
+            VkPipelineStageFlags2 destinationStage{};
+            VkAccessFlags2 destinationAccess{};
+            VkImageLayout newLayout{VK_IMAGE_LAYOUT_UNDEFINED};
+        };
+
+        void recordFlashSentinelImageBarrier(VkCommandBuffer commandBuffer, VkImage image,
+                                             FlashSentinelImageTransition transition) {
+            VkImageMemoryBarrier2 barrier{};
+            barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+            barrier.srcStageMask = transition.sourceStage;
+            barrier.srcAccessMask = transition.sourceAccess;
+            barrier.dstStageMask = transition.destinationStage;
+            barrier.dstAccessMask = transition.destinationAccess;
+            barrier.oldLayout = transition.oldLayout;
+            barrier.newLayout = transition.newLayout;
+            barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrier.image = image;
+            barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            barrier.subresourceRange.baseMipLevel = 0;
+            barrier.subresourceRange.levelCount = 1;
+            barrier.subresourceRange.baseArrayLayer = 0;
+            barrier.subresourceRange.layerCount = 1;
+
+            VkDependencyInfo dependency{};
+            dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+            dependency.imageMemoryBarrierCount = 1;
+            dependency.pImageMemoryBarriers = &barrier;
+            vkCmdPipelineBarrier2(commandBuffer, &dependency);
+        }
+
+        void recordFlashSentinel(VkCommandBuffer commandBuffer, VkImage image,
+                                 VkImageView imageView, VkExtent2D extent) {
+            recordFlashSentinelImageBarrier(
+                commandBuffer, image,
+                FlashSentinelImageTransition{
+                    .sourceStage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+                    .sourceAccess = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT,
+                    .oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                    .destinationStage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+                    .destinationAccess = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+                    .newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                });
+
+            VkRenderingAttachmentInfo colorAttachment{};
+            colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+            colorAttachment.imageView = imageView;
+            colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+            colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+            colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+
+            VkRenderingInfo rendering{};
+            rendering.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+            rendering.renderArea = VkRect2D{
+                .offset = VkOffset2D{.x = 0, .y = 0},
+                .extent = extent,
+            };
+            rendering.layerCount = 1;
+            rendering.colorAttachmentCount = 1;
+            rendering.pColorAttachments = &colorAttachment;
+
+            const std::uint32_t side = std::min({24U, extent.width, extent.height});
+            struct SentinelCorner {
+                VkClearColorValue color{};
+                VkOffset2D offset{};
+            };
+            const std::array<SentinelCorner, 4> corners{
+                SentinelCorner{
+                    .color = VkClearColorValue{{1.0F, 0.0F, 1.0F, 1.0F}},
+                    .offset = VkOffset2D{.x = 0, .y = 0},
+                },
+                SentinelCorner{
+                    .color = VkClearColorValue{{0.0F, 1.0F, 0.0F, 1.0F}},
+                    .offset =
+                        VkOffset2D{.x = static_cast<std::int32_t>(extent.width - side), .y = 0},
+                },
+                SentinelCorner{
+                    .color = VkClearColorValue{{0.0F, 1.0F, 1.0F, 1.0F}},
+                    .offset =
+                        VkOffset2D{.x = 0, .y = static_cast<std::int32_t>(extent.height - side)},
+                },
+                SentinelCorner{
+                    .color = VkClearColorValue{{1.0F, 1.0F, 0.0F, 1.0F}},
+                    .offset = VkOffset2D{.x = static_cast<std::int32_t>(extent.width - side),
+                                         .y = static_cast<std::int32_t>(extent.height - side)},
+                },
+            };
+
+            vkCmdBeginRendering(commandBuffer, &rendering);
+            for (const SentinelCorner& corner : corners) {
+                VkClearAttachment clear{};
+                clear.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+                clear.colorAttachment = 0;
+                clear.clearValue.color = corner.color;
+                const VkClearRect rect{
+                    .rect =
+                        VkRect2D{
+                            .offset = corner.offset,
+                            .extent = VkExtent2D{.width = side, .height = side},
+                        },
+                    .baseArrayLayer = 0,
+                    .layerCount = 1,
+                };
+                vkCmdClearAttachments(commandBuffer, 1, &clear, 1, &rect);
+            }
+            vkCmdEndRendering(commandBuffer);
+
+            recordFlashSentinelImageBarrier(
+                commandBuffer, image,
+                FlashSentinelImageTransition{
+                    .sourceStage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+                    .sourceAccess = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+                    .oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                    .destinationStage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+                    .destinationAccess = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT,
+                    .newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                });
+        }
+
         void recordRenderedViewStats(EditorSharedViewportRenderProducerStats& stats,
-                                     EditorSharedViewportPresentDesc desc) {
+                                     EditorSharedViewportPresentDesc desc,
+                                     const EditorSharedViewportPacketState& state) {
             if (desc.hasScene) {
                 switch (desc.kind) {
                 case EditorViewportKind::Scene:
@@ -103,6 +261,7 @@ namespace asharia::editor {
             stats.lastSessionId = desc.sessionId;
             stats.lastTargetId = desc.targetId;
             stats.lastRenderKind = desc.kind;
+            stats.lastRenderExtent = state.renderExtent;
             stats.lastDebugProxyCount = static_cast<std::uint32_t>(desc.debugProxies.size());
             stats.lastDebugWorldLineCount = desc.hasScene && desc.kind == EditorViewportKind::Scene
                                                 ? 3U + (desc.debugProxies.size() * 3U)
@@ -169,7 +328,8 @@ namespace asharia::editor {
                     .device = device,
                     .allocator = allocator,
                     .format = kSharedViewportFormat,
-                    .extent = VkExtent2D{.width = desc.extent.width, .height = desc.extent.height},
+                    .extent = VkExtent2D{.width = desc.allocationExtent.width,
+                                         .height = desc.allocationExtent.height},
                     .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
                     .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
                 });
@@ -235,7 +395,8 @@ namespace asharia::editor {
         recordSharedViewportFrame(VkQueue graphicsQueue, BasicFullscreenTextureRenderer& renderer,
                                   EditorSharedViewportFrameEpochTracker& frameEpochTracker,
                                   EditorSharedViewportPacketState& state,
-                                  EditorSharedViewportPresentDesc desc, std::uint64_t frameIndex) {
+                                  EditorSharedViewportPresentDesc desc,
+                                  BasicRenderViewFrameParams frameParams) {
             if (!state.frameResources) {
                 return std::unexpected{
                     vulkanError("Shared viewport present slot has no frame resources")};
@@ -258,7 +419,14 @@ namespace asharia::editor {
                 .imageView = targetImage.imageView(),
                 .imageIndex = 0U,
                 .format = targetImage.format(),
-                .extent = targetImage.extent(),
+                // RenderGraph, render area, viewport and projection use the requested logical
+                // extent. Studio supplies the same exact physical extent for allocation and
+                // logical size; the wider native contract remains valid for non-Studio callers.
+                .extent =
+                    VkExtent2D{
+                        .width = desc.logicalExtent.width,
+                        .height = desc.logicalExtent.height,
+                    },
                 .clearColor = VkClearColorValue{{0.12F, 0.12F, 0.13F, 1.0F}},
                 .frameLoop = nullptr,
             };
@@ -273,23 +441,21 @@ namespace asharia::editor {
                 .image = targetImage.image(),
                 .imageView = targetImage.imageView(),
                 .format = targetImage.format(),
-                .extent = targetImage.extent(),
+                // The VkImage allocation may be wider for a generic native caller, while
+                // rendering, projection, viewport and scissor use the explicit logical extent.
+                .extent = frame.extent,
                 .aspectMask = targetImage.aspectMask(),
                 .finalUsage = BasicRenderViewTargetFinalUsage::SampledTexture,
             };
+            state.renderExtent = view.target.extent;
             view.viewKind = *viewKind;
-            view.frameParams = BasicRenderViewFrameParams{
-                .frameIndex = frameIndex,
-                .timeSeconds = static_cast<float>(frameIndex) / 60.0F,
-                .deltaSeconds = 1.0F / 60.0F,
-                .renderScale = 1.0F,
-            };
+            view.frameParams = frameParams;
             view.viewName = desc.panelId.empty() ? "Studio Viewport" : desc.panelId;
             std::vector<BasicDebugWorldLine> debugLines;
             if (desc.hasScene) {
                 const EditorViewportCamera camera =
-                    desc.hasCamera ? editorViewportCameraForExtent(desc.camera, desc.extent)
-                                   : defaultEditorSceneViewCamera(desc.extent);
+                    desc.hasCamera ? editorViewportCameraForExtent(desc.camera, desc.logicalExtent)
+                                   : defaultEditorSceneViewCamera(desc.logicalExtent);
                 view.camera = BasicRenderViewCamera{
                     .view = camera.view,
                     .projection = camera.projection,
@@ -333,6 +499,11 @@ namespace asharia::editor {
                 return std::unexpected{std::move(recorded.error())};
             }
 
+            if (hasFlashSentinel(desc)) {
+                recordFlashSentinel(state.commandBuffer, targetImage.image(),
+                                    targetImage.imageView(), view.target.extent);
+            }
+
             result = checkVk(vkEndCommandBuffer(state.commandBuffer),
                              "Failed to end shared viewport command buffer");
             if (!result) {
@@ -370,7 +541,7 @@ namespace asharia::editor {
             state.frameEpoch = frameEpochTracker.submit();
             state.submitted = true;
             state.waitForCompositionRelease = true;
-            state.frameIndex = frameIndex;
+            state.frameIndex = frameParams.frameIndex;
 
             return {};
         }
@@ -378,7 +549,7 @@ namespace asharia::editor {
     } // namespace
 
     EditorSharedViewportPacketState::~EditorSharedViewportPacketState() {
-        if (submitted) {
+        if (hasPendingGpuWork()) {
             logError("Shared viewport packet destruction was attempted before GPU completion.");
             frameEpoch.abandon();
             std::terminate();
@@ -391,39 +562,114 @@ namespace asharia::editor {
         if (device != VK_NULL_HANDLE && fence != VK_NULL_HANDLE) {
             vkDestroyFence(device, fence, nullptr);
         }
+        if (device != VK_NULL_HANDLE && consumerReleaseFence != VK_NULL_HANDLE) {
+            vkDestroyFence(device, consumerReleaseFence, nullptr);
+        }
         if (device != VK_NULL_HANDLE && commandPool != VK_NULL_HANDLE) {
             vkDestroyCommandPool(device, commandPool, nullptr);
         }
     }
 
+    Result<void> EditorSharedViewportPacketState::submitConsumerReleaseWait(VkQueue graphicsQueue) {
+        if (consumerReleasePending) {
+            return std::unexpected{
+                vulkanError("Shared viewport consumer release wait was already requested")};
+        }
+
+        // From this point forward destruction is unsafe until a successful
+        // consumer-done wait fence proves that the external reader released
+        // the shared image. Failures deliberately leave this state pending so
+        // the runtime quarantines the packet instead of returning its image to
+        // the cross-packet pool.
+        consumerReleasePending = true;
+        if (device == VK_NULL_HANDLE || graphicsQueue == VK_NULL_HANDLE ||
+            signalSemaphore.handle() == VK_NULL_HANDLE) {
+            return std::unexpected{
+                vulkanError("Shared viewport packet cannot wait for consumer release")};
+        }
+
+        VkFenceCreateInfo fenceInfo{};
+        fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+        auto result = checkVk(vkCreateFence(device, &fenceInfo, nullptr, &consumerReleaseFence),
+                              "Failed to create shared viewport consumer release fence");
+        if (!result) {
+            return std::unexpected{std::move(result.error())};
+        }
+
+        VkSemaphoreSubmitInfo waitInfo{};
+        waitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
+        waitInfo.semaphore = signalSemaphore.handle();
+        waitInfo.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+
+        VkSubmitInfo2 submitInfo{};
+        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
+        submitInfo.waitSemaphoreInfoCount = 1U;
+        submitInfo.pWaitSemaphoreInfos = &waitInfo;
+
+        result = checkVk(vkQueueSubmit2(graphicsQueue, 1U, &submitInfo, consumerReleaseFence),
+                         "Failed to submit shared viewport consumer release wait");
+        if (!result) {
+            return std::unexpected{std::move(result.error())};
+        }
+
+        consumerReleaseSubmitted = true;
+        return {};
+    }
+
     Result<bool> EditorSharedViewportPacketState::retireCompletedGpuWork() {
-        if (!submitted) {
-            return true;
-        }
-        if (device == VK_NULL_HANDLE || fence == VK_NULL_HANDLE) {
-            return std::unexpected{
-                vulkanError("Shared viewport present slot has no submission fence")};
-        }
-
-        const VkResult status = vkGetFenceStatus(device, fence);
-        if (status == VK_NOT_READY) {
-            return false;
-        }
-        if (status != VK_SUCCESS) {
-            return std::unexpected{
-                vulkanError("Failed to query shared viewport present slot fence", status)};
-        }
-
-        frameEpoch.complete();
-        submitted = false;
-        for (VulkanTransientImageResource& resource : transientImages) {
-            auto released = transientImagePool.releaseCompleted(resource);
-            if (!released) {
-                return std::unexpected{std::move(released.error())};
+        if (submitted) {
+            if (device == VK_NULL_HANDLE || fence == VK_NULL_HANDLE) {
+                return std::unexpected{
+                    vulkanError("Shared viewport present slot has no submission fence")};
             }
+
+            const VkResult status = vkGetFenceStatus(device, fence);
+            if (status == VK_NOT_READY) {
+                return false;
+            }
+            if (status != VK_SUCCESS) {
+                return std::unexpected{
+                    vulkanError("Failed to query shared viewport present slot fence", status)};
+            }
+
+            frameEpoch.complete();
+            submitted = false;
+            for (VulkanTransientImageResource& resource : transientImages) {
+                auto released = transientImagePool.releaseCompleted(resource);
+                if (!released) {
+                    return std::unexpected{std::move(released.error())};
+                }
+            }
+            transientImages.clear();
         }
-        transientImages.clear();
+
+        if (consumerReleasePending) {
+            if (!consumerReleaseSubmitted || device == VK_NULL_HANDLE ||
+                consumerReleaseFence == VK_NULL_HANDLE) {
+                return std::unexpected{
+                    vulkanError("Shared viewport consumer release completion cannot be confirmed")};
+            }
+
+            const VkResult status = vkGetFenceStatus(device, consumerReleaseFence);
+            if (status == VK_NOT_READY) {
+                return false;
+            }
+            if (status != VK_SUCCESS) {
+                return std::unexpected{
+                    vulkanError("Failed to query shared viewport consumer release fence", status)};
+            }
+
+            vkDestroyFence(device, consumerReleaseFence, nullptr);
+            consumerReleaseFence = VK_NULL_HANDLE;
+            consumerReleaseSubmitted = false;
+            consumerReleasePending = false;
+        }
+
         return true;
+    }
+
+    bool EditorSharedViewportPacketState::hasPendingGpuWork() const noexcept {
+        return submitted || consumerReleasePending;
     }
 
     void EditorSharedViewportPacketState::abandonPendingGpuWork() noexcept {
@@ -438,7 +684,7 @@ namespace asharia::editor {
             .waitSemaphoreHandle = waitSemaphoreHandle,
             .signalSemaphoreHandle = signalSemaphoreHandle,
             .format = targetImage.format(),
-            .extent = targetImage.extent(),
+            .allocationExtent = targetImage.extent(),
             .memorySizeBytes = targetImage.memorySizeBytes(),
             .frameIndex = frameIndex,
         };
@@ -459,10 +705,15 @@ namespace asharia::editor {
         producer.allocator_ = context.allocator();
         producer.graphicsQueue_ = context.graphicsQueue();
         producer.graphicsQueueFamily_ = context.graphicsQueueFamily();
+        const std::filesystem::path shaderDirectory = viewportShaderDirectory();
+        if (shaderDirectory.empty()) {
+            return std::unexpected{
+                vulkanError("Could not resolve the packaged shared viewport shader directory")};
+        }
         auto renderer = BasicFullscreenTextureRenderer::create(BasicFullscreenTextureRendererDesc{
             .device = producer.device_,
             .allocator = producer.allocator_,
-            .shaderDirectory = ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR,
+            .shaderDirectory = shaderDirectory,
         });
         if (!renderer) {
             return std::unexpected{std::move(renderer.error())};
@@ -474,7 +725,7 @@ namespace asharia::editor {
     }
 
     Result<std::unique_ptr<EditorSharedViewportPacketState>>
-    EditorSharedViewportRenderProducer::renderSceneViewFrame(std::uint64_t frameIndex,
+    EditorSharedViewportRenderProducer::renderSceneViewFrame(BasicRenderViewFrameParams frameParams,
                                                              EditorSharedViewportPresentDesc desc,
                                                              std::size_t frameResourceIndex) {
         auto state = std::make_unique<EditorSharedViewportPacketState>();
@@ -490,19 +741,19 @@ namespace asharia::editor {
         }
 
         auto rendered = recordSharedViewportFrame(graphicsQueue_, renderer_, frameEpochTracker_,
-                                                  *state, desc, frameIndex);
+                                                  *state, desc, frameParams);
         if (!rendered) {
             return std::unexpected{std::move(rendered.error())};
         }
 
         ++stats_.framesRendered;
         ++stats_.packetsCreated;
-        recordRenderedViewStats(stats_, desc);
+        recordRenderedViewStats(stats_, desc, *state);
         return state;
     }
 
     Result<std::unique_ptr<EditorSharedViewportPacketState>>
-    EditorSharedViewportRenderProducer::createPresentSlot(std::uint64_t frameIndex,
+    EditorSharedViewportRenderProducer::createPresentSlot(BasicRenderViewFrameParams frameParams,
                                                           EditorSharedViewportPresentDesc desc,
                                                           std::size_t frameResourceIndex) {
         auto state = std::make_unique<EditorSharedViewportPacketState>();
@@ -519,27 +770,28 @@ namespace asharia::editor {
         }
 
         auto rendered = recordSharedViewportFrame(graphicsQueue_, renderer_, frameEpochTracker_,
-                                                  *state, desc, frameIndex);
+                                                  *state, desc, frameParams);
         if (!rendered) {
             return std::unexpected{std::move(rendered.error())};
         }
 
         ++stats_.framesRendered;
         ++stats_.packetsCreated;
-        recordRenderedViewStats(stats_, desc);
+        recordRenderedViewStats(stats_, desc, *state);
         return state;
     }
 
     Result<void>
     EditorSharedViewportRenderProducer::renderPresentSlot(EditorSharedViewportPacketState& state,
                                                           EditorSharedViewportPresentDesc desc,
-                                                          std::uint64_t frameIndex) {
+                                                          BasicRenderViewFrameParams frameParams) {
         if (!state.reusable) {
             return std::unexpected{
                 vulkanError("Shared viewport present packet is not a reusable slot")};
         }
         const VkExtent2D extent = state.imageLease.image().extent();
-        if (extent.width != desc.extent.width || extent.height != desc.extent.height) {
+        if (extent.width != desc.allocationExtent.width ||
+            extent.height != desc.allocationExtent.height) {
             return std::unexpected{
                 vulkanError("Shared viewport present slot extent cannot change in place")};
         }
@@ -565,13 +817,13 @@ namespace asharia::editor {
         }
 
         auto rendered = recordSharedViewportFrame(graphicsQueue_, renderer_, frameEpochTracker_,
-                                                  state, desc, frameIndex);
+                                                  state, desc, frameParams);
         if (!rendered) {
             return std::unexpected{std::move(rendered.error())};
         }
 
         ++stats_.framesRendered;
-        recordRenderedViewStats(stats_, desc);
+        recordRenderedViewStats(stats_, desc, state);
         return {};
     }
 

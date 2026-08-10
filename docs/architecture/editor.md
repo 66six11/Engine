@@ -236,13 +236,90 @@ EditorViewportCoordinator::recordRequestedViews()
 The display is intentionally one frame delayed. This keeps panel drawing simple and avoids two-phase panel rendering until
 same-frame presentation is required and measured.
 
-### Studio external presentation boundary
+### Studio Viewport Presentation Transaction boundary
 
-The Avalonia Studio Scene View uses the same native renderer through a separate external-presentation path. Interactive
-panel resize is event-driven and latest-request-wins: the composition visual follows the current panel bounds immediately,
-while ready frames advance monotonically and converge on the newest pixel extent. Two presentation slots are allocated on
-demand, and native frame resources are retired only after fence completion; failed consumer release is quarantined within
-the fixed resource budget instead of blocking the UI thread. The detailed contracts are maintained in
+The Avalonia Studio Scene View uses the same native renderer through a separate external-presentation path. Its production
+abstraction is a reusable `Viewport Presentation Transaction`, not a dock-only operation. Every endpoint owns
+its front/candidate surfaces, stream/import state and retirement. Each participant validates
+`SessionId + EndpointEpoch + TransactionId`: the transaction id is shared by the group, while session and epoch bind that endpoint
+to one content session and one attach/compositor lifetime; request sequence, target revision and geometry or
+capture identity provide the finer content gate.
+
+The group lifecycle is `Proposal → Preparing → Prepared → Validated → Published → Rendered → Retiring → Completed`.
+Recoverable pre-publish failure/cancellation becomes `Aborted`; an ambiguous result after publish becomes `Quarantined` with
+resource ownership retained. All participants must be prepared and validated before publish. Participants under the same
+Avalonia compositor can apply their state/layout mutation and every `visual.Surface`/`Size` switch in one UI turn and share one
+composition-batch `Rendered` barrier. Different compositors have no common commit barrier and are explicitly non-atomic; they
+must use separate transactions.
+
+Scene endpoints require an exact panel extent. Game Preview endpoints can freeze an independent fit policy in their proposal.
+Frame Debugger immutable captures use an independent endpoint and capture identity, so inspecting a frozen frame cannot replace
+the mutable Scene/Game front. The endpoint policy is therefore separate from the transaction state machine.
+
+`EditorDockStagedGridSplitter`, `EditorDockSplitResizePolicy` and `EditorDockSplitResizeCoordinator` are only a layout-proposal
+adapter. They translate drag input through min/max/layout-rounding rules, synchronously probe the prospective exact `PixelSize`,
+and restore the committed `GridLength` before yielding. The transaction coordinator prepares endpoint-owned candidate surfaces,
+then publishes the committed `GridLength` and all same-compositor surface switches together while `Opacity` remains 1. A fault,
+cancellation, stale identity or any participant mismatch aborts before publish and preserves every old front. Replaced fronts
+begin retirement only after the shared batch reports `Rendered`. A→B→A requires a new transaction and cannot revive an old
+snapshot. Plain `GridSplitter.ShowsPreview` and drag-end debounce remain rejected because they do not produce unique exact
+geometry during the drag.
+
+Main and Floating Windows share `EditorDockPresentationLayoutHost` around their dock workspace. The shared host implements the
+platform-neutral `IInteractiveTopLevelResizeSink` and obtains an optional `IInteractiveTopLevelResizeAdapterFactory` through the
+application composition root. `IInteractiveTopLevelResizeAdapterProvider`, `IInteractiveTopLevelResizeAdapterFactory`,
+`IInteractiveTopLevelResizeAttachment`, `IInteractiveTopLevelResizeSink`, `IInteractiveTopLevelResizeCommit` and
+`InteractiveTopLevelResizeProjection` live in `Asharia.Studio.Presentation.Avalonia.Windowing`; the shared host, transaction
+coordinator and endpoint control contain no HWND, WM-message, USER32 or P/Invoke surface.
+
+The independent `Asharia.Studio.Presentation.Avalonia.Windows` integration owns the native hook. Its
+`Win32InteractiveTopLevelResizeAdapterFactory` has one deliberately narrow precommit scope: an ordinary decorated border drag within
+one fixed-DPI epoch. `WM_SIZING` copies the proposed screen-space `RECT`, writes the last accepted exact `RECT` back to USER32 and
+coalesces work outside WndProc. The host keeps at most one active workspace request and one queued latest, probes all visible exact
+viewport endpoints while the old HWND/layout/front remain committed, and prepares their candidate surfaces. The publish turn applies
+the platform-neutral outer commit; only the Windows integration calls `SetWindowPos`, after which the host calls
+`TopLevel.UpdateLayout`, revalidates the actual workspace/endpoint extents and switches the same-compositor fronts. Only a successful
+`Published` result advances the accepted HWND `RECT`. Pre-publish failure or an invalid interaction/DPI/chrome/endpoint epoch preserves
+or restores the old committed state. WndProc itself never waits, renders or walks the visual tree.
+
+`WM_EXITSIZEMOVE` closes the interaction epoch. Every outer commit not yet accepted becomes stale, the queued successor is discarded,
+and the shared host rejects it when `IsCurrent()` is false. An active candidate already inside native render, GPU or consumer work is
+not synchronously killed; it completes and then follows the normal pre-publish abort/work-fence retirement path. The Window stays at
+the last Published exact `RECT` instead of applying the raw cursor-final proposal after release. The accepted final may therefore lag
+raw final by 0–1 candidate, and diagnostics must report both values plus pixel/logical lag. Avoiding a post-release catch-up
+`SetWindowPos` removes that additional grow-gap/shrink-crop transition, but does not make drag-time USER32/DWM and Avalonia commits
+physically atomic.
+
+The V5 native stream still keeps at most one executing request, one latest pending replacement and one ready frame per
+viewport, with at most three persistent full presentation slots. Each slot keeps its external image, producer/consumer
+semaphores, command resources and retirement proof together across frames. The old three-slot steady front plus the one-frame
+candidate stay within the process-wide four-resource cap; Realtime prefill resumes only after the prepared switch. Snap,
+maximize/restore, programmatic Window/Bounds resize, DPI/cross-monitor transitions, non-Windows top-levels without the capability and
+other geometry sources without a precommit seam remain on the unchanged exact-only hidden fallback: they hide the mismatched front
+until a new exact frame is ready, never crop or stretch, but can show a blank Scene interval and have not reached zero-flash acceptance.
+
+The Win32 publish turn is not a physical atomicity claim. USER32/DWM top-level geometry and an Avalonia composition batch have no
+shared public scanout fence during drag. A separate Windows-only opt-in WGC acceptance project observes corner sentinels in
+`wgc-dwm-composited-pixels`; its release capture window requires every WGC-delivered sample after the epoch closes to match the final
+accepted/Published exact extent, with no gap, crop, stretch, blank or spill. WGC-delivered samples are not a lossless record of every
+DWM refresh and are not LCD scanout evidence, so `PhysicalDisplayedEvidenceAvailable` remains `false`. The checked Unreal public
+threaded-rendering contract and Unity public SceneView source/API expose no native-top-level-plus-viewport physical transaction
+precedent. Asharia adopts their immutable render ownership and repaint/invalidation separation, but rejects copying their APIs or
+placing platform hooks in shared presentation; the capability plus independent integration is an Asharia-local, package-first boundary.
+
+`IsRealtime=true` is the explicit default and keeps producing exact frames for a static scene at the >=60 FPS acceptance
+floor. `false` is an explicit OnDemand mode: the session emits one coalesced refresh request when target, camera, extent or
+exposure changes, hidden dock tabs stop frame admission, and re-exposure or a newly attached surface requests an exact frame.
+Target/camera/exposure changes also advance a managed content-sequence fence so an older snapshot cannot cross the surface
+commit; extent freshness remains owned solely by the exact geometry generation. Removing or replacing a session hides its old
+surface and retires both active and desired streams before the replacement can present. The runtime's frame index is a
+render-attempt identity (failed attempts may leave gaps), while shader/preview time comes from a monotonic runtime clock and is
+never synthesized as `frameIndex / 60`. The 2026-08-09 pre-split combined Studio splitter run completed 90/90 unique exact generations at
+108.25/s, with proposal-to-shared-batch-`Rendered` p95 about 12.59 ms, requested-mismatch hidden duty 0, and subsequent
+Realtime steady surface-update cadence 222.84 FPS. These are application/Avalonia surface facts, not physical scanout facts;
+they are also not Win32 outer-Window pixel evidence. Physical display cadence remains separate from both PresentMon top-level timing
+and WGC DWM-composited pixels. The WGC opt-in entry is implemented, but only a successful full run may be recorded as current pixel
+evidence. The detailed contracts are maintained in
 [`apps/studio/docs/architecture/viewport-rendering.md`](../../apps/studio/docs/architecture/viewport-rendering.md) and
 [`apps/studio/docs/adr/0006-viewport-interactive-resize.md`](../../apps/studio/docs/adr/0006-viewport-interactive-resize.md).
 
@@ -251,6 +328,10 @@ Scene View overlay state remains editor-owned until the coordinator translates i
 and blend policy, plus a data-only debug world-line span. It does not use `EditorViewportKind`,
 `EditorViewportOverlayFlags`, ImGui ids or Vulkan handles from panels. Grid, gizmo and debug draw passes must consume this
 contract in later slices instead of reading editor panel state directly.
+
+The Studio V5 request does not yet carry selection or mutable overlay intent. Those features require an explicit immutable
+view-state snapshot/revision before they can participate in the content fence; document revision or a managed invalidation bit
+must not be used as a substitute.
 
 ## 生命周期
 
@@ -681,6 +762,38 @@ build\cmake\msvc-debug\apps\editor\asharia-editor.exe --smoke-editor-viewport
 build\cmake\msvc-debug\apps\editor\asharia-editor.exe --smoke-editor-viewport-resize
 build\cmake\msvc-debug\apps\editor\asharia-editor.exe --smoke-editor-frame-debugger
 ```
+
+Studio `Editor.exe --smoke-studio-viewport-cadence` 只承担前台静态 Scene 的 5 秒 Realtime 稳态基线，门控 exact surface-update
+`>=60 FPS`、p95 与 max；它不再承载 resize/fault/overload 场景。`--smoke-viewport-transaction-resize`、
+`--smoke-viewport-transaction-overload`、`--smoke-viewport-transaction-faults`、
+`--smoke-viewport-transaction-supersede` 与 `--smoke-viewport-multi-endpoint` 已是独立真实 Studio GPU smoke，分别门控 splitter
+exact/hidden、bounded latest-wins、13-stage 失败 ownership、latest/stale identity 与 same-compositor 两-endpoint group atomicity；
+`--smoke-viewport-transaction-flash` 另逐个成功 transaction 的 group composition batch 检查 native
+corner sentinel 的结构边界。各入口分开报告 native resource、transaction phase、Avalonia surface/`Rendered` 与 physical display；
+`--smoke-viewport-transaction-window-resize` 还用真实 HWND 驱动 Windows integration 的 `WM_SIZING` precommit，但把性能与连续结构证据分开：
+`performance` lane 不启动连续 recorder，以 first `Proposed`→final exact `Rendered` 门控 grow/shrink/A→B→A 三个 120 Hz、
+90-input case 均 `>=60/s`；`continuous` lane 只对短 ABA 轨迹连续请求并采样 outer/client/workspace/panel/surface composition batch，门控
+blank/stretch/crop/gap/mismatch=0，不作 FPS claim。release policy 在 `WM_EXITSIZEMOVE` 关闭 interaction epoch，使未接受 proposal stale，
+停在最后 Published exact RECT；它必须输出 raw/accepted final 与 0–1 candidate 的 pixel/logical lag。release-stop 之前
+`wait-final` policy 的 ABA 性能代表值为
+90 inputs/744.47 ms、50 unique exact `Rendered` /
+757.57 ms（66.00/s）、post-request transaction publish catch-up 2/2（25.44 ms，小于两个 60 Hz composition budget）、hidden=0；
+结构 lane 为 24/24 exact sampled batches，五类结构错误
+全为 0；这些历史数值不作为新的 release-stop gate 的通过数据。两条应用内 lane 仍明确输出
+pixel/PhysicalDisplayed evidence unavailable。独立 Windows-only
+`Asharia.Studio.WindowsCapture.Tests` 通过 `ASHARIA_RUN_STUDIO_WGC_DWM_ACCEPTANCE=1` opt in：drag 样本仍分类
+blank/stretch/crop/gap/spill；release capture 从 interaction epoch 关闭起硬门控每个 WGC-delivered sample 都与最后
+accepted/Published exact extent 一致，不允许 release gap/crop/stretch/blank/spill。它不保证捕获每个 DWM refresh，且始终报告
+`PhysicalDisplayedEvidenceAvailable=false`。当前严格 release-stop gate 以 `SystemRelativeTime` 对齐 `release-imminent` QPC，从
+`WM_EXITSIZEMOVE` 前的保守边界开始筛选；grow/shrink 2/2 PASS，release 分别为 1/1 与 2/2 exact，每个 delivered sample 都满足
+`SceneBounds == completion accepted extent`，gap/blank/crop/stretch/accepted-extent mismatch 全为 0。两条 case 都先建立 pending raw
+final，再验证其 `Cancelled` 且 `rawFinalProposalAccepted=false`。没有 observer 的层明确输出 evidence unavailable。代表性
+owned-splitter resize 为 209/209 observed exact `Rendered` generations、106.44/s、p95
+15.26 ms、hidden 0；新增 Window smoke 之前的五族 GPU process acceptance 为 47/47，steady 为 219.43 surface-updates/s。当前 PresentMon 复采因大量 ETW
+event loss 且无 CSV 被作废，不能把这些
+应用侧数字称为 physical display；PresentMon 即使有效也只能证明顶层 cadence，不能排除 Scene-only 中间像素帧。WGC pixel evidence
+与 LCD scanout evidence 也必须继续分层。
+multi-endpoint 当前只通过两 endpoint；3–4 realtime 容量与 slow-consumer queue HOL 仍未解决。
 
 `--smoke-editor-viewport` also validates Scene View flag defaults, verifies that pending Gizmo/Select authoring flags are
 cleared from effective Scene View diagnostics, verifies that Scene-only authoring flags are cleared from Game/Preview,

@@ -286,6 +286,14 @@ packet stable id 复制到 `BasicRenderViewOverlayDesc::sourceOverlayIds` 供 di
 Scene grid overlay contribution 已携带与 editor settings bootstrap 相同的 built-in 默认设置。这仍不是 runtime
 camera system，也还不是外部 manifest loader 或 hot reload。
 
+Camera-driven draw 统一保留 engine projection 的 clip-space +Y-up，并由
+`renderer_basic_vulkan` 使用 `y = extent.height, height = -extent.height` 的 Vulkan viewport 映射到
+top-left/Y-down framebuffer；picking、world-grid 的 `SV_Position` unproject 与 Avalonia `TopLeftOrigin` 因而共享同一
+pixel 约定。该边界采用 Unreal 将 view rectangle 与 projection data 共同归属 `FSceneViewProjectionData` 的模式，
+并使用 Vulkan 1.1 已支持的 negative viewport height 完成 backend 映射；拒绝在各个 mesh/grid shader 分散写 Y flip，
+也不改变纯 fullscreen texture/composite pass 的取样方向。world-grid LOD 以 `lerp(current, next, blend)` 交叉淡化，
+major/minor 先应用各自 opacity 再决定覆盖，避免 LOD 中点和重合线出现亮度脉冲。
+
 下一步顺序：
 
 1. 继续完善 Frame Debug / RG View 的 pass、packet source、view kind 和 selected event 细节，保持当前

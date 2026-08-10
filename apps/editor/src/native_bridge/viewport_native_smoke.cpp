@@ -1,65 +1,45 @@
 ﻿#include "native_bridge/viewport_native_smoke.hpp"
 
-#include <vulkan/vulkan.h>
-
-#define WIN32_LEAN_AND_MEAN
-// clang-format off
-#include <windows.h>
-#include <vulkan/vulkan_win32.h>
-// clang-format on
-
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
-#include <string_view>
 #include <thread>
-#include <type_traits>
 
 #include "asharia/core/log.hpp"
-#include "asharia/rhi_vulkan/vulkan_context.hpp"
-#include "asharia/rhi_vulkan/vulkan_error.hpp"
 
-#include "editor_shared_viewport_render_producer.hpp"
+#include "editor_shared_viewport_dispatch.hpp"
 #include "editor_shared_viewport_runtime.hpp"
 #include "native_bridge/viewport_native_api.hpp"
 
 namespace asharia::editor {
     namespace {
 
-        static_assert(
-            std::is_same_v<decltype(EditorSharedViewportRuntime::instance().ensureDeviceSnapshot()),
-                           asharia::Result<EditorSharedViewportDeviceSnapshot>>);
-
-        void logNativeMessage(const void* messageUtf8, std::uint64_t messageByteLength) {
-            if (messageUtf8 == nullptr || messageByteLength == 0U) {
-                return;
-            }
-
-            const auto message =
-                std::string_view{static_cast<const char*>(messageUtf8), messageByteLength};
-            logError(message);
-        }
-
-        void logPresentPacketMessage(const EditorViewportNativePresentPacket& packet) {
-            logNativeMessage(packet.messageUtf8, packet.messageByteLength);
-        }
-
-        class SharedViewportRuntimeShutdown final {
-        public:
-            SharedViewportRuntimeShutdown() = default;
-            SharedViewportRuntimeShutdown(const SharedViewportRuntimeShutdown&) = delete;
-            SharedViewportRuntimeShutdown& operator=(const SharedViewportRuntimeShutdown&) = delete;
-            SharedViewportRuntimeShutdown(SharedViewportRuntimeShutdown&&) = delete;
-            SharedViewportRuntimeShutdown& operator=(SharedViewportRuntimeShutdown&&) = delete;
-
-            ~SharedViewportRuntimeShutdown() {
-                editor_viewport_shutdown();
-            }
+        struct ExpectedRenderExtent final {
+            std::uint32_t width;
+            std::uint32_t height;
         };
 
-        [[nodiscard]] EditorViewportNativeCompatibilityRequest makeRequest(
-            std::uint32_t imageHandleType = EditorViewportNativeHandleType_VulkanOpaqueNt,
-            std::uint32_t semaphoreHandleType = EditorViewportNativeHandleType_VulkanOpaqueNt) {
+        enum class DispatchProbeKind : std::uint8_t {
+            Completion,
+            Close,
+            Render,
+        };
+
+        struct DispatchProbeStream final {
+            std::uint64_t streamId{};
+            std::uint32_t completionSteps{};
+            std::uint32_t closeSteps{};
+            std::uint32_t renderSteps{};
+            bool realtime{};
+        };
+
+        struct DispatchProbeEvent final {
+            std::uint64_t streamId{};
+            DispatchProbeKind kind{DispatchProbeKind::Render};
+        };
+
+        [[nodiscard]] EditorViewportNativeCompatibilityRequest makeCompatibilityRequest() {
             return EditorViewportNativeCompatibilityRequest{
                 .header =
                     EditorViewportNativeAbiHeader{
@@ -67,8 +47,8 @@ namespace asharia::editor {
                         .structSize = static_cast<std::uint32_t>(
                             sizeof(EditorViewportNativeCompatibilityRequest)),
                     },
-                .imageHandleType = imageHandleType,
-                .semaphoreHandleType = semaphoreHandleType,
+                .imageHandleType = EditorViewportNativeHandleType_VulkanOpaqueNt,
+                .semaphoreHandleType = EditorViewportNativeHandleType_VulkanOpaqueNt,
                 .deviceLuidLowPart = 0U,
                 .deviceLuidHighPart = 0,
                 .hasDeviceLuid = 0U,
@@ -78,78 +58,26 @@ namespace asharia::editor {
             };
         }
 
-        [[nodiscard]] EditorViewportNativeCompatibilityRequest makeUndersizedRequest() {
-            EditorViewportNativeCompatibilityRequest request = makeRequest();
-            request.header.structSize =
-                static_cast<std::uint32_t>(sizeof(EditorViewportNativeAbiHeader));
-            return request;
-        }
-
-        [[nodiscard]] EditorViewportNativeCompatibilityRequest makeMismatchedUuidRequest() {
-            EditorViewportNativeCompatibilityRequest request = makeRequest();
-            request.hasDeviceUuid = 1U;
-            request.deviceUuidLow = 0x1111111111111111UL;
-            request.deviceUuidHigh = 0x2222222222222222UL;
-            return request;
-        }
-
-        [[nodiscard]] EditorViewportNativePresentRequest makePresentRequest(VkExtent2D extent) {
-            return EditorViewportNativePresentRequest{
-                .header =
-                    EditorViewportNativeAbiHeader{
-                        .abiVersion = EDITOR_NATIVE_ABI_VERSION,
-                        .structSize =
-                            static_cast<std::uint32_t>(sizeof(EditorViewportNativePresentRequest)),
-                    },
-                .compatibility = makeRequest(),
-                .widthPixels = extent.width,
-                .heightPixels = extent.height,
-            };
-        }
-
-        [[nodiscard]] EditorViewportNativePresentRequestV2
-        makePresentRequestV2(VkExtent2D extent, bool hasScene, std::uint64_t sceneRevision) {
-            return EditorViewportNativePresentRequestV2{
+        [[nodiscard]] EditorViewportNativePresentRequestV5
+        makeFrameRequest(std::uint64_t requestSequence) {
+            return EditorViewportNativePresentRequestV5{
                 .header =
                     EditorViewportNativeAbiHeader{
                         .abiVersion = EDITOR_NATIVE_ABI_VERSION,
                         .structSize = static_cast<std::uint32_t>(
-                            sizeof(EditorViewportNativePresentRequestV2)),
+                            sizeof(EditorViewportNativePresentRequestV5)),
                     },
-                .compatibility = makeRequest(),
-                .widthPixels = extent.width,
-                .heightPixels = extent.height,
-                .hasScene = hasScene ? 1U : 0U,
-                .reserved = 0U,
-                .sceneRevision = hasScene ? sceneRevision : 0U,
-            };
-        }
-
-        [[nodiscard]] EditorViewportNativePresentRequestV4
-        makePresentRequestV4(VkExtent2D extent, std::uint32_t kind,
-                             EditorViewportNativeId sessionId, EditorViewportNativeId targetId,
-                             std::uint64_t targetRevision, std::uint64_t requestSequence,
-                             const EditorViewportNativeDebugProxy* debugProxies,
-                             std::uint32_t debugProxyCount) {
-            return EditorViewportNativePresentRequestV4{
-                .header =
-                    EditorViewportNativeAbiHeader{
-                        .abiVersion = EDITOR_NATIVE_ABI_VERSION,
-                        .structSize = static_cast<std::uint32_t>(
-                            sizeof(EditorViewportNativePresentRequestV4)),
-                    },
-                .compatibility = makeRequest(),
-                .sessionId = sessionId,
-                .targetId = targetId,
-                .targetRevision = targetRevision,
+                .sessionId = EditorViewportNativeId{.low = 11U, .high = 12U},
+                .targetId = EditorViewportNativeId{.low = 21U, .high = 22U},
+                .targetRevision = requestSequence,
                 .requestSequence = requestSequence,
-                .debugProxies = debugProxies,
-                .debugProxyCount = debugProxyCount,
-                .kind = kind,
+                .debugProxies = nullptr,
+                .debugProxyCount = 0U,
+                .kind = EditorViewportNativeRenderKind_Scene,
                 .targetKind = EditorViewportNativeTargetKind_DocumentScene,
-                .widthPixels = extent.width,
-                .heightPixels = extent.height,
-                .reserved = 0U,
+                .widthPixels = 384U,
+                .heightPixels = 224U,
+                .flags = EditorViewportNativePresentRequestV5Flags_HasLogicalExtent,
                 .camera =
                     EditorViewportNativeCamera{
                         .position = {0.0F, 2.0F, -6.0F},
@@ -159,1167 +87,571 @@ namespace asharia::editor {
                         .nearPlane = 0.1F,
                         .farPlane = 1000.0F,
                     },
+                .logicalWidthPixels = 377U,
+                .logicalHeightPixels = 219U,
             };
         }
 
-        void releaseIfNeeded(EditorViewportNativeCompatibilityResult result) {
-            if (result.messageUtf8 != nullptr) {
-                editor_viewport_release_compatibility_result(result);
-            }
-        }
-
-        void releaseIfNeeded(EditorViewportNativePresentPacket packet) {
-            if (packet.nativePacket != nullptr || packet.messageUtf8 != nullptr) {
-                editor_viewport_release_present_packet(packet);
-            }
-        }
-
-        struct ImportedCompositionSemaphores final {
-            ImportedCompositionSemaphores() = default;
-            ImportedCompositionSemaphores(const ImportedCompositionSemaphores&) = delete;
-            ImportedCompositionSemaphores& operator=(const ImportedCompositionSemaphores&) = delete;
-            ImportedCompositionSemaphores(ImportedCompositionSemaphores&&) = delete;
-            ImportedCompositionSemaphores& operator=(ImportedCompositionSemaphores&&) = delete;
-
-            ~ImportedCompositionSemaphores() {
-                if (ready != VK_NULL_HANDLE) {
-                    vkDestroySemaphore(device, ready, nullptr);
+        [[nodiscard]] bool waitForReadyFrame(std::uint64_t streamId,
+                                             EditorViewportNativeReadyFrameV5& frame) {
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
+            while (std::chrono::steady_clock::now() < deadline) {
+                if (editor_viewport_try_take_ready_v5(streamId, &frame) !=
+                    EditorViewportNativeStatus_Success) {
+                    return false;
                 }
-                if (release != VK_NULL_HANDLE) {
-                    vkDestroySemaphore(device, release, nullptr);
+                if (frame.hasFrame != 0U) {
+                    return true;
                 }
+                std::this_thread::yield();
             }
-
-            VkDevice device{VK_NULL_HANDLE};
-            VkSemaphore ready{VK_NULL_HANDLE};
-            VkSemaphore release{VK_NULL_HANDLE};
-        };
-
-        [[nodiscard]] PFN_vkImportSemaphoreWin32HandleKHR
-        loadImportSemaphoreWin32Handle(VkDevice device) {
-            // Vulkan extension entry points use the API's generic function-pointer lookup.
-            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-            return reinterpret_cast<PFN_vkImportSemaphoreWin32HandleKHR>(
-                vkGetDeviceProcAddr(device, "vkImportSemaphoreWin32HandleKHR"));
+            return false;
         }
 
-        [[nodiscard]] bool
-        importCompositionSemaphore(VkDevice device,
-                                   PFN_vkImportSemaphoreWin32HandleKHR importSemaphore,
-                                   void* sourceHandle, VkSemaphore& semaphore) {
-            VkSemaphoreCreateInfo createInfo{};
-            createInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-            const VkResult created = vkCreateSemaphore(device, &createInfo, nullptr, &semaphore);
-            if (created != VK_SUCCESS) {
-                return false;
+        [[nodiscard]] bool waitForPoll(std::uint64_t streamId,
+                                       EditorViewportNativeStreamPollV5& poll,
+                                       std::uint32_t lifecycle) {
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
+            while (std::chrono::steady_clock::now() < deadline) {
+                if (editor_viewport_poll_stream_v5(streamId, &poll) !=
+                    EditorViewportNativeStatus_Success) {
+                    return false;
+                }
+                if (poll.lifecycle == lifecycle) {
+                    return true;
+                }
+                std::this_thread::yield();
             }
-
-            VkImportSemaphoreWin32HandleInfoKHR importInfo{};
-            importInfo.sType = VK_STRUCTURE_TYPE_IMPORT_SEMAPHORE_WIN32_HANDLE_INFO_KHR;
-            importInfo.semaphore = semaphore;
-            importInfo.handleType = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_WIN32_BIT;
-            importInfo.handle = static_cast<HANDLE>(sourceHandle);
-            return importSemaphore(device, &importInfo) == VK_SUCCESS;
+            return false;
         }
 
-        [[nodiscard]] bool
-        completeCompositionCycle(const VulkanContext& context,
-                                 const EditorViewportNativePresentPacket& packet) {
-            if (packet.nativePacket == nullptr || packet.waitSemaphoreHandle == nullptr ||
-                packet.signalSemaphoreHandle == nullptr) {
-                return false;
+        [[nodiscard]] bool waitForReadyPoll(std::uint64_t streamId,
+                                            EditorViewportNativeStreamPollV5& poll) {
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
+            while (std::chrono::steady_clock::now() < deadline) {
+                if (editor_viewport_poll_stream_v5(streamId, &poll) !=
+                    EditorViewportNativeStatus_Success) {
+                    return false;
+                }
+                if (poll.hasReadyFrame != 0U) {
+                    return true;
+                }
+                std::this_thread::yield();
             }
-
-            const PFN_vkImportSemaphoreWin32HandleKHR importSemaphore =
-                loadImportSemaphoreWin32Handle(context.device());
-            if (importSemaphore == nullptr) {
-                logError("Viewport native bridge smoke could not load semaphore import.");
-                return false;
-            }
-
-            ImportedCompositionSemaphores semaphores;
-            semaphores.device = context.device();
-            if (!importCompositionSemaphore(context.device(), importSemaphore,
-                                            packet.waitSemaphoreHandle, semaphores.ready) ||
-                !importCompositionSemaphore(context.device(), importSemaphore,
-                                            packet.signalSemaphoreHandle, semaphores.release)) {
-                logError("Viewport native bridge smoke could not import composition semaphores.");
-                return false;
-            }
-
-            VkFence fence = VK_NULL_HANDLE;
-            VkFenceCreateInfo fenceInfo{};
-            fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-            VkResult result = vkCreateFence(context.device(), &fenceInfo, nullptr, &fence);
-            if (result != VK_SUCCESS) {
-                logError("Viewport native bridge smoke could not create a composition fence.");
-                return false;
-            }
-
-            VkSemaphoreSubmitInfo waitInfo{};
-            waitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-            waitInfo.semaphore = semaphores.ready;
-            waitInfo.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-
-            VkSemaphoreSubmitInfo signalInfo{};
-            signalInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-            signalInfo.semaphore = semaphores.release;
-            signalInfo.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-
-            VkSubmitInfo2 submitInfo{};
-            submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
-            submitInfo.waitSemaphoreInfoCount = 1U;
-            submitInfo.pWaitSemaphoreInfos = &waitInfo;
-            submitInfo.signalSemaphoreInfoCount = 1U;
-            submitInfo.pSignalSemaphoreInfos = &signalInfo;
-
-            result = vkQueueSubmit2(context.graphicsQueue(), 1U, &submitInfo, fence);
-            if (result == VK_SUCCESS) {
-                constexpr std::uint64_t kCompositionTimeoutNanoseconds = 5'000'000'000ULL;
-                result = vkWaitForFences(context.device(), 1U, &fence, VK_TRUE,
-                                         kCompositionTimeoutNanoseconds);
-            }
-            vkDestroyFence(context.device(), fence, nullptr);
-            if (result != VK_SUCCESS) {
-                logError("Viewport native bridge smoke did not complete the composition cycle.");
-                return false;
-            }
-            return true;
+            return false;
         }
 
-        [[nodiscard]] bool
-        expectCompatibilityStatus(const EditorViewportNativeCompatibilityRequest* request,
-                                  std::uint32_t expectedStatus) {
+        [[nodiscard]] bool waitForNoOutstandingPackets() {
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
+            while (std::chrono::steady_clock::now() < deadline) {
+                EditorViewportNativeRuntimeStatsV8 stats{};
+                if (editor_viewport_query_runtime_stats_v8(&stats) !=
+                    EditorViewportNativeStatus_Success) {
+                    return false;
+                }
+                if (stats.outstandingPackets == 0U) {
+                    return true;
+                }
+                std::this_thread::yield();
+            }
+            return false;
+        }
+
+        [[nodiscard]] bool queryCompatibility() {
+            EditorViewportNativeCompatibilityRequest compatibility = makeCompatibilityRequest();
             EditorViewportNativeCompatibilityResult result{};
-            const std::uint32_t status =
-                editor_viewport_query_composition_compatibility(request, &result);
-            const bool matches = status == expectedStatus && result.status == expectedStatus;
-            releaseIfNeeded(result);
-            return matches;
+            const bool compatible =
+                editor_viewport_query_composition_compatibility(&compatibility, &result) ==
+                    EditorViewportNativeStatus_Success &&
+                result.status == EditorViewportNativeStatus_Success &&
+                result.producedImageHandleType == EditorViewportNativeHandleType_VulkanOpaqueNt &&
+                result.producedSemaphoreHandleType == EditorViewportNativeHandleType_VulkanOpaqueNt;
+            editor_viewport_release_compatibility_result(result);
+            return compatible;
         }
 
-        [[nodiscard]] bool queryRuntimeStatsV2(EditorViewportNativeRuntimeStatsV2& stats) {
-            const std::uint32_t status = editor_viewport_query_runtime_stats_v2(&stats);
-            return status == EditorViewportNativeStatus_Success &&
-                   stats.header.abiVersion == EDITOR_NATIVE_ABI_VERSION &&
-                   stats.header.structSize == sizeof(EditorViewportNativeRuntimeStatsV2);
-        }
+        [[nodiscard]] bool smokeMonotonicFrameClock() {
+            using FrameClock = EditorSharedViewportFrameClock;
+            const FrameClock::Clock::time_point epoch{};
+            FrameClock clock{epoch};
 
-        [[nodiscard]] bool queryRuntimeStatsV3(EditorViewportNativeRuntimeStatsV3& stats) {
-            const std::uint32_t status = editor_viewport_query_runtime_stats_v3(&stats);
-            return status == EditorViewportNativeStatus_Success &&
-                   stats.header.abiVersion == EDITOR_NATIVE_ABI_VERSION &&
-                   stats.header.structSize == sizeof(EditorViewportNativeRuntimeStatsV3);
-        }
-
-        [[nodiscard]] bool queryRuntimeStatsV4(EditorViewportNativeRuntimeStatsV4& stats) {
-            const std::uint32_t status = editor_viewport_query_runtime_stats_v4(&stats);
-            return status == EditorViewportNativeStatus_Success &&
-                   stats.header.abiVersion == EDITOR_NATIVE_ABI_VERSION &&
-                   stats.header.structSize == sizeof(EditorViewportNativeRuntimeStatsV4);
-        }
-
-        [[nodiscard]] bool queryRuntimeStatsV5(EditorViewportNativeRuntimeStatsV5& stats) {
-            const std::uint32_t status = editor_viewport_query_runtime_stats_v5(&stats);
-            return status == EditorViewportNativeStatus_Success &&
-                   stats.header.abiVersion == EDITOR_NATIVE_ABI_VERSION &&
-                   stats.header.structSize == sizeof(EditorViewportNativeRuntimeStatsV5);
-        }
-
-        [[nodiscard]] bool queryRuntimeStatsV6(EditorViewportNativeRuntimeStatsV6& stats) {
-            const std::uint32_t status = editor_viewport_query_runtime_stats_v6(&stats);
-            return status == EditorViewportNativeStatus_Success &&
-                   stats.header.abiVersion == EDITOR_NATIVE_ABI_VERSION &&
-                   stats.header.structSize == sizeof(EditorViewportNativeRuntimeStatsV6);
-        }
-
-        [[nodiscard]] bool queryRuntimeStatsV7(EditorViewportNativeRuntimeStatsV7& stats) {
-            const std::uint32_t status = editor_viewport_query_runtime_stats_v7(&stats);
-            return status == EditorViewportNativeStatus_Success &&
-                   stats.header.abiVersion == EDITOR_NATIVE_ABI_VERSION &&
-                   stats.header.structSize == sizeof(EditorViewportNativeRuntimeStatsV7);
-        }
-
-        [[nodiscard]] bool waitForRuntimeEpochs(std::uint64_t submitted, std::uint64_t completed,
-                                                std::uint64_t pending,
-                                                std::uint64_t outstandingPackets) {
-            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
-            while (std::chrono::steady_clock::now() < deadline) {
-                EditorViewportNativeRuntimeStatsV3 stats{};
-                if (queryRuntimeStatsV3(stats) && stats.frameEpochsSubmitted == submitted &&
-                    stats.frameEpochsCompleted == completed &&
-                    stats.frameEpochsPending == pending &&
-                    stats.outstandingPackets == outstandingPackets) {
-                    return true;
-                }
-                std::this_thread::yield();
+            const BasicRenderViewFrameParams first = clock.frameParams(1U, epoch);
+            if (first.frameIndex != 1U || first.timeSeconds != 0.0F || first.deltaSeconds != 0.0F) {
+                logError("Viewport frame clock did not start at a zero monotonic epoch.");
+                return false;
             }
-            return false;
-        }
+            clock.markRendered(epoch);
 
-        [[nodiscard]] bool waitForExternalImageLeases(std::uint64_t expectedLeases) {
-            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
-            while (std::chrono::steady_clock::now() < deadline) {
-                EditorViewportNativeRuntimeStatsV2 stats{};
-                if (queryRuntimeStatsV2(stats) && stats.externalImagesLeased == expectedLeases) {
-                    return true;
-                }
-                std::this_thread::yield();
+            const auto fiveMilliseconds = epoch + std::chrono::milliseconds{5};
+            const BasicRenderViewFrameParams second = clock.frameParams(2U, fiveMilliseconds);
+            if (std::abs(second.timeSeconds - 0.005F) > 0.0001F ||
+                std::abs(second.deltaSeconds - 0.005F) > 0.0001F) {
+                logError("Viewport frame clock used a nominal FPS instead of elapsed time.");
+                return false;
             }
-            return false;
-        }
+            clock.markRendered(fiveMilliseconds);
 
-        [[nodiscard]] bool waitForRuntimeShutdown() {
-            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
-            while (std::chrono::steady_clock::now() < deadline) {
-                EditorViewportNativeRuntimeStatsV2 stats{};
-                if (queryRuntimeStatsV2(stats) && stats.hasContext == 0U &&
-                    stats.hasRenderProducer == 0U && stats.shutdownRequested == 1U &&
-                    stats.outstandingPackets == 0U) {
-                    return true;
-                }
-                std::this_thread::yield();
-            }
-            return false;
-        }
-
-        [[nodiscard]] bool smokeCompatibilityContract() {
-            if (!expectCompatibilityStatus(nullptr, EditorViewportNativeStatus_InvalidArgument)) {
-                logError(
-                    "Viewport native bridge smoke did not reject a null compatibility request.");
+            const auto failedAttemptAt = epoch + std::chrono::milliseconds{10};
+            const BasicRenderViewFrameParams failedAttempt = clock.frameParams(3U, failedAttemptAt);
+            if (failedAttempt.frameIndex != 3U ||
+                std::abs(failedAttempt.deltaSeconds - 0.005F) > 0.0001F) {
+                logError("Viewport frame clock did not identify a render attempt.");
                 return false;
             }
 
-            EditorViewportNativeCompatibilityRequest undersizedRequest = makeUndersizedRequest();
-            if (!expectCompatibilityStatus(&undersizedRequest,
-                                           EditorViewportNativeStatus_UnsupportedAbi)) {
-                logError("Viewport native bridge smoke did not reject an undersized ABI request.");
+            const auto succeededAfterFailureAt = epoch + std::chrono::milliseconds{21};
+            const BasicRenderViewFrameParams succeededAfterFailure =
+                clock.frameParams(4U, succeededAfterFailureAt);
+            if (succeededAfterFailure.frameIndex != 4U ||
+                std::abs(succeededAfterFailure.timeSeconds - 0.021F) > 0.0001F ||
+                std::abs(succeededAfterFailure.deltaSeconds - 0.016F) > 0.0001F) {
+                logError("Viewport frame clock advanced its success sample after a failed render.");
+                return false;
+            }
+            clock.markRendered(succeededAfterFailureAt);
+
+            const auto afterIdle = epoch + std::chrono::milliseconds{2021};
+            const BasicRenderViewFrameParams resumed = clock.frameParams(5U, afterIdle);
+            if (resumed.frameIndex != 5U || std::abs(resumed.timeSeconds - 2.021F) > 0.0001F ||
+                std::abs(resumed.deltaSeconds - 2.0F) > 0.0001F) {
+                logError("Viewport frame clock did not preserve elapsed time across idle.");
                 return false;
             }
 
-            EditorViewportNativeCompatibilityRequest unknownHandleRequest =
-                makeRequest(EditorViewportNativeHandleType_Unknown,
-                            EditorViewportNativeHandleType_VulkanOpaqueNt);
-            if (!expectCompatibilityStatus(&unknownHandleRequest,
-                                           EditorViewportNativeStatus_UnsupportedHandleType)) {
-                logError(
-                    "Viewport native bridge smoke did not reject an unknown image handle type.");
+            const auto resetEpoch = epoch + std::chrono::seconds{3};
+            clock.reset(resetEpoch);
+            const BasicRenderViewFrameParams resetFirst = clock.frameParams(6U, resetEpoch);
+            if (resetFirst.frameIndex != 6U || resetFirst.timeSeconds != 0.0F ||
+                resetFirst.deltaSeconds != 0.0F) {
+                logError("Viewport frame clock reset retained its previous epoch or delta.");
                 return false;
             }
+            clock.markRendered(resetEpoch);
 
-            EditorViewportNativeCompatibilityRequest supportedRequest = makeRequest();
-            EditorViewportNativeCompatibilityResult supportedResult{};
-            const std::uint32_t supportedStatus = editor_viewport_query_composition_compatibility(
-                &supportedRequest, &supportedResult);
-            const bool supported = supportedStatus == EditorViewportNativeStatus_Success &&
-                                   supportedResult.status == EditorViewportNativeStatus_Success &&
-                                   supportedResult.producedImageHandleType ==
-                                       EditorViewportNativeHandleType_VulkanOpaqueNt &&
-                                   supportedResult.producedSemaphoreHandleType ==
-                                       EditorViewportNativeHandleType_VulkanOpaqueNt;
-            if (!supported) {
-                logNativeMessage(supportedResult.messageUtf8, supportedResult.messageByteLength);
-                releaseIfNeeded(supportedResult);
-                logError("Viewport native bridge smoke did not accept a Vulkan opaque NT request.");
+            const auto afterReset = resetEpoch + std::chrono::milliseconds{7};
+            const BasicRenderViewFrameParams resetSecond = clock.frameParams(7U, afterReset);
+            if (std::abs(resetSecond.timeSeconds - 0.007F) > 0.0001F ||
+                std::abs(resetSecond.deltaSeconds - 0.007F) > 0.0001F) {
+                logError("Viewport frame clock reset did not establish a fresh monotonic epoch.");
                 return false;
             }
-            EditorViewportNativeCompatibilityRequest matchingRequest = makeRequest();
-            matchingRequest.hasDeviceUuid = 1U;
-            matchingRequest.deviceUuidLow = supportedResult.nativeDeviceUuidLow;
-            matchingRequest.deviceUuidHigh = supportedResult.nativeDeviceUuidHigh;
-            releaseIfNeeded(supportedResult);
-
-            if (!expectCompatibilityStatus(&matchingRequest, EditorViewportNativeStatus_Success)) {
-                logError("Viewport native bridge smoke did not match its device snapshot UUID.");
-                return false;
-            }
-
-            EditorViewportNativeCompatibilityRequest mismatchedRequest =
-                makeMismatchedUuidRequest();
-            if (!expectCompatibilityStatus(&mismatchedRequest,
-                                           EditorViewportNativeStatus_DeviceMismatch)) {
-                logError("Viewport native bridge smoke did not detect a mismatched device UUID.");
-                return false;
-            }
-
             return true;
         }
 
-        [[nodiscard]] bool smokeFirstPacketAndBackpressure() {
-            EditorViewportNativePresentRequestV2 invalidSceneRequest =
-                makePresentRequestV2(VkExtent2D{.width = 320U, .height = 180U}, false, 0U);
-            invalidSceneRequest.sceneRevision = 1U;
-            EditorViewportNativePresentPacket invalidScenePacket{};
-            if (editor_viewport_acquire_present_packet_v2(&invalidSceneRequest,
-                                                          &invalidScenePacket) !=
-                    EditorViewportNativeStatus_InvalidArgument ||
-                invalidScenePacket.status != EditorViewportNativeStatus_InvalidArgument) {
-                releaseIfNeeded(invalidScenePacket);
-                logError("Viewport native bridge smoke accepted a scene revision without a "
-                         "scene.");
-                return false;
-            }
-
-            EditorViewportNativePresentPacket packet{};
-            EditorViewportNativePresentRequestV2 firstPresentRequest =
-                makePresentRequestV2(VkExtent2D{.width = 320U, .height = 180U}, true, 42U);
-            const std::uint32_t packetStatus =
-                editor_viewport_acquire_present_packet_v2(&firstPresentRequest, &packet);
-            const bool packetAvailable =
-                packetStatus == EditorViewportNativeStatus_Success &&
-                packet.status == EditorViewportNativeStatus_Success &&
-                packet.nativePacket != nullptr && packet.imageHandle != nullptr &&
-                packet.waitSemaphoreHandle != nullptr && packet.signalSemaphoreHandle != nullptr &&
-                packet.widthPixels == 320U && packet.heightPixels == 180U &&
-                packet.format == EditorViewportNativeImageFormat_Bgra8Unorm &&
-                packet.memorySizeBytes >= 320ULL * 180ULL * 4ULL && packet.frameIndex == 1U;
-            if (!packetAvailable) {
-                logPresentPacketMessage(packet);
-                releaseIfNeeded(packet);
-                logError("Viewport native bridge smoke did not produce the first shared present "
-                         "packet.");
-                return false;
-            }
-            EditorViewportNativeRuntimeStats statsAfterFirstPacket{};
-            const std::uint32_t statsStatus =
-                editor_viewport_query_runtime_stats(&statsAfterFirstPacket);
-            if (statsStatus != EditorViewportNativeStatus_Success ||
-                statsAfterFirstPacket.framesRendered != 1U ||
-                statsAfterFirstPacket.producersCreated != 1U ||
-                statsAfterFirstPacket.packetsCreated != 1U ||
-                statsAfterFirstPacket.outstandingPackets != 1U ||
-                statsAfterFirstPacket.hasRenderProducer == 0U) {
-                releaseIfNeeded(packet);
-                logError(
-                    "Viewport native bridge smoke did not expose first render producer stats.");
-                return false;
-            }
-            EditorViewportNativeRuntimeStatsV2 statsV2AfterFirstPacket{};
-            const std::uint32_t statsV2Status =
-                editor_viewport_query_runtime_stats_v2(&statsV2AfterFirstPacket);
-            if (statsV2Status != EditorViewportNativeStatus_Success ||
-                statsV2AfterFirstPacket.header.structSize !=
-                    sizeof(EditorViewportNativeRuntimeStatsV2) ||
-                statsV2AfterFirstPacket.framesRendered != 1U ||
-                statsV2AfterFirstPacket.producersCreated != 1U ||
-                statsV2AfterFirstPacket.packetsCreated != 1U ||
-                statsV2AfterFirstPacket.outstandingPackets != 1U ||
-                statsV2AfterFirstPacket.hasRenderProducer == 0U) {
-                releaseIfNeeded(packet);
-                logError("Viewport native bridge smoke did not expose runtime stats v2.");
-                return false;
-            }
-            EditorViewportNativeRuntimeStatsV3 statsV3AfterFirstPacket{};
-            if (!queryRuntimeStatsV3(statsV3AfterFirstPacket) ||
-                statsV3AfterFirstPacket.framesRendered != 1U ||
-                statsV3AfterFirstPacket.producersCreated != 1U ||
-                statsV3AfterFirstPacket.packetsCreated != 1U ||
-                statsV3AfterFirstPacket.outstandingPackets != 1U ||
-                statsV3AfterFirstPacket.hasRenderProducer == 0U ||
-                statsV3AfterFirstPacket.frameEpochsSubmitted != 1U ||
-                statsV3AfterFirstPacket.frameEpochsCompleted != 0U ||
-                statsV3AfterFirstPacket.frameEpochsPending != 1U) {
-                releaseIfNeeded(packet);
-                logError(
-                    "Viewport native bridge smoke did not expose runtime stats v3 before release.");
-                return false;
-            }
-            EditorViewportNativeRuntimeStatsV4 statsV4AfterFirstPacket{};
-            if (!queryRuntimeStatsV4(statsV4AfterFirstPacket) ||
-                statsV4AfterFirstPacket.framesRendered != 1U ||
-                statsV4AfterFirstPacket.producersCreated != 1U ||
-                statsV4AfterFirstPacket.packetsCreated != 1U ||
-                statsV4AfterFirstPacket.outstandingPackets != 1U ||
-                statsV4AfterFirstPacket.hasRenderProducer == 0U ||
-                statsV4AfterFirstPacket.frameEpochsSubmitted != 1U ||
-                statsV4AfterFirstPacket.frameEpochsCompleted != 0U ||
-                statsV4AfterFirstPacket.frameEpochsPending != 1U ||
-                statsV4AfterFirstPacket.rendererCreations != 1U) {
-                releaseIfNeeded(packet);
-                logError(
-                    "Viewport native bridge smoke did not expose runtime stats v4 before release.");
-                return false;
-            }
-            EditorViewportNativeRuntimeStatsV6 statsV6AfterFirstPacket{};
-            if (!queryRuntimeStatsV6(statsV6AfterFirstPacket) ||
-                statsV6AfterFirstPacket.framesRendered != 1U ||
-                statsV6AfterFirstPacket.sceneFramesRendered != 1U ||
-                statsV6AfterFirstPacket.lastSceneRevision != 42U) {
-                releaseIfNeeded(packet);
-                logError("Viewport native bridge smoke did not consume the minimal scene "
-                         "revision.");
-                return false;
-            }
-
-            EditorViewportNativePresentPacket backpressuredPacket{};
-            const std::uint32_t backpressuredStatus = editor_viewport_acquire_present_packet_v2(
-                &firstPresentRequest, &backpressuredPacket);
-            const bool acquireRejectedWhilePending =
-                backpressuredStatus == EditorViewportNativeStatus_Unavailable &&
-                backpressuredPacket.status == EditorViewportNativeStatus_Unavailable &&
-                backpressuredPacket.nativePacket == nullptr &&
-                backpressuredPacket.imageHandle == nullptr &&
-                backpressuredPacket.waitSemaphoreHandle == nullptr &&
-                backpressuredPacket.signalSemaphoreHandle == nullptr;
-            if (!acquireRejectedWhilePending) {
-                releaseIfNeeded(backpressuredPacket);
-                releaseIfNeeded(packet);
-                logError("Viewport native bridge smoke allowed acquire while a present packet was "
-                         "still pending.");
-                return false;
-            }
-
-            EditorViewportNativeRuntimeStatsV5 statsV5AfterBackpressure{};
-            if (!queryRuntimeStatsV5(statsV5AfterBackpressure) ||
-                statsV5AfterBackpressure.framesRendered != 1U ||
-                statsV5AfterBackpressure.packetsCreated != 1U ||
-                statsV5AfterBackpressure.outstandingPackets != 1U ||
-                statsV5AfterBackpressure.rendererCreations != 1U ||
-                statsV5AfterBackpressure.maxOutstandingPackets != 4U ||
-                statsV5AfterBackpressure.packetBackpressureHits != 1U ||
-                statsV5AfterBackpressure.frameEpochsSubmitted != 1U ||
-                statsV5AfterBackpressure.frameEpochsCompleted != 0U ||
-                statsV5AfterBackpressure.frameEpochsPending != 1U) {
-                releaseIfNeeded(backpressuredPacket);
-                releaseIfNeeded(packet);
-                logError("Viewport native bridge smoke did not expose v5 backpressure stats.");
-                return false;
-            }
-            releaseIfNeeded(backpressuredPacket);
-            releaseIfNeeded(packet);
-            if (!waitForRuntimeEpochs(1U, 1U, 0U, 0U)) {
-                logError("Viewport native bridge smoke did not poll the first packet retirement.");
-                return false;
-            }
-
-            EditorViewportNativeRuntimeStatsV3 statsV3AfterFirstRelease{};
-            if (!queryRuntimeStatsV3(statsV3AfterFirstRelease) ||
-                statsV3AfterFirstRelease.frameEpochsSubmitted != 1U ||
-                statsV3AfterFirstRelease.frameEpochsCompleted != 1U ||
-                statsV3AfterFirstRelease.frameEpochsPending != 0U ||
-                statsV3AfterFirstRelease.outstandingPackets != 0U) {
-                logError("Viewport native bridge smoke did not expose completed epoch stats after "
-                         "first release.");
-                return false;
-            }
-            EditorViewportNativeRuntimeStatsV4 statsV4AfterFirstRelease{};
-            if (!queryRuntimeStatsV4(statsV4AfterFirstRelease) ||
-                statsV4AfterFirstRelease.rendererCreations != 1U ||
-                statsV4AfterFirstRelease.frameEpochsSubmitted != 1U ||
-                statsV4AfterFirstRelease.frameEpochsCompleted != 1U ||
-                statsV4AfterFirstRelease.frameEpochsPending != 0U ||
-                statsV4AfterFirstRelease.outstandingPackets != 0U) {
-                logError("Viewport native bridge smoke did not preserve renderer reuse stats after "
-                         "first release.");
-                return false;
-            }
-            EditorViewportNativeRuntimeStatsV5 statsV5AfterFirstRelease{};
-            if (!queryRuntimeStatsV5(statsV5AfterFirstRelease) ||
-                statsV5AfterFirstRelease.rendererCreations != 1U ||
-                statsV5AfterFirstRelease.packetsCreated != 1U ||
-                statsV5AfterFirstRelease.outstandingPackets != 0U ||
-                statsV5AfterFirstRelease.maxOutstandingPackets != 4U ||
-                statsV5AfterFirstRelease.packetBackpressureHits != 1U ||
-                statsV5AfterFirstRelease.frameEpochsSubmitted != 1U ||
-                statsV5AfterFirstRelease.frameEpochsCompleted != 1U ||
-                statsV5AfterFirstRelease.frameEpochsPending != 0U) {
-                logError(
-                    "Viewport native bridge smoke did not preserve v5 stats after first release.");
-                return false;
-            }
-
-            return true;
-        }
-
-        [[nodiscard]] bool smokeSameSizeLegacyReuse() {
-            EditorViewportNativePresentPacket secondPacket{};
-            EditorViewportNativePresentRequest secondPresentRequest =
-                makePresentRequest(VkExtent2D{.width = 320U, .height = 180U});
-            const std::uint32_t secondPacketStatus =
-                editor_viewport_acquire_present_packet(&secondPresentRequest, &secondPacket);
-            const bool secondPacketAvailable =
-                secondPacketStatus == EditorViewportNativeStatus_Success &&
-                secondPacket.status == EditorViewportNativeStatus_Success &&
-                secondPacket.nativePacket != nullptr && secondPacket.imageHandle != nullptr &&
-                secondPacket.waitSemaphoreHandle != nullptr &&
-                secondPacket.signalSemaphoreHandle != nullptr && secondPacket.widthPixels == 320U &&
-                secondPacket.heightPixels == 180U && secondPacket.frameIndex == 2U;
-            if (!secondPacketAvailable) {
-                logPresentPacketMessage(secondPacket);
-                releaseIfNeeded(secondPacket);
-                logError(
-                    "Viewport native bridge smoke did not produce the second same-size packet.");
-                return false;
-            }
-            releaseIfNeeded(secondPacket);
-            if (!waitForRuntimeEpochs(2U, 2U, 0U, 0U)) {
-                logError(
-                    "Viewport native bridge smoke did not poll the same-size packet retirement.");
-                return false;
-            }
-
-            EditorViewportNativeRuntimeStatsV3 statsV3AfterSecondRelease{};
-            if (!queryRuntimeStatsV3(statsV3AfterSecondRelease) ||
-                statsV3AfterSecondRelease.frameEpochsSubmitted != 2U ||
-                statsV3AfterSecondRelease.frameEpochsCompleted != 2U ||
-                statsV3AfterSecondRelease.frameEpochsPending != 0U) {
-                logError("Viewport native bridge smoke did not advance epoch stats after the "
-                         "second release.");
-                return false;
-            }
-            EditorViewportNativeRuntimeStatsV4 statsV4AfterSecondRelease{};
-            if (!queryRuntimeStatsV4(statsV4AfterSecondRelease) ||
-                statsV4AfterSecondRelease.rendererCreations != 1U ||
-                statsV4AfterSecondRelease.packetsCreated != 2U ||
-                statsV4AfterSecondRelease.frameEpochsSubmitted != 2U ||
-                statsV4AfterSecondRelease.frameEpochsCompleted != 2U ||
-                statsV4AfterSecondRelease.frameEpochsPending != 0U) {
-                logError("Viewport native bridge smoke did not preserve renderer reuse stats after "
-                         "the second release.");
-                return false;
-            }
-
-            EditorViewportNativeRuntimeStatsV2 statsAfterSameSizeReuse{};
-            if (!queryRuntimeStatsV2(statsAfterSameSizeReuse) ||
-                statsAfterSameSizeReuse.externalImagesAcquired != 2U ||
-                statsAfterSameSizeReuse.externalImagesCreated != 1U ||
-                statsAfterSameSizeReuse.externalImagesReused < 1U ||
-                statsAfterSameSizeReuse.externalImagesReleased < 2U ||
-                statsAfterSameSizeReuse.externalImagesAvailable < 1U ||
-                statsAfterSameSizeReuse.externalImagesLeased != 0U) {
-                logError(
-                    "Viewport native bridge smoke did not observe same-size external image reuse.");
-                return false;
-            }
-
-            return true;
-        }
-
-        [[nodiscard]] bool smokeResizeChurn() {
-            EditorViewportNativePresentPacket resizedPacket{};
-            EditorViewportNativePresentRequest resizedPresentRequest =
-                makePresentRequest(VkExtent2D{.width = 640U, .height = 360U});
-            const std::uint32_t resizedPacketStatus =
-                editor_viewport_acquire_present_packet(&resizedPresentRequest, &resizedPacket);
-            const bool resizedPacketAvailable =
-                resizedPacketStatus == EditorViewportNativeStatus_Success &&
-                resizedPacket.status == EditorViewportNativeStatus_Success &&
-                resizedPacket.nativePacket != nullptr && resizedPacket.imageHandle != nullptr &&
-                resizedPacket.waitSemaphoreHandle != nullptr &&
-                resizedPacket.signalSemaphoreHandle != nullptr &&
-                resizedPacket.widthPixels == 640U && resizedPacket.heightPixels == 360U &&
-                resizedPacket.frameIndex == 3U;
-            if (!resizedPacketAvailable) {
-                logPresentPacketMessage(resizedPacket);
-                releaseIfNeeded(resizedPacket);
-                logError("Viewport native bridge smoke did not produce a resized shared present "
-                         "packet.");
-                return false;
-            }
-            releaseIfNeeded(resizedPacket);
-            if (!waitForRuntimeEpochs(3U, 3U, 0U, 0U)) {
-                logError(
-                    "Viewport native bridge smoke did not poll the resized packet retirement.");
-                return false;
-            }
-
-            EditorViewportNativeRuntimeStatsV3 statsV3AfterResizeRelease{};
-            if (!queryRuntimeStatsV3(statsV3AfterResizeRelease) ||
-                statsV3AfterResizeRelease.frameEpochsSubmitted != 3U ||
-                statsV3AfterResizeRelease.frameEpochsCompleted != 3U ||
-                statsV3AfterResizeRelease.frameEpochsPending != 0U) {
-                logError("Viewport native bridge smoke did not advance epoch stats after the "
-                         "resized release.");
-                return false;
-            }
-            EditorViewportNativeRuntimeStatsV4 statsV4AfterResizeRelease{};
-            if (!queryRuntimeStatsV4(statsV4AfterResizeRelease) ||
-                statsV4AfterResizeRelease.rendererCreations != 1U ||
-                statsV4AfterResizeRelease.packetsCreated != 3U ||
-                statsV4AfterResizeRelease.frameEpochsSubmitted != 3U ||
-                statsV4AfterResizeRelease.frameEpochsCompleted != 3U ||
-                statsV4AfterResizeRelease.frameEpochsPending != 0U) {
-                logError("Viewport native bridge smoke did not preserve renderer reuse stats after "
-                         "the resized release.");
-                return false;
-            }
-
-            EditorViewportNativeRuntimeStatsV2 statsAfterResize{};
-            if (!queryRuntimeStatsV2(statsAfterResize) ||
-                statsAfterResize.externalImagesAcquired != 3U ||
-                statsAfterResize.externalImagesCreated != 2U ||
-                statsAfterResize.externalImagesReused < 1U ||
-                statsAfterResize.externalImagesReleased < 3U ||
-                statsAfterResize.externalImagesAvailable != 2U ||
-                statsAfterResize.externalImagesLeased != 0U) {
-                logError("Viewport native bridge smoke did not observe resize external image "
-                         "allocation.");
-                return false;
-            }
-
-            EditorViewportNativePresentPacket resizeChurnPacket{};
-            EditorViewportNativePresentRequest resizeChurnRequest =
-                makePresentRequest(VkExtent2D{.width = 800U, .height = 450U});
-            const std::uint32_t resizeChurnStatus =
-                editor_viewport_acquire_present_packet(&resizeChurnRequest, &resizeChurnPacket);
-            const bool resizeChurnPacketAvailable =
-                resizeChurnStatus == EditorViewportNativeStatus_Success &&
-                resizeChurnPacket.status == EditorViewportNativeStatus_Success &&
-                resizeChurnPacket.nativePacket != nullptr &&
-                resizeChurnPacket.widthPixels == 800U && resizeChurnPacket.heightPixels == 450U &&
-                resizeChurnPacket.frameIndex == 4U;
-            if (!resizeChurnPacketAvailable) {
-                logPresentPacketMessage(resizeChurnPacket);
-                releaseIfNeeded(resizeChurnPacket);
-                logError("Viewport native bridge smoke did not produce the resize churn packet.");
-                return false;
-            }
-            releaseIfNeeded(resizeChurnPacket);
-            if (!waitForRuntimeEpochs(4U, 4U, 0U, 0U)) {
-                logError("Viewport native bridge smoke did not poll the resize churn retirement.");
-                return false;
-            }
-
-            EditorViewportNativeRuntimeStatsV2 statsAfterResizeChurn{};
-            if (!queryRuntimeStatsV2(statsAfterResizeChurn) ||
-                statsAfterResizeChurn.externalImagesAcquired != 4U ||
-                statsAfterResizeChurn.externalImagesCreated != 3U ||
-                statsAfterResizeChurn.externalImagesReleased < 4U ||
-                statsAfterResizeChurn.externalImagesAvailable != 2U ||
-                statsAfterResizeChurn.externalImagesLeased != 0U) {
-                logError("Viewport native bridge smoke observed an unbounded resize image cache.");
-                return false;
-            }
-
-            return true;
-        }
-
-        using AdditionalPresentSlots = std::array<EditorViewportNativePresentPacket, 3U>;
-
-        void releaseAll(AdditionalPresentSlots& slots) {
-            for (EditorViewportNativePresentPacket& slot : slots) {
-                releaseIfNeeded(slot);
-            }
-        }
-
-        [[nodiscard]] bool createReusableSlot(const EditorViewportNativePresentRequestV2& request,
-                                              EditorViewportNativePresentPacket& slot) {
-            const std::uint32_t status = editor_viewport_create_present_slot_v3(&request, &slot);
-            if (status == EditorViewportNativeStatus_Success &&
-                slot.status == EditorViewportNativeStatus_Success && slot.nativePacket != nullptr &&
-                slot.frameIndex == 5U) {
-                return true;
-            }
-
-            logPresentPacketMessage(slot);
-            releaseIfNeeded(slot);
-            logError("Viewport native bridge smoke did not create a reusable present slot.");
-            return false;
-        }
-
-        [[nodiscard]] bool smokeReusableSlotFrames(const VulkanContext& compositionContext,
-                                                   EditorViewportNativePresentPacket& slot) {
-            EditorViewportNativePresentSlotRenderRequest renderRequest{
-                .header =
-                    EditorViewportNativeAbiHeader{
-                        .abiVersion = EDITOR_NATIVE_ABI_VERSION,
-                        .structSize = static_cast<std::uint32_t>(
-                            sizeof(EditorViewportNativePresentSlotRenderRequest)),
-                    },
-                .nativeSlot = slot.nativePacket,
-                .widthPixels = slot.widthPixels,
-                .heightPixels = slot.heightPixels,
-                .hasScene = 1U,
-                .reserved = 0U,
-                .sceneRevision = 10U,
+        [[nodiscard]] bool smokeStableRoundRobinDispatchPolicy() {
+            std::array<DispatchProbeStream, 4> streams{
+                DispatchProbeStream{.streamId = 10U, .realtime = true},
+                DispatchProbeStream{.streamId = 20U, .renderSteps = 1U},
+                DispatchProbeStream{.streamId = 30U, .renderSteps = 1U},
+                DispatchProbeStream{.streamId = 40U, .renderSteps = 1U},
             };
-
-            if (!completeCompositionCycle(compositionContext, slot) ||
-                editor_viewport_render_present_slot_v3(&renderRequest, &slot) !=
-                    EditorViewportNativeStatus_Success ||
-                slot.frameIndex != 6U || !completeCompositionCycle(compositionContext, slot)) {
-                logError("Viewport native bridge smoke did not reuse a present slot.");
+            std::array<DispatchProbeEvent, 8> events{};
+            std::size_t eventCount{};
+            std::uint64_t cursor{};
+            const auto streamId = [](const DispatchProbeStream& stream) { return stream.streamId; };
+            const auto noPriorityWork = [](DispatchProbeStream&) { return false; };
+            const auto render = [&events, &eventCount](DispatchProbeStream& stream) {
+                if (stream.renderSteps == 0U && !stream.realtime) {
+                    return false;
+                }
+                events.at(eventCount++) = DispatchProbeEvent{
+                    .streamId = stream.streamId,
+                    .kind = DispatchProbeKind::Render,
+                };
+                if (stream.renderSteps != 0U) {
+                    --stream.renderSteps;
+                }
+                return true;
+            };
+            for (std::size_t dispatch = 0U; dispatch < streams.size(); ++dispatch) {
+                if (!detail::dispatchOneStableRoundRobin(std::span{streams}, cursor, streamId,
+                                                         noPriorityWork, render)) {
+                    logError("Viewport scheduler probe stopped before all four streams ran.");
+                    return false;
+                }
+            }
+            if (events.at(0).streamId != 10U || events.at(1).streamId != 20U ||
+                events.at(2).streamId != 30U || events.at(3).streamId != 40U) {
+                logError("Viewport scheduler probe let a realtime stream monopolize dispatch.");
                 return false;
             }
 
-            renderRequest.sceneRevision = 11U;
-            if (editor_viewport_render_present_slot_v3(&renderRequest, &slot) !=
-                    EditorViewportNativeStatus_Success ||
-                slot.frameIndex != 7U || !completeCompositionCycle(compositionContext, slot)) {
-                logError("Viewport native bridge smoke did not repeatedly reuse a present slot.");
+            streams = {
+                DispatchProbeStream{.streamId = 10U, .renderSteps = 1U},
+                DispatchProbeStream{.streamId = 20U, .renderSteps = 1U},
+                DispatchProbeStream{.streamId = 30U, .closeSteps = 2U},
+                DispatchProbeStream{.streamId = 40U, .completionSteps = 1U},
+            };
+            eventCount = 0U;
+            cursor = 10U;
+            const auto priority = [&events, &eventCount](DispatchProbeStream& stream) {
+                DispatchProbeKind kind{};
+                if (stream.completionSteps != 0U) {
+                    --stream.completionSteps;
+                    kind = DispatchProbeKind::Completion;
+                } else if (stream.closeSteps != 0U) {
+                    --stream.closeSteps;
+                    kind = DispatchProbeKind::Close;
+                } else {
+                    return false;
+                }
+                events.at(eventCount++) =
+                    DispatchProbeEvent{.streamId = stream.streamId, .kind = kind};
+                return true;
+            };
+            for (std::size_t dispatch = 0U; dispatch < 4U; ++dispatch) {
+                if (!detail::dispatchOneStableRoundRobin(std::span{streams}, cursor, streamId,
+                                                         priority, render)) {
+                    logError("Viewport scheduler priority probe stopped unexpectedly.");
+                    return false;
+                }
+            }
+            if (events.at(0).kind != DispatchProbeKind::Close || events.at(0).streamId != 30U ||
+                events.at(1).kind != DispatchProbeKind::Completion ||
+                events.at(1).streamId != 40U || events.at(2).kind != DispatchProbeKind::Close ||
+                events.at(2).streamId != 30U || events.at(3).kind != DispatchProbeKind::Render) {
+                logError(
+                    "Viewport scheduler rendered before global completion/close work drained.");
                 return false;
             }
-
-            EditorViewportNativePresentSlotRenderRequest mismatchedExtentRender = renderRequest;
-            ++mismatchedExtentRender.widthPixels;
-            if (editor_viewport_render_present_slot_v3(&mismatchedExtentRender, &slot) !=
-                EditorViewportNativeStatus_InvalidArgument) {
-                logError("Viewport native bridge smoke changed a present slot extent in place.");
-                return false;
-            }
-
             return true;
         }
 
-        [[nodiscard]] bool
-        smokeBoundedReusableSlots(const EditorViewportNativePresentRequestV2& request) {
-            AdditionalPresentSlots additionalSlots{};
-            for (EditorViewportNativePresentPacket& slot : additionalSlots) {
-                const std::uint32_t status =
-                    editor_viewport_create_present_slot_v3(&request, &slot);
-                if (status != EditorViewportNativeStatus_Success ||
-                    slot.status != EditorViewportNativeStatus_Success ||
-                    slot.nativePacket == nullptr) {
-                    releaseAll(additionalSlots);
-                    logError("Viewport native bridge smoke did not allocate four bounded slots.");
+        [[nodiscard]] bool completeNotSubmitted(std::uint64_t streamId, void* nativeSlot) {
+            return editor_viewport_complete_frame_v5(
+                       streamId, nativeSlot,
+                       EditorViewportNativePresentCompletionKind_NotSubmittedToConsumer) ==
+                   EditorViewportNativeStatus_Success;
+        }
+
+        [[nodiscard]] bool completeConsumerAccessed(std::uint64_t streamId, void* nativeSlot) {
+            return editor_viewport_complete_frame_v5(
+                       streamId, nativeSlot,
+                       EditorViewportNativePresentCompletionKind_ConsumerAccessed) ==
+                   EditorViewportNativeStatus_Success;
+        }
+
+        [[nodiscard]] bool waitForLogicalRenderExtent(std::uint64_t requestSequence,
+                                                      ExpectedRenderExtent expectedExtent) {
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
+            while (std::chrono::steady_clock::now() < deadline) {
+                EditorViewportNativeRuntimeStatsV8 stats{};
+                if (editor_viewport_query_runtime_stats_v8(&stats) !=
+                    EditorViewportNativeStatus_Success) {
+                    return false;
+                }
+                if (stats.lastRequestSequence >= requestSequence) {
+                    return stats.lastRenderWidthPixels == expectedExtent.width &&
+                           stats.lastRenderHeightPixels == expectedExtent.height;
+                }
+                std::this_thread::yield();
+            }
+            return false;
+        }
+
+        // This end-to-end state-machine smoke intentionally keeps the complete
+        // submit/take/complete/close timeline visible in one function.
+        // NOLINTNEXTLINE(readability-function-cognitive-complexity)
+        [[nodiscard]] bool smokeBoundedLatestWinsStream() {
+            EditorViewportNativeCompatibilityRequest compatibility = makeCompatibilityRequest();
+            EditorViewportNativeStreamHandleV5 stream{};
+            if (editor_viewport_open_stream_v5(&compatibility, &stream) !=
+                    EditorViewportNativeStatus_Success ||
+                stream.status != EditorViewportNativeStatus_Success || stream.streamId == 0U) {
+                logError("Viewport V5 smoke could not open a stream.");
+                return false;
+            }
+
+            EditorViewportNativePresentRequestV5 firstRequest = makeFrameRequest(1U);
+            if (editor_viewport_submit_latest_v5(stream.streamId, &firstRequest) !=
+                EditorViewportNativeStatus_Success) {
+                return false;
+            }
+            const auto firstReadyDeadline =
+                std::chrono::steady_clock::now() + std::chrono::seconds{5};
+            EditorViewportNativeStreamPollV5 firstReadyPoll{};
+            while (std::chrono::steady_clock::now() < firstReadyDeadline) {
+                if (editor_viewport_poll_stream_v5(stream.streamId, &firstReadyPoll) !=
+                    EditorViewportNativeStatus_Success) {
+                    return false;
+                }
+                if (firstReadyPoll.hasReadyFrame != 0U) {
+                    break;
+                }
+                std::this_thread::yield();
+            }
+            if (firstReadyPoll.hasReadyFrame == 0U) {
+                logError("Viewport V5 smoke did not render its first ready frame.");
+                return false;
+            }
+
+            // A ready frame blocks another ready publication. Every submit in
+            // this burst therefore targets the single pending-latest cell.
+            for (std::uint64_t sequence = 2U; sequence <= 32U; ++sequence) {
+                EditorViewportNativePresentRequestV5 request = makeFrameRequest(sequence);
+                if (editor_viewport_submit_latest_v5(stream.streamId, &request) !=
+                    EditorViewportNativeStatus_Success) {
+                    return false;
+                }
+            }
+            EditorViewportNativeStreamPollV5 burstPoll{};
+            if (editor_viewport_poll_stream_v5(stream.streamId, &burstPoll) !=
+                    EditorViewportNativeStatus_Success ||
+                burstPoll.hasPendingLatest == 0U || burstPoll.coalescedRequests < 30U) {
+                logError("Viewport V5 smoke did not coalesce its pending-latest burst.");
+                return false;
+            }
+
+            // Hold the ready frame long enough for its producer fence to retire. Taking it must
+            // explicitly wake the render owner; there may no longer be a timed GPU-retirement
+            // poll or another resize submission to rescue the pending-latest request.
+            std::this_thread::sleep_for(std::chrono::milliseconds{100});
+
+            EditorViewportNativeReadyFrameV5 firstFrame{};
+            if (!waitForReadyFrame(stream.streamId, firstFrame) ||
+                firstFrame.requestSequence != 1U) {
+                logError("Viewport V5 smoke did not receive its first frame.");
+                return false;
+            }
+
+            EditorViewportNativeReadyFrameV5 secondFrame{};
+            if (!waitForReadyFrame(stream.streamId, secondFrame) ||
+                secondFrame.requestSequence != 32U ||
+                secondFrame.nativeSlot == firstFrame.nativeSlot ||
+                secondFrame.widthPixels != 384U || secondFrame.heightPixels != 224U ||
+                secondFrame.logicalWidthPixels != 377U || secondFrame.logicalHeightPixels != 219U ||
+                !waitForLogicalRenderExtent(32U,
+                                            ExpectedRenderExtent{.width = 377U, .height = 219U})) {
+                logError("Viewport V5 smoke did not publish the latest burst request on slot 2.");
+                return false;
+            }
+
+            EditorViewportNativePresentRequestV5 thirdRequest = makeFrameRequest(33U);
+            if (editor_viewport_submit_latest_v5(stream.streamId, &thirdRequest) !=
+                EditorViewportNativeStatus_Success) {
+                return false;
+            }
+            EditorViewportNativeReadyFrameV5 thirdFrame{};
+            if (!waitForReadyFrame(stream.streamId, thirdFrame) ||
+                thirdFrame.requestSequence != 33U ||
+                thirdFrame.nativeSlot == firstFrame.nativeSlot ||
+                thirdFrame.nativeSlot == secondFrame.nativeSlot) {
+                logError("Viewport V5 smoke did not allocate its third bounded slot.");
+                return false;
+            }
+
+            EditorViewportNativePresentRequestV5 fourthRequest = makeFrameRequest(34U);
+            if (editor_viewport_submit_latest_v5(stream.streamId, &fourthRequest) !=
+                EditorViewportNativeStatus_Success) {
+                return false;
+            }
+            EditorViewportNativeStreamPollV5 boundedPoll{};
+            if (editor_viewport_poll_stream_v5(stream.streamId, &boundedPoll) !=
+                    EditorViewportNativeStatus_Success ||
+                boundedPoll.slotCount != 3U || boundedPoll.hasPendingLatest == 0U ||
+                boundedPoll.hasReadyFrame != 0U) {
+                logError("Viewport V5 smoke exceeded or bypassed its three-slot bound.");
+                return false;
+            }
+
+            if (editor_viewport_complete_frame_v5(stream.streamId, firstFrame.nativeSlot, 99U) !=
+                    EditorViewportNativeStatus_InvalidArgument ||
+                !completeNotSubmitted(stream.streamId, firstFrame.nativeSlot)) {
+                logError("Viewport V5 smoke did not preserve ownership after invalid completion.");
+                return false;
+            }
+            EditorViewportNativeStreamPollV5 retainedPoll{};
+            if (editor_viewport_poll_stream_v5(stream.streamId, &retainedPoll) !=
+                    EditorViewportNativeStatus_Success ||
+                retainedPoll.hasPendingLatest == 0U || retainedPoll.hasReadyFrame != 0U) {
+                logError("Viewport V5 smoke reused the compositor's sole available slot.");
+                return false;
+            }
+            if (!completeNotSubmitted(stream.streamId, secondFrame.nativeSlot)) {
+                return false;
+            }
+            EditorViewportNativeReadyFrameV5 fourthFrame{};
+            if (!waitForReadyFrame(stream.streamId, fourthFrame) ||
+                fourthFrame.requestSequence != 34U ||
+                fourthFrame.nativeSlot != firstFrame.nativeSlot) {
+                logError("Viewport V5 smoke did not reuse the completed persistent slot.");
+                return false;
+            }
+
+            if (!completeNotSubmitted(stream.streamId, thirdFrame.nativeSlot) ||
+                !completeConsumerAccessed(stream.streamId, fourthFrame.nativeSlot)) {
+                return false;
+            }
+            const std::array<void*, 3> importedSlots{
+                firstFrame.nativeSlot,
+                secondFrame.nativeSlot,
+                thirdFrame.nativeSlot,
+            };
+            for (void* nativeSlot : importedSlots) {
+                if (editor_viewport_release_slot_import_v5(stream.streamId, nativeSlot) !=
+                    EditorViewportNativeStatus_Success) {
+                    return false;
+                }
+            }
+            if (editor_viewport_close_stream_v5(stream.streamId) !=
+                EditorViewportNativeStatus_Success) {
+                return false;
+            }
+            EditorViewportNativeStreamPollV5 closedPoll{};
+            if (!waitForPoll(stream.streamId, closedPoll,
+                             EditorViewportNativeStreamLifecycle_Closed) ||
+                closedPoll.slotCount != 3U || closedPoll.submittedRequests != 34U ||
+                closedPoll.renderedFrames != 4U ||
+                editor_viewport_destroy_stream_v5(stream.streamId) !=
+                    EditorViewportNativeStatus_Success) {
+                logError("Viewport V5 smoke did not close and destroy its stream.");
+                return false;
+            }
+            return true;
+        }
+
+        // The native cap is intentionally still four. This smoke proves only
+        // that four cold streams each receive their first slot and that a
+        // ready+pending realtime stream cannot consume the other cold slots.
+        // NOLINTNEXTLINE(readability-function-cognitive-complexity)
+        [[nodiscard]] bool smokeFourStreamColdStartFairness() {
+            constexpr std::size_t kStreamCount = 4U;
+            constexpr std::uint64_t kRealtimeFirstSequence = 1'000U;
+            std::array<EditorViewportNativeStreamHandleV5, kStreamCount> streams{};
+            EditorViewportNativeCompatibilityRequest compatibility = makeCompatibilityRequest();
+            for (EditorViewportNativeStreamHandleV5& stream : streams) {
+                if (editor_viewport_open_stream_v5(&compatibility, &stream) !=
+                        EditorViewportNativeStatus_Success ||
+                    stream.status != EditorViewportNativeStatus_Success || stream.streamId == 0U) {
+                    logError("Viewport fairness smoke could not open four streams.");
                     return false;
                 }
             }
 
-            EditorViewportNativePresentPacket slotBeyondLimit{};
-            const std::uint32_t status =
-                editor_viewport_create_present_slot_v3(&request, &slotBeyondLimit);
-            const bool limitEnforced =
-                status == EditorViewportNativeStatus_Unavailable &&
-                slotBeyondLimit.status == EditorViewportNativeStatus_Unavailable &&
-                slotBeyondLimit.nativePacket == nullptr;
-            releaseIfNeeded(slotBeyondLimit);
-            releaseAll(additionalSlots);
-            if (!limitEnforced) {
-                logError("Viewport native bridge smoke exceeded the four-slot limit.");
+            EditorViewportNativePresentRequestV5 first = makeFrameRequest(kRealtimeFirstSequence);
+            if (editor_viewport_submit_latest_v5(streams.at(0).streamId, &first) !=
+                EditorViewportNativeStatus_Success) {
+                return false;
+            }
+            EditorViewportNativeStreamPollV5 realtimeReady{};
+            if (!waitForReadyPoll(streams.at(0).streamId, realtimeReady)) {
+                logError("Viewport fairness smoke did not prepare the realtime stream.");
                 return false;
             }
 
-            return true;
-        }
-
-        [[nodiscard]] bool smokeReusableSlotStats() {
-            EditorViewportNativeRuntimeStatsV5 stats{};
-            if (!waitForRuntimeEpochs(10U, 10U, 0U, 0U) || !queryRuntimeStatsV5(stats) ||
-                stats.framesRendered != 10U || stats.packetsCreated != 8U ||
-                stats.outstandingPackets != 0U || stats.maxOutstandingPackets != 4U ||
-                stats.packetBackpressureHits != 2U || stats.frameEpochsSubmitted != 10U ||
-                stats.frameEpochsCompleted != 10U || stats.frameEpochsPending != 0U) {
-                logError("Viewport native bridge smoke did not retire reusable slots cleanly.");
-                return false;
-            }
-
-            return true;
-        }
-
-        [[nodiscard]] bool
-        smokeNonBlockingRetirement(const VulkanContext& compositionContext,
-                                   const EditorViewportNativePresentRequestV2& request) {
-            EditorViewportNativeRuntimeStatsV5 statsBefore{};
-            if (!queryRuntimeStatsV5(statsBefore) || statsBefore.frameEpochsPending != 0U ||
-                statsBefore.outstandingPackets != 0U) {
-                logError(
-                    "Viewport native bridge smoke did not start retirement from an idle runtime.");
-                return false;
-            }
-
-            EditorViewportNativePresentPacket slot{};
-            if (editor_viewport_create_present_slot_v3(&request, &slot) !=
-                    EditorViewportNativeStatus_Success ||
-                slot.status != EditorViewportNativeStatus_Success || slot.nativePacket == nullptr ||
-                slot.frameIndex != statsBefore.framesRendered + 1U) {
-                logPresentPacketMessage(slot);
-                releaseIfNeeded(slot);
-                logError("Viewport native bridge smoke could not create the retirement test slot.");
-                return false;
-            }
-
-            auto* state = static_cast<EditorSharedViewportPacketState*>(slot.nativePacket);
-            if (state->device == VK_NULL_HANDLE || state->fence == VK_NULL_HANDLE ||
-                !state->submitted) {
-                releaseIfNeeded(slot);
-                logError("Viewport native bridge smoke received an incomplete retirement slot.");
-                return false;
-            }
-
-            VkQueue graphicsQueue = VK_NULL_HANDLE;
-            // Both smoke contexts use the same no-surface queue policy; the preceding interop
-            // checks establish that this family is valid for the packet device.
-            vkGetDeviceQueue(state->device, compositionContext.graphicsQueueFamily(), 0U,
-                             &graphicsQueue);
-
-            constexpr std::uint64_t kInitialFrameTimeoutNanoseconds = 5'000'000'000ULL;
-            VkResult setupResult = vkWaitForFences(state->device, 1U, &state->fence, VK_TRUE,
-                                                   kInitialFrameTimeoutNanoseconds);
-            if (setupResult != VK_SUCCESS) {
-                releaseIfNeeded(slot);
-                logError(
-                    "Viewport native bridge smoke could not observe the initial frame completion.");
-                return false;
-            }
-
-            setupResult = vkResetFences(state->device, 1U, &state->fence);
-            if (setupResult != VK_SUCCESS || graphicsQueue == VK_NULL_HANDLE) {
-                state->submitted = false;
-                releaseIfNeeded(slot);
-                logError("Viewport native bridge smoke could not reset its retirement fence.");
-                return false;
-            }
-
-            const VkFence retirementFence = state->fence;
-            const auto releaseStarted = std::chrono::steady_clock::now();
-            releaseIfNeeded(slot);
-            slot = {};
-            const auto releaseDuration = std::chrono::steady_clock::now() - releaseStarted;
-            constexpr auto kMaximumNonBlockingReleaseDuration = std::chrono::milliseconds{500};
-            bool passed = releaseDuration < kMaximumNonBlockingReleaseDuration;
-            if (!passed) {
-                logError("Viewport native bridge smoke observed a blocking packet release.");
-            }
-
-            const std::uint64_t expectedSubmitted = statsBefore.frameEpochsSubmitted + 1U;
-            const std::uint64_t expectedCompleted = statsBefore.frameEpochsCompleted;
-            EditorViewportNativeRuntimeStatsV5 statsPending{};
-            if (!queryRuntimeStatsV5(statsPending) ||
-                statsPending.frameEpochsSubmitted != expectedSubmitted ||
-                statsPending.frameEpochsCompleted != expectedCompleted ||
-                statsPending.frameEpochsPending != 1U || statsPending.outstandingPackets != 0U) {
-                logError("Viewport native bridge smoke did not retain pending work for polling.");
-                passed = false;
-            }
-
-            EditorViewportNativeRuntimeStatsV2 statsPendingV2{};
-            if (!queryRuntimeStatsV2(statsPendingV2) || statsPendingV2.externalImagesLeased != 1U) {
-                logError("Viewport native bridge smoke released a pending external image early.");
-                passed = false;
-            }
-
-            VkSubmitInfo2 completionSubmit{};
-            completionSubmit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
-            const VkResult completionSubmitted =
-                vkQueueSubmit2(graphicsQueue, 1U, &completionSubmit, retirementFence);
-            if (completionSubmitted != VK_SUCCESS) {
-                logError(vulkanError("Viewport native bridge smoke could not submit retirement "
-                                     "completion",
-                                     completionSubmitted)
-                             .message);
-                return false;
-            }
-
-            const bool epochsReclaimed =
-                waitForRuntimeEpochs(expectedSubmitted, expectedSubmitted, 0U, 0U);
-            const bool leaseReturned = waitForExternalImageLeases(0U);
-            if (!epochsReclaimed || !leaseReturned) {
-                // Debug-smoke cleanup only: no render loop can reach this fallback.
-                const VkResult queueIdle = vkQueueWaitIdle(graphicsQueue);
-                if (queueIdle != VK_SUCCESS) {
-                    logError(vulkanError("Viewport native bridge smoke could not idle the "
-                                         "retirement queue",
-                                         queueIdle)
-                                 .message);
+            for (std::uint64_t sequence = kRealtimeFirstSequence + 1U;
+                 sequence <= kRealtimeFirstSequence + 8U; ++sequence) {
+                EditorViewportNativePresentRequestV5 request = makeFrameRequest(sequence);
+                if (editor_viewport_submit_latest_v5(streams.at(0).streamId, &request) !=
+                    EditorViewportNativeStatus_Success) {
+                    return false;
                 }
-                EditorViewportNativeRuntimeStatsV2 finalPoll{};
-                [[maybe_unused]] const bool finalPollSucceeded = queryRuntimeStatsV2(finalPoll);
             }
-
-            if (!epochsReclaimed) {
-                logError("Viewport native bridge smoke did not reclaim the polled retirement.");
-                return false;
-            }
-            if (!leaseReturned) {
-                logError("Viewport native bridge smoke did not return the retired image lease.");
-                return false;
-            }
-
-            EditorViewportNativeRuntimeStatsV2 statsAfter{};
-            if (!queryRuntimeStatsV2(statsAfter) || statsAfter.externalImagesLeased != 0U) {
-                logError("Viewport native bridge smoke retained a reclaimed external image lease.");
-                return false;
-            }
-            return passed;
-        }
-
-        [[nodiscard]] bool smokeReusableSlots() {
-            auto compositionContext = VulkanContext::create(VulkanContextDesc{
-                .applicationName = "Shared viewport composition smoke",
-                .requiredInstanceExtensions = {},
-                .createSurface = {},
-                .enableValidation = false,
-                .debugLabels = VulkanDebugLabelMode::Optional,
-                .requireVulkan14 = true,
-                .externalInterop =
-                    VulkanExternalInteropOptions{
-                        .opaqueWin32Semaphore = true,
-                    },
-            });
-            if (!compositionContext) {
-                logError(compositionContext.error().message);
-                return false;
-            }
-
-            EditorViewportNativePresentPacket reusableSlot{};
-            const EditorViewportNativePresentRequestV2 request =
-                makePresentRequestV2(VkExtent2D{.width = 800U, .height = 450U}, true, 9U);
-            if (!createReusableSlot(request, reusableSlot)) {
-                return false;
-            }
-
-            const bool framesPassed = smokeReusableSlotFrames(*compositionContext, reusableSlot);
-            const bool limitPassed = framesPassed && smokeBoundedReusableSlots(request);
-            releaseIfNeeded(reusableSlot);
-            const bool statsPassed = framesPassed && limitPassed && smokeReusableSlotStats();
-            return statsPassed && smokeNonBlockingRetirement(*compositionContext, request);
-        }
-
-        [[nodiscard]] bool smokeGenericViewportSessions() {
-            static_assert(sizeof(EditorViewportNativeId) == 16U);
-            static_assert(sizeof(EditorViewportNativeCamera) == 48U);
-            static_assert(sizeof(EditorViewportNativeDebugProxy) == 56U);
-            static_assert(sizeof(EditorViewportNativePresentRequestV4) == 192U);
-
-            EditorViewportNativeRuntimeStatsV7 statsBefore{};
-            if (!queryRuntimeStatsV7(statsBefore) || statsBefore.outstandingPackets != 0U) {
-                logError("Viewport V4 smoke did not begin from an idle slot set.");
-                return false;
-            }
-
-            const std::array<EditorViewportNativeDebugProxy, 1> sceneProxies{
-                EditorViewportNativeDebugProxy{
-                    .objectId = EditorViewportNativeId{.low = 301U, .high = 1U},
-                    .position = {1.0F, 2.0F, 3.0F},
-                    .rotation = {0.0F, 0.0F, 0.0F, 1.0F},
-                    .scale = {1.0F, 2.0F, 1.0F},
-                },
+            std::array<std::uint64_t, kStreamCount> expectedSequences{
+                kRealtimeFirstSequence,
+                2'001U,
+                2'002U,
+                2'003U,
             };
-            EditorViewportNativePresentRequestV4 invalidRequest = makePresentRequestV4(
-                VkExtent2D{.width = 640U, .height = 360U}, 99U,
-                EditorViewportNativeId{.low = 100U, .high = 1U},
-                EditorViewportNativeId{.low = 200U, .high = 1U}, 100U, 10U, sceneProxies.data(),
-                static_cast<std::uint32_t>(sceneProxies.size()));
-            EditorViewportNativePresentPacket invalidPacket{};
-            if (editor_viewport_create_present_slot_v4(&invalidRequest, &invalidPacket) !=
-                    EditorViewportNativeStatus_InvalidArgument ||
-                invalidPacket.status != EditorViewportNativeStatus_InvalidArgument) {
-                releaseIfNeeded(invalidPacket);
-                logError("Viewport V4 smoke accepted an unknown render kind.");
-                return false;
-            }
-            invalidRequest.kind = EditorViewportNativeRenderKind_Scene;
-            invalidRequest.debugProxyCount = 257U;
-            invalidPacket = {};
-            if (editor_viewport_create_present_slot_v4(&invalidRequest, &invalidPacket) !=
-                    EditorViewportNativeStatus_InvalidArgument ||
-                invalidPacket.status != EditorViewportNativeStatus_InvalidArgument) {
-                releaseIfNeeded(invalidPacket);
-                logError("Viewport V4 smoke accepted an unbounded debug proxy request.");
-                return false;
+            for (std::size_t index = 1U; index < streams.size(); ++index) {
+                EditorViewportNativePresentRequestV5 request =
+                    makeFrameRequest(expectedSequences.at(index));
+                request.targetId.low += static_cast<std::uint64_t>(index);
+                if (editor_viewport_submit_latest_v5(streams.at(index).streamId, &request) !=
+                    EditorViewportNativeStatus_Success) {
+                    return false;
+                }
             }
 
-            auto compositionContext = VulkanContext::create(VulkanContextDesc{
-                .applicationName = "Generic viewport session composition smoke",
-                .requiredInstanceExtensions = {},
-                .createSurface = {},
-                .enableValidation = false,
-                .debugLabels = VulkanDebugLabelMode::Optional,
-                .requireVulkan14 = true,
-                .externalInterop =
-                    VulkanExternalInteropOptions{
-                        .opaqueWin32Semaphore = true,
-                    },
-            });
-            if (!compositionContext) {
-                logError(compositionContext.error().message);
-                return false;
+            for (std::size_t index = 1U; index < streams.size(); ++index) {
+                EditorViewportNativeStreamPollV5 poll{};
+                if (!waitForReadyPoll(streams.at(index).streamId, poll) ||
+                    poll.renderedFrames != 1U) {
+                    logError("Viewport fairness smoke starved a cold stream first frame.");
+                    return false;
+                }
             }
-
-            const EditorViewportNativeId sceneSession{.low = 101U, .high = 1U};
-            const EditorViewportNativeId sceneTarget{.low = 201U, .high = 1U};
-            EditorViewportNativePresentRequestV4 sceneRequest = makePresentRequestV4(
-                VkExtent2D{.width = 640U, .height = 360U}, EditorViewportNativeRenderKind_Scene,
-                sceneSession, sceneTarget, 101U, 11U, sceneProxies.data(),
-                static_cast<std::uint32_t>(sceneProxies.size()));
-            const EditorViewportNativeId gameSession{.low = 102U, .high = 1U};
-            const EditorViewportNativeId gameTarget{.low = 202U, .high = 1U};
-            EditorViewportNativePresentRequestV4 gameRequest = makePresentRequestV4(
-                VkExtent2D{.width = 320U, .height = 180U}, EditorViewportNativeRenderKind_Game,
-                gameSession, gameTarget, 102U, 12U, nullptr, 0U);
-            EditorViewportNativePresentPacket sceneSlot{};
-            EditorViewportNativePresentPacket gameSlot{};
-            EditorViewportNativeRuntimeStatsV7 statsAfterScene{};
-            const bool sceneMapped =
-                editor_viewport_create_present_slot_v4(&sceneRequest, &sceneSlot) ==
-                    EditorViewportNativeStatus_Success &&
-                sceneSlot.nativePacket != nullptr && queryRuntimeStatsV7(statsAfterScene) &&
-                statsAfterScene.sceneFramesRendered == statsBefore.sceneFramesRendered + 1U &&
-                statsAfterScene.lastSessionId.low == sceneSession.low &&
-                statsAfterScene.lastTargetId.low == sceneTarget.low &&
-                statsAfterScene.lastTargetRevision == 101U &&
-                statsAfterScene.lastRequestSequence == 11U &&
-                statsAfterScene.lastRenderKind == EditorViewportNativeRenderKind_Scene &&
-                statsAfterScene.lastDebugProxyCount == 1U &&
-                statsAfterScene.lastDebugWorldLineCount == 6U &&
-                statsAfterScene.lastWorldGridEnabled == 1U;
-            const bool createdBoth =
-                sceneMapped &&
-                editor_viewport_create_present_slot_v4(&gameRequest, &gameSlot) ==
-                    EditorViewportNativeStatus_Success &&
-                gameSlot.nativePacket != nullptr && sceneSlot.nativePacket != gameSlot.nativePacket;
-            if (!createdBoth) {
-                releaseIfNeeded(sceneSlot);
-                releaseIfNeeded(gameSlot);
-                logError("Viewport V4 smoke did not create independent Scene and Game slots.");
-                return false;
-            }
-
-            EditorViewportNativeRuntimeStatsV7 statsAfterPair{};
-            const bool pairMapped =
-                queryRuntimeStatsV7(statsAfterPair) &&
-                statsAfterPair.sceneFramesRendered == statsBefore.sceneFramesRendered + 1U &&
-                statsAfterPair.gameFramesRendered == statsBefore.gameFramesRendered + 1U &&
-                statsAfterPair.lastSessionId.low == gameSession.low &&
-                statsAfterPair.lastTargetId.low == gameTarget.low &&
-                statsAfterPair.lastRequestSequence == 12U &&
-                statsAfterPair.lastRenderKind == EditorViewportNativeRenderKind_Game &&
-                statsAfterPair.lastDebugProxyCount == 0U;
-            const bool pairCompleted = completeCompositionCycle(*compositionContext, sceneSlot) &&
-                                       completeCompositionCycle(*compositionContext, gameSlot);
-            releaseIfNeeded(sceneSlot);
-            releaseIfNeeded(gameSlot);
-            if (!pairMapped || !pairCompleted ||
-                !waitForRuntimeEpochs(statsBefore.frameEpochsSubmitted + 2U,
-                                      statsBefore.frameEpochsCompleted + 2U, 0U, 0U)) {
-                logError("Viewport V4 smoke did not preserve independent session routing.");
-                return false;
-            }
-
-            const EditorViewportNativeId previewSession{.low = 103U, .high = 1U};
-            const EditorViewportNativeId previewTarget{.low = 203U, .high = 1U};
-            EditorViewportNativePresentRequestV4 previewRequest = makePresentRequestV4(
-                VkExtent2D{.width = 256U, .height = 256U}, EditorViewportNativeRenderKind_Preview,
-                previewSession, previewTarget, 103U, 13U, sceneProxies.data(),
-                static_cast<std::uint32_t>(sceneProxies.size()));
-            EditorViewportNativePresentPacket previewSlot{};
-            if (editor_viewport_create_present_slot_v4(&previewRequest, &previewSlot) !=
+            EditorViewportNativeStreamPollV5 realtimePoll{};
+            if (editor_viewport_poll_stream_v5(streams.at(0).streamId, &realtimePoll) !=
                     EditorViewportNativeStatus_Success ||
-                !completeCompositionCycle(*compositionContext, previewSlot)) {
-                releaseIfNeeded(previewSlot);
-                logError("Viewport V4 smoke did not render a Preview slot.");
-                return false;
-            }
-            EditorViewportNativeRuntimeStatsV7 statsAfterPreview{};
-            const bool previewMapped =
-                queryRuntimeStatsV7(statsAfterPreview) &&
-                statsAfterPreview.previewFramesRendered == statsBefore.previewFramesRendered + 1U &&
-                statsAfterPreview.lastTargetRevision == 103U &&
-                statsAfterPreview.lastRequestSequence == 13U &&
-                statsAfterPreview.lastSessionId.low == previewSession.low &&
-                statsAfterPreview.lastTargetId.low == previewTarget.low &&
-                statsAfterPreview.lastRenderKind == EditorViewportNativeRenderKind_Preview &&
-                statsAfterPreview.lastDebugProxyCount == 1U;
-            releaseIfNeeded(previewSlot);
-            if (!previewMapped ||
-                !waitForRuntimeEpochs(statsBefore.frameEpochsSubmitted + 3U,
-                                      statsBefore.frameEpochsCompleted + 3U, 0U, 0U)) {
-                logError("Viewport V4 smoke did not preserve Preview request metadata.");
-                return false;
-            }
-            return true;
-        }
-
-        [[nodiscard]] bool smokeShutdownOrdering() {
-            EditorViewportNativeRuntimeStatsV4 statsBeforeRequest{};
-            if (!queryRuntimeStatsV4(statsBeforeRequest) ||
-                statsBeforeRequest.outstandingPackets != 0U) {
-                logError("Viewport native bridge smoke did not begin shutdown from idle.");
-                return false;
-            }
-            EditorViewportNativePresentPacket shutdownPendingPacket{};
-            EditorViewportNativePresentRequest shutdownPendingRequest =
-                makePresentRequest(VkExtent2D{.width = 160U, .height = 90U});
-            const std::uint32_t shutdownPendingStatus = editor_viewport_acquire_present_packet(
-                &shutdownPendingRequest, &shutdownPendingPacket);
-            const bool shutdownPendingPacketAvailable =
-                shutdownPendingStatus == EditorViewportNativeStatus_Success &&
-                shutdownPendingPacket.status == EditorViewportNativeStatus_Success &&
-                shutdownPendingPacket.nativePacket != nullptr &&
-                shutdownPendingPacket.imageHandle != nullptr &&
-                shutdownPendingPacket.waitSemaphoreHandle != nullptr &&
-                shutdownPendingPacket.signalSemaphoreHandle != nullptr &&
-                shutdownPendingPacket.frameIndex == statsBeforeRequest.framesRendered + 1U;
-            if (!shutdownPendingPacketAvailable) {
-                logPresentPacketMessage(shutdownPendingPacket);
-                releaseIfNeeded(shutdownPendingPacket);
-                logError(
-                    "Viewport native bridge smoke did not produce a packet for shutdown ordering.");
+                realtimePoll.renderedFrames != 1U || realtimePoll.hasReadyFrame == 0U ||
+                realtimePoll.hasPendingLatest == 0U || realtimePoll.coalescedRequests < 7U) {
+                logError("Viewport fairness smoke lost or over-rendered realtime pending work.");
                 return false;
             }
 
-            EditorViewportNativeRuntimeStatsV3 statsV3BeforeShutdown{};
-            if (!queryRuntimeStatsV3(statsV3BeforeShutdown) ||
-                statsV3BeforeShutdown.frameEpochsSubmitted !=
-                    statsBeforeRequest.frameEpochsSubmitted + 1U ||
-                statsV3BeforeShutdown.frameEpochsCompleted !=
-                    statsBeforeRequest.frameEpochsCompleted ||
-                statsV3BeforeShutdown.frameEpochsPending != 1U ||
-                statsV3BeforeShutdown.outstandingPackets != 1U) {
-                releaseIfNeeded(shutdownPendingPacket);
-                logError("Viewport native bridge smoke did not preserve pending epoch stats before "
-                         "shutdown.");
+            for (std::size_t index = 0U; index < streams.size(); ++index) {
+                EditorViewportNativeReadyFrameV5 frame{};
+                if (!waitForReadyFrame(streams.at(index).streamId, frame) ||
+                    frame.requestSequence != expectedSequences.at(index) ||
+                    !completeNotSubmitted(streams.at(index).streamId, frame.nativeSlot) ||
+                    editor_viewport_release_slot_import_v5(streams.at(index).streamId,
+                                                           frame.nativeSlot) !=
+                        EditorViewportNativeStatus_Success) {
+                    logError("Viewport fairness smoke could not release a cold stream frame.");
+                    return false;
+                }
+            }
+            // Leave the realtime successor pending while the other streams
+            // complete and close. Lifecycle work must make progress before
+            // the newly freed capacity can be used for another render.
+            for (std::size_t index = 1U; index < streams.size(); ++index) {
+                if (editor_viewport_close_stream_v5(streams.at(index).streamId) !=
+                    EditorViewportNativeStatus_Success) {
+                    return false;
+                }
+            }
+            for (std::size_t index = 1U; index < streams.size(); ++index) {
+                EditorViewportNativeStreamPollV5 closedPoll{};
+                if (!waitForPoll(streams.at(index).streamId, closedPoll,
+                                 EditorViewportNativeStreamLifecycle_Closed) ||
+                    closedPoll.renderedFrames != 1U ||
+                    editor_viewport_destroy_stream_v5(streams.at(index).streamId) !=
+                        EditorViewportNativeStatus_Success) {
+                    logError("Viewport fairness smoke let pending render work starve close.");
+                    return false;
+                }
+            }
+            if (editor_viewport_close_stream_v5(streams.at(0).streamId) !=
+                EditorViewportNativeStatus_Success) {
                 return false;
             }
-            EditorViewportNativeRuntimeStatsV4 statsV4BeforeShutdown{};
-            if (!queryRuntimeStatsV4(statsV4BeforeShutdown) ||
-                statsV4BeforeShutdown.rendererCreations != 1U ||
-                statsV4BeforeShutdown.packetsCreated != statsBeforeRequest.packetsCreated + 1U ||
-                statsV4BeforeShutdown.frameEpochsSubmitted !=
-                    statsBeforeRequest.frameEpochsSubmitted + 1U ||
-                statsV4BeforeShutdown.frameEpochsCompleted !=
-                    statsBeforeRequest.frameEpochsCompleted ||
-                statsV4BeforeShutdown.frameEpochsPending != 1U ||
-                statsV4BeforeShutdown.outstandingPackets != 1U) {
-                releaseIfNeeded(shutdownPendingPacket);
-                logError("Viewport native bridge smoke did not preserve renderer reuse stats "
-                         "before shutdown.");
+            EditorViewportNativeStreamPollV5 realtimeClosedPoll{};
+            if (!waitForPoll(streams.at(0).streamId, realtimeClosedPoll,
+                             EditorViewportNativeStreamLifecycle_Closed) ||
+                realtimeClosedPoll.renderedFrames < 1U || realtimeClosedPoll.renderedFrames > 2U ||
+                editor_viewport_destroy_stream_v5(streams.at(0).streamId) !=
+                    EditorViewportNativeStatus_Success) {
+                logError("Viewport fairness smoke did not close the realtime stream.");
                 return false;
             }
-
-            editor_viewport_shutdown();
-            releaseIfNeeded(shutdownPendingPacket);
-            if (!waitForRuntimeShutdown()) {
-                logError("Viewport native bridge smoke retained an idle shutdown context.");
+            if (!waitForNoOutstandingPackets()) {
+                logError("Viewport fairness smoke did not retire all four native packets.");
                 return false;
             }
-
-            EditorViewportNativeRuntimeStatsV2 statsAfterRetirement{};
-            if (!queryRuntimeStatsV2(statsAfterRetirement) ||
-                statsAfterRetirement.hasContext != 0U ||
-                statsAfterRetirement.hasRenderProducer != 0U ||
-                statsAfterRetirement.shutdownRequested != 1U ||
-                statsAfterRetirement.outstandingPackets != 0U) {
-                logError("Viewport native bridge smoke reported inconsistent shutdown state.");
-                return false;
-            }
-
-            EditorViewportNativePresentPacket afterShutdownPacket{};
-            EditorViewportNativePresentRequest afterShutdownRequest =
-                makePresentRequest(VkExtent2D{.width = 160U, .height = 90U});
-            const std::uint32_t afterShutdownStatus =
-                editor_viewport_acquire_present_packet(&afterShutdownRequest, &afterShutdownPacket);
-            const bool acquireRejectedAfterShutdown =
-                afterShutdownStatus == EditorViewportNativeStatus_Unavailable &&
-                afterShutdownPacket.status == EditorViewportNativeStatus_Unavailable &&
-                afterShutdownPacket.nativePacket == nullptr;
-            releaseIfNeeded(afterShutdownPacket);
-            if (!acquireRejectedAfterShutdown) {
-                logError("Viewport native bridge smoke allowed acquire after viewport shutdown.");
-                return false;
-            }
-
             return true;
         }
 
     } // namespace
 
     bool runViewportNativeBridgeSmoke() {
-        const SharedViewportRuntimeShutdown shutdownOnExit;
-        return smokeCompatibilityContract() && smokeFirstPacketAndBackpressure() &&
-               smokeSameSizeLegacyReuse() && smokeResizeChurn() && smokeReusableSlots() &&
-               smokeGenericViewportSessions() && smokeShutdownOrdering();
+        if (!smokeMonotonicFrameClock() || !smokeStableRoundRobinDispatchPolicy() ||
+            !queryCompatibility() || !smokeBoundedLatestWinsStream() ||
+            !smokeFourStreamColdStartFairness()) {
+            editor_viewport_shutdown();
+            return false;
+        }
+
+        editor_viewport_shutdown();
+        EditorViewportNativeRenderThreadStats stats{};
+        if (editor_viewport_query_render_thread_stats(&stats) !=
+                EditorViewportNativeStatus_Success ||
+            stats.lifecycle != EditorViewportNativeRuntimeLifecycle_Stopped ||
+            stats.renderThreadRunning != 0U || stats.renderThreadJoined == 0U) {
+            logError("Viewport V5 smoke did not stop and join its native render thread.");
+            return false;
+        }
+        return true;
     }
 
 } // namespace asharia::editor

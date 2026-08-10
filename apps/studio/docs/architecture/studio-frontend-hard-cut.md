@@ -4,11 +4,14 @@
 R0.5 只读开发态观测面已由[对应 Slice 1→8](studio-development-observability.md#210-r05-slice-8-modern-read-only-stdio-mcp-adapter-cardclosed-evidence)关闭；后续 R1 仍受
 [ADR-0007](../adr/0007-studio-frontend-hard-cut.md)约束）
 
-更新日期：2026-08-04
+更新日期：2026-08-05
 
 > 2026-08-04 进展：R1 首个 writable vertical Slice 已由
 > [ADR-0009](../adr/0009-authoritative-scene-document.md) 关闭。下文 R0 审计表保留当时证据；凡写“SceneDocument
-> 尚未开始/待 R1”的历史行，当前状态均以 ADR-0009 为准，不得反向解释为现状。
+> 尚未开始/待 R1”的历史行，当前状态均以 ADR-0009 为准，不得反向解释为现状。2026-08-05，#361 又以真实
+> SceneDocument consumer 重新建立 `ViewportSession -> EngineBridge -> editor_native -> Avalonia composition` 最小闭环；
+> 下文关于“无可见 viewport / 无 native deployment”的 R0 删除卡同样只保留历史证据，当前状态以
+> [Viewport 渲染架构](viewport-rendering.md) 与 [ADR-0002](../adr/0002-cross-platform-viewport-presentation.md) 为准。
 
 ## 1. 结论与范围
 
