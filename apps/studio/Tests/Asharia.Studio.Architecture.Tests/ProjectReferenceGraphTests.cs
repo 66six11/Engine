@@ -485,7 +485,10 @@ public sealed class ProjectReferenceGraphTests
             "StudioInspectorPanelView.axaml"));
         Assert.Contains("StudioHierarchyPanel", hierarchyXaml, StringComparison.Ordinal);
         Assert.Contains("StudioInspectorPanel", inspectorXaml, StringComparison.Ordinal);
-        Assert.Contains("Shell.SceneEntities", hierarchyXaml, StringComparison.Ordinal);
+        Assert.Contains("ItemsSource=\"{Binding VisibleRows}\"", hierarchyXaml, StringComparison.Ordinal);
+        Assert.Contains("SelectedItem=\"{Binding SelectedRow", hierarchyXaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("Shell.SceneEntities", hierarchyXaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("Shell.SelectedEntity", hierarchyXaml, StringComparison.Ordinal);
         Assert.Contains("Shell.ApplyEntityTransformCommand", inspectorXaml, StringComparison.Ordinal);
 
         var headlessProject = XDocument.Load(Path.Combine(

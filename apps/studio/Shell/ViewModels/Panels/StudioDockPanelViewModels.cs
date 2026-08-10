@@ -20,9 +20,6 @@ internal abstract class StudioDockPanelViewModel
     public StudioShellViewModel Shell { get; }
 }
 
-internal sealed class StudioHierarchyPanelViewModel(StudioShellViewModel shell)
-    : StudioDockPanelViewModel(shell);
-
 internal sealed class StudioScenePanelViewModel :
     StudioDockPanelViewModel,
     INotifyPropertyChanged,

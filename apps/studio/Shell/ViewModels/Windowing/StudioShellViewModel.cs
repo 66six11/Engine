@@ -148,7 +148,7 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
         get => selectedEntity_;
         set
         {
-            if (Equals(selectedEntity_, value))
+            if (ReferenceEquals(selectedEntity_, value))
             {
                 return;
             }
@@ -239,6 +239,8 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
     public EditorDockWorkspaceViewModel DockWorkspace => dockWorkspace_;
 
     internal IProjectSession ProjectSession => projectSession_;
+
+    internal ProjectSessionSnapshot AppliedProjectSnapshot => projectSnapshot_;
 
     internal ViewportPresentationLifetime ViewportPresentationLifetime =>
         viewportPresentationLifetime_;
@@ -474,12 +476,18 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
 
     private void ApplyProjectSnapshot(ProjectSessionSnapshot snapshot)
     {
-        var selectedObjectId = selectedEntity_?.ObjectId;
+        var previousSessionId = projectSnapshot_.Project?.SessionId;
+        var previousSceneId = projectSnapshot_.Document?.SceneId;
+        var sameSelectionScope = previousSessionId == snapshot.Project?.SessionId
+            && previousSceneId == snapshot.Document?.SceneId;
+        var selectedObjectId = sameSelectionScope
+            ? selectedEntity_?.ObjectId
+            : null;
         projectSnapshot_ = snapshot;
         var nextSelection = selectedObjectId is { } id
             ? snapshot.Document?.Entities.FirstOrDefault(entity => entity.ObjectId == id)
             : null;
-        if (!Equals(selectedEntity_, nextSelection))
+        if (!ReferenceEquals(selectedEntity_, nextSelection))
         {
             selectedEntity_ = nextSelection;
             LoadInspector(nextSelection);
