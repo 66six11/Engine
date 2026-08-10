@@ -32,8 +32,8 @@ internal sealed class CurrentUserManifestStore
         rootDirectory_ = Path.GetFullPath(rootDirectory);
         using var identity = WindowsIdentity.GetCurrent();
         currentUser_ = identity.User
-            ?? throw new InvalidOperationException(
-                "Current Windows identity does not expose a user SID.");
+                       ?? throw new InvalidOperationException(
+                           "Current Windows identity does not expose a user SID.");
         ManifestPath = Path.Combine(
             rootDirectory_,
             $"{studioInstanceId.Value:D}.json");
@@ -88,13 +88,13 @@ internal sealed class CurrentUserManifestStore
         try
         {
             await using (var stream = FileSystemAclExtensions.Create(
-                new FileInfo(temporaryPath),
-                FileMode.CreateNew,
-                FileSystemRights.Write,
-                FileShare.None,
-                FileBufferBytes,
-                FileOptions.Asynchronous | FileOptions.WriteThrough,
-                CreateFileSecurity()))
+                             new FileInfo(temporaryPath),
+                             FileMode.CreateNew,
+                             FileSystemRights.Write,
+                             FileShare.None,
+                             FileBufferBytes,
+                             FileOptions.Asynchronous | FileOptions.WriteThrough,
+                             CreateFileSecurity()))
             {
                 await stream.WriteAsync(payload, cancellationToken)
                     .ConfigureAwait(false);
