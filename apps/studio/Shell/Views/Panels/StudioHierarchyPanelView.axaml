@@ -1,23 +1,244 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:icons="using:Editor.UI.Icons"
              xmlns:vm="using:Editor.Shell.ViewModels.Panels"
-             xmlns:scenes="using:Asharia.Studio.Application.Scenes"
              x:Class="Editor.Shell.Views.Panels.StudioHierarchyPanelView"
              x:DataType="vm:StudioHierarchyPanelViewModel"
              AutomationProperties.AutomationId="StudioHierarchyPanel"
              AutomationProperties.Name="Scene Hierarchy"
              AutomationProperties.ControlTypeOverride="Group">
-    <Grid Margin="8" RowDefinitions="Auto,*" RowSpacing="6">
-        <TextBlock FontSize="13" FontWeight="SemiBold" Text="Entities" />
-        <ListBox x:Name="HierarchyList"
-                 Grid.Row="1"
-                 ItemsSource="{Binding Shell.SceneEntities}"
-                 SelectedItem="{Binding Shell.SelectedEntity}">
-            <ListBox.ItemTemplate>
-                <DataTemplate x:DataType="scenes:SceneEntitySnapshot">
-                    <TextBlock Padding="6,4" Text="{Binding Name}" />
-                </DataTemplate>
-            </ListBox.ItemTemplate>
-        </ListBox>
-    </Grid>
+    <UserControl.Styles>
+        <Style Selector="Border.hierarchy-toolbar">
+            <Setter Property="Padding" Value="6,5,6,4" />
+            <Setter Property="Background" Value="{DynamicResource EditorBrushSurface01}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource EditorBrushDivider}" />
+            <Setter Property="BorderThickness" Value="0,0,0,1" />
+        </Style>
+
+        <Style Selector="Border.hierarchy-search-frame">
+            <Setter Property="MinHeight" Value="20" />
+            <Setter Property="Background" Value="{DynamicResource EditorBrushInputBackground}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource EditorBrushBorderSubtle}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="4" />
+        </Style>
+
+        <Style Selector="Border.hierarchy-search-frame:focus-within">
+            <Setter Property="BorderBrush" Value="{DynamicResource EditorBrushBorderInteractive}" />
+        </Style>
+
+        <Style Selector="TextBox.hierarchy-search">
+            <Setter Property="MinHeight" Value="20" />
+            <Setter Property="Padding" Value="21,0,5,0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeDefault}" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+
+        <Style Selector="TextBlock.hierarchy-counter">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextMuted}" />
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeSmall}" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <Style Selector="Grid.hierarchy-column-header">
+            <Setter Property="Height" Value="22" />
+            <Setter Property="Background" Value="{DynamicResource EditorBrushBase01}" />
+        </Style>
+
+        <Style Selector="TextBlock.hierarchy-column-label">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextDisabled}" />
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeSmall}" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+        </Style>
+
+        <Style Selector="ListBox.hierarchy-list">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="0" />
+        </Style>
+
+        <Style Selector="ListBox.hierarchy-list ListBoxItem">
+            <Setter Property="Height" Value="20" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="FocusAdorner" Value="{x:Null}" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        </Style>
+
+        <Style Selector="ListBox.hierarchy-list ListBoxItem:pointerover">
+            <Setter Property="Background" Value="{DynamicResource EditorBrushHierarchyRowHover}" />
+        </Style>
+
+        <Style Selector="ListBox.hierarchy-list ListBoxItem:selected">
+            <Setter Property="Background" Value="{DynamicResource EditorBrushSelectionInactive}" />
+        </Style>
+
+        <Style Selector="Grid.hierarchy-row">
+            <Setter Property="Height" Value="20" />
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+
+        <Style Selector="Button.hierarchy-expander">
+            <Setter Property="Width" Value="18" />
+            <Setter Property="Height" Value="20" />
+            <Setter Property="MinWidth" Value="0" />
+            <Setter Property="MinHeight" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="CornerRadius" Value="0" />
+            <Setter Property="FocusAdorner" Value="{x:Null}" />
+        </Style>
+
+        <Style Selector="Button.hierarchy-expander:pointerover">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+
+        <Style Selector="icons|EditorIconView.hierarchy-node-icon">
+            <Setter Property="Width" Value="14" />
+            <Setter Property="Height" Value="14" />
+            <Setter Property="IconBrush" Value="{DynamicResource EditorBrushIconSecondary}" />
+            <Setter Property="IsHitTestVisible" Value="False" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <Style Selector="TextBlock.hierarchy-node-title">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextPrimary}" />
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeDefault}" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <Style Selector="TextBlock.hierarchy-node-type">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextMuted}" />
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeSmall}" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <Style Selector="TextBlock.hierarchy-empty">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextMuted}" />
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeDefault}" />
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="IsHitTestVisible" Value="False" />
+        </Style>
+    </UserControl.Styles>
+
+    <Border Background="{DynamicResource EditorBrushBase00}">
+        <Grid RowDefinitions="Auto,Auto,*">
+            <Border Grid.Row="0" Classes="hierarchy-toolbar">
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                    <Border Grid.Column="0" Classes="hierarchy-search-frame">
+                        <Grid>
+                            <TextBox x:Name="HierarchySearchBox"
+                                     Classes="hierarchy-search"
+                                     Text="{Binding FilterText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                     PlaceholderText="Search hierarchy"
+                                     AutomationProperties.Name="Search hierarchy" />
+                            <icons:EditorIconView Margin="5,0,0,0"
+                                                  Width="12"
+                                                  Height="12"
+                                                  HorizontalAlignment="Left"
+                                                  VerticalAlignment="Center"
+                                                  IsHitTestVisible="False"
+                                                  IconBrush="{DynamicResource EditorBrushIconSecondary}"
+                                                  IconKey="{x:Static icons:EditorIconKey.UiSearch}"
+                                                  IconSize="12" />
+                        </Grid>
+                    </Border>
+                    <TextBlock Grid.Column="1"
+                               Classes="hierarchy-counter"
+                               Text="{Binding EntityCountText}" />
+                </Grid>
+            </Border>
+
+            <Grid Grid.Row="1"
+                  Classes="hierarchy-column-header"
+                  ColumnDefinitions="18,16,*,80">
+                <TextBlock Grid.Column="2"
+                           Classes="hierarchy-column-label"
+                           Text="Name" />
+                <TextBlock Grid.Column="3"
+                           Margin="8,0"
+                           Classes="hierarchy-column-label"
+                           Text="Type" />
+            </Grid>
+
+            <Grid Grid.Row="2">
+                <ListBox x:Name="HierarchyList"
+                         Classes="hierarchy-list"
+                         ItemsSource="{Binding VisibleRows}"
+                         SelectedItem="{Binding SelectedRow, Mode=TwoWay}"
+                         AutomationProperties.Name="Scene objects">
+                    <ListBox.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <VirtualizingStackPanel />
+                        </ItemsPanelTemplate>
+                    </ListBox.ItemsPanel>
+                    <ListBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:StudioHierarchyRowViewModel">
+                            <Grid Classes="hierarchy-row"
+                                  ColumnDefinitions="Auto,18,16,*,80"
+                                  DoubleTapped="OnHierarchyRowDoubleTapped"
+                                  AutomationProperties.Name="{Binding AutomationName}">
+                                <Grid Grid.Column="0"
+                                      Width="{Binding IndentWidth}"
+                                      IsVisible="{Binding ShowIndentGuide}"
+                                      IsHitTestVisible="False"
+                                      Opacity="0.72">
+                                    <Border Width="1"
+                                            Height="{Binding GuideHeight}"
+                                            Margin="5,0,0,0"
+                                            HorizontalAlignment="Left"
+                                            VerticalAlignment="Top"
+                                            Background="{DynamicResource EditorBrushBorderDefault}" />
+                                    <Border Width="7"
+                                            Height="1"
+                                            Margin="5,9,0,0"
+                                            HorizontalAlignment="Left"
+                                            VerticalAlignment="Top"
+                                            Background="{DynamicResource EditorBrushBorderDefault}" />
+                                </Grid>
+                                <Button Grid.Column="1"
+                                        Classes="hierarchy-expander"
+                                        Click="OnHierarchyExpanderClick"
+                                        Focusable="False"
+                                        IsVisible="{Binding HasChildren}"
+                                        AutomationProperties.Name="Toggle scene expansion">
+                                    <icons:EditorIconView IconBrush="{DynamicResource EditorBrushIconSecondary}"
+                                                          IconKey="{Binding ExpanderIconKey}"
+                                                          IconSize="14"
+                                                          StrokeWidth="2" />
+                                </Button>
+                                <icons:EditorIconView Grid.Column="2"
+                                                      Classes="hierarchy-node-icon"
+                                                      IconKey="{Binding IconKey}"
+                                                      IconSize="14"
+                                                      StrokeWidth="2" />
+                                <TextBlock Grid.Column="3"
+                                           Classes="hierarchy-node-title"
+                                           Text="{Binding DisplayName}" />
+                                <TextBlock Grid.Column="4"
+                                           Margin="8,0"
+                                           Classes="hierarchy-node-type"
+                                           Text="{Binding TypeName}" />
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+
+                <Border x:Name="HierarchyEmptyState"
+                        IsVisible="{Binding IsEmptyStateVisible}"
+                        IsHitTestVisible="False">
+                    <TextBlock x:Name="HierarchyEmptyStateText"
+                               Classes="hierarchy-empty"
+                               Text="{Binding EmptyStateText}" />
+                </Border>
+            </Grid>
+        </Grid>
+    </Border>
 </UserControl>

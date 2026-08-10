@@ -8,10 +8,13 @@
 >
 > 2026-08-04：ADR-0009 已建立不依赖旧 Workbench 的最小真实编辑面：单 SceneDocument、Hierarchy、Inspector、
 > Create Entity、Save 与 dirty。Dock、Project/Asset panel、Scene View、Diagnostics panels、undo/redo 和多文档仍是后续范围。
+>
+> 2026-08-10：#363 只恢复 Hierarchy 的生产 UI 与 snapshot projection；它不恢复本文已 supersede 的旧
+> Workbench/provider/tree framework，也不扩展当前 Scene ABI。
 
-更新日期：2026-08-04
+更新日期：2026-08-10
 
-跟踪：GitHub Epic #119；设计 Slice #337；首个实现 Slice #338
+跟踪：GitHub Epic #119；设计 Slice #337；首个实现 Slice #338；Hierarchy 第一纵切 #363
 
 ## 1. 目的
 
@@ -51,11 +54,13 @@ find -> inspect -> select -> edit -> preview -> validate -> commit/undo
 
 ## 3. 当前实现事实与缺口
 
-2026-08-04 的 production 源码与运行态事实：
+2026-08-10 的 production 源码与运行态事实：
 
 - `Editor.csproj` 使用 Avalonia、compiled binding 与 CommunityToolkit.Mvvm；
 - Shell 只有项目 ingress 和单 SceneDocument 三列编辑面，没有恢复旧 Dock/Workbench；
 - Hierarchy 投影 authoritative entity snapshot；Inspector 编辑所选 stable object ID 的名称与 local Transform；
+- #363 的 Hierarchy UI 继续消费同一 authoritative snapshot，并以 `SceneEntitySnapshot.ObjectId` 在 snapshot
+  替换后重映射 selection；row/control 不是 scene truth；
 - Create Entity、Save、dirty 标记与关闭重开恢复经过 Application/EngineBridge/native Document 真实链；
 - selection 仅由 ViewModel 按 stable ID remap，不成为 engine truth；
 - Project/Asset panel、Scene View、Console/Problems panel、Command Palette、Dock、多文档、undo/redo 和 Play Mode 尚未实现。
@@ -67,6 +72,8 @@ find -> inspect -> select -> edit -> preview -> validate -> commit/undo
 3. Scene View、render lane、工具栏和 overlay 未实现。
 4. Console/Problems/Status 的诊断呈现仍要从同一 bounded hub 重建。
 5. Dock、多文档、Play 和 viewport tools 只有相应 owner/command 落地后才能启用。
+6. 当前 `SceneEntitySnapshot` 只有 `ObjectId`、`Name` 与 `Transform`；Scene ABI 尚无 `ParentId`、entity kind、
+   visibility、lock 或 authoring command，因此 Hierarchy 不能宣称真实嵌套关系或这些 mutation 能力。
 
 这些缺口优先通过现有系统的组合、状态投影和少量 Shell surface 解决；不以抽象通用 UI 框架作为前置条件。
 
@@ -232,12 +239,31 @@ Project 面板负责 active project 的 asset/product 查找与状态投影，�
 
 ### 8.2 Hierarchy
 
-- 默认显示 active scene/document snapshot；
-- selection 双向同步；
-- search/filter 不改变 scene；
-- visible、locked、dirty/prefab-like state 需要稳定 icon/badge 和 tooltip；
-- expansion、column width 和 local filter 是 panel-local state；
-- reparent、rename、delete 尚未接入 transaction 前不得伪装为可用。
+#363 的第一纵切采用以下当前合同：
+
+- Hierarchy 是 active scene/document authoritative snapshot 的 presentation projection，不拥有或缓存另一份
+  Scene/World truth；
+- `SceneEntitySnapshot.ObjectId` 是 entity row 的稳定 identity。snapshot 更新后 selection 按 `ObjectId`
+  重映射到新 snapshot；Avalonia row、控件实例与可见索引都不是 selection truth；
+- 当前 ABI 没有 `ParentId`。因此 scene root 只能是 presentation-only 容器，其下 entity 是同级 projection；
+  它不得被解释为已建立 engine parent/child 关系；
+- filter text、root expansion、keyboard anchor、scroll position 与列宽属于 panel-local state，不写入 scene、
+  dirty revision 或 undo history；filter 隐藏已选 entity 时保留 document selection；
+- ViewModel 生成 flat visible-row projection，View 使用虚拟化列表。缩进、连接线与 expander 只表达该 projection，
+  不通过递归 `ItemsControl` 为完整 scene 实例化控件树；
+- 视觉采用已删除 Hierarchy 的目标效果，而不恢复其实现架构：紧凑 search/count toolbar、Name/Type header、
+  20 px rows、12 px/layer indentation、connector、chevron、entity icon、hover/selection 与明确 empty state；
+- 当前唯一诚实的 entity type label 是 `Entity`。ABI 提供真实 kind 后再投影新的 type/icon，而不是从名称或
+  控件层猜测；
+- search/filter 只改变 visible projection 和计数，不改变 scene，也不因结果为空清除 selection。
+
+明确拒绝：
+
+- 在 Scene ABI 具备 `ParentId`、kind、visibility/lock state 且 Application 提供 command/transaction 之前，
+  不伪造 reparent、visibility、lock、rename、delete 或拖放 mutation；
+- 不恢复旧 fixture/provider、transient row selection 或通用 Tree framework。#363 只建立 Hierarchy 自有的最小
+  projection/ViewModel，并在出现第二个真实 consumer 后再评估共享 primitive；
+- 不把 panel-local expansion/filter 持久化为 scene authoring data。
 
 ## 9. Scene View
 
@@ -324,10 +350,11 @@ lifecycle 合同见 [Studio 前端硬切架构](studio-frontend-hard-cut.md)。
 
 | 来源 | 观察 | 决策 |
 | --- | --- | --- |
-| Unreal Editor Interface / Level Editor / Outliner | Viewport、Outliner、Details、Content 与底部诊断围绕选择和任务协作 | Adopt 关系；不复制外观、素材或名称 |
+| Unreal Editor Interface / Level Editor / Scene Outliner API | Viewport、Outliner、Details、Content 围绕选择协作；Scene Outliner 把 widget、mode、hierarchy 与稳定 `FSceneOutlinerTreeItemID` 分开 | Adopt owner/projection/稳定 identity 边界；不复制 API、外观、素材或名称 |
 | Unreal Project Browser / Content Browser、Godot/O3DE Project Manager / asset dock、Unity Hub / Project window | 工程选择、版本、构建与恢复在工作台前或独立管理 surface；编辑器内 asset browser 只管理 active project 内容 | Adopt 所有权分层；当前先用 Shell surface，独立进程延后 |
 | Godot Editor / Inspector Dock | Scene、FileSystem、Inspector 协作；底部面板可折叠；Inspector 有搜索、历史和恢复入口 | Adopt 可折叠诊断与明确 Inspector 状态；历史/收藏延后 |
-| O3DE Editor / Entity Outliner | Outliner + Asset Browser + Viewport + Inspector 的生产布局；搜索、过滤、锁定和可见性状态明确 | Adopt 默认信息架构与状态可见性；复杂列/批量能力延后 |
+| O3DE Editor / Entity Outliner source | Outliner + Asset Browser + Viewport + Inspector 的生产布局；widget、list model 与 sort/filter proxy 分工，selection/expansion 以 entity id 恢复 | Adopt snapshot/model/filter owner 边界与过滤期间 selection 保留；visibility、lock、拖放和批量能力延后 |
+| Unity `SceneHierarchy` reference source | `TreeViewController` 消费稳定 entity id，`TreeViewState` 保存窗口局部 expansion/selection，`GetRows()` 暴露当前 visible rows | Adopt stable-id selection、panel-local tree state 与 flat visible-row projection；不把 Unity layout persistence 或 API 搬入 Scene 文档 |
 | Blender HIG | 区分 scene selection、UI selection、drag 与 undo；空间上下文明确 | Adopt selection/focus/undo 边界 |
 | Marking Menu 实证研究 | 可见菜单可帮助 novice 逐步形成 expert gesture | Deferred：command catalog 和快捷键冲突模型稳定后再评估 |
 | Toolglass / Magic Lenses | 空间 overlay 能减少反复切换 mode 的成本 | Adapt：只用于 viewport 的非阻塞 overlay；拒绝全局浮动工具层 |
@@ -432,6 +459,8 @@ git diff --check
 - [Unreal Editor Interface](https://dev.epicgames.com/documentation/en-us/unreal-engine/unreal-editor-interface)
 - [Unreal Level Editor](https://dev.epicgames.com/documentation/en-us/unreal-engine/level-editor-in-unreal-engine)
 - [Unreal Outliner](https://dev.epicgames.com/documentation/en-us/unreal-engine/outliner-in-unreal-engine)
+- [Unreal SceneOutliner module API](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Editor/SceneOutliner)
+- [Unreal `ISceneOutliner` API](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Editor/SceneOutliner/ISceneOutliner)
 - [Unreal Opening an Existing Project](https://dev.epicgames.com/documentation/en-us/unreal-engine/opening-an-existing-unreal-engine-project)
 - [Unreal Content Browser](https://dev.epicgames.com/documentation/en-us/unreal-engine/content-browser-in-unreal-engine)
 - [Godot：A first look at the editor](https://docs.godotengine.org/en/stable/getting_started/introduction/first_look_at_the_editor.html)
@@ -439,10 +468,13 @@ git diff --check
 - [Godot Project Manager](https://docs.godotengine.org/en/stable/tutorials/editor/project_manager.html)
 - [O3DE Editor](https://docs.o3de.org/docs/user-guide/editor/)
 - [O3DE Entity Outliner](https://www.docs.o3de.org/docs/user-guide/editor/entity-outliner/)
+- [O3DE `EntityOutlinerListModel`](https://github.com/o3de/o3de/blob/development/Code/Framework/AzToolsFramework/AzToolsFramework/UI/Outliner/EntityOutlinerListModel.cpp)
+- [O3DE `EntityOutlinerSortFilterProxyModel`](https://github.com/o3de/o3de/blob/development/Code/Framework/AzToolsFramework/AzToolsFramework/UI/Outliner/EntityOutlinerSortFilterProxyModel.cpp)
 - [O3DE Project Manager](https://www.docs.o3de.org/docs/user-guide/project-config/project-manager/)
 - [O3DE Asset Browser](https://www.docs.o3de.org/docs/user-guide/editor/asset-browser/)
 - [Unity Hub Manage Projects](https://docs.unity.com/en-us/hub/project-manage)
 - [Unity Project window](https://docs.unity3d.com/Manual/ProjectView.html)
+- [Unity `SceneHierarchy` reference source](https://github.com/Unity-Technologies/UnityCsReference/blob/master/Editor/Mono/SceneHierarchy.cs)
 - [Blender HIG：Selection](https://developer.blender.org/docs/features/interface/human_interface_guidelines/selection/)
 - [Blender HIG：General Patterns](https://developer.blender.org/docs/features/interface/human_interface_guidelines/general_patterns/)
 

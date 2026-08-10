@@ -31,8 +31,12 @@ public sealed class MainWindowXamlTests
 
         var hierarchyXaml = LoadPanelXaml("StudioHierarchyPanelView.axaml");
         Assert.Contains("x:DataType=\"vm:StudioHierarchyPanelViewModel\"", hierarchyXaml);
-        Assert.Contains("ItemsSource=\"{Binding Shell.SceneEntities}\"", hierarchyXaml);
-        Assert.Contains("SelectedItem=\"{Binding Shell.SelectedEntity}\"", hierarchyXaml);
+        Assert.Contains("ItemsSource=\"{Binding VisibleRows}\"", hierarchyXaml);
+        Assert.Contains("SelectedItem=\"{Binding SelectedRow", hierarchyXaml);
+        Assert.Contains("{Binding FilterText", hierarchyXaml);
+        Assert.Contains("VirtualizingStackPanel", hierarchyXaml);
+        Assert.DoesNotContain("Shell.SceneEntities", hierarchyXaml);
+        Assert.DoesNotContain("Shell.SelectedEntity", hierarchyXaml);
 
         var inspectorXaml = LoadPanelXaml("StudioInspectorPanelView.axaml");
         Assert.Contains("x:DataType=\"vm:StudioInspectorPanelViewModel\"", inspectorXaml);
