@@ -2,27 +2,42 @@ using System;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using Asharia.Studio.Presentation.Avalonia.Windowing;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Platform;
 using Avalonia.Threading;
 
-namespace Editor.Shell.Views.Docking;
+namespace Asharia.Studio.Presentation.Avalonia.Windows.Windowing;
 
-internal sealed class EditorDockPresentationOuterLayoutCommit(
-    Action apply,
-    Action rollback,
-    Action? accept = null,
-    Func<bool>? isCurrent = null)
+public sealed class Win32InteractiveTopLevelResizeAdapterFactory :
+    IInteractiveTopLevelResizeAdapterFactory
 {
-    public Action Apply { get; } = apply ?? throw new ArgumentNullException(nameof(apply));
+    public static Win32InteractiveTopLevelResizeAdapterFactory Instance { get; } = new();
 
-    public Action Rollback { get; } = rollback ?? throw new ArgumentNullException(nameof(rollback));
+    private Win32InteractiveTopLevelResizeAdapterFactory()
+    {
+    }
 
-    public Action Accept { get; } = accept ?? (static () => { });
+    public IInteractiveTopLevelResizeAttachment? TryAttach(
+        TopLevel topLevel,
+        IInteractiveTopLevelResizeSink sink)
+    {
+        ArgumentNullException.ThrowIfNull(topLevel);
+        ArgumentNullException.ThrowIfNull(sink);
+        if (!OperatingSystem.IsWindows() ||
+            topLevel.TryGetPlatformHandle() is not { } platformHandle ||
+            !string.Equals(platformHandle.HandleDescriptor, "HWND", StringComparison.Ordinal))
+        {
+            return null;
+        }
 
-    public Func<bool> IsCurrent { get; } = isCurrent ?? (static () => true);
+        return new Win32InteractiveTopLevelResizeAdapter(
+            sink,
+            topLevel,
+            platformHandle.Handle);
+    }
 }
 
 /// <summary>
@@ -30,7 +45,8 @@ internal sealed class EditorDockPresentationOuterLayoutCommit(
 /// last accepted HWND rectangle until the exact Scene candidate is ready; the accepted rectangle,
 /// Avalonia layout, and viewport surface are then advanced by the same UI transaction.
 /// </summary>
-internal sealed partial class EditorDockWin32PresentationResizeAdapter : IDisposable
+internal sealed partial class Win32InteractiveTopLevelResizeAdapter :
+    IInteractiveTopLevelResizeAttachment
 {
     private const uint kWindowMessageSizing = 0x0214;
     private const uint kWindowMessageCancelMode = 0x001F;
@@ -44,14 +60,13 @@ internal sealed partial class EditorDockWin32PresentationResizeAdapter : IDispos
     private const uint kSetWindowPositionNoActivate = 0x0010;
     private const uint kSetWindowPositionNoSize = 0x0001;
     private const uint kSetWindowPositionNoMove = 0x0002;
-    private readonly EditorDockPresentationLayoutHost host_;
+    private readonly IInteractiveTopLevelResizeSink sink_;
     private readonly TopLevel topLevel_;
     private readonly nint windowHandle_;
     private readonly Win32Properties.CustomWndProcHookCallback hook_;
     private readonly Action drainLatestProposal_;
     private bool hasAcceptedRect_;
     private bool hasLatestProposal_;
-    private bool hasObservedProposal_;
     private bool isCancelRestorationGuardActive_;
     private bool isDpiCancellationPending_;
     private bool isProposalDrainPosted_;
@@ -59,42 +74,23 @@ internal sealed partial class EditorDockWin32PresentationResizeAdapter : IDispos
     private bool isApplyingWindowRect_;
     private bool isDisposed_;
     private bool isSizingInteractionActive_;
-    private bool isSizingInteractionClosing_;
     private ulong nextSizingEpoch_;
     private ulong sizingEpoch_;
     private NativeRect acceptedRect_;
     private NativeRect lastProposedRect_;
     private ProjectionSnapshot projection_;
 
-    private EditorDockWin32PresentationResizeAdapter(
-        EditorDockPresentationLayoutHost host,
+    internal Win32InteractiveTopLevelResizeAdapter(
+        IInteractiveTopLevelResizeSink sink,
         TopLevel topLevel,
         nint windowHandle)
     {
-        host_ = host;
+        sink_ = sink;
         topLevel_ = topLevel;
         windowHandle_ = windowHandle;
         hook_ = OnWindowMessage;
         drainLatestProposal_ = DrainLatestProposal;
         Win32Properties.AddWndProcHookCallback(topLevel_, hook_);
-    }
-
-    public static EditorDockWin32PresentationResizeAdapter? TryAttach(
-        EditorDockPresentationLayoutHost host)
-    {
-        ArgumentNullException.ThrowIfNull(host);
-        if (!OperatingSystem.IsWindows() ||
-            TopLevel.GetTopLevel(host) is not { } topLevel ||
-            topLevel.TryGetPlatformHandle() is not { } platformHandle ||
-            !string.Equals(platformHandle.HandleDescriptor, "HWND", StringComparison.Ordinal))
-        {
-            return null;
-        }
-
-        return new EditorDockWin32PresentationResizeAdapter(
-            host,
-            topLevel,
-            platformHandle.Handle);
     }
 
     public void Dispose()
@@ -107,11 +103,9 @@ internal sealed partial class EditorDockWin32PresentationResizeAdapter : IDispos
         isDisposed_ = true;
         sizingEpoch_ = checked(++nextSizingEpoch_);
         hasLatestProposal_ = false;
-        hasObservedProposal_ = false;
         isProposalDrainPosted_ = false;
         strictSizingEnabled_ = false;
         isSizingInteractionActive_ = false;
-        isSizingInteractionClosing_ = false;
         isCancelRestorationGuardActive_ = false;
         isDpiCancellationPending_ = false;
         Win32Properties.RemoveWndProcHookCallback(topLevel_, hook_);
@@ -137,8 +131,7 @@ internal sealed partial class EditorDockWin32PresentationResizeAdapter : IDispos
                     message,
                     isApplyingWindowRect_,
                     strictSizingEnabled_,
-                    isSizingInteractionActive_,
-                    isSizingInteractionClosing_))
+                    isSizingInteractionActive_))
             {
                 isDpiCancellationPending_ = true;
             }
@@ -178,16 +171,14 @@ internal sealed partial class EditorDockWin32PresentationResizeAdapter : IDispos
                     message,
                     wParam,
                     strictSizingEnabled_,
-                    isSizingInteractionActive_,
-                    isSizingInteractionClosing_))
+                    isSizingInteractionActive_))
             {
                 CancelSizingInteraction(guardNativeRestoration:
                     ShouldArmNativeRestorationGuard(
                         message,
                         wParam,
                         strictSizingEnabled_,
-                        isSizingInteractionActive_,
-                        isSizingInteractionClosing_));
+                        isSizingInteractionActive_));
                 return 0;
             }
             if (message != kWindowMessageSizing || lParam == 0 ||
@@ -202,7 +193,6 @@ internal sealed partial class EditorDockWin32PresentationResizeAdapter : IDispos
             // transaction allocation happen outside the hot WM_SIZING path.
             lastProposedRect_ = Marshal.PtrToStructure<NativeRect>(lParam);
             hasLatestProposal_ = true;
-            hasObservedProposal_ = true;
             Marshal.StructureToPtr(acceptedRect_, lParam, fDeleteOld: false);
             handled = true;
             PostProposalDrainIfNeeded();
@@ -237,14 +227,12 @@ internal sealed partial class EditorDockWin32PresentationResizeAdapter : IDispos
     {
         sizingEpoch_ = checked(++nextSizingEpoch_);
         isSizingInteractionActive_ = true;
-        isSizingInteractionClosing_ = false;
         isCancelRestorationGuardActive_ = false;
         isDpiCancellationPending_ = false;
         hasLatestProposal_ = false;
-        hasObservedProposal_ = false;
         strictSizingEnabled_ = false;
         hasAcceptedRect_ = false;
-        if (!host_.CanStartPrecommittedWindowResize() ||
+        if (!sink_.CanStartPrecommittedResize() ||
             !TryCaptureProjection(out projection_))
         {
             return;
@@ -259,10 +247,9 @@ internal sealed partial class EditorDockWin32PresentationResizeAdapter : IDispos
         uint message,
         nint wParam,
         bool strictSizingEnabled,
-        bool isSizingInteractionActive,
-        bool isSizingInteractionClosing) =>
+        bool isSizingInteractionActive) =>
         strictSizingEnabled &&
-        (isSizingInteractionActive || isSizingInteractionClosing) &&
+        isSizingInteractionActive &&
         (message == kWindowMessageCancelMode ||
          message == kWindowMessageDpiChanged ||
          message == kWindowMessageKeyDown && wParam == kVirtualKeyEscape);
@@ -271,35 +258,30 @@ internal sealed partial class EditorDockWin32PresentationResizeAdapter : IDispos
         uint message,
         nint wParam,
         bool strictSizingEnabled,
-        bool isSizingInteractionActive,
-        bool isSizingInteractionClosing) =>
+        bool isSizingInteractionActive) =>
         // Only the live USER32 modal sizing loop can issue the native restoration that needs
-        // interception. A transaction may remain in the closing state after WM_EXITSIZEMOVE,
-        // but arming the guard there would consume the next unrelated Snap/maximize/programmatic
-        // WINDOWPOS change.
+        // interception. After WM_EXITSIZEMOVE, arming the guard would consume the next unrelated
+        // Snap, maximize or programmatic WINDOWPOS change.
         isSizingInteractionActive &&
         message != kWindowMessageDpiChanged &&
         ShouldHandleCancellationMessage(
             message,
             wParam,
             strictSizingEnabled,
-            isSizingInteractionActive,
-            isSizingInteractionClosing);
+            isSizingInteractionActive);
 
     internal static bool ShouldDeferDpiCancellation(
         uint message,
         bool isApplyingWindowRect,
         bool strictSizingEnabled,
-        bool isSizingInteractionActive,
-        bool isSizingInteractionClosing) =>
+        bool isSizingInteractionActive) =>
         isApplyingWindowRect &&
         message == kWindowMessageDpiChanged &&
         ShouldHandleCancellationMessage(
             message,
             0,
             strictSizingEnabled,
-            isSizingInteractionActive,
-            isSizingInteractionClosing);
+            isSizingInteractionActive);
 
     private void EndSizingInteraction()
     {
@@ -309,22 +291,18 @@ internal sealed partial class EditorDockWin32PresentationResizeAdapter : IDispos
             return;
         }
 
-        isSizingInteractionActive_ = false;
-        isSizingInteractionClosing_ = strictSizingEnabled_ && hasObservedProposal_;
-        if (!isSizingInteractionClosing_)
-        {
-            sizingEpoch_ = checked(++nextSizingEpoch_);
-        }
-        PostProposalDrainIfNeeded();
+        // Releasing the native modal loop is a hard proposal boundary. Any proposal that did
+        // not reach Accept belongs to the old epoch and may finish already-admitted GPU work,
+        // but it must not commit the outer rectangle or publish after release. The current HWND
+        // therefore remains the last accepted (Published exact) rectangle.
+        CancelSizingInteraction();
     }
 
     private void CancelSizingInteraction(bool guardNativeRestoration = false)
     {
         sizingEpoch_ = checked(++nextSizingEpoch_);
         isSizingInteractionActive_ = false;
-        isSizingInteractionClosing_ = false;
         hasLatestProposal_ = false;
-        hasObservedProposal_ = false;
         strictSizingEnabled_ = false;
         isDpiCancellationPending_ = false;
         isCancelRestorationGuardActive_ = guardNativeRestoration && hasAcceptedRect_;
@@ -373,13 +351,7 @@ internal sealed partial class EditorDockWin32PresentationResizeAdapter : IDispos
             }
 
             var windowCommit = new WindowRectCommit(this, epoch, proposedRect, projection_);
-            if (!host_.TryQueuePrecommittedWindowResize(
-                    targetSize,
-                    new EditorDockPresentationOuterLayoutCommit(
-                        windowCommit.Apply,
-                        windowCommit.Rollback,
-                        windowCommit.Accept,
-                        windowCommit.IsCurrent)))
+            if (!sink_.TryQueuePrecommittedResize(targetSize, windowCommit))
             {
                 throw new InvalidOperationException(
                     "The exact Window presentation proposal was rejected.");
@@ -389,10 +361,6 @@ internal sealed partial class EditorDockWin32PresentationResizeAdapter : IDispos
         {
             isProposalDrainPosted_ = false;
             Trace.TraceError("Win32 viewport sizing drain failed: {0}", exception);
-            if (isSizingInteractionClosing_)
-            {
-                CancelSizingInteraction();
-            }
         }
     }
 
@@ -411,8 +379,8 @@ internal sealed partial class EditorDockWin32PresentationResizeAdapter : IDispos
             windowRect,
             clientRect.Width,
             clientRect.Height,
-            topLevel_.ClientSize.Width - host_.Bounds.Width,
-            topLevel_.ClientSize.Height - host_.Bounds.Height,
+            topLevel_.ClientSize.Width - sink_.CurrentWorkspaceSize.Width,
+            topLevel_.ClientSize.Height - sink_.CurrentWorkspaceSize.Height,
             scaling);
         return true;
     }
@@ -422,7 +390,7 @@ internal sealed partial class EditorDockWin32PresentationResizeAdapter : IDispos
         NativeRect proposedRect,
         out Size targetSize)
     {
-        return TryProjectWorkspaceTarget(
+        return InteractiveTopLevelResizeProjection.TryProjectWorkspaceTarget(
             new Size(projection.WindowRect.Width, projection.WindowRect.Height),
             new Size(projection.ClientWidth, projection.ClientHeight),
             new Size(proposedRect.Width, proposedRect.Height),
@@ -431,46 +399,11 @@ internal sealed partial class EditorDockWin32PresentationResizeAdapter : IDispos
             out targetSize);
     }
 
-    internal static bool TryProjectWorkspaceTarget(
-        Size currentOuterPixels,
-        Size currentClientPixels,
-        Size proposedOuterPixels,
-        Size fixedLogicalInsets,
-        double scaling,
-        out Size targetSize)
-    {
-        targetSize = default;
-        if (!double.IsFinite(scaling) || scaling <= 0)
-        {
-            return false;
-        }
-
-        var targetClientWidth = proposedOuterPixels.Width -
-            (currentOuterPixels.Width - currentClientPixels.Width);
-        var targetClientHeight = proposedOuterPixels.Height -
-            (currentOuterPixels.Height - currentClientPixels.Height);
-        if (targetClientWidth <= 0 || targetClientHeight <= 0)
-        {
-            return false;
-        }
-
-        var targetWidth = (targetClientWidth / scaling) - fixedLogicalInsets.Width;
-        var targetHeight = (targetClientHeight / scaling) - fixedLogicalInsets.Height;
-        if (!double.IsFinite(targetWidth) || !double.IsFinite(targetHeight) ||
-            targetWidth <= 0 || targetHeight <= 0)
-        {
-            return false;
-        }
-
-        targetSize = new Size(targetWidth, targetHeight);
-        return true;
-    }
-
     private void ApplyWindowRect(NativeRect targetRect)
     {
         if (isDisposed_)
         {
-            throw new ObjectDisposedException(nameof(EditorDockWin32PresentationResizeAdapter));
+            throw new ObjectDisposedException(nameof(Win32InteractiveTopLevelResizeAdapter));
         }
 
         isApplyingWindowRect_ = true;
@@ -510,7 +443,7 @@ internal sealed partial class EditorDockWin32PresentationResizeAdapter : IDispos
     private void ValidateCommit(ulong epoch, NativeRect targetRect)
     {
         if (isDisposed_ || epoch == 0 || epoch != sizingEpoch_ ||
-            !isSizingInteractionActive_ && !isSizingInteractionClosing_)
+            !isSizingInteractionActive_)
         {
             throw new OperationCanceledException(
                 "The interactive Window resize proposal is no longer current.");
@@ -526,8 +459,8 @@ internal sealed partial class EditorDockWin32PresentationResizeAdapter : IDispos
     private void ValidateProjection(ProjectionSnapshot projection)
     {
         var scaling = topLevel_.RenderScaling;
-        var fixedLogicalWidth = topLevel_.ClientSize.Width - host_.Bounds.Width;
-        var fixedLogicalHeight = topLevel_.ClientSize.Height - host_.Bounds.Height;
+        var fixedLogicalWidth = topLevel_.ClientSize.Width - sink_.CurrentWorkspaceSize.Width;
+        var fixedLogicalHeight = topLevel_.ClientSize.Height - sink_.CurrentWorkspaceSize.Height;
         if (Math.Abs(scaling - projection.Scaling) > double.Epsilon ||
             Math.Abs(fixedLogicalWidth - projection.FixedLogicalWidth) >
                 LayoutHelper.LayoutEpsilon ||
@@ -551,14 +484,6 @@ internal sealed partial class EditorDockWin32PresentationResizeAdapter : IDispos
             {
                 projection_ = acceptedProjection;
             }
-        }
-        if (epoch == sizingEpoch_ && isSizingInteractionClosing_ &&
-            targetRect == lastProposedRect_)
-        {
-            sizingEpoch_ = checked(++nextSizingEpoch_);
-            isSizingInteractionClosing_ = false;
-            hasObservedProposal_ = false;
-            strictSizingEnabled_ = false;
         }
     }
 
@@ -625,10 +550,10 @@ internal sealed partial class EditorDockWin32PresentationResizeAdapter : IDispos
         double Scaling);
 
     private sealed class WindowRectCommit(
-        EditorDockWin32PresentationResizeAdapter owner,
+        Win32InteractiveTopLevelResizeAdapter owner,
         ulong epoch,
         NativeRect targetRect,
-        ProjectionSnapshot projection)
+        ProjectionSnapshot projection) : IInteractiveTopLevelResizeCommit
     {
         private NativeRect rollbackRect_;
         private bool hasRollbackRect_;

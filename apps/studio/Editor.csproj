@@ -6,6 +6,9 @@
         <ApplicationManifest>app.manifest</ApplicationManifest>
         <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+        <AshariaStudioTargetsWindows Condition="'$(RuntimeIdentifier)' == '' and '$(OS)' == 'Windows_NT'">true</AshariaStudioTargetsWindows>
+        <AshariaStudioTargetsWindows Condition="'$(RuntimeIdentifier)' != '' and $([System.String]::Copy('$(RuntimeIdentifier)').StartsWith('win-'))">true</AshariaStudioTargetsWindows>
+        <DefineConstants Condition="'$(AshariaStudioTargetsWindows)' == 'true'">$(DefineConstants);ASHARIA_STUDIO_WINDOWS</DefineConstants>
         <StudioNativeBuildPreset Condition="'$(StudioNativeBuildPreset)' == '' and '$(Configuration)' == 'Release'">msvc-release</StudioNativeBuildPreset>
         <StudioNativeBuildPreset Condition="'$(StudioNativeBuildPreset)' == ''">msvc-debug</StudioNativeBuildPreset>
         <StudioProjectNativeLibrary>$(MSBuildProjectDirectory)\..\..\build\cmake\$(StudioNativeBuildPreset)\packages\project-core\asharia_project_native.dll</StudioProjectNativeLibrary>
@@ -29,6 +32,8 @@
       <ProjectReference Include="src\Asharia.Studio.Application\Asharia.Studio.Application.csproj" />
       <ProjectReference Include="src\Asharia.Studio.EngineBridge\Asharia.Studio.EngineBridge.csproj" />
       <ProjectReference Include="src\Asharia.Studio.Presentation.Avalonia\Asharia.Studio.Presentation.Avalonia.csproj" />
+      <ProjectReference Include="src\Asharia.Studio.Presentation.Avalonia.Windows\Asharia.Studio.Presentation.Avalonia.Windows.csproj"
+                        Condition="'$(AshariaStudioTargetsWindows)' == 'true'" />
       <ProjectReference Include="src\Asharia.Studio.DevelopmentHost\Asharia.Studio.DevelopmentHost.csproj"
                         Condition="'$(Configuration)' == 'Debug'" />
       <ProjectReference Include="src\Asharia.Studio.DevelopmentProtocol\Asharia.Studio.DevelopmentProtocol.csproj"
@@ -42,7 +47,7 @@
         <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.0" />
     </ItemGroup>
 
-    <ItemGroup Condition="'$(OS)' == 'Windows_NT'">
+    <ItemGroup Condition="'$(AshariaStudioTargetsWindows)' == 'true'">
         <None Include="$(StudioProjectNativeLibrary)"
               Link="asharia_project_native.dll"
               CopyToOutputDirectory="PreserveNewest"
@@ -74,7 +79,7 @@
 
     <Target Name="ValidateStudioProjectNativeLibrary"
             BeforeTargets="PrepareForBuild;Publish"
-            Condition="'$(OS)' == 'Windows_NT'">
+            Condition="'$(AshariaStudioTargetsWindows)' == 'true'">
         <Error Condition="!Exists('$(StudioProjectNativeLibrary)')"
                Text="The canonical Studio project adapter is missing at '$(StudioProjectNativeLibrary)'. Run Conan, configure the $(StudioNativeBuildPreset) preset, and build the asharia-project-native target first." />
         <Error Condition="!Exists('$(StudioSceneNativeLibrary)')"

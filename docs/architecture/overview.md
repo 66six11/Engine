@@ -181,6 +181,11 @@ Asharia Engine 当前目标仍是先做一个小而完整的 Vulkan renderer，�
 - `Asharia.Studio.Presentation.Avalonia.Viewports.ViewportPresentationTransactionCoordinator` 以
   每个 participant 的 `SessionId + EndpointEpoch + TransactionId` 编排 Proposal→Preparing→Prepared→Validated→Published→Rendered→Retiring→
   Completed/Aborted/Quarantined。同一 Avalonia compositor scope 可 group all-or-nothing visible publish；跨 compositor 明确不原子。
+- `Asharia.Studio.Presentation.Avalonia.Windowing` 只定义 platform-neutral interactive top-level resize capability：
+  `IInteractiveTopLevelResizeAdapterProvider`、`IInteractiveTopLevelResizeAdapterFactory`、`IInteractiveTopLevelResizeAttachment`、
+  `IInteractiveTopLevelResizeSink`、`IInteractiveTopLevelResizeCommit` 与 `InteractiveTopLevelResizeProjection`。shared host、transaction
+  coordinator 和 endpoint control 不引用 HWND、WM message、USER32 或 P/Invoke；Windows native hook、RECT projection 与 commit owner
+  独立位于 `Asharia.Studio.Presentation.Avalonia.Windows`。
 - `EditorDockStagedGridSplitter`、`EditorDockSplitResizePolicy` 与 `EditorDockSplitResizeCoordinator` 只拥有 splitter drag
   proposal、definition min/max/layout rounding、requested/committed `GridLength` 与同步 layout probe；它们是 transaction 的 layout
   adapter，不拥有 endpoint surface/stream。这些 transient editor layout state 不进入 `SceneDocument` 或 runtime。
@@ -274,8 +279,8 @@ Studio Avalonia `Viewport Presentation Transaction` 的当前路径：
    内临时应用 proposal 并 `UpdateLayout`；control 以 `ceil(Bounds * RenderScaling)` 捕获 target `PixelSize`，probe Bounds 不推进
    geometry/presentation。coordinator 在 UI dispatcher yield 前恢复 committed `GridLength`，旧 exact Bounds、front surface 与
    `Opacity=1` 保持可见。Main Window 与 Floating Window 的 dock workspace 另共用
-   `EditorDockPresentationLayoutHost`；它让 Win32 platform adapter 能把 bounded outer-Window proposal 翻译成同一 transaction，而不把
-   USER32 ownership 放进通用 endpoint coordinator。
+   `EditorDockPresentationLayoutHost`；它实现 platform-neutral `IInteractiveTopLevelResizeSink`，让可选平台 integration 把 bounded
+   outer-Window proposal 翻译成同一 transaction，而不把 native Window ownership 放进 shared host 或通用 endpoint coordinator。
 3. 每个 participant endpoint 为冻结的 target policy 创建独立 candidate `CompositionDrawingSurface` 与 stream。managed
    `ViewportSession` 合并 latest request，native stream 原子替换唯一 pending-latest；唯一 RenderThread 异步 record/submit，candidate
    只生产首帧。每个
@@ -292,17 +297,21 @@ Studio Avalonia `Viewport Presentation Transaction` 的当前路径：
 6. plain `GridSplitter.ShowsPreview` 或 drag-end debounce 会让拖动期间没有 unique exact geometry，不能满足 `>=60/s`，因此不采用。
    同一 drag 的新 proposal latest-wins 替换 queued successor，不取消正在 preparation/publish 的 active proposal；每个 successful
    switch 后立即准备当时最新 proposal。显式 cancel 或 session/endpoint epoch 失效才终止尚未 publish 的 active candidate。
-   Windows fixed-DPI 普通装饰边框 drag 由 `EditorDockWin32PresentationResizeAdapter` 在 `WM_SIZING` 中复制 proposed `RECT`、回写
-   last-accepted exact `RECT`，并在 WndProc 外 coalesce 到 workspace host 的一个 active + 一个 queued latest。所有受影响 endpoint
-   prepared 后，publish turn 才执行 `SetWindowPos + TopLevel.UpdateLayout`、复验实际 workspace/extent 并切换 same-compositor fronts；
-   成功 `Published` 后才接受新 HWND `RECT`。Snap、maximize/restore、程序化 Window/Bounds、DPI transition 与非 Win32 top-level
-   不能使用这个 precommit seam，仍通过 Render-priority early admission 走 exact-only hidden fallback：禁止 crop/stretch，但明确允许
-   短暂 blank，尚未达到零闪。
-   USER32/DWM geometry 与 Avalonia composition batch 没有共享 physical commit fence；同一 UI publish turn 不是物理 scanout 原子性。
-   独立 Windows-only opt-in WGC test project 已能以 Scene corner sentinel 分析 `wgc-dwm-composited-pixels`。它只覆盖 WGC-delivered
-   DWM 合成样本，不保证取得每个 refresh，也不证明 LCD scanout；`PhysicalDisplayedEvidenceAvailable` 固定为 `false`。当前 process
-   acceptance 只门控 monotonic grow：允许并显式统计 old exact Scene 到 new HWND 的右/下背景 gap，整个 Scene blank、stretch、crop
-   或 spill 仍为硬失败。shrink WGC pixel closure 仍 pending，不得由 grow 结果宣称通过。
+   Windows fixed-DPI 普通装饰边框 drag 由独立 `Asharia.Studio.Presentation.Avalonia.Windows` integration 在 `WM_SIZING` 中复制
+   proposed `RECT`、回写 last-accepted exact `RECT`，并在 WndProc 外经 shared capability coalesce 到 workspace host 的一个 active +
+   一个 queued latest。所有受影响 endpoint prepared 后，publish turn 才经 platform-neutral outer commit 执行 native `SetWindowPos`，
+   再由 host `TopLevel.UpdateLayout`、复验实际 workspace/extent 并切换 same-compositor fronts；成功 `Published` 后才接受新 HWND `RECT`。
+   `WM_EXITSIZEMOVE` 关闭 interaction epoch，使所有未接受 commit stale、丢弃 queued successor，并停在最后 Published exact RECT；已进入
+   GPU/consumer 的 candidate 自然完成后按普通 abort/work fence 回收。accepted final 相对 raw cursor final 允许落后 0–1 candidate，smoke 必须
+   输出 raw/accepted final 与 pixel/logical lag。release 后不再追加 native geometry catch-up，因而消除那一次 `SetWindowPos` 造成的
+   grow gap/shrink crop。
+   Snap、maximize/restore、程序化 Window/Bounds、DPI/跨屏 transition、没有 capability 的非 Windows top-level 与其他无法 precommit
+   的 geometry source 仍通过 Render-priority early admission 走不变的 exact-only hidden fallback：禁止 crop/stretch，但明确允许短暂
+   blank，尚未达到零闪。拖动中 USER32/DWM geometry 与 Avalonia composition batch 仍没有共享 physical commit fence；同一 UI
+   publish turn 不是物理 scanout 原子性。独立 Windows-only opt-in WGC test project 以 Scene corner sentinel 分析
+   `wgc-dwm-composited-pixels`，release capture window 要求所有 WGC-delivered samples 都匹配最后 accepted/Published exact extent，拒绝
+   gap/crop/stretch/blank/spill。它不保证取得每个 DWM refresh，也不证明 LCD scanout；`PhysicalDisplayedEvidenceAvailable` 固定为
+   `false`。
 7. typed `Backpressure` 在下一次 composition cadence 重试；Unavailable/device failure 显式降级。`IsRealtime=true` 即使静止也每个
    commit 重挂下一帧并以 exact surface-update `>=60 FPS` 为最低门槛；candidate commit 后才恢复 steady 预填充。`false` 只响应
    dirty invalidation。hidden dock tab/lifetime pause 停止 admission，ancestor visible、新 surface attach 或 lifetime
@@ -315,17 +324,23 @@ Studio Avalonia `Viewport Presentation Transaction` 的当前路径：
    `--smoke-viewport-transaction-resize`、`--smoke-viewport-transaction-overload`、`--smoke-viewport-transaction-faults`、
    `--smoke-viewport-transaction-supersede` 与 `--smoke-viewport-multi-endpoint` 已拆成独立真实 Studio GPU smoke，
    `--smoke-viewport-transaction-flash` 再做 transaction-batch 结构边界，
-   `--smoke-viewport-transaction-window-resize` 使用真实 HWND 驱动 Win32 precommit，并拆成 first `Proposed`→final exact `Rendered`
+   `--smoke-viewport-transaction-window-resize` 使用真实 HWND 驱动 Windows integration precommit，并拆成 first `Proposed`→final exact `Rendered`
    的 `performance` lane 与短 ABA continuous composition-batch `structural` lane。前者分别以 120 Hz、90 inputs 运行
-   grow/shrink/A→B→A，均门控 `>=60/s`；后者只拒绝 blank/stretch/crop/gap/mismatch，不作 FPS claim。最新 ABA 性能代表值为
+   grow/shrink/A→B→A，均门控 `>=60/s`；后者只拒绝 blank/stretch/crop/gap/mismatch，不作 FPS claim。release policy 另使
+   `WM_EXITSIZEMOVE` 后的未接受 proposal stale，并报告 raw/accepted final 与 0–1 candidate lag。release-stop 之前 `wait-final` policy
+   的 ABA 性能代表值为
    90 inputs/744.47 ms、50 unique exact `Rendered`/757.57 ms（66.00/s）、post-request transaction publish catch-up 2/2
-   且 25.44 ms 小于两个 60 Hz composition budget、hidden=0；连续请求的结构采样为 24/24 exact sampled batches，五类错误全为 0。
+   且 25.44 ms 小于两个 60 Hz composition budget、hidden=0；连续请求的结构采样为 24/24 exact sampled batches，五类错误全为 0；
+   这些历史数值不作为新的 release-stop gate 的通过数据。
    这不是“捕获了每个 DWM frame”的声明。新增 Window smoke 之前的五族 GPU process acceptance 为 47/47；
    各入口按 native resource、transaction phase、Avalonia surface/`Rendered` 与 physical display 分层报告；没有 observer 的层输出
    evidence unavailable；Window 两条应用内 lane 仍明确报告 pixel/PhysicalDisplayed evidence unavailable。独立
-   `Asharia.Studio.WindowsCapture.Tests` 仅在设置 `ASHARIA_RUN_STUDIO_WGC_DWM_ACCEPTANCE=1` 时启动真实 WGC pixel gate；当前只有
-   monotonic-grow process acceptance，shrink WGC pixel closure 仍 pending。代表性 owned-splitter resize 完成
-   209/209 observed exact `Rendered` generations、106.44/s、p95 15.26 ms、hidden 0，
+   `Asharia.Studio.WindowsCapture.Tests` 仅在设置 `ASHARIA_RUN_STUDIO_WGC_DWM_ACCEPTANCE=1` 时启动真实 WGC pixel gate；release capture
+   对每个 delivered sample 应用 accepted/Published exact gate，不能外推到未交付的 DWM refresh 或 LCD scanout。当前严格 release-stop
+   gate 使用 `SystemRelativeTime` 对齐 `release-imminent` QPC，从 `WM_EXITSIZEMOVE` 前的保守边界开始筛选：grow/shrink 2/2 PASS，
+   release 分别为 1/1 与 2/2 exact，每个 sample 都匹配 completion accepted extent，gap/blank/crop/stretch/accepted-extent mismatch
+   全为 0；两条 case 都先建立 pending raw final，再验证其 `Cancelled` 且 `rawFinalProposalAccepted=false`。代表性 owned-splitter resize 完成 209/209 observed exact
+   `Rendered` generations、106.44/s、p95 15.26 ms、hidden 0，
    steady 为 219.43 surface-updates/s。当前 PresentMon 采样因大量 ETW event loss 且没有 CSV 被作废；multi-endpoint 只通过两
    endpoint 的 group boundary，3–4 realtime lane 与 slow-consumer HOL 仍是 blocker。PresentMon 顶层 cadence 不能证明 Scene
    generation/pixel exact，也不能替代独立 WGC pixel gate。
@@ -338,8 +353,9 @@ handoff/thread owner boundary、Unity 的 semantic invalidation→repaint 分层
 render tick 分离及无 drag-end debounce；拒绝复制其品牌 API、模块/widget owner、固定 editor tick 或任何跨 compositor 的伪原子提交。
 `Viewport Presentation Transaction` 的 endpoint ownership、identity tuple 和 same-compositor 原子边界是这些公开事实与 Asharia
 package-first、Avalonia composition、headless/Vulkan lifetime 约束结合后的本地推论，不声称来自任一引擎的同名 API。已检查的
-Unreal public threaded-rendering contract 与 Unity public SceneView source/API 都没有公开 native Window geometry + editor viewport
-surface 的 physical atomic transaction；Win32 workspace precommit 是 Asharia 本地合同，而不是推测或复制未公开的引擎内部实现。
+Unreal public threaded-rendering contract 与 Unity public SceneView source/API 都没有公开 native top-level geometry + editor viewport
+surface 的 physical atomic transaction；platform-neutral capability、独立 Windows integration 与 release-stop policy 是 Asharia 为
+package-first/cross-platform/exact Scene 边界定义的本地合同，而不是推测或复制未公开的引擎内部实现。
 
 当前建议仍保持：
 

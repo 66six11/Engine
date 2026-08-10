@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Asharia.Studio.Application.Viewports;
 using Asharia.Studio.Presentation.Avalonia.Viewports;
+using Avalonia;
 using Xunit;
 
 namespace Editor.Tests.Shell.Composition;
@@ -41,6 +42,8 @@ public sealed class StudioViewportTransactionSmokeTests
                     .CommandLineSwitch,
                 Editor.Shell.Composition.StudioViewportTransactionWindowResizeSmoke
                     .ObserverReadyEventOptionPrefix + "Local\\Asharia.Studio.Wgc.test",
+                Editor.Shell.Composition.StudioViewportTransactionWindowResizeSmoke
+                    .ReleasePolicyOptionPrefix + "immediate-exit",
             ]));
     }
 
@@ -63,6 +66,141 @@ public sealed class StudioViewportTransactionSmokeTests
         Assert.Throws<ArgumentException>(() =>
             Editor.Shell.Composition.StudioViewportTransactionWindowResizeSmoke
                 .ParseObserverReadyEventName([prefix]));
+    }
+
+    [Fact]
+    public void Window_resize_release_policy_defaults_to_wait_final_and_accepts_immediate_exit()
+    {
+        var prefix = Editor.Shell.Composition.StudioViewportTransactionWindowResizeSmoke
+            .ReleasePolicyOptionPrefix;
+
+        Assert.Equal(
+            Editor.Shell.Composition.StudioViewportTransactionWindowResizeSmoke
+                .WindowResizeReleasePolicy.WaitFinal,
+            Editor.Shell.Composition.StudioViewportTransactionWindowResizeSmoke
+                .ParseReleasePolicy([]));
+        Assert.Equal(
+            Editor.Shell.Composition.StudioViewportTransactionWindowResizeSmoke
+                .WindowResizeReleasePolicy.ImmediateExit,
+            Editor.Shell.Composition.StudioViewportTransactionWindowResizeSmoke
+                .ParseReleasePolicy([$"{prefix}immediate-exit"]));
+        Assert.Throws<ArgumentException>(() =>
+            Editor.Shell.Composition.StudioViewportTransactionWindowResizeSmoke
+                .ParseReleasePolicy([$"{prefix}unknown"]));
+        Assert.Throws<ArgumentException>(() =>
+            Editor.Shell.Composition.StudioViewportTransactionWindowResizeSmoke
+                .ParseReleasePolicy(
+                    [$"{prefix}wait-final", $"{prefix}immediate-exit"]));
+    }
+
+    [Fact]
+    public void Immediate_exit_uses_the_accepted_commit_and_allows_zero_final_catch_up()
+    {
+        var rawRequested = new Size(1200, 800);
+        var acceptedCommitted = new Size(1170, 793);
+        var immediate = Editor.Shell.Composition.StudioViewportTransactionWindowResizeSmoke
+            .WindowResizeReleasePolicy.ImmediateExit;
+        var waitFinal = Editor.Shell.Composition.StudioViewportTransactionWindowResizeSmoke
+            .WindowResizeReleasePolicy.WaitFinal;
+
+        Assert.Equal(
+            acceptedCommitted,
+            Editor.Shell.Composition.StudioViewportTransactionWindowResizeSmoke
+                .ResolveFinalTruthSize(immediate, rawRequested, acceptedCommitted));
+        Assert.Equal(
+            rawRequested,
+            Editor.Shell.Composition.StudioViewportTransactionWindowResizeSmoke
+                .ResolveFinalTruthSize(waitFinal, rawRequested, acceptedCommitted));
+        Assert.True(Editor.Shell.Composition.StudioViewportTransactionWindowResizeSmoke
+            .IsFinalCatchUpAccepted(immediate, 0));
+        Assert.False(Editor.Shell.Composition.StudioViewportTransactionWindowResizeSmoke
+            .IsFinalCatchUpAccepted(waitFinal, 0));
+        Assert.True(Editor.Shell.Composition.StudioViewportTransactionWindowResizeSmoke
+            .IsFinalCatchUpAccepted(waitFinal, 1));
+        Assert.False(Editor.Shell.Composition.StudioViewportTransactionWindowResizeSmoke
+            .IsFinalCatchUpAccepted(immediate, 3));
+        Assert.True(Editor.Shell.Composition.StudioViewportTransactionWindowResizeSmoke
+            .IsFinalRetirementAccepted(
+                immediate,
+                ViewportPresentationTransactionResult.Cancelled));
+        Assert.False(Editor.Shell.Composition.StudioViewportTransactionWindowResizeSmoke
+            .IsFinalRetirementAccepted(
+                immediate,
+                ViewportPresentationTransactionResult.Committed));
+        Assert.True(Editor.Shell.Composition.StudioViewportTransactionWindowResizeSmoke
+            .IsHostFailureCountAccepted(
+                immediate,
+                ViewportPresentationTransactionResult.Cancelled,
+                failedRequests: 1));
+        Assert.False(Editor.Shell.Composition.StudioViewportTransactionWindowResizeSmoke
+            .IsHostFailureCountAccepted(
+                immediate,
+                ViewportPresentationTransactionResult.Cancelled,
+                failedRequests: 0));
+        Assert.False(Editor.Shell.Composition.StudioViewportTransactionWindowResizeSmoke
+            .IsFinalRetirementAccepted(
+                waitFinal,
+                ViewportPresentationTransactionResult.Cancelled));
+        Assert.True(Editor.Shell.Composition.StudioViewportTransactionWindowResizeSmoke
+            .IsFinalRetirementAccepted(
+                waitFinal,
+                ViewportPresentationTransactionResult.Committed));
+        Assert.True(Editor.Shell.Composition.StudioViewportTransactionWindowResizeSmoke
+            .IsHostFailureCountAccepted(
+                waitFinal,
+                ViewportPresentationTransactionResult.Committed,
+                failedRequests: 0));
+        Assert.True(Editor.Shell.Composition.StudioViewportTransactionWindowResizeSmoke
+            .IsRawFinalProposalDropAccepted(
+                immediate,
+                pendingRawFinalBeforeExit: true,
+                rawFinalProposalAccepted: false,
+                ViewportPresentationTransactionResult.Cancelled));
+        Assert.False(Editor.Shell.Composition.StudioViewportTransactionWindowResizeSmoke
+            .IsRawFinalProposalDropAccepted(
+                immediate,
+                pendingRawFinalBeforeExit: false,
+                rawFinalProposalAccepted: false,
+                ViewportPresentationTransactionResult.Cancelled));
+        Assert.False(Editor.Shell.Composition.StudioViewportTransactionWindowResizeSmoke
+            .IsRawFinalProposalDropAccepted(
+                immediate,
+                pendingRawFinalBeforeExit: true,
+                rawFinalProposalAccepted: true,
+                ViewportPresentationTransactionResult.Cancelled));
+        Assert.False(Editor.Shell.Composition.StudioViewportTransactionWindowResizeSmoke
+            .IsRawFinalProposalDropAccepted(
+                immediate,
+                pendingRawFinalBeforeExit: true,
+                rawFinalProposalAccepted: false,
+                ViewportPresentationTransactionResult.Committed));
+    }
+
+    [Fact]
+    public void Raw_final_proposal_lag_reports_signed_physical_extent_delta()
+    {
+        var raw = new Editor.Shell.Composition.StudioViewportTransactionWindowResizeSmoke
+            .NativeRect
+        {
+            Left = 100,
+            Top = 80,
+            Right = 1740,
+            Bottom = 890,
+        };
+        var accepted = new Editor.Shell.Composition.StudioViewportTransactionWindowResizeSmoke
+            .NativeRect
+        {
+            Left = 100,
+            Top = 80,
+            Right = 1710,
+            Bottom = 883,
+        };
+
+        var lag = Editor.Shell.Composition.StudioViewportTransactionWindowResizeSmoke
+            .CalculateRawFinalProposalLag(raw, accepted);
+
+        Assert.Equal(30, lag.Width);
+        Assert.Equal(7, lag.Height);
     }
 
     [Fact]

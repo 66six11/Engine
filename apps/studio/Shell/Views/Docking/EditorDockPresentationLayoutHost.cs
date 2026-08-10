@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Asharia.Studio.Application.Viewports;
 using Asharia.Studio.Presentation.Avalonia.Viewports;
+using Asharia.Studio.Presentation.Avalonia.Windowing;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
@@ -27,18 +28,19 @@ internal readonly record struct EditorDockPresentationLayoutHostMetrics(
     Size RequestedSize);
 
 /// <summary>
-/// Coordinates an owned dock tree with a platform precommit adapter. On Win32 interactive border
-/// resize the HWND remains at the last exact size while replacement viewport surfaces are
-/// prepared; the Window layout and all exact fronts then advance in one UI transaction. Resize
-/// sources that cannot be intercepted before layout retain the ordinary exact-only fallback.
+/// Coordinates an owned dock tree with an optional platform precommit adapter. The outer layout
+/// remains at the last exact size while replacement viewport surfaces are prepared; the top-level
+/// layout and all exact fronts then advance in one UI transaction. Resize sources that cannot be
+/// intercepted before layout retain the ordinary exact-only fallback.
 /// </summary>
-public sealed class EditorDockPresentationLayoutHost : Decorator
+public sealed class EditorDockPresentationLayoutHost : Decorator,
+    IInteractiveTopLevelResizeSink
 {
     private readonly ViewportPresentationTransactionTelemetry transactionTelemetry_ = new();
     private readonly ViewportPresentationTransactionCoordinator presentationTransactions_;
     private TaskCompletionSource idleCompletion_ = CreateCompletedIdleCompletion();
     private CancellationTokenSource? attachmentCancellation_;
-    private EditorDockWin32PresentationResizeAdapter? win32ResizeAdapter_;
+    private IInteractiveTopLevelResizeAttachment? interactiveResizeAttachment_;
     private LayoutRequest? queuedRequest_;
     private Task<ViewportPresentationTransactionReport>? latestRetirementCompletion_;
     private Size committedSize_;
@@ -100,7 +102,12 @@ public sealed class EditorDockPresentationLayoutHost : Decorator
         base.OnAttachedToVisualTree(e);
         isAttached_ = true;
         attachmentCancellation_ = new CancellationTokenSource();
-        win32ResizeAdapter_ = EditorDockWin32PresentationResizeAdapter.TryAttach(this);
+        if (Application.Current is IInteractiveTopLevelResizeAdapterProvider provider &&
+            provider.InteractiveTopLevelResizeAdapterFactory is { } factory &&
+            TopLevel.GetTopLevel(this) is { } topLevel)
+        {
+            interactiveResizeAttachment_ = factory.TryAttach(topLevel, this);
+        }
     }
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
@@ -109,8 +116,8 @@ public sealed class EditorDockPresentationLayoutHost : Decorator
         queuedRequest_ = null;
         isDrainPosted_ = false;
         hasCommittedSize_ = false;
-        win32ResizeAdapter_?.Dispose();
-        win32ResizeAdapter_ = null;
+        interactiveResizeAttachment_?.Dispose();
+        interactiveResizeAttachment_ = null;
         var cancellation = attachmentCancellation_;
         cancellation?.Cancel();
         attachmentCancellation_ = null;
@@ -162,7 +169,7 @@ public sealed class EditorDockPresentationLayoutHost : Decorator
             return finalSize;
         }
 
-        // A non-precommitted source (Snap, maximize, programmatic resize or a non-Win32 host) has
+        // A non-precommitted source (Snap, maximize, programmatic resize or another platform) has
         // already changed the outer layout. Do not retain/crop the old dock tree and pretend the
         // exact transaction succeeded; let viewport controls use their explicit mismatch fallback.
         committedSize_ = normalized;
@@ -177,7 +184,7 @@ public sealed class EditorDockPresentationLayoutHost : Decorator
 
     internal bool TryQueuePrecommittedWindowResize(
         Size targetSize,
-        EditorDockPresentationOuterLayoutCommit outerCommit)
+        IInteractiveTopLevelResizeCommit outerCommit)
     {
         ArgumentNullException.ThrowIfNull(outerCommit);
         Dispatcher.UIThread.VerifyAccess();
@@ -211,7 +218,7 @@ public sealed class EditorDockPresentationLayoutHost : Decorator
 
     private void QueueLatest(
         Size targetSize,
-        EditorDockPresentationOuterLayoutCommit? outerCommit = null,
+        IInteractiveTopLevelResizeCommit? outerCommit = null,
         bool postDrain = true)
     {
         requestedSize_ = targetSize;
@@ -318,6 +325,11 @@ public sealed class EditorDockPresentationLayoutHost : Decorator
         {
             return;
         }
+        if (request.OuterCommit?.IsCurrent() == false)
+        {
+            ResetRequestedSizeIfNoSuccessor(request);
+            return;
+        }
         if (request.OuterCommit is null &&
             AreLayoutSizesEqual(request.TargetSize, committedSize_))
         {
@@ -383,12 +395,16 @@ public sealed class EditorDockPresentationLayoutHost : Decorator
                 hasApplyBaseline = true;
                 ApplyCommittedLayout(
                     request.TargetSize,
-                    request.OuterCommit?.Apply,
+                    request.OuterCommit is { } outerCommit
+                        ? outerCommit.Apply
+                        : null,
                     viewportTargets.Select(static target => target.Control));
             },
             () => ApplyCommittedLayout(
                 hasApplyBaseline ? rollbackCommitted : committedSize_,
-                request.OuterCommit?.Rollback),
+                request.OuterCommit is { } outerCommit
+                    ? outerCommit.Rollback
+                    : null),
             cancellationToken);
         latestRetirementCompletion_ = execution.RetirementCompletion;
         if (!execution.Published)
@@ -510,7 +526,9 @@ public sealed class EditorDockPresentationLayoutHost : Decorator
         {
             ApplyCommittedLayout(
                 request.TargetSize,
-                request.OuterCommit?.Apply,
+                request.OuterCommit is { } outerCommit
+                    ? outerCommit.Apply
+                    : null,
                 expectedViewports);
             return true;
         }
@@ -518,7 +536,11 @@ public sealed class EditorDockPresentationLayoutHost : Decorator
         {
             try
             {
-                ApplyCommittedLayout(rollbackCommitted, request.OuterCommit?.Rollback);
+                ApplyCommittedLayout(
+                    rollbackCommitted,
+                    request.OuterCommit is { } outerCommit
+                        ? outerCommit.Rollback
+                        : null);
             }
             catch (Exception rollbackException)
             {
@@ -679,10 +701,20 @@ public sealed class EditorDockPresentationLayoutHost : Decorator
         return completion;
     }
 
+    Size IInteractiveTopLevelResizeSink.CurrentWorkspaceSize => Bounds.Size;
+
+    bool IInteractiveTopLevelResizeSink.CanStartPrecommittedResize() =>
+        CanStartPrecommittedWindowResize();
+
+    bool IInteractiveTopLevelResizeSink.TryQueuePrecommittedResize(
+        Size targetSize,
+        IInteractiveTopLevelResizeCommit outerCommit) =>
+        TryQueuePrecommittedWindowResize(targetSize, outerCommit);
+
     private readonly record struct LayoutRequest(
         ulong Sequence,
         Size TargetSize,
-        EditorDockPresentationOuterLayoutCommit? OuterCommit,
+        IInteractiveTopLevelResizeCommit? OuterCommit,
         int RetryCount = 0);
 
     private sealed record ViewportLayoutProbe(

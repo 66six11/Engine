@@ -50,6 +50,60 @@ internal static class WgcDwmCompositedAcceptanceGate
     }
 }
 
+internal static class WgcDwmCompositedReleaseWindow
+{
+    internal static TimeSpan ConvertQpcToTimeSpan(long qpc, long frequency)
+    {
+        if (qpc < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(qpc));
+        }
+        if (frequency <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(frequency));
+        }
+
+        var wholeSeconds = Math.DivRem(qpc, frequency, out var remainder);
+        var fractionalTicks = checked((long)Math.Round(
+            remainder * ((double)TimeSpan.TicksPerSecond / frequency),
+            MidpointRounding.ToEven));
+        var ticks = checked(
+            wholeSeconds * TimeSpan.TicksPerSecond + fractionalTicks);
+        return TimeSpan.FromTicks(ticks);
+    }
+
+    internal static WgcDwmCompositedReleaseSelection Select(
+        IReadOnlyList<DwmCompositedFrameObservation> observations,
+        TimeSpan releaseCompositorTime,
+        TimeSpan finalCompositorTime,
+        long deliveryBaselineSequence)
+    {
+        ArgumentNullException.ThrowIfNull(observations);
+        if (finalCompositorTime < releaseCompositorTime)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(finalCompositorTime),
+                "The final compositor time must not precede the release marker.");
+        }
+
+        var releaseObservations = observations
+            .Where(observation =>
+                observation.CompositorRenderedTime >= releaseCompositorTime &&
+                observation.CompositorRenderedTime <= finalCompositorTime)
+            .ToArray();
+        var delayedPreReleaseDeliveredAfterBaseline = observations.Count(observation =>
+            observation.Sequence > deliveryBaselineSequence &&
+            observation.CompositorRenderedTime < releaseCompositorTime);
+        return new WgcDwmCompositedReleaseSelection(
+            releaseObservations,
+            delayedPreReleaseDeliveredAfterBaseline);
+    }
+}
+
+internal readonly record struct WgcDwmCompositedReleaseSelection(
+    IReadOnlyList<DwmCompositedFrameObservation> Observations,
+    int DelayedPreReleaseDeliveredAfterBaseline);
+
 [AttributeUsage(AttributeTargets.Method, AllowMultiple = false)]
 public sealed class WgcDwmCompositedFactAttribute : FactAttribute
 {
@@ -90,6 +144,50 @@ public sealed class WgcDwmCompositedAcceptanceGateTests
 public sealed class WgcDwmCompositedAcceptanceSummaryTests
 {
     [Fact]
+    public void Qpc_conversion_preserves_the_system_relative_compositor_clock()
+    {
+        const long qpc = 7_618_983_569_941;
+
+        Assert.Equal(
+            TimeSpan.FromTicks(qpc),
+            WgcDwmCompositedReleaseWindow.ConvertQpcToTimeSpan(
+                qpc,
+                TimeSpan.TicksPerSecond));
+        Assert.Equal(
+            TimeSpan.FromMilliseconds(1500),
+            WgcDwmCompositedReleaseWindow.ConvertQpcToTimeSpan(
+                qpc: 4_500_000,
+                frequency: 3_000_000));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            WgcDwmCompositedReleaseWindow.ConvertQpcToTimeSpan(1, 0));
+    }
+
+    [Fact]
+    public void Release_window_uses_compositor_time_and_only_uses_sequence_for_delivery_diagnostics()
+    {
+        var observations = new[]
+        {
+            CreateObservation(1, TimeSpan.FromMilliseconds(90), isGap: false),
+            CreateObservation(2, TimeSpan.FromMilliseconds(100), isGap: false),
+            CreateObservation(3, TimeSpan.FromMilliseconds(98), isGap: true),
+            CreateObservation(4, TimeSpan.FromMilliseconds(110), isGap: false),
+            CreateObservation(5, TimeSpan.FromMilliseconds(99), isGap: true),
+            CreateObservation(6, TimeSpan.FromMilliseconds(111), isGap: false),
+        };
+
+        var selection = WgcDwmCompositedReleaseWindow.Select(
+            observations,
+            releaseCompositorTime: TimeSpan.FromMilliseconds(100),
+            finalCompositorTime: TimeSpan.FromMilliseconds(110),
+            deliveryBaselineSequence: 3);
+
+        Assert.Equal(
+            new long[] { 2, 4 },
+            selection.Observations.Select(static observation => observation.Sequence));
+        Assert.Equal(1, selection.DelayedPreReleaseDeliveredAfterBaseline);
+    }
+
+    [Fact]
     public void Summary_reports_allowed_gaps_and_WGC_delivered_cadence_without_scanout_claims()
     {
         var observations = new[]
@@ -102,6 +200,11 @@ public sealed class WgcDwmCompositedAcceptanceSummaryTests
         var summary = WgcDwmCompositedAcceptanceSummary.Create(
             "grow",
             observations,
+            observations[1..],
+            expectedReleaseWidth: 1280,
+            expectedReleaseHeight: 720,
+            releaseMarkerDeltaMilliseconds: 0.25,
+            delayedPreReleaseDeliveredAfterBaseline: 1,
             new WgcDwmCompositedRecorderMetrics(1800, 1100, 0, 0, 0));
 
         Assert.Equal("wgc-dwm-composited-pixels", summary.EvidenceKind);
@@ -115,6 +218,16 @@ public sealed class WgcDwmCompositedAcceptanceSummaryTests
         Assert.Equal(1.0 / 3.0, summary.AllowedGapFrameRatio, precision: 8);
         Assert.Equal(30, summary.MaximumRightGapPixels);
         Assert.Equal(8, summary.MaximumBottomGapPixels);
+        Assert.Equal(2, summary.ReleaseObserved);
+        Assert.Equal(1, summary.ReleaseExact);
+        Assert.Equal(1, summary.ReleaseNonExact);
+        Assert.Equal(1, summary.ReleaseGap);
+        Assert.Equal(0, summary.ReleaseBlank);
+        Assert.Equal(0, summary.ReleaseCrop);
+        Assert.Equal(0, summary.ReleaseStretch);
+        Assert.Equal(0, summary.ReleaseAcceptedExtentMismatch);
+        Assert.Equal(0.25, summary.ReleaseMarkerDeltaMilliseconds);
+        Assert.Equal(1, summary.DelayedPreReleaseDeliveredAfterBaseline);
         Assert.Equal(2, summary.WgcDeliveredCadenceSampleCount);
         Assert.Equal(200.0 / 3.0, summary.WgcDeliveredFrameRateHz!.Value, precision: 8);
         Assert.Equal(20, summary.WgcDeliveredIntervalP95Milliseconds);
@@ -123,8 +236,66 @@ public sealed class WgcDwmCompositedAcceptanceSummaryTests
         var shrinkSummary = WgcDwmCompositedAcceptanceSummary.Create(
             "shrink",
             observations,
+            observations[1..],
+            expectedReleaseWidth: 1280,
+            expectedReleaseHeight: 720,
+            releaseMarkerDeltaMilliseconds: 0.25,
+            delayedPreReleaseDeliveredAfterBaseline: 1,
             new WgcDwmCompositedRecorderMetrics(1800, 1100, 0, 0, 0));
         Assert.Equal(1, shrinkSummary.PixelContractViolationFrameCount);
+    }
+
+    [Fact]
+    public void Summary_classifies_release_blank_crop_and_stretch_samples()
+    {
+        var baseline = CreateObservation(1, TimeSpan.Zero, isGap: false);
+        var blank = CreateReleaseFailureObservation(
+            2,
+            new DwmCompositedSentinelObservation(
+                Located: false,
+                IsBlank: true,
+                HasExactBlockSizes: false,
+                HasAlignedCorners: false,
+                Layout: default,
+                Insets: default));
+        var crop = CreateReleaseFailureObservation(
+            3,
+            new DwmCompositedSentinelObservation(
+                Located: false,
+                IsBlank: false,
+                HasExactBlockSizes: false,
+                HasAlignedCorners: false,
+                Layout: default,
+                Insets: default));
+        var stretch = CreateReleaseFailureObservation(
+            4,
+            new DwmCompositedSentinelObservation(
+                Located: true,
+                IsBlank: false,
+                HasExactBlockSizes: false,
+                HasAlignedCorners: true,
+                Layout: default,
+                Insets: default));
+        var release = new[] { blank, crop, stretch };
+
+        var summary = WgcDwmCompositedAcceptanceSummary.Create(
+            "grow",
+            new[] { baseline, blank, crop, stretch },
+            release,
+            expectedReleaseWidth: 1280,
+            expectedReleaseHeight: 720,
+            releaseMarkerDeltaMilliseconds: 0,
+            delayedPreReleaseDeliveredAfterBaseline: 0,
+            new WgcDwmCompositedRecorderMetrics(1800, 1100, 0, 0, 0));
+
+        Assert.Equal(3, summary.ReleaseObserved);
+        Assert.Equal(0, summary.ReleaseExact);
+        Assert.Equal(3, summary.ReleaseNonExact);
+        Assert.Equal(0, summary.ReleaseGap);
+        Assert.Equal(1, summary.ReleaseBlank);
+        Assert.Equal(1, summary.ReleaseCrop);
+        Assert.Equal(1, summary.ReleaseStretch);
+        Assert.Equal(3, summary.ReleaseAcceptedExtentMismatch);
     }
 
     private static DwmCompositedFrameObservation CreateObservation(
@@ -137,7 +308,11 @@ public sealed class WgcDwmCompositedAcceptanceSummaryTests
             IsBlank: false,
             HasExactBlockSizes: true,
             HasAlignedCorners: true,
-            Layout: default,
+            Layout: new DwmCompositedSentinelLayout(
+                new PixelRectangle(0, 0, 24, 24),
+                new PixelRectangle(1256, 0, 24, 24),
+                new PixelRectangle(0, 696, 24, 24),
+                new PixelRectangle(1256, 696, 24, 24)),
             Insets: default);
         var continuity = new DwmCompositedSentinelContinuity(
             CurrentIsExact: true,
@@ -157,6 +332,20 @@ public sealed class WgcDwmCompositedAcceptanceSummaryTests
             Sentinel: sentinel,
             Continuity: continuity);
     }
+
+    private static DwmCompositedFrameObservation CreateReleaseFailureObservation(
+        long sequence,
+        DwmCompositedSentinelObservation sentinel) =>
+        new(
+            Sequence: sequence,
+            CompositorRenderedTime: TimeSpan.FromMilliseconds(sequence * 10),
+            ContentWidth: 1280,
+            ContentHeight: 720,
+            SurfaceWidth: 1800,
+            SurfaceHeight: 1100,
+            PixelFormat: DirectXPixelFormat.B8G8R8A8UIntNormalized,
+            Sentinel: sentinel,
+            Continuity: default);
 }
 
 [Collection(WgcDwmCompositedAcceptanceCollection.kCollectionName)]
@@ -179,9 +368,15 @@ public sealed class WgcDwmCompositedCaptureAcceptanceTests
     }
 
     [WgcDwmCompositedFact]
-    public async Task Grow_resize_preserves_scene_sentinels_in_DWM_composited_pixels()
+    public Task Grow_release_matches_the_final_accepted_scene_extent_in_DWM_pixels() =>
+        RunResizeReleaseAcceptanceAsync("grow");
+
+    [WgcDwmCompositedFact]
+    public Task Shrink_release_matches_the_final_accepted_scene_extent_in_DWM_pixels() =>
+        RunResizeReleaseAcceptanceAsync("shrink");
+
+    private async Task RunResizeReleaseAcceptanceAsync(string pattern)
     {
-        const string pattern = "grow";
         WgcDwmCompositedAcceptanceGate.RequireEnabled();
         Assert.True(
             GraphicsCaptureSession.IsSupported(),
@@ -201,6 +396,7 @@ public sealed class WgcDwmCompositedCaptureAcceptanceTests
             $"--viewport-window-pattern={pattern}",
             "--viewport-window-input-hz=30",
             "--viewport-window-input-count=12",
+            "--viewport-window-release-policy=immediate-exit",
             $"--viewport-window-observer-ready-event={eventName}");
 
         var readyLine = await editor.WaitForOutputLineAsync(
@@ -226,6 +422,29 @@ public sealed class WgcDwmCompositedCaptureAcceptanceTests
             line => IsObserverPhase(line, "ready-signaled"),
             kFrameTimeout);
 
+        var releaseImminentLine = await editor.WaitForOutputLineAsync(
+            line => IsObserverPhase(line, "release-imminent"),
+            kExitTimeout);
+        var releaseImminent = AssertObserverEvent(
+            releaseImminentLine,
+            eventName,
+            expectedExtentRequired: false);
+        var releaseWaitingLine = await editor.WaitForOutputLineAsync(
+            line => IsObserverPhase(line, "release-waiting"),
+            kFrameTimeout);
+        var releaseWaiting = AssertObserverEvent(
+            releaseWaitingLine,
+            eventName,
+            expectedExtentRequired: false);
+        Assert.True(
+            releaseWaiting.CompositorTime >= releaseImminent.CompositorTime,
+            "The post-WM_EXITSIZEMOVE release marker preceded the imminent marker.");
+        var releaseBaseline = recorder.LatestSequence;
+        Assert.True(observerReady.Set());
+        _ = await editor.WaitForOutputLineAsync(
+            line => IsObserverPhase(line, "release-signaled"),
+            kFrameTimeout);
+
         var completionLine = await editor.WaitForOutputLineAsync(
             line => IsObserverPhase(line, "completion-waiting"),
             kExitTimeout);
@@ -245,9 +464,10 @@ public sealed class WgcDwmCompositedCaptureAcceptanceTests
         _ = await editor.WaitForOutputLineAsync(
             line => IsObserverPhase(line, "completion-signaled"),
             kFrameTimeout);
-        _ = await editor.WaitForOutputLineAsync(
+        var evidenceLine = await editor.WaitForOutputLineAsync(
             line => line.StartsWith(kEvidencePrefix, StringComparison.Ordinal),
             kFrameTimeout);
+        AssertImmediateExitDropEvidence(evidenceLine, pattern);
         var exitCode = await editor.WaitForExitAsync(kExitTimeout);
         Assert.Equal(0, exitCode);
 
@@ -256,11 +476,24 @@ public sealed class WgcDwmCompositedCaptureAcceptanceTests
                 observation.Sequence >= baseline.Sequence &&
                 observation.Sequence <= final.Sequence)
             .ToArray();
+        var releaseSelection = WgcDwmCompositedReleaseWindow.Select(
+            observed,
+            releaseImminent.CompositorTime,
+            final.CompositorRenderedTime,
+            releaseBaseline);
+        var releaseObserved = releaseSelection.Observations;
         Assert.True(observed.Length >= 2, editor.CapturedOutput);
+        Assert.NotEmpty(releaseObserved);
         var metrics = recorder.CaptureMetrics();
         var summary = WgcDwmCompositedAcceptanceSummary.Create(
             pattern,
             observed,
+            releaseObserved,
+            completion.ExpectedWidth,
+            completion.ExpectedHeight,
+            (releaseWaiting.CompositorTime - releaseImminent.CompositorTime)
+                .TotalMilliseconds,
+            releaseSelection.DelayedPreReleaseDeliveredAfterBaseline,
             metrics);
         output_.WriteLine(
             $"wgc-dwm-composited-acceptance " +
@@ -268,19 +501,46 @@ public sealed class WgcDwmCompositedCaptureAcceptanceTests
 
         Assert.All(observed, observation =>
         {
-            Assert.True(
-                observation.IsAcceptableForGrow,
-                $"DWM frame {observation.Sequence} violated the {pattern} pixel contract: " +
-                $"content={observation.ContentWidth}x{observation.ContentHeight}, " +
-                $"sentinelExact={observation.Sentinel.IsExact}, " +
-                $"insets={observation.Sentinel.Insets}, " +
-                $"leftTop={observation.Continuity.LeftTopInsetsMatch}, " +
-                $"rightBottom={observation.Continuity.RightBottomInsetsMatch}, " +
-                $"rightBottomDoNotDecrease=" +
-                $"{observation.Continuity.RightBottomInsetsDoNotDecrease}.");
             Assert.True(observation.PixelEvidenceAvailable);
             Assert.False(observation.PhysicalDisplayedEvidenceAvailable);
+            if (pattern == "grow")
+            {
+                Assert.True(
+                    observation.IsAcceptableForGrow,
+                    $"DWM frame {observation.Sequence} violated the {pattern} pixel contract: " +
+                    $"content={observation.ContentWidth}x{observation.ContentHeight}, " +
+                    $"sentinelExact={observation.Sentinel.IsExact}, " +
+                    $"insets={observation.Sentinel.Insets}, " +
+                    $"leftTop={observation.Continuity.LeftTopInsetsMatch}, " +
+                    $"rightBottom={observation.Continuity.RightBottomInsetsMatch}, " +
+                    $"rightBottomDoNotDecrease=" +
+                    $"{observation.Continuity.RightBottomInsetsDoNotDecrease}.");
+            }
         });
+        Assert.All(releaseObserved, observation =>
+        {
+            var sceneBounds = observation.Sentinel.Layout.SceneBounds;
+            Assert.True(
+                observation.IsExact &&
+                sceneBounds.Width == completion.ExpectedWidth &&
+                sceneBounds.Height == completion.ExpectedHeight,
+                $"DWM release frame {observation.Sequence} was not exact: " +
+                $"content={observation.ContentWidth}x{observation.ContentHeight}, " +
+                $"scene={sceneBounds.Width}x{sceneBounds.Height}, " +
+                $"accepted={completion.ExpectedWidth}x{completion.ExpectedHeight}, " +
+                $"sentinelLocated={observation.Sentinel.Located}, " +
+                $"sentinelBlank={observation.Sentinel.IsBlank}, " +
+                $"blockSizes={observation.Sentinel.HasExactBlockSizes}, " +
+                $"alignedCorners={observation.Sentinel.HasAlignedCorners}, " +
+                $"rightGap={observation.Continuity.RightGapPixels}, " +
+                $"bottomGap={observation.Continuity.BottomGapPixels}.");
+        });
+        Assert.Equal(0, summary.ReleaseNonExact);
+        Assert.Equal(0, summary.ReleaseGap);
+        Assert.Equal(0, summary.ReleaseBlank);
+        Assert.Equal(0, summary.ReleaseCrop);
+        Assert.Equal(0, summary.ReleaseStretch);
+        Assert.Equal(0, summary.ReleaseAcceptedExtentMismatch);
         Assert.True(
             observed.Select(observation => new
             {
@@ -297,6 +557,24 @@ public sealed class WgcDwmCompositedCaptureAcceptanceTests
         Assert.True(metrics.EnvelopeWidth >= baseline.ContentWidth + 1024);
         Assert.True(metrics.EnvelopeHeight >= baseline.ContentHeight + 512);
         Assert.True(metrics.HasNoDrops, metrics.ToString());
+    }
+
+    private static void AssertImmediateExitDropEvidence(string line, string pattern)
+    {
+        using var document = JsonDocument.Parse(line[kEvidencePrefix.Length..]);
+        var root = document.RootElement;
+        Assert.Equal(pattern, root.GetProperty("pattern").GetString());
+        Assert.Equal("immediate-exit", root.GetProperty("releasePolicy").GetString());
+        var win32 = root.GetProperty("win32");
+        Assert.False(win32.GetProperty("rawFinalProposalAccepted").GetBoolean());
+        Assert.True(win32.GetProperty("rawFinalProposalDropped").GetBoolean());
+        Assert.True(win32.GetProperty("pendingRawFinalBeforeExit").GetBoolean());
+        Assert.Equal("Cancelled", win32.GetProperty("finalRetirementResult").GetString());
+        var lag = win32.GetProperty("rawProposalLagPx");
+        Assert.NotEqual(
+            0,
+            Math.Abs(lag.GetProperty("width").GetInt32()) +
+            Math.Abs(lag.GetProperty("height").GetInt32()));
     }
 
     private static bool IsObserverPhase(string line, string expectedPhase)
@@ -321,12 +599,17 @@ public sealed class WgcDwmCompositedCaptureAcceptanceTests
         using var document = JsonDocument.Parse(line[kObserverPrefix.Length..]);
         var root = document.RootElement;
         Assert.Equal(expectedEventName, root.GetProperty("eventName").GetString());
-        Assert.True(root.GetProperty("qpc").GetInt64() > 0);
+        var qpc = root.GetProperty("qpc").GetInt64();
+        var frequency = root.GetProperty("frequency").GetInt64();
+        Assert.True(qpc > 0);
+        var compositorTime = WgcDwmCompositedReleaseWindow.ConvertQpcToTimeSpan(
+            qpc,
+            frequency);
         var extent = root.GetProperty("expectedSceneExtent");
         if (!expectedExtentRequired)
         {
             Assert.Equal(JsonValueKind.Null, extent.ValueKind);
-            return default;
+            return new ObserverReceipt(compositorTime, 0, 0);
         }
 
         Assert.Equal(JsonValueKind.Object, extent.ValueKind);
@@ -334,10 +617,13 @@ public sealed class WgcDwmCompositedCaptureAcceptanceTests
         var height = extent.GetProperty("height").GetInt32();
         Assert.True(width > 0);
         Assert.True(height > 0);
-        return new ObserverReceipt(width, height);
+        return new ObserverReceipt(compositorTime, width, height);
     }
 
-    private readonly record struct ObserverReceipt(int ExpectedWidth, int ExpectedHeight);
+    private readonly record struct ObserverReceipt(
+        TimeSpan CompositorTime,
+        int ExpectedWidth,
+        int ExpectedHeight);
 }
 
 internal sealed record WgcDwmCompositedAcceptanceSummary(
@@ -353,6 +639,16 @@ internal sealed record WgcDwmCompositedAcceptanceSummary(
     double AllowedGapFrameRatio,
     int MaximumRightGapPixels,
     int MaximumBottomGapPixels,
+    int ReleaseObserved,
+    int ReleaseExact,
+    int ReleaseNonExact,
+    int ReleaseGap,
+    int ReleaseBlank,
+    int ReleaseCrop,
+    int ReleaseStretch,
+    int ReleaseAcceptedExtentMismatch,
+    double ReleaseMarkerDeltaMilliseconds,
+    int DelayedPreReleaseDeliveredAfterBaseline,
     int WgcDeliveredCadenceSampleCount,
     double? WgcDeliveredFrameRateHz,
     double? WgcDeliveredIntervalP95Milliseconds,
@@ -362,10 +658,34 @@ internal sealed record WgcDwmCompositedAcceptanceSummary(
     public static WgcDwmCompositedAcceptanceSummary Create(
         string pattern,
         IReadOnlyList<DwmCompositedFrameObservation> observations,
+        IReadOnlyList<DwmCompositedFrameObservation> releaseObservations,
+        int expectedReleaseWidth,
+        int expectedReleaseHeight,
+        double releaseMarkerDeltaMilliseconds,
+        int delayedPreReleaseDeliveredAfterBaseline,
         WgcDwmCompositedRecorderMetrics recorderMetrics)
     {
         ArgumentException.ThrowIfNullOrEmpty(pattern);
         ArgumentNullException.ThrowIfNull(observations);
+        ArgumentNullException.ThrowIfNull(releaseObservations);
+        if (expectedReleaseWidth <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(expectedReleaseWidth));
+        }
+        if (expectedReleaseHeight <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(expectedReleaseHeight));
+        }
+        if (!double.IsFinite(releaseMarkerDeltaMilliseconds) ||
+            releaseMarkerDeltaMilliseconds < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(releaseMarkerDeltaMilliseconds));
+        }
+        if (delayedPreReleaseDeliveredAfterBaseline < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(delayedPreReleaseDeliveredAfterBaseline));
+        }
         var allowsGrowGap = pattern switch
         {
             "grow" => true,
@@ -381,8 +701,17 @@ internal sealed record WgcDwmCompositedAcceptanceSummary(
                 "At least one WGC observation is required.",
                 nameof(observations));
         }
+        if (releaseObservations.Count == 0)
+        {
+            throw new ArgumentException(
+                "At least one release-phase WGC observation is required.",
+                nameof(releaseObservations));
+        }
 
         var ordered = observations.OrderBy(static observation => observation.Sequence).ToArray();
+        var releaseOrdered = releaseObservations
+            .OrderBy(static observation => observation.Sequence)
+            .ToArray();
         var allowedGapFrames = ordered
             .Where(static observation => observation.IsAllowedGrowGap)
             .ToArray();
@@ -423,6 +752,32 @@ internal sealed record WgcDwmCompositedAcceptanceSummary(
                 ? 0
                 : allowedGapFrames.Max(static observation =>
                     observation.Continuity.BottomGapPixels),
+            ReleaseObserved: releaseOrdered.Length,
+            ReleaseExact: releaseOrdered.Count(static observation =>
+                observation.IsExact),
+            ReleaseNonExact: releaseOrdered.Count(static observation =>
+                !observation.IsExact),
+            ReleaseGap: releaseOrdered.Count(static observation =>
+                observation.IsAllowedGrowGap ||
+                observation.Continuity.RightGapPixels > 0 ||
+                observation.Continuity.BottomGapPixels > 0),
+            ReleaseBlank: releaseOrdered.Count(static observation =>
+                observation.Sentinel.IsBlank),
+            ReleaseCrop: releaseOrdered.Count(static observation =>
+                !observation.IsExact &&
+                !observation.Sentinel.IsBlank &&
+                (!observation.Sentinel.Located ||
+                 !observation.Sentinel.HasAlignedCorners)),
+            ReleaseStretch: releaseOrdered.Count(static observation =>
+                !observation.IsExact &&
+                observation.Sentinel.Located &&
+                !observation.Sentinel.HasExactBlockSizes),
+            ReleaseAcceptedExtentMismatch: releaseOrdered.Count(observation =>
+                observation.Sentinel.Layout.SceneBounds.Width != expectedReleaseWidth ||
+                observation.Sentinel.Layout.SceneBounds.Height != expectedReleaseHeight),
+            ReleaseMarkerDeltaMilliseconds: releaseMarkerDeltaMilliseconds,
+            DelayedPreReleaseDeliveredAfterBaseline:
+                delayedPreReleaseDeliveredAfterBaseline,
             WgcDeliveredCadenceSampleCount: intervals.Length,
             WgcDeliveredFrameRateHz: deliveredFrameRate,
             WgcDeliveredIntervalP95Milliseconds: Percentile95(intervals),

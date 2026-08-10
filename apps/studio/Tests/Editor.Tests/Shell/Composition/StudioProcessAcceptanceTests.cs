@@ -714,12 +714,17 @@ public sealed class StudioProcessAcceptanceTests
             arguments,
             StudioViewportTransactionWindowResizeSmoke.EvidenceOptionPrefix);
         var measuresPerformance = evidenceLane == "performance";
+        var releasePolicy = StudioViewportTransactionWindowResizeSmoke.ParseReleasePolicy(
+            arguments);
 
         Assert.Equal(
             measuresPerformance ? "window-resize-performance" : "window-resize-structural",
             root.GetProperty("scenario").GetString());
         Assert.Equal("main", root.GetProperty("hostKind").GetString());
         Assert.Equal(pattern, root.GetProperty("pattern").GetString());
+        Assert.Equal(
+            StudioViewportTransactionWindowResizeSmoke.ReleasePolicyName(releasePolicy),
+            root.GetProperty("releasePolicy").GetString());
         Assert.Equal(
             measuresPerformance
                 ? "transaction-rendered-performance"
@@ -735,6 +740,28 @@ public sealed class StudioProcessAcceptanceTests
             win32.GetProperty("sizingHandled").GetInt32());
         Assert.Equal(1, win32.GetProperty("exitSizeMove").GetInt32());
         Assert.True(win32.GetProperty("finalWindowRectMatches").GetBoolean(), scenario);
+        if (releasePolicy == StudioViewportTransactionWindowResizeSmoke
+                .WindowResizeReleasePolicy.WaitFinal)
+        {
+            Assert.True(win32.GetProperty("rawFinalProposalAccepted").GetBoolean());
+            Assert.False(win32.GetProperty("rawFinalProposalDropped").GetBoolean());
+            Assert.False(win32.GetProperty("pendingRawFinalBeforeExit").GetBoolean());
+            Assert.Equal(
+                "Committed",
+                win32.GetProperty("finalRetirementResult").GetString());
+        }
+        else
+        {
+            Assert.False(win32.GetProperty("rawFinalProposalAccepted").GetBoolean());
+            Assert.True(win32.GetProperty("rawFinalProposalDropped").GetBoolean());
+            Assert.True(win32.GetProperty("pendingRawFinalBeforeExit").GetBoolean());
+            Assert.Equal(
+                "Cancelled",
+                win32.GetProperty("finalRetirementResult").GetString());
+        }
+        Assert.Equal(JsonValueKind.Object, win32.GetProperty("rawFinalProposal").ValueKind);
+        Assert.Equal(JsonValueKind.Object, win32.GetProperty("acceptedFinal").ValueKind);
+        Assert.Equal(JsonValueKind.Object, win32.GetProperty("rawProposalLagPx").ValueKind);
 
         var performanceWindow = root.GetProperty("performanceWindow");
         var batches = root.GetProperty("compositionBatches");
@@ -771,9 +798,12 @@ public sealed class StudioProcessAcceptanceTests
         Assert.True(final.GetProperty("exact").GetBoolean(), scenario);
         Assert.True(final.GetProperty("rendered").GetBoolean(), scenario);
         Assert.True(final.GetProperty("structurallyExact").GetBoolean(), scenario);
+        Assert.Equal(JsonValueKind.Object, final.GetProperty("accepted").ValueKind);
+        Assert.Equal(JsonValueKind.Object, final.GetProperty("rawProposalLag").ValueKind);
+        Assert.Equal(JsonValueKind.Object, final.GetProperty("candidateLag").ValueKind);
         Assert.InRange(
             final.GetProperty("catchUpBatches").GetInt32(),
-            1,
+            final.GetProperty("minimumCatchUpBatches").GetInt32(),
             final.GetProperty("maximumCatchUpBatches").GetInt32());
         if (measuresPerformance)
         {

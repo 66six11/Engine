@@ -27,6 +27,8 @@ internal static partial class StudioViewportTransactionWindowResizeSmoke
     internal const string EvidenceOptionPrefix = "--viewport-window-evidence=";
     internal const string ObserverReadyEventOptionPrefix =
         "--viewport-window-observer-ready-event=";
+    internal const string ReleasePolicyOptionPrefix =
+        "--viewport-window-release-policy=";
     private const int DefaultInputCount = 90;
     private const double DefaultInputHz = 120;
     private const uint kWindowMessageSizing = 0x0214;
@@ -186,20 +188,51 @@ internal static partial class StudioViewportTransactionWindowResizeSmoke
                 }
             }
             var inputFinishedAt = Stopwatch.GetTimestamp();
+            var pendingRawFinalBeforeExit = false;
+            if (options.ReleasePolicy == WindowResizeReleasePolicy.WaitFinal)
+            {
+                // The regular performance/structural lanes measure the complete requested
+                // trajectory. Let the last proposal publish before closing the native sizing
+                // interaction so those lanes retain their existing final-target contract.
+                await layoutHost.WhenIdleAsync().WaitAsync(kTimeout);
+            }
+            else
+            {
+                var pendingMetrics = await WaitForPendingRawFinalProposalAsync(
+                    layoutHost,
+                    finalRequestedSize,
+                    kTimeout);
+                pendingRawFinalBeforeExit = true;
+                WriteHostMetrics("release_pending_stale", pendingMetrics);
+            }
+
+            WriteExternalObserverMarker(
+                options.ObserverReadyEventName,
+                "release-imminent");
             _ = SendMessage(
                 platformHandle.Handle,
                 kWindowMessageExitSizeMove,
                 0,
                 0);
             WriteHostMetrics("exited_size_move", layoutHost.CaptureMetrics());
+            // Do not block before WM_EXITSIZEMOVE in the immediate lane. Waiting there would
+            // give the final candidate time to publish and would stop exercising drop-on-exit.
+            // The adapter epoch is closed before the observer takes its release baseline.
+            await WaitForExternalObserverAsync(
+                options.ObserverReadyEventName,
+                "release");
 
             WriteHostMetrics("before_idle", layoutHost.CaptureMetrics());
             await layoutHost.WhenIdleAsync().WaitAsync(kTimeout);
             WriteHostMetrics("after_idle", layoutHost.CaptureMetrics());
+            ViewportPresentationTransactionResult? finalRetirementResult = null;
             if (layoutHost.LatestRetirementCompletion is { } retirement)
             {
                 var retirementReport = await retirement.WaitAsync(kTimeout);
-                if (!retirementReport.Succeeded)
+                finalRetirementResult = retirementReport.Result;
+                if (!IsFinalRetirementAccepted(
+                        options.ReleasePolicy,
+                        retirementReport.Result))
                 {
                     throw new InvalidOperationException(
                         $"The final Window resize transaction retired as " +
@@ -208,18 +241,24 @@ internal static partial class StudioViewportTransactionWindowResizeSmoke
             }
             await WaitForEndpointDrainAsync(control, kTimeout);
 
+            var acceptedHostMetrics = layoutHost.CaptureMetrics();
+            var finalTruthSize = ResolveFinalTruthSize(
+                options.ReleasePolicy,
+                finalRequestedSize,
+                acceptedHostMetrics.CommittedSize);
             var finalSnapshot = control.CapturePresentationTestSnapshot();
             CompositionBatchSnapshot finalObservation;
             if (recorder is not null)
             {
                 finalObservation = await recorder.WaitForAsync(
                     batch => batch.Sequence > finalRequestBatchBaseline &&
-                             batch.GeometryGeneration >
-                                 finalRequestGeometryGenerationBaseline &&
+                             (options.ReleasePolicy == WindowResizeReleasePolicy.ImmediateExit ||
+                              batch.GeometryGeneration >
+                                  finalRequestGeometryGenerationBaseline) &&
                              batch.GeometryGeneration == finalSnapshot.GeometryGeneration &&
                              batch.StructurallyExact &&
-                             AreClose(batch.HostCommittedSize, finalRequestedSize) &&
-                             AreClose(batch.HostBoundsSize, finalRequestedSize),
+                             AreClose(batch.HostCommittedSize, finalTruthSize) &&
+                             AreClose(batch.HostBoundsSize, finalTruthSize),
                     kTimeout);
                 await recorder.StopAsync();
             }
@@ -271,7 +310,8 @@ internal static partial class StudioViewportTransactionWindowResizeSmoke
                 transactionEvents,
                 finalRequestSentAt,
                 finalRenderedEvent.Timestamp);
-            var publishedRenderedCatchUpElapsed = finalRenderedEvent.IsValid &&
+            var publishedRenderedCatchUpElapsed = publishedRenderedCatchUpBatches > 0 &&
+                                                  finalRenderedEvent.IsValid &&
                                                   finalRenderedEvent.Timestamp >=
                                                       finalRequestObservedAt
                 ? Stopwatch.GetElapsedTime(
@@ -281,10 +321,24 @@ internal static partial class StudioViewportTransactionWindowResizeSmoke
             var renderedNonOrigin = renderedEvents
                 .Any(telemetryEvent =>
                     telemetryEvent.Extent != initialSnapshot.SurfaceExtent);
-            var finalWindowRectMatches = GetWindowRect(
+            var hasAcceptedFinalWindowRect = GetWindowRect(
                 platformHandle.Handle,
-                out var finalWindowRect) &&
+                out var finalWindowRect);
+            var rawFinalProposalLag = hasAcceptedFinalWindowRect
+                ? CalculateRawFinalProposalLag(proposedRects[^1], finalWindowRect)
+                : default;
+            var rawFinalProposalAccepted = hasAcceptedFinalWindowRect &&
                 finalWindowRect == proposedRects[^1];
+            var rawFinalProposalDropped = IsRawFinalProposalDropAccepted(
+                options.ReleasePolicy,
+                pendingRawFinalBeforeExit,
+                rawFinalProposalAccepted,
+                finalRetirementResult);
+            var finalWindowRectMatches = hasAcceptedFinalWindowRect &&
+                (options.ReleasePolicy == WindowResizeReleasePolicy.ImmediateExit
+                    ? finalObservation.WindowRect == finalWindowRect &&
+                      AreClose(finalObservation.HostCommittedSize, finalTruthSize)
+                    : finalWindowRect == proposedRects[^1]);
             var expectedMinimumRate = options.InputHz >= 60 ? 60 : options.InputHz * 0.95;
 
             StudioViewportTransactionSmokeOutput.WriteSummary(
@@ -311,12 +365,19 @@ internal static partial class StudioViewportTransactionWindowResizeSmoke
                      renderedPerformance.Rate < expectedMinimumRate) ||
                 transactionMetrics.Outcomes.FaultedCount != 0 ||
                 transactionMetrics.Outcomes.QuarantinedCount != 0 ||
-                hostMetrics.FailedRequests != 0 ||
+                !IsHostFailureCountAccepted(
+                    options.ReleasePolicy,
+                    finalRetirementResult,
+                    hostMetrics.FailedRequests) ||
+                options.ReleasePolicy == WindowResizeReleasePolicy.ImmediateExit &&
+                    !rawFinalProposalDropped ||
                 hostMetrics.MaximumPendingWork > 2 ||
                 hostMetrics.HasActive ||
                 hostMetrics.HasQueued ||
                 !finalRenderedEvent.IsValid ||
-                publishedRenderedCatchUpBatches is < 1 or > 2 ||
+                !IsFinalCatchUpAccepted(
+                    options.ReleasePolicy,
+                    publishedRenderedCatchUpBatches) ||
                 publishedRenderedCatchUpElapsed > kMaximumCatchUp60HzBudget ||
                 !finalWindowRectMatches ||
                 finalSnapshot.GeometryGeneration <= initialSnapshot.GeometryGeneration ||
@@ -335,8 +396,13 @@ internal static partial class StudioViewportTransactionWindowResizeSmoke
                     $"faulted={transactionMetrics.Outcomes.FaultedCount}, " +
                     $"quarantined={transactionMetrics.Outcomes.QuarantinedCount}, " +
                     $"hostFailed={hostMetrics.FailedRequests}, " +
+                    $"pendingRawFinal={pendingRawFinalBeforeExit}, " +
+                    $"rawFinalAccepted={rawFinalProposalAccepted}, " +
+                    $"rawFinalDropped={rawFinalProposalDropped}, " +
+                    $"retirement={finalRetirementResult}, " +
                     $"pendingHighWater={hostMetrics.MaximumPendingWork}, " +
-                    $"publishedRenderedCatchUp={publishedRenderedCatchUpBatches}/2, " +
+                    $"publishedRenderedCatchUp={publishedRenderedCatchUpBatches}/" +
+                    $"{MinimumFinalCatchUp(options.ReleasePolicy)}..2, " +
                     $"inputCatchUp={conservativeInputCatchUpBatches}, " +
                     $"compositionBatches={finalCompositionCatchUpBatches}, " +
                     $"catchUpElapsedMs=" +
@@ -359,6 +425,7 @@ internal static partial class StudioViewportTransactionWindowResizeSmoke
                     scenario = options.StructuredScenario,
                     hostKind = "main",
                     pattern = options.Pattern,
+                    releasePolicy = ReleasePolicyName(options.ReleasePolicy),
                     evidenceKind = options.EvidenceKind,
                     pixelEvidenceAvailable = false,
                     physicalDisplayedEvidenceAvailable = false,
@@ -373,6 +440,21 @@ internal static partial class StudioViewportTransactionWindowResizeSmoke
                         sizingHandled = handledSizingMessages,
                         exitSizeMove = 1,
                         finalWindowRectMatches,
+                        rawFinalProposalAccepted,
+                        rawFinalProposalDropped,
+                        pendingRawFinalBeforeExit,
+                        finalRetirementResult = finalRetirementResult?.ToString(),
+                        rawFinalProposal = PhysicalRect(proposedRects[^1]),
+                        acceptedFinal = hasAcceptedFinalWindowRect
+                            ? PhysicalRect(finalWindowRect)
+                            : null,
+                        rawProposalLagPx = hasAcceptedFinalWindowRect
+                            ? new
+                            {
+                                width = rawFinalProposalLag.Width,
+                                height = rawFinalProposalLag.Height,
+                            }
+                            : null,
                     },
                     input = new
                     {
@@ -414,8 +496,11 @@ internal static partial class StudioViewportTransactionWindowResizeSmoke
                     final = new
                     {
                         requested = LogicalSize(finalRequestedSize),
+                        accepted = LogicalSize(finalTruthSize),
                         committed = LogicalSize(hostMetrics.CommittedSize),
                         catchUpBatches = publishedRenderedCatchUpBatches,
+                        minimumCatchUpBatches = MinimumFinalCatchUp(
+                            options.ReleasePolicy),
                         maximumCatchUpBatches = 2,
                         catchUpBasis =
                             "full-identity Published at or after final request observation " +
@@ -430,6 +515,18 @@ internal static partial class StudioViewportTransactionWindowResizeSmoke
                         exact = resizeMetrics.FinalGenerationHasExactSurface,
                         rendered = resizeMetrics.FinalGenerationCompleted,
                         structurallyExact = finalObservation.StructurallyExact,
+                        rawProposalLag = new
+                        {
+                            logicalWidth = finalRequestedSize.Width - finalTruthSize.Width,
+                            logicalHeight = finalRequestedSize.Height - finalTruthSize.Height,
+                        },
+                        candidateLag = new
+                        {
+                            candidateExtent = Extent(finalSnapshot.CandidateExtent),
+                            acceptedExtent = Extent(finalSnapshot.SurfaceExtent),
+                            outstanding = finalSnapshot.CandidateExtent.Width != 0 ||
+                                finalSnapshot.CandidateExtent.Height != 0,
+                        },
                     },
                     renderedNonOrigin,
                     visibility = new
@@ -448,9 +545,11 @@ internal static partial class StudioViewportTransactionWindowResizeSmoke
                   "structurally exact";
             Console.Out.WriteLine(
                 $"viewport-transaction-window-resize PASS: " +
-                $"evidence={options.Evidence}, pattern={options.Pattern}, {laneSummary}, " +
+                $"evidence={options.Evidence}, pattern={options.Pattern}, " +
+                $"release={ReleasePolicyName(options.ReleasePolicy)}, {laneSummary}, " +
                 $"post-request Published-to-Rendered catch-up=" +
-                $"{publishedRenderedCatchUpBatches}/2, " +
+                $"{publishedRenderedCatchUpBatches}/" +
+                $"{MinimumFinalCatchUp(options.ReleasePolicy)}..2, " +
                 $"elapsed={publishedRenderedCatchUpElapsed.TotalMilliseconds:F2}ms; " +
                 "pixelEvidenceAvailable=false; physicalDisplayedEvidenceAvailable=false.");
             exitCode = 0;
@@ -541,6 +640,110 @@ internal static partial class StudioViewportTransactionWindowResizeSmoke
         return eventName;
     }
 
+    internal static WindowResizeReleasePolicy ParseReleasePolicy(
+        IReadOnlyList<string> arguments)
+    {
+        ArgumentNullException.ThrowIfNull(arguments);
+        var matches = arguments
+            .Where(argument => argument.StartsWith(
+                ReleasePolicyOptionPrefix,
+                StringComparison.Ordinal))
+            .ToArray();
+        if (matches.Length > 1)
+        {
+            throw new ArgumentException(
+                "Window resize release policy accepts at most one value.",
+                nameof(arguments));
+        }
+        if (matches.Length == 0)
+        {
+            return WindowResizeReleasePolicy.WaitFinal;
+        }
+
+        return matches[0][ReleasePolicyOptionPrefix.Length..] switch
+        {
+            "wait-final" => WindowResizeReleasePolicy.WaitFinal,
+            "immediate-exit" => WindowResizeReleasePolicy.ImmediateExit,
+            var value => throw new ArgumentException(
+                $"Unknown Window resize release policy '{value}'.",
+                nameof(arguments)),
+        };
+    }
+
+    internal static Size ResolveFinalTruthSize(
+        WindowResizeReleasePolicy releasePolicy,
+        Size rawFinalRequestedSize,
+        Size acceptedCommittedSize) =>
+        releasePolicy == WindowResizeReleasePolicy.ImmediateExit
+            ? acceptedCommittedSize
+            : rawFinalRequestedSize;
+
+    internal static int MinimumFinalCatchUp(WindowResizeReleasePolicy releasePolicy) =>
+        releasePolicy == WindowResizeReleasePolicy.ImmediateExit ? 0 : 1;
+
+    internal static bool IsFinalCatchUpAccepted(
+        WindowResizeReleasePolicy releasePolicy,
+        int catchUpBatches) =>
+        catchUpBatches >= MinimumFinalCatchUp(releasePolicy) && catchUpBatches <= 2;
+
+    internal static bool IsFinalRetirementAccepted(
+        WindowResizeReleasePolicy releasePolicy,
+        ViewportPresentationTransactionResult result) =>
+        releasePolicy switch
+        {
+            WindowResizeReleasePolicy.WaitFinal =>
+                result == ViewportPresentationTransactionResult.Committed,
+            WindowResizeReleasePolicy.ImmediateExit =>
+                result == ViewportPresentationTransactionResult.Cancelled,
+            _ => false,
+        };
+
+    internal static bool IsHostFailureCountAccepted(
+        WindowResizeReleasePolicy releasePolicy,
+        ViewportPresentationTransactionResult? finalRetirementResult,
+        ulong failedRequests)
+    {
+        var expectedFailures = releasePolicy == WindowResizeReleasePolicy.ImmediateExit &&
+            finalRetirementResult == ViewportPresentationTransactionResult.Cancelled
+                ? 1UL
+                : 0UL;
+        return failedRequests == expectedFailures;
+    }
+
+    internal static bool IsRawFinalProposalDropAccepted(
+        WindowResizeReleasePolicy releasePolicy,
+        bool pendingRawFinalBeforeExit,
+        bool rawFinalProposalAccepted,
+        ViewportPresentationTransactionResult? finalRetirementResult) =>
+        releasePolicy == WindowResizeReleasePolicy.ImmediateExit &&
+        pendingRawFinalBeforeExit &&
+        !rawFinalProposalAccepted &&
+        finalRetirementResult == ViewportPresentationTransactionResult.Cancelled;
+
+    internal static RawFinalProposalLag CalculateRawFinalProposalLag(
+        NativeRect rawFinalProposal,
+        NativeRect acceptedFinal) =>
+        new(
+            checked(rawFinalProposal.Width - acceptedFinal.Width),
+            checked(rawFinalProposal.Height - acceptedFinal.Height));
+
+    internal static string ReleasePolicyName(WindowResizeReleasePolicy releasePolicy) =>
+        releasePolicy switch
+        {
+            WindowResizeReleasePolicy.WaitFinal => "wait-final",
+            WindowResizeReleasePolicy.ImmediateExit => "immediate-exit",
+            _ => throw new ArgumentOutOfRangeException(nameof(releasePolicy)),
+        };
+
+    private static void WriteExternalObserverMarker(string? eventName, string phase)
+    {
+        if (eventName is null)
+        {
+            return;
+        }
+        WriteObserverHandshake(phase, eventName, expectedSceneExtent: null);
+    }
+
     private static async Task WaitForExternalObserverAsync(
         string? eventName,
         string phase,
@@ -601,6 +804,7 @@ internal static partial class StudioViewportTransactionWindowResizeSmoke
                 phase,
                 eventName,
                 qpc = Stopwatch.GetTimestamp(),
+                frequency = Stopwatch.Frequency,
                 expectedSceneExtent = expectedSceneExtent is { } extent
                     ? new { width = extent.Width, height = extent.Height }
                     : null,
@@ -721,6 +925,26 @@ internal static partial class StudioViewportTransactionWindowResizeSmoke
         }
     }
 
+    private static async Task<EditorDockPresentationLayoutHostMetrics>
+        WaitForPendingRawFinalProposalAsync(
+            EditorDockPresentationLayoutHost host,
+            Size rawFinalProposal,
+            TimeSpan timeout)
+    {
+        using var deadline = new CancellationTokenSource(timeout);
+        while (true)
+        {
+            var metrics = host.CaptureMetrics();
+            if (AreClose(metrics.RequestedSize, rawFinalProposal) &&
+                !AreClose(metrics.CommittedSize, rawFinalProposal) &&
+                (metrics.HasActive || metrics.HasQueued))
+            {
+                return metrics;
+            }
+            await Task.Delay(TimeSpan.FromMilliseconds(1), deadline.Token);
+        }
+    }
+
     private static async Task WaitForEndpointDrainAsync(
         ViewportCompositionControl control,
         TimeSpan timeout)
@@ -773,7 +997,8 @@ internal static partial class StudioViewportTransactionWindowResizeSmoke
             $"viewport-transaction-window-resize phase={phase} QPC={timestamp} " +
             $"Frequency={Stopwatch.Frequency} host=main pattern={options.Pattern} " +
             $"inputHz={options.InputHz:F2} count={options.InputCount} " +
-            $"evidence={options.Evidence}.");
+            $"evidence={options.Evidence} " +
+            $"release={ReleasePolicyName(options.ReleasePolicy)}.");
 
     private static void WriteBatch(CompositionBatchSnapshot batch)
     {
@@ -1194,12 +1419,21 @@ internal static partial class StudioViewportTransactionWindowResizeSmoke
             : 0;
     }
 
+    internal enum WindowResizeReleasePolicy
+    {
+        WaitFinal,
+        ImmediateExit,
+    }
+
+    internal readonly record struct RawFinalProposalLag(int Width, int Height);
+
     private sealed record WindowResizeOptions(
         string Pattern,
         double InputHz,
         int InputCount,
         string Evidence,
-        string? ObserverReadyEventName)
+        string? ObserverReadyEventName,
+        WindowResizeReleasePolicy ReleasePolicy)
     {
         public bool MeasuresRenderedPerformance => Evidence == "performance";
 
@@ -1230,6 +1464,7 @@ internal static partial class StudioViewportTransactionWindowResizeSmoke
                 DefaultInputCount);
             var evidence = Read(arguments, EvidenceOptionPrefix) ?? "performance";
             var observerReadyEventName = ParseObserverReadyEventName(arguments);
+            var releasePolicy = ParseReleasePolicy(arguments);
             if (evidence is not ("performance" or "continuous"))
             {
                 throw new ArgumentException(
@@ -1253,7 +1488,8 @@ internal static partial class StudioViewportTransactionWindowResizeSmoke
                 inputHz,
                 inputCount,
                 evidence,
-                observerReadyEventName);
+                observerReadyEventName,
+                releasePolicy);
         }
 
         private static string? Read(string[] arguments, string prefix) =>

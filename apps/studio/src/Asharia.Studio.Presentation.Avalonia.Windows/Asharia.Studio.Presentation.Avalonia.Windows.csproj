@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>Asharia.Studio.Presentation.Avalonia.Windows</AssemblyName>
+    <RootNamespace>Asharia.Studio.Presentation.Avalonia.Windows</RootNamespace>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia.Desktop" Version="12.1.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Editor.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Asharia.Studio.Presentation.Avalonia\Asharia.Studio.Presentation.Avalonia.csproj" />
+  </ItemGroup>
+</Project>

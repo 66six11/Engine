@@ -265,32 +265,47 @@ begin retirement only after the shared batch reports `Rendered`. A→B→A requi
 snapshot. Plain `GridSplitter.ShowsPreview` and drag-end debounce remain rejected because they do not produce unique exact
 geometry during the drag.
 
-Main and Floating Windows share `EditorDockPresentationLayoutHost` around their dock workspace. On Win32, its
-`EditorDockWin32PresentationResizeAdapter` has one deliberately narrow precommit scope: an ordinary decorated border drag within
+Main and Floating Windows share `EditorDockPresentationLayoutHost` around their dock workspace. The shared host implements the
+platform-neutral `IInteractiveTopLevelResizeSink` and obtains an optional `IInteractiveTopLevelResizeAdapterFactory` through the
+application composition root. `IInteractiveTopLevelResizeAdapterProvider`, `IInteractiveTopLevelResizeAdapterFactory`,
+`IInteractiveTopLevelResizeAttachment`, `IInteractiveTopLevelResizeSink`, `IInteractiveTopLevelResizeCommit` and
+`InteractiveTopLevelResizeProjection` live in `Asharia.Studio.Presentation.Avalonia.Windowing`; the shared host, transaction
+coordinator and endpoint control contain no HWND, WM-message, USER32 or P/Invoke surface.
+
+The independent `Asharia.Studio.Presentation.Avalonia.Windows` integration owns the native hook. Its
+`Win32InteractiveTopLevelResizeAdapterFactory` has one deliberately narrow precommit scope: an ordinary decorated border drag within
 one fixed-DPI epoch. `WM_SIZING` copies the proposed screen-space `RECT`, writes the last accepted exact `RECT` back to USER32 and
 coalesces work outside WndProc. The host keeps at most one active workspace request and one queued latest, probes all visible exact
 viewport endpoints while the old HWND/layout/front remain committed, and prepares their candidate surfaces. The publish turn applies
-`SetWindowPos + TopLevel.UpdateLayout`, revalidates the actual workspace/endpoint extents and switches the same-compositor fronts;
-only a successful `Published` result advances the accepted HWND `RECT`. Pre-publish failure or an invalid interaction/DPI/chrome/
-endpoint epoch preserves or restores the old committed state. WndProc itself never waits, renders or walks the visual tree.
+the platform-neutral outer commit; only the Windows integration calls `SetWindowPos`, after which the host calls
+`TopLevel.UpdateLayout`, revalidates the actual workspace/endpoint extents and switches the same-compositor fronts. Only a successful
+`Published` result advances the accepted HWND `RECT`. Pre-publish failure or an invalid interaction/DPI/chrome/endpoint epoch preserves
+or restores the old committed state. WndProc itself never waits, renders or walks the visual tree.
+
+`WM_EXITSIZEMOVE` closes the interaction epoch. Every outer commit not yet accepted becomes stale, the queued successor is discarded,
+and the shared host rejects it when `IsCurrent()` is false. An active candidate already inside native render, GPU or consumer work is
+not synchronously killed; it completes and then follows the normal pre-publish abort/work-fence retirement path. The Window stays at
+the last Published exact `RECT` instead of applying the raw cursor-final proposal after release. The accepted final may therefore lag
+raw final by 0–1 candidate, and diagnostics must report both values plus pixel/logical lag. Avoiding a post-release catch-up
+`SetWindowPos` removes that additional grow-gap/shrink-crop transition, but does not make drag-time USER32/DWM and Avalonia commits
+physically atomic.
 
 The V5 native stream still keeps at most one executing request, one latest pending replacement and one ready frame per
 viewport, with at most three persistent full presentation slots. Each slot keeps its external image, producer/consumer
 semaphores, command resources and retirement proof together across frames. The old three-slot steady front plus the one-frame
 candidate stay within the process-wide four-resource cap; Realtime prefill resumes only after the prepared switch. Snap,
-maximize/restore, programmatic Window/Bounds resize, `WM_DPICHANGED`/cross-monitor DPI and non-Win32 top-level changes cannot use the
-`WM_SIZING` seam and remain an explicit exact-only hidden fallback: they hide the mismatched front until a new exact frame is ready,
-never crop or stretch, but can show a blank Scene interval and have not reached zero-flash acceptance.
+maximize/restore, programmatic Window/Bounds resize, DPI/cross-monitor transitions, non-Windows top-levels without the capability and
+other geometry sources without a precommit seam remain on the unchanged exact-only hidden fallback: they hide the mismatched front
+until a new exact frame is ready, never crop or stretch, but can show a blank Scene interval and have not reached zero-flash acceptance.
 
 The Win32 publish turn is not a physical atomicity claim. USER32/DWM top-level geometry and an Avalonia composition batch have no
-shared public scanout fence. A separate Windows-only opt-in WGC acceptance project now observes corner sentinels in
-`wgc-dwm-composited-pixels`. Current process acceptance covers monotonic grow only. It hard-fails a blank Scene, stretched or cropped
-sentinels, and Scene spill, while permitting and counting the right/bottom panel-background gap between an old exact Scene and a newer
-HWND content extent; that gap is not relabeled as an exact Scene generation. Shrink WGC pixel closure remains pending and must not be
-inferred from the grow result. WGC-delivered samples are not a lossless record of every DWM refresh and are not LCD scanout evidence, so
-`PhysicalDisplayedEvidenceAvailable` remains `false`. The checked Unreal public threaded-rendering contract and Unity public SceneView
-source/API expose no native-Window-plus-viewport physical transaction precedent, so this is an Asharia-local boundary rather than
-a copied engine API.
+shared public scanout fence during drag. A separate Windows-only opt-in WGC acceptance project observes corner sentinels in
+`wgc-dwm-composited-pixels`; its release capture window requires every WGC-delivered sample after the epoch closes to match the final
+accepted/Published exact extent, with no gap, crop, stretch, blank or spill. WGC-delivered samples are not a lossless record of every
+DWM refresh and are not LCD scanout evidence, so `PhysicalDisplayedEvidenceAvailable` remains `false`. The checked Unreal public
+threaded-rendering contract and Unity public SceneView source/API expose no native-top-level-plus-viewport physical transaction
+precedent. Asharia adopts their immutable render ownership and repaint/invalidation separation, but rejects copying their APIs or
+placing platform hooks in shared presentation; the capability plus independent integration is an Asharia-local, package-first boundary.
 
 `IsRealtime=true` is the explicit default and keeps producing exact frames for a static scene at the >=60 FPS acceptance
 floor. `false` is an explicit OnDemand mode: the session emits one coalesced refresh request when target, camera, extent or
@@ -755,17 +770,24 @@ Studio `Editor.exe --smoke-studio-viewport-cadence` 只承担前台静态 Scene 
 exact/hidden、bounded latest-wins、13-stage 失败 ownership、latest/stale identity 与 same-compositor 两-endpoint group atomicity；
 `--smoke-viewport-transaction-flash` 另逐个成功 transaction 的 group composition batch 检查 native
 corner sentinel 的结构边界。各入口分开报告 native resource、transaction phase、Avalonia surface/`Rendered` 与 physical display；
-`--smoke-viewport-transaction-window-resize` 还用真实 HWND 驱动 Win32 `WM_SIZING` precommit，但把性能与连续结构证据分开：
+`--smoke-viewport-transaction-window-resize` 还用真实 HWND 驱动 Windows integration 的 `WM_SIZING` precommit，但把性能与连续结构证据分开：
 `performance` lane 不启动连续 recorder，以 first `Proposed`→final exact `Rendered` 门控 grow/shrink/A→B→A 三个 120 Hz、
 90-input case 均 `>=60/s`；`continuous` lane 只对短 ABA 轨迹连续请求并采样 outer/client/workspace/panel/surface composition batch，门控
-blank/stretch/crop/gap/mismatch=0，不作 FPS claim。最新 ABA 性能代表值为 90 inputs/744.47 ms、50 unique exact `Rendered` /
+blank/stretch/crop/gap/mismatch=0，不作 FPS claim。release policy 在 `WM_EXITSIZEMOVE` 关闭 interaction epoch，使未接受 proposal stale，
+停在最后 Published exact RECT；它必须输出 raw/accepted final 与 0–1 candidate 的 pixel/logical lag。release-stop 之前
+`wait-final` policy 的 ABA 性能代表值为
+90 inputs/744.47 ms、50 unique exact `Rendered` /
 757.57 ms（66.00/s）、post-request transaction publish catch-up 2/2（25.44 ms，小于两个 60 Hz composition budget）、hidden=0；
 结构 lane 为 24/24 exact sampled batches，五类结构错误
-全为 0。两条应用内 lane 仍明确输出 pixel/PhysicalDisplayed evidence unavailable。独立 Windows-only
-`Asharia.Studio.WindowsCapture.Tests` 通过 `ASHARIA_RUN_STUDIO_WGC_DWM_ACCEPTANCE=1` opt in：它对 WGC-delivered DWM 合成样本硬拒
-blank/stretch/crop/spill，允许并计数 grow 的 old-exact-Scene→new-HWND 右/下背景 gap；当前 process acceptance 只覆盖 monotonic
-grow，shrink WGC pixel closure 仍 pending，不得宣称通过。它不保证捕获每个 DWM refresh，且始终报告
-`PhysicalDisplayedEvidenceAvailable=false`。没有 observer 的层明确输出 evidence unavailable。代表性
+全为 0；这些历史数值不作为新的 release-stop gate 的通过数据。两条应用内 lane 仍明确输出
+pixel/PhysicalDisplayed evidence unavailable。独立 Windows-only
+`Asharia.Studio.WindowsCapture.Tests` 通过 `ASHARIA_RUN_STUDIO_WGC_DWM_ACCEPTANCE=1` opt in：drag 样本仍分类
+blank/stretch/crop/gap/spill；release capture 从 interaction epoch 关闭起硬门控每个 WGC-delivered sample 都与最后
+accepted/Published exact extent 一致，不允许 release gap/crop/stretch/blank/spill。它不保证捕获每个 DWM refresh，且始终报告
+`PhysicalDisplayedEvidenceAvailable=false`。当前严格 release-stop gate 以 `SystemRelativeTime` 对齐 `release-imminent` QPC，从
+`WM_EXITSIZEMOVE` 前的保守边界开始筛选；grow/shrink 2/2 PASS，release 分别为 1/1 与 2/2 exact，每个 delivered sample 都满足
+`SceneBounds == completion accepted extent`，gap/blank/crop/stretch/accepted-extent mismatch 全为 0。两条 case 都先建立 pending raw
+final，再验证其 `Cancelled` 且 `rawFinalProposalAccepted=false`。没有 observer 的层明确输出 evidence unavailable。代表性
 owned-splitter resize 为 209/209 observed exact `Rendered` generations、106.44/s、p95
 15.26 ms、hidden 0；新增 Window smoke 之前的五族 GPU process acceptance 为 47/47，steady 为 219.43 surface-updates/s。当前 PresentMon 复采因大量 ETW
 event loss 且无 CSV 被作废，不能把这些

@@ -737,6 +737,15 @@ public sealed class ProjectReferenceGraphTests
             reference =>
             {
                 Assert.Equal(
+                    "src/Asharia.Studio.Presentation.Avalonia.Windows/Asharia.Studio.Presentation.Avalonia.Windows.csproj",
+                    reference.Include);
+                Assert.Equal(
+                    "'$(AshariaStudioTargetsWindows)' == 'true'",
+                    reference.Condition);
+            },
+            reference =>
+            {
+                Assert.Equal(
                     "src/Asharia.Studio.Presentation.Avalonia/Asharia.Studio.Presentation.Avalonia.csproj",
                     reference.Include);
                 Assert.Null(reference.Condition);
@@ -1093,6 +1102,7 @@ public sealed class ProjectReferenceGraphTests
                 "src/Asharia.Studio.DevelopmentHost/Asharia.Studio.DevelopmentHost.csproj",
                 "src/Asharia.Studio.DevelopmentProtocol/Asharia.Studio.DevelopmentProtocol.csproj",
                 "src/Asharia.Studio.EngineBridge/Asharia.Studio.EngineBridge.csproj",
+                "src/Asharia.Studio.Presentation.Avalonia.Windows/Asharia.Studio.Presentation.Avalonia.Windows.csproj",
                 "src/Asharia.Studio.Presentation.Avalonia/Asharia.Studio.Presentation.Avalonia.csproj",
             ],
             projectPaths);

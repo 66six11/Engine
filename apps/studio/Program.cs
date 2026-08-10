@@ -1,5 +1,6 @@
 using Avalonia;
 using System;
+using Editor.Shell.Composition;
 namespace Editor;
 
 sealed class Program
@@ -14,17 +15,9 @@ sealed class Program
     // Avalonia configuration, don't remove; also used by visual designer.
     public static AppBuilder BuildAvaloniaApp()
     {
-        return AppBuilder.Configure<App>()
-            .UsePlatformDetect()
-            .With(new Win32PlatformOptions
-            {
-                RenderingMode =
-                [
-                    Win32RenderingMode.Vulkan,
-                    Win32RenderingMode.AngleEgl,
-                    Win32RenderingMode.Software,
-                ],
-            })
+        return StudioPlatformComposition.ConfigurePlatform(
+                AppBuilder.Configure<App>()
+                    .UsePlatformDetect())
             .WithInterFont();
     }
 }

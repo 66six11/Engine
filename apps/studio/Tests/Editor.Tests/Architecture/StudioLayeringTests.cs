@@ -462,8 +462,8 @@ public sealed class StudioLayeringTests
             "RequestCompositionBatchCommitAsync().Rendered",
             viewportControlSource,
             StringComparison.Ordinal);
-        Assert.Contains("Win32PlatformOptions", programSource, StringComparison.Ordinal);
-        Assert.Contains("Win32RenderingMode.Vulkan", programSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("Win32PlatformOptions", programSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("Win32RenderingMode", programSource, StringComparison.Ordinal);
         Assert.DoesNotContain("StudioNativeTeardown", appSource, StringComparison.Ordinal);
         Assert.DoesNotContain("OutstandingNativeOperationCount", appSource, StringComparison.Ordinal);
     }
@@ -650,6 +650,57 @@ public sealed class StudioLayeringTests
             "Models",
             "Scene",
             "SceneProviderDescriptor.cs")));
+        Assert.Empty(offenders);
+    }
+
+    [Fact]
+    public void Shared_dock_and_presentation_sources_are_platform_neutral()
+    {
+        var root = FindRepositoryRoot();
+        var sharedRoots = new[]
+        {
+            Path.Combine(root, "Shell", "Views", "Docking"),
+            Path.Combine(root, "src", "Asharia.Studio.Presentation.Avalonia"),
+        };
+        var explicitWindowsRoot = Path.Combine(
+            root,
+            "src",
+            "Asharia.Studio.Presentation.Avalonia.Windows");
+        var forbiddenTokens = new[]
+        {
+            "Win32",
+            "HWND",
+            "USER32",
+            "user32.dll",
+            "Win32Properties",
+            "OperatingSystem.IsWindows",
+            "System.Runtime.InteropServices",
+            "LibraryImport",
+            "DllImport",
+            "Microsoft.Win32",
+        };
+
+        Assert.All(sharedRoots, path => Assert.True(
+            Directory.Exists(path),
+            $"Shared presentation source root is missing: {path}"));
+        Assert.True(
+            Directory.Exists(explicitWindowsRoot),
+            $"The explicit Windows presentation adapter root is missing: {explicitWindowsRoot}");
+
+        var offenders = sharedRoots
+            .SelectMany(path => Directory.EnumerateFiles(path, "*.cs", SearchOption.AllDirectories))
+            .SelectMany(path =>
+            {
+                var source = File.ReadAllText(path);
+                return forbiddenTokens
+                    .Where(token =>
+                        Path.GetFileName(path).Contains(token, StringComparison.OrdinalIgnoreCase) ||
+                        source.Contains(token, StringComparison.OrdinalIgnoreCase))
+                    .Select(token => $"{Path.GetRelativePath(root, path)}: {token}");
+            })
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
         Assert.Empty(offenders);
     }
 

@@ -5,6 +5,7 @@ using Asharia.Studio.Application.Diagnostics;
 using Asharia.Studio.Application.Projects;
 using Asharia.Studio.EngineBridge.Project;
 using Asharia.Studio.EngineBridge.Scene;
+using Asharia.Studio.Presentation.Avalonia.Windowing;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
@@ -19,10 +20,13 @@ using Editor.Shell.Views.Windowing;
 namespace Editor;
 
 // ReSharper disable once PartialTypeWithSinglePart
-public partial class App : Application
+public partial class App : Application,
+    IInteractiveTopLevelResizeAdapterProvider
 {
     private readonly IStudioDiagnosticHub diagnostics_;
     private readonly bool enableReadOnlyDevelopmentObservation_;
+    private readonly IInteractiveTopLevelResizeAdapterFactory?
+        interactiveTopLevelResizeAdapterFactory_;
     private StudioProcessSession? processSession_;
     private MainWindow? mainWindow_;
     private Task? startupTask_;
@@ -36,7 +40,8 @@ public partial class App : Application
         : this(
             new StudioDiagnosticHub(),
             StudioDevelopmentStartup.IsReadOnlyObservationGranted(
-                Environment.GetCommandLineArgs()))
+                Environment.GetCommandLineArgs()),
+            StudioPlatformComposition.CreateInteractiveTopLevelResizeAdapterFactory())
     {
     }
 
@@ -48,13 +53,29 @@ public partial class App : Application
     internal App(
         IStudioDiagnosticHub diagnostics,
         bool enableReadOnlyDevelopmentObservation)
+        : this(
+            diagnostics,
+            enableReadOnlyDevelopmentObservation,
+            interactiveTopLevelResizeAdapterFactory: null)
+    {
+    }
+
+    internal App(
+        IStudioDiagnosticHub diagnostics,
+        bool enableReadOnlyDevelopmentObservation,
+        IInteractiveTopLevelResizeAdapterFactory? interactiveTopLevelResizeAdapterFactory)
     {
         ArgumentNullException.ThrowIfNull(diagnostics);
         diagnostics_ = diagnostics;
         enableReadOnlyDevelopmentObservation_ =
             enableReadOnlyDevelopmentObservation;
+        interactiveTopLevelResizeAdapterFactory_ = interactiveTopLevelResizeAdapterFactory;
         Logger.Sink = new StudioAvaloniaLogSink(diagnostics_);
     }
+
+    IInteractiveTopLevelResizeAdapterFactory?
+        IInteractiveTopLevelResizeAdapterProvider.InteractiveTopLevelResizeAdapterFactory =>
+            interactiveTopLevelResizeAdapterFactory_;
 
     public override void Initialize()
     {
