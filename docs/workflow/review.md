@@ -308,6 +308,7 @@ $smokes = @(
     "--smoke-material-binding",
     "--smoke-fullscreen-texture",
     "--smoke-scene-draw-packet",
+    "--smoke-render-view-scene-mesh",
     "--smoke-render-view-grid-readback",
     "--smoke-offscreen-viewport",
     "--smoke-compute-dispatch",
@@ -335,6 +336,25 @@ foreach ($preset in @("clangcl-debug", "msvc-debug")) {
 ```
 
 如果某个 smoke 命令尚不存在，审查回复必须说明原因，不能默默跳过。
+
+涉及 RenderView scene mesh、RenderGraph vertex/index buffer access、indexed command encoding、scene raster
+policy 或 Vulkan polygon mode capability 时，`--smoke-render-view-scene-mesh` 必须在两个 compiler preset 上运行。
+审查证据至少确认：`builtin.render-view-scene-mesh` 的 Color/Depth + `vertices: BufferVertexRead` +
+`indices: BufferIndexRead` schema、`DrawIndexed` 五参数与 packet context、空 scene 不插入 pass、unknown resource
+保留 typed context，以及同帧 per-view Solid/Wireframe 不互相污染。`fillModeNonSolid` 未启用时，typed unavailable
+receipt 是合法 capability 分支；实现不得创建非法 line pipeline、静默回退 Solid 或为 1 px 线宽启用
+`wideLines`。
+
+修改 validation mesh fixture/generator 时，还必须运行：
+
+```powershell
+python -m unittest tools.tests.test_validation_mesh_product
+```
+
+`assets/fixtures/scene-rendering/directional-wedge.obj`、sidecar metadata 与
+`tools/generate_validation_mesh_product.py` 只证明 deterministic fixture -> generated product -> renderer-owned
+GPU buffer 的门禁链路。它们不是通用 OBJ importer 或稳定 runtime mesh product schema；review 不得据此宣称
+asset-backed mesh resource pipeline 已完成。
 
 所有 `asharia-sample-viewer --smoke-*` 图形路径，以及通过 `EditorRunMode` 启动的图形 editor smoke，都必须
 创建隐藏 GLFW 窗口，不得显示顶层窗口或取得前台焦点。sample-viewer 的 smoke 窗口必须通过唯一

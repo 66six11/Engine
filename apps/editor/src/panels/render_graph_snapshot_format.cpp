@@ -87,6 +87,10 @@ namespace asharia::editor::render_graph_snapshot_format {
                 return "TransferWrite";
             case asharia::RenderGraphBufferState::HostRead:
                 return "HostRead";
+            case asharia::RenderGraphBufferState::VertexRead:
+                return "VertexRead";
+            case asharia::RenderGraphBufferState::IndexRead:
+                return "IndexRead";
             case asharia::RenderGraphBufferState::ShaderRead:
                 return "ShaderRead";
             case asharia::RenderGraphBufferState::StorageReadWrite:
@@ -113,6 +117,10 @@ namespace asharia::editor::render_graph_snapshot_format {
                 return "TransferWrite";
             case asharia::RenderGraphSlotAccess::BufferShaderRead:
                 return "BufferShaderRead";
+            case asharia::RenderGraphSlotAccess::BufferVertexRead:
+                return "BufferVertexRead";
+            case asharia::RenderGraphSlotAccess::BufferIndexRead:
+                return "BufferIndexRead";
             case asharia::RenderGraphSlotAccess::BufferTransferRead:
                 return "BufferTransferRead";
             case asharia::RenderGraphSlotAccess::BufferTransferWrite:
@@ -152,6 +160,8 @@ namespace asharia::editor::render_graph_snapshot_format {
             case asharia::RenderGraphSlotAccess::DepthSampledRead:
             case asharia::RenderGraphSlotAccess::TransferRead:
             case asharia::RenderGraphSlotAccess::BufferShaderRead:
+            case asharia::RenderGraphSlotAccess::BufferVertexRead:
+            case asharia::RenderGraphSlotAccess::BufferIndexRead:
             case asharia::RenderGraphSlotAccess::BufferTransferRead:
             case asharia::RenderGraphSlotAccess::BufferStorageReadWrite:
                 return true;
@@ -177,6 +187,8 @@ namespace asharia::editor::render_graph_snapshot_format {
             case asharia::RenderGraphSlotAccess::DepthSampledRead:
             case asharia::RenderGraphSlotAccess::TransferRead:
             case asharia::RenderGraphSlotAccess::BufferShaderRead:
+            case asharia::RenderGraphSlotAccess::BufferVertexRead:
+            case asharia::RenderGraphSlotAccess::BufferIndexRead:
             case asharia::RenderGraphSlotAccess::BufferTransferRead:
                 return false;
             }
@@ -233,6 +245,10 @@ namespace asharia::editor::render_graph_snapshot_format {
             return "Copy Dst";
         case asharia::RenderGraphSlotAccess::BufferShaderRead:
             return "Buffer R";
+        case asharia::RenderGraphSlotAccess::BufferVertexRead:
+            return "Vertex R";
+        case asharia::RenderGraphSlotAccess::BufferIndexRead:
+            return "Index R";
         case asharia::RenderGraphSlotAccess::BufferTransferRead:
             return "Buffer Src";
         case asharia::RenderGraphSlotAccess::BufferTransferWrite:
@@ -257,6 +273,8 @@ namespace asharia::editor::render_graph_snapshot_format {
         case asharia::RenderGraphSlotAccess::DepthSampledRead:
         case asharia::RenderGraphSlotAccess::TransferRead:
         case asharia::RenderGraphSlotAccess::BufferShaderRead:
+        case asharia::RenderGraphSlotAccess::BufferVertexRead:
+        case asharia::RenderGraphSlotAccess::BufferIndexRead:
         case asharia::RenderGraphSlotAccess::BufferTransferRead:
             return "Read";
         }

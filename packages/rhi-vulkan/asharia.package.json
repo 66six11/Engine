@@ -12,15 +12,23 @@
   "description": "Vulkan device, queues, swapchain, memory allocation, and synchronization.",
   "dependencies": ["com.asharia.core", "com.asharia.rendergraph"],
   "targets": ["asharia-rhi-vulkan", "asharia-rhi-vulkan-rendergraph"],
-  "testTargets": ["asharia-rhi-vulkan-enumeration-tests"],
+  "testTargets": [
+    "asharia-rhi-vulkan-enumeration-tests",
+    "asharia-rhi-vulkan-pipeline-tests",
+    "asharia-rhi-vulkan-rendergraph-tests"
+  ],
   "targetRoles": {
     "asharia-rhi-vulkan": "backend",
     "asharia-rhi-vulkan-rendergraph": "adapter",
-    "asharia-rhi-vulkan-enumeration-tests": "test"
+    "asharia-rhi-vulkan-enumeration-tests": "test",
+    "asharia-rhi-vulkan-pipeline-tests": "test",
+    "asharia-rhi-vulkan-rendergraph-tests": "test"
   },
   "targetDependencies": {
     "asharia-rhi-vulkan": ["asharia-core"],
     "asharia-rhi-vulkan-rendergraph": ["asharia-rhi-vulkan", "asharia-rendergraph"],
-    "asharia-rhi-vulkan-enumeration-tests": ["asharia-rhi-vulkan"]
+    "asharia-rhi-vulkan-enumeration-tests": ["asharia-rhi-vulkan"],
+    "asharia-rhi-vulkan-pipeline-tests": ["asharia-rhi-vulkan"],
+    "asharia-rhi-vulkan-rendergraph-tests": ["asharia-rhi-vulkan-rendergraph"]
   }
 }

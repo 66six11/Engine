@@ -483,6 +483,21 @@ namespace asharia {
 
     Result<VulkanGraphicsPipeline>
     VulkanGraphicsPipeline::createDynamicRendering(const VulkanGraphicsPipelineDesc& desc) {
+        const bool usesNonSolidPolygonMode = desc.polygonMode == VK_POLYGON_MODE_LINE ||
+                                             desc.polygonMode == VK_POLYGON_MODE_POINT;
+        if (usesNonSolidPolygonMode && !desc.deviceCapabilities.fillModeNonSolid) {
+            return std::unexpected{vulkanError(
+                "Cannot create a Vulkan graphics pipeline with a non-solid polygon mode because "
+                "fillModeNonSolid is not enabled",
+                VK_ERROR_FEATURE_NOT_PRESENT)};
+        }
+
+        if (desc.polygonMode != VK_POLYGON_MODE_FILL && !usesNonSolidPolygonMode) {
+            return std::unexpected{vulkanError(
+                "Cannot create a Vulkan graphics pipeline with an unsupported polygon mode",
+                VK_ERROR_FEATURE_NOT_PRESENT)};
+        }
+
         if (desc.device == VK_NULL_HANDLE || desc.layout == VK_NULL_HANDLE ||
             desc.vertexShader == VK_NULL_HANDLE || desc.fragmentShader == VK_NULL_HANDLE ||
             desc.vertexEntryPoint.empty() || desc.fragmentEntryPoint.empty() ||
@@ -524,7 +539,7 @@ namespace asharia {
 
         VkPipelineRasterizationStateCreateInfo rasterization{};
         rasterization.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-        rasterization.polygonMode = VK_POLYGON_MODE_FILL;
+        rasterization.polygonMode = desc.polygonMode;
         rasterization.cullMode = VK_CULL_MODE_NONE;
         rasterization.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
         rasterization.lineWidth = 1.0F;

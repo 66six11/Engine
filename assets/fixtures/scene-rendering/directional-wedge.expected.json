@@ -1,0 +1,22 @@
+{
+  "schema": "com.asharia.validation.mesh-product",
+  "schemaVersion": 1,
+  "assetId": "7c9fe8ac-3c8b-4f66-9665-0af0fd7b693e",
+  "productHash": "0eb29d6de539d278",
+  "vertexCount": 14,
+  "indexCount": 72,
+  "vertexFormat": "position3f-color3f",
+  "indexFormat": "uint16",
+  "bounds": {
+    "min": [
+      -1.25,
+      -0.125,
+      -0.625
+    ],
+    "max": [
+      1.5,
+      0.25,
+      0.75
+    ]
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "schema": "com.asharia.asset.metadata",
+  "schemaVersion": 1,
+  "guid": "7c9fe8ac-3c8b-4f66-9665-0af0fd7b693e",
+  "assetType": "com.asharia.asset.Mesh",
+  "sourcePath": "assets/fixtures/scene-rendering/directional-wedge.obj",
+  "sourceHash": "d7ff046639713056",
+  "settingsHash": "b690ee300563543b",
+  "importer": {
+    "id": "com.asharia.importer.validation-mesh-fixture",
+    "version": 1
+  },
+  "settings": {
+    "fixtureContract": "directional-wedge-v1"
+  }
+}

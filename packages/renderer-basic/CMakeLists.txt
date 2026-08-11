@@ -9,6 +9,7 @@ if(NOT DEFINED ASHARIA_REPOSITORY_ROOT)
 endif()
 include("${ASHARIA_REPOSITORY_ROOT}/cmake/AshariaPackage.cmake")
 asharia_package_init()
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
 asharia_require_package_target(asharia::core engine/core)
 asharia_require_package_target(asharia::material_core packages/material-core)
 asharia_require_package_target(asharia::rendergraph packages/rendergraph)
@@ -17,6 +18,50 @@ asharia_require_package_target(asharia::rhi_vulkan packages/rhi-vulkan)
 
 add_library(asharia-renderer-basic INTERFACE)
 add_library(asharia::renderer_basic ALIAS asharia-renderer-basic)
+
+set(ASHARIA_RENDERER_BASIC_GENERATED_INCLUDE_DIR
+    "${CMAKE_CURRENT_BINARY_DIR}/generated"
+)
+set(ASHARIA_RENDERER_BASIC_VALIDATION_MESH_HEADER
+    "${ASHARIA_RENDERER_BASIC_GENERATED_INCLUDE_DIR}/asharia/validation/directional_wedge_mesh_product.hpp"
+)
+set(ASHARIA_RENDERER_BASIC_VALIDATION_MESH_MANIFEST
+    "${ASHARIA_RENDERER_BASIC_GENERATED_INCLUDE_DIR}/asharia/validation/directional_wedge_mesh_product.json"
+)
+set(ASHARIA_RENDERER_BASIC_VALIDATION_MESH_SOURCE
+    "${ASHARIA_REPOSITORY_ROOT}/assets/fixtures/scene-rendering/directional-wedge.obj"
+)
+set(ASHARIA_RENDERER_BASIC_VALIDATION_MESH_METADATA
+    "${ASHARIA_REPOSITORY_ROOT}/assets/fixtures/scene-rendering/directional-wedge.obj.ameta"
+)
+set(ASHARIA_RENDERER_BASIC_VALIDATION_MESH_GENERATOR
+    "${ASHARIA_REPOSITORY_ROOT}/tools/generate_validation_mesh_product.py"
+)
+add_custom_command(
+    OUTPUT
+        "${ASHARIA_RENDERER_BASIC_VALIDATION_MESH_HEADER}"
+        "${ASHARIA_RENDERER_BASIC_VALIDATION_MESH_MANIFEST}"
+    COMMAND
+        "${CMAKE_COMMAND}" -E make_directory
+        "${ASHARIA_RENDERER_BASIC_GENERATED_INCLUDE_DIR}/asharia/validation"
+    COMMAND
+        "${Python3_EXECUTABLE}"
+        "${ASHARIA_RENDERER_BASIC_VALIDATION_MESH_GENERATOR}"
+        --source "${ASHARIA_RENDERER_BASIC_VALIDATION_MESH_SOURCE}"
+        --metadata "${ASHARIA_RENDERER_BASIC_VALIDATION_MESH_METADATA}"
+        --output-header "${ASHARIA_RENDERER_BASIC_VALIDATION_MESH_HEADER}"
+        --output-manifest "${ASHARIA_RENDERER_BASIC_VALIDATION_MESH_MANIFEST}"
+    DEPENDS
+        "${ASHARIA_RENDERER_BASIC_VALIDATION_MESH_GENERATOR}"
+        "${ASHARIA_RENDERER_BASIC_VALIDATION_MESH_SOURCE}"
+        "${ASHARIA_RENDERER_BASIC_VALIDATION_MESH_METADATA}"
+    VERBATIM
+)
+add_custom_target(asharia-renderer-basic-validation-mesh-product
+    DEPENDS
+        "${ASHARIA_RENDERER_BASIC_VALIDATION_MESH_HEADER}"
+        "${ASHARIA_RENDERER_BASIC_VALIDATION_MESH_MANIFEST}"
+)
 set(ASHARIA_RENDERER_BASIC_VULKAN_PRIVATE_PARTS
     src/basic_renderers/compute_dispatch_renderer.inl
     src/basic_renderers/debug_preview.inl
@@ -44,6 +89,9 @@ add_library(asharia-renderer-basic-vulkan
     ${ASHARIA_RENDERER_BASIC_VULKAN_PRIVATE_PARTS}
 )
 add_library(asharia::renderer_basic_vulkan ALIAS asharia-renderer-basic-vulkan)
+add_dependencies(asharia-renderer-basic-vulkan
+    asharia-renderer-basic-validation-mesh-product
+)
 
 set(ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/shaders")
 set(ASHARIA_RENDERER_BASIC_TRIANGLE_SHADER_SOURCE
@@ -321,6 +369,8 @@ target_link_libraries(asharia-renderer-basic
 target_include_directories(asharia-renderer-basic-vulkan
     PUBLIC
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    PRIVATE
+        "${ASHARIA_RENDERER_BASIC_GENERATED_INCLUDE_DIR}"
 )
 
 target_link_libraries(asharia-renderer-basic-vulkan

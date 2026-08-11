@@ -154,6 +154,7 @@ Result<void> BasicMesh3DRenderer::ensurePipeline(VkFormat colorFormat, VkFormat 
         .depthFormat = depthFormat,
         .vertexBindings = bindings,
         .vertexAttributes = attributes,
+        .deviceCapabilities = {},
     });
     if (!pipeline) {
         return std::unexpected{std::move(pipeline.error())};

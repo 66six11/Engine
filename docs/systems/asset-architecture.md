@@ -1061,6 +1061,12 @@ scan-to-planning bridge baseline 稳定。
 - #137 已定义 KTX/KTX2/Basis、DDS、HDR/EXR 和 compressed texture policy 的文档入口；后续仍需
   Mesh product record、KTX2/Basis fixture validation、完整 GPU resource owner 和 runtime
   texture/mesh lifetime。
+- `assets/fixtures/scene-rendering/directional-wedge.obj` 与 sidecar metadata 是 scene-mesh GPU smoke 的
+  repository validation fixture；`tools/generate_validation_mesh_product.py` 只解析门禁所需的封闭 OBJ 子集，
+  在 build tree 生成 deterministic C++ vertex/index product header 和 manifest。renderer 消费生成后的 product
+  data，不读取 source path 或 importer state。该 fixture/tool 不属于 `asset-pipeline` importer，不建立通用 OBJ
+  source support、稳定 mesh product schema、runtime mesh handle/registry 或 reload/lifetime owner，也不改变“mesh
+  product/runtime 闭环尚未完成”的事实。
 - staging/upload 仍放在 RHI/resource runtime，不放在 `asset-core`、`project-core` 或 `.ameta`。
 
 验收：

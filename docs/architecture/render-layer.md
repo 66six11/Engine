@@ -34,19 +34,56 @@
   selection、gizmo 或更多 debug line pass 必须继续把 per-view 数据作为 renderer-owned pass input，而不是从
   diagnostics 读取。
 - `BasicRenderViewDesc::scene` 是 scene/asset/SRP 接入的当前最小入口。它只接收 `renderer_basic` 的
-  backend-neutral `BasicDrawListItem` span；`recordViewFrame()` 在 draw item 非空时插入
-  `builtin.render-view-scene-inputs` marker pass，把 draw item count 作为 typed params 与 command summary 放入
-  RenderGraph，并记录 `BindRenderViewSceneInputs` execution event。非空 scene draw item 会先验证基础 draw 语义：
-  每个 item 至少声明 vertex 或 index，且 instance count 非零。该 pass 暂不绘制 mesh、上传 GPU 资源或读取
-  asset/editor object；真实 scene mesh pass 后续必须消费同一类 renderer-owned input，再显式声明 color/depth/buffer
-  resource usage。
+  backend-neutral `BasicDrawListItem` span 和 per-view `BasicSceneRasterMode`。非空 span 会插入真实
+  `builtin.render-view-scene-mesh` pass；typed params 显式记录 draw item 数、indexed draw 数、view kind 和
+  Solid/Wireframe policy。schema 要求 `target: ColorWrite`、`depth: DepthAttachmentWrite`、
+  `vertices: BufferVertexRead`、`indices: BufferIndexRead`，并只允许 `SetShader`、`SetInt` 和
+  `DrawIndexed` command summary。`renderer_basic_vulkan` 据此绑定 renderer-owned vertex/index buffer，使用
+  camera view-projection 与每个 item 的 model matrix 录制 depth-tested `vkCmdDrawIndexed`。空 span 不插入
+  scene-mesh pass；仅有 Entity/Transform 的空实体不会隐式获得 mesh，也不会因为出现在 Hierarchy 就被绘制。
 - `BasicDrawListItem` 携带 renderer-owned `BasicDrawPacketContext`：稳定 source object id、mesh resource key
-  和 material resource key。该 context 只进入 diagnostics / invalid-input error context，不把 `World*`、
+  和 material resource key。该 context 进入 diagnostics、invalid-input error 和每个 `DrawIndexed` execution
+  event，使 Frame Debug 能关联 pass、command、draw item 和 source/resource identity；它不把 `World*`、
   `Entity*`、editor pointer、source asset path、importer state 或 Vulkan handle 传进 renderer API。
+- RenderGraph 对 vertex/index buffer 使用独立的 `VertexRead` / `IndexRead` state 和
+  `BufferVertexRead` / `BufferIndexRead` slot access，不以 `ShaderRead` 冒充。它们不携带 shader stage；
+  `rhi_vulkan_rendergraph` 分别映射为
+  `VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT + VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT` 和
+  `VK_PIPELINE_STAGE_2_INDEX_INPUT_BIT + VK_ACCESS_2_INDEX_READ_BIT`。`DrawIndexed` 保留
+  `indexCount / instanceCount / firstIndex / vertexOffset / firstInstance`，贯穿 compiled pass、executor
+  context、diagnostics 和 debug tables。
+- Solid 是每个 RenderView 的默认 raster policy。Wireframe 使用独立的
+  `VK_POLYGON_MODE_LINE` pipeline；`VulkanContext` 只在调用方请求且 physical device 支持时启用
+  `fillModeNonSolid`，再通过 typed `VulkanDeviceCapabilities` 告知 renderer。该 feature 不是 context
+  启动硬要求；未启用时 Wireframe 返回 `VK_ERROR_FEATURE_NOT_PRESENT` typed error，同时把
+  `BasicSceneWireframePath::Unavailable` 写入 diagnostics，不静默回退 Solid，也不让非法 pipeline 进入
+  Vulkan validation。当前线宽固定 1 px，不查询或启用 `wideLines`。
 - 当前阶段不交付 SRP 接入。SRP 只作为后续消费者约束：RenderView policy / recording 的职责划分不能把
   pipeline authoring、asset upload、script callback 或 editor state 塞进 `rendergraph`、`rhi_vulkan`
   或 `apps/editor` 的捷径；未来 SRP 应通过 renderer-owned scene/pass input 和 RenderGraph 声明接到同一
   RenderView route。
+
+## 引擎先例与 Asharia 决策
+
+- 采用 Unreal 的 owner 分离：[`USceneComponent`](https://dev.epicgames.com/documentation/unreal-engine/API/Runtime/Engine/Components/USceneComponent)
+  只有 transform/attachment，本身没有 rendering/collision；
+  [`UStaticMeshComponent`](https://dev.epicgames.com/documentation/unreal-engine/API/Runtime/Engine/UStaticMeshComponent)
+  才实例化 mesh，并通过 `CreateSceneProxy()` 为 render thread 建立表示。Asharia 因而不让空 Entity
+  隐式生成 mesh；scene/runtime 只在显式 mesh/material reference 可解析后提取 immutable draw packet，renderer
+  再持有 GPU resource 和 execution state。
+- 采用 Godot 的 [`Node3D`](https://docs.godotengine.org/en/stable/classes/class_node3d.html) 与
+  [`MeshInstance3D`](https://docs.godotengine.org/en/stable/classes/class_meshinstance3d.html) 分离，以及
+  [`Viewport.DEBUG_DRAW_WIREFRAME`](https://docs.godotengine.org/en/stable/classes/class_viewport.html) 的
+  per-viewport policy：Wireframe 是 view presentation/debug policy，不修改 scene mesh、material 或 source asset。
+- 采用 O3DE Atom 的 [Render Component → Feature Processor → Draw Packet](https://docs.o3de.org/docs/atom-guide/dev-guide/frame-rendering/)
+  owner 方向：renderer-owned packet/context 承接 simulation snapshot，RenderGraph pass 再消费资源与 draw intent；
+  不让 scene/editor object 直接进入 backend callback。
+- 拒绝用 debug line、AABB/bounds、selection outline 或 editor proxy 冒充“真实 mesh 已渲染”。这些仍是显式
+  overlay/debug pass；scene-mesh 验收必须观察 Color/Depth、VertexRead/IndexRead、`DrawIndexed` execution event
+  和像素结果。
+- 拒绝让 Avalonia/editor panel 持有 GPU resource、Vulkan handle、OBJ/source path 或 importer state。UI 只提交
+  view policy 并消费 sampled output/typed diagnostics；source→product 属于工具/asset 层，product→GPU 属于
+  renderer/resource owner。
 
 ## Public Header 布局
 
@@ -82,18 +119,24 @@
 - `mesh3d_renderer.inl`
 - `draw_list_renderer.inl`
 
-这个阶段刻意不把 helper 提升成内部公共 API。`graph_recording.inl` 只覆盖 image-only graph compile、transient image preparation、execute 和 final transition 这条稳定路径；`debug_preview.inl` 只覆盖 Frame Debug replay preview 的候选图像、结果状态、image copy pass 和 source-pass after-pass 调度；`render_view_targets.inl` / `render_view_diagnostics.inl` 只覆盖 RenderView target 转换、target 验证、diagnostics snapshot 和 execution event recorder；`render_view_pass_policy.inl` 只覆盖 RenderView scene input、world-grid / debug-line overlay pass enablement 与 typed params 计算；`render_view_recording.inl` 只覆盖把该 policy 插入 RenderGraph pass。fullscreen source/composite pass、descriptor set、pipeline readiness、debug preview candidate 定义和 compute buffer/readback 仍留在原 owner，避免抽象过早扩大。
+这个阶段刻意不把 helper 提升成内部公共 API。`graph_recording.inl` 只覆盖 graph compile、transient resource preparation、execute 和 final transition 这条稳定路径；`debug_preview.inl` 只覆盖 Frame Debug replay preview 的候选图像、结果状态、image copy pass 和 source-pass after-pass 调度；`render_view_targets.inl` / `render_view_diagnostics.inl` 只覆盖 RenderView target 转换、target 验证、diagnostics snapshot 和 execution event recorder；`render_view_pass_policy.inl` 只覆盖 RenderView scene-mesh、world-grid / debug-line overlay pass enablement 与 typed params 计算；`render_view_recording.inl` 只覆盖把该 policy 插入 RenderGraph pass。fullscreen source/composite pass、descriptor set、pipeline readiness、debug preview candidate 定义和 compute buffer/readback 仍留在原 owner，避免抽象过早扩大。
 
 ## 当前限制
 
 - 实现分片不是独立 translation unit，不能提升并行编译能力。
 - `renderer_basic_vulkan` 仍包含 sample renderer、editor viewport renderer 和 debug preview 支撑，后续需要继续按 RenderView pipeline、scene sample renderer、debug capture support 拆分。
 - Frame Debug 的 execution event 目前是 renderer diagnostics 的轻量事件流，不等价于完整 GPU command capture。
-- Debug-line overlay 的 vertex upload 仍是 renderer-owned per-frame upload buffer ring，尚未建模为 RenderGraph buffer resource；当前 RenderGraph 只观察 color target write、pass params 和 execution event。
+- Debug-line overlay 的 vertex upload 仍是 renderer-owned per-frame upload buffer ring，尚未建模为 RenderGraph buffer resource；
+  scene-mesh vertex/index buffer 已通过独立 RenderGraph slots/states 可见，但当前仍是 validation product 对应的
+  renderer-owned 持久 buffer，不是通用 runtime mesh resource registry。
 - Buffer upload baseline 已新增 `builtin.transfer-copy-buffer` 和 `CopyBuffer` command summary；
   `--smoke-buffer-upload` 只验证显式 payload 经 staging buffer 复制到 device-local buffer 再复制到 readback
   buffer，不读取 source path、`.ameta`、importer 或 product cache。真实 mesh/texture runtime resource owner
   仍是后续切片。
+- `assets/fixtures/scene-rendering/directional-wedge.obj` 和 sidecar metadata 只属于 repository validation
+  fixture；`tools/generate_validation_mesh_product.py` 在构建时验证封闭的 OBJ 子集并生成 deterministic C++
+  product header/manifest。renderer 只消费生成的 vertex/index product 数据。该工具不是通用 OBJ importer，
+  生成 schema 也不是承诺给项目资产的 runtime mesh product format。
 
 ## 下一步收敛
 
@@ -102,13 +145,16 @@
 只保留渲染层合同：
 
 1. 评估是否把 RenderView 路径从 `BasicFullscreenTextureRenderer` 中独立成明确的 view renderer，fullscreen composite 只消费 sampled texture。
-2. 新增 scene mesh、selection 或 gizmo pass 时，先扩展 renderer-owned pass policy、typed input、execution event 和 smoke，再决定是否需要新的 recorder owner。
+2. 扩展 asset-backed scene mesh、selection 或 gizmo pass 时，先扩展 renderer-owned pass policy、typed input、execution event 和 smoke，再决定是否需要新的 recorder owner。
 3. 保持 `renderer_basic` 后端无关，把 Vulkan 录制和资源生命周期限制在 `renderer_basic_vulkan` / `rhi_vulkan`。
 4. 可编程管线必须遵守 [programmable-pipeline.md](../rendergraph/programmable-pipeline.md)，不能绕过 RenderGraph/RHI 边界。
 
 ## 后续接入门禁
 
-- Scene mesh 接入前必须把 mesh/draw packet 变成 renderer-owned input，新增 RenderView pass policy、pass insertion、typed params、execution event 和 smoke；不能从 editor object 或 diagnostics 读取 mesh。
+- Scene mesh validation slice 已满足 renderer-owned draw packet、RenderView pass policy、Color/Depth +
+  VertexRead/IndexRead、`DrawIndexed` execution event 和 `--smoke-render-view-scene-mesh` 门禁。升级为通用
+  asset-backed mesh 前，仍必须补 product/runtime resource handle、GPU lifetime/reload/deferred deletion 和
+  material compatibility；不能从 editor object、source path 或 diagnostics 读取 mesh。
 - Asset upload 接入前必须定义 asset-core source/product owner、renderer/RHI resource handle 或 upload request、GPU lifetime/deferred deletion 以及失败上下文；新增上传、copy 或 buffer 写入时必须进入 RenderGraph command/diagnostics，或作为命名 external pre-pass 出现在 Frame Debug/review 输出中。
 - 资源上传第一步只允许 renderer/RHI 消费显式 payload 或未来 product data；`asset-core` / `project-core`
   不得持有 GPU handle、RenderGraph pass 或 Vulkan upload state。后续 mesh/texture upload 必须继续保留同样

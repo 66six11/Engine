@@ -21,6 +21,8 @@ namespace asharia {
                 .transferReadSlots = {},
                 .transferWriteSlots = {},
                 .bufferReadSlots = {},
+                .bufferVertexReadSlots = {},
+                .bufferIndexReadSlots = {},
                 .bufferTransferReadSlots = {},
                 .bufferWriteSlots = {},
                 .bufferStorageReadWriteSlots = {},

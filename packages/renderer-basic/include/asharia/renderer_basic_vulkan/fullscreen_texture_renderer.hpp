@@ -76,17 +76,42 @@ namespace asharia {
         createFrameResourceContext(std::size_t index) const;
         void resetFrameResourceCursors() noexcept;
         [[nodiscard]] BasicPipelineCacheStats pipelineCacheStats() const;
+        [[nodiscard]] BasicPipelineCacheStats worldGridPipelineCacheStats() const;
+        [[nodiscard]] BasicPipelineCacheStats debugLinePipelineCacheStats() const;
+        [[nodiscard]] BasicPipelineCacheStats sceneMeshPipelineCacheStats() const;
         [[nodiscard]] BasicOffscreenViewportStats offscreenViewportStats() const;
         [[nodiscard]] BasicOffscreenViewportTarget offscreenViewportTarget() const;
         [[nodiscard]] VulkanDescriptorAllocatorStats descriptorAllocatorStats() const;
         [[nodiscard]] VulkanBufferStats bufferStats() const;
 
     private:
-        [[nodiscard]] Result<void> ensurePipeline(VkFormat colorFormat);
-        [[nodiscard]] Result<void>
+        struct FullscreenPipelineCacheEntry {
+            VkFormat colorFormat{VK_FORMAT_UNDEFINED};
+            VulkanGraphicsPipeline pipeline;
+        };
+
+        struct SceneMeshPipelineCacheEntry {
+            VkFormat colorFormat{VK_FORMAT_UNDEFINED};
+            VkFormat depthFormat{VK_FORMAT_UNDEFINED};
+            BasicSceneRasterMode rasterMode{BasicSceneRasterMode::Solid};
+            VulkanGraphicsPipeline pipeline;
+        };
+
+        struct OverlayPipelineCacheEntry {
+            VkFormat colorFormat{VK_FORMAT_UNDEFINED};
+            BasicRenderViewOverlayBlendMode blendMode{BasicRenderViewOverlayBlendMode::AlphaBlend};
+            VulkanGraphicsPipeline pipeline;
+        };
+
+        [[nodiscard]] Result<VkPipeline> ensurePipeline(VkFormat colorFormat);
+        [[nodiscard]] Result<VkPipeline>
         ensureWorldGridPipeline(VkFormat colorFormat, BasicRenderViewOverlayBlendMode blendMode);
-        [[nodiscard]] Result<void>
+        [[nodiscard]] Result<VkPipeline>
         ensureDebugLinePipeline(VkFormat colorFormat, BasicRenderViewOverlayBlendMode blendMode);
+        [[nodiscard]] Result<VkPipeline> ensureSceneMeshPipeline(VkFormat colorFormat,
+                                                                 VkFormat depthFormat,
+                                                                 BasicSceneRasterMode rasterMode);
+        [[nodiscard]] Result<void> ensureSceneMeshResources();
         [[nodiscard]] VkDescriptorSet
         acquireFullscreenDescriptorSet(const VulkanFrameRecordContext& frame,
                                        BasicRenderFrameResourceContext* frameResources);
@@ -113,22 +138,22 @@ namespace asharia {
         VulkanShaderModule worldGridFragmentShader_;
         VulkanShaderModule debugLineVertexShader_;
         VulkanShaderModule debugLineFragmentShader_;
+        VulkanShaderModule sceneMeshVertexShader_;
+        VulkanShaderModule sceneMeshFragmentShader_;
         std::vector<VulkanDescriptorSetLayout> descriptorSetLayouts_;
         VulkanPipelineLayout pipelineLayout_;
         VulkanPipelineLayout worldGridPipelineLayout_;
         VulkanPipelineLayout debugLinePipelineLayout_;
+        VulkanPipelineLayout sceneMeshPipelineLayout_;
         VulkanPipelineCache pipelineCache_;
-        VulkanGraphicsPipeline pipeline_;
-        VulkanGraphicsPipeline worldGridPipeline_;
-        VulkanGraphicsPipeline debugLinePipeline_;
-        VkFormat pipelineFormat_{VK_FORMAT_UNDEFINED};
-        VkFormat worldGridPipelineFormat_{VK_FORMAT_UNDEFINED};
-        VkFormat debugLinePipelineFormat_{VK_FORMAT_UNDEFINED};
-        BasicRenderViewOverlayBlendMode worldGridPipelineBlendMode_{
-            BasicRenderViewOverlayBlendMode::AlphaBlend};
-        BasicRenderViewOverlayBlendMode debugLinePipelineBlendMode_{
-            BasicRenderViewOverlayBlendMode::AlphaBlend};
+        std::vector<FullscreenPipelineCacheEntry> fullscreenPipelines_;
+        std::vector<OverlayPipelineCacheEntry> worldGridPipelines_;
+        std::vector<OverlayPipelineCacheEntry> debugLinePipelines_;
+        std::vector<SceneMeshPipelineCacheEntry> sceneMeshPipelines_;
         BasicPipelineCacheStats pipelineCacheStats_;
+        BasicPipelineCacheStats worldGridPipelineCacheStats_;
+        BasicPipelineCacheStats debugLinePipelineCacheStats_;
+        BasicPipelineCacheStats sceneMeshPipelineCacheStats_;
         VulkanRenderTarget offscreenViewportTarget_;
         VulkanDescriptorAllocator descriptorAllocator_;
         std::vector<VkDescriptorSet> descriptorSets_;
@@ -141,10 +166,13 @@ namespace asharia {
         std::vector<VkDeviceSize> debugLineVertexBufferSizes_;
         std::uint64_t debugLineVertexBufferEpoch_{};
         std::size_t debugLineVertexBufferCursor_{};
+        VulkanBuffer sceneMeshVertexBuffer_;
+        VulkanBuffer sceneMeshIndexBuffer_;
         VulkanBuffer uniformBuffer_;
         VulkanSampler sampler_;
         VulkanTransientImagePool transientImagePool_;
         std::vector<VulkanTransientImageResource> transientImages_;
+        VulkanDeviceCapabilities deviceCapabilities_;
     };
 
 } // namespace asharia

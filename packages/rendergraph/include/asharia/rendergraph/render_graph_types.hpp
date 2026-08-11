@@ -51,6 +51,8 @@ namespace asharia {
         TransferRead,
         TransferWrite,
         HostRead,
+        VertexRead,
+        IndexRead,
         ShaderRead,
         StorageReadWrite,
     };
@@ -147,6 +149,8 @@ namespace asharia {
         TransferRead,
         TransferWrite,
         BufferShaderRead,
+        BufferVertexRead,
+        BufferIndexRead,
         BufferTransferRead,
         BufferTransferWrite,
         BufferStorageReadWrite,
@@ -166,6 +170,7 @@ namespace asharia {
         SetInt,
         SetVec4,
         DrawFullscreenTriangle,
+        DrawIndexed,
         ClearColor,
         FillBuffer,
         CopyImage,
@@ -191,6 +196,7 @@ namespace asharia {
         std::array<float, 4> floatValues{};
         int intValue{};
         std::array<std::uint32_t, 3> uintValues{};
+        std::uint32_t uintValue{};
     };
 
 } // namespace asharia

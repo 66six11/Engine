@@ -52,6 +52,8 @@
 #include "asharia/serialization/text_archive.hpp"
 #include "asharia/window_glfw/glfw_window.hpp"
 
+#include "scene_mesh_smoke.hpp"
+
 namespace {
 
     constexpr asharia::VulkanDebugLabelMode kSmokeDebugLabels =
@@ -87,6 +89,7 @@ namespace {
                      "[--smoke-fullscreen-texture] "
                      "[--smoke-scene-draw-packet] "
                      "[--smoke-render-view-grid-readback] "
+                     "[--smoke-render-view-scene-mesh] "
                      "[--smoke-offscreen-viewport] [--smoke-compute-dispatch] "
                      "[--smoke-buffer-upload] [--smoke-texture-upload] "
                      "[--smoke-renderer-format-contract] [--smoke-deferred-deletion] "
@@ -4062,10 +4065,6 @@ namespace {
         return EXIT_SUCCESS;
     }
 
-    constexpr asharia::BasicDrawResourceKey kSmokeSceneMeshA{.value = 0xA501U};
-    constexpr asharia::BasicDrawResourceKey kSmokeSceneMeshB{.value = 0xA502U};
-    constexpr asharia::BasicDrawResourceKey kSmokeSceneMaterial{.value = 0xB501U};
-
     [[nodiscard]] constexpr asharia::BasicTransformMatrix3D
     smokeSceneModelMatrix(const asharia::TransformComponent& transform) {
         return asharia::BasicTransformMatrix3D{
@@ -4131,23 +4130,23 @@ namespace {
 
         return std::array{
             asharia::BasicDrawListItem{
-                .drawItem = asharia::basicIndexedCubeDrawItem(),
+                .drawItem = asharia::basicValidationMeshDrawItem(),
                 .modelMatrix = smokeSceneModelMatrix(*leftStored),
                 .context =
                     asharia::BasicDrawPacketContext{
                         .sourceObject = smokeSceneSourceId(*left),
-                        .meshResource = kSmokeSceneMeshA,
-                        .materialResource = kSmokeSceneMaterial,
+                        .meshResource = asharia::kBasicValidationMeshResourceKey,
+                        .materialResource = asharia::kBasicDefaultUnlitMaterialResourceKey,
                     },
             },
             asharia::BasicDrawListItem{
-                .drawItem = asharia::basicIndexedCubeDrawItem(),
+                .drawItem = asharia::basicValidationMeshDrawItem(),
                 .modelMatrix = smokeSceneModelMatrix(*rightStored),
                 .context =
                     asharia::BasicDrawPacketContext{
                         .sourceObject = smokeSceneSourceId(*right),
-                        .meshResource = kSmokeSceneMeshB,
-                        .materialResource = kSmokeSceneMaterial,
+                        .meshResource = asharia::kBasicValidationMeshResourceKey,
+                        .materialResource = asharia::kBasicDefaultUnlitMaterialResourceKey,
                     },
             },
         };
@@ -4159,37 +4158,47 @@ namespace {
             asharia::logError("Fullscreen texture smoke did not record overlay diagnostics.");
             return false;
         }
-        if (diagnostics.scene.drawItemCount != 2U) {
+        if (diagnostics.scene.drawItemCount != 2U ||
+            diagnostics.scene.indexedDrawCount != 2U ||
+            diagnostics.scene.rasterMode != asharia::BasicSceneRasterMode::Solid ||
+            diagnostics.scene.wireframePath != asharia::BasicSceneWireframePath::NotRequested ||
+            diagnostics.scene.meshResource != asharia::kBasicValidationMeshResourceKey ||
+            diagnostics.scene.materialResource !=
+                asharia::kBasicDefaultUnlitMaterialResourceKey) {
             asharia::logError("Fullscreen texture smoke did not record scene input diagnostics.");
             return false;
         }
         if (diagnostics.scene.drawPacketContexts.size() != 2U ||
             diagnostics.scene.drawPacketContexts[0].sourceObject.index != 1U ||
             diagnostics.scene.drawPacketContexts[0].sourceObject.generation != 1U ||
-            diagnostics.scene.drawPacketContexts[0].meshResource != kSmokeSceneMeshA ||
-            diagnostics.scene.drawPacketContexts[0].materialResource != kSmokeSceneMaterial ||
+            diagnostics.scene.drawPacketContexts[0].meshResource !=
+                asharia::kBasicValidationMeshResourceKey ||
+            diagnostics.scene.drawPacketContexts[0].materialResource !=
+                asharia::kBasicDefaultUnlitMaterialResourceKey ||
             diagnostics.scene.drawPacketContexts[1].sourceObject.index != 2U ||
             diagnostics.scene.drawPacketContexts[1].sourceObject.generation != 1U ||
-            diagnostics.scene.drawPacketContexts[1].meshResource != kSmokeSceneMeshB ||
-            diagnostics.scene.drawPacketContexts[1].materialResource != kSmokeSceneMaterial) {
+            diagnostics.scene.drawPacketContexts[1].meshResource !=
+                asharia::kBasicValidationMeshResourceKey ||
+            diagnostics.scene.drawPacketContexts[1].materialResource !=
+                asharia::kBasicDefaultUnlitMaterialResourceKey) {
             asharia::logError(
                 "Fullscreen texture smoke did not preserve scene draw packet diagnostics.");
             return false;
         }
-        const auto sceneInputPass = std::ranges::find_if(
+        const auto sceneMeshPass = std::ranges::find_if(
             diagnostics.renderGraph.passes,
             [](const asharia::RenderGraphDiagnosticsPassNode& pass) {
-                return pass.type == asharia::kBasicRenderViewSceneInputsPassType;
+                return pass.type == asharia::kBasicRenderViewSceneMeshPassType;
             });
-        if (sceneInputPass == diagnostics.renderGraph.passes.end() ||
-            !sceneInputPass->hasSideEffects || sceneInputPass->commandCount != 1U) {
-            asharia::logError("Fullscreen texture smoke did not record a scene input marker pass.");
+        if (sceneMeshPass == diagnostics.renderGraph.passes.end() ||
+            sceneMeshPass->commandCount != 5U) {
+            asharia::logError("Fullscreen texture smoke did not record the Scene mesh pass.");
             return false;
         }
         const auto sceneInputCommand = std::ranges::find_if(
             diagnostics.renderGraph.commands,
-            [sceneInputPass](const asharia::RenderGraphDiagnosticsCommandNode& command) {
-                return command.passName == sceneInputPass->name &&
+            [sceneMeshPass](const asharia::RenderGraphDiagnosticsCommandNode& command) {
+                return command.passName == sceneMeshPass->name &&
                        command.kind == asharia::RenderGraphCommandKind::SetInt &&
                        command.detail == "SceneDrawItemCount = 2";
             });
@@ -4201,7 +4210,7 @@ namespace {
         const auto sceneInputEvent = std::ranges::find_if(
             diagnostics.executionEvents, [](const asharia::BasicRenderViewExecutionEvent& event) {
                 return event.kind == asharia::BasicRenderViewExecutionEventKind::RenderViewInput &&
-                       event.label == "BindRenderViewSceneInputs";
+                       event.label == "BindRenderViewSceneMesh";
             });
         if (sceneInputEvent == diagnostics.executionEvents.end()) {
             asharia::logError("Fullscreen texture smoke did not record a scene input event.");
@@ -4229,8 +4238,7 @@ namespace {
     }
 
     constexpr std::string_view kInvalidSceneInputSmokeExpectedError =
-        "RenderView scene input item must declare vertices or indices and a non-zero instance "
-        "count";
+        "RenderView scene input item must declare an indexed draw and a non-zero instance count";
 
     struct SmokeFullscreenTextureState {
         asharia::BasicRenderViewDiagnostics overlayDiagnostics;
@@ -4310,8 +4318,8 @@ namespace {
                 .context =
                     asharia::BasicDrawPacketContext{
                         .sourceObject = asharia::BasicDrawSourceId{.index = 1U, .generation = 1U},
-                        .meshResource = kSmokeSceneMeshA,
-                        .materialResource = kSmokeSceneMaterial,
+                        .meshResource = asharia::kBasicValidationMeshResourceKey,
+                        .materialResource = asharia::kBasicDefaultUnlitMaterialResourceKey,
                     },
             },
         };
@@ -4353,8 +4361,14 @@ namespace {
             std::string::npos;
         state.invalidSceneInputContextReported =
             rejected.error().message.find("source object 1:1") != std::string::npos &&
-            rejected.error().message.find("mesh resource 42241") != std::string::npos &&
-            rejected.error().message.find("material resource 46337") != std::string::npos;
+            rejected.error().message.find(
+                "mesh resource " +
+                std::to_string(asharia::kBasicValidationMeshResourceKey.value)) !=
+                std::string::npos &&
+            rejected.error().message.find(
+                "material resource " +
+                std::to_string(asharia::kBasicDefaultUnlitMaterialResourceKey.value)) !=
+                std::string::npos;
         if (!state.invalidSceneInputRejected) {
             return std::unexpected{std::move(rejected.error())};
         }
@@ -4916,6 +4930,7 @@ namespace {
                 .device = context->device(),
                 .allocator = context->allocator(),
                 .shaderDirectory = shaderDir,
+                .deviceCapabilities = {},
             });
         if (!renderer) {
             asharia::logError(renderer.error().message);
@@ -5039,6 +5054,7 @@ namespace {
                 .device = context->device(),
                 .allocator = context->allocator(),
                 .shaderDirectory = shaderDir,
+                .deviceCapabilities = {},
             });
         if (!renderer) {
             asharia::logError(renderer.error().message);
@@ -5094,7 +5110,7 @@ namespace {
                                               "Fullscreen texture smoke", 32)) {
             return EXIT_FAILURE;
         }
-        if (!validateBufferUploadStats(renderer->bufferStats(), 2, "Fullscreen texture smoke")) {
+        if (!validateBufferUploadStats(renderer->bufferStats(), 4, "Fullscreen texture smoke")) {
             return EXIT_FAILURE;
         }
         if (!validateDebugLabelStats(frameLoop->debugLabelStats(), "Fullscreen texture smoke")) {
@@ -5185,6 +5201,7 @@ namespace {
                 .device = context->device(),
                 .allocator = context->allocator(),
                 .shaderDirectory = shaderDir,
+                .deviceCapabilities = {},
             });
         if (!renderer) {
             asharia::logError(renderer.error().message);
@@ -5886,7 +5903,7 @@ namespace {
         RasterMrt,
         RasterFullscreen,
         RenderViewWorldGrid,
-        RenderViewSceneInputs,
+        RenderViewSceneMesh,
         RenderViewOverlay,
         RasterDrawList,
         ComputeDispatch,
@@ -5912,6 +5929,8 @@ namespace {
         asharia::RenderGraphImageHandle unexpectedTarget{};
         asharia::RenderGraphBufferHandle storageTarget{};
         asharia::RenderGraphBufferHandle readbackTarget{};
+        asharia::RenderGraphBufferHandle vertexTarget{};
+        asharia::RenderGraphBufferHandle indexTarget{};
     };
 
     struct BuiltinSchemaSmokeCompileOptions {
@@ -5995,6 +6014,18 @@ namespace {
                 .initialState = asharia::RenderGraphBufferState::Undefined,
                 .finalState = asharia::RenderGraphBufferState::HostRead,
             }),
+            .vertexTarget = graph.importBuffer(asharia::RenderGraphBufferDesc{
+                .name = "BuiltinSchemaVertexBuffer",
+                .byteSize = 256,
+                .initialState = asharia::RenderGraphBufferState::VertexRead,
+                .finalState = asharia::RenderGraphBufferState::VertexRead,
+            }),
+            .indexTarget = graph.importBuffer(asharia::RenderGraphBufferDesc{
+                .name = "BuiltinSchemaIndexBuffer",
+                .byteSize = 256,
+                .initialState = asharia::RenderGraphBufferState::IndexRead,
+                .finalState = asharia::RenderGraphBufferState::IndexRead,
+            }),
         };
     }
 
@@ -6070,7 +6101,15 @@ namespace {
         case BuiltinSchemaSmokePass::RenderViewOverlay:
             writeColorSlotUnlessOmitted(pass, omittedSlot, "target", images.colorTarget);
             break;
-        case BuiltinSchemaSmokePass::RenderViewSceneInputs:
+        case BuiltinSchemaSmokePass::RenderViewSceneMesh:
+            writeColorSlotUnlessOmitted(pass, omittedSlot, "target", images.colorTarget);
+            writeDepthSlotUnlessOmitted(pass, omittedSlot, "depth", images.depthTarget);
+            if (omittedSlot != "vertices") {
+                pass.readVertexBuffer("vertices", images.vertexTarget);
+            }
+            if (omittedSlot != "indices") {
+                pass.readIndexBuffer("indices", images.indexTarget);
+            }
             break;
         case BuiltinSchemaSmokePass::TransientPresent:
             readTextureSlotUnlessOmitted(pass, omittedSlot, "source", images.colorSource);
@@ -6241,11 +6280,11 @@ namespace {
                 .context = "builtin render view world grid",
             },
             BuiltinSchemaSmokeCase{
-                .pass = BuiltinSchemaSmokePass::RenderViewSceneInputs,
-                .type = asharia::kBasicRenderViewSceneInputsPassType,
-                .paramsType = asharia::kBasicRenderViewSceneInputsParamsType,
-                .missingSlot = {},
-                .context = "builtin render view scene inputs",
+                .pass = BuiltinSchemaSmokePass::RenderViewSceneMesh,
+                .type = asharia::kBasicRenderViewSceneMeshPassType,
+                .paramsType = asharia::kBasicRenderViewSceneMeshParamsType,
+                .missingSlot = "indices",
+                .context = "builtin render view scene mesh",
             },
             BuiltinSchemaSmokeCase{
                 .pass = BuiltinSchemaSmokePass::RenderViewOverlay,
@@ -7766,6 +7805,8 @@ namespace {
             SmokeCommand{.option = "--smoke-scene-draw-packet", .run = runSmokeSceneDrawPacket},
             SmokeCommand{.option = "--smoke-render-view-grid-readback",
                          .run = runSmokeRenderViewGridReadback},
+            SmokeCommand{.option = "--smoke-render-view-scene-mesh",
+                         .run = asharia::sample_viewer::runSmokeRenderViewSceneMesh},
             SmokeCommand{.option = "--smoke-offscreen-viewport", .run = runSmokeOffscreenViewport},
             SmokeCommand{.option = "--smoke-compute-dispatch", .run = runSmokeComputeDispatch},
             SmokeCommand{.option = "--smoke-buffer-upload", .run = runSmokeBufferUpload},

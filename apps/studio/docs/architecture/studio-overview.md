@@ -16,7 +16,7 @@ create/open project 后自动创建或打开默认场景，Hierarchy/Inspector �
 来自 native revision/savepoint，关闭项目后重开恢复一致数据。第三条 Slice #359/#361 建立 UI-neutral
 `ViewportSession`、typed frame lease 和首个专用 Avalonia Scene View composition control。Release image 现在真实包含并验证
 `Asharia.Runtime.Contracts`、`Asharia.Studio.EngineBridge`、`Asharia.Studio.Presentation.Avalonia`、
-`asharia_project_native.dll`、`asharia_scene_native.dll`、`editor_native.dll` 与精确 12 个 renderer-basic shader 文件；
+`asharia_project_native.dll`、`asharia_scene_native.dll`、`editor_native.dll` 与精确 16 个 renderer-basic shader 文件；
 仍拒绝 development host/protocol、旧 `Asharia.Editor` 与 `slang.dll`。
 
 ## 1. 目的

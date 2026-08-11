@@ -50,6 +50,24 @@ namespace asharia {
                                                        BasicDrawResourceKey) = default;
     };
 
+    inline constexpr BasicDrawResourceKey kBasicValidationMeshResourceKey{
+        .value = 0x0EB29D6DE539D278ULL,
+    };
+    inline constexpr BasicDrawResourceKey kBasicDefaultUnlitMaterialResourceKey{
+        .value = 0x4153484D41544C01ULL,
+    };
+
+    enum class BasicSceneRasterMode : std::uint32_t {
+        Solid,
+        Wireframe,
+    };
+
+    enum class BasicSceneWireframePath : std::uint32_t {
+        NotRequested,
+        PolygonLine,
+        Unavailable,
+    };
+
     struct BasicDrawPacketContext {
         BasicDrawSourceId sourceObject{};
         BasicDrawResourceKey meshResource{};
@@ -103,22 +121,29 @@ namespace asharia {
         };
     }
 
-    [[nodiscard]] constexpr BasicTransformMatrix3D basicIdentityTransform3D() {
-        return BasicTransformMatrix3D{
-            1.0F, 0.0F, 0.0F, 0.0F,
-            0.0F, 1.0F, 0.0F, 0.0F,
-            0.0F, 0.0F, 1.0F, 0.0F,
-            0.0F, 0.0F, 0.0F, 1.0F,
+    [[nodiscard]] constexpr BasicDrawItem basicValidationMeshDrawItem() {
+        return BasicDrawItem{
+            .vertexCount = 0,
+            .indexCount = 72,
+            .instanceCount = 1,
+            .firstVertex = 0,
+            .firstIndex = 0,
+            .vertexOffset = 0,
+            .firstInstance = 0,
         };
     }
 
-    [[nodiscard]] constexpr BasicTransformMatrix3D
-    basicTranslationTransform3D(float x, float y, float z) {
+    [[nodiscard]] constexpr BasicTransformMatrix3D basicIdentityTransform3D() {
         return BasicTransformMatrix3D{
-            1.0F, 0.0F, 0.0F, x,
-            0.0F, 1.0F, 0.0F, y,
-            0.0F, 0.0F, 1.0F, z,
-            0.0F, 0.0F, 0.0F, 1.0F,
+            1.0F, 0.0F, 0.0F, 0.0F, 0.0F, 1.0F, 0.0F, 0.0F,
+            0.0F, 0.0F, 1.0F, 0.0F, 0.0F, 0.0F, 0.0F, 1.0F,
+        };
+    }
+
+    [[nodiscard]] constexpr BasicTransformMatrix3D basicTranslationTransform3D(float x, float y,
+                                                                               float z) {
+        return BasicTransformMatrix3D{
+            1.0F, 0.0F, 0.0F, x, 0.0F, 1.0F, 0.0F, y, 0.0F, 0.0F, 1.0F, z, 0.0F, 0.0F, 0.0F, 1.0F,
         };
     }
 

@@ -27,6 +27,8 @@ namespace asharia {
         std::vector<RenderGraphImageHandle> transferReads;
         std::vector<RenderGraphImageHandle> transferWrites;
         std::vector<RenderGraphBufferHandle> bufferReads;
+        std::vector<RenderGraphBufferHandle> bufferVertexReads;
+        std::vector<RenderGraphBufferHandle> bufferIndexReads;
         std::vector<RenderGraphBufferHandle> bufferTransferReads;
         std::vector<RenderGraphBufferHandle> bufferWrites;
         std::vector<RenderGraphBufferHandle> bufferStorageReadWrites;
@@ -38,6 +40,8 @@ namespace asharia {
         std::vector<RenderGraphImageSlot> transferReadSlots;
         std::vector<RenderGraphImageSlot> transferWriteSlots;
         std::vector<RenderGraphBufferSlot> bufferReadSlots;
+        std::vector<RenderGraphBufferSlot> bufferVertexReadSlots;
+        std::vector<RenderGraphBufferSlot> bufferIndexReadSlots;
         std::vector<RenderGraphBufferSlot> bufferTransferReadSlots;
         std::vector<RenderGraphBufferSlot> bufferWriteSlots;
         std::vector<RenderGraphBufferSlot> bufferStorageReadWriteSlots;

@@ -196,6 +196,12 @@ namespace asharia::rendergraph_internal {
             appendBufferAccessEdges(declarations, snapshot, passIndex, pass,
                                     RenderGraphSlotAccess::BufferShaderRead, pass.bufferReadSlots);
             appendBufferAccessEdges(declarations, snapshot, passIndex, pass,
+                                    RenderGraphSlotAccess::BufferVertexRead,
+                                    pass.bufferVertexReadSlots);
+            appendBufferAccessEdges(declarations, snapshot, passIndex, pass,
+                                    RenderGraphSlotAccess::BufferIndexRead,
+                                    pass.bufferIndexReadSlots);
+            appendBufferAccessEdges(declarations, snapshot, passIndex, pass,
                                     RenderGraphSlotAccess::BufferTransferRead,
                                     pass.bufferTransferReadSlots);
             appendBufferAccessEdges(declarations, snapshot, passIndex, pass,

@@ -30,6 +30,13 @@ Asharia Engine 的原则：
 - Unity SceneView / Camera、Unreal FSceneView、Godot Viewport / Camera3D 说明：编辑器视窗相机可以由
   editor viewport 拥有导航状态，但进入渲染后必须转换成统一的 view/camera 输入；Scene/Game/Preview 的差异
   主要是 view kind、render target、culling/layer mask、show/debug flags、overlay intent 和 refresh policy。
+- Unreal `USceneComponent` / `UStaticMeshComponent` / scene proxy、Godot `Node3D` / `MeshInstance3D` 与 O3DE
+  Render Component / Feature Processor / Draw Packet 说明：transform/hierarchy object 不等于可渲染 mesh；
+  simulation/scene 只提取稳定 identity、transform 和 resource reference，renderer owner 再持有 draw packet、
+  GPU resource 与 backend execution state。空 Entity 不隐式生成 mesh。
+- Godot Viewport wireframe debug draw 说明：Solid/Wireframe 属于 per-view presentation policy，不应修改 scene
+  object、material 或 source asset。Vulkan `fillModeNonSolid` 是可选 logical-device capability；不可用时返回
+  typed unavailable 结果，不以 debug lines 或 Solid fallback 假装成功。
 - Unity / Godot shader built-ins 与 Vulkan descriptor / push constants 说明：model、view、projection、
   view-projection、camera position 等矩阵和视图数据是 shader input 合同。需要这些数据的 pass 必须显式消费
   per-view / per-draw 参数、buffer 或常量绑定，diagnostics 只能回显，不能作为渲染输入来源。
@@ -138,10 +145,14 @@ Scene View、Game View、Preview View 和未来 ReflectionProbe 都应走同一�
 `BasicDebugWorldLine` 时插入 `builtin.render-view-overlay` pass，把 camera position / near plane、frame params、
 debug world-line count 作为 typed params 与 command summary 记录，并在 `renderer_basic_vulkan` 内投影 world line，
 通过 debug-line shader/pipeline 绘制 line-list。没有 debug line 时 overlay intent 只保留在 diagnostics，避免空
-pass。`BasicRenderViewDesc::scene` 已作为 scene/asset/SRP 的最小输入入口：非空 draw item span 会生成
-`builtin.render-view-scene-inputs` marker pass、typed draw item count 和 `BindRenderViewSceneInputs` execution event，
-并拒绝没有 vertex/index 或 instanceCount 为零的无效 draw item；但暂不绘制 mesh 或拥有 asset/GPU upload 生命周期。
-现有 mesh/draw-list smoke 仍在 renderer 内部用 extent 和 model matrix 计算 MVP。后续相机相关 grid、scene mesh、
+pass。`BasicRenderViewDesc::scene` 已作为 scene/asset/SRP 的最小输入入口：非空 draw item span 会生成真实
+`builtin.render-view-scene-mesh` pass，显式声明 Color/Depth attachment、VertexRead/IndexRead buffer，记录
+`DrawIndexed` command 与带 `BasicDrawPacketContext` 的 execution event，并拒绝无 index、无 resource identity、
+越界 draw range 或 instanceCount 为零的 item。空 span 不产生 scene-mesh pass，空 Entity/Transform 不隐式获得
+mesh。`BasicSceneRasterMode` 是 per-view Solid/Wireframe policy；Wireframe 只在 typed
+`VulkanDeviceCapabilities::fillModeNonSolid` 可用时创建 polygon-line pipeline，否则返回
+`VK_ERROR_FEATURE_NOT_PRESENT` 并记录 `BasicSceneWireframePath::Unavailable`，不静默回退。当前 GPU mesh data
+来自 deterministic validation product，尚不是通用 asset/runtime mesh resource owner。后续 asset-backed mesh、
 selection、gizmo 或 debug line pass 必须继续沿 renderer-owned per-view constants / pass input 合同推进，不能回退到
 diagnostics-only 数据源。
 
@@ -168,6 +179,8 @@ Asset 和热更新必须经过确定性的编译产物和 runtime-safe handle。
 
 - source asset、metadata、import settings、product/cache key、dependency 和 runtime handle 分离。
 - generated product/cache 可删除重建，默认不作为 source truth。
+- repository validation OBJ 和其 deterministic generated C++ product 只属于 fixture/tool 门禁，不等于通用 OBJ
+  importer、稳定 runtime mesh product schema 或 asset-pipeline owner。
 - 脚本热更新可以改 manifest、settings、layout 描述和 provider 参数。
 - 脚本热更新不能直接创建、销毁或持有 GPU resource。
 - shader/material/mesh/texture reload 必须通过 resource key、generation、deferred destruction 和 diagnostics
@@ -247,8 +260,8 @@ Package 边界正确不代表架构已经健康。跨系统功能还必须检查
 | planned `asset-pipeline` / `asset-processor` | source scan、metadata IO facade、import job、product manifest、cache invalidation | editor panel rendering、runtime resource ownership、GPU upload |
 | `rendergraph` | pass/resource/buffer/access/dependency/diagnostics | editor view、Vulkan command recording、drawcall identity |
 | `rhi_vulkan` | instance/device/swapchain/allocator/command/sync | RenderGraph policy、editor diagnostics UI |
-| `renderer_basic` | backend-neutral renderer contract、RenderView、debug packets、shared schemas | Vulkan handles、descriptor writes、ImGui texture ids |
-| `renderer_basic_vulkan` | Vulkan command recording、pipeline、descriptor、GPU resource binding | editor panel state、script object ownership |
+| `renderer_basic` | backend-neutral draw item、draw packet context、scene raster policy、shared schemas | Vulkan handles、descriptor writes、ImGui texture ids |
+| `renderer_basic_vulkan` | Vulkan RenderView、command recording、pipeline、descriptor、GPU resource binding | editor panel state、script object ownership、source/importer state |
 | `shader-slang` | Slang compile、SPIR-V validation、shader metadata/reflection product | runtime material ownership、Vulkan pipeline policy |
 | planned `scripting` | script host/context/binding/diagnostics/permission model | editor UI implementation、Vulkan/RHI escape hatch、GPU ownership |
 | planned `packages/systems/editor` internal `editor_domain` | editor id、selection、transaction、service facade、action metadata | ImGui/Avalonia backend、Vulkan backend、renderer implementation |
@@ -365,6 +378,7 @@ flowchart LR
 - 不让 renderer backend 知道 editor panel、ImGui id 或 script object。
 - 不用长生命周期全局单例绕过 package 边界。
 - 不把临时 smoke glue 提升成公共 API，除非已有两个以上真实消费者。
+- 不让空 Entity、Transform、debug bounds 或 debug lines 隐式代表 mesh component/product。
 - 不把 C++ 成员名、widget label、script field name 或 JSON key 当作长期 stable schema identity。
 - 不用 source path、runtime pointer 或 loaded resource 状态替代 asset GUID / handle。
 - 不为了“未来会多线程”提前引入常驻线程；必须先有 owner、packet、failure path、counter 和 fallback。

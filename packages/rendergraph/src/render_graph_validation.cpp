@@ -54,6 +54,19 @@ namespace asharia::rendergraph_internal {
                 }};
             }
 
+            if ((state == RenderGraphBufferState::VertexRead ||
+                 state == RenderGraphBufferState::IndexRead) &&
+                shaderStage != RenderGraphShaderStage::None) {
+                const std::string stateName =
+                    state == RenderGraphBufferState::VertexRead ? "VertexRead" : "IndexRead";
+                return std::unexpected{Error{
+                    ErrorDomain::RenderGraph,
+                    0,
+                    "Render graph buffer '" + std::string{bufferName} + "' " + stateName +
+                        " state must not declare a shader stage.",
+                }};
+            }
+
             return {};
         }
 

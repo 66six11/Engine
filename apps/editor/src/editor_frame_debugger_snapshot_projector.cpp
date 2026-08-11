@@ -44,6 +44,16 @@ namespace asharia::editor {
             return integerValue(static_cast<std::int64_t>(value));
         }
 
+        [[nodiscard]] std::string formatResourceKey(std::uint64_t value) {
+            constexpr std::string_view kHexDigits = "0123456789abcdef";
+            std::string text(16, '0');
+            for (std::size_t index = 0; index < text.size(); ++index) {
+                const auto shift = static_cast<std::uint32_t>((text.size() - index - 1U) * 4U);
+                text[index] = kHexDigits[(value >> shift) & 0xFU];
+            }
+            return text;
+        }
+
         [[nodiscard]] archive::ArchiveValue boolValue(bool value) {
             return archive::ArchiveValue::boolean(value);
         }
@@ -63,6 +73,33 @@ namespace asharia::editor {
             return uint32Value(*value);
         }
 
+        [[nodiscard]] archive::ArchiveValue sourceObjectValue(
+            const std::optional<BasicDrawPacketContext>& drawPacketContext) {
+            if (!drawPacketContext) {
+                return archive::ArchiveValue::null();
+            }
+            return archive::ArchiveValue::object({
+                member("index", uint32Value(drawPacketContext->sourceObject.index)),
+                member("generation", uint32Value(drawPacketContext->sourceObject.generation)),
+            });
+        }
+
+        [[nodiscard]] archive::ArchiveValue meshResourceKeyValue(
+            const std::optional<BasicDrawPacketContext>& drawPacketContext) {
+            if (!drawPacketContext) {
+                return archive::ArchiveValue::null();
+            }
+            return stringValue(formatResourceKey(drawPacketContext->meshResource.value));
+        }
+
+        [[nodiscard]] archive::ArchiveValue materialResourceKeyValue(
+            const std::optional<BasicDrawPacketContext>& drawPacketContext) {
+            if (!drawPacketContext) {
+                return archive::ArchiveValue::null();
+            }
+            return stringValue(formatResourceKey(drawPacketContext->materialResource.value));
+        }
+
         [[nodiscard]] std::string passId(std::size_t passIndex) {
             return "pass:" + std::to_string(passIndex);
         }
@@ -76,6 +113,14 @@ namespace asharia::editor {
             const std::string_view prefix =
                 kind == RenderGraphResourceKind::Buffer ? "buffer:" : "image:";
             return std::string{prefix} + std::to_string(resourceIndex);
+        }
+
+        [[nodiscard]] archive::ArchiveValue optionalResourceIdValue(
+            RenderGraphResourceKind kind, std::optional<std::uint32_t> resourceIndex) {
+            if (!resourceIndex) {
+                return archive::ArchiveValue::null();
+            }
+            return stringValue(resourceId(kind, *resourceIndex));
         }
 
         [[nodiscard]] std::string eventId(BasicRenderViewExecutionEventId executionEventId) {
@@ -150,6 +195,10 @@ namespace asharia::editor {
                 return "TransferWrite";
             case RenderGraphBufferState::HostRead:
                 return "HostRead";
+            case RenderGraphBufferState::VertexRead:
+                return "VertexRead";
+            case RenderGraphBufferState::IndexRead:
+                return "IndexRead";
             case RenderGraphBufferState::ShaderRead:
                 return "ShaderRead";
             case RenderGraphBufferState::StorageReadWrite:
@@ -214,6 +263,10 @@ namespace asharia::editor {
                 return "TransferWrite";
             case RenderGraphSlotAccess::BufferShaderRead:
                 return "BufferShaderRead";
+            case RenderGraphSlotAccess::BufferVertexRead:
+                return "BufferVertexRead";
+            case RenderGraphSlotAccess::BufferIndexRead:
+                return "BufferIndexRead";
             case RenderGraphSlotAccess::BufferTransferRead:
                 return "BufferTransferRead";
             case RenderGraphSlotAccess::BufferTransferWrite:
@@ -238,6 +291,8 @@ namespace asharia::editor {
                 return "SetVec4";
             case RenderGraphCommandKind::DrawFullscreenTriangle:
                 return "DrawFullscreenTriangle";
+            case RenderGraphCommandKind::DrawIndexed:
+                return "DrawIndexed";
             case RenderGraphCommandKind::ClearColor:
                 return "ClearColor";
             case RenderGraphCommandKind::FillBuffer:
@@ -423,24 +478,39 @@ namespace asharia::editor {
                 member("kind", stringValue(executionEventKindName(event.kind))),
                 member("passId", stringValue(passId(event.passIndex))),
                 member("passName", stringValue(event.passName)),
+                member("declarationIndex", countValue(event.declarationIndex)),
+                member("commandIndex", optionalSizeValue(event.commandIndex)),
                 member("commandId",
                        event.commandIndex
                            ? stringValue(commandId(event.passIndex, *event.commandIndex))
                            : archive::ArchiveValue::null()),
                 member("label", stringValue(event.label)),
+                member("sceneDrawItemIndex", optionalSizeValue(event.sceneDrawItemIndex)),
+                member("sourceObject", sourceObjectValue(event.drawPacketContext)),
+                member("meshResourceKey", meshResourceKeyValue(event.drawPacketContext)),
+                member("materialResourceKey", materialResourceKeyValue(event.drawPacketContext)),
                 member("sourceResourceId",
-                       event.sourceImageResourceIndex
-                           ? stringValue(resourceId(RenderGraphResourceKind::Image,
-                                                    *event.sourceImageResourceIndex))
-                           : archive::ArchiveValue::null()),
+                       optionalResourceIdValue(RenderGraphResourceKind::Image,
+                                               event.sourceImageResourceIndex)),
                 member("targetResourceId",
-                       event.targetImageResourceIndex
-                           ? stringValue(resourceId(RenderGraphResourceKind::Image,
-                                                    *event.targetImageResourceIndex))
-                           : archive::ArchiveValue::null()),
+                       optionalResourceIdValue(RenderGraphResourceKind::Image,
+                                               event.targetImageResourceIndex)),
+                member("depthResourceId",
+                       optionalResourceIdValue(RenderGraphResourceKind::Image,
+                                               event.depthImageResourceIndex)),
+                member("vertexResourceId",
+                       optionalResourceIdValue(RenderGraphResourceKind::Buffer,
+                                               event.vertexBufferResourceIndex)),
+                member("indexResourceId",
+                       optionalResourceIdValue(RenderGraphResourceKind::Buffer,
+                                               event.indexBufferResourceIndex)),
                 member("vertexCount", uint32Value(event.draw.vertexCount)),
                 member("indexCount", uint32Value(event.draw.indexCount)),
                 member("instanceCount", uint32Value(event.draw.instanceCount)),
+                member("firstVertex", uint32Value(event.draw.firstVertex)),
+                member("firstIndex", uint32Value(event.draw.firstIndex)),
+                member("vertexOffset", integerValue(event.draw.vertexOffset)),
+                member("firstInstance", uint32Value(event.draw.firstInstance)),
                 member("groupCountX", uint32Value(event.dispatch.groupCountX)),
                 member("groupCountY", uint32Value(event.dispatch.groupCountY)),
                 member("groupCountZ", uint32Value(event.dispatch.groupCountZ)),

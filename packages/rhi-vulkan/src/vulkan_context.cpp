@@ -492,6 +492,7 @@ namespace asharia {
 
         Result<VkDevice> createDevice(VkPhysicalDevice physicalDevice,
                                       std::uint32_t graphicsQueueFamily,
+                                      VkPhysicalDeviceFeatures features,
                                       VkPhysicalDeviceVulkan11Features features11,
                                       VkPhysicalDeviceVulkan13Features features13,
                                       VkPhysicalDeviceVulkan14Features features14,
@@ -508,6 +509,7 @@ namespace asharia {
             VkPhysicalDeviceFeatures2 features2{};
             features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
             features2.pNext = &features11;
+            features2.features = features;
             features11.pNext = &features13;
             features13.pNext = &features14;
 
@@ -628,6 +630,7 @@ namespace asharia {
         graphicsQueueFamily_ = std::exchange(other.graphicsQueueFamily_, 0);
         allocator_ = std::exchange(other.allocator_, nullptr);
         deviceInfo_ = std::move(other.deviceInfo_);
+        capabilities_ = std::exchange(other.capabilities_, {});
         debugLabelFunctions_ = std::exchange(other.debugLabelFunctions_, {});
         return *this;
     }
@@ -666,6 +669,7 @@ namespace asharia {
         graphicsQueue_ = VK_NULL_HANDLE;
         graphicsQueueFamily_ = 0;
         allocator_ = nullptr;
+        capabilities_ = {};
         debugLabelFunctions_ = {};
     }
 
@@ -768,6 +772,12 @@ namespace asharia {
                 vulkanError("Selected device does not support shaderDrawParameters")};
         }
 
+        const bool fillModeNonSolidEnabled =
+            desc.enableFillModeNonSolid && queriedFeatures.features.fillModeNonSolid == VK_TRUE;
+
+        VkPhysicalDeviceFeatures enabledFeatures{};
+        enabledFeatures.fillModeNonSolid = fillModeNonSolidEnabled ? VK_TRUE : VK_FALSE;
+
         features11 = {};
         features11.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
         features11.shaderDrawParameters = VK_TRUE;
@@ -780,8 +790,8 @@ namespace asharia {
         features14 = {};
         features14.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_FEATURES;
 
-        auto device = createDevice(selected.device, selected.queues.graphicsFamily, features11,
-                                   features13, features14,
+        auto device = createDevice(selected.device, selected.queues.graphicsFamily,
+                                   enabledFeatures, features11, features13, features14,
                                    context.surface_ != VK_NULL_HANDLE, desc.externalInterop);
         if (!device) {
             return std::unexpected{std::move(device.error())};
@@ -810,6 +820,9 @@ namespace asharia {
             .graphicsQueueTimestampValidBits = selected.queues.timestampValidBits,
             .timestampPeriodNanoseconds = selected.properties.limits.timestampPeriod,
             .identity = selected.identity,
+        };
+        context.capabilities_ = VulkanDeviceCapabilities{
+            .fillModeNonSolid = fillModeNonSolidEnabled,
         };
 
         logInfo("Selected Vulkan device: " + context.deviceInfo_.name + " (" +
@@ -852,6 +865,10 @@ namespace asharia {
 
     const VulkanDeviceInfo& VulkanContext::deviceInfo() const {
         return deviceInfo_;
+    }
+
+    const VulkanDeviceCapabilities& VulkanContext::capabilities() const {
+        return capabilities_;
     }
 
     VulkanDebugLabelFunctions VulkanContext::debugLabelFunctions() const {

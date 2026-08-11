@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "asharia/core/result.hpp"
+#include "asharia/rhi_vulkan/vulkan_device_capabilities.hpp"
 
 namespace asharia {
 
@@ -216,6 +217,8 @@ namespace asharia {
         std::span<const VkVertexInputBindingDescription> vertexBindings;
         std::span<const VkVertexInputAttributeDescription> vertexAttributes;
         VkPrimitiveTopology topology{VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST};
+        VkPolygonMode polygonMode{VK_POLYGON_MODE_FILL};
+        VulkanDeviceCapabilities deviceCapabilities;
         VkBool32 colorBlendEnable{VK_FALSE};
         VkBlendFactor colorSrcBlendFactor{VK_BLEND_FACTOR_ONE};
         VkBlendFactor colorDstBlendFactor{VK_BLEND_FACTOR_ZERO};

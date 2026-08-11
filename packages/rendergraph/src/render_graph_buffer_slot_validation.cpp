@@ -119,6 +119,16 @@ namespace asharia {
                 return std::unexpected{std::move(bufferTransferReadSlots.error())};
             }
 
+            auto bufferVertexReadSlots = validateSlots(buffers, pass, pass.bufferVertexReadSlots);
+            if (!bufferVertexReadSlots) {
+                return std::unexpected{std::move(bufferVertexReadSlots.error())};
+            }
+
+            auto bufferIndexReadSlots = validateSlots(buffers, pass, pass.bufferIndexReadSlots);
+            if (!bufferIndexReadSlots) {
+                return std::unexpected{std::move(bufferIndexReadSlots.error())};
+            }
+
             auto bufferWriteSlots = validateSlots(buffers, pass, pass.bufferWriteSlots);
             if (!bufferWriteSlots) {
                 return std::unexpected{std::move(bufferWriteSlots.error())};

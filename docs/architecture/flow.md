@@ -209,7 +209,7 @@ flowchart TD
   执行。Shell 只选择路径、发命令和投影 snapshot；
   ViewModel、Dock 与 Application 不解析 descriptor/scene JSON，也不持有 native/GPU handle。Windows composition root 优先
   选择 Avalonia Vulkan compositor，由专用 presentation adapter 导入 opaque NT image/semaphore；AngleEgl/Software 只保留
-  Studio 非渲染功能并让 Scene View 明确降级。Release image 精确包含 project/scene/editor 三个 native DLL 与 12 个
+  Studio 非渲染功能并让 Scene View 明确降级。Release image 精确包含 project/scene/editor 三个 native DLL 与 16 个
   renderer-basic shader/reflection 文件，不携带 Slang、Vulkan SDK 或 validation layer。当前已有单 SceneDocument、Hierarchy、
   名称/local Transform Inspector、Create Entity、Save、dirty、现有 Dock 中的一个可见 Scene View 与 on-demand revision/resize
   更新；仍无 Asset Browser、undo/redo、Play Mode、第二 Viewport、通用 fair scheduler、camera/input 或 preview consumer。
@@ -1012,6 +1012,7 @@ flowchart TD
     MeshSmoke["--smoke-mesh"]
     Mesh3DSmoke["--smoke-mesh-3d"]
     DrawListSmoke["--smoke-draw-list"]
+    SceneMeshSmoke["--smoke-render-view-scene-mesh"]
     MrtSmoke["--smoke-mrt"]
     DescriptorSmoke["--smoke-descriptor-layout"]
     MaterialBindingSmoke["--smoke-material-binding"]
@@ -1024,8 +1025,8 @@ flowchart TD
     Ext["glfwRequiredVulkanInstanceExtensions"]
     Context["VulkanContext::create"]
     Device["选择 physical device<br/>创建 logical device / queue / VMA"]
-    ShaderBuild["shader-slang package<br/>slangc + spirv-val<br/>triangle / descriptor / mesh3d / compute SPIR-V + reflection JSON"]
-    RendererObject["BasicTriangleRenderer / BasicMesh3DRenderer / BasicDrawListRenderer / BasicComputeDispatchRenderer<br/>shader modules / pipeline layout / buffers / pipeline<br/>BasicDrawItem / BasicDrawListItem / MVP push constants / dispatch params"]
+    ShaderBuild["shader-slang package<br/>slangc + spirv-val<br/>triangle / descriptor / mesh3d / scene-mesh / compute SPIR-V + reflection JSON"]
+    RendererObject["BasicTriangleRenderer / BasicMesh3DRenderer / BasicDrawListRenderer / BasicFullscreenTextureRenderer / BasicComputeDispatchRenderer<br/>shader modules / pipeline layout / buffers / pipeline<br/>BasicDrawItem / BasicDrawListItem / scene draw packet / MVP push constants / dispatch params"]
     DescriptorLayout["Descriptor layout smoke<br/>reflection signature -> descriptor set layout -> pipeline layout<br/>descriptor allocator-backed pool/set<br/>buffer + image + sampler write"]
     MaterialBinding["Material binding smoke<br/>material signature -> descriptor set layout -> pipeline layout<br/>stale pipeline key and signature mismatch diagnostics"]
     TextureProduct["asset_pipeline execute<br/>PNG Texture2D product blob"]
@@ -1043,6 +1044,7 @@ flowchart TD
     Args --> MeshSmoke
     Args --> Mesh3DSmoke
     Args --> DrawListSmoke
+    Args --> SceneMeshSmoke
     Args --> MrtSmoke
     Args --> DescriptorSmoke
     Args --> MaterialBindingSmoke
@@ -1086,6 +1088,11 @@ flowchart TD
     DrawListSmoke --> Context
     DrawListSmoke --> ShaderBuild
     DrawListSmoke --> RendererObject
+    SceneMeshSmoke --> GLFW
+    SceneMeshSmoke --> Ext
+    SceneMeshSmoke --> Context
+    SceneMeshSmoke --> ShaderBuild
+    SceneMeshSmoke --> RendererObject
     MrtSmoke --> GLFW
     MrtSmoke --> Ext
     MrtSmoke --> Context
@@ -1135,6 +1142,10 @@ flowchart TD
 - `--smoke-draw-list` 已接入独立 `BasicDrawListRenderer`：使用后端无关 `BasicDrawListItem`、
   `builtin.raster-draw-list` schema、typed params payload、transient depth attachment 和共享 cube
   vertex/index buffer，验证 buffer upload counters、多 item 的 `vkCmdPushConstants` + indexed draw 循环。
+- `--smoke-render-view-scene-mesh` 已接入真实 RenderView scene-mesh 路径：deterministic validation
+  product 进入 renderer-owned vertex/index buffer，`builtin.render-view-scene-mesh` 显式声明 Color/Depth +
+  VertexRead/IndexRead slots，以 `DrawIndexed` execution event 和 `BasicDrawPacketContext` 关联 draw 与资源身份；
+  Solid/Wireframe 是独立 per-view policy，Wireframe capability 缺失走 typed unavailable receipt。
 - `--smoke-mrt` 已接入独立 `BasicMrtRenderer`：使用 `builtin.raster-mrt` schema、两个 named color
   slots、两张 transient color attachments 和 dynamic rendering multi-color clear，验证 transient image
   pool 对两张 color attachments 的 retire/reuse。
@@ -1226,7 +1237,7 @@ sequenceDiagram
     RecordCtx->>FrameLoop: enqueue deferred callbacks
     RendererVk->>Adapter: recordRenderGraphTransitions(compiled transitions, bindings)
     Adapter->>Vulkan: vkCmdPipelineBarrier2
-    RendererVk->>Vulkan: debug-label pass regions + vkCmdClearColorImage / vkCmdBeginRendering / vkCmdDraw
+    RendererVk->>Vulkan: debug-label pass regions + vkCmdClearColorImage / vkCmdBeginRendering / vkCmdDraw / vkCmdDrawIndexed
     RendererVk-->>RecordHook: VulkanFrameRecordResult(waitStageMask)
     RecordHook-->>FrameLoop: VulkanFrameRecordResult(waitStageMask)
     FrameLoop->>Vulkan: vkEndCommandBuffer
@@ -1492,6 +1503,40 @@ flowchart TD
     Begin --> BuildGraph --> Compile --> ToTransfer --> Clear --> ToColor --> BeginRendering --> Draw --> EndRendering --> ToPresent --> End
 ```
 
+`--smoke-render-view-scene-mesh` 当前真实录制流程：
+
+```mermaid
+flowchart TD
+    Input["BasicRenderViewDesc<br/>camera + scene draw items + per-view raster mode"]
+    Empty{"drawItems empty?"}
+    NoPass["不插入 scene-mesh pass<br/>空 Entity/Transform 不隐式生成 mesh"]
+    Product["validation fixture tool<br/>OBJ -> deterministic generated vertex/index product"]
+    Buffers["renderer-owned persistent VulkanBuffer<br/>vertices + indices"]
+    Resources["import color target<br/>create transient D32 depth<br/>import vertex/index buffers"]
+    Pass["builtin.render-view-scene-mesh<br/>target: ColorWrite<br/>depth: DepthAttachmentWrite<br/>vertices: VertexRead<br/>indices: IndexRead"]
+    Commands["SetShader / SetInt<br/>DrawIndexed per draw item"]
+    Compile["compile(schema)<br/>validate slots/access/commands<br/>dependency + lifetime + transitions"]
+    Adapter["rhi_vulkan_rendergraph<br/>VertexRead/IndexRead -> vertex-input stage/access"]
+    Capability{"raster mode"}
+    Solid["Solid pipeline<br/>VK_POLYGON_MODE_FILL"]
+    Wire["Wireframe pipeline<br/>VK_POLYGON_MODE_LINE<br/>requires enabled fillModeNonSolid"]
+    Unavailable["typed VK_ERROR_FEATURE_NOT_PRESENT<br/>wireframe path = Unavailable"]
+    Execute["dynamic rendering<br/>bind vertex/index buffers<br/>push view/model constants<br/>vkCmdDrawIndexed"]
+    Evidence["execution events + diagnostics<br/>DrawIndexed args + BasicDrawPacketContext"]
+
+    Input --> Empty
+    Empty -->|yes| NoPass
+    Empty -->|no| Product --> Buffers --> Resources --> Pass --> Commands --> Compile --> Adapter --> Capability
+    Capability -->|Solid| Solid --> Execute
+    Capability -->|Wireframe + capability| Wire --> Execute
+    Capability -->|Wireframe + unavailable| Unavailable
+    Execute --> Evidence
+```
+
+该 OBJ 路径是 repository validation fixture/tool，只接受门禁所需的封闭子集；它不声明通用 OBJ importer、
+runtime mesh product schema 或 asset resource registry 已完成。renderer 消费生成后的 product data，不读取
+source path 或 `.ameta`，Avalonia/editor 也不持有 GPU buffer。
+
 `--smoke-fullscreen-texture` 当前真实录制流程：
 
 ```mermaid
@@ -1602,24 +1647,26 @@ flowchart TD
   RenderView camera/per-view constants；差异只落在 view kind、overlay/debug/show flags、filtering 和 refresh
   intent 上。
 - Scene/debug viewport flags 已先作为 view-local intent 接入 editor viewport request/result，并完成 flagged texture
-  metadata 的 acquire roundtrip。Grid 已沿该路径进入 renderer-owned world-grid pass；transform gizmo、selection outline
-  和 wire overlay 在真实 provider/render bridge 前保持 pending/effective-off。Scene-only authoring pass 不能污染
-  Game View graph；Game debug pass 必须显式 opt in。
+  metadata 的 acquire roundtrip。Grid 已沿该路径进入 renderer-owned world-grid pass；scene-mesh
+  Solid/Wireframe 已是 `BasicSceneRasterMode` per-view policy，因此同帧 Scene Wireframe 与 Game Solid 不共享或污染
+  pipeline intent。transform gizmo、selection outline 和独立 wire overlay 仍在真实 provider/render bridge 前保持
+  pending/effective-off；它们不能用 debug lines 冒充 scene mesh。Scene-only authoring pass 不能污染 Game View graph；
+  Game debug pass 必须显式 opt in。
 - RenderGraph handle 只在单个 view graph 内有效；跨 view 共享资源必须由 resource manager 拥有并 import。
 
 ## RenderGraph 编译与执行流程
 
 ```mermaid
 flowchart TD
-    Import["importImage(RenderGraphImageDesc)"]
+    Import["importImage / importBuffer<br/>typed image/buffer desc"]
     AddPass["addPass(name, type)"]
-    Writes["writeColor / writeTransfer"]
+    Writes["writeColor / writeDepth / writeTransfer<br/>readVertexBuffer / readIndexBuffer"]
     Callback["execute(callback)<br/>可选 C++ 快速路径"]
-    Commands["command summary<br/>ClearColor / SetShader / SetTexture / DrawFullscreenTriangle"]
+    Commands["command summary<br/>ClearColor / SetShader / SetTexture<br/>DrawFullscreenTriangle / DrawIndexed"]
     Registry["RenderGraphExecutorRegistry<br/>按 pass type 查找 executor"]
     Compile["compile()"]
     Dependencies["构建 read/write dependency<br/>active pass + culling<br/>稳定拓扑排序"]
-    Track["按编译后 pass 顺序追踪 image 当前 state"]
+    Track["按编译后 pass 顺序追踪 image/buffer 当前 state"]
     PassPlan["生成 RenderGraphCompiledPass<br/>declaration index / culling flags / resource slots"]
     Final["生成 finalTransitions"]
     DebugTables["formatDebugTables(compiled)"]
@@ -1668,7 +1715,7 @@ flowchart TD
 - 动态 feature 应在 record/build 阶段决定是否把 pass 放进 graph；轻量常驻 feature 用参数控制，昂贵或
   需要额外 RT/buffer 的 feature 用 active predicate 控制是否 record。
 
-当前抽象状态：
+当前 image 抽象状态：
 
 - `Undefined`
 - `ColorAttachment`
@@ -1679,6 +1726,17 @@ flowchart TD
 - `TransferSrc`
 - `TransferDst`
 - `Present`
+
+当前 buffer 抽象状态：
+
+- `Undefined`
+- `TransferRead`
+- `TransferWrite`
+- `HostRead`
+- `VertexRead`
+- `IndexRead`
+- `ShaderRead(fragment/compute)`
+- `StorageReadWrite(compute)`
 
 当前 write 声明：
 
@@ -1697,31 +1755,38 @@ flowchart TD
 - `writeDepth("depth", image)` 会要求 image 进入 `DepthAttachmentWrite`。
 - `readDepth("depth", image)` 会要求 image 进入 `DepthAttachmentRead`。
 - `sampleDepth("depth", image, shaderStage)` 会要求 image 进入 `DepthSampledRead(shaderStage)`。
+- `readVertexBuffer("vertices", buffer)` 会要求 buffer 进入 `VertexRead`；
+  `readIndexBuffer("indices", buffer)` 会要求 buffer 进入 `IndexRead`。两者是 vertex-input domain 的专用
+  access，不携带 shader stage，也不能用 `ShaderRead` 冒充。
 - 同一 pass 内同一 image 现在不能跨 access group 重复声明。Unity/RDG 工具里的 read-write 展示是访问摘要；
   Asharia Engine 后续若支持 attachment read/write、blend/load、storage read/write、framebuffer fetch 或
   grab/copy-to-temp，必须先新增明确 state/API 和 Vulkan feature/layout/access 映射。
-- compiled pass 和 executor context 已携带 `colorWriteSlots` / `shaderReadSlots` / `transferWriteSlots`，
+- compiled pass 和 executor context 已携带 `colorWriteSlots` / `shaderReadSlots` / `transferWriteSlots` /
+  `bufferVertexReadSlots` / `bufferIndexReadSlots`，
   `--smoke-rendergraph` 会验证 slot name、shader stage 并在调试表输出 slot。
 - `setParamsType("...")` / `setParams(type, params)` 已接入最小 params type id 和 POD payload；
   compiled pass 和 executor context 会携带 type id 与 payload bytes。
 - `RenderGraphSchemaRegistry` / `RenderGraphPassSchema` 已接入最小 schema 验证：按 pass type 校验
   params type、允许的 slot、必需 slot 和允许的 command kind。
 - `renderer_basic/render_graph_schemas.hpp` 已集中维护内建 clear、dynamic clear、transient present、
-  triangle、depth triangle、mesh3D、draw-list 和 fullscreen pass 的 type、params type、POD params
+  triangle、depth triangle、mesh3D、draw-list、RenderView scene-mesh 和 fullscreen pass 的 type、params type、POD params
   与 schema registry helper；真实 renderer-basic Vulkan 路径现在通过这套共享 schema compile。
 - `--smoke-rendergraph` 已覆盖每个 renderer-basic builtin pass 的 missing slot、invalid slot 和
   wrong params type 负向编译路径。
-- `renderer_basic_vulkan` 的 fullscreen、transient、depth、mesh 和 draw-list callbacks 已按
-  `source` / `target` / `depth` named slot 查询 Vulkan binding，避免 callback 隐式捕获资源 handle。
+- `renderer_basic_vulkan` 的 fullscreen、transient、depth、mesh、draw-list 和 RenderView scene-mesh callbacks 已按
+  `source` / `target` / `depth` / `vertices` / `indices` named slot 查询 Vulkan binding，避免 callback 隐式捕获
+  resource handle。
 - `PassBuilder::allowCulling()` 和 `PassBuilder::hasSideEffects()` 已接入；schema 也可声明
   `allowCulling` / `hasSideEffects`。默认 pass 不参与 culling，写 imported image 的 pass 会作为外部输出保留。
 - `pass.type` 是当前 typed executor key，并会继续演进为执行模型 / pass opcode。它不等同于
   RenderQueue 或 shader tag；脚本/工具未来应通过同一套 C++ builder 语义生成 pass 声明、资源访问、
   typed params 和受控 command context。
 - 受控 command context skeleton 已接入：`RenderGraphCommandList` 可记录后端无关的 command summary，
-  当前覆盖 clear、shader/pass 名称、texture slot binding、标量/向量参数和 fullscreen triangle draw。
+  当前覆盖 clear、shader/pass 名称、texture slot binding、标量/向量参数、fullscreen triangle draw 和
+  `drawIndexed(indexCount, instanceCount, firstIndex, vertexOffset, firstInstance)`。
   command summary 会进入 compiled pass、executor context 和 debug table；fullscreen texture smoke 已验证
-  `setTexture`、`setVec4` 和 `drawFullscreenTriangle` 的最小 Vulkan 执行路径。
+  `setTexture`、`setVec4` 和 `drawFullscreenTriangle` 的最小 Vulkan 执行路径，scene-mesh smoke 已验证
+  `DrawIndexed` 五参数、draw item index 与 packet context 的真实 Vulkan 执行路径。
 
 ## RenderGraph 到 Vulkan 的翻译流程
 
@@ -1748,7 +1813,10 @@ flowchart TD
   `VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL`、`VK_PIPELINE_STAGE_2_TRANSFER_BIT` 和
   `VK_ACCESS_2_TRANSFER_READ_BIT`。
 - `vulkanBufferUsage`、`vulkanBufferTransition` 和 `vulkanBufferBarrier` 已实现；当前覆盖 `TransferRead`、
-  `TransferWrite`、`HostRead`、`ShaderRead(fragment/compute)` 和 `StorageReadWrite(compute)`。
+  `TransferWrite`、`HostRead`、`VertexRead`、`IndexRead`、`ShaderRead(fragment/compute)` 和
+  `StorageReadWrite(compute)`。`VertexRead` 精确映射为
+  `VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT + VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT`，`IndexRead` 精确映射为
+  `VK_PIPELINE_STAGE_2_INDEX_INPUT_BIT + VK_ACCESS_2_INDEX_READ_BIT`；两者不需要 shader stage。
 - `recordRenderGraphTransitions` 已要求调用方提供 `VulkanRenderGraphImageBinding` 表，不再隐式假设所有 transition 都作用在当前 swapchain image。
 - `--smoke-rendergraph` 已验证 `TransferDst -> Present` 的 layout、stage、access 与 `VkImageMemoryBarrier2` 字段。
 - `--smoke-rendergraph` 已验证 `TransferDst -> ShaderRead(fragment)` 映射到
@@ -1762,6 +1830,8 @@ flowchart TD
   `ShaderRead(compute)` usage、`TransferWrite -> StorageReadWrite(compute)`、
   `StorageReadWrite(compute) -> TransferRead` 和 `TransferWrite -> HostRead` 映射到
   `VkBufferMemoryBarrier2` 所需 stage/access 字段。
+- RenderGraph CPU tests 与 `--smoke-render-view-scene-mesh` 已覆盖 vertex/index slot schema、dependency/lifetime、
+  `VertexRead` / `IndexRead` transition、Vulkan stage/access 映射及 `DrawIndexed` command/event 合同。
 - `--smoke-frame` 已消费 RenderGraph 编译结果来录制 clear frame barriers。
 - `--smoke-rendergraph` 已输出 resources、passes、dependencies、slots、commands、transitions、
   transients 的 Markdown 调试表格，并验证 pass type、params type、slot schema、command summary、
@@ -1778,7 +1848,7 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    Now["当前:<br/>reflection-derived pipeline layout<br/>descriptor allocator-backed pool/set buffer/image/sampler write smoke<br/>descriptor bind + fullscreen texture smoke<br/>compute pipeline + storage descriptor + dispatch readback smoke<br/>persistent offscreen viewport target smoke<br/>editor viewport overlay flags baseline<br/>editor viewport on-demand refresh<br/>editor overlay texture metadata roundtrip<br/>RenderView view params + overlay contract<br/>renderer-basic shared builtin schemas<br/>builtin schema negative smoke<br/>fullscreen pass schema + command-derived pipeline key<br/>indexed mesh + draw list smoke<br/>pass.type + executor registry<br/>named write slots<br/>params type + typed POD payload<br/>RenderGraph dependency sort + culling flags<br/>RenderGraph diagnostics snapshot<br/>RenderView diagnostics snapshot<br/>Frame Debug capture/pause state<br/>Live RG View<br/>FrameDebuggerPanel Frame/RenderGraph views<br/>Frame Debug image preview copy<br/>ShaderRead(fragment/compute)<br/>TransferSrc/TransferRead + copyImage<br/>StorageReadWrite(compute) + Dispatch command summary<br/>DepthAttachmentRead/Write + DepthSampledRead<br/>RenderGraph transient image plan<br/>PrepareBackend transient allocation smoke<br/>transient image pool counters<br/>pipeline cache wrapper + reuse counters<br/>descriptor allocator counters<br/>buffer/upload/readback counters<br/>depth attachment MVP smoke<br/>command context debug IR<br/>CPU-only RenderGraph benchmark<br/>GPU debug labels + timestamp delayed readback"]
+    Now["当前:<br/>reflection-derived pipeline layout<br/>descriptor allocator-backed pool/set buffer/image/sampler write smoke<br/>descriptor bind + fullscreen texture smoke<br/>compute pipeline + storage descriptor + dispatch readback smoke<br/>persistent offscreen viewport target smoke<br/>editor viewport overlay flags baseline<br/>editor viewport on-demand refresh<br/>editor overlay texture metadata roundtrip<br/>RenderView view params + overlay contract<br/>RenderView scene-mesh Color/Depth + VertexRead/IndexRead<br/>per-view Solid/Wireframe + optional fillModeNonSolid receipt<br/>DrawIndexed command + packet context<br/>renderer-basic shared builtin schemas<br/>builtin schema negative smoke<br/>fullscreen pass schema + command-derived pipeline key<br/>indexed mesh + draw list smoke<br/>pass.type + executor registry<br/>named write slots<br/>params type + typed POD payload<br/>RenderGraph dependency sort + culling flags<br/>RenderGraph diagnostics snapshot<br/>RenderView diagnostics snapshot<br/>Frame Debug capture/pause state<br/>Live RG View<br/>FrameDebuggerPanel Frame/RenderGraph views<br/>Frame Debug image preview copy<br/>ShaderRead(fragment/compute)<br/>TransferSrc/TransferRead + copyImage<br/>StorageReadWrite(compute) + Dispatch command summary<br/>DepthAttachmentRead/Write + DepthSampledRead<br/>RenderGraph transient image plan<br/>PrepareBackend transient allocation smoke<br/>transient image pool counters<br/>pipeline cache wrapper + reuse counters<br/>descriptor allocator counters<br/>buffer/upload/readback counters<br/>depth attachment MVP smoke<br/>command context debug IR<br/>CPU-only RenderGraph benchmark<br/>GPU debug labels + timestamp delayed readback"]
     Step1["下一步:<br/>render-side contracts<br/>multi-view target plumbing<br/>material/resource signatures"]
     Step2["之后:<br/>upstream systems<br/>scene-core / editor_domain / asset-core"]
 
@@ -1825,8 +1895,10 @@ flowchart TD
 7. fullscreen、postprocess 和 depth 前必须先补 `ShaderRead`、`DepthAttachmentRead/Write`、`DepthSampledRead` 等抽象 state，以及对应 Vulkan layout/stage/access 翻译；`ShaderRead` 需要携带 shader stage/domain，depth attachment 读写不能和 depth texture 采样混用。后续同图 read/write 只能通过明确的 attachment read/write、storage read/write、framebuffer fetch 或 `readTransfer` + `copyImage` 语义进入，不放开模糊的 `readTexture + writeColor`。
 8. transient image 和 depth attachment 必须同步扩展 RenderGraph state、Vulkan binding 表、VMA allocation 和 smoke。
 9. 受控 command context 已用 C++ 原型化未来脚本 API；`setTexture` 和 fullscreen draw 已有最小 Vulkan 验证路径，fullscreen pass 已开始从 command summary 派生当前 pipeline key，并通过 typed params payload 传递 clear/tint 数据。
-10. mesh asset 路线已从 indexed quad smoke 走到最小 draw list；后续 asset-core 拥有 GUID/import/cache，
-    renderer/RHI 只消费 resource handle、product data 和 upload request，不提前暴露逐 object 脚本 draw loop。
+10. mesh 路线已从 indexed quad/draw-list smoke 走到真实 `builtin.render-view-scene-mesh`：validation product
+    通过 Color/Depth + VertexRead/IndexRead 和 `DrawIndexed` 进入 RenderView。该 deterministic OBJ fixture/tool
+    不是通用 importer；后续 asset-core/asset-pipeline 拥有 GUID/import/cache/product，resource-runtime 与 renderer/RHI
+    只消费 resource handle、product data 和 upload request，不提前暴露逐 object 脚本 draw loop。
 11. RenderGraph diagnostics snapshot 已提供结构化、后端无关的 pass/resource/access edge/dependency/transition/lifetime
     数据，并已挂到 `BasicRenderViewDesc` 的可选 `BasicRenderViewDiagnostics` 输出槽。`RenderGraphPanel` 作为
     Live RG View 显示最近一次 RenderView compile 后已经确定的数据；`FrameDebuggerPanel` 在同一面板内提供 Frame
@@ -1862,8 +1934,10 @@ flowchart TD
     capture 中的 world-grid desc，而不是重新猜默认 grid 参数。只有存在 `BasicDebugWorldLine` 时才插入
     `builtin.render-view-overlay` pass，把 camera/frame/debug-line count 作为 typed params 与 command summary
     记录，并由 `renderer_basic_vulkan` 把 world line 投影为 line-list vertex buffer 绘制到目标 attachment。
-    mesh/draw-list smoke 仍在 renderer 内部构造 MVP。
-    后续 scene mesh、selection/gizmo 和更多 debug line pass 必须继续沿这条 RenderView route 接入。
+    scene-mesh pass 现在以 renderer-owned camera view-projection、per-item model matrix、validation vertex/index
+    product 和 draw packet context 构造 indexed draw；Solid/Wireframe 是 per-view policy，空 scene 不生成 pass。
+    后续 asset-backed mesh、selection/gizmo 和更多 debug line pass 必须继续沿这条 RenderView route 接入，不能让
+    empty Entity、bounds 或 debug lines 冒充 mesh。
 14. SRP 不是当前 RenderView/Grid/Frame Debug/overlay 基础阶段的交付项；它只作为后续消费者约束。
     当前阶段的验收是保持依赖方向、scene/pass input 和 RenderGraph 声明路线不阻塞未来 SRP，而不是实现
     RenderPipelineAsset、RendererFeature、RendererList 或脚本化 pipeline authoring。

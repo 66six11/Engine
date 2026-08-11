@@ -340,6 +340,12 @@ namespace asharia {
         case RenderGraphBufferState::HostRead:
             label = "HostRead";
             break;
+        case RenderGraphBufferState::VertexRead:
+            label = "VertexRead";
+            break;
+        case RenderGraphBufferState::IndexRead:
+            label = "IndexRead";
+            break;
         case RenderGraphBufferState::ShaderRead:
             label = "ShaderRead";
             break;
@@ -421,6 +427,10 @@ namespace asharia {
                               std::span<const VulkanRenderGraphBufferBinding> bufferBindings) {
         std::string label = renderGraphPassDebugLabel(pass, imageBindings);
         appendRenderGraphBufferSlotLabels(label, "bufferRead", pass.bufferReadSlots,
+                                          bufferBindings);
+        appendRenderGraphBufferSlotLabels(label, "vertexRead", pass.bufferVertexReadSlots,
+                                          bufferBindings);
+        appendRenderGraphBufferSlotLabels(label, "indexRead", pass.bufferIndexReadSlots,
                                           bufferBindings);
         appendRenderGraphBufferSlotLabels(label, "bufferTransferRead", pass.bufferTransferReadSlots,
                                           bufferBindings);

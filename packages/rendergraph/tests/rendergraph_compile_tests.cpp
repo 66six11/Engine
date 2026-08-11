@@ -1,10 +1,14 @@
-﻿#include <cstdlib>
+﻿#include <algorithm>
+#include <array>
+#include <cstdint>
+#include <cstdlib>
 #include <exception>
 #include <expected>
 #include <iostream>
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 #include "asharia/rendergraph/render_graph.hpp"
 
@@ -21,6 +25,7 @@ namespace {
     constexpr std::string_view kBufferCopyPass = "test.buffer-copy";
     constexpr std::string_view kBufferToImageCopyPass = "test.buffer-to-image-copy";
     constexpr std::string_view kImageToBufferCopyPass = "test.image-to-buffer-copy";
+    constexpr std::string_view kIndexedMeshPass = "test.indexed-mesh";
     constexpr std::string_view kSideEffectPass = "test.side-effect";
 
     [[nodiscard]] bool contains(std::string_view text, std::string_view needle) {
@@ -318,6 +323,26 @@ namespace {
                     },
                 },
             .allowedCommands = {asharia::RenderGraphCommandKind::CopyImageToBuffer},
+        });
+        schemas.registerSchema(asharia::RenderGraphPassSchema{
+            .type = std::string{kIndexedMeshPass},
+            .paramsType = {},
+            .resourceSlots =
+                {
+                    asharia::RenderGraphResourceSlotSchema{
+                        .name = "vertices",
+                        .access = asharia::RenderGraphSlotAccess::BufferVertexRead,
+                        .shaderStage = asharia::RenderGraphShaderStage::None,
+                        .optional = false,
+                    },
+                    asharia::RenderGraphResourceSlotSchema{
+                        .name = "indices",
+                        .access = asharia::RenderGraphSlotAccess::BufferIndexRead,
+                        .shaderStage = asharia::RenderGraphShaderStage::None,
+                        .optional = false,
+                    },
+                },
+            .allowedCommands = {asharia::RenderGraphCommandKind::DrawIndexed},
         });
         schemas.registerSchema(asharia::RenderGraphPassSchema{
             .type = std::string{kSideEffectPass},
@@ -940,6 +965,233 @@ namespace {
         return verifyImageBufferTransferDiagnostics(snapshot);
     }
 
+    [[nodiscard]] bool verifyIndexedMeshSlots(const asharia::RenderGraphCompiledPass& drawPass,
+                                              asharia::RenderGraphBufferHandle vertices,
+                                              asharia::RenderGraphBufferHandle indices) {
+        return expect(drawPass.name == "DrawIndexedMesh" &&
+                          drawPass.bufferVertexReads ==
+                              std::vector<asharia::RenderGraphBufferHandle>{vertices} &&
+                          drawPass.bufferIndexReads ==
+                              std::vector<asharia::RenderGraphBufferHandle>{indices} &&
+                          drawPass.bufferVertexReadSlots.size() == 1 &&
+                          drawPass.bufferVertexReadSlots.front().name == "vertices" &&
+                          drawPass.bufferVertexReadSlots.front().shaderStage ==
+                              asharia::RenderGraphShaderStage::None &&
+                          drawPass.bufferIndexReadSlots.size() == 1 &&
+                          drawPass.bufferIndexReadSlots.front().name == "indices" &&
+                          drawPass.bufferIndexReadSlots.front().shaderStage ==
+                              asharia::RenderGraphShaderStage::None,
+                      "RenderGraph did not preserve independent vertex/index buffer slots.");
+    }
+
+    [[nodiscard]] bool verifyDrawIndexedCommands(const asharia::RenderGraphCompiledPass& drawPass) {
+        const asharia::RenderGraphCommand& draw = drawPass.commands.front();
+        if (!expect(draw.kind == asharia::RenderGraphCommandKind::DrawIndexed &&
+                        draw.uintValues == std::array<std::uint32_t, 3>{36, 1, 0} &&
+                        draw.intValue == 0 && draw.uintValue == 0,
+                    "RenderGraph did not preserve DrawIndexed defaults.")) {
+            return false;
+        }
+
+        asharia::RenderGraphCommandList explicitDrawCommands;
+        explicitDrawCommands.drawIndexed(12, 3, 4, -2, 5);
+        const asharia::RenderGraphCommand& explicitDraw = explicitDrawCommands.commands().front();
+        return expect(explicitDraw.uintValues == std::array<std::uint32_t, 3>{12, 3, 4} &&
+                          explicitDraw.intValue == -2 && explicitDraw.uintValue == 5,
+                      "RenderGraph did not preserve explicit DrawIndexed arguments.");
+    }
+
+    [[nodiscard]] bool
+    verifyIndexedMeshTransitions(const asharia::RenderGraphCompiledPass& drawPass,
+                                 asharia::RenderGraphBufferHandle vertices,
+                                 asharia::RenderGraphBufferHandle indices) {
+        const auto hasTransition = [&drawPass](asharia::RenderGraphBufferHandle buffer,
+                                               asharia::RenderGraphBufferState newState) {
+            return std::ranges::any_of(
+                drawPass.bufferTransitionsBefore,
+                [buffer, newState](const asharia::RenderGraphBufferTransition& transition) {
+                    return transition.buffer == buffer &&
+                           transition.oldState == asharia::RenderGraphBufferState::TransferWrite &&
+                           transition.newState == newState &&
+                           transition.newShaderStage == asharia::RenderGraphShaderStage::None;
+                });
+        };
+        return expect(hasTransition(vertices, asharia::RenderGraphBufferState::VertexRead) &&
+                          hasTransition(indices, asharia::RenderGraphBufferState::IndexRead),
+                      "RenderGraph did not compile vertex/index read transitions.");
+    }
+
+    [[nodiscard]] bool
+    verifyIndexedMeshDependencies(const asharia::RenderGraphCompileResult& compiled,
+                                  asharia::RenderGraphBufferHandle vertices,
+                                  asharia::RenderGraphBufferHandle indices) {
+        const auto hasDependency = [&compiled](asharia::RenderGraphBufferHandle buffer) {
+            return std::ranges::any_of(
+                compiled.dependencies,
+                [buffer](const asharia::RenderGraphPassDependency& dependency) {
+                    return dependency.toDeclarationIndex == 2 &&
+                           dependency.resourceKind == asharia::RenderGraphResourceKind::Buffer &&
+                           dependency.buffer == buffer;
+                });
+        };
+        return expect(hasDependency(vertices) && hasDependency(indices),
+                      "RenderGraph did not connect mesh uploads to indexed draw reads.");
+    }
+
+    [[nodiscard]] bool verifyIndexedMeshLifetimes(const asharia::RenderGraphCompileResult& compiled,
+                                                  asharia::RenderGraphBufferHandle vertices,
+                                                  asharia::RenderGraphBufferHandle indices) {
+        const auto hasLifetime = [&compiled](asharia::RenderGraphBufferHandle buffer,
+                                             asharia::RenderGraphBufferState finalState) {
+            return std::ranges::any_of(
+                compiled.transientBuffers,
+                [buffer, finalState](const asharia::RenderGraphTransientBufferAllocation& value) {
+                    return value.buffer == buffer && value.finalState == finalState &&
+                           value.lastPassIndex == 2;
+                });
+        };
+        return expect(hasLifetime(vertices, asharia::RenderGraphBufferState::VertexRead) &&
+                          hasLifetime(indices, asharia::RenderGraphBufferState::IndexRead),
+                      "RenderGraph did not extend mesh buffer lifetimes through indexed draw.");
+    }
+
+    [[nodiscard]] bool
+    verifyIndexedMeshDiagnostics(const asharia::RenderGraphDiagnosticsSnapshot& snapshot) {
+        const auto hasAccessEdge = [&snapshot](std::string_view slotName,
+                                               asharia::RenderGraphSlotAccess access) {
+            return std::ranges::any_of(
+                snapshot.accessEdges,
+                [slotName, access](const asharia::RenderGraphDiagnosticsAccessEdge& edge) {
+                    return edge.passName == "DrawIndexedMesh" && edge.slotName == slotName &&
+                           edge.access == access &&
+                           edge.shaderStage == asharia::RenderGraphShaderStage::None;
+                });
+        };
+        const bool hasDrawCommand = std::ranges::any_of(
+            snapshot.commands, [](const asharia::RenderGraphDiagnosticsCommandNode& command) {
+                return command.passName == "DrawIndexedMesh" &&
+                       command.kind == asharia::RenderGraphCommandKind::DrawIndexed &&
+                       command.detail ==
+                           "indexCount=36, instanceCount=1, firstIndex=0, vertexOffset=0, "
+                           "firstInstance=0";
+            });
+        return expect(
+            hasAccessEdge("vertices", asharia::RenderGraphSlotAccess::BufferVertexRead) &&
+                hasAccessEdge("indices", asharia::RenderGraphSlotAccess::BufferIndexRead) &&
+                hasDrawCommand,
+            "RenderGraph diagnostics missed indexed mesh slots or command detail.");
+    }
+
+    [[nodiscard]] bool
+    compilesIndexedMeshContract(const asharia::RenderGraphSchemaRegistry& schemas) {
+        asharia::RenderGraph graph;
+        const auto vertices = graph.createTransientBuffer(transientBufferDesc("MeshVertices"));
+        const auto indices = graph.createTransientBuffer(transientBufferDesc("MeshIndices"));
+
+        const auto executeNoOp = [](asharia::RenderGraphPassContext) -> asharia::Result<void> {
+            return {};
+        };
+        graph.addPass("UploadVertices", std::string{kBufferTransferWritePass})
+            .writeBuffer("target", vertices)
+            .recordCommands([](asharia::RenderGraphCommandList& commands) {
+                commands.fillBuffer("target", 0x01020304U);
+            })
+            .execute(executeNoOp);
+        graph.addPass("UploadIndices", std::string{kBufferTransferWritePass})
+            .writeBuffer("target", indices)
+            .recordCommands([](asharia::RenderGraphCommandList& commands) {
+                commands.fillBuffer("target", 0x05060708U);
+            })
+            .execute(executeNoOp);
+
+        bool observedExecutionContext = false;
+        graph.addPass("DrawIndexedMesh", std::string{kIndexedMeshPass})
+            .readVertexBuffer("vertices", vertices)
+            .readIndexBuffer("indices", indices)
+            .recordCommands(
+                [](asharia::RenderGraphCommandList& commands) { commands.drawIndexed(36); })
+            .execute([&observedExecutionContext](
+                         asharia::RenderGraphPassContext context) -> asharia::Result<void> {
+                observedExecutionContext =
+                    context.bufferVertexReads.size() == 1 && context.bufferIndexReads.size() == 1 &&
+                    context.bufferVertexReadSlots.size() == 1 &&
+                    context.bufferIndexReadSlots.size() == 1 && context.commands.size() == 1 &&
+                    context.commands.front().kind == asharia::RenderGraphCommandKind::DrawIndexed;
+                return {};
+            });
+
+        auto compiled = graph.compile(schemas);
+        if (!compiled) {
+            std::cerr << compiled.error().message << '\n';
+            return false;
+        }
+        if (!expect(compiled->passes.size() == 3,
+                    "RenderGraph did not keep indexed mesh upload and draw passes.")) {
+            return false;
+        }
+
+        const asharia::RenderGraphCompiledPass& drawPass = compiled->passes.back();
+        if (!verifyIndexedMeshSlots(drawPass, vertices, indices) ||
+            !verifyDrawIndexedCommands(drawPass) ||
+            !verifyIndexedMeshTransitions(drawPass, vertices, indices) ||
+            !verifyIndexedMeshDependencies(*compiled, vertices, indices) ||
+            !verifyIndexedMeshLifetimes(*compiled, vertices, indices)) {
+            return false;
+        }
+
+        const asharia::RenderGraphDiagnosticsSnapshot snapshot =
+            graph.diagnosticsSnapshot(*compiled);
+        if (!verifyIndexedMeshDiagnostics(snapshot)) {
+            return false;
+        }
+
+        const std::string debugTables = graph.formatDebugTables(*compiled);
+        if (!expect(contains(debugTables, "BufferVertexRead") &&
+                        contains(debugTables, "BufferIndexRead") &&
+                        contains(debugTables, "DrawIndexed") &&
+                        contains(debugTables, "VertexRead") && contains(debugTables, "IndexRead"),
+                    "RenderGraph debug tables missed indexed mesh state.")) {
+            return false;
+        }
+
+        auto executed = graph.execute(*compiled);
+        if (!executed) {
+            std::cerr << executed.error().message << '\n';
+            return false;
+        }
+        return expect(observedExecutionContext,
+                      "RenderGraph execution context missed indexed mesh slots or command.");
+    }
+
+    [[nodiscard]] bool
+    rejectsShaderStagesForVertexAndIndexReads(const asharia::RenderGraphSchemaRegistry& schemas) {
+        asharia::RenderGraph vertexGraph;
+        static_cast<void>(vertexGraph.importBuffer(asharia::RenderGraphBufferDesc{
+            .name = "VertexReadWithShaderStage",
+            .byteSize = 256,
+            .initialState = asharia::RenderGraphBufferState::VertexRead,
+            .initialShaderStage = asharia::RenderGraphShaderStage::Fragment,
+            .finalState = asharia::RenderGraphBufferState::VertexRead,
+        }));
+        if (!expectCompileFailure(vertexGraph.compile(schemas),
+                                  "VertexRead state must not declare a shader stage",
+                                  "VertexRead buffer with shader stage")) {
+            return false;
+        }
+
+        asharia::RenderGraph indexGraph;
+        static_cast<void>(indexGraph.importBuffer(asharia::RenderGraphBufferDesc{
+            .name = "IndexReadWithShaderStage",
+            .byteSize = 256,
+            .initialState = asharia::RenderGraphBufferState::IndexRead,
+            .finalState = asharia::RenderGraphBufferState::IndexRead,
+            .finalShaderStage = asharia::RenderGraphShaderStage::Compute,
+        }));
+        return expectCompileFailure(indexGraph.compile(schemas),
+                                    "IndexRead state must not declare a shader stage",
+                                    "IndexRead buffer with shader stage");
+    }
+
     [[nodiscard]] bool rejectsMissingProducers(const asharia::RenderGraphSchemaRegistry& schemas) {
         asharia::RenderGraph imageGraph;
         const auto orphanImage = imageGraph.createTransientImage(transientColorDesc("OrphanImage"));
@@ -1355,7 +1607,9 @@ namespace {
             keepsImportedInitialReadBeforeOverwrite(schemas) &&
             buildsDiagnosticsSnapshot(schemas) && compilesImageTransferCopy(schemas) &&
             compilesBufferFillCommand(schemas) && compilesBufferTransferCopy(schemas) &&
-            compilesImageBufferTransferCopies(schemas) && rejectsMissingProducers(schemas) &&
+            compilesImageBufferTransferCopies(schemas) && compilesIndexedMeshContract(schemas) &&
+            rejectsShaderStagesForVertexAndIndexReads(schemas) &&
+            rejectsMissingProducers(schemas) &&
             rejectsImportedResourcesWithoutFinalState(schemas) &&
             rejectsExecutingCompiledGraphAfterMutation(schemas) &&
             rejectsCommandsWithWrongResourceSlots() && rejectsInvalidResourceDeclarations();

@@ -34,6 +34,8 @@ namespace asharia {
             case RenderGraphSlotAccess::TransferWrite:
                 return pass.transferWriteSlots;
             case RenderGraphSlotAccess::BufferShaderRead:
+            case RenderGraphSlotAccess::BufferVertexRead:
+            case RenderGraphSlotAccess::BufferIndexRead:
             case RenderGraphSlotAccess::BufferTransferRead:
             case RenderGraphSlotAccess::BufferTransferWrite:
             case RenderGraphSlotAccess::BufferStorageReadWrite:
@@ -47,6 +49,10 @@ namespace asharia {
             switch (access) {
             case RenderGraphSlotAccess::BufferShaderRead:
                 return pass.bufferReadSlots;
+            case RenderGraphSlotAccess::BufferVertexRead:
+                return pass.bufferVertexReadSlots;
+            case RenderGraphSlotAccess::BufferIndexRead:
+                return pass.bufferIndexReadSlots;
             case RenderGraphSlotAccess::BufferTransferRead:
                 return pass.bufferTransferReadSlots;
             case RenderGraphSlotAccess::BufferTransferWrite:
@@ -198,6 +204,18 @@ namespace asharia {
                 pass, pass.bufferReadSlots, RenderGraphSlotAccess::BufferShaderRead, schema);
             if (!bufferReadSlots) {
                 return std::unexpected{std::move(bufferReadSlots.error())};
+            }
+
+            auto bufferVertexReadSlots = validateSlotsAgainstSchema(
+                pass, pass.bufferVertexReadSlots, RenderGraphSlotAccess::BufferVertexRead, schema);
+            if (!bufferVertexReadSlots) {
+                return std::unexpected{std::move(bufferVertexReadSlots.error())};
+            }
+
+            auto bufferIndexReadSlots = validateSlotsAgainstSchema(
+                pass, pass.bufferIndexReadSlots, RenderGraphSlotAccess::BufferIndexRead, schema);
+            if (!bufferIndexReadSlots) {
+                return std::unexpected{std::move(bufferIndexReadSlots.error())};
             }
 
             auto bufferTransferReadSlots =

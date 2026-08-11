@@ -157,6 +157,7 @@ Result<void> BasicTriangleRenderer::ensurePipeline(VkFormat colorFormat, VkForma
         .depthFormat = depthFormat,
         .vertexBindings = bindings,
         .vertexAttributes = attributes,
+        .deviceCapabilities = {},
     });
     if (!pipeline) {
         return std::unexpected{std::move(pipeline.error())};

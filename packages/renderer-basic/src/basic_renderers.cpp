@@ -23,6 +23,7 @@
 #include "asharia/renderer_basic_vulkan/frame_graph_vulkan.hpp"
 #include "asharia/rendergraph/render_graph_builder.hpp"
 #include "asharia/shader_slang/reflection.hpp"
+#include "asharia/validation/directional_wedge_mesh_product.hpp"
 
 namespace asharia {
     namespace renderer_basic_detail {
@@ -84,6 +85,13 @@ namespace asharia {
         };
 
         constexpr float kBasicDebugLineClipEpsilon = 0.000001F;
+
+        static_assert(validation::kDirectionalWedgeValidationProductHash ==
+                      kBasicValidationMeshResourceKey.value);
+        static_assert(validation::kDirectionalWedgeValidationVertices.size() == 14U);
+        static_assert(validation::kDirectionalWedgeValidationIndices.size() == 72U);
+        static_assert(validation::kDirectionalWedgeValidationBounds.minimum[0] == -1.25F);
+        static_assert(validation::kDirectionalWedgeValidationBounds.maximum[0] == 1.5F);
 
         [[nodiscard]] VkViewport basicCameraViewport(VkExtent2D extent) {
             return VkViewport{
@@ -165,6 +173,18 @@ namespace asharia {
             return 0;
         }
 
+        [[nodiscard]] Result<std::uint32_t>
+        basicSceneRasterModeValue(BasicSceneRasterMode rasterMode) {
+            switch (rasterMode) {
+            case BasicSceneRasterMode::Solid:
+                return 0U;
+            case BasicSceneRasterMode::Wireframe:
+                return 1U;
+            }
+            return std::unexpected{
+                Error{ErrorDomain::RenderGraph, 0, "RenderView scene raster mode is invalid"}};
+        }
+
         [[nodiscard]] BasicRenderViewOverlayParams
         basicRenderViewOverlayParams(const BasicRenderViewDesc& view) {
             return BasicRenderViewOverlayParams{
@@ -190,8 +210,100 @@ namespace asharia {
             };
         }
 
+        [[nodiscard]] std::string basicRenderViewSceneMeshItemContext(const BasicDrawListItem& item,
+                                                                      std::size_t itemIndex) {
+            std::string context = " (item " + std::to_string(itemIndex);
+            if (item.context.sourceObject) {
+                context += ", source object " + std::to_string(item.context.sourceObject.index) +
+                           ":" + std::to_string(item.context.sourceObject.generation);
+            }
+            if (item.context.meshResource) {
+                context += ", mesh resource " + std::to_string(item.context.meshResource.value);
+            }
+            if (item.context.materialResource) {
+                context +=
+                    ", material resource " + std::to_string(item.context.materialResource.value);
+            }
+            context += ")";
+            return context;
+        }
+
+        [[nodiscard]] Result<void> validateBasicRenderViewSceneMeshItem(
+            const BasicDrawListItem& item, std::size_t itemIndex,
+            std::span<const validation::ValidationMeshVertex> vertices,
+            std::span<const std::uint16_t> indices) {
+            const std::string itemContext = basicRenderViewSceneMeshItemContext(item, itemIndex);
+            if (item.drawItem.vertexCount != 0U || item.drawItem.indexCount == 0U ||
+                item.drawItem.instanceCount == 0U) {
+                return std::unexpected{Error{
+                    ErrorDomain::RenderGraph,
+                    0,
+                    "RenderView scene input item must declare an indexed draw and a non-zero "
+                    "instance count" +
+                        itemContext,
+                }};
+            }
+            if (item.context.meshResource != kBasicValidationMeshResourceKey) {
+                return std::unexpected{Error{
+                    ErrorDomain::RenderGraph,
+                    0,
+                    "RenderView scene input item references an unresolved mesh resource" +
+                        itemContext,
+                }};
+            }
+            if (item.context.materialResource != kBasicDefaultUnlitMaterialResourceKey) {
+                return std::unexpected{Error{
+                    ErrorDomain::RenderGraph,
+                    0,
+                    "RenderView scene input item references an unresolved material resource" +
+                        itemContext,
+                }};
+            }
+            if (!std::ranges::all_of(item.modelMatrix,
+                                     [](float value) { return std::isfinite(value); })) {
+                return std::unexpected{Error{
+                    ErrorDomain::RenderGraph,
+                    0,
+                    "RenderView scene input item model matrix contains a non-finite value" +
+                        itemContext,
+                }};
+            }
+            const std::size_t firstIndex = item.drawItem.firstIndex;
+            const std::size_t indexCount = item.drawItem.indexCount;
+            if (firstIndex > indices.size() || indexCount > indices.size() - firstIndex) {
+                return std::unexpected{Error{
+                    ErrorDomain::RenderGraph,
+                    0,
+                    "RenderView scene input item index range exceeds the resolved mesh" +
+                        itemContext,
+                }};
+            }
+            if (item.drawItem.vertexOffset < 0) {
+                return std::unexpected{Error{
+                    ErrorDomain::RenderGraph,
+                    0,
+                    "RenderView scene input item cannot use a negative vertex offset" + itemContext,
+                }};
+            }
+            std::uint32_t maxIndex{};
+            for (std::uint16_t indexValue : indices.subspan(firstIndex, indexCount)) {
+                maxIndex = std::max(maxIndex, static_cast<std::uint32_t>(indexValue));
+            }
+            const std::size_t maxVertex =
+                static_cast<std::size_t>(item.drawItem.vertexOffset) + maxIndex;
+            if (maxVertex >= vertices.size()) {
+                return std::unexpected{Error{
+                    ErrorDomain::RenderGraph,
+                    0,
+                    "RenderView scene input item vertex range exceeds the resolved mesh" +
+                        itemContext,
+                }};
+            }
+            return {};
+        }
+
         [[nodiscard]] Result<void>
-        validateBasicRenderViewSceneInputs(const BasicRenderViewDesc& view) {
+        validateBasicRenderViewSceneMesh(const BasicRenderViewDesc& view) {
             if (view.scene.drawItems.size() >
                 static_cast<std::size_t>(std::numeric_limits<int>::max())) {
                 return std::unexpected{Error{
@@ -200,46 +312,32 @@ namespace asharia {
                     "RenderView scene draw item count exceeds command summary limits",
                 }};
             }
-            auto sceneInputItemContext = [](const BasicDrawListItem& item, std::size_t itemIndex) {
-                std::string context = " (item " + std::to_string(itemIndex);
-                if (item.context.sourceObject) {
-                    context += ", source object " +
-                               std::to_string(item.context.sourceObject.index) + ":" +
-                               std::to_string(item.context.sourceObject.generation);
-                }
-                if (item.context.meshResource) {
-                    context += ", mesh resource " + std::to_string(item.context.meshResource.value);
-                }
-                if (item.context.materialResource) {
-                    context += ", material resource " +
-                               std::to_string(item.context.materialResource.value);
-                }
-                context += ")";
-                return context;
-            };
+            auto rasterMode = basicSceneRasterModeValue(view.scene.rasterMode);
+            if (!rasterMode) {
+                return std::unexpected{std::move(rasterMode.error())};
+            }
+            constexpr auto product = validation::directionalWedgeValidationMeshProduct();
             for (std::size_t itemIndex = 0; itemIndex < view.scene.drawItems.size(); ++itemIndex) {
-                const BasicDrawListItem& item = view.scene.drawItems[itemIndex];
-                if ((item.drawItem.vertexCount == 0 && item.drawItem.indexCount == 0) ||
-                    item.drawItem.instanceCount == 0) {
-                    return std::unexpected{Error{
-                        ErrorDomain::RenderGraph,
-                        0,
-                        "RenderView scene input item must declare vertices or indices and a "
-                        "non-zero instance count" +
-                            sceneInputItemContext(item, itemIndex),
-                    }};
+                auto item = validateBasicRenderViewSceneMeshItem(
+                    view.scene.drawItems[itemIndex], itemIndex, product.vertices, product.indices);
+                if (!item) {
+                    return std::unexpected{std::move(item.error())};
                 }
             }
             return {};
         }
 
-        [[nodiscard]] BasicRenderViewSceneInputsParams
-        basicRenderViewSceneInputsParams(const BasicRenderViewDesc& view) {
-            return BasicRenderViewSceneInputsParams{
+        [[nodiscard]] Result<BasicRenderViewSceneMeshParams>
+        basicRenderViewSceneMeshParams(const BasicRenderViewDesc& view) {
+            auto rasterMode = basicSceneRasterModeValue(view.scene.rasterMode);
+            if (!rasterMode) {
+                return std::unexpected{std::move(rasterMode.error())};
+            }
+            return BasicRenderViewSceneMeshParams{
                 .drawItemCount = static_cast<std::uint32_t>(view.scene.drawItems.size()),
                 .viewKind = basicRenderViewKindValue(view.viewKind),
-                .reserved0 = 0,
-                .reserved1 = 0,
+                .rasterMode = *rasterMode,
+                .indexedDrawCount = static_cast<std::uint32_t>(view.scene.drawItems.size()),
             };
         }
 
@@ -247,8 +345,7 @@ namespace asharia {
                                                      float value) {
             const float denominator =
                 std::max(range.end - range.start, kBasicWorldGridMinimumSpacing);
-            const float interpolation =
-                std::clamp((value - range.start) / denominator, 0.0F, 1.0F);
+            const float interpolation = std::clamp((value - range.start) / denominator, 0.0F, 1.0F);
             return interpolation * interpolation * (3.0F - (2.0F * interpolation));
         }
 
@@ -553,23 +650,74 @@ namespace asharia {
         }
 
         [[nodiscard]] Result<void>
-        validateBasicRenderViewSceneInputsCommands(RenderGraphPassContext pass,
-                                                   BasicRenderViewSceneInputsParams params) {
-            if (pass.commands.size() != 1) {
-                return std::unexpected{
-                    renderGraphError("RenderView scene inputs pass expected exactly one command")};
+        validateBasicRenderViewSceneMeshCommands(RenderGraphPassContext pass,
+                                                 BasicRenderViewSceneMeshParams params,
+                                                 std::span<const BasicDrawListItem> drawItems) {
+            constexpr std::size_t kMetadataCommandCount = 3;
+            if (pass.commands.size() != kMetadataCommandCount + drawItems.size()) {
+                return std::unexpected{renderGraphError(
+                    "RenderView scene mesh pass command count does not match the immutable draw "
+                    "packet batch")};
             }
 
-            const RenderGraphCommand& drawCount = pass.commands.front();
+            const RenderGraphCommand& shader = pass.commands[0];
+            const RenderGraphCommand& drawCount = pass.commands[1];
+            const RenderGraphCommand& rasterMode = pass.commands[2];
+            auto shaderKind = expectCommandKind(shader, RenderGraphCommandKind::SetShader,
+                                                "RenderView scene mesh shader");
+            if (!shaderKind) {
+                return std::unexpected{std::move(shaderKind.error())};
+            }
             auto countKind = expectCommandKind(drawCount, RenderGraphCommandKind::SetInt,
-                                               "RenderView scene input draw count");
+                                               "RenderView scene mesh draw count");
             if (!countKind) {
                 return std::unexpected{std::move(countKind.error())};
+            }
+            auto rasterModeKind = expectCommandKind(rasterMode, RenderGraphCommandKind::SetInt,
+                                                    "RenderView scene mesh raster mode");
+            if (!rasterModeKind) {
+                return std::unexpected{std::move(rasterModeKind.error())};
+            }
+            if (shader.name != "Hidden/RenderViewSceneMesh" ||
+                shader.secondaryName != "DefaultUnlit") {
+                return std::unexpected{renderGraphError(
+                    "RenderView scene mesh shader command does not match the current contract")};
             }
             if (drawCount.name != "SceneDrawItemCount" ||
                 drawCount.intValue != static_cast<int>(params.drawItemCount)) {
                 return std::unexpected{renderGraphError(
-                    "RenderView scene input draw count command does not match params")};
+                    "RenderView scene mesh draw count command does not match params")};
+            }
+            if (rasterMode.name != "SceneRasterMode" ||
+                rasterMode.intValue != static_cast<int>(params.rasterMode)) {
+                return std::unexpected{renderGraphError(
+                    "RenderView scene mesh raster mode command does not match params")};
+            }
+
+            if (params.drawItemCount != drawItems.size() ||
+                params.indexedDrawCount != drawItems.size()) {
+                return std::unexpected{renderGraphError(
+                    "RenderView scene mesh params do not describe an indexed command for each "
+                    "draw packet")};
+            }
+
+            for (std::size_t itemIndex = 0; itemIndex < drawItems.size(); ++itemIndex) {
+                const RenderGraphCommand& command =
+                    pass.commands[kMetadataCommandCount + itemIndex];
+                const BasicDrawItem& draw = drawItems[itemIndex].drawItem;
+                auto commandKind = expectCommandKind(command, RenderGraphCommandKind::DrawIndexed,
+                                                     "RenderView scene mesh indexed draw command");
+                if (!commandKind) {
+                    return std::unexpected{std::move(commandKind.error())};
+                }
+                if (command.uintValues !=
+                        std::array{draw.indexCount, draw.instanceCount, draw.firstIndex} ||
+                    command.intValue != draw.vertexOffset ||
+                    command.uintValue != draw.firstInstance) {
+                    return std::unexpected{renderGraphError(
+                        "RenderView scene mesh indexed draw command does not match its immutable "
+                        "draw packet")};
+                }
             }
 
             return {};
@@ -592,10 +740,10 @@ namespace asharia {
             return {};
         }
 
-// clang-format off
+        // clang-format off
 #include "basic_renderers/shader_contracts.inl"
 #include "basic_renderers/pipeline_layouts.inl"
-// clang-format on
+        // clang-format on
         void recordTransferClear(const VulkanFrameRecordContext& frame,
                                  VkClearColorValue clearColor) {
             VkImageSubresourceRange clearRange{};
@@ -807,8 +955,7 @@ namespace asharia {
             BasicMat4 inverse{};
             for (std::size_t row = 0; row < 4U; ++row) {
                 for (std::size_t column = 0; column < 4U; ++column) {
-                    inverse.at((row * 4U) + column) =
-                        basicAugmentedAt(augmented, row, column + 4U);
+                    inverse.at((row * 4U) + column) = basicAugmentedAt(augmented, row, column + 4U);
                 }
             }
             return inverse;
@@ -903,16 +1050,16 @@ namespace asharia {
         [[nodiscard]] BasicMesh3DPushConstants
         basicMesh3DPushConstants(const BasicRenderViewCamera& camera,
                                  const BasicMat4& modelMatrix) {
-            const BasicMat4 mvp = multiplyBasicMat4(
-                BasicMat4{camera.viewProjection[0], camera.viewProjection[1],
-                          camera.viewProjection[2], camera.viewProjection[3],
-                          camera.viewProjection[4], camera.viewProjection[5],
-                          camera.viewProjection[6], camera.viewProjection[7],
-                          camera.viewProjection[8], camera.viewProjection[9],
-                          camera.viewProjection[10], camera.viewProjection[11],
-                          camera.viewProjection[12], camera.viewProjection[13],
-                          camera.viewProjection[14], camera.viewProjection[15]},
-                modelMatrix);
+            const BasicMat4 mvp =
+                multiplyBasicMat4(BasicMat4{camera.viewProjection[0], camera.viewProjection[1],
+                                            camera.viewProjection[2], camera.viewProjection[3],
+                                            camera.viewProjection[4], camera.viewProjection[5],
+                                            camera.viewProjection[6], camera.viewProjection[7],
+                                            camera.viewProjection[8], camera.viewProjection[9],
+                                            camera.viewProjection[10], camera.viewProjection[11],
+                                            camera.viewProjection[12], camera.viewProjection[13],
+                                            camera.viewProjection[14], camera.viewProjection[15]},
+                                  modelMatrix);
             return BasicMesh3DPushConstants{
                 .mvpRow0 = {mvp[0], mvp[1], mvp[2], mvp[3]},
                 .mvpRow1 = {mvp[4], mvp[5], mvp[6], mvp[7]},
@@ -925,20 +1072,18 @@ namespace asharia {
         basicRenderViewWorldGridPushConstants(const BasicRenderViewCamera& camera,
                                               BasicRenderViewWorldGridParams params) {
             const BasicMat4 viewProjection{
-                camera.viewProjection[0],  camera.viewProjection[1],
-                camera.viewProjection[2],  camera.viewProjection[3],
-                camera.viewProjection[4],  camera.viewProjection[5],
-                camera.viewProjection[6],  camera.viewProjection[7],
-                camera.viewProjection[8],  camera.viewProjection[9],
-                camera.viewProjection[10], camera.viewProjection[11],
-                camera.viewProjection[12], camera.viewProjection[13],
-                camera.viewProjection[14], camera.viewProjection[15],
+                camera.viewProjection[0],  camera.viewProjection[1],  camera.viewProjection[2],
+                camera.viewProjection[3],  camera.viewProjection[4],  camera.viewProjection[5],
+                camera.viewProjection[6],  camera.viewProjection[7],  camera.viewProjection[8],
+                camera.viewProjection[9],  camera.viewProjection[10], camera.viewProjection[11],
+                camera.viewProjection[12], camera.viewProjection[13], camera.viewProjection[14],
+                camera.viewProjection[15],
             };
             const std::optional<BasicMat4> inverseViewProjection = inverseBasicMat4(viewProjection);
             if (!inverseViewProjection) {
-                return std::unexpected{Error{
-                    ErrorDomain::RenderGraph, 0,
-                    "RenderView world grid requires an invertible view-projection matrix"}};
+                return std::unexpected{
+                    Error{ErrorDomain::RenderGraph, 0,
+                          "RenderView world grid requires an invertible view-projection matrix"}};
             }
 
             const BasicMat4& inverse = *inverseViewProjection;
@@ -957,31 +1102,33 @@ namespace asharia {
         struct BasicDrawBuffers {
             VkBuffer vertex{VK_NULL_HANDLE};
             VkBuffer index{VK_NULL_HANDLE};
+            VkDeviceSize vertexOffset{};
+            VkDeviceSize indexOffset{};
+        };
+
+        struct BasicRenderViewSceneMeshAttachments {
+            VkImageView color{VK_NULL_HANDLE};
+            VkImageView depth{VK_NULL_HANDLE};
         };
 
         [[nodiscard]] std::optional<BasicProjectedDebugLinePoint>
         projectBasicDebugWorldLinePoint(const BasicRenderViewCamera& camera,
                                         std::array<float, 3> point) {
             const BasicMat4 viewProjection{
-                camera.viewProjection[0],  camera.viewProjection[1],
-                camera.viewProjection[2],  camera.viewProjection[3],
-                camera.viewProjection[4],  camera.viewProjection[5],
-                camera.viewProjection[6],  camera.viewProjection[7],
-                camera.viewProjection[8],  camera.viewProjection[9],
-                camera.viewProjection[10], camera.viewProjection[11],
-                camera.viewProjection[12], camera.viewProjection[13],
-                camera.viewProjection[14], camera.viewProjection[15],
+                camera.viewProjection[0],  camera.viewProjection[1],  camera.viewProjection[2],
+                camera.viewProjection[3],  camera.viewProjection[4],  camera.viewProjection[5],
+                camera.viewProjection[6],  camera.viewProjection[7],  camera.viewProjection[8],
+                camera.viewProjection[9],  camera.viewProjection[10], camera.viewProjection[11],
+                camera.viewProjection[12], camera.viewProjection[13], camera.viewProjection[14],
+                camera.viewProjection[15],
             };
             const std::array world{point[0], point[1], point[2], 1.0F};
-            const float clipX =
-                (viewProjection[0] * world[0]) + (viewProjection[1] * world[1]) +
-                (viewProjection[2] * world[2]) + (viewProjection[3] * world[3]);
-            const float clipY =
-                (viewProjection[4] * world[0]) + (viewProjection[5] * world[1]) +
-                (viewProjection[6] * world[2]) + (viewProjection[7] * world[3]);
-            const float clipW =
-                (viewProjection[12] * world[0]) + (viewProjection[13] * world[1]) +
-                (viewProjection[14] * world[2]) + (viewProjection[15] * world[3]);
+            const float clipX = (viewProjection[0] * world[0]) + (viewProjection[1] * world[1]) +
+                                (viewProjection[2] * world[2]) + (viewProjection[3] * world[3]);
+            const float clipY = (viewProjection[4] * world[0]) + (viewProjection[5] * world[1]) +
+                                (viewProjection[6] * world[2]) + (viewProjection[7] * world[3]);
+            const float clipW = (viewProjection[12] * world[0]) + (viewProjection[13] * world[1]) +
+                                (viewProjection[14] * world[2]) + (viewProjection[15] * world[3]);
             if (!std::isfinite(clipX) || !std::isfinite(clipY) || !std::isfinite(clipW) ||
                 clipW <= kBasicDebugLineClipEpsilon) {
                 return std::nullopt;
@@ -1071,10 +1218,11 @@ namespace asharia {
 
             vkCmdBeginRendering(frame.commandBuffer, &renderingInfo);
             vkCmdBindPipeline(frame.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-            constexpr VkDeviceSize vertexBufferOffset = 0;
-            vkCmdBindVertexBuffers(frame.commandBuffer, 0, 1, &buffers.vertex, &vertexBufferOffset);
+            vkCmdBindVertexBuffers(frame.commandBuffer, 0, 1, &buffers.vertex,
+                                   &buffers.vertexOffset);
             if (drawItem.indexCount > 0) {
-                vkCmdBindIndexBuffer(frame.commandBuffer, buffers.index, 0, VK_INDEX_TYPE_UINT16);
+                vkCmdBindIndexBuffer(frame.commandBuffer, buffers.index, buffers.indexOffset,
+                                     VK_INDEX_TYPE_UINT16);
             }
             vkCmdSetViewport(frame.commandBuffer, 0, 1, &viewport);
             vkCmdSetScissor(frame.commandBuffer, 0, 1, &scissor);
@@ -1130,17 +1278,19 @@ namespace asharia {
                 .offset = VkOffset2D{.x = 0, .y = 0},
                 .extent = frame.extent,
             };
-            const BasicMesh3DPushConstants pushConstants = camera != nullptr
-                ? basicMesh3DPushConstants(*camera, basicMesh3DModelMatrix())
-                : basicMesh3DPushConstants(frame.extent, basicMesh3DModelMatrix());
+            const BasicMesh3DPushConstants pushConstants =
+                camera != nullptr
+                    ? basicMesh3DPushConstants(*camera, basicMesh3DModelMatrix())
+                    : basicMesh3DPushConstants(frame.extent, basicMesh3DModelMatrix());
 
             vkCmdBeginRendering(frame.commandBuffer, &renderingInfo);
             vkCmdBindPipeline(frame.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
             vkCmdPushConstants(frame.commandBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0,
                                static_cast<std::uint32_t>(sizeof(pushConstants)), &pushConstants);
-            constexpr VkDeviceSize vertexBufferOffset = 0;
-            vkCmdBindVertexBuffers(frame.commandBuffer, 0, 1, &buffers.vertex, &vertexBufferOffset);
-            vkCmdBindIndexBuffer(frame.commandBuffer, buffers.index, 0, VK_INDEX_TYPE_UINT16);
+            vkCmdBindVertexBuffers(frame.commandBuffer, 0, 1, &buffers.vertex,
+                                   &buffers.vertexOffset);
+            vkCmdBindIndexBuffer(frame.commandBuffer, buffers.index, buffers.indexOffset,
+                                 VK_INDEX_TYPE_UINT16);
             vkCmdSetViewport(frame.commandBuffer, 0, 1, &viewport);
             vkCmdSetScissor(frame.commandBuffer, 0, 1, &scissor);
             vkCmdDrawIndexed(frame.commandBuffer, drawItem.indexCount, drawItem.instanceCount,
@@ -1192,9 +1342,10 @@ namespace asharia {
 
             vkCmdBeginRendering(frame.commandBuffer, &renderingInfo);
             vkCmdBindPipeline(frame.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-            constexpr VkDeviceSize vertexBufferOffset = 0;
-            vkCmdBindVertexBuffers(frame.commandBuffer, 0, 1, &buffers.vertex, &vertexBufferOffset);
-            vkCmdBindIndexBuffer(frame.commandBuffer, buffers.index, 0, VK_INDEX_TYPE_UINT16);
+            vkCmdBindVertexBuffers(frame.commandBuffer, 0, 1, &buffers.vertex,
+                                   &buffers.vertexOffset);
+            vkCmdBindIndexBuffer(frame.commandBuffer, buffers.index, buffers.indexOffset,
+                                 VK_INDEX_TYPE_UINT16);
             vkCmdSetViewport(frame.commandBuffer, 0, 1, &viewport);
             vkCmdSetScissor(frame.commandBuffer, 0, 1, &scissor);
 
@@ -1216,6 +1367,73 @@ namespace asharia {
                 }
             }
 
+            vkCmdEndRendering(frame.commandBuffer);
+        }
+
+        void recordBasicRenderViewSceneMeshDraw(const VulkanFrameRecordContext& frame,
+                                                BasicRenderViewSceneMeshAttachments attachments,
+                                                VkExtent2D targetExtent, VkPipeline pipeline,
+                                                VkPipelineLayout pipelineLayout,
+                                                BasicDrawBuffers buffers,
+                                                const BasicRenderViewCamera& camera,
+                                                std::span<const BasicDrawListItem> drawItems) {
+            VkRenderingAttachmentInfo colorAttachment{};
+            colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+            colorAttachment.imageView = attachments.color;
+            colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+            colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+            colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+
+            VkRenderingAttachmentInfo depthAttachment{};
+            depthAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+            depthAttachment.imageView = attachments.depth;
+            depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+            depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+            depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+            depthAttachment.clearValue = VkClearValue{
+                .depthStencil =
+                    VkClearDepthStencilValue{
+                        .depth = 1.0F,
+                        .stencil = 0,
+                    },
+            };
+
+            VkRenderingInfo renderingInfo{};
+            renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+            renderingInfo.renderArea = VkRect2D{
+                .offset = VkOffset2D{.x = 0, .y = 0},
+                .extent = targetExtent,
+            };
+            renderingInfo.layerCount = 1;
+            renderingInfo.colorAttachmentCount = 1;
+            renderingInfo.pColorAttachments = &colorAttachment;
+            renderingInfo.pDepthAttachment = &depthAttachment;
+
+            const VkViewport viewport = basicCameraViewport(targetExtent);
+            const VkRect2D scissor{
+                .offset = VkOffset2D{.x = 0, .y = 0},
+                .extent = targetExtent,
+            };
+
+            vkCmdBeginRendering(frame.commandBuffer, &renderingInfo);
+            vkCmdBindPipeline(frame.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+            vkCmdBindVertexBuffers(frame.commandBuffer, 0, 1, &buffers.vertex,
+                                   &buffers.vertexOffset);
+            vkCmdBindIndexBuffer(frame.commandBuffer, buffers.index, buffers.indexOffset,
+                                 VK_INDEX_TYPE_UINT16);
+            vkCmdSetViewport(frame.commandBuffer, 0, 1, &viewport);
+            vkCmdSetScissor(frame.commandBuffer, 0, 1, &scissor);
+
+            for (const BasicDrawListItem& item : drawItems) {
+                const BasicMesh3DPushConstants pushConstants =
+                    basicMesh3DPushConstants(camera, item.modelMatrix);
+                vkCmdPushConstants(frame.commandBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT,
+                                   0, static_cast<std::uint32_t>(sizeof(pushConstants)),
+                                   &pushConstants);
+                vkCmdDrawIndexed(frame.commandBuffer, item.drawItem.indexCount,
+                                 item.drawItem.instanceCount, item.drawItem.firstIndex,
+                                 item.drawItem.vertexOffset, item.drawItem.firstInstance);
+            }
             vkCmdEndRendering(frame.commandBuffer);
         }
 
@@ -1376,8 +1594,7 @@ namespace asharia {
         }
 
         void recordBasicRenderViewOverlayTouch(const VulkanFrameRecordContext& frame,
-                                               VkImageView targetImageView,
-                                               VkExtent2D targetExtent,
+                                               VkImageView targetImageView, VkExtent2D targetExtent,
                                                BasicRenderViewOverlayColorLoadOp loadOp,
                                                BasicRenderViewOverlayColorStoreOp storeOp) {
             VkRenderingAttachmentInfo colorAttachment{};
@@ -1482,8 +1699,7 @@ namespace asharia {
 
             vkCmdBeginRendering(frame.commandBuffer, &renderingInfo);
             vkCmdBindPipeline(frame.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-            vkCmdBindVertexBuffers(frame.commandBuffer, 0, 1, &vertexBuffer,
-                                   &kVertexBufferOffset);
+            vkCmdBindVertexBuffers(frame.commandBuffer, 0, 1, &vertexBuffer, &kVertexBufferOffset);
             vkCmdSetViewport(frame.commandBuffer, 0, 1, &viewport);
             vkCmdSetScissor(frame.commandBuffer, 0, 1, &scissor);
             vkCmdDraw(frame.commandBuffer, vertexCount, 1, 0, 0);
@@ -1630,26 +1846,123 @@ namespace asharia {
             return {};
         }
 
-        [[nodiscard]] Result<void> executeBasicRenderViewSceneInputsPass(
-            RenderGraphPassContext pass, BasicRenderViewExecutionEventRecorder* eventRecorder) {
+        [[nodiscard]] Result<void> executeBasicRenderViewSceneMeshPass(
+            const VulkanFrameRecordContext& frame, RenderGraphPassContext pass,
+            std::span<const VulkanRenderGraphImageBinding> imageBindings,
+            std::span<const VulkanRenderGraphBufferBinding> bufferBindings, VkExtent2D targetExtent,
+            const BasicRenderViewCamera& camera, BasicSceneRasterMode rasterMode,
+            VkPipeline pipeline, VkPipelineLayout pipelineLayout,
+            std::span<const BasicDrawListItem> drawItems,
+            BasicRenderViewExecutionEventRecorder* eventRecorder) {
+            [[maybe_unused]] const auto timestamp = VulkanTimestampScope::begin(frame, pass.name);
+            [[maybe_unused]] const auto debugLabel = VulkanDebugLabelScope::begin(
+                frame, renderGraphPassDebugLabel(pass, imageBindings, bufferBindings));
             if (eventRecorder != nullptr) {
                 eventRecorder->beginPass(pass);
             }
+            auto imageTransitions =
+                recordRenderGraphTransitions(frame, pass.transitionsBefore, imageBindings);
+            if (!imageTransitions) {
+                return std::unexpected{std::move(imageTransitions.error())};
+            }
+            auto bufferTransitions = recordRenderGraphBufferTransitions(
+                frame, pass.bufferTransitionsBefore, bufferBindings);
+            if (!bufferTransitions) {
+                return std::unexpected{std::move(bufferTransitions.error())};
+            }
 
-            auto sceneParams = readPassParams<BasicRenderViewSceneInputsParams>(
-                pass, kBasicRenderViewSceneInputsParamsType, "RenderView scene inputs pass");
+            auto sceneParams = readPassParams<BasicRenderViewSceneMeshParams>(
+                pass, kBasicRenderViewSceneMeshParamsType, "RenderView scene mesh pass");
             if (!sceneParams) {
                 return std::unexpected{std::move(sceneParams.error())};
             }
-            auto commands = validateBasicRenderViewSceneInputsCommands(pass, *sceneParams);
+            auto commands = validateBasicRenderViewSceneMeshCommands(pass, *sceneParams, drawItems);
             if (!commands) {
                 return std::unexpected{std::move(commands.error())};
             }
+            auto expectedRasterMode = basicSceneRasterModeValue(rasterMode);
+            if (!expectedRasterMode) {
+                return std::unexpected{std::move(expectedRasterMode.error())};
+            }
+            const auto indexedDrawCount = static_cast<std::uint32_t>(drawItems.size());
+            if (sceneParams->drawItemCount != drawItems.size() ||
+                sceneParams->indexedDrawCount != indexedDrawCount ||
+                sceneParams->rasterMode != *expectedRasterMode) {
+                return std::unexpected{renderGraphError(
+                    "RenderView scene mesh params do not match the immutable draw packet batch")};
+            }
+            if (pipeline == VK_NULL_HANDLE || pipelineLayout == VK_NULL_HANDLE) {
+                return std::unexpected{
+                    Error{ErrorDomain::Vulkan, 0,
+                          "RenderView scene mesh pass has incomplete pipeline resources"}};
+            }
+            auto targetBinding = findVulkanRenderGraphColorWrite(pass, "target", imageBindings);
+            if (!targetBinding) {
+                return std::unexpected{std::move(targetBinding.error())};
+            }
+            auto depthBinding = findVulkanRenderGraphDepthWrite(pass, "depth", imageBindings);
+            if (!depthBinding) {
+                return std::unexpected{std::move(depthBinding.error())};
+            }
+            auto vertexBinding = findVulkanRenderGraphBufferSlot(pass.bufferVertexReadSlots,
+                                                                 "vertices", pass, bufferBindings);
+            if (!vertexBinding) {
+                return std::unexpected{std::move(vertexBinding.error())};
+            }
+            auto indexBinding = findVulkanRenderGraphBufferSlot(pass.bufferIndexReadSlots,
+                                                                "indices", pass, bufferBindings);
+            if (!indexBinding) {
+                return std::unexpected{std::move(indexBinding.error())};
+            }
+            if (vertexBinding->vulkanBuffer == VK_NULL_HANDLE ||
+                indexBinding->vulkanBuffer == VK_NULL_HANDLE) {
+                return std::unexpected{Error{
+                    ErrorDomain::Vulkan,
+                    0,
+                    "RenderView scene mesh pass resolved an invalid vertex or index buffer",
+                }};
+            }
+
+            const BasicDrawBuffers buffers{
+                .vertex = vertexBinding->vulkanBuffer,
+                .index = indexBinding->vulkanBuffer,
+                .vertexOffset = vertexBinding->offset,
+                .indexOffset = indexBinding->offset,
+            };
+
+            recordBasicRenderViewSceneMeshDraw(frame,
+                                               BasicRenderViewSceneMeshAttachments{
+                                                   .color = targetBinding->vulkanImageView,
+                                                   .depth = depthBinding->vulkanImageView,
+                                               },
+                                               targetExtent, pipeline, pipelineLayout, buffers,
+                                               camera, drawItems);
 
             if (eventRecorder != nullptr) {
                 eventRecorder->append(pass, BasicRenderViewExecutionEventKind::RenderViewInput,
-                                      "BindRenderViewSceneInputs",
-                                      firstCommandIndex(pass, RenderGraphCommandKind::SetInt));
+                                      "BindRenderViewSceneMesh",
+                                      firstCommandIndex(pass, RenderGraphCommandKind::SetShader),
+                                      {}, {}, std::nullopt, targetBinding->image.index,
+                                      std::nullopt, std::nullopt, depthBinding->image.index,
+                                      vertexBinding->buffer.index, indexBinding->buffer.index);
+                constexpr std::size_t kMetadataCommandCount = 3;
+                for (std::size_t itemIndex = 0; itemIndex < drawItems.size(); ++itemIndex) {
+                    const BasicDrawListItem& item = drawItems[itemIndex];
+                    eventRecorder->append(pass, BasicRenderViewExecutionEventKind::DrawIndexed,
+                                          "DrawSceneMeshIndexed", kMetadataCommandCount + itemIndex,
+                                          BasicRenderViewDrawEvent{
+                                              .vertexCount = item.drawItem.vertexCount,
+                                              .indexCount = item.drawItem.indexCount,
+                                              .instanceCount = item.drawItem.instanceCount,
+                                              .firstVertex = item.drawItem.firstVertex,
+                                              .firstIndex = item.drawItem.firstIndex,
+                                              .vertexOffset = item.drawItem.vertexOffset,
+                                              .firstInstance = item.drawItem.firstInstance,
+                                          },
+                                          {}, std::nullopt, targetBinding->image.index, itemIndex,
+                                          item.context, depthBinding->image.index,
+                                          vertexBinding->buffer.index, indexBinding->buffer.index);
+                }
                 eventRecorder->endPass(pass);
             }
             return {};
@@ -1686,8 +1999,7 @@ namespace asharia {
                 return std::unexpected{
                     renderGraphError("RenderView world grid pass cannot execute while disabled")};
             }
-            if (worldGridPipeline == VK_NULL_HANDLE ||
-                worldGridPipelineLayout == VK_NULL_HANDLE) {
+            if (worldGridPipeline == VK_NULL_HANDLE || worldGridPipelineLayout == VK_NULL_HANDLE) {
                 return std::unexpected{
                     Error{ErrorDomain::Vulkan, 0,
                           "RenderView world grid pass has an incomplete Vulkan pipeline"}};
@@ -1755,11 +2067,10 @@ namespace asharia {
             }
 
             if (eventRecorder != nullptr) {
-                eventRecorder->append(
-                    pass, BasicRenderViewExecutionEventKind::RenderViewInput,
-                    "BindRenderViewInputs",
-                    firstCommandIndex(pass, RenderGraphCommandKind::SetShader), {}, {},
-                    std::nullopt, targetBinding->image.index);
+                eventRecorder->append(pass, BasicRenderViewExecutionEventKind::RenderViewInput,
+                                      "BindRenderViewInputs",
+                                      firstCommandIndex(pass, RenderGraphCommandKind::SetShader),
+                                      {}, {}, std::nullopt, targetBinding->image.index);
             }
             if (debugLineVertexCount > 0 && debugLinePipeline != VK_NULL_HANDLE &&
                 debugLineVertexBuffer != VK_NULL_HANDLE) {
@@ -2026,13 +2337,13 @@ namespace asharia {
             return {};
         }
 
-// clang-format off
+        // clang-format off
 #include "basic_renderers/graph_recording.inl"
 #include "basic_renderers/render_view_targets.inl"
 #include "basic_renderers/debug_preview.inl"
 #include "basic_renderers/render_view_pass_policy.inl"
 #include "basic_renderers/render_view_recording.inl"
-// clang-format on
+        // clang-format on
         [[nodiscard]] Result<void>
         validateBasicDrawListItems(std::span<const BasicDrawListItem> drawItems) {
             if (drawItems.empty()) {
@@ -2105,7 +2416,7 @@ namespace asharia {
 
     // Keep the renderer implementations in private source parts. They share the helpers above
     // without promoting those helpers to a public or cross-translation-unit API.
-// clang-format off
+    // clang-format off
 #include "basic_renderers/descriptor_layout_smoke.inl"
 #include "basic_renderers/material_binding_smoke.inl"
 #include "basic_renderers/fullscreen_texture_renderer.inl"
@@ -2114,5 +2425,5 @@ namespace asharia {
 #include "basic_renderers/triangle_renderer.inl"
 #include "basic_renderers/mesh3d_renderer.inl"
 #include "basic_renderers/draw_list_renderer.inl"
-// clang-format on
+    // clang-format on
 } // namespace asharia

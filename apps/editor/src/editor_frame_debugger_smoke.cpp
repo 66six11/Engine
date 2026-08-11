@@ -6,10 +6,12 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 
 #include "asharia/archive/archive_value.hpp"
 #include "asharia/archive/json_archive.hpp"
 #include "asharia/core/log.hpp"
+#include "asharia/renderer_basic/render_graph_schemas.hpp"
 
 #include "editor_frame_debugger.hpp"
 #include "editor_frame_debugger_snapshot_projector.hpp"
@@ -209,6 +211,17 @@ namespace asharia::editor {
                    member->stringValue == expected;
         }
 
+        [[nodiscard]] bool arrayContainsStringMember(
+            const asharia::archive::ArchiveValue& value, std::string_view key,
+            const char* expected) {
+            return value.kind == asharia::archive::ArchiveValueKind::Array &&
+                   std::ranges::any_of(
+                       value.arrayValue,
+                       [key, expected](const asharia::archive::ArchiveValue& item) {
+                           return requiredStringMemberEquals(item, key, expected);
+                       });
+        }
+
         [[nodiscard]] bool requiredIntegerMemberEquals(
             const asharia::archive::ArchiveValue& value, std::string_view key,
             std::int64_t expected) {
@@ -218,16 +231,272 @@ namespace asharia::editor {
                    member->integerValue == expected;
         }
 
+        [[nodiscard]] bool requiredNullMember(const asharia::archive::ArchiveValue& value,
+                                              std::string_view key) {
+            const asharia::archive::ArchiveValue* member = value.findMemberValue(key);
+            return member != nullptr && member->kind == asharia::archive::ArchiveValueKind::Null;
+        }
+
+        [[nodiscard]] const asharia::archive::ArchiveValue* arrayObjectWithStringMember(
+            const asharia::archive::ArchiveValue& value, std::string_view key,
+            const char* expected) {
+            if (value.kind != asharia::archive::ArchiveValueKind::Array) {
+                return nullptr;
+            }
+            const auto found = std::ranges::find_if(
+                value.arrayValue, [key, expected](const asharia::archive::ArchiveValue& item) {
+                    return requiredStringMemberEquals(item, key, expected);
+                });
+            return found == value.arrayValue.end() ? nullptr : &(*found);
+        }
+
+        constexpr std::uint32_t kProjectedSceneColorResourceIndex = 17U;
+        constexpr std::uint32_t kProjectedSceneDepthResourceIndex = 18U;
+        constexpr std::uint32_t kProjectedSceneVertexResourceIndex = 27U;
+        constexpr std::uint32_t kProjectedSceneIndexResourceIndex = 28U;
+        constexpr std::size_t kProjectedSceneDrawItemIndex = 6U;
+        constexpr asharia::BasicDrawSourceId kProjectedSceneSourceObject{
+            .index = 0x12345678U,
+            .generation = 0x9ABCDEF0U,
+        };
+        constexpr asharia::BasicDrawResourceKey kProjectedSceneMeshResourceKey{
+            .value = 0x0123456789ABCDEFULL,
+        };
+        constexpr asharia::BasicDrawResourceKey kProjectedSceneMaterialResourceKey{
+            .value = 0xFEDCBA9876543210ULL,
+        };
+        constexpr std::size_t kProjectedSceneCommandIndex = 4U;
+        constexpr std::uint32_t kProjectedSceneIndexCount = 72U;
+        constexpr std::uint32_t kProjectedSceneInstanceCount = 3U;
+        constexpr std::uint32_t kProjectedSceneFirstVertex = 11U;
+        constexpr std::uint32_t kProjectedSceneFirstIndex = 5U;
+        constexpr std::int32_t kProjectedSceneVertexOffset = -2;
+        constexpr std::uint32_t kProjectedSceneFirstInstance = 9U;
+
+        [[nodiscard]] asharia::BasicRenderViewExecutionEventId
+        appendSceneDrawProjectionFixture(EditorFrameDebugCapture& capture) {
+            asharia::RenderGraphDiagnosticsSnapshot& graph = capture.diagnostics.renderGraph;
+            const std::size_t scenePassIndex = graph.passes.size();
+            const std::size_t sceneDeclarationIndex = graph.declaredPassCount;
+
+            asharia::RenderGraphDiagnosticsPassNode scenePass;
+            scenePass.passIndex = scenePassIndex;
+            scenePass.declarationIndex = sceneDeclarationIndex;
+            scenePass.name = "RenderViewSceneMesh";
+            scenePass.type = asharia::kBasicRenderViewSceneMeshPassType;
+            scenePass.paramsType = asharia::kBasicRenderViewSceneMeshParamsType;
+            scenePass.commandCount = 1U;
+            graph.passes.push_back(std::move(scenePass));
+            ++graph.declaredPassCount;
+
+            asharia::RenderGraphDiagnosticsResourceNode color;
+            color.resourceIndex = kProjectedSceneColorResourceIndex;
+            color.name = "SceneMeshColor";
+            color.imageFormat = asharia::RenderGraphImageFormat::B8G8R8A8Srgb;
+            color.imageExtent.width = capture.requestedExtent.width;
+            color.imageExtent.height = capture.requestedExtent.height;
+            color.imageFinalAccess.state = asharia::RenderGraphImageState::ColorAttachment;
+            graph.resources.push_back(std::move(color));
+
+            asharia::RenderGraphDiagnosticsResourceNode depth;
+            depth.resourceIndex = kProjectedSceneDepthResourceIndex;
+            depth.name = "SceneMeshDepth";
+            depth.imageFormat = asharia::RenderGraphImageFormat::D32Sfloat;
+            depth.imageExtent.width = capture.requestedExtent.width;
+            depth.imageExtent.height = capture.requestedExtent.height;
+            depth.imageFinalAccess.state = asharia::RenderGraphImageState::DepthAttachmentWrite;
+            graph.resources.push_back(std::move(depth));
+            graph.declaredImageCount += 2U;
+
+            asharia::RenderGraphDiagnosticsResourceNode vertices;
+            vertices.kind = asharia::RenderGraphResourceKind::Buffer;
+            vertices.resourceIndex = kProjectedSceneVertexResourceIndex;
+            vertices.name = "ValidationMeshVertices";
+            vertices.bufferByteSize = 14U * sizeof(asharia::BasicVertex3D);
+            vertices.bufferInitialAccess.state = asharia::RenderGraphBufferState::VertexRead;
+            vertices.bufferFinalAccess = vertices.bufferInitialAccess;
+            graph.resources.push_back(std::move(vertices));
+
+            asharia::RenderGraphDiagnosticsResourceNode indices;
+            indices.kind = asharia::RenderGraphResourceKind::Buffer;
+            indices.resourceIndex = kProjectedSceneIndexResourceIndex;
+            indices.name = "ValidationMeshIndices";
+            indices.bufferByteSize = 72U * sizeof(std::uint16_t);
+            indices.bufferInitialAccess.state = asharia::RenderGraphBufferState::IndexRead;
+            indices.bufferFinalAccess = indices.bufferInitialAccess;
+            graph.resources.push_back(std::move(indices));
+            graph.declaredBufferCount += 2U;
+
+            asharia::RenderGraphDiagnosticsAccessEdge colorAccess;
+            colorAccess.passIndex = scenePassIndex;
+            colorAccess.declarationIndex = sceneDeclarationIndex;
+            colorAccess.passName = "RenderViewSceneMesh";
+            colorAccess.resourceIndex = kProjectedSceneColorResourceIndex;
+            colorAccess.resourceName = "SceneMeshColor";
+            colorAccess.slotName = "color";
+            colorAccess.access = asharia::RenderGraphSlotAccess::ColorWrite;
+            graph.accessEdges.push_back(std::move(colorAccess));
+
+            asharia::RenderGraphDiagnosticsAccessEdge depthAccess;
+            depthAccess.passIndex = scenePassIndex;
+            depthAccess.declarationIndex = sceneDeclarationIndex;
+            depthAccess.passName = "RenderViewSceneMesh";
+            depthAccess.resourceIndex = kProjectedSceneDepthResourceIndex;
+            depthAccess.resourceName = "SceneMeshDepth";
+            depthAccess.slotName = "depth";
+            depthAccess.access = asharia::RenderGraphSlotAccess::DepthAttachmentWrite;
+            graph.accessEdges.push_back(std::move(depthAccess));
+
+            asharia::RenderGraphDiagnosticsAccessEdge vertexAccess;
+            vertexAccess.passIndex = scenePassIndex;
+            vertexAccess.declarationIndex = sceneDeclarationIndex;
+            vertexAccess.passName = "RenderViewSceneMesh";
+            vertexAccess.resourceKind = asharia::RenderGraphResourceKind::Buffer;
+            vertexAccess.resourceIndex = kProjectedSceneVertexResourceIndex;
+            vertexAccess.resourceName = "ValidationMeshVertices";
+            vertexAccess.slotName = "vertices";
+            vertexAccess.access = asharia::RenderGraphSlotAccess::BufferVertexRead;
+            graph.accessEdges.push_back(std::move(vertexAccess));
+
+            asharia::RenderGraphDiagnosticsAccessEdge indexAccess;
+            indexAccess.passIndex = scenePassIndex;
+            indexAccess.declarationIndex = sceneDeclarationIndex;
+            indexAccess.passName = "RenderViewSceneMesh";
+            indexAccess.resourceKind = asharia::RenderGraphResourceKind::Buffer;
+            indexAccess.resourceIndex = kProjectedSceneIndexResourceIndex;
+            indexAccess.resourceName = "ValidationMeshIndices";
+            indexAccess.slotName = "indices";
+            indexAccess.access = asharia::RenderGraphSlotAccess::BufferIndexRead;
+            graph.accessEdges.push_back(std::move(indexAccess));
+
+            asharia::RenderGraphDiagnosticsCommandNode drawCommand;
+            drawCommand.passIndex = scenePassIndex;
+            drawCommand.declarationIndex = sceneDeclarationIndex;
+            drawCommand.commandIndex = kProjectedSceneCommandIndex;
+            drawCommand.passName = "RenderViewSceneMesh";
+            drawCommand.kind = asharia::RenderGraphCommandKind::DrawIndexed;
+            drawCommand.detail =
+                "indexCount=72, instanceCount=3, firstIndex=5, vertexOffset=-2, "
+                "firstInstance=9";
+            graph.commands.push_back(std::move(drawCommand));
+
+            asharia::BasicRenderViewExecutionEvent drawEvent;
+            drawEvent.id.value = capture.diagnostics.executionEvents.size() + 1U;
+            drawEvent.kind = asharia::BasicRenderViewExecutionEventKind::DrawIndexed;
+            drawEvent.passIndex = scenePassIndex;
+            drawEvent.declarationIndex = sceneDeclarationIndex;
+            drawEvent.commandIndex = kProjectedSceneCommandIndex;
+            drawEvent.passName = "RenderViewSceneMesh";
+            drawEvent.label = "DrawSceneMeshIndexed";
+            drawEvent.draw.indexCount = kProjectedSceneIndexCount;
+            drawEvent.draw.instanceCount = kProjectedSceneInstanceCount;
+            drawEvent.draw.firstVertex = kProjectedSceneFirstVertex;
+            drawEvent.draw.firstIndex = kProjectedSceneFirstIndex;
+            drawEvent.draw.vertexOffset = kProjectedSceneVertexOffset;
+            drawEvent.draw.firstInstance = kProjectedSceneFirstInstance;
+            drawEvent.sceneDrawItemIndex = kProjectedSceneDrawItemIndex;
+            asharia::BasicDrawPacketContext packetContext;
+            packetContext.sourceObject = kProjectedSceneSourceObject;
+            packetContext.meshResource = kProjectedSceneMeshResourceKey;
+            packetContext.materialResource = kProjectedSceneMaterialResourceKey;
+            drawEvent.drawPacketContext = packetContext;
+            drawEvent.targetImageResourceIndex = kProjectedSceneColorResourceIndex;
+            drawEvent.depthImageResourceIndex = kProjectedSceneDepthResourceIndex;
+            drawEvent.vertexBufferResourceIndex = kProjectedSceneVertexResourceIndex;
+            drawEvent.indexBufferResourceIndex = kProjectedSceneIndexResourceIndex;
+            const asharia::BasicRenderViewExecutionEventId eventId = drawEvent.id;
+            capture.diagnostics.executionEvents.push_back(std::move(drawEvent));
+            return eventId;
+        }
+
+        [[nodiscard]] bool validateProjectedSceneDrawEvent(
+            const asharia::archive::ArchiveValue& events,
+            const asharia::BasicRenderViewExecutionEvent& expectedEvent) {
+            const asharia::archive::ArchiveValue* event =
+                arrayObjectWithStringMember(events, "label", "DrawSceneMeshIndexed");
+            if (event == nullptr) {
+                return false;
+            }
+            const asharia::archive::ArchiveValue* sourceObject =
+                requiredObjectMember(*event, "sourceObject");
+            const std::string commandId =
+                "command:" + std::to_string(expectedEvent.passIndex) + ":" +
+                std::to_string(kProjectedSceneCommandIndex);
+            const std::string targetResourceId =
+                "image:" + std::to_string(kProjectedSceneColorResourceIndex);
+            const std::string depthResourceId =
+                "image:" + std::to_string(kProjectedSceneDepthResourceIndex);
+            const std::string vertexResourceId =
+                "buffer:" + std::to_string(kProjectedSceneVertexResourceIndex);
+            const std::string indexResourceId =
+                "buffer:" + std::to_string(kProjectedSceneIndexResourceIndex);
+            return sourceObject != nullptr &&
+                   requiredStringMemberEquals(*event, "kind", "DrawIndexed") &&
+                   requiredStringMemberEquals(*event, "passName", "RenderViewSceneMesh") &&
+                   requiredIntegerMemberEquals(
+                       *event, "declarationIndex",
+                       static_cast<std::int64_t>(expectedEvent.declarationIndex)) &&
+                   requiredIntegerMemberEquals(
+                       *event, "commandIndex",
+                       static_cast<std::int64_t>(kProjectedSceneCommandIndex)) &&
+                   requiredStringMemberEquals(*event, "commandId", commandId.c_str()) &&
+                   requiredIntegerMemberEquals(
+                       *event, "sceneDrawItemIndex",
+                       static_cast<std::int64_t>(kProjectedSceneDrawItemIndex)) &&
+                   requiredIntegerMemberEquals(*sourceObject, "index",
+                                               kProjectedSceneSourceObject.index) &&
+                   requiredIntegerMemberEquals(*sourceObject, "generation",
+                                               kProjectedSceneSourceObject.generation) &&
+                   requiredStringMemberEquals(*event, "meshResourceKey",
+                                              "0123456789abcdef") &&
+                   requiredStringMemberEquals(*event, "materialResourceKey",
+                                              "fedcba9876543210") &&
+                   requiredNullMember(*event, "sourceResourceId") &&
+                   requiredStringMemberEquals(*event, "targetResourceId",
+                                              targetResourceId.c_str()) &&
+                   requiredStringMemberEquals(*event, "depthResourceId",
+                                              depthResourceId.c_str()) &&
+                   requiredStringMemberEquals(*event, "vertexResourceId",
+                                              vertexResourceId.c_str()) &&
+                   requiredStringMemberEquals(*event, "indexResourceId",
+                                              indexResourceId.c_str()) &&
+                   requiredIntegerMemberEquals(*event, "vertexCount", 0) &&
+                   requiredIntegerMemberEquals(*event, "indexCount",
+                                               kProjectedSceneIndexCount) &&
+                   requiredIntegerMemberEquals(*event, "instanceCount",
+                                               kProjectedSceneInstanceCount) &&
+                   requiredIntegerMemberEquals(*event, "firstVertex",
+                                               kProjectedSceneFirstVertex) &&
+                   requiredIntegerMemberEquals(*event, "firstIndex",
+                                               kProjectedSceneFirstIndex) &&
+                   requiredIntegerMemberEquals(*event, "vertexOffset",
+                                               kProjectedSceneVertexOffset) &&
+                   requiredIntegerMemberEquals(*event, "firstInstance",
+                                               kProjectedSceneFirstInstance);
+        }
+
+        [[nodiscard]] bool validateProjectedStructuralEventOptionals(
+            const asharia::archive::ArchiveValue& events) {
+            const asharia::archive::ArchiveValue* event =
+                arrayObjectWithStringMember(events, "kind", "BeginPass");
+            return event != nullptr && requiredNullMember(*event, "commandIndex") &&
+                   requiredNullMember(*event, "commandId") &&
+                   requiredNullMember(*event, "sceneDrawItemIndex") &&
+                   requiredNullMember(*event, "sourceObject") &&
+                   requiredNullMember(*event, "meshResourceKey") &&
+                   requiredNullMember(*event, "materialResourceKey") &&
+                   requiredNullMember(*event, "depthResourceId") &&
+                   requiredNullMember(*event, "vertexResourceId") &&
+                   requiredNullMember(*event, "indexResourceId");
+        }
+
         [[nodiscard]] bool validateStudioFrameDebugSnapshotProjection(
             const EditorFrameDebugCapture& capture) {
-            const asharia::BasicRenderViewExecutionEvent* selectedEvent = nullptr;
-            for (const asharia::BasicRenderViewExecutionEvent& event :
-                 capture.diagnostics.executionEvents) {
-                if (isInspectableExecutionEvent(event.kind) && event.targetImageResourceIndex) {
-                    selectedEvent = &event;
-                    break;
-                }
-            }
+            EditorFrameDebugCapture projectionCapture = capture;
+            const asharia::BasicRenderViewExecutionEventId sceneDrawEventId =
+                appendSceneDrawProjectionFixture(projectionCapture);
+            const asharia::BasicRenderViewExecutionEvent* selectedEvent =
+                capturedExecutionEvent(projectionCapture.diagnostics, sceneDrawEventId.value);
             if (selectedEvent == nullptr) {
                 asharia::logError(
                     "Editor frame debugger smoke found no previewable event for Studio snapshot.");
@@ -240,15 +509,15 @@ namespace asharia::editor {
                     "Editor frame debugger smoke could not request projection capture.");
                 return false;
             }
-            projectedDebugger.beginFrame(capture.frameIndex);
+            projectedDebugger.beginFrame(projectionCapture.frameIndex);
             projectedDebugger.captureRecordedView(EditorFrameDebugCaptureDesc{
-                .frameIndex = capture.frameIndex,
-                .submittedFrameEpoch = capture.submittedFrameEpoch,
-                .viewKind = capture.viewKind,
-                .requestedExtent = capture.requestedExtent,
-                .diagnostics = capture.diagnostics,
+                .frameIndex = projectionCapture.frameIndex,
+                .submittedFrameEpoch = projectionCapture.submittedFrameEpoch,
+                .viewKind = projectionCapture.viewKind,
+                .requestedExtent = projectionCapture.requestedExtent,
+                .diagnostics = projectionCapture.diagnostics,
             });
-            projectedDebugger.endSubmittedFrame(capture.submittedFrameEpoch);
+            projectedDebugger.endSubmittedFrame(projectionCapture.submittedFrameEpoch);
             if (projectedDebugger.state() != EditorFrameDebuggerState::PausedFrameDebug ||
                 !projectedDebugger.selectReplayEvent(selectedEvent->id) ||
                 !projectedDebugger.preview().selectedImageResourceIndex) {
@@ -288,28 +557,46 @@ namespace asharia::editor {
                     "Editor frame debugger smoke wrote an incomplete Studio snapshot root.");
                 return false;
             }
-            if (!requiredIntegerMemberEquals(*captureJson, "frameIndex", capture.frameIndex) ||
+            if (!requiredIntegerMemberEquals(*captureJson, "frameIndex",
+                                             projectionCapture.frameIndex) ||
                 !requiredIntegerMemberEquals(
                     *captureJson, "submittedFrameEpoch",
-                    static_cast<std::int64_t>(capture.submittedFrameEpoch)) ||
+                    static_cast<std::int64_t>(projectionCapture.submittedFrameEpoch)) ||
                 !requiredStringMemberEquals(*captureJson, "viewKind", "Scene")) {
                 asharia::logError(
                     "Editor frame debugger smoke wrote an incomplete Studio capture snapshot.");
                 return false;
             }
-            if (passes->arrayValue.size() != capture.diagnostics.renderGraph.passes.size() ||
+            if (passes->arrayValue.size() !=
+                    projectionCapture.diagnostics.renderGraph.passes.size() ||
                 resources->arrayValue.size() !=
-                    capture.diagnostics.renderGraph.resources.size() ||
-                events->arrayValue.size() != capture.diagnostics.executionEvents.size()) {
+                    projectionCapture.diagnostics.renderGraph.resources.size() ||
+                events->arrayValue.size() !=
+                    projectionCapture.diagnostics.executionEvents.size()) {
                 asharia::logError(
                     "Editor frame debugger smoke projected unexpected Studio snapshot counts.");
                 return false;
             }
+            const asharia::archive::ArchiveValue* commands =
+                requiredArrayMember(root, "commands");
+            const asharia::archive::ArchiveValue* accesses =
+                requiredArrayMember(root, "accessEdges");
+            if (commands == nullptr || accesses == nullptr ||
+                !arrayContainsStringMember(*resources, "bufferInitialAccess", "VertexRead") ||
+                !arrayContainsStringMember(*resources, "bufferInitialAccess", "IndexRead") ||
+                !arrayContainsStringMember(*accesses, "access", "BufferVertexRead") ||
+                !arrayContainsStringMember(*accesses, "access", "BufferIndexRead") ||
+                !arrayContainsStringMember(*commands, "kind", "DrawIndexed") ||
+                !arrayContainsStringMember(*events, "kind", "DrawIndexed") ||
+                !validateProjectedSceneDrawEvent(*events, *selectedEvent) ||
+                !validateProjectedStructuralEventOptionals(*events)) {
+                asharia::logError(
+                    "Editor frame debugger smoke lost Scene mesh packet/resource/draw fields.");
+                return false;
+            }
             if (!requiredStringMemberEquals(*preview, "status", "Pending") ||
                 !requiredIntegerMemberEquals(
-                    *preview, "sourceResourceIndex",
-                    static_cast<std::int64_t>(
-                        *projectedDebugger.preview().selectedImageResourceIndex))) {
+                    *preview, "sourceResourceIndex", kProjectedSceneColorResourceIndex)) {
                 asharia::logError(
                     "Editor frame debugger smoke did not project preview metadata.");
                 return false;

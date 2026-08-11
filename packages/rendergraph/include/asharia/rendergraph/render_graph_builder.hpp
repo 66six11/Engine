@@ -47,6 +47,8 @@ namespace asharia {
             PassBuilder& writeTransfer(std::string slotName, RenderGraphImageHandle image);
             PassBuilder& readBuffer(std::string slotName, RenderGraphBufferHandle buffer,
                                     RenderGraphShaderStage shaderStage);
+            PassBuilder& readVertexBuffer(std::string slotName, RenderGraphBufferHandle buffer);
+            PassBuilder& readIndexBuffer(std::string slotName, RenderGraphBufferHandle buffer);
 
             PassBuilder& readTransferBuffer(std::string slotName, RenderGraphBufferHandle buffer);
             PassBuilder& writeBuffer(RenderGraphBufferHandle buffer);

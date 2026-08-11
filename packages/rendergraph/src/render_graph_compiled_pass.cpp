@@ -31,6 +31,8 @@ namespace asharia::rendergraph_internal {
             .transferReads = imageHandles(pass.transferReadSlots),
             .transferWrites = imageHandles(pass.transferWriteSlots),
             .bufferReads = bufferHandles(pass.bufferReadSlots),
+            .bufferVertexReads = bufferHandles(pass.bufferVertexReadSlots),
+            .bufferIndexReads = bufferHandles(pass.bufferIndexReadSlots),
             .bufferTransferReads = bufferHandles(pass.bufferTransferReadSlots),
             .bufferWrites = bufferHandles(pass.bufferWriteSlots),
             .bufferStorageReadWrites = bufferHandles(pass.bufferStorageReadWriteSlots),
@@ -42,6 +44,8 @@ namespace asharia::rendergraph_internal {
             .transferReadSlots = pass.transferReadSlots,
             .transferWriteSlots = pass.transferWriteSlots,
             .bufferReadSlots = pass.bufferReadSlots,
+            .bufferVertexReadSlots = pass.bufferVertexReadSlots,
+            .bufferIndexReadSlots = pass.bufferIndexReadSlots,
             .bufferTransferReadSlots = pass.bufferTransferReadSlots,
             .bufferWriteSlots = pass.bufferWriteSlots,
             .bufferStorageReadWriteSlots = pass.bufferStorageReadWriteSlots,
@@ -163,6 +167,28 @@ namespace asharia::rendergraph_internal {
                               currentBufferAccesses, compiledPass);
         if (!bufferReadTransitions) {
             return std::unexpected{std::move(bufferReadTransitions.error())};
+        }
+
+        auto bufferVertexReadTransitions =
+            transitionBuffers(buffers, compiledPass.bufferVertexReadSlots,
+                              RenderGraphBufferAccess{
+                                  .state = RenderGraphBufferState::VertexRead,
+                                  .shaderStage = RenderGraphShaderStage::None,
+                              },
+                              currentBufferAccesses, compiledPass);
+        if (!bufferVertexReadTransitions) {
+            return std::unexpected{std::move(bufferVertexReadTransitions.error())};
+        }
+
+        auto bufferIndexReadTransitions =
+            transitionBuffers(buffers, compiledPass.bufferIndexReadSlots,
+                              RenderGraphBufferAccess{
+                                  .state = RenderGraphBufferState::IndexRead,
+                                  .shaderStage = RenderGraphShaderStage::None,
+                              },
+                              currentBufferAccesses, compiledPass);
+        if (!bufferIndexReadTransitions) {
+            return std::unexpected{std::move(bufferIndexReadTransitions.error())};
         }
 
         auto bufferStorageReadWriteTransitions =

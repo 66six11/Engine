@@ -8,6 +8,9 @@ namespace {
     constexpr std::size_t kDescriptorSetRingSize = 16U;
     constexpr std::size_t kDebugLineVertexBufferRingSize = 16U;
     constexpr std::size_t kFrameResourceContextCount = 4U;
+    constexpr std::size_t kFullscreenPipelineCacheCapacity = 2U;
+    constexpr std::size_t kOverlayPipelineCacheCapacity = 4U;
+    constexpr std::size_t kSceneMeshPipelineCacheCapacity = 4U;
     constexpr std::size_t kResourcesPerFrameContext =
         kDescriptorSetRingSize / kFrameResourceContextCount;
 
@@ -43,22 +46,22 @@ BasicFullscreenTextureRenderer::operator=(BasicFullscreenTextureRenderer&& other
     worldGridFragmentShader_ = std::move(other.worldGridFragmentShader_);
     debugLineVertexShader_ = std::move(other.debugLineVertexShader_);
     debugLineFragmentShader_ = std::move(other.debugLineFragmentShader_);
+    sceneMeshVertexShader_ = std::move(other.sceneMeshVertexShader_);
+    sceneMeshFragmentShader_ = std::move(other.sceneMeshFragmentShader_);
     descriptorSetLayouts_ = std::move(other.descriptorSetLayouts_);
     pipelineLayout_ = std::move(other.pipelineLayout_);
     worldGridPipelineLayout_ = std::move(other.worldGridPipelineLayout_);
     debugLinePipelineLayout_ = std::move(other.debugLinePipelineLayout_);
+    sceneMeshPipelineLayout_ = std::move(other.sceneMeshPipelineLayout_);
     pipelineCache_ = std::move(other.pipelineCache_);
-    pipeline_ = std::move(other.pipeline_);
-    worldGridPipeline_ = std::move(other.worldGridPipeline_);
-    debugLinePipeline_ = std::move(other.debugLinePipeline_);
-    pipelineFormat_ = std::exchange(other.pipelineFormat_, VK_FORMAT_UNDEFINED);
-    worldGridPipelineFormat_ = std::exchange(other.worldGridPipelineFormat_, VK_FORMAT_UNDEFINED);
-    debugLinePipelineFormat_ = std::exchange(other.debugLinePipelineFormat_, VK_FORMAT_UNDEFINED);
-    worldGridPipelineBlendMode_ = std::exchange(other.worldGridPipelineBlendMode_,
-                                                BasicRenderViewOverlayBlendMode::AlphaBlend);
-    debugLinePipelineBlendMode_ = std::exchange(other.debugLinePipelineBlendMode_,
-                                                BasicRenderViewOverlayBlendMode::AlphaBlend);
+    fullscreenPipelines_ = std::move(other.fullscreenPipelines_);
+    worldGridPipelines_ = std::move(other.worldGridPipelines_);
+    debugLinePipelines_ = std::move(other.debugLinePipelines_);
+    sceneMeshPipelines_ = std::move(other.sceneMeshPipelines_);
     pipelineCacheStats_ = std::exchange(other.pipelineCacheStats_, {});
+    worldGridPipelineCacheStats_ = std::exchange(other.worldGridPipelineCacheStats_, {});
+    debugLinePipelineCacheStats_ = std::exchange(other.debugLinePipelineCacheStats_, {});
+    sceneMeshPipelineCacheStats_ = std::exchange(other.sceneMeshPipelineCacheStats_, {});
     offscreenViewportTarget_ = std::move(other.offscreenViewportTarget_);
     descriptorAllocator_ = std::move(other.descriptorAllocator_);
     descriptorSets_ = std::move(other.descriptorSets_);
@@ -71,10 +74,13 @@ BasicFullscreenTextureRenderer::operator=(BasicFullscreenTextureRenderer&& other
     debugLineVertexBufferSizes_ = std::move(other.debugLineVertexBufferSizes_);
     debugLineVertexBufferEpoch_ = std::exchange(other.debugLineVertexBufferEpoch_, 0);
     debugLineVertexBufferCursor_ = std::exchange(other.debugLineVertexBufferCursor_, 0);
+    sceneMeshVertexBuffer_ = std::move(other.sceneMeshVertexBuffer_);
+    sceneMeshIndexBuffer_ = std::move(other.sceneMeshIndexBuffer_);
     uniformBuffer_ = std::move(other.uniformBuffer_);
     sampler_ = std::move(other.sampler_);
     transientImagePool_ = std::move(other.transientImagePool_);
     transientImages_ = std::move(other.transientImages_);
+    deviceCapabilities_ = std::exchange(other.deviceCapabilities_, {});
     return *this;
 }
 
@@ -101,6 +107,10 @@ BasicFullscreenTextureRenderer::create(const BasicFullscreenTextureRendererDesc&
     auto worldGridReflection = validateWorldGridReflection(desc.shaderDirectory);
     if (!worldGridReflection) {
         return std::unexpected{std::move(worldGridReflection.error())};
+    }
+    auto sceneMeshReflection = validateMesh3DReflection(desc.shaderDirectory);
+    if (!sceneMeshReflection) {
+        return std::unexpected{std::move(sceneMeshReflection.error())};
     }
     auto resources = createPipelineLayoutResources(desc.device, *signature);
     if (!resources) {
@@ -135,6 +145,14 @@ BasicFullscreenTextureRenderer::create(const BasicFullscreenTextureRendererDesc&
     auto debugLineFragmentCode = readSpirvFile(desc.shaderDirectory / "debug_line.frag.spv");
     if (!debugLineFragmentCode) {
         return std::unexpected{std::move(debugLineFragmentCode.error())};
+    }
+    auto sceneMeshVertexCode = readSpirvFile(desc.shaderDirectory / "basic_mesh3d.vert.spv");
+    if (!sceneMeshVertexCode) {
+        return std::unexpected{std::move(sceneMeshVertexCode.error())};
+    }
+    auto sceneMeshFragmentCode = readSpirvFile(desc.shaderDirectory / "basic_mesh3d.frag.spv");
+    if (!sceneMeshFragmentCode) {
+        return std::unexpected{std::move(sceneMeshFragmentCode.error())};
     }
 
     auto vertexShader = VulkanShaderModule::create(VulkanShaderModuleDesc{
@@ -179,6 +197,20 @@ BasicFullscreenTextureRenderer::create(const BasicFullscreenTextureRendererDesc&
     if (!debugLineFragmentShader) {
         return std::unexpected{std::move(debugLineFragmentShader.error())};
     }
+    auto sceneMeshVertexShader = VulkanShaderModule::create(VulkanShaderModuleDesc{
+        .device = desc.device,
+        .code = *sceneMeshVertexCode,
+    });
+    if (!sceneMeshVertexShader) {
+        return std::unexpected{std::move(sceneMeshVertexShader.error())};
+    }
+    auto sceneMeshFragmentShader = VulkanShaderModule::create(VulkanShaderModuleDesc{
+        .device = desc.device,
+        .code = *sceneMeshFragmentCode,
+    });
+    if (!sceneMeshFragmentShader) {
+        return std::unexpected{std::move(sceneMeshFragmentShader.error())};
+    }
     constexpr std::array worldGridPushConstantRanges{
         VkPushConstantRange{
             .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
@@ -201,6 +233,21 @@ BasicFullscreenTextureRenderer::create(const BasicFullscreenTextureRendererDesc&
     });
     if (!debugLinePipelineLayout) {
         return std::unexpected{std::move(debugLinePipelineLayout.error())};
+    }
+    constexpr std::array sceneMeshPushConstantRanges{
+        VkPushConstantRange{
+            .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
+            .offset = 0,
+            .size = static_cast<std::uint32_t>(sizeof(BasicMesh3DPushConstants)),
+        },
+    };
+    auto sceneMeshPipelineLayout = VulkanPipelineLayout::create(VulkanPipelineLayoutDesc{
+        .device = desc.device,
+        .setLayouts = {},
+        .pushConstantRanges = sceneMeshPushConstantRanges,
+    });
+    if (!sceneMeshPipelineLayout) {
+        return std::unexpected{std::move(sceneMeshPipelineLayout.error())};
     }
 
     constexpr std::array tint{1.0F, 1.0F, 1.0F, 1.0F};
@@ -314,10 +361,13 @@ BasicFullscreenTextureRenderer::create(const BasicFullscreenTextureRendererDesc&
     renderer.worldGridFragmentShader_ = std::move(*worldGridFragmentShader);
     renderer.debugLineVertexShader_ = std::move(*debugLineVertexShader);
     renderer.debugLineFragmentShader_ = std::move(*debugLineFragmentShader);
+    renderer.sceneMeshVertexShader_ = std::move(*sceneMeshVertexShader);
+    renderer.sceneMeshFragmentShader_ = std::move(*sceneMeshFragmentShader);
     renderer.descriptorSetLayouts_ = std::move(resources->descriptorSetLayouts);
     renderer.pipelineLayout_ = std::move(resources->pipelineLayout);
     renderer.worldGridPipelineLayout_ = std::move(*worldGridPipelineLayout);
     renderer.debugLinePipelineLayout_ = std::move(*debugLinePipelineLayout);
+    renderer.sceneMeshPipelineLayout_ = std::move(*sceneMeshPipelineLayout);
     renderer.pipelineCache_ = std::move(*pipelineCache);
     renderer.descriptorAllocator_ = std::move(*descriptorAllocator);
     renderer.descriptorSets_ = std::move(fullscreenDescriptorSets);
@@ -326,13 +376,25 @@ BasicFullscreenTextureRenderer::create(const BasicFullscreenTextureRendererDesc&
     renderer.debugLineVertexBufferSizes_.resize(kDebugLineVertexBufferRingSize);
     renderer.uniformBuffer_ = std::move(*uniformBuffer);
     renderer.sampler_ = std::move(*sampler);
+    renderer.deviceCapabilities_ = desc.deviceCapabilities;
     return renderer;
 }
 
-Result<void> BasicFullscreenTextureRenderer::ensurePipeline(VkFormat colorFormat) {
-    if (pipeline_.handle() != VK_NULL_HANDLE && pipelineFormat_ == colorFormat) {
+Result<VkPipeline> BasicFullscreenTextureRenderer::ensurePipeline(VkFormat colorFormat) {
+    const auto cached = std::ranges::find_if(
+        fullscreenPipelines_, [colorFormat](const FullscreenPipelineCacheEntry& entry) {
+            return entry.colorFormat == colorFormat;
+        });
+    if (cached != fullscreenPipelines_.end()) {
         ++pipelineCacheStats_.reused;
-        return {};
+        return cached->pipeline.handle();
+    }
+    if (fullscreenPipelines_.size() >= kFullscreenPipelineCacheCapacity) {
+        return std::unexpected{Error{
+            ErrorDomain::Vulkan,
+            0,
+            "Fullscreen texture pipeline cache exhausted its supported format key space",
+        }};
     }
 
     auto pipeline = VulkanGraphicsPipeline::createDynamicRendering(VulkanGraphicsPipelineDesc{
@@ -346,23 +408,37 @@ Result<void> BasicFullscreenTextureRenderer::ensurePipeline(VkFormat colorFormat
         .colorFormat = colorFormat,
         .vertexBindings = {},
         .vertexAttributes = {},
+        .deviceCapabilities = {},
     });
     if (!pipeline) {
         return std::unexpected{std::move(pipeline.error())};
     }
-
-    pipeline_ = std::move(*pipeline);
-    pipelineFormat_ = colorFormat;
+    fullscreenPipelines_.push_back(FullscreenPipelineCacheEntry{
+        .colorFormat = colorFormat,
+        .pipeline = std::move(*pipeline),
+    });
     ++pipelineCacheStats_.created;
-    return {};
+    return fullscreenPipelines_.back().pipeline.handle();
 }
 
-Result<void>
+Result<VkPipeline>
 BasicFullscreenTextureRenderer::ensureWorldGridPipeline(VkFormat colorFormat,
                                                         BasicRenderViewOverlayBlendMode blendMode) {
-    if (worldGridPipeline_.handle() != VK_NULL_HANDLE && worldGridPipelineFormat_ == colorFormat &&
-        worldGridPipelineBlendMode_ == blendMode) {
-        return {};
+    const auto cached = std::ranges::find_if(
+        worldGridPipelines_, [colorFormat, blendMode](const OverlayPipelineCacheEntry& entry) {
+            return entry.colorFormat == colorFormat && entry.blendMode == blendMode;
+        });
+    if (cached != worldGridPipelines_.end()) {
+        ++worldGridPipelineCacheStats_.reused;
+        return cached->pipeline.handle();
+    }
+    if (worldGridPipelines_.size() >= kOverlayPipelineCacheCapacity) {
+        return std::unexpected{Error{
+            ErrorDomain::Vulkan,
+            0,
+            "RenderView world-grid pipeline cache exhausted its supported format/blend key "
+            "space",
+        }};
     }
 
     VkBlendFactor colorSrcBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
@@ -391,6 +467,7 @@ BasicFullscreenTextureRenderer::ensureWorldGridPipeline(VkFormat colorFormat,
         .vertexBindings = {},
         .vertexAttributes = {},
         .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+        .deviceCapabilities = {},
         .colorBlendEnable = VK_TRUE,
         .colorSrcBlendFactor = colorSrcBlendFactor,
         .colorDstBlendFactor = colorDstBlendFactor,
@@ -403,18 +480,32 @@ BasicFullscreenTextureRenderer::ensureWorldGridPipeline(VkFormat colorFormat,
         return std::unexpected{std::move(pipeline.error())};
     }
 
-    worldGridPipeline_ = std::move(*pipeline);
-    worldGridPipelineFormat_ = colorFormat;
-    worldGridPipelineBlendMode_ = blendMode;
-    return {};
+    worldGridPipelines_.push_back(OverlayPipelineCacheEntry{
+        .colorFormat = colorFormat,
+        .blendMode = blendMode,
+        .pipeline = std::move(*pipeline),
+    });
+    ++worldGridPipelineCacheStats_.created;
+    return worldGridPipelines_.back().pipeline.handle();
 }
 
-Result<void>
+Result<VkPipeline>
 BasicFullscreenTextureRenderer::ensureDebugLinePipeline(VkFormat colorFormat,
                                                         BasicRenderViewOverlayBlendMode blendMode) {
-    if (debugLinePipeline_.handle() != VK_NULL_HANDLE && debugLinePipelineFormat_ == colorFormat &&
-        debugLinePipelineBlendMode_ == blendMode) {
-        return {};
+    const auto cached = std::ranges::find_if(
+        debugLinePipelines_, [colorFormat, blendMode](const OverlayPipelineCacheEntry& entry) {
+            return entry.colorFormat == colorFormat && entry.blendMode == blendMode;
+        });
+    if (cached != debugLinePipelines_.end()) {
+        ++debugLinePipelineCacheStats_.reused;
+        return cached->pipeline.handle();
+    }
+    if (debugLinePipelines_.size() >= kOverlayPipelineCacheCapacity) {
+        return std::unexpected{Error{
+            ErrorDomain::Vulkan,
+            0,
+            "RenderView debug-line pipeline cache exhausted its supported format/blend key space",
+        }};
     }
 
     const auto bindings = basicDebugLineVertexInputBindings();
@@ -445,6 +536,7 @@ BasicFullscreenTextureRenderer::ensureDebugLinePipeline(VkFormat colorFormat,
         .vertexBindings = bindings,
         .vertexAttributes = attributes,
         .topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST,
+        .deviceCapabilities = {},
         .colorBlendEnable = VK_TRUE,
         .colorSrcBlendFactor = colorSrcBlendFactor,
         .colorDstBlendFactor = colorDstBlendFactor,
@@ -457,14 +549,145 @@ BasicFullscreenTextureRenderer::ensureDebugLinePipeline(VkFormat colorFormat,
         return std::unexpected{std::move(pipeline.error())};
     }
 
-    debugLinePipeline_ = std::move(*pipeline);
-    debugLinePipelineFormat_ = colorFormat;
-    debugLinePipelineBlendMode_ = blendMode;
+    debugLinePipelines_.push_back(OverlayPipelineCacheEntry{
+        .colorFormat = colorFormat,
+        .blendMode = blendMode,
+        .pipeline = std::move(*pipeline),
+    });
+    ++debugLinePipelineCacheStats_.created;
+    return debugLinePipelines_.back().pipeline.handle();
+}
+
+Result<void> BasicFullscreenTextureRenderer::ensureSceneMeshResources() {
+    if (sceneMeshVertexBuffer_.handle() != VK_NULL_HANDLE &&
+        sceneMeshIndexBuffer_.handle() != VK_NULL_HANDLE) {
+        return {};
+    }
+
+    constexpr auto validationMesh = validation::directionalWedgeValidationMeshProduct();
+    std::vector<BasicVertex3D> validationVertices;
+    validationVertices.reserve(validationMesh.vertices.size());
+    for (const validation::ValidationMeshVertex& vertex : validationMesh.vertices) {
+        validationVertices.push_back(BasicVertex3D{
+            .position = {vertex.position[0], vertex.position[1], vertex.position[2]},
+            .color = {vertex.color[0], vertex.color[1], vertex.color[2]},
+        });
+    }
+    const std::span<const BasicVertex3D> normalizedVertices{validationVertices};
+    auto vertexBuffer = VulkanBuffer::create(VulkanBufferDesc{
+        .device = device_,
+        .allocator = allocator_,
+        .size = normalizedVertices.size_bytes(),
+        .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+        .memoryUsage = VulkanBufferMemoryUsage::HostUpload,
+    });
+    if (!vertexBuffer) {
+        return std::unexpected{std::move(vertexBuffer.error())};
+    }
+    auto uploadedVertices = vertexBuffer->upload(std::as_bytes(normalizedVertices));
+    if (!uploadedVertices) {
+        return std::unexpected{std::move(uploadedVertices.error())};
+    }
+    auto indexBuffer = VulkanBuffer::create(VulkanBufferDesc{
+        .device = device_,
+        .allocator = allocator_,
+        .size = validationMesh.indices.size_bytes(),
+        .usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+        .memoryUsage = VulkanBufferMemoryUsage::HostUpload,
+    });
+    if (!indexBuffer) {
+        return std::unexpected{std::move(indexBuffer.error())};
+    }
+    auto uploadedIndices = indexBuffer->upload(std::as_bytes(validationMesh.indices));
+    if (!uploadedIndices) {
+        return std::unexpected{std::move(uploadedIndices.error())};
+    }
+
+    sceneMeshVertexBuffer_ = std::move(*vertexBuffer);
+    sceneMeshIndexBuffer_ = std::move(*indexBuffer);
     return {};
+}
+
+Result<VkPipeline>
+BasicFullscreenTextureRenderer::ensureSceneMeshPipeline(VkFormat colorFormat, VkFormat depthFormat,
+                                                        BasicSceneRasterMode rasterMode) {
+    VkPolygonMode polygonMode{VK_POLYGON_MODE_FILL};
+    switch (rasterMode) {
+    case BasicSceneRasterMode::Solid:
+        break;
+    case BasicSceneRasterMode::Wireframe:
+        polygonMode = VK_POLYGON_MODE_LINE;
+        break;
+    default:
+        return std::unexpected{
+            Error{ErrorDomain::Vulkan, 0, "RenderView scene raster mode is invalid"}};
+    }
+
+    const auto cached = std::ranges::find_if(
+        sceneMeshPipelines_,
+        [colorFormat, depthFormat, rasterMode](const SceneMeshPipelineCacheEntry& entry) {
+            return entry.colorFormat == colorFormat && entry.depthFormat == depthFormat &&
+                   entry.rasterMode == rasterMode;
+        });
+    if (cached != sceneMeshPipelines_.end()) {
+        ++sceneMeshPipelineCacheStats_.reused;
+        return cached->pipeline.handle();
+    }
+    if (sceneMeshPipelines_.size() >= kSceneMeshPipelineCacheCapacity) {
+        return std::unexpected{Error{
+            ErrorDomain::Vulkan,
+            0,
+            "RenderView scene mesh pipeline cache exhausted its supported format/raster key "
+            "space",
+        }};
+    }
+
+    const auto bindings = basicVertex3DInputBindings();
+    const auto attributes = basicVertex3DInputAttributes();
+    auto pipeline = VulkanGraphicsPipeline::createDynamicRendering(VulkanGraphicsPipelineDesc{
+        .device = device_,
+        .pipelineCache = pipelineCache_.handle(),
+        .layout = sceneMeshPipelineLayout_.handle(),
+        .vertexShader = sceneMeshVertexShader_.handle(),
+        .fragmentShader = sceneMeshFragmentShader_.handle(),
+        .vertexEntryPoint = "main",
+        .fragmentEntryPoint = "main",
+        .colorFormat = colorFormat,
+        .depthFormat = depthFormat,
+        .vertexBindings = bindings,
+        .vertexAttributes = attributes,
+        .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+        .polygonMode = polygonMode,
+        .deviceCapabilities = deviceCapabilities_,
+    });
+    if (!pipeline) {
+        return std::unexpected{std::move(pipeline.error())};
+    }
+
+    sceneMeshPipelines_.push_back(SceneMeshPipelineCacheEntry{
+        .colorFormat = colorFormat,
+        .depthFormat = depthFormat,
+        .rasterMode = rasterMode,
+        .pipeline = std::move(*pipeline),
+    });
+    ++sceneMeshPipelineCacheStats_.created;
+    return sceneMeshPipelines_.back().pipeline.handle();
 }
 
 BasicPipelineCacheStats BasicFullscreenTextureRenderer::pipelineCacheStats() const {
     return pipelineCacheStats_;
+}
+
+BasicPipelineCacheStats BasicFullscreenTextureRenderer::worldGridPipelineCacheStats() const {
+    return worldGridPipelineCacheStats_;
+}
+
+BasicPipelineCacheStats BasicFullscreenTextureRenderer::debugLinePipelineCacheStats() const {
+    return debugLinePipelineCacheStats_;
+}
+
+BasicPipelineCacheStats BasicFullscreenTextureRenderer::sceneMeshPipelineCacheStats() const {
+    return sceneMeshPipelineCacheStats_;
 }
 
 VkDescriptorSet BasicFullscreenTextureRenderer::acquireFullscreenDescriptorSet(
@@ -623,6 +846,8 @@ VulkanBufferStats BasicFullscreenTextureRenderer::bufferStats() const {
     for (const VulkanBuffer& buffer : debugLineVertexBuffers_) {
         accumulateBufferStats(stats, buffer);
     }
+    accumulateBufferStats(stats, sceneMeshVertexBuffer_);
+    accumulateBufferStats(stats, sceneMeshIndexBuffer_);
     return stats;
 }
 
@@ -683,13 +908,50 @@ Result<VulkanFrameRecordResult> BasicFullscreenTextureRenderer::recordViewFrame(
         return std::unexpected{std::move(targetFormat.error())};
     }
 
+    std::vector<BasicDrawListItem> sceneDrawItems(view.scene.drawItems.begin(),
+                                                  view.scene.drawItems.end());
+    view.scene.drawItems = std::span<const BasicDrawListItem>{sceneDrawItems};
+    std::vector<BasicDebugWorldLine> debugWorldLines(view.overlay.debugWorldLines.begin(),
+                                                     view.overlay.debugWorldLines.end());
+    view.overlay.debugWorldLines = std::span<const BasicDebugWorldLine>{debugWorldLines};
+    auto sceneMeshValidated = validateBasicRenderViewSceneMesh(view);
+    if (!sceneMeshValidated) {
+        return std::unexpected{std::move(sceneMeshValidated.error())};
+    }
+    auto renderViewPassPolicyResult = basicRenderViewPassPolicy(view, debugWorldLines);
+    if (!renderViewPassPolicyResult) {
+        return std::unexpected{std::move(renderViewPassPolicyResult.error())};
+    }
+    const BasicRenderViewPassPolicy renderViewPassPolicy = *renderViewPassPolicyResult;
+
     auto pipeline = ensurePipeline(view.target.format);
     if (!pipeline) {
         return std::unexpected{std::move(pipeline.error())};
     }
-    auto sceneInputsValidated = validateBasicRenderViewSceneInputs(view);
-    if (!sceneInputsValidated) {
-        return std::unexpected{std::move(sceneInputsValidated.error())};
+    const VkPipeline fullscreenPipeline = *pipeline;
+    constexpr VkFormat kSceneDepthFormat = VK_FORMAT_D32_SFLOAT;
+    VkPipeline sceneMeshPipeline = VK_NULL_HANDLE;
+    if (renderViewPassPolicy.sceneMeshEnabled) {
+        if (view.scene.rasterMode == BasicSceneRasterMode::Wireframe &&
+            !deviceCapabilities_.fillModeNonSolid) {
+            setBasicRenderViewWireframeUnavailableDiagnostics(view);
+            return std::unexpected{Error{
+                ErrorDomain::Vulkan,
+                static_cast<int>(VK_ERROR_FEATURE_NOT_PRESENT),
+                "RenderView scene wireframe requires the logical-device fillModeNonSolid "
+                "capability; no solid fallback was selected",
+            }};
+        }
+        auto resources = ensureSceneMeshResources();
+        if (!resources) {
+            return std::unexpected{std::move(resources.error())};
+        }
+        auto scenePipeline =
+            ensureSceneMeshPipeline(view.target.format, kSceneDepthFormat, view.scene.rasterMode);
+        if (!scenePipeline) {
+            return std::unexpected{std::move(scenePipeline.error())};
+        }
+        sceneMeshPipeline = *scenePipeline;
     }
     const VkDescriptorSet fullscreenDescriptorSet =
         acquireFullscreenDescriptorSet(frame, frameResources);
@@ -714,9 +976,63 @@ Result<VulkanFrameRecordResult> BasicFullscreenTextureRenderer::recordViewFrame(
         .extent = basicRenderGraphExtent(viewTarget.extent),
     };
     const auto source = graph.createTransientImage(sourceDesc);
+    RenderGraphImageHandle sceneDepth{};
+    if (renderViewPassPolicy.sceneMeshEnabled) {
+        sceneDepth = graph.createTransientImage(RenderGraphImageDesc{
+            .name = "RenderViewSceneDepth",
+            .format = RenderGraphImageFormat::D32Sfloat,
+            .extent = basicRenderGraphExtent(viewTarget.extent),
+        });
+    }
+
+    RenderGraphBufferHandle sceneVertices{};
+    RenderGraphBufferHandle sceneIndices{};
+    std::vector<VulkanRenderGraphBufferBinding> bufferBindings;
+    if (renderViewPassPolicy.sceneMeshEnabled) {
+        sceneVertices = graph.importBuffer(RenderGraphBufferDesc{
+            .name = "RenderViewValidationMeshVertices",
+            .byteSize = sceneMeshVertexBuffer_.size(),
+            .initialState = RenderGraphBufferState::VertexRead,
+            .initialShaderStage = RenderGraphShaderStage::None,
+            .finalState = RenderGraphBufferState::VertexRead,
+            .finalShaderStage = RenderGraphShaderStage::None,
+        });
+        sceneIndices = graph.importBuffer(RenderGraphBufferDesc{
+            .name = "RenderViewValidationMeshIndices",
+            .byteSize = sceneMeshIndexBuffer_.size(),
+            .initialState = RenderGraphBufferState::IndexRead,
+            .initialShaderStage = RenderGraphShaderStage::None,
+            .finalState = RenderGraphBufferState::IndexRead,
+            .finalShaderStage = RenderGraphShaderStage::None,
+        });
+
+        bufferBindings.reserve(2);
+        bufferBindings.push_back(VulkanRenderGraphBufferBinding{
+            .buffer = sceneVertices,
+            .vulkanBuffer = sceneMeshVertexBuffer_.handle(),
+            .offset = 0,
+            .size = sceneMeshVertexBuffer_.size(),
+            .debugName = "RenderViewValidationMeshVertices",
+        });
+        auto namedVertices = setVulkanRenderGraphBufferDebugName(frame, bufferBindings.back());
+        if (!namedVertices) {
+            return std::unexpected{std::move(namedVertices.error())};
+        }
+        bufferBindings.push_back(VulkanRenderGraphBufferBinding{
+            .buffer = sceneIndices,
+            .vulkanBuffer = sceneMeshIndexBuffer_.handle(),
+            .offset = 0,
+            .size = sceneMeshIndexBuffer_.size(),
+            .debugName = "RenderViewValidationMeshIndices",
+        });
+        auto namedIndices = setVulkanRenderGraphBufferDebugName(frame, bufferBindings.back());
+        if (!namedIndices) {
+            return std::unexpected{std::move(namedIndices.error())};
+        }
+    }
 
     std::vector<VulkanRenderGraphImageBinding> bindings;
-    bindings.reserve(3);
+    bindings.reserve(4);
     bindings.push_back(basicRenderViewTargetBinding(renderTarget, viewTarget));
 
     const std::array debugPreviewCandidates{
@@ -751,39 +1067,44 @@ Result<VulkanFrameRecordResult> BasicFullscreenTextureRenderer::recordViewFrame(
         .tint = {1.0F, 1.0F, 1.0F, 1.0F},
     };
 
-    std::vector<BasicDebugWorldLine> debugWorldLines(view.overlay.debugWorldLines.begin(),
-                                                     view.overlay.debugWorldLines.end());
-    view.overlay.debugWorldLines = std::span<const BasicDebugWorldLine>{debugWorldLines};
-    const BasicRenderViewPassPolicy renderViewPassPolicy =
-        basicRenderViewPassPolicy(view, debugWorldLines);
     BasicRenderViewPassRecordingContext renderViewRecording{
         .graph = graph,
         .renderTarget = renderTarget,
+        .sceneDepth = sceneDepth,
+        .sceneVertices = sceneVertices,
+        .sceneIndices = sceneIndices,
         .policy = renderViewPassPolicy,
         .frame = frame,
         .bindings = bindings,
+        .bufferBindings = bufferBindings,
         .viewTarget = viewTarget,
         .camera = view.camera,
+        .sceneDrawItems = sceneDrawItems,
+        .sceneRasterMode = view.scene.rasterMode,
         .colorLoadOp = view.overlay.colorLoadOp,
         .colorStoreOp = view.overlay.colorStoreOp,
         .eventRecorder = eventRecorder,
     };
+    VkPipeline worldGridPipeline = VK_NULL_HANDLE;
     if (renderViewPassPolicy.worldGridEnabled) {
-        auto worldGridPipeline =
+        auto ensuredWorldGridPipeline =
             ensureWorldGridPipeline(view.target.format, view.overlay.blendMode);
-        if (!worldGridPipeline) {
-            return std::unexpected{std::move(worldGridPipeline.error())};
+        if (!ensuredWorldGridPipeline) {
+            return std::unexpected{std::move(ensuredWorldGridPipeline.error())};
         }
+        worldGridPipeline = *ensuredWorldGridPipeline;
     }
     std::vector<BasicDebugLineVertex> debugLineVertices;
     VkBuffer debugLineVertexBuffer = VK_NULL_HANDLE;
     std::uint32_t debugLineVertexCount = 0;
+    VkPipeline debugLinePipeline = VK_NULL_HANDLE;
     if (renderViewPassPolicy.debugLineOverlayEnabled) {
-        auto debugLinePipeline =
+        auto ensuredDebugLinePipeline =
             ensureDebugLinePipeline(view.target.format, view.overlay.blendMode);
-        if (!debugLinePipeline) {
-            return std::unexpected{std::move(debugLinePipeline.error())};
+        if (!ensuredDebugLinePipeline) {
+            return std::unexpected{std::move(ensuredDebugLinePipeline.error())};
         }
+        debugLinePipeline = *ensuredDebugLinePipeline;
         debugLineVertices = basicDebugLineVertices(view.camera, debugWorldLines);
         if (!debugLineVertices.empty()) {
             if (debugLineVertices.size() > std::numeric_limits<std::uint32_t>::max()) {
@@ -801,10 +1122,6 @@ Result<VulkanFrameRecordResult> BasicFullscreenTextureRenderer::recordViewFrame(
         }
     }
 
-    if (renderViewPassPolicy.sceneInputsEnabled) {
-        debugPreviewCursor.advanceSourcePassWithoutPreview();
-        addBasicRenderViewSceneInputsPass(renderViewRecording);
-    }
     graph.addPass("ClearFullscreenSource", kBasicTransferClearPassType)
         .setParams(kBasicTransferClearParamsType, kClearParams)
         .writeTransfer("target", source)
@@ -830,9 +1147,9 @@ Result<VulkanFrameRecordResult> BasicFullscreenTextureRenderer::recordViewFrame(
                 .drawFullscreenTriangle();
         })
         .execute([&frame, &bindings, viewTarget, &eventRecorder, fullscreenDescriptorSet,
-                  this](RenderGraphPassContext pass) -> Result<void> {
+                  fullscreenPipeline, this](RenderGraphPassContext pass) -> Result<void> {
             return executeBasicFullscreenTexturePass(
-                frame, pass, bindings, device_, pipeline_.handle(), pipelineLayout_.handle(),
+                frame, pass, bindings, device_, fullscreenPipeline, pipelineLayout_.handle(),
                 fullscreenDescriptorSet, viewTarget.extent,
                 BasicFullscreenTexturePassMessages{
                     .paramsContext = "Fullscreen texture pass",
@@ -847,7 +1164,7 @@ Result<VulkanFrameRecordResult> BasicFullscreenTextureRenderer::recordViewFrame(
     }
 
     if (renderViewPassPolicy.worldGridEnabled) {
-        addBasicRenderViewWorldGridPass(renderViewRecording, worldGridPipeline_.handle(),
+        addBasicRenderViewWorldGridPass(renderViewRecording, worldGridPipeline,
                                         worldGridPipelineLayout_.handle());
         auto debugPreviewAfterWorldGrid = debugPreviewCursor.tryAddPreviewAfterSourcePass();
         if (!debugPreviewAfterWorldGrid) {
@@ -855,9 +1172,18 @@ Result<VulkanFrameRecordResult> BasicFullscreenTextureRenderer::recordViewFrame(
         }
     }
 
+    if (renderViewPassPolicy.sceneMeshEnabled) {
+        addBasicRenderViewSceneMeshPass(renderViewRecording, sceneMeshPipeline,
+                                        sceneMeshPipelineLayout_.handle());
+        auto debugPreviewAfterSceneMesh = debugPreviewCursor.tryAddPreviewAfterSourcePass();
+        if (!debugPreviewAfterSceneMesh) {
+            return std::unexpected{std::move(debugPreviewAfterSceneMesh.error())};
+        }
+    }
+
     if (renderViewPassPolicy.debugLineOverlayEnabled) {
-        addBasicRenderViewOverlayPass(renderViewRecording, debugLinePipeline_.handle(),
-                                      debugLineVertexBuffer, debugLineVertexCount);
+        addBasicRenderViewOverlayPass(renderViewRecording, debugLinePipeline, debugLineVertexBuffer,
+                                      debugLineVertexCount);
         auto debugPreviewAfterOverlay = debugPreviewCursor.tryAddPreviewAfterSourcePass();
         if (!debugPreviewAfterOverlay) {
             return std::unexpected{std::move(debugPreviewAfterOverlay.error())};
@@ -885,6 +1211,12 @@ Result<VulkanFrameRecordResult> BasicFullscreenTextureRenderer::recordViewFrame(
     auto executed = graph.execute(*compiled);
     if (!executed) {
         return std::unexpected{std::move(executed.error())};
+    }
+
+    auto finalBufferTransitions =
+        recordRenderGraphBufferTransitions(frame, compiled->finalBufferTransitions, bufferBindings);
+    if (!finalBufferTransitions) {
+        return std::unexpected{std::move(finalBufferTransitions.error())};
     }
 
     auto finalTransitions =
@@ -926,6 +1258,7 @@ BasicFullscreenTextureRenderer::recordOffscreenViewportFrame(const VulkanFrameRe
     if (!pipeline) {
         return std::unexpected{std::move(pipeline.error())};
     }
+    const VkPipeline fullscreenPipeline = *pipeline;
     const VkDescriptorSet compositeDescriptorSet = acquireCompositeDescriptorSet(frame, nullptr);
     if (compositeDescriptorSet == VK_NULL_HANDLE) {
         return std::unexpected{
@@ -970,10 +1303,10 @@ BasicFullscreenTextureRenderer::recordOffscreenViewportFrame(const VulkanFrameRe
                 .setVec4("Tint", kCompositeParams.tint)
                 .drawFullscreenTriangle();
         })
-        .execute([&frame, &bindings, backbufferTarget, compositeDescriptorSet,
+        .execute([&frame, &bindings, backbufferTarget, compositeDescriptorSet, fullscreenPipeline,
                   this](RenderGraphPassContext pass) -> Result<void> {
             return executeBasicFullscreenTexturePass(
-                frame, pass, bindings, device_, pipeline_.handle(), pipelineLayout_.handle(),
+                frame, pass, bindings, device_, fullscreenPipeline, pipelineLayout_.handle(),
                 compositeDescriptorSet, backbufferTarget.extent,
                 BasicFullscreenTexturePassMessages{
                     .paramsContext = "Offscreen viewport composite pass",
