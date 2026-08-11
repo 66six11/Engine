@@ -4,6 +4,7 @@
 
 #include "asharia/scene/world_native_api.h"
 
+#define ASHARIA_SCENE_DOCUMENT_NATIVE_ABI_VERSION 2U
 #define ASHARIA_SCENE_NATIVE_MAX_PROJECT_PATH_UTF8_BYTES 32768U
 
 #if defined(__cplusplus)
@@ -46,6 +47,15 @@ typedef struct AshariaSceneNativeDocumentCreateEntityRequest {
     AshariaSceneNativeStringView nameUtf8;
 } AshariaSceneNativeDocumentCreateEntityRequest;
 
+typedef struct AshariaSceneNativeDocumentCreateMeshEntityRequest {
+    AshariaSceneNativeAbiHeader header;
+    AshariaSceneNativeDocumentHandle document;
+    uint64_t expectedRevision;
+    AshariaSceneNativeStringView objectIdUtf8;
+    AshariaSceneNativeStringView nameUtf8;
+    AshariaSceneNativeStringView meshAssetGuidUtf8;
+} AshariaSceneNativeDocumentCreateMeshEntityRequest;
+
 typedef struct AshariaSceneNativeDocumentSetEntityNameRequest {
     AshariaSceneNativeAbiHeader header;
     AshariaSceneNativeDocumentHandle document;
@@ -85,6 +95,9 @@ typedef struct AshariaSceneNativeDocumentEntitySnapshot {
     AshariaSceneNativeTextSpan objectIdUtf8;
     AshariaSceneNativeTextSpan nameUtf8;
     AshariaSceneNativeTransform transform;
+    AshariaSceneNativeEntityId runtimeEntity;
+    /* Empty when the entity has no Mesh component; otherwise a canonical asset GUID. */
+    AshariaSceneNativeTextSpan meshAssetGuidUtf8;
 } AshariaSceneNativeDocumentEntitySnapshot;
 
 typedef struct AshariaSceneNativeDocumentSnapshotResult {
@@ -120,6 +133,12 @@ asharia_scene_document_create_entity(const AshariaSceneNativeDocumentCreateEntit
                                      void* responseBuffer, uint64_t responseCapacity,
                                      AshariaSceneNativeDocumentOperationResult* result)
     ASHARIA_SCENE_NATIVE_NOEXCEPT;
+
+ASHARIA_SCENE_NATIVE_API AshariaSceneNativeStatus ASHARIA_SCENE_NATIVE_CALL
+asharia_scene_document_create_mesh_entity(
+    const AshariaSceneNativeDocumentCreateMeshEntityRequest* request, void* responseBuffer,
+    uint64_t responseCapacity,
+    AshariaSceneNativeDocumentOperationResult* result) ASHARIA_SCENE_NATIVE_NOEXCEPT;
 
 ASHARIA_SCENE_NATIVE_API AshariaSceneNativeStatus ASHARIA_SCENE_NATIVE_CALL
 asharia_scene_document_set_entity_name(

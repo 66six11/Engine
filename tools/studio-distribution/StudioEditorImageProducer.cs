@@ -81,6 +81,7 @@ public static partial class StudioEditorImageProducer
         "asharia_scene_document_close",
         "asharia_scene_document_snapshot",
         "asharia_scene_document_create_entity",
+        "asharia_scene_document_create_mesh_entity",
         "asharia_scene_document_set_entity_name",
         "asharia_scene_document_set_entity_transform",
         "asharia_scene_document_save",
@@ -89,6 +90,24 @@ public static partial class StudioEditorImageProducer
     [
         "editor_viewport_query_composition_compatibility",
         "editor_viewport_release_compatibility_result",
+        "editor_viewport_open_stream_v6",
+        "editor_viewport_submit_latest_v6",
+        "editor_viewport_try_take_ready_v6",
+        "editor_viewport_complete_frame_v6",
+        "editor_viewport_release_slot_import_v6",
+        "editor_viewport_close_stream_v6",
+        "editor_viewport_poll_stream_v6",
+        "editor_viewport_destroy_stream_v6",
+        "editor_viewport_shutdown",
+    ];
+    private static readonly string[] LegacyViewportStreamAbiExports =
+    [
+        "editor_viewport_acquire_present_packet",
+        "editor_viewport_release_present_packet",
+        "editor_viewport_acquire_present_packet_v2",
+        "editor_viewport_create_present_slot_v3",
+        "editor_viewport_render_present_slot_v3",
+        "editor_viewport_create_present_slot_v4",
         "editor_viewport_open_stream_v5",
         "editor_viewport_submit_latest_v5",
         "editor_viewport_try_take_ready_v5",
@@ -97,7 +116,6 @@ public static partial class StudioEditorImageProducer
         "editor_viewport_close_stream_v5",
         "editor_viewport_poll_stream_v5",
         "editor_viewport_destroy_stream_v5",
-        "editor_viewport_shutdown",
     ];
     private static readonly string[] ViewportShaderFiles =
     [
@@ -337,10 +355,8 @@ public static partial class StudioEditorImageProducer
             viewportNativeEntry,
             expectDll: true,
             "publishRoot/editor_native.dll");
-        ValidateRequiredExports(
+        ValidateViewportNativeExports(
             viewportNativeEntry,
-            "editor_native.dll",
-            ViewportNativeRequiredExports,
             "publishRoot/editor_native.dll");
         var viewportShaderEntries = ViewportShaderFiles.ToDictionary(
             fileName => fileName,
@@ -1243,10 +1259,8 @@ public static partial class StudioEditorImageProducer
             viewportNativeEntry,
             expectDll: true,
             "publishRoot/editor_native.dll");
-        ValidateRequiredExports(
+        ValidateViewportNativeExports(
             viewportNativeEntry,
-            "editor_native.dll",
-            ViewportNativeRequiredExports,
             "publishRoot/editor_native.dll");
         foreach (var fileName in ViewportShaderFiles)
         {
@@ -1360,6 +1374,22 @@ public static partial class StudioEditorImageProducer
                 path,
                 expectedDllName,
                 requiredExports,
+                out var error))
+        {
+            Fail(
+                "studio-distribution.editor-image.native-identity-invalid",
+                location,
+                error);
+        }
+    }
+
+    private static void ValidateViewportNativeExports(string path, string location)
+    {
+        if (!StudioEditorImageIdentityInspector.HasRequiredExports(
+                path,
+                "editor_native.dll",
+                ViewportNativeRequiredExports,
+                LegacyViewportStreamAbiExports,
                 out var error))
         {
             Fail(

@@ -60,6 +60,7 @@ namespace asharia {
         case RenderGraphImageState::Undefined:
             return VK_IMAGE_LAYOUT_UNDEFINED;
         case RenderGraphImageState::ColorAttachment:
+        case RenderGraphImageState::ColorReadWrite:
             return VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
         case RenderGraphImageState::ShaderRead:
             return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -103,6 +104,12 @@ namespace asharia {
             return VulkanRenderGraphImageUsage{
                 .stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
                 .accessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+            };
+        case RenderGraphImageState::ColorReadWrite:
+            return VulkanRenderGraphImageUsage{
+                .stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+                .accessMask = VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT |
+                              VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
             };
         case RenderGraphImageState::ShaderRead:
             return VulkanRenderGraphImageUsage{

@@ -1166,12 +1166,12 @@ namespace asharia {
             return vertices;
         }
 
-        void recordTriangleDraw(const VulkanFrameRecordContext& frame, VkPipeline pipeline,
-                                BasicDrawBuffers buffers, BasicDrawItem drawItem,
+        void recordTriangleDraw(const VulkanFrameRecordContext& frame, VkImageView colorImageView,
+                                VkPipeline pipeline, BasicDrawBuffers buffers, BasicDrawItem drawItem,
                                 VkImageView depthImageView = VK_NULL_HANDLE) {
             VkRenderingAttachmentInfo colorAttachment{};
             colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-            colorAttachment.imageView = frame.imageView;
+            colorAttachment.imageView = colorImageView;
             colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
             colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
             colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -1237,13 +1237,14 @@ namespace asharia {
             vkCmdEndRendering(frame.commandBuffer);
         }
 
-        void recordMesh3DDraw(const VulkanFrameRecordContext& frame, VkPipeline pipeline,
-                              VkPipelineLayout pipelineLayout, BasicDrawBuffers buffers,
-                              VkImageView depthImageView, BasicDrawItem drawItem,
+        void recordMesh3DDraw(const VulkanFrameRecordContext& frame, VkImageView colorImageView,
+                              VkPipeline pipeline, VkPipelineLayout pipelineLayout,
+                              BasicDrawBuffers buffers, VkImageView depthImageView,
+                              BasicDrawItem drawItem,
                               const BasicRenderViewCamera* camera = nullptr) {
             VkRenderingAttachmentInfo colorAttachment{};
             colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-            colorAttachment.imageView = frame.imageView;
+            colorAttachment.imageView = colorImageView;
             colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
             colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
             colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -1298,13 +1299,14 @@ namespace asharia {
             vkCmdEndRendering(frame.commandBuffer);
         }
 
-        void recordDrawListDraw(const VulkanFrameRecordContext& frame, VkPipeline pipeline,
+        void recordDrawListDraw(const VulkanFrameRecordContext& frame,
+                                VkImageView colorImageView, VkPipeline pipeline,
                                 VkPipelineLayout pipelineLayout, BasicDrawBuffers buffers,
                                 VkImageView depthImageView,
                                 std::span<const BasicDrawListItem> drawItems) {
             VkRenderingAttachmentInfo colorAttachment{};
             colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-            colorAttachment.imageView = frame.imageView;
+            colorAttachment.imageView = colorImageView;
             colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
             colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
             colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -1896,7 +1898,8 @@ namespace asharia {
                     Error{ErrorDomain::Vulkan, 0,
                           "RenderView scene mesh pass has incomplete pipeline resources"}};
             }
-            auto targetBinding = findVulkanRenderGraphColorWrite(pass, "target", imageBindings);
+            auto targetBinding =
+                findVulkanRenderGraphColorReadWrite(pass, "target", imageBindings);
             if (!targetBinding) {
                 return std::unexpected{std::move(targetBinding.error())};
             }
@@ -2005,7 +2008,8 @@ namespace asharia {
                           "RenderView world grid pass has an incomplete Vulkan pipeline"}};
             }
 
-            auto targetBinding = findVulkanRenderGraphColorWrite(pass, "target", bindings);
+            auto targetBinding =
+                findVulkanRenderGraphColorReadWrite(pass, "target", bindings);
             if (!targetBinding) {
                 return std::unexpected{std::move(targetBinding.error())};
             }
@@ -2061,7 +2065,8 @@ namespace asharia {
                 return std::unexpected{std::move(commands.error())};
             }
 
-            auto targetBinding = findVulkanRenderGraphColorWrite(pass, "target", bindings);
+            auto targetBinding =
+                findVulkanRenderGraphColorReadWrite(pass, "target", bindings);
             if (!targetBinding) {
                 return std::unexpected{std::move(targetBinding.error())};
             }
@@ -2258,7 +2263,8 @@ namespace asharia {
                 if (usesImage(pass.transferReads, image)) {
                     usage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
                 }
-                if (usesImage(pass.colorWrites, image)) {
+                if (usesImage(pass.colorWrites, image) ||
+                    usesImage(pass.colorReadWrites, image)) {
                     usage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
                 }
                 if (usesImage(pass.shaderReads, image) ||

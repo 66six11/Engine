@@ -167,6 +167,8 @@ namespace asharia::editor {
             switch (state) {
             case RenderGraphImageState::ColorAttachment:
                 return "ColorAttachment";
+            case RenderGraphImageState::ColorReadWrite:
+                return "ColorReadWrite";
             case RenderGraphImageState::ShaderRead:
                 return "ShaderRead";
             case RenderGraphImageState::DepthAttachmentRead:
@@ -249,6 +251,8 @@ namespace asharia::editor {
             switch (access) {
             case RenderGraphSlotAccess::ColorWrite:
                 return "ColorWrite";
+            case RenderGraphSlotAccess::ColorReadWrite:
+                return "ColorReadWrite";
             case RenderGraphSlotAccess::ShaderRead:
                 return "ShaderRead";
             case RenderGraphSlotAccess::DepthAttachmentRead:
@@ -360,6 +364,7 @@ namespace asharia::editor {
                        stringValue("frame:" + std::to_string(capture.submittedFrameEpoch))),
                 member("frameIndex", integerValue(capture.frameIndex)),
                 member("submittedFrameEpoch", uint64Value(capture.submittedFrameEpoch)),
+                member("sourceRevision", uint64Value(capture.sourceRevision)),
                 member("viewKind", stringValue(viewportKindName(capture.viewKind))),
                 member("requestedWidth", uint32Value(capture.requestedExtent.width)),
                 member("requestedHeight", uint32Value(capture.requestedExtent.height)),
@@ -559,8 +564,8 @@ namespace asharia::editor {
             }
 
             return archive::ArchiveValue::object({
-                member("schemaVersion", integerValue(1)),
-                member("version", integerValue(1)),
+                member("schemaVersion", integerValue(2)),
+                member("version", integerValue(2)),
                 member("state", stringValue(frameDebugger.stateName())),
                 member("capture",
                        capture == nullptr ? archive::ArchiveValue::null()

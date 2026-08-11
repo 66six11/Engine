@@ -181,6 +181,13 @@ namespace asharia::scene {
                     sceneDocumentError(SceneDocumentErrorCode::InvalidTransform,
                                        context + " contains a non-finite or non-unit Transform.")};
             }
+            if (entity.mesh.has_value() && (!static_cast<bool>(*entity.mesh) ||
+                                            entity.mesh->expectedType != kSceneMeshAssetType)) {
+                return std::unexpected{sceneDocumentError(
+                    SceneDocumentErrorCode::InvalidAssetReference,
+                    context + " mesh must reference a non-zero asset GUID with expected type '" +
+                        std::string{kSceneMeshAssetTypeName} + "'.")};
+            }
             return {};
         }
 
@@ -331,8 +338,17 @@ namespace asharia::scene {
     }
 
     SceneDocumentSnapshot SceneDocument::snapshot() const {
+        std::vector<SceneDocumentSnapshot::RuntimeEntityBinding> runtimeEntities;
+        runtimeEntities.reserve(runtimeEntities_.size());
+        for (const RuntimeEntity& runtime : runtimeEntities_) {
+            runtimeEntities.push_back(SceneDocumentSnapshot::RuntimeEntityBinding{
+                .objectId = runtime.objectId,
+                .entity = runtime.entity,
+            });
+        }
         return SceneDocumentSnapshot{
             .data = data_,
+            .runtimeEntities = std::move(runtimeEntities),
             .revision = revision_,
             .savedRevision = savedRevision_,
         };
@@ -340,6 +356,31 @@ namespace asharia::scene {
 
     VoidResult SceneDocument::createEntity(SceneObjectId objectId, std::string_view name,
                                            std::uint64_t expectedRevision) {
+        return createPreparedEntity(
+            SceneEntityData{
+                .objectId = objectId,
+                .name = std::string{name},
+                .transform = {},
+                .mesh = std::nullopt,
+            },
+            expectedRevision);
+    }
+
+    VoidResult SceneDocument::createMeshEntity(SceneObjectId objectId, std::string_view name,
+                                               asset::AssetGuid meshAsset,
+                                               std::uint64_t expectedRevision) {
+        return createPreparedEntity(
+            SceneEntityData{
+                .objectId = objectId,
+                .name = std::string{name},
+                .transform = {},
+                .mesh = asset::makeAssetReference(meshAsset, kSceneMeshAssetType),
+            },
+            expectedRevision);
+    }
+
+    VoidResult SceneDocument::createPreparedEntity(SceneEntityData prepared,
+                                                   std::uint64_t expectedRevision) {
         if (auto revision = requireRevision(expectedRevision); !revision) {
             return revision;
         }
@@ -348,21 +389,17 @@ namespace asharia::scene {
                 sceneDocumentError(SceneDocumentErrorCode::InvalidScene,
                                    "Scene document entity count reached the configured limit.")};
         }
-        SceneEntityData prepared{
-            .objectId = objectId,
-            .name = std::string{name},
-            .transform = {},
-        };
         if (auto valid = validateEntity(prepared, data_.entities.size()); !valid) {
             return valid;
         }
-        if (findRuntimeEntity(objectId) != nullptr) {
+        if (findRuntimeEntity(prepared.objectId) != nullptr) {
             return std::unexpected{
                 sceneDocumentError(SceneDocumentErrorCode::DuplicateObjectId,
                                    "Scene document already contains object ID '" +
-                                       formatSceneObjectId(objectId) + "'.")};
+                                       formatSceneObjectId(prepared.objectId) + "'.")};
         }
 
+        const SceneObjectId objectId = prepared.objectId;
         data_.entities.reserve(data_.entities.size() + 1U);
         runtimeEntities_.reserve(runtimeEntities_.size() + 1U);
         auto created = world_.createEntity(prepared.name);

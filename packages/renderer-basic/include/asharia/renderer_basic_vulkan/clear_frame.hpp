@@ -337,7 +337,8 @@ namespace asharia {
                 if (usesImage(pass.transferWrites, image)) {
                     usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
                 }
-                if (usesImage(pass.colorWrites, image)) {
+                if (usesImage(pass.colorWrites, image) ||
+                    usesImage(pass.colorReadWrites, image)) {
                     usage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
                 }
                 if (usesImage(pass.shaderReads, image) ||

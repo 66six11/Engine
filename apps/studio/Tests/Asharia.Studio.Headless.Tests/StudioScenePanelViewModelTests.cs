@@ -28,9 +28,12 @@ public sealed class StudioScenePanelViewModelTests
             Asharia.Studio.Application.Viewports.ViewportSession>(panel.Session);
         Assert.Equal((ulong)1, panel.ViewportRevision);
         Assert.True(panel.IsRealtime);
+        Assert.False(panel.IsWireframe);
 
         panel.IsRealtime = false;
+        panel.IsWireframe = true;
         Assert.False(panel.IsRealtime);
+        Assert.True(panel.IsWireframe);
         Assert.Same(session, panel.Session);
 
         await Task.Run(() => projectSession.Publish(Ready(sceneId, revision: 2)));
@@ -40,6 +43,16 @@ public sealed class StudioScenePanelViewModelTests
         Assert.Equal((ulong)2, panel.ViewportRevision);
         Assert.Equal((ulong)2, session.Current.TargetRevision);
         Assert.False(panel.IsRealtime);
+        Assert.True(panel.IsWireframe);
+        Assert.Equal(
+            Asharia.Studio.Application.Viewports.ViewportSceneRasterMode.Wireframe,
+            session.TryBeginRender(
+                new Asharia.Studio.Application.Viewports.ViewportRenderSize(
+                    new Asharia.Studio.Application.Viewports.ViewportExtent(640, 480),
+                    new Asharia.Studio.Application.Viewports.ViewportExtent(640, 480)),
+                out var wireframeRequest)
+                ? wireframeRequest!.SceneRasterMode
+                : throw new InvalidOperationException("Wireframe refresh request was not emitted."));
     }
 
     [AvaloniaFact]

@@ -21,6 +21,8 @@ public sealed class MainWindowXamlTests
         Assert.Contains("Command=\"{Binding CreateProjectCommand}\"", xaml);
         Assert.Contains("Command=\"{Binding OpenProjectCommand}\"", xaml);
         Assert.Contains("Command=\"{Binding CreateEntityCommand}\"", xaml);
+        Assert.Contains("Command=\"{Binding CreateMeshEntityCommand}\"", xaml);
+        Assert.Contains("Content=\"+ Mesh\"", xaml);
         Assert.Contains("Command=\"{Binding SaveSceneCommand}\"", xaml);
         Assert.Contains("Text=\"{Binding DocumentStateText}\"", xaml);
         Assert.Contains("DataContext=\"{Binding DockWorkspace}\"", xaml);
@@ -43,6 +45,12 @@ public sealed class MainWindowXamlTests
         Assert.Contains("Text=\"{Binding Shell.InspectorName}\"", inspectorXaml);
         Assert.Contains("Command=\"{Binding Shell.ApplyEntityNameCommand}\"", inspectorXaml);
         Assert.Contains("Command=\"{Binding Shell.ApplyEntityTransformCommand}\"", inspectorXaml);
+
+        var scenePanelXaml = LoadPanelXaml("StudioScenePanelView.axaml");
+        Assert.Contains(
+            "Command=\"{Binding Shell.CreateMeshEntityCommand}\"",
+            scenePanelXaml);
+        Assert.Contains("IsChecked=\"{Binding IsWireframe, Mode=TwoWay}\"", scenePanelXaml);
     }
 
     [Fact]

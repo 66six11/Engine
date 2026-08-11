@@ -1,7 +1,9 @@
-# ADR-0011：Studio shared viewport 的唯一 RenderThread 与 V5 stream scheduler
+# ADR-0011：Studio shared viewport 的唯一 RenderThread 与 V6 stream scheduler
 
 状态：Accepted / Implemented
 日期：2026-08-08
+
+最近修订：2026-08-11（Viewport V6 authored mesh/raster/receipt 硬切）
 
 ## 决策摘要
 
@@ -9,8 +11,9 @@
 stream 共享同一 context、producer、graphics queue、renderer cache、frame epoch tracker、单调 frame clock 和 retirement。Avalonia control、
 `ViewportSession`、EngineBridge caller 与每个 stream 都不是 renderer owner。
 
-V5 把旧同步 request/wait facade 硬切为：非阻塞 latest submit、非阻塞 ready take、显式 frame completion、显式 import release
-和异步 close/poll/destroy。V4 frame symbols 不导出。
+V6 保留非阻塞 latest submit、非阻塞 ready take、显式 frame completion、显式 import release 和异步 close/poll/destroy，
+并把 authored mesh snapshots、per-view raster mode 与 request-correlated Scene mesh receipt 纳入同一 owning packet。V5 frame
+symbols不导出；历史 `query_runtime_stats_v2..v8` 是独立 diagnostics 版本链，不属于 stream protocol compatibility。
 
 ## Owner boundary
 
@@ -18,7 +21,7 @@ V5 把旧同步 request/wait facade 硬切为：非阻塞 latest submit、非阻
 Avalonia UI
   publishes immutable ViewportRenderRequest
         |
-EngineBridge V5
+EngineBridge V6
   copies blittable request into native owning packet
         |
 per-stream mailbox
@@ -59,7 +62,7 @@ consumer-available semaphore。ready take 只改变 stream 状态，不触碰 Vu
 
 ### Completion
 
-`complete_frame_v5` 是非阻塞所有权消息：
+`complete_frame_v6` 是非阻塞所有权消息：
 
 - `NotSubmittedToConsumer`：这次 surface update 没有开始，slot 下一次 submit 不等待 consumer signal；
 - `ConsumerAccessed`：surface update 成功，下一次复用必须 GPU-wait consumer-available semaphore。
@@ -68,8 +71,8 @@ unknown completion kind 返回 `InvalidArgument`，不消费 Presented 所有权
 
 ### Close
 
-`close_stream_v5` 停止 admission、丢弃 pending latest，并把未 take 的 ready frame按 NotSubmitted 回收。Presented slot 必须先有
-completion；曾暴露给 managed 的 slot 还必须收到 `release_slot_import_v5`。满足后 owner 调用现有 consumer-safe
+`close_stream_v6` 停止 admission、丢弃 pending latest，并把未 take 的 ready frame按 NotSubmitted 回收。Presented slot 必须先有
+completion；曾暴露给 managed 的 slot 还必须收到 `release_slot_import_v6`。满足后 owner 调用现有 consumer-safe
 `releasePresentPacketOnRenderThread`：
 
 - last completion 为 NotSubmitted：只等 producer fence；
@@ -129,19 +132,21 @@ producer fence 代替 consumer completion、独立 renderer process（当前故�
 - 全局 outstanding/context 上限仍为 4。它足以证明四个 cold stream 各自取得首帧，但不能为需要至少两个 reusable slot 的
   3–4 个 steady realtime endpoint 提供容量保证；本切片不扩大 cap/slot/context，也不宣称达到多 viewport steady 60 FPS；
 - full slot 的 imported wrapper 由 Avalonia adapter 管理，native 不接触 Avalonia API；
-- V5 目前只支持 `DocumentScene` target kind 和 Vulkan opaque NT handles。
+- V6 目前只支持 `DocumentScene` target kind 和 Vulkan opaque NT handles；已知 validation mesh 可解析为真实 draw，未知/未就绪
+  authored asset 逐项 no-draw，不会替换成默认模型。
 
 ## 验证
 
-- MSVC native V5 smoke 验证 34 次 submit 只产生 4 个 render、coalesced counter、三个 distinct slots 和 reuse；
+- MSVC native V6 smoke 验证 burst submit 的 latest-wins、coalesced counter、三个 distinct slots、reuse，以及 authored mesh
+  deep-copy/receipt 与 malformed full-frame reject；
 - deterministic scheduler probe 验证四条 render lane 按稳定 ID 轮转、持续 realtime lane 不独占，以及两步 close 与 completion
-  全部先于 render；真实 V5/Vulkan smoke 验证 cap=4 下四个 cold stream 都取得首帧，ready+pending realtime stream 不消耗其余
+  全部先于 render；真实 V6/Vulkan smoke 验证 cap=4 下四个 cold stream 都取得首帧，ready+pending realtime stream 不消耗其余
   cold first-slot 容量；
 - smoke 验证 close 前 import release、Closed 后 destroy、runtime shutdown/join；
 - managed tests 验证 exact-once completion、ABI sizes、stream lifecycle 和 failure mapping；
 - CPU clock smoke 以注入 time point 验证首帧 0、5 ms 连续帧、失败 attempt 不推进成功 sample、2 s dirty-only idle gap、
   reset 建立新 epoch，以及时间与 attempt identity 解耦；
-- DLL export audit 验证 V5 frame exports 存在、V4 create/release packet exports 不存在。
+- DLL export audit 验证 V6 frame exports 存在、V5 frame exports 不存在。
 
 ## 资料
 

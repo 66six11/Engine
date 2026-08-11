@@ -106,10 +106,16 @@ namespace asharia::editor {
             .hasCamera = desc.hasCamera,
             .camera = desc.camera,
             .debugProxies = {},
+            .authoredMeshes = {},
+            .sceneRasterMode = desc.sceneRasterMode,
+            .captureSceneMeshEvidence = desc.captureSceneMeshEvidence,
             .flashSentinelCorners = desc.flashSentinelCorners,
         };
         if (!desc.debugProxies.empty()) {
             packet.debugProxies.assign(desc.debugProxies.begin(), desc.debugProxies.end());
+        }
+        if (!desc.authoredMeshes.empty()) {
+            packet.authoredMeshes.assign(desc.authoredMeshes.begin(), desc.authoredMeshes.end());
         }
         return packet;
     }
@@ -129,6 +135,9 @@ namespace asharia::editor {
             .hasCamera = hasCamera,
             .camera = camera,
             .debugProxies = debugProxies,
+            .authoredMeshes = authoredMeshes,
+            .sceneRasterMode = sceneRasterMode,
+            .captureSceneMeshEvidence = captureSceneMeshEvidence,
             .flashSentinelCorners = flashSentinelCorners,
         };
     }
@@ -152,7 +161,8 @@ namespace asharia::editor {
         return runtime;
     }
 
-    asharia::Result<EditorSharedViewportStreamId> EditorSharedViewportRuntime::openStream() {
+    asharia::Result<EditorSharedViewportStreamId>
+    EditorSharedViewportRuntime::openStream(bool supportsWireframe) {
         if (isOnRenderThread()) {
             return std::unexpected{
                 vulkanError("Shared viewport stream API cannot re-enter its render thread")};
@@ -173,6 +183,7 @@ namespace asharia::editor {
             }
             auto stream = std::make_shared<StreamState>();
             stream->slots.reserve(kMaxStreamSlots);
+            stream->supportsWireframe = supportsWireframe;
             {
                 std::lock_guard lock{streamsMutex_};
                 streams_.emplace(streamId, std::move(stream));
@@ -184,6 +195,32 @@ namespace asharia::editor {
     }
 
     asharia::Result<void>
+    EditorSharedViewportRuntime::validateSceneRasterMode(
+        EditorSharedViewportStreamId streamId,
+        EditorSharedViewportSceneRasterMode rasterMode) {
+        auto stream = findStream(streamId);
+        if (!stream) {
+            return std::unexpected{vulkanError("Shared viewport stream does not exist")};
+        }
+
+        std::lock_guard lock{stream->mutex};
+        if (stream->closeRequested || stream->closed || stream->faulted) {
+            return std::unexpected{
+                vulkanError("Shared viewport stream is not accepting frames")};
+        }
+        if (rasterMode == EditorSharedViewportSceneRasterMode::Wireframe &&
+            !stream->supportsWireframe) {
+            return std::unexpected{asharia::Error{
+                asharia::ErrorDomain::Vulkan,
+                static_cast<int>(VK_ERROR_FEATURE_NOT_PRESENT),
+                "Shared viewport wireframe is unavailable because fillModeNonSolid was not "
+                "enabled on the stream device",
+            }};
+        }
+        return {};
+    }
+
+    asharia::Result<void>
     EditorSharedViewportRuntime::submitLatest(EditorSharedViewportStreamId streamId,
                                               EditorSharedViewportPresentDesc desc) {
         if (desc.logicalExtent.width == 0U || desc.logicalExtent.height == 0U ||
@@ -191,6 +228,10 @@ namespace asharia::editor {
             desc.allocationExtent.height < desc.logicalExtent.height) {
             return std::unexpected{
                 vulkanError("Cannot submit a shared viewport stream frame with invalid extents")};
+        }
+        auto rasterModeValid = validateSceneRasterMode(streamId, desc.sceneRasterMode);
+        if (!rasterModeValid) {
+            return std::unexpected{std::move(rasterModeValid.error())};
         }
         auto stream = findStream(streamId);
         if (!stream) {
@@ -718,6 +759,7 @@ namespace asharia::editor {
         return EditorSharedViewportDeviceSnapshot{
             .vendorId = deviceInfo.vendorId,
             .deviceId = deviceInfo.deviceId,
+            .fillModeNonSolid = context_->capabilities().fillModeNonSolid,
             .identity = deviceInfo.identity,
         };
     }
@@ -1283,6 +1325,8 @@ namespace asharia::editor {
                     .requestSequence = packet->requestSequence,
                     .kind = packet->kind,
                     .logicalExtent = packet->logicalExtent,
+                    .sceneMeshReceipt = static_cast<EditorSharedViewportPacketState*>(
+                        rendered->nativePacket)->sceneMeshReceipt,
                 },
         };
         ++stream.renderedFrames;

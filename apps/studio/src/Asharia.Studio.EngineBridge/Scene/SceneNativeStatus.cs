@@ -18,4 +18,5 @@ public enum SceneNativeStatus : uint
     StaleHandle = 13,
     InvalidObject = 14,
     DuplicateObject = 15,
+    InvalidAssetReference = 16,
 }

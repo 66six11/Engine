@@ -36,10 +36,13 @@
 - `BasicRenderViewDesc::scene` 是 scene/asset/SRP 接入的当前最小入口。它只接收 `renderer_basic` 的
   backend-neutral `BasicDrawListItem` span 和 per-view `BasicSceneRasterMode`。非空 span 会插入真实
   `builtin.render-view-scene-mesh` pass；typed params 显式记录 draw item 数、indexed draw 数、view kind 和
-  Solid/Wireframe policy。schema 要求 `target: ColorWrite`、`depth: DepthAttachmentWrite`、
+  Solid/Wireframe policy。schema 要求 `target: ColorReadWrite`、`depth: DepthAttachmentWrite`、
   `vertices: BufferVertexRead`、`indices: BufferIndexRead`，并只允许 `SetShader`、`SetInt` 和
   `DrawIndexed` command summary。`renderer_basic_vulkan` 据此绑定 renderer-owned vertex/index buffer，使用
-  camera view-projection 与每个 item 的 model matrix 录制 depth-tested `vkCmdDrawIndexed`。空 span 不插入
+  camera view-projection 与每个 item 的 model matrix 录制 depth-tested `vkCmdDrawIndexed`；color attachment
+  的 `LOAD` 由正式 read/write access 表达，不再伪装为 write-only。RenderGraph compiler 对进入该 pass 的
+  `ColorAttachment -> ColorReadWrite` 和连续 `ColorReadWrite -> ColorReadWrite` 生成 same-layout barrier，
+  Vulkan adapter 使用 color-attachment output stage 与 `READ | WRITE` access。空 span 不插入
   scene-mesh pass；仅有 Entity/Transform 的空实体不会隐式获得 mesh，也不会因为出现在 Hierarchy 就被绘制。
 - `BasicDrawListItem` 携带 renderer-owned `BasicDrawPacketContext`：稳定 source object id、mesh resource key
   和 material resource key。该 context 进入 diagnostics、invalid-input error 和每个 `DrawIndexed` execution
@@ -65,19 +68,27 @@
 
 ## 引擎先例与 Asharia 决策
 
+- 采用 Unreal RDG 的显式 render-target load action（[`ERenderTargetLoadAction`](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/RHI/ERenderTargetLoadAction)）和
+  Godot `RenderingDevice` 对 keep/discard 初始内容的显式区别：保留既有 color 必须成为可编译的资源访问事实。
+  Asharia 不把 Vulkan `VkAttachmentLoadOp` 泄漏到 RenderGraph public API，而以 backend-neutral
+  `ColorReadWrite` / `readWriteColor` 表达 LOAD + 后续写入；拒绝把 LOAD pass 继续声明成 `ColorWrite`，因为
+  这样 compiler 无法推导 producer、RAW/WAW dependency 与 access mask。
 - 采用 Unreal 的 owner 分离：[`USceneComponent`](https://dev.epicgames.com/documentation/unreal-engine/API/Runtime/Engine/Components/USceneComponent)
   只有 transform/attachment，本身没有 rendering/collision；
   [`UStaticMeshComponent`](https://dev.epicgames.com/documentation/unreal-engine/API/Runtime/Engine/UStaticMeshComponent)
-  才实例化 mesh，并通过 `CreateSceneProxy()` 为 render thread 建立表示。Asharia 因而不让空 Entity
-  隐式生成 mesh；scene/runtime 只在显式 mesh/material reference 可解析后提取 immutable draw packet，renderer
-  再持有 GPU resource 和 execution state。
+  才实例化 mesh，并通过 `CreateSceneProxy()` 为 render thread 建立表示。Asharia 采用“transform 与显式 mesh
+  reference 分离、render 输入不可变”的方向：空 Entity 不隐式生成 mesh，schema v2 只保存 optional typed mesh GUID，
+  `scene-rendering` 再从 snapshot 与显式 binding 提取 immutable draw list。拒绝照搬 UObject/component/proxy API，
+  因为 Asharia 的 scene-core 必须保持 headless、package-first，renderer 才持有 GPU resource/execution state。
 - 采用 Godot 的 [`Node3D`](https://docs.godotengine.org/en/stable/classes/class_node3d.html) 与
   [`MeshInstance3D`](https://docs.godotengine.org/en/stable/classes/class_meshinstance3d.html) 分离，以及
   [`Viewport.DEBUG_DRAW_WIREFRAME`](https://docs.godotengine.org/en/stable/classes/class_viewport.html) 的
-  per-viewport policy：Wireframe 是 view presentation/debug policy，不修改 scene mesh、material 或 source asset。
+  per-viewport policy：Wireframe 是 view presentation/debug policy，不修改 scene mesh、material 或 source asset。拒绝
+  把 Godot scene tree/node 生命周期带入 data-only SceneDocument；Scene/Game 共享 authored mesh input，但 raster 按 view 计算。
 - 采用 O3DE Atom 的 [Render Component → Feature Processor → Draw Packet](https://docs.o3de.org/docs/atom-guide/dev-guide/frame-rendering/)
   owner 方向：renderer-owned packet/context 承接 simulation snapshot，RenderGraph pass 再消费资源与 draw intent；
-  不让 scene/editor object 直接进入 backend callback。
+  不让 scene/editor object 直接进入 backend callback。拒绝此阶段引入 O3DE 式全局 Feature Processor：当前可复用需求
+  只需要 `scene-rendering` 的 CPU extraction 和 caller-owned explicit bindings，不需要通用 registry/service。
 - 拒绝用 debug line、AABB/bounds、selection outline 或 editor proxy 冒充“真实 mesh 已渲染”。这些仍是显式
   overlay/debug pass；scene-mesh 验收必须观察 Color/Depth、VertexRead/IndexRead、`DrawIndexed` execution event
   和像素结果。
@@ -137,6 +148,11 @@
   fixture；`tools/generate_validation_mesh_product.py` 在构建时验证封闭的 OBJ 子集并生成 deterministic C++
   product header/manifest。renderer 只消费生成的 vertex/index product 数据。该工具不是通用 OBJ importer，
   生成 schema 也不是承诺给项目资产的 runtime mesh product format。
+- validation product native resolver 只是在 smoke/fixture 中把一个已知 asset identity 映射到显式 product binding；它不是
+  importer、asset database 或 runtime resource registry。binding 缺失、type 不符、stale 或自身无效时，`scene-rendering`
+  只为该 object 产生 contextual no-draw diagnostic，不能偷换为 fixture 或 fallback mesh。
+- `BasicRenderViewSceneDesc::sourceRevision` 从 V6 scene packet 流入 renderer diagnostics，Frame Debug 在 capture 时冻结该值，
+  JSON 与 panel 都回显同一 revision；它是 capture 溯源证据，不是 renderer 反向读取 SceneDocument 的通道。
 
 ## 下一步收敛
 

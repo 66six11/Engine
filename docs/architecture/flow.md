@@ -203,9 +203,9 @@ flowchart TD
   execution 依赖。
 - `apps/studio` 是 Avalonia managed Studio shell，不属于 C++ CMake target graph。Project/document 产品链为
   `App/Shell -> Application ProjectSession -> EngineBridge project + scene adapters -> project/scene native ABI`；Scene View
-  产品链为 `StudioScenePanelView -> ViewportCompositionControl -> Application ViewportSession -> EngineBridge V5 stream
+  产品链为 `StudioScenePanelView -> ViewportCompositionControl -> Application ViewportSession -> EngineBridge V6 stream
   -> editor_native bounded scheduler -> process-level viewport RenderThread -> shared viewport producer -> renderer_basic_vulkan`。
-  V1–V4 frame exports 已硬切删除；Vulkan context、producer、queue submit、retirement 与 shutdown 只由 native owner thread
+  V1–V5 frame exports 已硬切删除；Vulkan context、producer、queue submit、retirement 与 shutdown 只由 native owner thread
   执行。Shell 只选择路径、发命令和投影 snapshot；
   ViewModel、Dock 与 Application 不解析 descriptor/scene JSON，也不持有 native/GPU handle。Windows composition root 优先
   选择 Avalonia Vulkan compositor，由专用 presentation adapter 导入 opaque NT image/semaphore；AngleEgl/Software 只保留
@@ -613,8 +613,32 @@ flowchart LR
 
 ## 当前 Studio Viewport 与 native RenderThread 流程
 
-#359 建立 render-session/native 边界，#361 接入首个 Avalonia Scene View；ADR-0011 将其硬切为 V5 异步
+#359 建立 render-session/native 边界，#361 接入首个 Avalonia Scene View；#367 将其硬切为 V6 异步
 stream，并由同进程 `editor_native.dll` 内唯一 shared viewport RenderThread 调度：
+
+### Scene mesh revision 到 Frame Debug 证据
+
+`SceneDocument` schema v2 与 native Document ABI v2 都是硬切合同；不存在 v1 reader/fallback。每个可渲染对象可带一个
+optional typed mesh `AssetReference`，持久化的是 authored GUID/type；`EntityId` 只在本次 runtime snapshot 中存在，product
+hash/generation、Basic resource/material key 和所有 GPU handle 都不进入 scene 文件。CPU-only
+`asharia::scene_rendering` 收到 immutable scene revision、mesh instances 和 caller 显式提供的 product bindings，输出拥有自身
+生命周期的 immutable `BasicDrawListItem` vector 与逐项 diagnostics。它采用 row-major `T * R * S` transform，并且不会读取
+`SceneDocument`/World 指针或建立 generic importer/resource service。
+
+```text
+Scene schema v2 / Document ABI v2 snapshot
+  -> scene-rendering extraction(revision, typed mesh reference, explicit binding)
+  -> immutable draw list + item diagnostics
+  -> V6 owning frame packet(source revision)
+  -> Scene/Game shared authored list, per-view raster policy
+  -> RenderView diagnostics.sourceRevision
+  -> frozen Frame Debug capture / JSON / panel
+```
+
+missing、wrong-kind、stale 或 invalid binding 只导致该 object 没有 draw，并在 diagnostics 中保留 scene object、asset 和
+revision context；空输入产生零 draw。相反，malformed V6 packet 是 ABI 边界失败，native scheduler 拒绝整帧而不提交部分内容。
+Scene 与 Game 可共享同一个 authored mesh snapshot，但它们的 raster policy（包括 Solid/Wireframe）仍按 view 独立计算，
+不修改 scene、material 或 source asset。
 
 ```mermaid
 sequenceDiagram
@@ -626,7 +650,7 @@ sequenceDiagram
     participant Consumer as Avalonia presentation endpoint owner
     participant Session as Application ViewportSession
     participant Bridge as EngineBridge ViewportBridge
-    participant Native as editor_native V5 stream ABI
+    participant Native as editor_native V6 stream ABI
     participant Scheduler as Bounded latest-wins scheduler
     participant Owner as Native viewport RenderThread
     participant Renderer as renderer_basic_vulkan
@@ -675,7 +699,7 @@ sequenceDiagram
         Note over Bridge,Native: do not guess a completion kind
     end
     opt completion kind is known
-        Bridge->>Native: editor_viewport_complete_frame_v5(stream, slot, completionKind)
+        Bridge->>Native: editor_viewport_complete_frame_v6(stream, slot, completionKind)
         Native->>Scheduler: Presented -> Completing
         alt NotSubmittedToConsumer
             Owner->>Owner: poll producer fence
@@ -762,8 +786,8 @@ release-stop 是 Asharia 的 package-first/cross-platform 推论，不是外部�
 - Application request 不含 Avalonia、OS/Vulkan handle 或 mutable World pointer；进入 native mailbox 前，借用的
   string/span/proxy 字段会复制为 owning immutable `RenderFramePacket`。Transform proxy array 是当前 Scene View 的
   有界调试表示，不是最终 mesh/material render snapshot。
-- native V5 request 是 144-byte self-contained input，ready frame 是 152-byte self-described output；V1–V4 frame
-  exports 与 managed fallback 均已删除。V5 smoke 证明 burst request 只留下最新 sequence、ready 被占用时不覆盖、
+- native V6 request/ready frame 是 self-described、owning ABI packet；V1–V5 frame
+  exports 与 managed fallback 均已删除。V6 smoke 覆盖 burst request 只留下最新 sequence、ready 被占用时不覆盖、
   steady-state 最多三个 distinct full slots，第四个请求等待 slot 回收。ABI 保留 logical/allocation 双 extent；Studio
   Scene exact request 对 logical/allocation 使用相同 panel `PixelSize`，并在 surface commit 前再次复验相等；Game fit 与 Frame Debug
   participant 则分别复验 proposal 中冻结的 fit target 或 capture identity/extent。caller 或 managed pump 不是 Vulkan owner。
@@ -851,7 +875,7 @@ release-stop 是 Asharia 的 package-first/cross-platform 推论，不是外部�
 - native `frameIndex` 只是 render-attempt identity，失败允许留 gap；`EditorSharedViewportRuntime` 在唯一 RenderThread 上采样
   steady-clock elapsed 与上次任意 stream 成功 render delta，形成 immutable frame params。刷新率只改变采样密度，不再通过
   `frameIndex / 60` 改变 shader 时间速度。
-- V5 completion hard cut 只有 `editor_viewport_complete_frame_v5(stream, slot, completionKind)`。未进入
+- V6 completion hard cut 只有 `editor_viewport_complete_frame_v6(stream, slot, completionKind)`。未进入
   `UpdateWithSemaphoresAsync` 的 frame 报告 `NotSubmittedToConsumer`；update 已完成的 frame 报告
   `ConsumerAccessed`，并在 native RenderThread 上提交空 queue wait，把 compositor consumer-done semaphore 转为
   retirement fence。producer 与 consumer proof 都完成后，同一个 full slot 才重新 Available。
@@ -965,13 +989,10 @@ sequenceDiagram
 - Windows `VulkanOpaqueNt` is the current validated composition backend. Other
   platforms must map their handle family through compatibility probing and a
   distinct pool key before image reuse.
-- `editor_viewport_query_runtime_stats` 只作为 native smoke / diagnostics 的 additive C ABI；v3 native runtime
-  stats expose epoch diagnostics, v4 stats expose renderer creation reuse
-  diagnostics, v5 stats expose `maxOutstandingPackets` plus
-  `packetBackpressureHits`, and v6 stats expose consumed scene-frame count plus
-  last scene revision；v7 再记录 Scene/Game/Preview frame counts 以及最后一次
-  session/target/revision/sequence/render-kind/debug-proxy count、Scene world-grid 开关与实际 debug world-line count，
-  同时保持 v1–v6 不变。
+- `editor_viewport_query_runtime_stats_v2..v8` 是仅供 native smoke / diagnostics 的历史版本链，不属于 V6 stream
+  compatibility surface；当前 smoke 使用 v8 记录 epoch、renderer creation/reuse、backpressure、已消费 scene frame、最后
+  scene revision、Scene/Game/Preview frame count，以及最后一次 session/target/revision/sequence/render-kind/debug-proxy count、
+  Scene world-grid 开关与实际 debug world-line count。V1–V5 stream exports 不再导出，也没有 managed fallback。
 - retired `SceneViewPresentationSession` 曾被设计成单 viewport、双 slot 的 latest-wins slice（不是当前合同）：
   相同在途观察去重，变化的
   Bounds 只保留最新 request；Busy/Backpressure 通过 1–16 ms 有界退避或 slot
@@ -1143,9 +1164,11 @@ flowchart TD
   `builtin.raster-draw-list` schema、typed params payload、transient depth attachment 和共享 cube
   vertex/index buffer，验证 buffer upload counters、多 item 的 `vkCmdPushConstants` + indexed draw 循环。
 - `--smoke-render-view-scene-mesh` 已接入真实 RenderView scene-mesh 路径：deterministic validation
-  product 进入 renderer-owned vertex/index buffer，`builtin.render-view-scene-mesh` 显式声明 Color/Depth +
+  product 进入 renderer-owned vertex/index buffer，`builtin.render-view-scene-mesh` 显式声明
+  ColorReadWrite/Depth +
   VertexRead/IndexRead slots，以 `DrawIndexed` execution event 和 `BasicDrawPacketContext` 关联 draw 与资源身份；
-  Solid/Wireframe 是独立 per-view policy，Wireframe capability 缺失走 typed unavailable receipt。
+  Solid/Wireframe 是独立 per-view policy；Wireframe capability 缺失在 V6 submit 复制/入队前返回 typed
+  `FeatureUnavailable`，stream 保持 Open，并等待显式 Solid request 恢复。
 - `--smoke-mrt` 已接入独立 `BasicMrtRenderer`：使用 `builtin.raster-mrt` schema、两个 named color
   slots、两张 transient color attachments 和 dynamic rendering multi-color clear，验证 transient image
   pool 对两张 color attachments 的 retire/reuse。
@@ -1513,7 +1536,7 @@ flowchart TD
     Product["validation fixture tool<br/>OBJ -> deterministic generated vertex/index product"]
     Buffers["renderer-owned persistent VulkanBuffer<br/>vertices + indices"]
     Resources["import color target<br/>create transient D32 depth<br/>import vertex/index buffers"]
-    Pass["builtin.render-view-scene-mesh<br/>target: ColorWrite<br/>depth: DepthAttachmentWrite<br/>vertices: VertexRead<br/>indices: IndexRead"]
+    Pass["builtin.render-view-scene-mesh<br/>target: ColorReadWrite<br/>depth: DepthAttachmentWrite<br/>vertices: VertexRead<br/>indices: IndexRead"]
     Commands["SetShader / SetInt<br/>DrawIndexed per draw item"]
     Compile["compile(schema)<br/>validate slots/access/commands<br/>dependency + lifetime + transitions"]
     Adapter["rhi_vulkan_rendergraph<br/>VertexRead/IndexRead -> vertex-input stage/access"]
@@ -1719,6 +1742,7 @@ flowchart TD
 
 - `Undefined`
 - `ColorAttachment`
+- `ColorReadWrite`
 - `ShaderRead(fragment/compute)`
 - `DepthAttachmentRead`
 - `DepthAttachmentWrite`
@@ -1742,6 +1766,14 @@ flowchart TD
 
 - `writeColor("target", image)` / `writeColor(image)` 会要求 image 进入 `ColorAttachment`；旧的
   无 slot API 暂时等价于 `"target"`。
+- `readWriteColor("target", image)` / `readWriteColor(image)` 会要求 image 进入 `ColorReadWrite`，正式
+  表达 LOAD/blend 等 attachment read + write。它必须读取 imported known initial state 或更早 writer；
+  undefined transient image 不能由同一 read/write pass 自己充当 producer。compiler 对连续 write-capable
+  image state 生成 same-layout transition，所以 `ColorAttachment -> ColorReadWrite`、
+  `ColorReadWrite -> ColorReadWrite` 与 `ColorAttachment -> ColorAttachment` 都保留明确 memory dependency。
+  当前实际可能使用 color attachment LOAD 的 Triangle、DepthTriangle、Mesh3D、DrawList、RenderView
+  WorldGrid、SceneMesh 与 Overlay pass 均使用该合同；只执行 attachment CLEAR 的 DynamicClear、MRT 与
+  Fullscreen pass 保持 `ColorAttachment` write-only 合同。
 - `writeTransfer("target", image)` / `writeTransfer(image)` 会要求 image 进入 `TransferDst`；旧的
   无 slot API 暂时等价于 `"target"`。
 - `readTransfer("source", image)` / `readTransfer(image)` 会要求 image 进入 `TransferSrc`，用于显式
@@ -1758,10 +1790,11 @@ flowchart TD
 - `readVertexBuffer("vertices", buffer)` 会要求 buffer 进入 `VertexRead`；
   `readIndexBuffer("indices", buffer)` 会要求 buffer 进入 `IndexRead`。两者是 vertex-input domain 的专用
   access，不携带 shader stage，也不能用 `ShaderRead` 冒充。
-- 同一 pass 内同一 image 现在不能跨 access group 重复声明。Unity/RDG 工具里的 read-write 展示是访问摘要；
-  Asharia Engine 后续若支持 attachment read/write、blend/load、storage read/write、framebuffer fetch 或
-  grab/copy-to-temp，必须先新增明确 state/API 和 Vulkan feature/layout/access 映射。
-- compiled pass 和 executor context 已携带 `colorWriteSlots` / `shaderReadSlots` / `transferWriteSlots` /
+- 同一 pass 内同一 image 不能跨 access group 重复声明；attachment LOAD/read-write 必须使用
+  `ColorReadWrite`，不能同时声明独立 `ColorWrite` 与 read slot。framebuffer fetch 或 grab/copy-to-temp
+  仍须另行新增明确 state/API 和 Vulkan feature/layout/access 映射。
+- compiled pass 和 executor context 已携带 `colorWriteSlots` / `colorReadWriteSlots` /
+  `shaderReadSlots` / `transferWriteSlots` /
   `bufferVertexReadSlots` / `bufferIndexReadSlots`，
   `--smoke-rendergraph` 会验证 slot name、shader stage 并在调试表输出 slot。
 - `setParamsType("...")` / `setParams(type, params)` 已接入最小 params type id 和 POD payload；

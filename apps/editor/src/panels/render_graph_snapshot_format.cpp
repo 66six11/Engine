@@ -59,6 +59,8 @@ namespace asharia::editor::render_graph_snapshot_format {
                 return "Undefined";
             case asharia::RenderGraphImageState::ColorAttachment:
                 return "ColorAttachment";
+            case asharia::RenderGraphImageState::ColorReadWrite:
+                return "ColorReadWrite";
             case asharia::RenderGraphImageState::ShaderRead:
                 return "ShaderRead";
             case asharia::RenderGraphImageState::DepthAttachmentRead:
@@ -103,6 +105,8 @@ namespace asharia::editor::render_graph_snapshot_format {
             switch (access) {
             case asharia::RenderGraphSlotAccess::ColorWrite:
                 return "ColorWrite";
+            case asharia::RenderGraphSlotAccess::ColorReadWrite:
+                return "ColorReadWrite";
             case asharia::RenderGraphSlotAccess::ShaderRead:
                 return "ShaderRead";
             case asharia::RenderGraphSlotAccess::DepthAttachmentRead:
@@ -155,6 +159,7 @@ namespace asharia::editor::render_graph_snapshot_format {
 
         [[nodiscard]] bool accessReads(asharia::RenderGraphSlotAccess access) {
             switch (access) {
+            case asharia::RenderGraphSlotAccess::ColorReadWrite:
             case asharia::RenderGraphSlotAccess::ShaderRead:
             case asharia::RenderGraphSlotAccess::DepthAttachmentRead:
             case asharia::RenderGraphSlotAccess::DepthSampledRead:
@@ -177,6 +182,7 @@ namespace asharia::editor::render_graph_snapshot_format {
         [[nodiscard]] bool accessWrites(asharia::RenderGraphSlotAccess access) {
             switch (access) {
             case asharia::RenderGraphSlotAccess::ColorWrite:
+            case asharia::RenderGraphSlotAccess::ColorReadWrite:
             case asharia::RenderGraphSlotAccess::DepthAttachmentWrite:
             case asharia::RenderGraphSlotAccess::TransferWrite:
             case asharia::RenderGraphSlotAccess::BufferTransferWrite:
@@ -231,6 +237,8 @@ namespace asharia::editor::render_graph_snapshot_format {
         switch (access) {
         case asharia::RenderGraphSlotAccess::ColorWrite:
             return "Color";
+        case asharia::RenderGraphSlotAccess::ColorReadWrite:
+            return "Color RW";
         case asharia::RenderGraphSlotAccess::ShaderRead:
             return "Sample";
         case asharia::RenderGraphSlotAccess::DepthAttachmentRead:
@@ -262,6 +270,7 @@ namespace asharia::editor::render_graph_snapshot_format {
     const char* accessDirectionName(asharia::RenderGraphSlotAccess access) {
         switch (access) {
         case asharia::RenderGraphSlotAccess::BufferStorageReadWrite:
+        case asharia::RenderGraphSlotAccess::ColorReadWrite:
             return "Read/Write";
         case asharia::RenderGraphSlotAccess::ColorWrite:
         case asharia::RenderGraphSlotAccess::DepthAttachmentWrite:

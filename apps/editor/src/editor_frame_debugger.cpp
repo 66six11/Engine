@@ -96,6 +96,7 @@ namespace asharia::editor {
         latestCapture_ = EditorFrameDebugCapture{
             .frameIndex = desc.frameIndex,
             .submittedFrameEpoch = desc.submittedFrameEpoch,
+            .sourceRevision = desc.diagnostics.scene.sourceRevision,
             .viewKind = desc.viewKind,
             .requestedExtent = desc.requestedExtent,
             .diagnostics = std::move(desc.diagnostics),

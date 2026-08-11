@@ -3,6 +3,11 @@ using Asharia.Runtime;
 
 namespace Asharia.Studio.EngineBridge.Scene.Abi;
 
+internal static class SceneDocumentNativeAbi
+{
+    public const uint Version = 2;
+}
+
 [StructLayout(LayoutKind.Explicit, Size = 8)]
 internal readonly record struct SceneNativeDocumentHandle(
     [field: FieldOffset(0)] uint Index,
@@ -30,7 +35,7 @@ internal readonly record struct SceneNativeDocumentOpenDefaultRequest(
         nint newSceneIdUtf8,
         ulong newSceneIdByteLength) =>
         new(
-            new SceneNativeAbiHeader(SceneNativeAbi.Version, StructSize),
+            new SceneNativeAbiHeader(SceneDocumentNativeAbi.Version, StructSize),
             new SceneNativeStringView(projectRootUtf8, projectRootByteLength),
             new SceneNativeStringView(newSceneIdUtf8, newSceneIdByteLength));
 }
@@ -43,7 +48,7 @@ internal readonly record struct SceneNativeDocumentRequest(
     public const uint StructSize = 16;
 
     public static SceneNativeDocumentRequest Current(SceneNativeDocumentHandle document) =>
-        new(new SceneNativeAbiHeader(SceneNativeAbi.Version, StructSize), document);
+        new(new SceneNativeAbiHeader(SceneDocumentNativeAbi.Version, StructSize), document);
 }
 
 [StructLayout(LayoutKind.Explicit, Size = 56)]
@@ -55,6 +60,18 @@ internal readonly record struct SceneNativeDocumentCreateEntityRequest(
     [field: FieldOffset(40)] SceneNativeStringView NameUtf8)
 {
     public const uint StructSize = 56;
+}
+
+[StructLayout(LayoutKind.Explicit, Size = 72)]
+internal readonly record struct SceneNativeDocumentCreateMeshEntityRequest(
+    [field: FieldOffset(0)] SceneNativeAbiHeader Header,
+    [field: FieldOffset(8)] SceneNativeDocumentHandle Document,
+    [field: FieldOffset(16)] ulong ExpectedRevision,
+    [field: FieldOffset(24)] SceneNativeStringView ObjectIdUtf8,
+    [field: FieldOffset(40)] SceneNativeStringView NameUtf8,
+    [field: FieldOffset(56)] SceneNativeStringView MeshAssetGuidUtf8)
+{
+    public const uint StructSize = 72;
 }
 
 [StructLayout(LayoutKind.Explicit, Size = 56)]
@@ -97,13 +114,15 @@ internal readonly record struct SceneNativeDocumentOperationResult(
     [field: FieldOffset(24)] ulong SavedRevision,
     [field: FieldOffset(32)] SceneNativeTextSpan MessageUtf8);
 
-[StructLayout(LayoutKind.Explicit, Size = 72)]
+[StructLayout(LayoutKind.Explicit, Size = 96)]
 internal readonly record struct SceneNativeDocumentEntitySnapshot(
     [field: FieldOffset(0)] SceneNativeTextSpan ObjectIdUtf8,
     [field: FieldOffset(16)] SceneNativeTextSpan NameUtf8,
-    [field: FieldOffset(32)] TransformValue Transform)
+    [field: FieldOffset(32)] TransformValue Transform,
+    [field: FieldOffset(72)] EntityId RuntimeEntityId,
+    [field: FieldOffset(80)] SceneNativeTextSpan MeshAssetGuidUtf8)
 {
-    public const int StructSize = 72;
+    public const int StructSize = 96;
 }
 
 [StructLayout(LayoutKind.Explicit, Size = 80)]

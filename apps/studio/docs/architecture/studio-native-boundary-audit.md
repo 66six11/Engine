@@ -1,6 +1,6 @@
 # Studio native boundary 审查
 
-状态：Current audit（SceneDocument consumer 与 V5 async viewport stream 已建立；device epoch/recovery 仍开放）
+状态：Current audit（SceneDocument ABI v2 consumer 与 V6 async viewport stream 已建立；device epoch/recovery 仍开放）
 
 更新日期：2026-08-08
 
@@ -19,15 +19,17 @@ process singleton
 + C ABI failure/size/ownership contract 不完整
 ```
 
-V5 ABI 现在承担 production presentation consumer：显式 stream handle、immutable latest request、bounded full-slot
-lease、异步 ready acquire 与 close/poll/destroy。V1–V4 frame exports 已删除，不提供 managed 或 deployment fallback。
+V6 ABI 现在承担 production presentation consumer：显式 stream handle、immutable latest request、bounded full-slot
+lease、异步 ready acquire 与 close/poll/destroy，并携带 authored mesh snapshots、per-view raster mode 与 Scene mesh receipt。
+V1–V5 stream exports 均不导出，不提供 managed 或 deployment fallback；历史 runtime-stats diagnostics 版本链不是 stream
+compatibility surface。
 后续多 Viewport fairness 与 device recovery 仍需引入 device epoch 和统一 recovery contract。
 
 R0 Studio 删除了旧 App/composition/publish viewport consumer 与 deployment copy。#359 重建 UI-neutral
 `ViewportSession`；#361 已让 App/Shell/Release publish 成为真实 consumer，
 部署 `editor_native.dll` 与 renderer-basic shader closure，并通过专用 `ViewportCompositionControl` 和
 process-owned `ViewportPresentationLifetime` 完成 Avalonia import/presentation/drain。native
-`EditorSharedViewportRuntime` 现在拥有一条 process-level RenderThread 和 V5 bounded latest-wins scheduler；每个 stream
+`EditorSharedViewportRuntime` 现在拥有一条 process-level RenderThread 和 V6 bounded latest-wins scheduler；每个 stream
 最多一个 executing、一个 pending latest、一个 ready frame 与三个持久 full slots。这关闭了“同步 caller 等帧”、
 “每帧重建 presentation resource”和“caller 线程直接拥有 Vulkan”三个旧事实，但尚未解决 process singleton、
 device epoch/recovery 或跨 stream weighted fairness。
@@ -197,7 +199,7 @@ process-exit quarantine 只是可诊断终极回退。
 - panel ID/kind 在 native bridge 硬编码；
 - shared viewport producer 使用默认相机与固定轴。
 
-#359 后续由 V5 保留的当前事实：request 携 session/target/revision/sequence、真实 camera snapshot 与最多 256 个来自
+#359 后续由 V6 保留的当前事实：request 携 session/target/revision/sequence、真实 camera snapshot 与最多 256 个来自
 `SceneDocumentSnapshot` 的 `{objectId, Transform}` debug proxies；native producer 将 Scene/Game/Preview 映射到同一
 RenderView path，Scene View 使用这些 Transform 生成调试轴，且双 session/slot smoke 验证 metadata 真被消费。
 
@@ -259,7 +261,7 @@ native size/offset static assertions 与 managed layout tests；Release producer
 
 owner-thread Slice 已把 Vulkan context create、record/queue submit、fence polling、retirement 与析构移出
 mutex。`queueMutex_` 只保护有界 render/control/release mailbox 与 lifecycle condition；单一
-RenderThread 仍是 Vulkan queue 的唯一 consumer。V5 已按 stream 提供 pending-latest 覆盖和 ready-frame acquire；
+RenderThread 仍是 Vulkan queue 的唯一 consumer。V6 已按 stream 提供 pending-latest 覆盖和 ready-frame acquire；
 当前缺口是多个 active stream 之间没有 deadline、weight 或 round-robin fairness 合同。未来多 Viewport 应在同一
 owner thread 内增加有界 cross-stream admission/scheduling，不应直接并行操作 Vulkan queue。
 
@@ -364,13 +366,13 @@ ErrorInfo {
 
 ## 7. 实施顺序与门禁
 
-1. **Managed Project Shell（已建立）**：Project/Scene 使用 package-owned dedicated ABI；Viewport 使用 V5 async
+1. **Managed Project Shell（已建立）**：Project/Scene 使用 package-owned dedicated ABI v2；Viewport 使用 V6 async
    stream，不保留旧 frame compatibility path。
 2. **ABI foundation**：真正 C header、session/handle/error；C include、双端 size/offset、catch-all、
    bad-alloc/fault injection、duplicate/stale handle smoke。
 3. **Scene slice（首个编辑闭环已建立）**：dedicated owner lane、generation-safe document handle、expected
    revision、immutable bulk snapshot 与 save/reopen 已接通；后续真实 undo 需求再引入 atomic mutation batch/change set/savepoint。
-4. **Viewport slice（V5 当前基线）**：`SceneDocument -> UI-neutral session -> camera/bounded Transform proxies
+4. **Viewport slice（V6 当前基线）**：`SceneDocument -> UI-neutral session -> camera/bounded Transform proxies
    -> submit latest / take ready -> persistent full-slot lease -> Avalonia composition` 已形成可见闭环；native Vulkan owner
    thread、三槽上限、exact geometry generation、尺寸变化立即逐流 retire 与 exact close 已接入。下一次 contract Slice 集中在 device epoch/recovery、
    cross-stream fairness，并补多 viewport、device lost 与真实交互 resize profiling。

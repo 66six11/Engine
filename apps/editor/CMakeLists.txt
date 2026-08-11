@@ -17,6 +17,7 @@ asharia_require_package_target(asharia::project_core_io packages/project-core)
 asharia_require_package_target(asharia::renderer_basic_vulkan packages/renderer-basic)
 asharia_require_package_target(asharia::rhi_vulkan packages/rhi-vulkan)
 asharia_require_package_target(asharia::scene_core packages/scene-core)
+asharia_require_package_target(asharia::scene_rendering packages/scene-rendering)
 asharia_require_package_target(asharia::shader_slang packages/shader-slang)
 asharia_require_package_target(asharia::window_glfw packages/window-glfw)
 
@@ -106,6 +107,7 @@ target_link_libraries(editor-native
         asharia::archive
         asharia::renderer_basic_vulkan
         asharia::rhi_vulkan
+        asharia::scene_rendering
         glm::glm
 )
 
@@ -113,6 +115,10 @@ target_compile_definitions(editor-native
     PRIVATE
         EDITOR_NATIVE_BUILD=1
 )
+
+if(ASHARIA_BUILD_TESTS)
+    target_compile_definitions(editor-native PRIVATE ASHARIA_EDITOR_NATIVE_TESTING=1)
+endif()
 
 asharia_configure_target(editor-native)
 
@@ -238,5 +244,9 @@ target_compile_definitions(asharia-editor
         ASHARIA_EDITOR_I18N_DIR="${CMAKE_CURRENT_SOURCE_DIR}/resources/i18n"
         ASHARIA_EDITOR_IMGUI_FRAGMENT_SHADER_SPV="${ASHARIA_EDITOR_IMGUI_FRAGMENT_SPV}"
 )
+
+if(ASHARIA_BUILD_TESTS)
+    target_compile_definitions(asharia-editor PRIVATE ASHARIA_EDITOR_NATIVE_TESTING=1)
+endif()
 
 asharia_configure_target(asharia-editor)

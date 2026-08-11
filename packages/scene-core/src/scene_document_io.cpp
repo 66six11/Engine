@@ -29,6 +29,17 @@ namespace asharia::scene {
                          std::move(message)};
         }
 
+        [[nodiscard]] Error invalidSceneError(std::string message) {
+            return Error{ErrorDomain::Scene, static_cast<int>(SceneDocumentErrorCode::InvalidScene),
+                         std::move(message)};
+        }
+
+        [[nodiscard]] Error sceneAssetReferenceError(std::string message) {
+            return Error{ErrorDomain::Scene,
+                         static_cast<int>(SceneDocumentErrorCode::InvalidAssetReference),
+                         std::move(message)};
+        }
+
         [[nodiscard]] bool containsName(std::span<const std::string_view> names,
                                         std::string_view name) noexcept {
             return std::ranges::any_of(
@@ -196,24 +207,44 @@ namespace asharia::scene {
             });
         }
 
+        [[nodiscard]] ArchiveValue meshValue(const asset::AssetReference& mesh) {
+            return ArchiveValue::object({
+                ArchiveMember{
+                    .key = "assetGuid",
+                    .value = ArchiveValue::string(asset::formatAssetGuid(mesh.guid)),
+                },
+                ArchiveMember{
+                    .key = "assetType",
+                    .value = ArchiveValue::string(std::string{kSceneMeshAssetTypeName}),
+                },
+            });
+        }
+
         [[nodiscard]] ArchiveValue documentValue(const SceneDocumentData& data) {
             std::vector<ArchiveValue> entities;
             entities.reserve(data.entities.size());
             for (const SceneEntityData& entity : data.entities) {
-                entities.push_back(ArchiveValue::object({
-                    ArchiveMember{
-                        .key = "id",
-                        .value = ArchiveValue::string(formatSceneObjectId(entity.objectId)),
-                    },
-                    ArchiveMember{
-                        .key = "name",
-                        .value = ArchiveValue::string(entity.name),
-                    },
-                    ArchiveMember{
-                        .key = "transform",
-                        .value = transformValue(entity.transform),
-                    },
-                }));
+                std::vector<ArchiveMember> members;
+                members.reserve(entity.mesh.has_value() ? 4U : 3U);
+                members.push_back(ArchiveMember{
+                    .key = "id",
+                    .value = ArchiveValue::string(formatSceneObjectId(entity.objectId)),
+                });
+                members.push_back(ArchiveMember{
+                    .key = "name",
+                    .value = ArchiveValue::string(entity.name),
+                });
+                members.push_back(ArchiveMember{
+                    .key = "transform",
+                    .value = transformValue(entity.transform),
+                });
+                if (entity.mesh.has_value()) {
+                    members.push_back(ArchiveMember{
+                        .key = "mesh",
+                        .value = meshValue(*entity.mesh),
+                    });
+                }
+                entities.push_back(ArchiveValue::object(std::move(members)));
             }
             return ArchiveValue::object({
                 ArchiveMember{
@@ -257,11 +288,39 @@ namespace asharia::scene {
                 .position = *position, .rotation = *rotation, .scale = *scale};
         }
 
+        [[nodiscard]] Result<asset::AssetReference> readMesh(const ArchiveValue& value,
+                                                             std::string_view context) {
+            constexpr std::array members{"assetGuid"sv, "assetType"sv};
+            if (auto valid = validateObjectMembers(value, context, members); !valid) {
+                return std::unexpected{std::move(valid.error())};
+            }
+            auto assetGuidText = requiredString(value, "assetGuid", context);
+            auto assetType = requiredString(value, "assetType", context);
+            if (!assetGuidText) {
+                return std::unexpected{std::move(assetGuidText.error())};
+            }
+            if (!assetType) {
+                return std::unexpected{std::move(assetType.error())};
+            }
+            if (*assetType != kSceneMeshAssetTypeName) {
+                return std::unexpected{sceneAssetReferenceError(
+                    std::string{context} + " expected asset type '" +
+                    std::string{kSceneMeshAssetTypeName} + "' but found '" + *assetType + "'.")};
+            }
+            auto assetGuid = asset::parseAssetGuid(*assetGuidText);
+            if (!assetGuid) {
+                return std::unexpected{sceneAssetReferenceError(
+                    std::string{context} +
+                    " contains an invalid asset GUID: " + assetGuid.error().message)};
+            }
+            return asset::makeAssetReference(*assetGuid, kSceneMeshAssetType);
+        }
+
         [[nodiscard]] Result<SceneEntityData> readEntity(const ArchiveValue& value,
                                                          std::size_t index) {
             const std::string context = "Scene entity[" + std::to_string(index) + "]";
-            constexpr std::array members{"id"sv, "name"sv, "transform"sv};
-            if (auto valid = validateObjectMembers(value, context, members); !valid) {
+            constexpr std::array currentMembers{"id"sv, "name"sv, "transform"sv, "mesh"sv};
+            if (auto valid = validateObjectMembers(value, context, currentMembers); !valid) {
                 return std::unexpected{std::move(valid.error())};
             }
             auto idText = requiredString(value, "id", context);
@@ -285,10 +344,24 @@ namespace asharia::scene {
             if (!transform) {
                 return std::unexpected{std::move(transform.error())};
             }
+            std::optional<asset::AssetReference> mesh;
+            if (const ArchiveValue* meshArchive = value.findMemberValue("mesh");
+                meshArchive != nullptr) {
+                if (meshArchive->kind != ArchiveValueKind::Object) {
+                    return std::unexpected{
+                        sceneAssetReferenceError(context + " mesh must be a JSON object.")};
+                }
+                auto parsedMesh = readMesh(*meshArchive, context + " Mesh");
+                if (!parsedMesh) {
+                    return std::unexpected{std::move(parsedMesh.error())};
+                }
+                mesh = *parsedMesh;
+            }
             return SceneEntityData{
                 .objectId = *objectId,
                 .name = std::move(*name),
                 .transform = *transform,
+                .mesh = mesh,
             };
         }
 
@@ -354,8 +427,8 @@ namespace asharia::scene {
             return std::unexpected{std::move(entities.error())};
         }
         if (*schema != kAshariaSceneSchema || *schemaVersion != kAshariaSceneSchemaVersion) {
-            return std::unexpected{
-                sceneIoError("Scene document schema or version is unsupported.")};
+            return std::unexpected{invalidSceneError(
+                "Scene document schema or version is unsupported; only schema v2 is accepted.")};
         }
         if ((*entities)->arrayValue.size() > kMaxSceneEntities) {
             return std::unexpected{

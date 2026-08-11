@@ -142,6 +142,7 @@ public sealed class ViewportRuntimeBridge
         ViewportNativeStatus.UnsupportedAbi or
         ViewportNativeStatus.UnsupportedCompositionInterop or
         ViewportNativeStatus.UnsupportedHandleType => ViewportFrameFailureKind.UnsupportedInterop,
+        ViewportNativeStatus.FeatureUnavailable => ViewportFrameFailureKind.UnsupportedFeature,
         ViewportNativeStatus.DeviceMismatch => ViewportFrameFailureKind.DeviceMismatch,
         ViewportNativeStatus.RenderFailed => ViewportFrameFailureKind.RenderFailed,
         _ => ViewportFrameFailureKind.InternalError,

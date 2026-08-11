@@ -85,6 +85,48 @@ public sealed class SceneDocumentBridgeTests
     }
 
     [Fact]
+    public async Task Typed_mesh_create_round_trips_runtime_entity_and_asset_reference()
+    {
+        var api = new StubSceneDocumentNativeApi();
+        var bridge = new SceneDocumentBridge(api);
+        var opened = await bridge.OpenDefaultAsync("C:\\Projects\\Sample", Guid.NewGuid());
+        var connection = Assert.IsAssignableFrom<ISceneDocumentConnection>(opened.Connection);
+        var objectId = Guid.NewGuid();
+        var mesh = SceneMeshReference.DirectionalWedgeValidation;
+
+        var created = await connection.CreateMeshEntityAsync(objectId, "Mesh", mesh, 1);
+        await connection.DisposeAsync();
+
+        Assert.True(created.Succeeded);
+        var entity = Assert.Single(created.Current.Entities);
+        Assert.Equal(objectId, entity.ObjectId);
+        Assert.Equal(new EntityId(1, 1), entity.RuntimeEntityId);
+        Assert.Equal(mesh, entity.Mesh);
+        Assert.Equal(SceneDocumentNativeAbi.Version, api.LastCreateMeshAbiVersion);
+    }
+
+    [Fact]
+    public async Task Invalid_mesh_reference_failure_is_typed_and_does_not_advance_revision()
+    {
+        var api = new StubSceneDocumentNativeApi { RejectMeshCreate = true };
+        var bridge = new SceneDocumentBridge(api);
+        var opened = await bridge.OpenDefaultAsync("C:\\Projects\\Sample", Guid.NewGuid());
+        var connection = Assert.IsAssignableFrom<ISceneDocumentConnection>(opened.Connection);
+
+        var created = await connection.CreateMeshEntityAsync(
+            Guid.NewGuid(),
+            "Mesh",
+            SceneMeshReference.DirectionalWedgeValidation,
+            1);
+        await connection.DisposeAsync();
+
+        Assert.False(created.Succeeded);
+        Assert.Equal(SceneDocumentFailureKind.InvalidAssetReference, created.Failure!.Kind);
+        Assert.Equal(1UL, created.Current.Revision);
+        Assert.Empty(created.Current.Entities);
+    }
+
+    [Fact]
     public async Task Open_receipt_must_match_the_snapshot_and_closes_the_native_handle()
     {
         var api = new StubSceneDocumentNativeApi { CorruptOpenReceipt = true };
@@ -100,23 +142,28 @@ public sealed class SceneDocumentBridgeTests
     }
 
     [Fact]
-    public void Managed_layout_matches_the_native_document_v1_contract()
+    public void Managed_layout_matches_the_native_document_v2_contract()
     {
         Assert.Equal(8, Marshal.SizeOf<SceneNativeDocumentHandle>());
         Assert.Equal(16, Marshal.SizeOf<SceneNativeTextSpan>());
         Assert.Equal(40, Marshal.SizeOf<SceneNativeDocumentOpenDefaultRequest>());
         Assert.Equal(16, Marshal.SizeOf<SceneNativeDocumentRequest>());
         Assert.Equal(56, Marshal.SizeOf<SceneNativeDocumentCreateEntityRequest>());
+        Assert.Equal(72, Marshal.SizeOf<SceneNativeDocumentCreateMeshEntityRequest>());
         Assert.Equal(56, Marshal.SizeOf<SceneNativeDocumentSetEntityNameRequest>());
         Assert.Equal(80, Marshal.SizeOf<SceneNativeDocumentSetEntityTransformRequest>());
         Assert.Equal(24, Marshal.SizeOf<SceneNativeDocumentSaveRequest>());
         Assert.Equal(48, Marshal.SizeOf<SceneNativeDocumentOperationResult>());
-        Assert.Equal(72, Marshal.SizeOf<SceneNativeDocumentEntitySnapshot>());
+        Assert.Equal(96, Marshal.SizeOf<SceneNativeDocumentEntitySnapshot>());
         Assert.Equal(80, Marshal.SizeOf<SceneNativeDocumentSnapshotResult>());
         Assert.Equal(40, OffsetOf<SceneNativeDocumentSnapshotResult>(
             nameof(SceneNativeDocumentSnapshotResult.EntitiesOffset)));
         Assert.Equal(64, OffsetOf<SceneNativeDocumentSnapshotResult>(
             nameof(SceneNativeDocumentSnapshotResult.MessageUtf8)));
+        Assert.Equal(72, OffsetOf<SceneNativeDocumentEntitySnapshot>(
+            nameof(SceneNativeDocumentEntitySnapshot.RuntimeEntityId)));
+        Assert.Equal(80, OffsetOf<SceneNativeDocumentEntitySnapshot>(
+            nameof(SceneNativeDocumentEntitySnapshot.MeshAssetGuidUtf8)));
     }
 
     private static int OffsetOf<T>(string propertyName)
@@ -137,6 +184,7 @@ public sealed class SceneDocumentBridgeTests
         private Guid objectId_;
         private string name_ = string.Empty;
         private TransformValue transform_ = TransformValue.Identity;
+        private Guid? meshAssetId_;
         private ulong revision_ = 1;
         private ulong savedRevision_ = 1;
 
@@ -145,6 +193,10 @@ public sealed class SceneDocumentBridgeTests
         public bool CorruptCreateReceipt { get; set; }
 
         public bool CorruptOpenReceipt { get; set; }
+
+        public bool RejectMeshCreate { get; set; }
+
+        public uint LastCreateMeshAbiVersion { get; private set; }
 
         public string OpenedProjectRoot { get; private set; } = string.Empty;
 
@@ -197,10 +249,14 @@ public sealed class SceneDocumentBridgeTests
                 ? []
                 : Encoding.UTF8.GetBytes(objectId_.ToString("D"));
             var nameBytes = Encoding.UTF8.GetBytes(name_);
+            var meshAssetGuidBytes = meshAssetId_ is Guid meshAssetId
+                ? Encoding.UTF8.GetBytes(meshAssetId.ToString("D"))
+                : [];
             var entityCount = objectId_ == Guid.Empty ? 0UL : 1UL;
             var required = checked(
                 (int)(entityCount * SceneNativeDocumentEntitySnapshot.StructSize) +
-                sceneIdBytes.Length + objectIdBytes.Length + nameBytes.Length);
+                sceneIdBytes.Length + objectIdBytes.Length + nameBytes.Length +
+                meshAssetGuidBytes.Length);
             if ((ulong)required > responseCapacity)
             {
                 result = new SceneNativeDocumentSnapshotResult(
@@ -223,7 +279,15 @@ public sealed class SceneDocumentBridgeTests
             {
                 var idSpan = Append(bytes, ref cursor, objectIdBytes);
                 var nameSpan = Append(bytes, ref cursor, nameBytes);
-                var entity = new SceneNativeDocumentEntitySnapshot(idSpan, nameSpan, transform_);
+                var meshAssetGuidSpan = meshAssetGuidBytes.Length == 0
+                    ? default
+                    : Append(bytes, ref cursor, meshAssetGuidBytes);
+                var entity = new SceneNativeDocumentEntitySnapshot(
+                    idSpan,
+                    nameSpan,
+                    transform_,
+                    new EntityId(1, 1),
+                    meshAssetGuidSpan);
                 MemoryMarshal.Write(bytes.AsSpan(0, SceneNativeDocumentEntitySnapshot.StructSize),
                     in entity);
             }
@@ -258,6 +322,30 @@ public sealed class SceneDocumentBridgeTests
                 SceneNativeStatus.Success,
                 CorruptCreateReceipt ? revision_ + 1 : revision_,
                 savedRevision_);
+            return SceneNativeStatus.Success;
+        }
+
+        public SceneNativeStatus CreateMeshEntity(
+            in SceneNativeDocumentCreateMeshEntityRequest request,
+            nint responseBuffer,
+            ulong responseCapacity,
+            out SceneNativeDocumentOperationResult result)
+        {
+            RecordThread();
+            LastCreateMeshAbiVersion = request.Header.AbiVersion;
+            if (RejectMeshCreate)
+            {
+                result = OperationResult(
+                    SceneNativeStatus.InvalidAssetReference,
+                    revision_,
+                    savedRevision_);
+                return SceneNativeStatus.InvalidAssetReference;
+            }
+            objectId_ = Guid.ParseExact(Read(request.ObjectIdUtf8), "D");
+            name_ = Read(request.NameUtf8);
+            meshAssetId_ = Guid.ParseExact(Read(request.MeshAssetGuidUtf8), "D");
+            revision_++;
+            result = OperationResult(SceneNativeStatus.Success, revision_, savedRevision_);
             return SceneNativeStatus.Success;
         }
 

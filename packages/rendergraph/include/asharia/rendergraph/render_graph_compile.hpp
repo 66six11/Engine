@@ -20,6 +20,7 @@ namespace asharia {
         std::vector<RenderGraphCommand> commands;
         std::vector<RenderGraphImageTransition> transitionsBefore;
         std::vector<RenderGraphImageHandle> colorWrites;
+        std::vector<RenderGraphImageHandle> colorReadWrites;
         std::vector<RenderGraphImageHandle> shaderReads;
         std::vector<RenderGraphImageHandle> depthReads;
         std::vector<RenderGraphImageHandle> depthWrites;
@@ -33,6 +34,7 @@ namespace asharia {
         std::vector<RenderGraphBufferHandle> bufferWrites;
         std::vector<RenderGraphBufferHandle> bufferStorageReadWrites;
         std::vector<RenderGraphImageSlot> colorWriteSlots;
+        std::vector<RenderGraphImageSlot> colorReadWriteSlots;
         std::vector<RenderGraphImageSlot> shaderReadSlots;
         std::vector<RenderGraphImageSlot> depthReadSlots;
         std::vector<RenderGraphImageSlot> depthWriteSlots;

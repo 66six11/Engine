@@ -229,7 +229,7 @@ BasicMesh3DRenderer::recordFrame(const VulkanFrameRecordContext& frame) {
 
     graph.addPass("Mesh3D", kBasicRasterMesh3DPassType)
         .setParams(kBasicRasterMesh3DParamsType, kMeshDrawItem)
-        .writeColor("target", backbuffer)
+        .readWriteColor("target", backbuffer)
         .writeDepth("depth", depth)
         .execute([&frame, &bindings, this](RenderGraphPassContext pass) -> Result<void> {
             [[maybe_unused]] const auto timestamp = VulkanTimestampScope::begin(frame, pass.name);
@@ -244,13 +244,19 @@ BasicMesh3DRenderer::recordFrame(const VulkanFrameRecordContext& frame) {
             if (!depthBinding) {
                 return std::unexpected{std::move(depthBinding.error())};
             }
+            auto targetBinding =
+                findVulkanRenderGraphColorReadWrite(pass, "target", bindings);
+            if (!targetBinding) {
+                return std::unexpected{std::move(targetBinding.error())};
+            }
             auto drawItem = readPassParams<BasicDrawItem>(pass, kBasicRasterMesh3DParamsType,
                                                           "Mesh3D raster pass");
             if (!drawItem) {
                 return std::unexpected{std::move(drawItem.error())};
             }
 
-            recordMesh3DDraw(frame, pipeline_.handle(), pipelineLayout_.handle(),
+            recordMesh3DDraw(frame, targetBinding->vulkanImageView, pipeline_.handle(),
+                             pipelineLayout_.handle(),
                              BasicDrawBuffers{
                                  .vertex = vertexBuffer_.handle(),
                                  .index = indexBuffer_.handle(),

@@ -10,6 +10,7 @@
 #include <memory>
 #include <new>
 #include <numbers>
+#include <optional>
 #include <span>
 #include <string_view>
 #include <thread>
@@ -29,24 +30,24 @@ namespace {
         };
     }
 
-    [[nodiscard]] EditorViewportNativeAbiHeader streamHandleV5Header() {
+    [[nodiscard]] EditorViewportNativeAbiHeader streamHandleV6Header() {
         return EditorViewportNativeAbiHeader{
             .abiVersion = EDITOR_NATIVE_ABI_VERSION,
-            .structSize = static_cast<std::uint32_t>(sizeof(EditorViewportNativeStreamHandleV5)),
+            .structSize = static_cast<std::uint32_t>(sizeof(EditorViewportNativeStreamHandleV6)),
         };
     }
 
-    [[nodiscard]] EditorViewportNativeAbiHeader readyFrameV5Header() {
+    [[nodiscard]] EditorViewportNativeAbiHeader readyFrameV6Header() {
         return EditorViewportNativeAbiHeader{
             .abiVersion = EDITOR_NATIVE_ABI_VERSION,
-            .structSize = static_cast<std::uint32_t>(sizeof(EditorViewportNativeReadyFrameV5)),
+            .structSize = static_cast<std::uint32_t>(sizeof(EditorViewportNativeReadyFrameV6)),
         };
     }
 
-    [[nodiscard]] EditorViewportNativeAbiHeader streamPollV5Header() {
+    [[nodiscard]] EditorViewportNativeAbiHeader streamPollV6Header() {
         return EditorViewportNativeAbiHeader{
             .abiVersion = EDITOR_NATIVE_ABI_VERSION,
-            .structSize = static_cast<std::uint32_t>(sizeof(EditorViewportNativeStreamPollV5)),
+            .structSize = static_cast<std::uint32_t>(sizeof(EditorViewportNativeStreamPollV6)),
         };
     }
 
@@ -152,13 +153,13 @@ namespace {
     }
 
     [[nodiscard]] bool
-    hasSupportedPresentRequestV5Header(const EditorViewportNativePresentRequestV5& request) {
+    hasSupportedPresentRequestV6Header(const EditorViewportNativePresentRequestV6& request) {
         return request.header.abiVersion == EDITOR_NATIVE_ABI_VERSION &&
-               request.header.structSize >= sizeof(EditorViewportNativePresentRequestV5);
+               request.header.structSize >= sizeof(EditorViewportNativePresentRequestV6);
     }
 
     [[nodiscard]] asharia::editor::EditorExtent2D
-    logicalExtentFor(const EditorViewportNativePresentRequestV5& request) {
+    logicalExtentFor(const EditorViewportNativePresentRequestV6& request) {
         return asharia::editor::EditorExtent2D{
             .width = request.logicalWidthPixels,
             .height = request.logicalHeightPixels,
@@ -215,16 +216,42 @@ namespace {
         return std::abs(rotationLengthSquared - 1.0F) <= 1.0e-3F;
     }
 
-    [[nodiscard]] bool validPresentRequestV5(const EditorViewportNativePresentRequestV5& request) {
+    [[nodiscard]] bool
+    validCanonicalUuid(std::span<const std::uint8_t, 16> value) noexcept {
+        return std::ranges::any_of(value, [](std::uint8_t byte) { return byte != 0U; });
+    }
+
+    [[nodiscard]] bool
+    validAuthoredMesh(const EditorViewportNativeAuthoredMeshSnapshotV6& snapshot) {
+        if (!validCanonicalUuid(std::span{snapshot.objectId}) ||
+            !validCanonicalUuid(std::span{snapshot.assetId}) ||
+            snapshot.runtimeEntityIndex == 0U || snapshot.runtimeEntityGeneration == 0U ||
+            snapshot.expectedMeshType != 0x900405520f80e8e6ULL ||
+            !finite3(snapshot.position) || !finite3(snapshot.scale)) {
+            return false;
+        }
+        float rotationLengthSquared{};
+        for (const float value : snapshot.rotation) {
+            if (!std::isfinite(value)) {
+                return false;
+            }
+            rotationLengthSquared += value * value;
+        }
+        return std::abs(rotationLengthSquared - 1.0e0F) <= 1.0e-3F;
+    }
+
+    [[nodiscard]] bool validPresentRequestV6(const EditorViewportNativePresentRequestV6& request) {
         constexpr std::uint32_t kMaximumDebugProxyCount = 256U;
+        constexpr std::uint32_t kMaximumAuthoredMeshCount = 10'000U;
         constexpr std::uint32_t kKnownFlags =
-            EditorViewportNativePresentRequestV5Flags_HasLogicalExtent |
-            EditorViewportNativePresentRequestV5Flags_FlashSentinelCorners;
+            EditorViewportNativePresentRequestV6Flags_HasLogicalExtent |
+            EditorViewportNativePresentRequestV6Flags_FlashSentinelCorners |
+            EditorViewportNativePresentRequestV6Flags_CaptureSceneMeshEvidence;
         const asharia::editor::EditorExtent2D logicalExtent = logicalExtentFor(request);
         if (!hasValue(request.sessionId) || !hasValue(request.targetId) ||
             request.targetRevision == 0U || request.requestSequence == 0U ||
             request.widthPixels == 0U || request.heightPixels == 0U ||
-            (request.flags & EditorViewportNativePresentRequestV5Flags_HasLogicalExtent) == 0U ||
+            (request.flags & EditorViewportNativePresentRequestV6Flags_HasLogicalExtent) == 0U ||
             (request.flags & ~kKnownFlags) != 0U || logicalExtent.width == 0U ||
             logicalExtent.height == 0U || logicalExtent.width > request.widthPixels ||
             logicalExtent.height > request.heightPixels ||
@@ -232,17 +259,54 @@ namespace {
             request.targetKind != EditorViewportNativeTargetKind_DocumentScene ||
             request.debugProxyCount > kMaximumDebugProxyCount ||
             (request.debugProxyCount != 0U && request.debugProxies == nullptr) ||
+            request.authoredMeshCount > kMaximumAuthoredMeshCount ||
+            (request.authoredMeshCount != 0U && request.authoredMeshes == nullptr) ||
+            request.sceneRasterMode > EditorViewportNativeSceneRasterMode_Wireframe ||
             !validCamera(request.camera)) {
             return false;
         }
-        if (request.debugProxyCount == 0U) {
+        if (request.debugProxyCount != 0U) {
+            const std::span<const EditorViewportNativeDebugProxy> debugProxies{
+                request.debugProxies, request.debugProxyCount};
+            if (!std::ranges::all_of(debugProxies, [](const EditorViewportNativeDebugProxy& proxy) {
+                    return validDebugProxy(proxy);
+                })) {
+                return false;
+            }
+        }
+        if (request.authoredMeshCount == 0U) {
             return true;
         }
-        const std::span<const EditorViewportNativeDebugProxy> debugProxies{request.debugProxies,
-                                                                           request.debugProxyCount};
-        return std::ranges::all_of(debugProxies, [](const EditorViewportNativeDebugProxy& proxy) {
-            return validDebugProxy(proxy);
+        const std::span<const EditorViewportNativeAuthoredMeshSnapshotV6> authoredMeshes{
+            request.authoredMeshes, request.authoredMeshCount};
+        return std::ranges::all_of(authoredMeshes, [](const auto& snapshot) {
+            return validAuthoredMesh(snapshot);
         });
+    }
+
+    [[nodiscard]] bool
+    hasUniqueAuthoredMeshIdentitiesV6(const EditorViewportNativePresentRequestV6& request) {
+        if (request.authoredMeshCount < 2U) {
+            return true;
+        }
+
+        std::vector<std::array<std::uint8_t, 16>> objectIds;
+        std::vector<std::uint64_t> runtimeEntities;
+        objectIds.reserve(request.authoredMeshCount);
+        runtimeEntities.reserve(request.authoredMeshCount);
+        for (const EditorViewportNativeAuthoredMeshSnapshotV6& mesh :
+             std::span{request.authoredMeshes, request.authoredMeshCount}) {
+            std::array<std::uint8_t, 16> objectId{};
+            std::ranges::copy(mesh.objectId, objectId.begin());
+            objectIds.push_back(objectId);
+            runtimeEntities.push_back((static_cast<std::uint64_t>(mesh.runtimeEntityIndex) << 32U) |
+                                      mesh.runtimeEntityGeneration);
+        }
+
+        std::ranges::sort(objectIds);
+        std::ranges::sort(runtimeEntities);
+        return std::ranges::adjacent_find(objectIds) == objectIds.end() &&
+               std::ranges::adjacent_find(runtimeEntities) == runtimeEntities.end();
     }
 
     [[nodiscard]] asharia::editor::EditorViewportKind viewportKind(std::uint32_t kind) {
@@ -290,33 +354,33 @@ namespace {
         };
     }
 
-    void clearStreamHandleV5(EditorViewportNativeStreamHandleV5* stream, std::uint32_t status) {
+    void clearStreamHandleV6(EditorViewportNativeStreamHandleV6* stream, std::uint32_t status) {
         if (stream == nullptr) {
             return;
         }
-        *stream = EditorViewportNativeStreamHandleV5{
-            .header = streamHandleV5Header(),
+        *stream = EditorViewportNativeStreamHandleV6{
+            .header = streamHandleV6Header(),
             .status = status,
-            .reserved = 0U,
+            .capabilities = EditorViewportNativeStreamCapabilitiesV6_None,
             .streamId = 0U,
         };
     }
 
-    void clearReadyFrameV5(EditorViewportNativeReadyFrameV5* frame, std::uint32_t status) {
+    void clearReadyFrameV6(EditorViewportNativeReadyFrameV6* frame, std::uint32_t status) {
         if (frame == nullptr) {
             return;
         }
         *frame = {};
-        frame->header = readyFrameV5Header();
+        frame->header = readyFrameV6Header();
         frame->status = status;
     }
 
-    void clearStreamPollV5(EditorViewportNativeStreamPollV5* poll, std::uint32_t status) {
+    void clearStreamPollV6(EditorViewportNativeStreamPollV6* poll, std::uint32_t status) {
         if (poll == nullptr) {
             return;
         }
         *poll = {};
-        poll->header = streamPollV5Header();
+        poll->header = streamPollV6Header();
         poll->status = status;
         poll->lifecycle = EditorViewportNativeStreamLifecycle_Faulted;
     }
@@ -440,9 +504,25 @@ namespace {
         return status;
     }
 
-    [[nodiscard]] std::uint32_t submitStreamFrameV5(
-        std::uint64_t streamId, const EditorViewportNativePresentRequestV5& request) {
+    [[nodiscard]] std::uint32_t submitStreamFrameV6(
+        std::uint64_t streamId, const EditorViewportNativePresentRequestV6& request) {
+        const asharia::editor::EditorSharedViewportSceneRasterMode rasterMode =
+            request.sceneRasterMode == EditorViewportNativeSceneRasterMode_Wireframe
+                ? asharia::editor::EditorSharedViewportSceneRasterMode::Wireframe
+                : asharia::editor::EditorSharedViewportSceneRasterMode::Solid;
+        auto rasterModeValid = asharia::editor::EditorSharedViewportRuntime::instance()
+                                   .validateSceneRasterMode(streamId, rasterMode);
+        if (!rasterModeValid) {
+            if (rasterModeValid.error().domain == asharia::ErrorDomain::Vulkan &&
+                rasterModeValid.error().code ==
+                    static_cast<int>(VK_ERROR_FEATURE_NOT_PRESENT)) {
+                return EditorViewportNativeStatus_FeatureUnavailable;
+            }
+            return EditorViewportNativeStatus_Unavailable;
+        }
+
         std::vector<asharia::editor::EditorSharedViewportDebugProxy> debugProxies;
+        std::vector<asharia::editor::EditorSharedViewportAuthoredMeshSnapshot> authoredMeshes;
         try {
             debugProxies.reserve(request.debugProxyCount);
             if (request.debugProxyCount != 0U) {
@@ -458,12 +538,29 @@ namespace {
                     });
                 }
             }
+            authoredMeshes.reserve(request.authoredMeshCount);
+            if (request.authoredMeshCount != 0U) {
+                const std::span<const EditorViewportNativeAuthoredMeshSnapshotV6> requestMeshes{
+                    request.authoredMeshes, request.authoredMeshCount};
+                for (const EditorViewportNativeAuthoredMeshSnapshotV6& mesh : requestMeshes) {
+                    asharia::editor::EditorSharedViewportAuthoredMeshSnapshot copy;
+                    std::ranges::copy(mesh.objectId, copy.objectId.begin());
+                    copy.runtimeEntityIndex = mesh.runtimeEntityIndex;
+                    copy.runtimeEntityGeneration = mesh.runtimeEntityGeneration;
+                    std::ranges::copy(mesh.assetId, copy.assetId.begin());
+                    copy.expectedMeshType = mesh.expectedMeshType;
+                    std::ranges::copy(mesh.position, copy.position.begin());
+                    std::ranges::copy(mesh.rotation, copy.rotation.begin());
+                    std::ranges::copy(mesh.scale, copy.scale.begin());
+                    authoredMeshes.push_back(copy);
+                }
+            }
         } catch (const std::bad_alloc&) {
             return EditorViewportNativeStatus_InternalError;
         }
 
         const asharia::editor::EditorSharedViewportPresentDesc desc{
-            .panelId = "viewport-stream/native-v5",
+            .panelId = "viewport-stream/native-v6",
             .kind = viewportKind(request.kind),
             .logicalExtent = logicalExtentFor(request),
             .allocationExtent =
@@ -479,14 +576,76 @@ namespace {
             .hasCamera = true,
             .camera = viewportCamera(request.camera),
             .debugProxies = debugProxies,
+            .authoredMeshes = authoredMeshes,
+            .sceneRasterMode = rasterMode,
+            .captureSceneMeshEvidence =
+                (request.flags & EditorViewportNativePresentRequestV6Flags_CaptureSceneMeshEvidence) != 0U,
             .flashSentinelCorners =
-                (request.flags & EditorViewportNativePresentRequestV5Flags_FlashSentinelCorners) !=
+                (request.flags & EditorViewportNativePresentRequestV6Flags_FlashSentinelCorners) !=
                 0U,
         };
         auto submitted =
             asharia::editor::EditorSharedViewportRuntime::instance().submitLatest(streamId, desc);
-        return submitted ? EditorViewportNativeStatus_Success
-                         : EditorViewportNativeStatus_Unavailable;
+        if (submitted) {
+            return EditorViewportNativeStatus_Success;
+        }
+        if (submitted.error().domain == asharia::ErrorDomain::Vulkan &&
+            submitted.error().code == static_cast<int>(VK_ERROR_FEATURE_NOT_PRESENT)) {
+            return EditorViewportNativeStatus_FeatureUnavailable;
+        }
+        return EditorViewportNativeStatus_Unavailable;
+    }
+
+    [[nodiscard]] std::uint32_t openStreamV6(
+        const EditorViewportNativeCompatibilityRequest* compatibility,
+        EditorViewportNativeStreamHandleV6* stream,
+        std::optional<bool> wireframeCapabilityOverride = std::nullopt) {
+        if (compatibility == nullptr || stream == nullptr) {
+            clearStreamHandleV6(stream, EditorViewportNativeStatus_InvalidArgument);
+            return EditorViewportNativeStatus_InvalidArgument;
+        }
+        if (!hasSupportedRequestHeader(*compatibility)) {
+            clearStreamHandleV6(stream, EditorViewportNativeStatus_UnsupportedAbi);
+            return EditorViewportNativeStatus_UnsupportedAbi;
+        }
+        if (!hasSupportedHandleTypes(*compatibility)) {
+            clearStreamHandleV6(stream, EditorViewportNativeStatus_UnsupportedHandleType);
+            return EditorViewportNativeStatus_UnsupportedHandleType;
+        }
+
+        try {
+            const auto deviceSnapshot =
+                asharia::editor::EditorSharedViewportRuntime::instance().ensureDeviceSnapshot();
+            if (!deviceSnapshot) {
+                clearStreamHandleV6(stream, EditorViewportNativeStatus_Unavailable);
+                return EditorViewportNativeStatus_Unavailable;
+            }
+            if (!matchesRequestedDevice(*compatibility, deviceSnapshot->identity)) {
+                clearStreamHandleV6(stream, EditorViewportNativeStatus_DeviceMismatch);
+                return EditorViewportNativeStatus_DeviceMismatch;
+            }
+
+            const bool supportsWireframe =
+                wireframeCapabilityOverride.value_or(deviceSnapshot->fillModeNonSolid);
+            auto opened = asharia::editor::EditorSharedViewportRuntime::instance().openStream(
+                supportsWireframe);
+            if (!opened) {
+                clearStreamHandleV6(stream, EditorViewportNativeStatus_Unavailable);
+                return EditorViewportNativeStatus_Unavailable;
+            }
+            *stream = EditorViewportNativeStreamHandleV6{
+                .header = streamHandleV6Header(),
+                .status = EditorViewportNativeStatus_Success,
+                .capabilities = supportsWireframe
+                                    ? EditorViewportNativeStreamCapabilitiesV6_Wireframe
+                                    : EditorViewportNativeStreamCapabilitiesV6_None,
+                .streamId = *opened,
+            };
+            return EditorViewportNativeStatus_Success;
+        } catch (...) {
+            clearStreamHandleV6(stream, EditorViewportNativeStatus_InternalError);
+            return EditorViewportNativeStatus_InternalError;
+        }
     }
 
 } // namespace
@@ -535,85 +694,66 @@ editor_viewport_release_compatibility_result(EditorViewportNativeCompatibilityRe
     const std::unique_ptr<std::byte[]> message{static_cast<std::byte*>(result.messageUtf8)};
 }
 
-std::uint32_t EDITOR_NATIVE_CALL editor_viewport_open_stream_v5(
+std::uint32_t EDITOR_NATIVE_CALL editor_viewport_open_stream_v6(
     const EditorViewportNativeCompatibilityRequest* compatibility,
-    EditorViewportNativeStreamHandleV5* stream) {
-    if (compatibility == nullptr || stream == nullptr) {
-        clearStreamHandleV5(stream, EditorViewportNativeStatus_InvalidArgument);
-        return EditorViewportNativeStatus_InvalidArgument;
-    }
-    if (!hasSupportedRequestHeader(*compatibility)) {
-        clearStreamHandleV5(stream, EditorViewportNativeStatus_UnsupportedAbi);
-        return EditorViewportNativeStatus_UnsupportedAbi;
-    }
-    if (!hasSupportedHandleTypes(*compatibility)) {
-        clearStreamHandleV5(stream, EditorViewportNativeStatus_UnsupportedHandleType);
-        return EditorViewportNativeStatus_UnsupportedHandleType;
-    }
-
-    try {
-        const auto deviceSnapshot =
-            asharia::editor::EditorSharedViewportRuntime::instance().ensureDeviceSnapshot();
-        if (!deviceSnapshot) {
-            clearStreamHandleV5(stream, EditorViewportNativeStatus_Unavailable);
-            return EditorViewportNativeStatus_Unavailable;
-        }
-        if (!matchesRequestedDevice(*compatibility, deviceSnapshot->identity)) {
-            clearStreamHandleV5(stream, EditorViewportNativeStatus_DeviceMismatch);
-            return EditorViewportNativeStatus_DeviceMismatch;
-        }
-
-        auto opened = asharia::editor::EditorSharedViewportRuntime::instance().openStream();
-        if (!opened) {
-            clearStreamHandleV5(stream, EditorViewportNativeStatus_Unavailable);
-            return EditorViewportNativeStatus_Unavailable;
-        }
-        *stream = EditorViewportNativeStreamHandleV5{
-            .header = streamHandleV5Header(),
-            .status = EditorViewportNativeStatus_Success,
-            .reserved = 0U,
-            .streamId = *opened,
-        };
-        return EditorViewportNativeStatus_Success;
-    } catch (...) {
-        clearStreamHandleV5(stream, EditorViewportNativeStatus_InternalError);
-        return EditorViewportNativeStatus_InternalError;
-    }
+    EditorViewportNativeStreamHandleV6* stream) {
+    return openStreamV6(compatibility, stream);
 }
 
-std::uint32_t EDITOR_NATIVE_CALL editor_viewport_submit_latest_v5(
-    std::uint64_t streamId, const EditorViewportNativePresentRequestV5* request) {
+#if defined(ASHARIA_EDITOR_NATIVE_TESTING)
+std::uint32_t EDITOR_NATIVE_CALL editor_viewport_open_stream_v6_for_test(
+    const EditorViewportNativeCompatibilityRequest* compatibility,
+    std::uint32_t capabilities,
+    EditorViewportNativeStreamHandleV6* stream) {
+    constexpr std::uint32_t kKnownCapabilities =
+        EditorViewportNativeStreamCapabilitiesV6_Wireframe;
+    if ((capabilities & ~kKnownCapabilities) != 0U) {
+        clearStreamHandleV6(stream, EditorViewportNativeStatus_InvalidArgument);
+        return EditorViewportNativeStatus_InvalidArgument;
+    }
+    return openStreamV6(
+        compatibility,
+        stream,
+        (capabilities & EditorViewportNativeStreamCapabilitiesV6_Wireframe) != 0U);
+}
+#endif
+
+std::uint32_t EDITOR_NATIVE_CALL editor_viewport_submit_latest_v6(
+    std::uint64_t streamId, const EditorViewportNativePresentRequestV6* request) {
     if (streamId == 0U || request == nullptr) {
         return EditorViewportNativeStatus_InvalidArgument;
     }
-    if (!hasSupportedPresentRequestV5Header(*request)) {
+    if (!hasSupportedPresentRequestV6Header(*request)) {
         return EditorViewportNativeStatus_UnsupportedAbi;
     }
-    if (!validPresentRequestV5(*request)) {
+    if (!validPresentRequestV6(*request)) {
         return EditorViewportNativeStatus_InvalidArgument;
     }
     try {
-        return submitStreamFrameV5(streamId, *request);
+        if (!hasUniqueAuthoredMeshIdentitiesV6(*request)) {
+            return EditorViewportNativeStatus_InvalidArgument;
+        }
+        return submitStreamFrameV6(streamId, *request);
     } catch (...) {
         return EditorViewportNativeStatus_InternalError;
     }
 }
 
-std::uint32_t EDITOR_NATIVE_CALL editor_viewport_try_take_ready_v5(
-    std::uint64_t streamId, EditorViewportNativeReadyFrameV5* frame) {
+std::uint32_t EDITOR_NATIVE_CALL editor_viewport_try_take_ready_v6(
+    std::uint64_t streamId, EditorViewportNativeReadyFrameV6* frame) {
     if (streamId == 0U || frame == nullptr) {
-        clearReadyFrameV5(frame, EditorViewportNativeStatus_InvalidArgument);
+        clearReadyFrameV6(frame, EditorViewportNativeStatus_InvalidArgument);
         return EditorViewportNativeStatus_InvalidArgument;
     }
 
     try {
         auto ready = asharia::editor::EditorSharedViewportRuntime::instance().tryTakeReady(streamId);
         if (!ready) {
-            clearReadyFrameV5(frame, EditorViewportNativeStatus_Unavailable);
+            clearReadyFrameV6(frame, EditorViewportNativeStatus_Unavailable);
             return EditorViewportNativeStatus_Unavailable;
         }
         if (!*ready) {
-            clearReadyFrameV5(frame, EditorViewportNativeStatus_Success);
+            clearReadyFrameV6(frame, EditorViewportNativeStatus_Success);
             return EditorViewportNativeStatus_Success;
         }
 
@@ -630,12 +770,12 @@ std::uint32_t EDITOR_NATIVE_CALL editor_viewport_try_take_ready_v5(
                     streamId, nativeFrame.present.nativePacket,
                     asharia::editor::EditorSharedViewportPresentCompletionKind::
                         NotSubmittedToConsumer);
-            clearReadyFrameV5(frame, EditorViewportNativeStatus_RenderFailed);
+            clearReadyFrameV6(frame, EditorViewportNativeStatus_RenderFailed);
             return EditorViewportNativeStatus_RenderFailed;
         }
 
-        *frame = EditorViewportNativeReadyFrameV5{
-            .header = readyFrameV5Header(),
+        *frame = EditorViewportNativeReadyFrameV6{
+            .header = readyFrameV6Header(),
             .status = EditorViewportNativeStatus_Success,
             .hasFrame = 1U,
             .streamId = streamId,
@@ -663,15 +803,37 @@ std::uint32_t EDITOR_NATIVE_CALL editor_viewport_try_take_ready_v5(
             .targetKind = EditorViewportNativeTargetKind_DocumentScene,
             .logicalWidthPixels = nativeFrame.logicalExtent.width,
             .logicalHeightPixels = nativeFrame.logicalExtent.height,
+            .sceneMeshReceipt = EditorViewportNativeSceneMeshReceiptV6{
+                .inputCount = nativeFrame.sceneMeshReceipt.inputCount,
+                .resolvedCount = nativeFrame.sceneMeshReceipt.resolvedCount,
+                .rejectedCount = nativeFrame.sceneMeshReceipt.rejectedCount,
+                .indexedDrawCount = nativeFrame.sceneMeshReceipt.indexedDrawCount,
+                .rasterMode = static_cast<std::uint32_t>(nativeFrame.sceneMeshReceipt.rasterMode),
+                .representativeSourceEntityIndex =
+                    nativeFrame.sceneMeshReceipt.representativeSourceEntityIndex,
+                .representativeSourceEntityGeneration =
+                    nativeFrame.sceneMeshReceipt.representativeSourceEntityGeneration,
+                .evidenceAvailable = nativeFrame.sceneMeshReceipt.evidenceAvailable ? 1U : 0U,
+                .representativeObjectId = {},
+                .representativeAssetId = {},
+                .meshResourceKey = nativeFrame.sceneMeshReceipt.meshResourceKey,
+                .materialResourceKey = nativeFrame.sceneMeshReceipt.materialResourceKey,
+                .productHash = nativeFrame.sceneMeshReceipt.productHash,
+                .sceneRevision = nativeFrame.sceneMeshReceipt.sceneRevision,
+            },
         };
+        std::ranges::copy(nativeFrame.sceneMeshReceipt.representativeObjectId,
+                          frame->sceneMeshReceipt.representativeObjectId);
+        std::ranges::copy(nativeFrame.sceneMeshReceipt.representativeAssetId,
+                          frame->sceneMeshReceipt.representativeAssetId);
         return EditorViewportNativeStatus_Success;
     } catch (...) {
-        clearReadyFrameV5(frame, EditorViewportNativeStatus_InternalError);
+        clearReadyFrameV6(frame, EditorViewportNativeStatus_InternalError);
         return EditorViewportNativeStatus_InternalError;
     }
 }
 
-std::uint32_t EDITOR_NATIVE_CALL editor_viewport_complete_frame_v5(
+std::uint32_t EDITOR_NATIVE_CALL editor_viewport_complete_frame_v6(
     std::uint64_t streamId, void* nativeSlot, std::uint32_t completionKind) {
     asharia::editor::EditorSharedViewportPresentCompletionKind nativeCompletionKind{};
     switch (completionKind) {
@@ -696,7 +858,7 @@ std::uint32_t EDITOR_NATIVE_CALL editor_viewport_complete_frame_v5(
     }
 }
 
-std::uint32_t EDITOR_NATIVE_CALL editor_viewport_release_slot_import_v5(
+std::uint32_t EDITOR_NATIVE_CALL editor_viewport_release_slot_import_v6(
     std::uint64_t streamId, void* nativeSlot) {
     try {
         auto released = asharia::editor::EditorSharedViewportRuntime::instance().releaseSlotImport(
@@ -708,7 +870,7 @@ std::uint32_t EDITOR_NATIVE_CALL editor_viewport_release_slot_import_v5(
     }
 }
 
-std::uint32_t EDITOR_NATIVE_CALL editor_viewport_close_stream_v5(std::uint64_t streamId) {
+std::uint32_t EDITOR_NATIVE_CALL editor_viewport_close_stream_v6(std::uint64_t streamId) {
     try {
         auto closed =
             asharia::editor::EditorSharedViewportRuntime::instance().requestCloseStream(streamId);
@@ -719,20 +881,20 @@ std::uint32_t EDITOR_NATIVE_CALL editor_viewport_close_stream_v5(std::uint64_t s
     }
 }
 
-std::uint32_t EDITOR_NATIVE_CALL editor_viewport_poll_stream_v5(
-    std::uint64_t streamId, EditorViewportNativeStreamPollV5* poll) {
+std::uint32_t EDITOR_NATIVE_CALL editor_viewport_poll_stream_v6(
+    std::uint64_t streamId, EditorViewportNativeStreamPollV6* poll) {
     if (streamId == 0U || poll == nullptr) {
-        clearStreamPollV5(poll, EditorViewportNativeStatus_InvalidArgument);
+        clearStreamPollV6(poll, EditorViewportNativeStatus_InvalidArgument);
         return EditorViewportNativeStatus_InvalidArgument;
     }
     try {
         auto snapshot = asharia::editor::EditorSharedViewportRuntime::instance().pollStream(streamId);
         if (!snapshot) {
-            clearStreamPollV5(poll, EditorViewportNativeStatus_Unavailable);
+            clearStreamPollV6(poll, EditorViewportNativeStatus_Unavailable);
             return EditorViewportNativeStatus_Unavailable;
         }
-        *poll = EditorViewportNativeStreamPollV5{
-            .header = streamPollV5Header(),
+        *poll = EditorViewportNativeStreamPollV6{
+            .header = streamPollV6Header(),
             .status = EditorViewportNativeStatus_Success,
             .lifecycle = nativeStreamLifecycleFor(snapshot->lifecycle),
             .hasPendingLatest = snapshot->hasPendingLatest ? 1U : 0U,
@@ -747,12 +909,12 @@ std::uint32_t EDITOR_NATIVE_CALL editor_viewport_poll_stream_v5(
         };
         return EditorViewportNativeStatus_Success;
     } catch (...) {
-        clearStreamPollV5(poll, EditorViewportNativeStatus_InternalError);
+        clearStreamPollV6(poll, EditorViewportNativeStatus_InternalError);
         return EditorViewportNativeStatus_InternalError;
     }
 }
 
-std::uint32_t EDITOR_NATIVE_CALL editor_viewport_destroy_stream_v5(std::uint64_t streamId) {
+std::uint32_t EDITOR_NATIVE_CALL editor_viewport_destroy_stream_v6(std::uint64_t streamId) {
     try {
         auto destroyed =
             asharia::editor::EditorSharedViewportRuntime::instance().destroyClosedStream(streamId);

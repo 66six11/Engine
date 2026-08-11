@@ -56,34 +56,38 @@ namespace asharia {
         [[nodiscard]] Result<void> validateUniqueImageAccesses(
             std::span<const RenderGraphImageDesc> images, const DeclaredPass& pass,
             std::span<const std::span<const RenderGraphImageSlot>> slotGroups) {
-            const std::array<ImageSlotGroup, 7> namedGroups{
+            const std::array<ImageSlotGroup, 8> namedGroups{
                 ImageSlotGroup{
                     .access = "ColorWrite",
                     .slots = slotGroups[0],
                 },
                 ImageSlotGroup{
-                    .access = "ShaderRead",
+                    .access = "ColorReadWrite",
                     .slots = slotGroups[1],
                 },
                 ImageSlotGroup{
-                    .access = "DepthAttachmentRead",
+                    .access = "ShaderRead",
                     .slots = slotGroups[2],
                 },
                 ImageSlotGroup{
-                    .access = "DepthAttachmentWrite",
+                    .access = "DepthAttachmentRead",
                     .slots = slotGroups[3],
                 },
                 ImageSlotGroup{
-                    .access = "DepthSampledRead",
+                    .access = "DepthAttachmentWrite",
                     .slots = slotGroups[4],
                 },
                 ImageSlotGroup{
-                    .access = "TransferRead",
+                    .access = "DepthSampledRead",
                     .slots = slotGroups[5],
                 },
                 ImageSlotGroup{
-                    .access = "TransferWrite",
+                    .access = "TransferRead",
                     .slots = slotGroups[6],
+                },
+                ImageSlotGroup{
+                    .access = "TransferWrite",
+                    .slots = slotGroups[7],
                 },
             };
 
@@ -122,10 +126,11 @@ namespace asharia {
 
         Result<void> validateUniquePassImageAccesses(std::span<const RenderGraphImageDesc> images,
                                                      const Pass& pass) {
-            const std::array<std::span<const RenderGraphImageSlot>, 7> slotGroups{
-                pass.colorWriteSlots,    pass.shaderReadSlots,       pass.depthReadSlots,
-                pass.depthWriteSlots,    pass.depthSampledReadSlots, pass.transferReadSlots,
-                pass.transferWriteSlots,
+            const std::array<std::span<const RenderGraphImageSlot>, 8> slotGroups{
+                pass.colorWriteSlots,         pass.colorReadWriteSlots,
+                pass.shaderReadSlots,         pass.depthReadSlots,
+                pass.depthWriteSlots,         pass.depthSampledReadSlots,
+                pass.transferReadSlots,       pass.transferWriteSlots,
             };
             return validateUniqueImageAccesses(images, pass, slotGroups);
         }

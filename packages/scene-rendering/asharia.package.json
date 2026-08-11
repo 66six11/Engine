@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "packageKind": "source-boundary",
+  "sourceRole": "module-group",
+  "ownerDomain": "rendering",
+  "plannedOwnershipRoot": "com.asharia.system.scene-rendering",
+  "selectable": false,
+  "catalogVisible": false,
+  "name": "com.asharia.scene-rendering",
+  "version": "0.1.0",
+  "displayName": "Asharia Engine Scene Rendering",
+  "description": "Backend-neutral CPU extraction of revisioned scene mesh references into Basic renderer draw packets.",
+  "dependencies": [
+    "com.asharia.asset-core",
+    "com.asharia.renderer-basic",
+    "com.asharia.scene-core"
+  ],
+  "targets": ["asharia-scene-rendering"],
+  "testTargets": ["asharia-scene-rendering-smoke-tests"],
+  "targetRoles": {
+    "asharia-scene-rendering": "runtime",
+    "asharia-scene-rendering-smoke-tests": "test"
+  },
+  "targetDependencies": {
+    "asharia-scene-rendering": [
+      "asharia-asset-core",
+      "asharia-renderer-basic",
+      "asharia-scene-core"
+    ],
+    "asharia-scene-rendering-smoke-tests": ["asharia-scene-rendering"]
+  }
+}

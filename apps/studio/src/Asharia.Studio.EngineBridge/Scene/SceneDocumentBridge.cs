@@ -263,6 +263,7 @@ public sealed class SceneDocumentBridge : ISceneDocumentGateway
 
         var entities = new List<SceneEntitySnapshot>(checked((int)result.EntityCount));
         var objectIds = new HashSet<Guid>();
+        var runtimeEntityIds = new HashSet<EntityId>();
         for (ulong index = 0; index < result.EntityCount; index++)
         {
             var offset = checked(
@@ -278,11 +279,42 @@ public sealed class SceneDocumentBridge : ISceneDocumentGateway
             {
                 throw new ArgumentException("Scene object id is invalid or duplicated.");
             }
+            if (!entity.RuntimeEntityId.IsValid ||
+                !runtimeEntityIds.Add(entity.RuntimeEntityId))
+            {
+                throw new ArgumentException(
+                    "Scene runtime entity id is invalid or duplicated.");
+            }
+            SceneMeshReference? mesh = null;
+            if (entity.MeshAssetGuidUtf8.ByteLength == 0)
+            {
+                if (entity.MeshAssetGuidUtf8.ByteOffset != 0)
+                {
+                    throw new ArgumentException(
+                        "An absent mesh asset reference must use an empty native span.");
+                }
+            }
+            else
+            {
+                var meshAssetGuidText = Decode(
+                    response,
+                    entity.MeshAssetGuidUtf8,
+                    result.RequiredByteLength);
+                if (!Guid.TryParseExact(meshAssetGuidText, "D", out var meshAssetGuid) ||
+                    meshAssetGuid == Guid.Empty)
+                {
+                    throw new ArgumentException(
+                        "Scene mesh asset reference is not a canonical non-empty UUID.");
+                }
+                mesh = new SceneMeshReference(meshAssetGuid);
+            }
             ValidateTransform(entity.Transform);
             entities.Add(new SceneEntitySnapshot(
                 objectId,
+                entity.RuntimeEntityId,
                 Decode(response, entity.NameUtf8, result.RequiredByteLength),
-                entity.Transform));
+                entity.Transform,
+                mesh));
         }
 
         return new SceneDocumentSnapshot(
@@ -447,6 +479,8 @@ public sealed class SceneDocumentBridge : ISceneDocumentGateway
         SceneNativeStatus.InvalidObject or SceneNativeStatus.DuplicateObject =>
             SceneDocumentFailureKind.InvalidObject,
         SceneNativeStatus.InvalidTransform => SceneDocumentFailureKind.InvalidTransform,
+        SceneNativeStatus.InvalidAssetReference =>
+            SceneDocumentFailureKind.InvalidAssetReference,
         SceneNativeStatus.IoFailure => SceneDocumentFailureKind.IoFailure,
         SceneNativeStatus.UnsupportedAbi => SceneDocumentFailureKind.NativeUnavailable,
         _ => SceneDocumentFailureKind.InternalError,
@@ -556,6 +590,27 @@ public sealed class SceneDocumentBridge : ISceneDocumentGateway
                 () => CreateEntityCore(objectId, name, expectedRevision)));
         }
 
+        public ValueTask<SceneDocumentOperationResult> CreateMeshEntityAsync(
+            Guid objectId,
+            string name,
+            SceneMeshReference mesh,
+            ulong expectedRevision,
+            CancellationToken cancellationToken = default)
+        {
+            ValidateObjectId(objectId);
+            ArgumentNullException.ThrowIfNull(name);
+            if (mesh.AssetId == Guid.Empty)
+            {
+                throw new ArgumentException(
+                    "Mesh asset id must not be empty.",
+                    nameof(mesh));
+            }
+            cancellationToken.ThrowIfCancellationRequested();
+            ThrowIfDisposed();
+            return new ValueTask<SceneDocumentOperationResult>(lane_.InvokeAsync(
+                () => CreateMeshEntityCore(objectId, name, mesh, expectedRevision)));
+        }
+
         public ValueTask<SceneDocumentOperationResult> SetEntityNameAsync(
             Guid objectId,
             string name,
@@ -632,7 +687,7 @@ public sealed class SceneDocumentBridge : ISceneDocumentGateway
                 {
                     var request = new SceneNativeDocumentCreateEntityRequest(
                         new SceneNativeAbiHeader(
-                            SceneNativeAbi.Version,
+                            SceneDocumentNativeAbi.Version,
                             SceneNativeDocumentCreateEntityRequest.StructSize),
                         handle_,
                         expectedRevision,
@@ -642,6 +697,54 @@ public sealed class SceneDocumentBridge : ISceneDocumentGateway
                         (nint response, ulong capacity,
                          out SceneNativeDocumentOperationResult result) =>
                             bridge_.nativeApi_.CreateEntity(
+                                in request,
+                                response,
+                                capacity,
+                                out result)));
+                }
+            }
+            catch (EncoderFallbackException exception)
+            {
+                return FailedCurrent(SceneDocumentFailureKind.InvalidInput, exception.Message);
+            }
+            catch (Exception exception) when (IsNativeBindingFailure(exception))
+            {
+                return NativeUnavailableCurrent(exception);
+            }
+        }
+
+        private unsafe SceneDocumentOperationResult CreateMeshEntityCore(
+            Guid objectId,
+            string name,
+            SceneMeshReference mesh,
+            ulong expectedRevision)
+        {
+            try
+            {
+                var objectIdBytes = StrictUtf8.GetBytes(objectId.ToString("D"));
+                var nameBytes = StrictUtf8.GetBytes(name);
+                var meshAssetGuidBytes = StrictUtf8.GetBytes(mesh.AssetId.ToString("D"));
+                fixed (byte* id = objectIdBytes)
+                fixed (byte* namePointer = nameBytes)
+                fixed (byte* meshAssetGuidPointer = meshAssetGuidBytes)
+                {
+                    var request = new SceneNativeDocumentCreateMeshEntityRequest(
+                        new SceneNativeAbiHeader(
+                            SceneDocumentNativeAbi.Version,
+                            SceneNativeDocumentCreateMeshEntityRequest.StructSize),
+                        handle_,
+                        expectedRevision,
+                        new SceneNativeStringView((nint)id, (ulong)objectIdBytes.Length),
+                        new SceneNativeStringView(
+                            (nint)namePointer,
+                            (ulong)nameBytes.Length),
+                        new SceneNativeStringView(
+                            (nint)meshAssetGuidPointer,
+                            (ulong)meshAssetGuidBytes.Length));
+                    return FinishEdit(bridge_.InvokeOperation(
+                        (nint response, ulong capacity,
+                         out SceneNativeDocumentOperationResult result) =>
+                            bridge_.nativeApi_.CreateMeshEntity(
                                 in request,
                                 response,
                                 capacity,
@@ -672,7 +775,7 @@ public sealed class SceneDocumentBridge : ISceneDocumentGateway
                 {
                     var request = new SceneNativeDocumentSetEntityNameRequest(
                         new SceneNativeAbiHeader(
-                            SceneNativeAbi.Version,
+                            SceneDocumentNativeAbi.Version,
                             SceneNativeDocumentSetEntityNameRequest.StructSize),
                         handle_,
                         expectedRevision,
@@ -710,7 +813,7 @@ public sealed class SceneDocumentBridge : ISceneDocumentGateway
                 {
                     var request = new SceneNativeDocumentSetEntityTransformRequest(
                         new SceneNativeAbiHeader(
-                            SceneNativeAbi.Version,
+                            SceneDocumentNativeAbi.Version,
                             SceneNativeDocumentSetEntityTransformRequest.StructSize),
                         handle_,
                         expectedRevision,
@@ -738,7 +841,7 @@ public sealed class SceneDocumentBridge : ISceneDocumentGateway
             {
                 var request = new SceneNativeDocumentSaveRequest(
                     new SceneNativeAbiHeader(
-                        SceneNativeAbi.Version,
+                        SceneDocumentNativeAbi.Version,
                         SceneNativeDocumentSaveRequest.StructSize),
                     handle_,
                     expectedRevision);

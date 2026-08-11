@@ -15,8 +15,9 @@ namespace asharia::rendergraph_internal {
         passWritesImportedResource(std::span<const RenderGraphImageDesc> images,
                                    std::span<const RenderGraphBufferDesc> buffers,
                                    const Pass& pass) {
-            const std::array<std::span<const RenderGraphImageSlot>, 3> writeSlotGroups{
+            const std::array<std::span<const RenderGraphImageSlot>, 4> writeSlotGroups{
                 pass.colorWriteSlots,
+                pass.colorReadWriteSlots,
                 pass.depthWriteSlots,
                 pass.transferWriteSlots,
             };

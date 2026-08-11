@@ -1,6 +1,6 @@
 # Studio viewport rendering
 
-最近更新：2026-08-10
+最近更新：2026-08-11
 
 ## 当前 production 链路
 
@@ -13,7 +13,7 @@ Viewport presentation proposal (Scene exact / Game fit / Frame Debug immutable c
   -> workspace host keeps one active request + one queued latest; committed layout/front stay visible
   -> ViewportPresentationTransactionCoordinator
   -> ViewportSession.TryPublishLatest immutable snapshot
-  -> EngineBridge ViewportRenderStream (V5)
+  -> EngineBridge ViewportRenderStream (V6)
   -> editor_native per-stream pending-latest
   -> process-level EditorSharedViewportRuntime RenderThread
   -> renderer_basic_vulkan offscreen external image
@@ -24,44 +24,50 @@ Viewport presentation proposal (Scene exact / Game fit / Frame Debug immutable c
   -> explicit frame completion
 ```
 
-Studio Scene View 当前渲染深灰背景、analytic XZ world grid、原点 XYZ 轴和每个 debug proxy 的 XYZ 轴。它还没有把
-`BasicRenderSceneDesc::drawItems` 接入真实 scene mesh；该缺口与 V5 presentation pipeline 分开。
+Studio Scene View 渲染深灰背景、analytic XZ world grid、原点 XYZ 轴和每个 debug proxy 的 XYZ 轴。它还会把同一
+`SceneDocumentSnapshot` revision 中显式 authored mesh 引用交给 `scene-rendering` 做 immutable extraction，并通过
+`BasicRenderViewSceneDesc::drawItems` 记录真实 indexed Scene draw。当前唯一 Ready product binding 是 #366 的 directional-wedge
+validation mesh；未知或未就绪 asset 逐项 no-draw，不能替换成默认几何，也不代表通用 mesh importer/runtime resolver 已完成。
 
 ## 模块职责
 
 | 模块 | 责任 | 禁止 |
 | --- | --- | --- |
 | `ViewportSession` | document/camera/extent/exposed invalidation；coalesced refresh signal；发布 immutable request；维护内容呈现序列下界 | 持有 native/GPU handle；等待 frame completion 才允许新 request；把 geometry revision 冒充内容 revision |
-| `ViewportBridge` / `ViewportRenderStream` | V5 ABI 映射、typed status、slot/frame lease | 调 Vulkan；猜测 stale native metadata |
+| `ViewportBridge` / `ViewportRenderStream` | V6 ABI 映射、typed status、authored-mesh snapshot、slot/frame lease 与 request-correlated mesh receipt | 调 Vulkan；猜测 stale native metadata；把 asset GUID 替换成 backend resource key |
 | `ViewportPresentationTransactionCoordinator` | 以 `SessionId + EndpointEpoch + TransactionId` 协调 Proposal→Completed/Aborted/Quarantined；同 compositor group barrier | 假定跨 compositor 原子；拥有 endpoint surface/stream；把 dock policy 写进通用状态机 |
 | `EditorDockStagedGridSplitter` / `EditorDockSplitResizePolicy` / `EditorDockSplitResizeCoordinator` | latest splitter layout proposal、min/max/layout-rounding、同步 probe、requested/committed `GridLength`；作为 transaction adapter | 直接写 GPU handle；拥有 transaction/resource lifetime；把 drag event 变成 FIFO；只在 drag-end resize |
 | `EditorDockPresentationLayoutHost` / `Asharia.Studio.Presentation.Avalonia.Windowing` capability | Main/Floating Window 共用 workspace layout owner；以 `IInteractiveTopLevelResizeAdapterProvider`、`IInteractiveTopLevelResizeAdapterFactory`、`IInteractiveTopLevelResizeAttachment`、`IInteractiveTopLevelResizeSink`、`IInteractiveTopLevelResizeCommit` 与 `InteractiveTopLevelResizeProjection` 接收可选 outer-layout proposal，并以 active + queued-latest 驱动 workspace transaction | 引用 HWND、WM message、USER32 或 P/Invoke；拥有 native hook；假定每个平台都有 precommit seam |
 | `Asharia.Studio.Presentation.Avalonia.Windows` / `Win32InteractiveTopLevelResizeAdapterFactory` | 把 Win32 fixed-DPI 普通装饰边框 drag 的 native proposal、RECT projection、commit 与 interaction epoch 映射到 shared capability | 在 WndProc 中等待/渲染/遍历 visual tree；把 Snap、maximize、程序化 resize 或 DPI transition 冒充 `WM_SIZING` precommit；宣称 USER32/DWM 与 Avalonia batch 物理原子 |
 | `ViewportCompositionControl`（endpoint owner） | persistent import cache、front/candidate drawing surface、exact geometry/content gate、publish receipt、detach/quarantine/drain | 创建 renderer thread；逐帧 `Task.Run`；把 surface/stream ownership 交给 Shell/ViewModel |
 | `EditorSharedViewportRuntime` | stream registry、latest/ready/slot scheduler、唯一 owner thread、retirement | 引用 managed/SceneDocument object |
-| `EditorSharedViewportRenderProducer` | full slot Vulkan resources、record/submit、grid/debug overlay | composition API；UI layout policy |
+| `EditorSharedViewportRenderProducer` | full slot Vulkan resources、显式 product binding、scene-mesh extraction、record/submit、grid/debug overlay | composition API；UI layout policy；从 source path 或 Avalonia 猜 mesh product |
 
-## V5 ABI
+## V6 ABI
 
 Frame path 只使用：
 
 ```text
-open_stream_v5(compatibility) -> streamId
-submit_latest_v5(streamId, owning request snapshot)
-try_take_ready_v5(streamId) -> optional self-describing frame
-complete_frame_v5(streamId, slotId, completionKind)
-release_slot_import_v5(streamId, slotId)
-close_stream_v5(streamId)
-poll_stream_v5(streamId)
-destroy_stream_v5(streamId)
+open_stream_v6(compatibility) -> streamId
+submit_latest_v6(streamId, owning request snapshot)
+try_take_ready_v6(streamId) -> optional self-describing frame
+complete_frame_v6(streamId, slotId, completionKind)
+release_slot_import_v6(streamId, slotId)
+close_stream_v6(streamId)
+poll_stream_v6(streamId)
+destroy_stream_v6(streamId)
 ```
 
-V4 frame symbols不导出，也没有 managed fallback。`query_composition_compatibility` 是一次性 device/handle control plane；
+V5 frame symbols不导出，也没有 managed fallback。`query_composition_compatibility` 是一次性 device/handle control plane；
 `query_runtime_stats_*` 是 diagnostics，不属于 frame ownership。
 
-request 复制：session id、target id/revision、sequence、kind、logical/allocation extent、camera 和最多 256 个 debug proxy。
-ready frame 自描述：session/target/revision/sequence、kind、logical/allocation extent、slot identity、stable external handles、format、
-memory size 和 native frame index。
+request 复制：session id、target id/revision、sequence、kind、logical/allocation extent、camera、最多 256 个 debug proxy、
+有界 authored mesh snapshots 与 per-view Scene raster mode。每个 authored mesh 只携 canonical object/asset UUID、transient
+runtime `EntityId`、expected Mesh type 与 Transform；managed pointer、SceneDocument/World pointer 和 GPU resource key 都不跨 ABI。
+ready frame 除 session/target/revision/sequence、kind、extent、slot、external handles、format、memory size 与 native frame index 外，
+还携 request-correlated Scene mesh receipt。只有显式 diagnostic flag 才收集 indexed draw evidence；receipt 的 scene revision、
+resolved/rejected counts 与 indexed draw count 是整批证据，`Representative*` source/asset/product/resource 字段只标识首个已解析 draw，
+不得外推为每个 mesh 的逐项 receipt；这些字段必须自洽，否则整帧 fail closed。
 
 ## 帧与槽状态
 
@@ -137,7 +143,7 @@ proposal adapter：它提供同步 layout probe 和可回滚 layout mutation，s
 ## Scene exact resize policy
 
 control 以 `ceil(Bounds * RenderScaling)` 采样当前 panel `PixelSize`，并把同一个 extent 同时写入 request 的 logical/allocation
-字段。V5 保留双字段以维持自描述 ABI，但 Studio surface presentation 的硬约束是：
+字段。V6 保留双字段以维持自描述 ABI，但 Studio surface presentation 的硬约束是：
 
 ```text
 external-image allocation == frame logical extent == commit-time panel PixelSize
@@ -264,8 +270,9 @@ hook 留在独立 integration assembly、而非 shared transaction owner，是 p
 内容门禁，exact size 由 geometry generation + commit-time extent 独占裁决。dirty-only 长时间空闲后，下一帧的绝对时间跳到
 当前 monotonic elapsed，delta 反映真实空闲间隔，不按 `frameIndex / 60` 补播假帧。
 
-selection 与 native overlay intent 当前还没有进入 V5 immutable request；现有 selection 只属于 shell，grid/axes 仍是 producer
-固定策略。未来接线必须增加显式 view-state snapshot/revision，并纳入内容门禁，不能复用 `TargetRevision` 或只设置 managed flag。
+selection 与 native overlay intent 当前还没有进入 V6 immutable request；现有 selection 只属于 shell，grid/axes 仍是 producer
+固定策略。authored mesh snapshots 与 Scene raster mode 已进入 V6，但 raster 是 per-view policy，不写回 SceneDocument。未来 selection
+接线必须增加显式 view-state snapshot/revision，并纳入内容门禁，不能复用 `TargetRevision` 或只设置 managed flag。
 
 ## Close 与 quarantine
 
@@ -308,7 +315,7 @@ WGC observer 才提供 DWM-composited pixel evidence，但同样不能冒充物�
 | `--smoke-viewport-transaction-faults` | 13 个真实阶段覆盖 surface/stream/create-submit、lease 后取消、partial import、surface update 已提交、prepare/publish/finalize/Rendered/retirement；pre-publish 保留旧 front，post-publish 只 quarantine，不错误 rollback，`RetirementCompletion` 单独给出最终资源 receipt。 |
 | `--smoke-viewport-transaction-supersede` | A 已 Published 未 Rendered 时接收 B；B failure/cancel 后以最新 Published A 为 committed baseline；A→B→A 使用新 transaction/generation/surface，不复活旧 bitmap。 |
 | `--smoke-viewport-multi-endpoint` | 同 compositor 两 endpoint：同文档双 Scene 与 Scene+Game ownership、all-prepared→同 batch publish、validation reject 的 0 publish、post-publish finalize ambiguity 的整组 quarantine。3–4 endpoint steady、不同速率公平、单 endpoint slow/fault/detach 后其他 endpoint 继续推进，以及 slow-consumer queue 隔离尚未通过，见下文 native blocker。 |
-| `--smoke-viewport-transaction-flash` | typed V5 diagnostic flag 把四色 corner sentinel 写入同一 native Scene external image；逐个成功 transaction 的共享 group composition batch 输出 Bounds/front/candidate/visual/surface/opacity/全部 identity，并拒绝结构上的 out-of-bounds、blank、stretch、crop、extent mismatch。它不是“每个物理显示帧”的采样，也尚未为 Win32 outer-Window precommit 提供逐帧像素证据；当前明确输出 `pixelEvidenceAvailable=false`。 |
+| `--smoke-viewport-transaction-flash` | typed V6 diagnostic flag 把四色 corner sentinel 写入同一 native Scene external image；逐个成功 transaction 的共享 group composition batch 输出 Bounds/front/candidate/visual/surface/opacity/全部 identity，并拒绝结构上的 out-of-bounds、blank、stretch、crop、extent mismatch。它不是“每个物理显示帧”的采样，也尚未为 Win32 outer-Window precommit 提供逐帧像素证据；当前明确输出 `pixelEvidenceAvailable=false`。 |
 | `--smoke-viewport-transaction-window-resize` | 真实 Win32 HWND、Avalonia compositor 与 Vulkan external surface；以 `WM_SIZING` 驱动 last-accepted RECT precommit。`--viewport-window-evidence=performance` 不启动连续 batch recorder，以 first `Proposed`→final exact `Rendered` 计算 unique rate；`continuous` 连续采样 outer/client/workspace/panel/front/surface composition batches 并拒绝 blank/stretch/crop/gap/mismatch。release policy 在 `WM_EXITSIZEMOVE` 关闭 epoch，不追赶 stale raw final，必须输出 raw/accepted final 与 0–1 candidate lag。两个通道都输出 `pixelEvidenceAvailable=false` 与 `physicalDisplayedEvidenceAvailable=false`，不能关闭 WGC pixel gate。 |
 | `Asharia.Studio.WindowsCapture.Tests` | Windows-only、显式 opt-in 的外部像素 observer；设置 `ASHARIA_RUN_STUDIO_WGC_DWM_ACCEPTANCE=1` 后启动真实 Editor/Vulkan Window smoke。drag 样本继续分类 blank/stretch/crop/gap/spill；release handshake 从 interaction epoch 关闭起要求每个 WGC-delivered sample 都与 child 报告的 accepted/Published exact extent 一致，不允许 release gap/crop/stretch/blank/spill。该 gate 不覆盖 WGC 未交付的 DWM refresh，也不证明 LCD scanout。 |
 
@@ -373,7 +380,8 @@ display cadence；exact panel generation 由应用侧 unique gate 证明。后�
 
 ## 后续边界
 
-- 接入真实 scene draw items，不改变 V5 presentation ownership；
+- 用 authoritative asset catalog/resource runtime 替换当前 validation-only product binding，并补 imported mesh hot-reload；V6 presentation ownership 不变；
+- selection outline/gizmo 继续作为 per-view editor feedback 独立接线，不写入 Scene schema 或 mesh material；
 - 多 Scene/Game/Preview/Frame Debugger endpoint 共用 runtime 与 transaction contract；stable round-robin 已成立，但 global cap 4
   只够四 cold first slots，3–4 realtime 的 slot/context/显存预算仍须单独设计和实测；
 - compositor stall 若证实造成 graphics queue head-of-line blocking，再评估 dedicated retirement queue；

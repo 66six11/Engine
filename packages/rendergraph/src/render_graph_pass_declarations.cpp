@@ -14,6 +14,7 @@ namespace asharia {
                 .paramsType = {},
                 .paramsData = {},
                 .colorWriteSlots = {},
+                .colorReadWriteSlots = {},
                 .shaderReadSlots = {},
                 .depthReadSlots = {},
                 .depthWriteSlots = {},

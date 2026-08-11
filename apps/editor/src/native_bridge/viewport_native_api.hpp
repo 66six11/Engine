@@ -19,6 +19,7 @@ enum EditorViewportNativeStatus : std::uint32_t {
     EditorViewportNativeStatus_DeviceLost = 8U,
     EditorViewportNativeStatus_InternalError = 9U,
     EditorViewportNativeStatus_Backpressure = 10U,
+    EditorViewportNativeStatus_FeatureUnavailable = 11U,
 };
 
 enum EditorViewportNativeHandleType : std::uint32_t {
@@ -38,13 +39,24 @@ enum EditorViewportNativeRenderKind : std::uint32_t {
     EditorViewportNativeRenderKind_Preview = 2U,
 };
 
+enum EditorViewportNativeSceneRasterMode : std::uint32_t {
+    EditorViewportNativeSceneRasterMode_Solid = 0U,
+    EditorViewportNativeSceneRasterMode_Wireframe = 1U,
+};
+
+enum EditorViewportNativeStreamCapabilitiesV6 : std::uint32_t {
+    EditorViewportNativeStreamCapabilitiesV6_None = 0U,
+    EditorViewportNativeStreamCapabilitiesV6_Wireframe = 1U << 0U,
+};
+
 enum EditorViewportNativeTargetKind : std::uint32_t {
     EditorViewportNativeTargetKind_DocumentScene = 0U,
 };
 
-enum EditorViewportNativePresentRequestV5Flags : std::uint32_t {
-    EditorViewportNativePresentRequestV5Flags_HasLogicalExtent = 1U << 0U,
-    EditorViewportNativePresentRequestV5Flags_FlashSentinelCorners = 1U << 1U,
+enum EditorViewportNativePresentRequestV6Flags : std::uint32_t {
+    EditorViewportNativePresentRequestV6Flags_HasLogicalExtent = 1U << 0U,
+    EditorViewportNativePresentRequestV6Flags_FlashSentinelCorners = 1U << 1U,
+    EditorViewportNativePresentRequestV6Flags_CaptureSceneMeshEvidence = 1U << 2U,
 };
 
 enum EditorViewportNativePresentCompletionKind : std::uint32_t {
@@ -110,16 +122,32 @@ struct EditorViewportNativeDebugProxy {
     float scale[3];
 };
 
-struct EditorViewportNativeStreamHandleV5 {
+// UUIDs in this ABI use the RFC 4122/network (big-endian) byte order.  They are
+// deliberately not EditorViewportNativeId because that legacy representation is
+// retained only for session/target echo fields.
+struct EditorViewportNativeAuthoredMeshSnapshotV6 {
+    std::uint8_t objectId[16];
+    std::uint32_t runtimeEntityIndex;
+    std::uint32_t runtimeEntityGeneration;
+    std::uint8_t assetId[16];
+    std::uint64_t expectedMeshType;
+    float position[3];
+    float rotation[4];
+    float scale[3];
+};
+
+static_assert(sizeof(EditorViewportNativeAuthoredMeshSnapshotV6) == 88U);
+
+struct EditorViewportNativeStreamHandleV6 {
     EditorViewportNativeAbiHeader header;
     std::uint32_t status;
-    std::uint32_t reserved;
+    std::uint32_t capabilities;
     std::uint64_t streamId;
 };
 
-static_assert(sizeof(EditorViewportNativeStreamHandleV5) == 24U);
+static_assert(sizeof(EditorViewportNativeStreamHandleV6) == 24U);
 
-struct EditorViewportNativePresentRequestV5 {
+struct EditorViewportNativePresentRequestV6 {
     EditorViewportNativeAbiHeader header;
     EditorViewportNativeId sessionId;
     EditorViewportNativeId targetId;
@@ -135,11 +163,33 @@ struct EditorViewportNativePresentRequestV5 {
     EditorViewportNativeCamera camera;
     std::uint32_t logicalWidthPixels;
     std::uint32_t logicalHeightPixels;
+    const EditorViewportNativeAuthoredMeshSnapshotV6* authoredMeshes;
+    std::uint32_t authoredMeshCount;
+    std::uint32_t sceneRasterMode;
 };
 
-static_assert(sizeof(EditorViewportNativePresentRequestV5) == 144U);
+static_assert(sizeof(EditorViewportNativePresentRequestV6) == 160U);
 
-struct EditorViewportNativeReadyFrameV5 {
+struct EditorViewportNativeSceneMeshReceiptV6 {
+    std::uint32_t inputCount;
+    std::uint32_t resolvedCount;
+    std::uint32_t rejectedCount;
+    std::uint32_t indexedDrawCount;
+    std::uint32_t rasterMode;
+    std::uint32_t representativeSourceEntityIndex;
+    std::uint32_t representativeSourceEntityGeneration;
+    std::uint32_t evidenceAvailable;
+    std::uint8_t representativeObjectId[16];
+    std::uint8_t representativeAssetId[16];
+    std::uint64_t meshResourceKey;
+    std::uint64_t materialResourceKey;
+    std::uint64_t productHash;
+    std::uint64_t sceneRevision;
+};
+
+static_assert(sizeof(EditorViewportNativeSceneMeshReceiptV6) == 96U);
+
+struct EditorViewportNativeReadyFrameV6 {
     EditorViewportNativeAbiHeader header;
     std::uint32_t status;
     std::uint32_t hasFrame;
@@ -162,11 +212,12 @@ struct EditorViewportNativeReadyFrameV5 {
     std::uint32_t targetKind;
     std::uint32_t logicalWidthPixels;
     std::uint32_t logicalHeightPixels;
+    EditorViewportNativeSceneMeshReceiptV6 sceneMeshReceipt;
 };
 
-static_assert(sizeof(EditorViewportNativeReadyFrameV5) == 152U);
+static_assert(sizeof(EditorViewportNativeReadyFrameV6) == 248U);
 
-struct EditorViewportNativeStreamPollV5 {
+struct EditorViewportNativeStreamPollV6 {
     EditorViewportNativeAbiHeader header;
     std::uint32_t status;
     std::uint32_t lifecycle;
@@ -181,7 +232,7 @@ struct EditorViewportNativeStreamPollV5 {
     std::uint64_t renderedFrames;
 };
 
-static_assert(sizeof(EditorViewportNativeStreamPollV5) == 64U);
+static_assert(sizeof(EditorViewportNativeStreamPollV6) == 64U);
 
 struct EditorViewportNativeRuntimeStats {
     EditorViewportNativeAbiHeader header;
@@ -407,30 +458,37 @@ EDITOR_NATIVE_API std::uint32_t EDITOR_NATIVE_CALL editor_viewport_query_composi
 EDITOR_NATIVE_API void EDITOR_NATIVE_CALL
 editor_viewport_release_compatibility_result(EditorViewportNativeCompatibilityResult result);
 
-EDITOR_NATIVE_API std::uint32_t EDITOR_NATIVE_CALL editor_viewport_open_stream_v5(
+EDITOR_NATIVE_API std::uint32_t EDITOR_NATIVE_CALL editor_viewport_open_stream_v6(
     const EditorViewportNativeCompatibilityRequest* compatibility,
-    EditorViewportNativeStreamHandleV5* stream);
+    EditorViewportNativeStreamHandleV6* stream);
 
-EDITOR_NATIVE_API std::uint32_t EDITOR_NATIVE_CALL editor_viewport_submit_latest_v5(
-    std::uint64_t streamId, const EditorViewportNativePresentRequestV5* request);
+#if defined(ASHARIA_EDITOR_NATIVE_TESTING)
+EDITOR_NATIVE_API std::uint32_t EDITOR_NATIVE_CALL editor_viewport_open_stream_v6_for_test(
+    const EditorViewportNativeCompatibilityRequest* compatibility,
+    std::uint32_t capabilities,
+    EditorViewportNativeStreamHandleV6* stream);
+#endif
 
-EDITOR_NATIVE_API std::uint32_t EDITOR_NATIVE_CALL editor_viewport_try_take_ready_v5(
-    std::uint64_t streamId, EditorViewportNativeReadyFrameV5* frame);
+EDITOR_NATIVE_API std::uint32_t EDITOR_NATIVE_CALL editor_viewport_submit_latest_v6(
+    std::uint64_t streamId, const EditorViewportNativePresentRequestV6* request);
 
-EDITOR_NATIVE_API std::uint32_t EDITOR_NATIVE_CALL editor_viewport_complete_frame_v5(
+EDITOR_NATIVE_API std::uint32_t EDITOR_NATIVE_CALL editor_viewport_try_take_ready_v6(
+    std::uint64_t streamId, EditorViewportNativeReadyFrameV6* frame);
+
+EDITOR_NATIVE_API std::uint32_t EDITOR_NATIVE_CALL editor_viewport_complete_frame_v6(
     std::uint64_t streamId, void* nativeSlot, std::uint32_t completionKind);
 
-EDITOR_NATIVE_API std::uint32_t EDITOR_NATIVE_CALL editor_viewport_release_slot_import_v5(
+EDITOR_NATIVE_API std::uint32_t EDITOR_NATIVE_CALL editor_viewport_release_slot_import_v6(
     std::uint64_t streamId, void* nativeSlot);
 
 EDITOR_NATIVE_API std::uint32_t EDITOR_NATIVE_CALL
-editor_viewport_close_stream_v5(std::uint64_t streamId);
+editor_viewport_close_stream_v6(std::uint64_t streamId);
 
-EDITOR_NATIVE_API std::uint32_t EDITOR_NATIVE_CALL editor_viewport_poll_stream_v5(
-    std::uint64_t streamId, EditorViewportNativeStreamPollV5* poll);
+EDITOR_NATIVE_API std::uint32_t EDITOR_NATIVE_CALL editor_viewport_poll_stream_v6(
+    std::uint64_t streamId, EditorViewportNativeStreamPollV6* poll);
 
 EDITOR_NATIVE_API std::uint32_t EDITOR_NATIVE_CALL
-editor_viewport_destroy_stream_v5(std::uint64_t streamId);
+editor_viewport_destroy_stream_v6(std::uint64_t streamId);
 
 EDITOR_NATIVE_API std::uint32_t EDITOR_NATIVE_CALL
 editor_viewport_query_runtime_stats(EditorViewportNativeRuntimeStats* stats);

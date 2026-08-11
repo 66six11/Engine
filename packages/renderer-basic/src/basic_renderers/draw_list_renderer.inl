@@ -240,7 +240,7 @@ BasicDrawListRenderer::recordFrame(const VulkanFrameRecordContext& frame) {
 
     graph.addPass("DrawList", kBasicRasterDrawListPassType)
         .setParams(kBasicRasterDrawListParamsType, drawListParams)
-        .writeColor("target", backbuffer)
+        .readWriteColor("target", backbuffer)
         .writeDepth("depth", depth)
         .execute([&frame, &bindings, this](RenderGraphPassContext pass) -> Result<void> {
             [[maybe_unused]] const auto timestamp = VulkanTimestampScope::begin(frame, pass.name);
@@ -265,8 +265,14 @@ BasicDrawListRenderer::recordFrame(const VulkanFrameRecordContext& frame) {
             if (!depthBinding) {
                 return std::unexpected{std::move(depthBinding.error())};
             }
+            auto targetBinding =
+                findVulkanRenderGraphColorReadWrite(pass, "target", bindings);
+            if (!targetBinding) {
+                return std::unexpected{std::move(targetBinding.error())};
+            }
 
-            recordDrawListDraw(frame, pipeline_.handle(), pipelineLayout_.handle(),
+            recordDrawListDraw(frame, targetBinding->vulkanImageView, pipeline_.handle(),
+                               pipelineLayout_.handle(),
                                BasicDrawBuffers{
                                    .vertex = vertexBuffer_.handle(),
                                    .index = indexBuffer_.handle(),

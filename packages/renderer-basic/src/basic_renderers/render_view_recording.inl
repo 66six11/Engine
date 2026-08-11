@@ -23,7 +23,7 @@ void addBasicRenderViewWorldGridPass(const BasicRenderViewPassRecordingContext& 
                                      VkPipelineLayout worldGridPipelineLayout) {
     context.graph.addPass("RenderViewWorldGrid", kBasicRenderViewWorldGridPassType)
         .setParams(kBasicRenderViewWorldGridParamsType, context.policy.worldGridParams)
-        .writeColor("target", context.renderTarget)
+        .readWriteColor("target", context.renderTarget)
         .recordCommands(
             [worldGridParams = context.policy.worldGridParams](RenderGraphCommandList& commands) {
                 commands.setShader("Hidden/RenderViewWorldGrid", "Fullscreen")
@@ -50,7 +50,7 @@ void addBasicRenderViewSceneMeshPass(const BasicRenderViewPassRecordingContext& 
                                      VkPipelineLayout sceneMeshPipelineLayout) {
     context.graph.addPass("RenderViewSceneMesh", kBasicRenderViewSceneMeshPassType)
         .setParams(kBasicRenderViewSceneMeshParamsType, context.policy.sceneMeshParams)
-        .writeColor("target", context.renderTarget)
+        .readWriteColor("target", context.renderTarget)
         .writeDepth("depth", context.sceneDepth)
         .readVertexBuffer("vertices", context.sceneVertices)
         .readIndexBuffer("indices", context.sceneIndices)
@@ -82,7 +82,7 @@ void addBasicRenderViewOverlayPass(const BasicRenderViewPassRecordingContext& co
                                    std::uint32_t debugLineVertexCount) {
     context.graph.addPass("RenderViewOverlayInputs", kBasicRenderViewOverlayPassType)
         .setParams(kBasicRenderViewOverlayParamsType, context.policy.overlayParams)
-        .writeColor("target", context.renderTarget)
+        .readWriteColor("target", context.renderTarget)
         .recordCommands([overlayParams =
                              context.policy.overlayParams](RenderGraphCommandList& commands) {
             commands.setShader("Hidden/RenderViewOverlay", "Inputs")

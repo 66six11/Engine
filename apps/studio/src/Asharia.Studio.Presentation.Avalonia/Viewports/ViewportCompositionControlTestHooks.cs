@@ -41,10 +41,24 @@ internal sealed class ViewportCompositionControlTestHooks
 {
     public bool EnableFlashSentinelCorners { get; init; }
 
-    internal ViewportRenderDiagnosticOverlay DiagnosticOverlay =>
-        EnableFlashSentinelCorners
-            ? ViewportRenderDiagnosticOverlay.FlashSentinelCorners
-            : ViewportRenderDiagnosticOverlay.None;
+    public bool EnableSceneMeshEvidence { get; init; }
+
+    internal ViewportRenderDiagnosticOverlay DiagnosticOverlay
+    {
+        get
+        {
+            var overlay = ViewportRenderDiagnosticOverlay.None;
+            if (EnableFlashSentinelCorners)
+            {
+                overlay |= ViewportRenderDiagnosticOverlay.FlashSentinelCorners;
+            }
+            if (EnableSceneMeshEvidence)
+            {
+                overlay |= ViewportRenderDiagnosticOverlay.CaptureSceneMeshEvidence;
+            }
+            return overlay;
+        }
+    }
 
     public Func<
         ViewportCompositionControlTestPoint,
@@ -56,6 +70,8 @@ internal sealed class ViewportCompositionControlTestHooks
     public Func<bool>? RejectPreparedValidation { get; init; }
 
     public Func<Task, Task>? WrapReplacedFrontRetirement { get; init; }
+
+    public Action<ViewportFrameLease>? LeaseAcquired { get; init; }
 
     public ValueTask BeforeStageAsyncCore(
         ViewportCompositionControlTestPoint point,
@@ -72,6 +88,12 @@ internal sealed class ViewportCompositionControlTestHooks
     {
         ArgumentNullException.ThrowIfNull(retirement);
         return WrapReplacedFrontRetirement?.Invoke(retirement) ?? retirement;
+    }
+
+    public void ObserveLease(ViewportFrameLease lease)
+    {
+        ArgumentNullException.ThrowIfNull(lease);
+        LeaseAcquired?.Invoke(lease);
     }
 }
 

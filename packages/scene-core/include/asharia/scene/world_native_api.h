@@ -42,6 +42,7 @@ enum {
     AshariaSceneNativeStatus_StaleHandle = 13U,
     AshariaSceneNativeStatus_InvalidObject = 14U,
     AshariaSceneNativeStatus_DuplicateObject = 15U,
+    AshariaSceneNativeStatus_InvalidAssetReference = 16U,
 };
 
 typedef struct AshariaSceneNativeAbiHeader {

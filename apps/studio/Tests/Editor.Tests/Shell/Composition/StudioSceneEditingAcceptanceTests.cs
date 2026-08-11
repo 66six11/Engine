@@ -4,6 +4,7 @@ using System.IO;
 using System.Threading.Tasks;
 using Asharia.Runtime;
 using Asharia.Studio.Application.Projects;
+using Asharia.Studio.Application.Scenes;
 using Asharia.Studio.EngineBridge.Project;
 using Asharia.Studio.EngineBridge.Scene;
 using Xunit;
@@ -52,11 +53,18 @@ public sealed class StudioSceneEditingAcceptanceTests
                 Assert.True(createdProject.Succeeded, createdProject.Message);
                 Assert.True(File.Exists(createdProject.Current.Document!.Path));
                 Assert.Empty(createdProject.Current.Document.Entities);
+                var initialSceneText = await File.ReadAllTextAsync(
+                    createdProject.Current.Document.Path).ConfigureAwait(false);
+                Assert.Contains("\"schemaVersion\": 2", initialSceneText, StringComparison.Ordinal);
 
-                var createdEntity = await Await(session.CreateEntityAsync("Entity"))
+                var mesh = SceneMeshReference.DirectionalWedgeValidation;
+                var createdEntity = await Await(session.CreateMeshEntityAsync("Entity", mesh))
                     .ConfigureAwait(false);
                 Assert.True(createdEntity.Succeeded, createdEntity.Message);
-                objectId = Assert.Single(createdEntity.Current.Document!.Entities).ObjectId;
+                var createdSnapshot = Assert.Single(createdEntity.Current.Document!.Entities);
+                objectId = createdSnapshot.ObjectId;
+                Assert.Equal(objectId, createdEntity.CreatedObjectId!.Value);
+                Assert.Equal(mesh, createdSnapshot.Mesh);
 
                 var renamed = await Await(session.SetEntityNameAsync(objectId, "主角"))
                     .ConfigureAwait(false);
@@ -87,6 +95,7 @@ public sealed class StudioSceneEditingAcceptanceTests
                 Assert.Equal(objectId, entity.ObjectId);
                 Assert.Equal("主角", entity.Name);
                 Assert.Equal(transform, entity.Transform);
+                Assert.Equal(SceneMeshReference.DirectionalWedgeValidation, entity.Mesh);
                 Assert.False(reopened.Current.Document.IsDirty);
             }
             finally

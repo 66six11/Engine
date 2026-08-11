@@ -1,4 +1,5 @@
 using System;
+using System.Buffers.Binary;
 using System.Runtime.InteropServices;
 using Asharia.Runtime;
 using Asharia.Studio.Application.Viewports;
@@ -18,6 +19,7 @@ internal enum ViewportNativeStatus : uint
     DeviceLost = 8,
     InternalError = 9,
     Backpressure = 10,
+    FeatureUnavailable = 11,
 }
 
 internal enum ViewportNativeHandleType : uint
@@ -31,6 +33,19 @@ internal enum ViewportNativeImageFormat : uint
     Unknown = 0,
     Rgba8Unorm = 1,
     Bgra8Unorm = 2,
+}
+
+internal enum ViewportNativeSceneRasterMode : uint
+{
+    Solid = 0,
+    Wireframe = 1,
+}
+
+[Flags]
+internal enum ViewportNativeStreamCapabilitiesV6 : uint
+{
+    None = 0,
+    Wireframe = 1U << 0,
 }
 
 internal enum ViewportNativePresentCompletionKind : uint
@@ -48,11 +63,12 @@ internal enum ViewportNativeStreamLifecycle : uint
 }
 
 [Flags]
-internal enum ViewportNativePresentRequestV5Flags : uint
+internal enum ViewportNativePresentRequestV6Flags : uint
 {
     None = 0,
     HasLogicalExtent = 1U << 0,
     FlashSentinelCorners = 1U << 1,
+    CaptureSceneMeshEvidence = 1U << 2,
 }
 
 [StructLayout(LayoutKind.Sequential)]
@@ -139,14 +155,64 @@ internal readonly record struct ViewportNativeDebugProxy(
     TransformValue Transform);
 
 [StructLayout(LayoutKind.Sequential)]
-internal readonly record struct ViewportNativeStreamHandleV5(
+internal readonly record struct ViewportNativeCanonicalUuid(ulong FirstBytes, ulong LastBytes)
+{
+    public static ViewportNativeCanonicalUuid FromGuid(Guid value)
+    {
+        Span<byte> bytes = stackalloc byte[16];
+        if (!value.TryWriteBytes(bytes, bigEndian: true, out _))
+        {
+            throw new InvalidOperationException("Could not encode a canonical viewport UUID.");
+        }
+        return new(
+            BinaryPrimitives.ReadUInt64LittleEndian(bytes),
+            BinaryPrimitives.ReadUInt64LittleEndian(bytes[8..]));
+    }
+
+    public Guid ToGuid()
+    {
+        Span<byte> bytes = stackalloc byte[16];
+        BinaryPrimitives.WriteUInt64LittleEndian(bytes, FirstBytes);
+        BinaryPrimitives.WriteUInt64LittleEndian(bytes[8..], LastBytes);
+        return new Guid(bytes, bigEndian: true);
+    }
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal readonly record struct ViewportNativeAuthoredMeshSnapshotV6(
+    ViewportNativeCanonicalUuid ObjectId,
+    uint RuntimeEntityIndex,
+    uint RuntimeEntityGeneration,
+    ViewportNativeCanonicalUuid AssetId,
+    ulong ExpectedMeshType,
+    TransformValue Transform);
+
+[StructLayout(LayoutKind.Sequential)]
+internal readonly record struct ViewportNativeSceneMeshReceiptV6(
+    uint InputCount,
+    uint ResolvedCount,
+    uint RejectedCount,
+    uint IndexedDrawCount,
+    uint RasterMode,
+    uint RepresentativeSourceEntityIndex,
+    uint RepresentativeSourceEntityGeneration,
+    uint EvidenceAvailable,
+    ViewportNativeCanonicalUuid RepresentativeObjectId,
+    ViewportNativeCanonicalUuid RepresentativeAssetId,
+    ulong MeshResourceKey,
+    ulong MaterialResourceKey,
+    ulong ProductHash,
+    ulong SceneRevision);
+
+[StructLayout(LayoutKind.Sequential)]
+internal readonly record struct ViewportNativeStreamHandleV6(
     ViewportNativeAbiHeader Header,
     uint Status,
-    uint Reserved,
+    uint Capabilities,
     ulong StreamId);
 
 [StructLayout(LayoutKind.Sequential)]
-internal readonly record struct ViewportNativePresentRequestV5(
+internal readonly record struct ViewportNativePresentRequestV6(
     ViewportNativeAbiHeader Header,
     ViewportNativeId SessionId,
     ViewportNativeId TargetId,
@@ -161,10 +227,13 @@ internal readonly record struct ViewportNativePresentRequestV5(
     uint Flags,
     ViewportNativeCamera Camera,
     uint LogicalWidthPixels,
-    uint LogicalHeightPixels);
+    uint LogicalHeightPixels,
+    nint AuthoredMeshes,
+    uint AuthoredMeshCount,
+    uint SceneRasterMode);
 
 [StructLayout(LayoutKind.Sequential)]
-internal readonly record struct ViewportNativeReadyFrameV5(
+internal readonly record struct ViewportNativeReadyFrameV6(
     ViewportNativeAbiHeader Header,
     uint Status,
     uint HasFrame,
@@ -186,10 +255,11 @@ internal readonly record struct ViewportNativeReadyFrameV5(
     uint Kind,
     uint TargetKind,
     uint LogicalWidthPixels,
-    uint LogicalHeightPixels);
+    uint LogicalHeightPixels,
+    ViewportNativeSceneMeshReceiptV6 SceneMeshReceipt);
 
 [StructLayout(LayoutKind.Sequential)]
-internal readonly record struct ViewportNativeStreamPollV5(
+internal readonly record struct ViewportNativeStreamPollV6(
     ViewportNativeAbiHeader Header,
     uint Status,
     uint Lifecycle,

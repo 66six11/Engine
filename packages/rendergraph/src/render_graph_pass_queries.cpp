@@ -65,7 +65,8 @@ namespace asharia::rendergraph_internal {
     }
 
     bool passReadsImage(const Pass& pass, RenderGraphImageHandle image) {
-        return slotsUseImage(pass.shaderReadSlots, image) ||
+        return slotsUseImage(pass.colorReadWriteSlots, image) ||
+               slotsUseImage(pass.shaderReadSlots, image) ||
                slotsUseImage(pass.depthReadSlots, image) ||
                slotsUseImage(pass.depthSampledReadSlots, image) ||
                slotsUseImage(pass.transferReadSlots, image);
@@ -73,6 +74,7 @@ namespace asharia::rendergraph_internal {
 
     bool passWritesImage(const Pass& pass, RenderGraphImageHandle image) {
         return slotsUseImage(pass.colorWriteSlots, image) ||
+               slotsUseImage(pass.colorReadWriteSlots, image) ||
                slotsUseImage(pass.depthWriteSlots, image) ||
                slotsUseImage(pass.transferWriteSlots, image);
     }
@@ -92,6 +94,7 @@ namespace asharia::rendergraph_internal {
 
     bool passUsesImage(const RenderGraphCompiledPass& pass, RenderGraphImageHandle image) {
         return slotsUseImage(pass.colorWriteSlots, image) ||
+               slotsUseImage(pass.colorReadWriteSlots, image) ||
                slotsUseImage(pass.shaderReadSlots, image) ||
                slotsUseImage(pass.depthReadSlots, image) ||
                slotsUseImage(pass.depthWriteSlots, image) ||

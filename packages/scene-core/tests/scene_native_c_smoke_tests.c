@@ -6,6 +6,14 @@
 #include "asharia/scene/world_native_api.h"
 
 int main(void) {
+    _Static_assert(ASHARIA_SCENE_DOCUMENT_NATIVE_ABI_VERSION == 2U,
+                   "SceneDocument ABI must hard-cut independently from World ABI.");
+    _Static_assert(sizeof(AshariaSceneNativeDocumentCreateMeshEntityRequest) == 72U,
+                   "Unexpected C mesh entity request layout.");
+    _Static_assert(sizeof(AshariaSceneNativeDocumentEntitySnapshot) == 96U,
+                   "Unexpected C SceneDocument entity snapshot layout.");
+    (void)&asharia_scene_document_create_mesh_entity;
+
     AshariaSceneNativeDocumentHandle document = {0U, 0U};
     if (document.index != 0U || document.generation != 0U) {
         return EXIT_FAILURE;

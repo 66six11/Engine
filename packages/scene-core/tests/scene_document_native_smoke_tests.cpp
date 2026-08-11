@@ -17,6 +17,8 @@ namespace {
 
     constexpr std::string_view kSceneId = "11111111-2222-3333-4444-555555555555";
     constexpr std::string_view kObjectId = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+    constexpr std::string_view kMeshObjectId = "bbbbbbbb-cccc-dddd-eeee-ffffffffffff";
+    constexpr std::string_view kMeshAssetGuid = "7c9fe8ac-3c8b-4f66-9665-0af0fd7b693e";
     constexpr std::string_view kName = "Native \xE4\xB8\xBB\xE8\xA7\x92";
 
     class TestDirectory {
@@ -48,7 +50,7 @@ namespace {
     };
 
     [[nodiscard]] AshariaSceneNativeAbiHeader header(std::size_t size) {
-        return {.abiVersion = ASHARIA_SCENE_NATIVE_ABI_VERSION,
+        return {.abiVersion = ASHARIA_SCENE_DOCUMENT_NATIVE_ABI_VERSION,
                 .structSize = static_cast<std::uint32_t>(size)};
     }
 
@@ -79,7 +81,7 @@ namespace {
     [[nodiscard]] bool snapshotDocument(AshariaSceneNativeDocumentHandle document,
                                         std::uint64_t expectedRevision,
                                         std::uint64_t expectedSavedRevision,
-                                        std::string_view expectedName) {
+                                        std::string_view expectedName, bool expectedMesh = false) {
         const AshariaSceneNativeDocumentRequest request{
             .header = header(sizeof(AshariaSceneNativeDocumentRequest)),
             .document = document,
@@ -105,7 +107,8 @@ namespace {
         if (expectedName.empty()) {
             return expect(result.entityCount == 0U, "Empty scene snapshot contained an entity.");
         }
-        if (!expect(result.entityCount == 1U &&
+        const std::uint64_t expectedEntityCount = expectedMesh ? 2U : 1U;
+        if (!expect(result.entityCount == expectedEntityCount &&
                         result.requiredBufferSize >=
                             sizeof(AshariaSceneNativeDocumentEntitySnapshot),
                     "Edited scene snapshot did not contain one entity.")) {
@@ -117,11 +120,33 @@ namespace {
             &entity,
             bytes.subspan(static_cast<std::size_t>(result.entitiesOffset), sizeof(entity)).data(),
             sizeof(entity));
-        return expect(spanText(buffer, entity.objectIdUtf8) == kObjectId &&
-                          spanText(buffer, entity.nameUtf8) == expectedName &&
-                          entity.transform.position.x == 4.0F &&
-                          entity.transform.rotation.w == 1.0F && entity.transform.scale.z == 3.0F,
-                      "Edited entity snapshot did not preserve ID, name, and Transform.");
+        if (!expect(
+                spanText(buffer, entity.objectIdUtf8) == kObjectId &&
+                    spanText(buffer, entity.nameUtf8) == expectedName &&
+                    entity.transform.position.x == 4.0F && entity.transform.rotation.w == 1.0F &&
+                    entity.transform.scale.z == 3.0F && entity.runtimeEntity.index != 0U &&
+                    entity.runtimeEntity.generation != 0U &&
+                    entity.meshAssetGuidUtf8.byteLength == 0U,
+                "Edited entity snapshot did not preserve ID, runtime ID, name, and Transform.")) {
+            return false;
+        }
+        if (!expectedMesh) {
+            return true;
+        }
+        AshariaSceneNativeDocumentEntitySnapshot meshEntity{};
+        std::memcpy(
+            &meshEntity,
+            bytes.subspan(sizeof(AshariaSceneNativeDocumentEntitySnapshot), sizeof(meshEntity))
+                .data(),
+            sizeof(meshEntity));
+        return expect(spanText(buffer, meshEntity.objectIdUtf8) == kMeshObjectId &&
+                          spanText(buffer, meshEntity.nameUtf8) == "Mesh Entity" &&
+                          spanText(buffer, meshEntity.meshAssetGuidUtf8) == kMeshAssetGuid &&
+                          meshEntity.runtimeEntity.index != 0U &&
+                          meshEntity.runtimeEntity.generation != 0U &&
+                          (meshEntity.runtimeEntity.index != entity.runtimeEntity.index ||
+                           meshEntity.runtimeEntity.generation != entity.runtimeEntity.generation),
+                      "Mesh entity snapshot did not preserve its runtime and asset identities.");
     }
 
 } // namespace
@@ -135,6 +160,17 @@ int main() noexcept {
             .projectRootUtf8 = view(projectPath),
             .newSceneIdUtf8 = view(kSceneId),
         };
+        auto legacyAbiRequest = openRequest;
+        legacyAbiRequest.header.abiVersion = ASHARIA_SCENE_NATIVE_ABI_VERSION;
+        AshariaSceneNativeDocumentHandle legacyAbiDocument{};
+        AshariaSceneNativeDocumentOperationResult legacyAbiResult{};
+        if (!expect(asharia_scene_document_open_default(&legacyAbiRequest, &legacyAbiDocument,
+                                                        nullptr, 0U, &legacyAbiResult) ==
+                            AshariaSceneNativeStatus_UnsupportedAbi &&
+                        legacyAbiDocument.index == 0U && legacyAbiDocument.generation == 0U,
+                    "Document ABI v2 accepted a World ABI v1 request.")) {
+            return 1;
+        }
         AshariaSceneNativeDocumentHandle document{};
         AshariaSceneNativeDocumentOperationResult opened{};
         if (!expect(
@@ -209,6 +245,36 @@ int main() noexcept {
             return 1;
         }
 
+        const AshariaSceneNativeDocumentCreateMeshEntityRequest meshRequest{
+            .header = header(sizeof(AshariaSceneNativeDocumentCreateMeshEntityRequest)),
+            .document = document,
+            .expectedRevision = 4U,
+            .objectIdUtf8 = view(kMeshObjectId),
+            .nameUtf8 = view("Mesh Entity"),
+            .meshAssetGuidUtf8 = view(kMeshAssetGuid),
+        };
+        AshariaSceneNativeDocumentOperationResult meshCreated{};
+        if (!expect(asharia_scene_document_create_mesh_entity(&meshRequest, errorBuffer.data(),
+                                                              errorBuffer.size(), &meshCreated) ==
+                            AshariaSceneNativeStatus_Success &&
+                        meshCreated.revision == 5U &&
+                        snapshotDocument(document, 5U, 1U, kName, true),
+                    "Native mesh entity creation did not publish the typed snapshot.")) {
+            return 1;
+        }
+
+        auto invalidMeshRequest = meshRequest;
+        invalidMeshRequest.expectedRevision = 5U;
+        invalidMeshRequest.meshAssetGuidUtf8 = view("00000000-0000-0000-0000-000000000000");
+        AshariaSceneNativeDocumentOperationResult invalidMesh{};
+        if (!expect(asharia_scene_document_create_mesh_entity(
+                        &invalidMeshRequest, errorBuffer.data(), errorBuffer.size(),
+                        &invalidMesh) == AshariaSceneNativeStatus_InvalidAssetReference &&
+                        snapshotDocument(document, 5U, 1U, kName, true),
+                    "Invalid native mesh reference changed the authoritative revision.")) {
+            return 1;
+        }
+
         AshariaSceneNativeStatus wrongThreadStatus = AshariaSceneNativeStatus_InternalError;
         std::thread wrongThread{[&] {
             const AshariaSceneNativeDocumentRequest request{
@@ -228,13 +294,13 @@ int main() noexcept {
         const AshariaSceneNativeDocumentSaveRequest saveRequest{
             .header = header(sizeof(AshariaSceneNativeDocumentSaveRequest)),
             .document = document,
-            .expectedRevision = 4U,
+            .expectedRevision = 5U,
         };
         AshariaSceneNativeDocumentOperationResult saved{};
         if (!expect(asharia_scene_document_save(&saveRequest, errorBuffer.data(),
                                                 errorBuffer.size(),
                                                 &saved) == AshariaSceneNativeStatus_Success &&
-                        saved.savedRevision == 4U,
+                        saved.savedRevision == 5U,
                     "Native document save did not advance the savepoint.")) {
             return 1;
         }
@@ -264,7 +330,7 @@ int main() noexcept {
                                                         &reopened) ==
                             AshariaSceneNativeStatus_Success &&
                         document.generation != staleHandle.generation &&
-                        snapshotDocument(document, 1U, 1U, kName) &&
+                        snapshotDocument(document, 1U, 1U, kName, true) &&
                         asharia_scene_document_close(&document) == AshariaSceneNativeStatus_Success,
                     "Saved native scene did not survive close and reopen.")) {
             return 1;

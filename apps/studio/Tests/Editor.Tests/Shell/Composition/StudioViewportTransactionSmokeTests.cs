@@ -3,7 +3,10 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
+using Asharia.Runtime;
+using Asharia.Studio.Application.Scenes;
 using Asharia.Studio.Application.Viewports;
+using Asharia.Studio.EngineBridge.Viewports;
 using Asharia.Studio.Presentation.Avalonia.Viewports;
 using Avalonia;
 using Xunit;
@@ -12,6 +15,13 @@ namespace Editor.Tests.Shell.Composition;
 
 public sealed class StudioViewportTransactionSmokeTests
 {
+    [Fact]
+    public void Router_recognizes_scene_mesh_smoke()
+    {
+        Assert.True(Editor.Shell.Composition.StudioViewportTransactionSmoke.IsRequested(
+            [Editor.Shell.Composition.StudioSceneMeshSmoke.CommandLineSwitch]));
+    }
+
     [Fact]
     public void Router_recognizes_flash_smoke()
     {
@@ -230,6 +240,24 @@ public sealed class StudioViewportTransactionSmokeTests
             game.Current.Kind);
         Assert.NotEqual(scene.Current.SessionId, game.Current.SessionId);
         Assert.Equal(scene.Current.TargetId, game.Current.TargetId);
+    }
+
+    [Fact]
+    public async Task Smoke_host_can_create_a_scene_session_for_an_authoritative_document()
+    {
+        await using var host = new Editor.Shell.Composition.StudioViewportSmokeHost();
+        var document = new SceneDocumentSnapshot(
+            Guid.NewGuid(),
+            "authoritative.scene.json",
+            revision: 7,
+            savedRevision: 5,
+            entities: []);
+
+        var session = host.CreateSceneSession(document);
+
+        Assert.Equal(document.SceneId, session.Current.TargetId);
+        Assert.Equal(document.Revision, session.Current.TargetRevision);
+        Assert.Equal(ViewportRenderKind.Scene, session.Current.Kind);
     }
 
     [Fact]
@@ -514,13 +542,136 @@ public sealed class StudioViewportTransactionSmokeTests
         var family = testType.GetMethod(
             nameof(StudioProcessAcceptanceTests
                 .Viewport_transaction_smoke_family_runs_at_the_real_Studio_boundary));
+        var sceneMesh = testType.GetMethod(
+            nameof(StudioProcessAcceptanceTests
+                .Scene_mesh_closes_from_v2_document_to_presented_wireframe_draw));
 
         Assert.NotNull(steady);
         Assert.NotNull(family);
+        Assert.NotNull(sceneMesh);
         Assert.IsType<StudioGpuFactAttribute>(
             Assert.Single(steady.GetCustomAttributes(typeof(StudioGpuFactAttribute), true)));
         Assert.IsType<StudioGpuTheoryAttribute>(
             Assert.Single(family.GetCustomAttributes(typeof(StudioGpuTheoryAttribute), true)));
+        Assert.IsType<StudioGpuFactAttribute>(
+            Assert.Single(sceneMesh.GetCustomAttributes(typeof(StudioGpuFactAttribute), true)));
+    }
+
+    [Fact]
+    public void Scene_mesh_receipt_validator_requires_the_exact_wireframe_draw_identity()
+    {
+        var objectId = Guid.NewGuid();
+        var runtimeEntityId = new EntityId(11, 3);
+        var mesh = SceneMeshReference.DirectionalWedgeValidation;
+        var entity = new SceneEntitySnapshot(
+            objectId,
+            runtimeEntityId,
+            "Directional Wedge",
+            TransformValue.Identity,
+            mesh);
+        var receipt = new ViewportSceneMeshReceipt(
+            InputCount: 1,
+            ResolvedCount: 1,
+            RejectedCount: 0,
+            IndexedDrawCount: 1,
+            ViewportSceneRasterMode.Wireframe,
+            EvidenceAvailable: true,
+            runtimeEntityId,
+            objectId,
+            mesh.AssetId,
+            Editor.Shell.Composition.StudioSceneMeshSmoke.ValidationMeshResourceKey,
+            Editor.Shell.Composition.StudioSceneMeshSmoke.DefaultUnlitMaterialResourceKey,
+            Editor.Shell.Composition.StudioSceneMeshSmoke.ValidationProductHash,
+            SceneRevision: 4);
+
+        Editor.Shell.Composition.StudioSceneMeshSmoke.ValidateReceipt(
+            receipt,
+            expectedRevision: 4,
+            entity);
+
+        Assert.Throws<InvalidOperationException>(() =>
+            Editor.Shell.Composition.StudioSceneMeshSmoke.ValidateReceipt(
+                receipt with { RasterMode = ViewportSceneRasterMode.Solid },
+                expectedRevision: 4,
+                entity));
+    }
+
+    [Fact]
+    public void Scene_mesh_structured_evidence_round_trips_through_process_parser()
+    {
+        var meshObjectId = Guid.NewGuid();
+        var emptyObjectId = Guid.NewGuid();
+        var assetId = SceneMeshReference.DirectionalWedgeValidation.AssetId;
+        var runtimeEntityId = new EntityId(8, 2);
+        var initialReceipt = new ViewportSceneMeshReceipt(
+            0,
+            0,
+            0,
+            0,
+            ViewportSceneRasterMode.Wireframe,
+            true,
+            null,
+            null,
+            null,
+            0,
+            0,
+            0,
+            1);
+        var meshReceipt = new ViewportSceneMeshReceipt(
+            1,
+            1,
+            0,
+            1,
+            ViewportSceneRasterMode.Wireframe,
+            true,
+            runtimeEntityId,
+            meshObjectId,
+            assetId,
+            Editor.Shell.Composition.StudioSceneMeshSmoke.ValidationMeshResourceKey,
+            Editor.Shell.Composition.StudioSceneMeshSmoke.DefaultUnlitMaterialResourceKey,
+            Editor.Shell.Composition.StudioSceneMeshSmoke.ValidationProductHash,
+            2);
+        var evidence = new Editor.Shell.Composition.StudioSceneMeshSmokeEvidence(
+            "scene-mesh-closure",
+            "studio-scene-mesh-vulkan",
+            PixelEvidenceAvailable: false,
+            PhysicalDisplayedEvidenceAvailable: false,
+            SceneSchemaVersion: 2,
+            meshObjectId,
+            emptyObjectId,
+            assetId,
+            Stage("initial-empty", 0, 1, initialReceipt),
+            Stage("mesh-created", 1, 2, meshReceipt),
+            Stage("empty-entity-created", 2, 3, meshReceipt with { SceneRevision = 3 }),
+            Stage("transform-updated", 2, 5, meshReceipt with { SceneRevision = 5 }),
+            RevisionOrderStrict: true,
+            FinalExactSurface: true,
+            StalePresentationExcluded: true,
+            SupersededRevision: 4,
+            SupersededRequestSequence: 4,
+            SupersededFrameIndex: 4,
+            SupersededReceipt: meshReceipt with { SceneRevision = 4 },
+            PresentedFramesAcrossSupersede: 1,
+            FinalPresentedRevision: 5);
+        var output = Editor.Shell.Composition.StudioSceneMeshSmoke.SerializeEvidence(evidence);
+
+        StudioProcessAcceptanceTests.AssertStructuredSceneMeshEvidence(output);
+
+        static Editor.Shell.Composition.StudioSceneMeshStageEvidence Stage(
+            string stage,
+            int entityCount,
+            ulong revision,
+            ViewportSceneMeshReceipt receipt) =>
+            new(
+                stage,
+                entityCount,
+                revision,
+                revision,
+                revision,
+                receipt,
+                $"Presented scene revision {revision}.",
+                CurrentSurfaceIsExact: true,
+                LastPresentationIsExact: true);
     }
 
     [Fact]

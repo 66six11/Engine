@@ -160,7 +160,7 @@ namespace asharia {
                 {
                     RenderGraphResourceSlotSchema{
                         .name = "target",
-                        .access = RenderGraphSlotAccess::ColorWrite,
+                        .access = RenderGraphSlotAccess::ColorReadWrite,
                         .shaderStage = RenderGraphShaderStage::None,
                         .optional = false,
                     },
@@ -177,7 +177,7 @@ namespace asharia {
                 {
                     RenderGraphResourceSlotSchema{
                         .name = "target",
-                        .access = RenderGraphSlotAccess::ColorWrite,
+                        .access = RenderGraphSlotAccess::ColorReadWrite,
                         .shaderStage = RenderGraphShaderStage::None,
                         .optional = false,
                     },
@@ -200,7 +200,7 @@ namespace asharia {
                 {
                     RenderGraphResourceSlotSchema{
                         .name = "target",
-                        .access = RenderGraphSlotAccess::ColorWrite,
+                        .access = RenderGraphSlotAccess::ColorReadWrite,
                         .shaderStage = RenderGraphShaderStage::None,
                         .optional = false,
                     },
@@ -275,7 +275,7 @@ namespace asharia {
                 {
                     RenderGraphResourceSlotSchema{
                         .name = "target",
-                        .access = RenderGraphSlotAccess::ColorWrite,
+                        .access = RenderGraphSlotAccess::ColorReadWrite,
                         .shaderStage = RenderGraphShaderStage::None,
                         .optional = false,
                     },
@@ -297,7 +297,7 @@ namespace asharia {
                 {
                     RenderGraphResourceSlotSchema{
                         .name = "target",
-                        .access = RenderGraphSlotAccess::ColorWrite,
+                        .access = RenderGraphSlotAccess::ColorReadWrite,
                         .shaderStage = RenderGraphShaderStage::None,
                         .optional = false,
                     },
@@ -337,7 +337,7 @@ namespace asharia {
                 {
                     RenderGraphResourceSlotSchema{
                         .name = "target",
-                        .access = RenderGraphSlotAccess::ColorWrite,
+                        .access = RenderGraphSlotAccess::ColorReadWrite,
                         .shaderStage = RenderGraphShaderStage::None,
                         .optional = false,
                     },
@@ -359,7 +359,7 @@ namespace asharia {
                 {
                     RenderGraphResourceSlotSchema{
                         .name = "target",
-                        .access = RenderGraphSlotAccess::ColorWrite,
+                        .access = RenderGraphSlotAccess::ColorReadWrite,
                         .shaderStage = RenderGraphShaderStage::None,
                         .optional = false,
                     },

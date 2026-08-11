@@ -48,9 +48,15 @@
                 <ToggleButton AutomationProperties.Name="Toggle realtime scene refresh"
                               Content="Realtime"
                               IsChecked="{Binding IsRealtime, Mode=TwoWay}" />
+                <ToggleButton AutomationProperties.Name="Toggle scene wireframe"
+                              Content="Wireframe"
+                              IsChecked="{Binding IsWireframe, Mode=TwoWay}" />
                 <Button AutomationProperties.Name="Create entity"
                         Command="{Binding Shell.CreateEntityCommand}"
                         Content="+ Entity" />
+                <Button AutomationProperties.Name="Create validation mesh entity"
+                        Command="{Binding Shell.CreateMeshEntityCommand}"
+                        Content="+ Mesh" />
                 <Button AutomationProperties.Name="Save scene"
                         Command="{Binding Shell.SaveSceneCommand}"
                         Content="Save" />
