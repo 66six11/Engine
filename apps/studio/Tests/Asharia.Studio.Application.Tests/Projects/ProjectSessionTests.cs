@@ -94,6 +94,7 @@ public sealed class ProjectSessionTests
         var saved = await session.SaveSceneAsync();
 
         Assert.True(created.Succeeded);
+        Assert.Equal(objectId, created.CreatedObjectId!.Value);
         Assert.True(renamed.Succeeded);
         Assert.True(moved.Succeeded);
         Assert.True(created.Current.Document.IsDirty);
@@ -101,6 +102,59 @@ public sealed class ProjectSessionTests
         Assert.Equal(new Float3(1, 2, 3), moved.Current.Document.Entities.Single().Transform.Position);
         Assert.False(saved.Current.Document!.IsDirty);
         Assert.Equal(saved.Current.Document.Revision, saved.Current.Document.SavedRevision);
+    }
+
+    [Fact]
+    public async Task Mesh_create_returns_authoritative_object_receipt_and_typed_reference()
+    {
+        var projectGateway = new ControlledProjectGateway
+        {
+            OpenResult = ProjectDescriptorOperationResult.Success(
+                new ProjectDescriptorSnapshot(
+                    "C:\\Projects\\Sample",
+                    "Sample",
+                    Guid.NewGuid())),
+        };
+        var sceneGateway = new ControlledSceneGateway();
+        await using var session = new ProjectSession(projectGateway, sceneGateway);
+        await session.OpenProjectAsync("C:\\Projects\\Sample");
+        var mesh = SceneMeshReference.DirectionalWedgeValidation;
+
+        var created = await session.CreateMeshEntityAsync("Mesh", mesh);
+
+        Assert.True(created.Succeeded);
+        Assert.NotNull(created.CreatedObjectId);
+        var entity = Assert.Single(created.Current.Document!.Entities);
+        Assert.Equal(created.CreatedObjectId!.Value, entity.ObjectId);
+        Assert.Equal(mesh, entity.Mesh);
+        Assert.True(entity.RuntimeEntityId.IsValid);
+    }
+
+    [Fact]
+    public async Task Invalid_mesh_reference_failure_has_no_receipt_or_revision_change()
+    {
+        var projectGateway = new ControlledProjectGateway
+        {
+            OpenResult = ProjectDescriptorOperationResult.Success(
+                new ProjectDescriptorSnapshot(
+                    "C:\\Projects\\Sample",
+                    "Sample",
+                    Guid.NewGuid())),
+        };
+        var sceneGateway = new ControlledSceneGateway();
+        sceneGateway.Connection.RejectMeshCreate = true;
+        await using var session = new ProjectSession(projectGateway, sceneGateway);
+        await session.OpenProjectAsync("C:\\Projects\\Sample");
+
+        var created = await session.CreateMeshEntityAsync(
+            "Mesh",
+            SceneMeshReference.DirectionalWedgeValidation);
+
+        Assert.False(created.Succeeded);
+        Assert.Equal(ProjectSessionFailureKind.InvalidAssetReference, created.FailureKind);
+        Assert.Null(created.CreatedObjectId);
+        Assert.Equal(1UL, created.Current.Document!.Revision);
+        Assert.Empty(created.Current.Document.Entities);
     }
 
     [Fact]
@@ -213,13 +267,44 @@ public sealed class ProjectSessionTests
 
         public int DisposeCount { get; private set; }
 
+        public bool RejectMeshCreate { get; set; }
+
         public ValueTask<SceneDocumentOperationResult> CreateEntityAsync(
             Guid objectId,
             string name,
             ulong expectedRevision,
             CancellationToken cancellationToken = default)
         {
-            entities_.Add(new SceneEntitySnapshot(objectId, name, TransformValue.Identity));
+            entities_.Add(new SceneEntitySnapshot(
+                objectId,
+                NextRuntimeEntityId(),
+                name,
+                TransformValue.Identity));
+            Advance();
+            return ValueTask.FromResult(SceneDocumentOperationResult.Success(Current));
+        }
+
+        public ValueTask<SceneDocumentOperationResult> CreateMeshEntityAsync(
+            Guid objectId,
+            string name,
+            SceneMeshReference mesh,
+            ulong expectedRevision,
+            CancellationToken cancellationToken = default)
+        {
+            if (RejectMeshCreate)
+            {
+                return ValueTask.FromResult(SceneDocumentOperationResult.Failed(
+                    Current,
+                    new SceneDocumentFailure(
+                        SceneDocumentFailureKind.InvalidAssetReference,
+                        "The mesh asset reference is invalid.")));
+            }
+            entities_.Add(new SceneEntitySnapshot(
+                objectId,
+                NextRuntimeEntityId(),
+                name,
+                TransformValue.Identity,
+                mesh));
             Advance();
             return ValueTask.FromResult(SceneDocumentOperationResult.Success(Current));
         }
@@ -233,8 +318,10 @@ public sealed class ProjectSessionTests
             var entity = entities_.Single(value => value.ObjectId == objectId);
             entities_[entities_.IndexOf(entity)] = new SceneEntitySnapshot(
                 entity.ObjectId,
+                entity.RuntimeEntityId,
                 name,
-                entity.Transform);
+                entity.Transform,
+                entity.Mesh);
             Advance();
             return ValueTask.FromResult(SceneDocumentOperationResult.Success(Current));
         }
@@ -248,8 +335,10 @@ public sealed class ProjectSessionTests
             var entity = entities_.Single(value => value.ObjectId == objectId);
             entities_[entities_.IndexOf(entity)] = new SceneEntitySnapshot(
                 entity.ObjectId,
+                entity.RuntimeEntityId,
                 entity.Name,
-                transform);
+                transform,
+                entity.Mesh);
             Advance();
             return ValueTask.FromResult(SceneDocumentOperationResult.Success(Current));
         }
@@ -270,6 +359,9 @@ public sealed class ProjectSessionTests
 
         private void Advance() =>
             Current = Snapshot(Current.Revision + 1, Current.SavedRevision, entities_);
+
+        private EntityId NextRuntimeEntityId() =>
+            new(checked((uint)entities_.Count + 1), 1);
 
         private static SceneDocumentSnapshot Snapshot(
             ulong revision,

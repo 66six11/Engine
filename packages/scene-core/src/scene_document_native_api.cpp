@@ -45,7 +45,7 @@ namespace {
 
     [[nodiscard]] constexpr bool hasSupportedHeader(const AshariaSceneNativeAbiHeader& header,
                                                     std::size_t requiredSize) noexcept {
-        return header.abiVersion == ASHARIA_SCENE_NATIVE_ABI_VERSION &&
+        return header.abiVersion == ASHARIA_SCENE_DOCUMENT_NATIVE_ABI_VERSION &&
                header.structSize >= requiredSize;
     }
 
@@ -159,6 +159,8 @@ namespace {
             return AshariaSceneNativeStatus_InvalidObject;
         case SceneDocumentErrorCode::InvalidTransform:
             return AshariaSceneNativeStatus_InvalidTransform;
+        case SceneDocumentErrorCode::InvalidAssetReference:
+            return AshariaSceneNativeStatus_InvalidAssetReference;
         }
         return AshariaSceneNativeStatus_InternalError;
     }
@@ -253,7 +255,8 @@ namespace {
                    AshariaSceneNativeDocumentSnapshotResult& result) {
         const std::string sceneId = asharia::scene::formatSceneId(snapshot.data.sceneId);
         const auto entityCount = static_cast<std::uint64_t>(snapshot.data.entities.size());
-        if (entityCount > std::numeric_limits<std::uint64_t>::max() /
+        if (snapshot.runtimeEntities.size() != snapshot.data.entities.size() ||
+            entityCount > std::numeric_limits<std::uint64_t>::max() /
                               sizeof(AshariaSceneNativeDocumentEntitySnapshot)) {
             result.operationStatus = AshariaSceneNativeStatus_InternalError;
             return AshariaSceneNativeStatus_InternalError;
@@ -264,9 +267,17 @@ namespace {
             result.operationStatus = AshariaSceneNativeStatus_InternalError;
             return AshariaSceneNativeStatus_InternalError;
         }
-        for (const asharia::scene::SceneEntityData& entity : snapshot.data.entities) {
+        for (std::size_t index = 0U; index < snapshot.data.entities.size(); ++index) {
+            const asharia::scene::SceneEntityData& entity = snapshot.data.entities[index];
+            const asharia::scene::SceneDocumentSnapshot::RuntimeEntityBinding& runtime =
+                snapshot.runtimeEntities[index];
+            if (runtime.objectId != entity.objectId || !asharia::isValid(runtime.entity)) {
+                result.operationStatus = AshariaSceneNativeStatus_InternalError;
+                return AshariaSceneNativeStatus_InternalError;
+            }
             if (!checkedAdd(required, 36U, required) ||
-                !checkedAdd(required, entity.name.size(), required)) {
+                !checkedAdd(required, entity.name.size(), required) ||
+                (entity.mesh.has_value() && !checkedAdd(required, 36U, required))) {
                 result.operationStatus = AshariaSceneNativeStatus_InternalError;
                 return AshariaSceneNativeStatus_InternalError;
             }
@@ -294,12 +305,17 @@ namespace {
 
         for (std::size_t index = 0U; index < snapshot.data.entities.size(); ++index) {
             const asharia::scene::SceneEntityData& entity = snapshot.data.entities[index];
+            const asharia::scene::SceneDocumentSnapshot::RuntimeEntityBinding& runtime =
+                snapshot.runtimeEntities[index];
             const std::string objectId = asharia::scene::formatSceneObjectId(entity.objectId);
             AshariaSceneNativeDocumentEntitySnapshot nativeEntity{
                 .objectIdUtf8 = {.offset = cursor,
                                  .byteLength = static_cast<std::uint64_t>(objectId.size())},
                 .nameUtf8 = {},
                 .transform = fromTransform(entity.transform),
+                .runtimeEntity = {.index = runtime.entity.index,
+                                  .generation = runtime.entity.generation},
+                .meshAssetGuidUtf8 = {},
             };
             std::memcpy(bytes.subspan(static_cast<std::size_t>(cursor), objectId.size()).data(),
                         objectId.data(), objectId.size());
@@ -314,6 +330,18 @@ namespace {
                     entity.name.data(), entity.name.size());
             }
             cursor += entity.name.size();
+            if (entity.mesh.has_value()) {
+                const std::string meshAssetGuid =
+                    asharia::asset::formatAssetGuid(entity.mesh->guid);
+                nativeEntity.meshAssetGuidUtf8 = {
+                    .offset = cursor,
+                    .byteLength = static_cast<std::uint64_t>(meshAssetGuid.size()),
+                };
+                std::memcpy(
+                    bytes.subspan(static_cast<std::size_t>(cursor), meshAssetGuid.size()).data(),
+                    meshAssetGuid.data(), meshAssetGuid.size());
+                cursor += meshAssetGuid.size();
+            }
             const std::uint64_t entryOffset = static_cast<std::uint64_t>(index) *
                                               sizeof(AshariaSceneNativeDocumentEntitySnapshot);
             std::memcpy(
@@ -348,11 +376,12 @@ namespace {
     static_assert(sizeof(AshariaSceneNativeDocumentOpenDefaultRequest) == 40U);
     static_assert(sizeof(AshariaSceneNativeDocumentRequest) == 16U);
     static_assert(sizeof(AshariaSceneNativeDocumentCreateEntityRequest) == 56U);
+    static_assert(sizeof(AshariaSceneNativeDocumentCreateMeshEntityRequest) == 72U);
     static_assert(sizeof(AshariaSceneNativeDocumentSetEntityNameRequest) == 56U);
     static_assert(sizeof(AshariaSceneNativeDocumentSetEntityTransformRequest) == 80U);
     static_assert(sizeof(AshariaSceneNativeDocumentSaveRequest) == 24U);
     static_assert(sizeof(AshariaSceneNativeDocumentOperationResult) == 48U);
-    static_assert(sizeof(AshariaSceneNativeDocumentEntitySnapshot) == 72U);
+    static_assert(sizeof(AshariaSceneNativeDocumentEntitySnapshot) == 96U);
     static_assert(sizeof(AshariaSceneNativeDocumentSnapshotResult) == 80U);
 
 } // namespace
@@ -540,6 +569,72 @@ AshariaSceneNativeStatus ASHARIA_SCENE_NATIVE_CALL asharia_scene_document_create
     } catch (...) {
         return finishOperation(AshariaSceneNativeStatus_InternalError,
                                "Native scene entity creation failed unexpectedly.",
+                               kEmptyRevisionState, responseBuffer, responseCapacity, *result);
+    }
+}
+
+AshariaSceneNativeStatus ASHARIA_SCENE_NATIVE_CALL asharia_scene_document_create_mesh_entity(
+    const AshariaSceneNativeDocumentCreateMeshEntityRequest* request, void* responseBuffer,
+    std::uint64_t responseCapacity, AshariaSceneNativeDocumentOperationResult* result) noexcept {
+    if (result == nullptr) {
+        return AshariaSceneNativeStatus_InvalidArgument;
+    }
+    *result = {};
+    if (invalidResponseBuffer(responseBuffer, responseCapacity) || request == nullptr) {
+        result->operationStatus = AshariaSceneNativeStatus_InvalidArgument;
+        return AshariaSceneNativeStatus_InvalidArgument;
+    }
+    if (!hasSupportedHeader(request->header,
+                            sizeof(AshariaSceneNativeDocumentCreateMeshEntityRequest))) {
+        result->operationStatus = AshariaSceneNativeStatus_UnsupportedAbi;
+        return AshariaSceneNativeStatus_UnsupportedAbi;
+    }
+    std::string_view objectIdText;
+    std::string_view name;
+    std::string_view meshAssetGuidText;
+    AshariaSceneNativeStatus inputStatus = makeUtf8View(request->objectIdUtf8, 36U, objectIdText);
+    if (inputStatus == AshariaSceneNativeStatus_Success) {
+        inputStatus =
+            makeUtf8View(request->nameUtf8, ASHARIA_SCENE_NATIVE_MAX_ENTITY_NAME_UTF8_BYTES, name);
+    }
+    if (inputStatus == AshariaSceneNativeStatus_Success) {
+        inputStatus = makeUtf8View(request->meshAssetGuidUtf8, 36U, meshAssetGuidText);
+    }
+    if (inputStatus != AshariaSceneNativeStatus_Success) {
+        result->operationStatus = inputStatus;
+        return inputStatus;
+    }
+    try {
+        auto objectId = asharia::scene::parseSceneObjectId(objectIdText);
+        if (!objectId) {
+            return finishOperation(AshariaSceneNativeStatus_InvalidObject, objectId.error().message,
+                                   kEmptyRevisionState, responseBuffer, responseCapacity, *result);
+        }
+        auto meshAssetGuid = asharia::asset::parseAssetGuid(meshAssetGuidText);
+        if (!meshAssetGuid) {
+            return finishOperation(AshariaSceneNativeStatus_InvalidAssetReference,
+                                   meshAssetGuid.error().message, kEmptyRevisionState,
+                                   responseBuffer, responseCapacity, *result);
+        }
+        std::scoped_lock lock{documentRegistry().mutex};
+        AshariaSceneNativeStatus status = AshariaSceneNativeStatus_Success;
+        DocumentSlot* slot = findDocumentSlot(request->document, status);
+        if (slot == nullptr) {
+            return finishOperation(status, "Scene document handle is invalid for this call.",
+                                   kEmptyRevisionState, responseBuffer, responseCapacity, *result);
+        }
+        auto changed = slot->document->createMeshEntity(*objectId, name, *meshAssetGuid,
+                                                        request->expectedRevision);
+        const auto snapshot = slot->document->snapshot();
+        const DocumentRevisionState revisionState{.revision = snapshot.revision,
+                                                  .savedRevision = snapshot.savedRevision};
+        return changed ? finishOperation(AshariaSceneNativeStatus_Success, {}, revisionState,
+                                         responseBuffer, responseCapacity, *result)
+                       : finishOperation(statusFromError(changed.error()), changed.error().message,
+                                         revisionState, responseBuffer, responseCapacity, *result);
+    } catch (...) {
+        return finishOperation(AshariaSceneNativeStatus_InternalError,
+                               "Native scene mesh entity creation failed unexpectedly.",
                                kEmptyRevisionState, responseBuffer, responseCapacity, *result);
     }
 }

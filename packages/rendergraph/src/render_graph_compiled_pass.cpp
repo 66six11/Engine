@@ -24,6 +24,7 @@ namespace asharia::rendergraph_internal {
             .commands = pass.commands,
             .transitionsBefore = {},
             .colorWrites = imageHandles(pass.colorWriteSlots),
+            .colorReadWrites = imageHandles(pass.colorReadWriteSlots),
             .shaderReads = imageHandles(pass.shaderReadSlots),
             .depthReads = imageHandles(pass.depthReadSlots),
             .depthWrites = imageHandles(pass.depthWriteSlots),
@@ -37,6 +38,7 @@ namespace asharia::rendergraph_internal {
             .bufferWrites = bufferHandles(pass.bufferWriteSlots),
             .bufferStorageReadWrites = bufferHandles(pass.bufferStorageReadWriteSlots),
             .colorWriteSlots = pass.colorWriteSlots,
+            .colorReadWriteSlots = pass.colorReadWriteSlots,
             .shaderReadSlots = pass.shaderReadSlots,
             .depthReadSlots = pass.depthReadSlots,
             .depthWriteSlots = pass.depthWriteSlots,
@@ -69,6 +71,17 @@ namespace asharia::rendergraph_internal {
                              currentAccesses, compiledPass);
         if (!colorTransitions) {
             return std::unexpected{std::move(colorTransitions.error())};
+        }
+
+        auto colorReadWriteTransitions =
+            transitionImages(images, compiledPass.colorReadWriteSlots,
+                             RenderGraphImageAccess{
+                                 .state = RenderGraphImageState::ColorReadWrite,
+                                 .shaderStage = RenderGraphShaderStage::None,
+                             },
+                             currentAccesses, compiledPass);
+        if (!colorReadWriteTransitions) {
+            return std::unexpected{std::move(colorReadWriteTransitions.error())};
         }
 
         auto shaderReadTransitions =

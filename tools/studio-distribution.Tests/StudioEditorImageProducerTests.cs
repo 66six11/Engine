@@ -507,7 +507,7 @@ public sealed class StudioEditorImageProducerTests
         StudioEditorImageTestInputs.WriteNativeDll(
             Path.Combine(fixture.PublishRoot, "editor_native.dll"),
             "editor_native.dll",
-            ["editor_viewport_open_stream_v5"]);
+            ["editor_viewport_open_stream_v6"]);
 
         var result = StudioEditorImageProducer.Produce(fixture.Request);
 
@@ -518,6 +518,66 @@ public sealed class StudioEditorImageProducerTests
                     == "studio-distribution.editor-image.native-identity-invalid"
                 && diagnostic.Location == "publishRoot/editor_native.dll");
         Assert.False(Directory.Exists(fixture.OutputRoot));
+    }
+
+    [Theory]
+    [InlineData("editor_viewport_acquire_present_packet")]
+    [InlineData("editor_viewport_release_present_packet")]
+    [InlineData("editor_viewport_acquire_present_packet_v2")]
+    [InlineData("editor_viewport_create_present_slot_v3")]
+    [InlineData("editor_viewport_render_present_slot_v3")]
+    [InlineData("editor_viewport_create_present_slot_v4")]
+    [InlineData("editor_viewport_open_stream_v5")]
+    [InlineData("editor_viewport_submit_latest_v5")]
+    [InlineData("editor_viewport_try_take_ready_v5")]
+    [InlineData("editor_viewport_complete_frame_v5")]
+    [InlineData("editor_viewport_release_slot_import_v5")]
+    [InlineData("editor_viewport_close_stream_v5")]
+    [InlineData("editor_viewport_poll_stream_v5")]
+    [InlineData("editor_viewport_destroy_stream_v5")]
+    public void Produce_rejects_legacy_viewport_stream_abi_export(string legacyExport)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using var fixture = new ProducerFixture(inputs_);
+        StudioEditorImageTestInputs.WriteNativeDll(
+            Path.Combine(fixture.PublishRoot, "editor_native.dll"),
+            "editor_native.dll",
+            StudioEditorImageTestInputs.CreateViewportNativeExports(legacyExport));
+
+        var result = StudioEditorImageProducer.Produce(fixture.Request);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(
+            result.Diagnostics,
+            diagnostic => diagnostic.Code
+                    == "studio-distribution.editor-image.native-identity-invalid"
+                && diagnostic.Location == "publishRoot/editor_native.dll"
+                && diagnostic.Message.Contains(legacyExport, StringComparison.Ordinal));
+        Assert.False(Directory.Exists(fixture.OutputRoot));
+    }
+
+    [Fact]
+    public void Produce_allows_historical_viewport_runtime_stats_v5_export()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using var fixture = new ProducerFixture(inputs_);
+        StudioEditorImageTestInputs.WriteNativeDll(
+            Path.Combine(fixture.PublishRoot, "editor_native.dll"),
+            "editor_native.dll",
+            StudioEditorImageTestInputs.CreateViewportNativeExports(
+                "editor_viewport_query_runtime_stats_v5"));
+
+        var result = StudioEditorImageProducer.Produce(fixture.Request);
+
+        Assert.True(result.Succeeded, Render(result));
     }
 
     [Fact]

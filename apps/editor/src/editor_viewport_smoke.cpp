@@ -352,8 +352,8 @@ namespace asharia::editor {
             scene = sceneDiagnostics->diagnostics;
             if (scene.renderGraph.passes.size() != 3U || scene.renderGraph.resources.size() != 2U ||
                 scene.renderGraph.accessEdges.size() != 4U ||
-                scene.renderGraph.dependencyEdges.size() != 2U ||
-                scene.renderGraph.transitions.size() != 4U || scene.executionEvents.empty()) {
+                scene.renderGraph.dependencyEdges.size() != 3U ||
+                scene.renderGraph.transitions.size() != 5U || scene.executionEvents.empty()) {
                 asharia::logError(
                     "Editor viewport smoke recorded unexpected render view diagnostics counts: "
                     "passes " +

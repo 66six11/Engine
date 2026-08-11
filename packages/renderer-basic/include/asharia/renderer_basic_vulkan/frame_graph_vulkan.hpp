@@ -225,6 +225,13 @@ namespace asharia {
     }
 
     [[nodiscard]] inline Result<VulkanRenderGraphImageBinding>
+    findVulkanRenderGraphColorReadWrite(
+        RenderGraphPassContext pass, std::string_view slotName,
+        std::span<const VulkanRenderGraphImageBinding> bindings) {
+        return findVulkanRenderGraphImageSlot(pass.colorReadWriteSlots, slotName, pass, bindings);
+    }
+
+    [[nodiscard]] inline Result<VulkanRenderGraphImageBinding>
     findVulkanRenderGraphDepthWrite(RenderGraphPassContext pass, std::string_view slotName,
                                     std::span<const VulkanRenderGraphImageBinding> bindings) {
         return findVulkanRenderGraphImageSlot(pass.depthWriteSlots, slotName, pass, bindings);
@@ -290,6 +297,9 @@ namespace asharia {
             break;
         case RenderGraphImageState::ColorAttachment:
             label = "ColorAttachment";
+            break;
+        case RenderGraphImageState::ColorReadWrite:
+            label = "ColorReadWrite";
             break;
         case RenderGraphImageState::ShaderRead:
             label = "ShaderRead";
@@ -411,6 +421,8 @@ namespace asharia {
         }
 
         appendRenderGraphImageSlotLabels(label, "color", pass.colorWriteSlots, bindings);
+        appendRenderGraphImageSlotLabels(label, "colorReadWrite", pass.colorReadWriteSlots,
+                                         bindings);
         appendRenderGraphImageSlotLabels(label, "read", pass.shaderReadSlots, bindings);
         appendRenderGraphImageSlotLabels(label, "depthRead", pass.depthReadSlots, bindings);
         appendRenderGraphImageSlotLabels(label, "depthWrite", pass.depthWriteSlots, bindings);

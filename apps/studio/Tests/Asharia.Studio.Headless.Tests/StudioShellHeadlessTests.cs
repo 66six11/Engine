@@ -4,6 +4,7 @@ using Avalonia.Automation.Peers;
 using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
 using Avalonia.Threading;
+using Asharia.Runtime;
 using Asharia.Studio.Application.Projects;
 using Asharia.Studio.Application.Scenes;
 using Asharia.Studio.TestSupport;
@@ -135,6 +136,82 @@ public sealed class StudioShellHeadlessTests
             Assert.True(window.FindControl<Grid>("ActiveProjectState")!.IsVisible);
             Assert.Equal("Sample", viewModel.ProjectStateText);
             Assert.Equal("C:\\Projects\\Sample", viewModel.ProjectPathText);
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
+    [AvaloniaFact]
+    public async System.Threading.Tasks.Task Create_mesh_button_selects_the_authoritative_receipt_entity()
+    {
+        using var viewModel = StudioShellTestFactory.Create(
+            out var projectSession,
+            out _);
+        var window = new MainWindow
+        {
+            DataContext = viewModel,
+        };
+        var project = new ActiveProjectSnapshot(
+            ProjectSessionId.CreateNew(),
+            System.Guid.NewGuid(),
+            "Sample",
+            "C:\\Projects\\Sample");
+        var initial = ProjectSessionSnapshot.Ready(
+            project,
+            new SceneDocumentSnapshot(
+                System.Guid.NewGuid(),
+                "C:\\Projects\\Sample\\Assets\\Scenes\\Default.asharia.scene.json",
+                revision: 1,
+                savedRevision: 1,
+                entities: []));
+        projectSession.Publish(initial);
+        var objectId = System.Guid.NewGuid();
+        var entity = new SceneEntitySnapshot(
+            objectId,
+            new EntityId(1, 1),
+            "Directional Wedge",
+            TransformValue.Identity,
+            SceneMeshReference.DirectionalWedgeValidation);
+        var updated = ProjectSessionSnapshot.Ready(
+            project,
+            new SceneDocumentSnapshot(
+                initial.Document!.SceneId,
+                initial.Document.Path,
+                revision: 2,
+                savedRevision: 1,
+                entities: [entity]));
+        projectSession.CreateMeshEntityHandler = (_, mesh, _) =>
+        {
+            Assert.Equal(SceneMeshReference.DirectionalWedgeValidation, mesh);
+            projectSession.Publish(updated);
+            return System.Threading.Tasks.ValueTask.FromResult(
+                ProjectSessionOperationResult.Success(
+                    updated,
+                    "Created a mesh scene entity.",
+                    objectId));
+        };
+
+        try
+        {
+            window.Show();
+            viewModel.MarkReady();
+            Dispatcher.UIThread.RunJobs();
+            var createMesh = Assert.IsType<Button>(
+                window.FindControl<Button>("CreateMeshEntityButton"));
+
+            createMesh.Command!.Execute(createMesh.CommandParameter);
+            using var timeout = new System.Threading.CancellationTokenSource(
+                System.TimeSpan.FromSeconds(2));
+            while (viewModel.IsProjectOperationRunning)
+            {
+                Dispatcher.UIThread.RunJobs();
+                await System.Threading.Tasks.Task.Delay(10, timeout.Token);
+            }
+            Dispatcher.UIThread.RunJobs();
+
+            Assert.Same(entity, viewModel.SelectedEntity);
         }
         finally
         {

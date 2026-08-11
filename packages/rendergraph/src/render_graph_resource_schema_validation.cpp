@@ -21,6 +21,8 @@ namespace asharia {
             switch (access) {
             case RenderGraphSlotAccess::ColorWrite:
                 return pass.colorWriteSlots;
+            case RenderGraphSlotAccess::ColorReadWrite:
+                return pass.colorReadWriteSlots;
             case RenderGraphSlotAccess::ShaderRead:
                 return pass.shaderReadSlots;
             case RenderGraphSlotAccess::DepthAttachmentRead:
@@ -60,6 +62,7 @@ namespace asharia {
             case RenderGraphSlotAccess::BufferStorageReadWrite:
                 return pass.bufferStorageReadWriteSlots;
             case RenderGraphSlotAccess::ColorWrite:
+            case RenderGraphSlotAccess::ColorReadWrite:
             case RenderGraphSlotAccess::ShaderRead:
             case RenderGraphSlotAccess::DepthAttachmentRead:
             case RenderGraphSlotAccess::DepthAttachmentWrite:
@@ -162,6 +165,13 @@ namespace asharia {
                                                          RenderGraphSlotAccess::ColorWrite, schema);
             if (!colorSlots) {
                 return std::unexpected{std::move(colorSlots.error())};
+            }
+
+            auto colorReadWriteSlots =
+                validateSlotsAgainstSchema(pass, pass.colorReadWriteSlots,
+                                           RenderGraphSlotAccess::ColorReadWrite, schema);
+            if (!colorReadWriteSlots) {
+                return std::unexpected{std::move(colorReadWriteSlots.error())};
             }
 
             auto shaderReadSlots = validateSlotsAgainstSchema(

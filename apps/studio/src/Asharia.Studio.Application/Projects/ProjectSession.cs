@@ -111,14 +111,41 @@ public sealed class ProjectSession : IProjectSession
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(name);
+        var objectId = Guid.NewGuid();
         return EditSceneAsync(
             (document, snapshot) => document.CreateEntityAsync(
-                Guid.NewGuid(),
+                objectId,
                 name,
                 snapshot.Revision,
                 CancellationToken.None),
             "Created a scene entity.",
-            cancellationToken);
+            cancellationToken,
+            objectId,
+            expectedMesh: null);
+    }
+
+    public ValueTask<ProjectSessionOperationResult> CreateMeshEntityAsync(
+        string name,
+        SceneMeshReference mesh,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(name);
+        if (mesh.AssetId == Guid.Empty)
+        {
+            throw new ArgumentException("Mesh asset id must not be empty.", nameof(mesh));
+        }
+        var objectId = Guid.NewGuid();
+        return EditSceneAsync(
+            (document, snapshot) => document.CreateMeshEntityAsync(
+                objectId,
+                name,
+                mesh,
+                snapshot.Revision,
+                CancellationToken.None),
+            "Created a mesh scene entity.",
+            cancellationToken,
+            objectId,
+            mesh);
     }
 
     public ValueTask<ProjectSessionOperationResult> SetEntityNameAsync(
@@ -316,7 +343,9 @@ public sealed class ProjectSession : IProjectSession
         Func<ISceneDocumentConnection, SceneDocumentSnapshot,
             ValueTask<SceneDocumentOperationResult>> operation,
         string successMessage,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Guid? createdObjectId = null,
+        SceneMeshReference? expectedMesh = null)
     {
         ThrowIfDisposed();
         using var linkedCancellation = CreateLinkedCancellation(cancellationToken);
@@ -359,7 +388,19 @@ public sealed class ProjectSession : IProjectSession
                     MapSceneFailure(failure.Kind),
                     failure.Message);
             }
-            return ProjectSessionOperationResult.Success(next, successMessage);
+            if (createdObjectId is Guid createdId &&
+                !ContainsCreatedObject(result.Current, createdId, expectedMesh))
+            {
+                return ProjectSessionOperationResult.Failed(
+                    next,
+                    ProjectSessionFailureKind.InternalError,
+                    "The successful scene create receipt is absent from the " +
+                    "authoritative snapshot.");
+            }
+            return ProjectSessionOperationResult.Success(
+                next,
+                successMessage,
+                createdObjectId);
         }
         finally
         {
@@ -387,6 +428,27 @@ public sealed class ProjectSession : IProjectSession
     private static string DiagnosticMessage(Exception exception, string fallback) =>
         string.IsNullOrWhiteSpace(exception.Message) ? fallback : exception.Message;
 
+    private static bool ContainsCreatedObject(
+        SceneDocumentSnapshot snapshot,
+        Guid objectId,
+        SceneMeshReference? expectedMesh)
+    {
+        SceneEntitySnapshot? match = null;
+        foreach (var entity in snapshot.Entities)
+        {
+            if (entity.ObjectId != objectId)
+            {
+                continue;
+            }
+            if (match is not null)
+            {
+                return false;
+            }
+            match = entity;
+        }
+        return match is not null && match.Mesh == expectedMesh;
+    }
+
     private static ProjectSessionFailureKind MapProjectFailure(
         ProjectDescriptorFailureKind kind) => kind switch
         {
@@ -407,6 +469,8 @@ public sealed class ProjectSession : IProjectSession
             SceneDocumentFailureKind.RevisionConflict => ProjectSessionFailureKind.RevisionConflict,
             SceneDocumentFailureKind.InvalidObject => ProjectSessionFailureKind.InvalidObject,
             SceneDocumentFailureKind.InvalidTransform => ProjectSessionFailureKind.InvalidTransform,
+            SceneDocumentFailureKind.InvalidAssetReference =>
+                ProjectSessionFailureKind.InvalidAssetReference,
             SceneDocumentFailureKind.IoFailure => ProjectSessionFailureKind.IoFailure,
             SceneDocumentFailureKind.NativeUnavailable => ProjectSessionFailureKind.NativeUnavailable,
             _ => ProjectSessionFailureKind.InternalError,

@@ -157,6 +157,14 @@ namespace asharia::rendergraph_internal {
                     continue;
                 }
 
+                if (!hasSourceWriter && passWritesImage(inputs.passes[reader], image)) {
+                    return std::unexpected{Error{
+                        ErrorDomain::RenderGraph,
+                        0,
+                        missingProducerMessage(inputs, reader, image),
+                    }};
+                }
+
                 if (!hasSourceWriter) {
                     if (writers.size() != 1) {
                         return std::unexpected{Error{

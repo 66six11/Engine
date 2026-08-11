@@ -222,7 +222,7 @@ BasicTriangleRenderer::recordFrame(const VulkanFrameRecordContext& frame) {
 
     graph.addPass("Triangle", kBasicRasterTrianglePassType)
         .setParams(kBasicRasterTriangleParamsType, drawItem_)
-        .writeColor("target", backbuffer)
+        .readWriteColor("target", backbuffer)
         .execute([&frame, &bindings, this](RenderGraphPassContext pass) -> Result<void> {
             [[maybe_unused]] const auto timestamp = VulkanTimestampScope::begin(frame, pass.name);
             [[maybe_unused]] const auto debugLabel = VulkanDebugLabelScope::begin(frame, pass.name);
@@ -236,7 +236,12 @@ BasicTriangleRenderer::recordFrame(const VulkanFrameRecordContext& frame) {
             if (!drawItem) {
                 return std::unexpected{std::move(drawItem.error())};
             }
-            recordTriangleDraw(frame, pipeline_.handle(),
+            auto targetBinding =
+                findVulkanRenderGraphColorReadWrite(pass, "target", bindings);
+            if (!targetBinding) {
+                return std::unexpected{std::move(targetBinding.error())};
+            }
+            recordTriangleDraw(frame, targetBinding->vulkanImageView, pipeline_.handle(),
                                BasicDrawBuffers{
                                    .vertex = vertexBuffer_.handle(),
                                    .index = indexBuffer_.handle(),
@@ -317,7 +322,7 @@ BasicTriangleRenderer::recordFrameWithDepth(const VulkanFrameRecordContext& fram
 
     graph.addPass("DepthTriangle", kBasicRasterDepthTrianglePassType)
         .setParams(kBasicRasterDepthTriangleParamsType, drawItem_)
-        .writeColor("target", backbuffer)
+        .readWriteColor("target", backbuffer)
         .writeDepth("depth", depth)
         .execute([&frame, &bindings, this](RenderGraphPassContext pass) -> Result<void> {
             [[maybe_unused]] const auto timestamp = VulkanTimestampScope::begin(frame, pass.name);
@@ -332,13 +337,18 @@ BasicTriangleRenderer::recordFrameWithDepth(const VulkanFrameRecordContext& fram
             if (!depthBinding) {
                 return std::unexpected{std::move(depthBinding.error())};
             }
+            auto targetBinding =
+                findVulkanRenderGraphColorReadWrite(pass, "target", bindings);
+            if (!targetBinding) {
+                return std::unexpected{std::move(targetBinding.error())};
+            }
             auto drawItem = readPassParams<BasicDrawItem>(pass, kBasicRasterDepthTriangleParamsType,
                                                           "Depth triangle raster pass");
             if (!drawItem) {
                 return std::unexpected{std::move(drawItem.error())};
             }
 
-            recordTriangleDraw(frame, pipeline_.handle(),
+            recordTriangleDraw(frame, targetBinding->vulkanImageView, pipeline_.handle(),
                                BasicDrawBuffers{
                                    .vertex = vertexBuffer_.handle(),
                                    .index = indexBuffer_.handle(),

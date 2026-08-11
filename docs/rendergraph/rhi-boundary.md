@@ -41,6 +41,7 @@ RenderGraph 层使用引擎自己的抽象类型：
 
 - `Undefined`
 - `ColorAttachment`
+- `ColorReadWrite`
 - `ShaderRead`
 - `StorageReadWrite`
 - `TransferRead`
@@ -49,6 +50,13 @@ RenderGraph 层使用引擎自己的抽象类型：
 - `Present`
 
 这些状态可以被 Vulkan、D3D、Metal 或测试后端分别翻译。
+
+`ColorAttachment` 表示不读取既有内容的 color attachment write；`ColorReadWrite` 表示 attachment
+会通过 LOAD、blend 或 logic operation 读取既有 color 并继续写入。两者都保持后端无关，Vulkan adapter
+分别映射为 `COLOR_ATTACHMENT_WRITE` 与 `COLOR_ATTACHMENT_READ | COLOR_ATTACHMENT_WRITE`，layout
+均为 `COLOR_ATTACHMENT_OPTIMAL`。compiler 对连续 write-capable image access 即使 layout/state 相同也会
+生成 transition，以显式承载 WAW/RAW memory dependency；`ColorReadWrite` 不能从 undefined transient
+image 自己生产自己要 LOAD 的内容。
 
 ## Vulkan 翻译归属
 

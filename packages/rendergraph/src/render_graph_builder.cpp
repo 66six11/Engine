@@ -22,6 +22,22 @@ namespace asharia {
     }
 
     RenderGraph::PassBuilder&
+    RenderGraph::PassBuilder::readWriteColor(RenderGraphImageHandle image) {
+        return readWriteColor("target", image);
+    }
+
+    RenderGraph::PassBuilder&
+    RenderGraph::PassBuilder::readWriteColor(std::string slotName,
+                                             RenderGraphImageHandle image) {
+        graph_->impl_->passes_[passIndex_].colorReadWriteSlots.push_back(RenderGraphImageSlot{
+            .name = std::move(slotName),
+            .image = image,
+        });
+        ++graph_->impl_->mutationGeneration_;
+        return *this;
+    }
+
+    RenderGraph::PassBuilder&
     RenderGraph::PassBuilder::readTexture(std::string slotName, RenderGraphImageHandle image,
                                           RenderGraphShaderStage shaderStage) {
         graph_->impl_->passes_[passIndex_].shaderReadSlots.push_back(RenderGraphImageSlot{

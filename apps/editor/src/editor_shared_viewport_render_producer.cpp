@@ -17,11 +17,16 @@
 #include "asharia/core/log.hpp"
 #include "asharia/rhi_vulkan/vulkan_context.hpp"
 #include "asharia/rhi_vulkan/vulkan_error.hpp"
+#include "asharia/scene_rendering/scene_mesh_extraction.hpp"
 
 namespace asharia::editor {
     namespace {
 
         constexpr VkFormat kSharedViewportFormat = VK_FORMAT_B8G8R8A8_UNORM;
+        constexpr std::array<std::uint8_t, 16> kValidationMeshAssetId{
+            0x7cU, 0x9fU, 0xe8U, 0xacU, 0x3cU, 0x8bU, 0x4fU, 0x66U,
+            0x96U, 0x65U, 0x0aU, 0xf0U, 0xfdU, 0x7bU, 0x69U, 0x3eU,
+        };
         [[nodiscard]] std::filesystem::path viewportShaderDirectory() {
             std::array<wchar_t, 32768> executablePath{};
             const DWORD length = GetModuleFileNameW(nullptr, executablePath.data(),
@@ -154,14 +159,17 @@ namespace asharia::editor {
 
         void recordFlashSentinel(VkCommandBuffer commandBuffer, VkImage image,
                                  VkImageView imageView, VkExtent2D extent) {
+            // The graph has already transitioned the layout for sampling, but no shader read occurs
+            // before this test-only overlay. Synchronize directly from the real color writer.
             recordFlashSentinelImageBarrier(
                 commandBuffer, image,
                 FlashSentinelImageTransition{
-                    .sourceStage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
-                    .sourceAccess = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT,
+                    .sourceStage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+                    .sourceAccess = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
                     .oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                     .destinationStage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-                    .destinationAccess = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+                    .destinationAccess = VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT |
+                                         VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
                     .newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
                 });
 
@@ -391,6 +399,143 @@ namespace asharia::editor {
             return std::unexpected{vulkanError("Unknown shared viewport kind")};
         }
 
+        [[nodiscard]] BasicSceneRasterMode
+        basicRasterMode(EditorSharedViewportSceneRasterMode rasterMode) {
+            return rasterMode == EditorSharedViewportSceneRasterMode::Wireframe
+                       ? BasicSceneRasterMode::Wireframe
+                       : BasicSceneRasterMode::Solid;
+        }
+
+        [[nodiscard]] scene_rendering::SceneMeshExtraction
+        extractAuthoredMeshes(EditorSharedViewportPresentDesc desc) {
+            std::vector<scene_rendering::SceneMeshInstance> instances;
+            instances.reserve(desc.authoredMeshes.size());
+            for (const EditorSharedViewportAuthoredMeshSnapshot& snapshot : desc.authoredMeshes) {
+                instances.push_back(scene_rendering::SceneMeshInstance{
+                    .objectId = scene::SceneObjectId{.bytes = snapshot.objectId},
+                    .entity =
+                        EntityId{
+                            .index = snapshot.runtimeEntityIndex,
+                            .generation = snapshot.runtimeEntityGeneration,
+                        },
+                    .transform =
+                        TransformComponent{
+                            .position = Vec3{.x = snapshot.position[0],
+                                             .y = snapshot.position[1],
+                                             .z = snapshot.position[2]},
+                            .rotation = Quat{.x = snapshot.rotation[0],
+                                             .y = snapshot.rotation[1],
+                                             .z = snapshot.rotation[2],
+                                             .w = snapshot.rotation[3]},
+                            .scale = Vec3{.x = snapshot.scale[0],
+                                          .y = snapshot.scale[1],
+                                          .z = snapshot.scale[2]},
+                        },
+                    .mesh =
+                        asset::AssetReference{
+                            .guid = asset::AssetGuid{.bytes = snapshot.assetId},
+                            .expectedType = asset::AssetTypeId{.value = snapshot.expectedMeshType},
+                        },
+                });
+            }
+
+            const scene_rendering::SceneMeshProductBinding validationBinding{
+                .asset =
+                    asset::AssetReference{
+                        .guid = asset::AssetGuid{.bytes = kValidationMeshAssetId},
+                        .expectedType = scene::kSceneMeshAssetType,
+                    },
+                .state = scene_rendering::SceneMeshProductState::Ready,
+                .productHash = 0x0EB29D6DE539D278ULL,
+                .productGeneration = 1U,
+                .meshResource = kBasicValidationMeshResourceKey,
+                .materialResource = kBasicDefaultUnlitMaterialResourceKey,
+                .drawItem = basicValidationMeshDrawItem(),
+            };
+            return scene_rendering::extractSceneMeshDrawList(
+                scene_rendering::SceneMeshExtractionInput{
+                    .revision = desc.sceneRevision,
+                    .instances = instances,
+                    .productBindings = std::span{&validationBinding, 1U},
+                });
+        }
+
+        void populateSceneMeshReceipt(EditorSharedViewportPresentDesc desc,
+                                      const scene_rendering::SceneMeshExtraction& extraction,
+                                      EditorSharedViewportSceneMeshReceipt& receipt) {
+            receipt = EditorSharedViewportSceneMeshReceipt{
+                .inputCount = static_cast<std::uint32_t>(desc.authoredMeshes.size()),
+                .resolvedCount = static_cast<std::uint32_t>(extraction.drawItems().size()),
+                .rejectedCount = static_cast<std::uint32_t>(extraction.diagnostics().size()),
+                .indexedDrawCount = 0U,
+                .rasterMode = desc.sceneRasterMode,
+                .sceneRevision = extraction.revision(),
+            };
+            if (extraction.drawItems().empty()) {
+                return;
+            }
+
+            const BasicDrawPacketContext& context = extraction.drawItems().front().context;
+            receipt.hasResolved = true;
+            receipt.representativeSourceEntityIndex = context.sourceObject.index;
+            receipt.representativeSourceEntityGeneration = context.sourceObject.generation;
+            receipt.meshResourceKey = context.meshResource.value;
+            receipt.materialResourceKey = context.materialResource.value;
+            receipt.productHash = 0x0EB29D6DE539D278ULL;
+            for (const EditorSharedViewportAuthoredMeshSnapshot& source : desc.authoredMeshes) {
+                if (source.runtimeEntityIndex != receipt.representativeSourceEntityIndex ||
+                    source.runtimeEntityGeneration !=
+                        receipt.representativeSourceEntityGeneration) {
+                    continue;
+                }
+                receipt.representativeObjectId = source.objectId;
+                receipt.representativeAssetId = source.assetId;
+                return;
+            }
+        }
+
+        void configureSceneCameraAndOverlay(EditorSharedViewportPresentDesc desc,
+                                            BasicRenderViewDesc& view,
+                                            std::vector<BasicDebugWorldLine>& debugLines) {
+            if (!desc.hasScene) {
+                return;
+            }
+
+            const EditorViewportCamera camera =
+                desc.hasCamera ? editorViewportCameraForExtent(desc.camera, desc.logicalExtent)
+                               : defaultEditorSceneViewCamera(desc.logicalExtent);
+            view.camera = BasicRenderViewCamera{
+                .view = camera.view,
+                .projection = camera.projection,
+                .viewProjection = camera.viewProjection,
+                .position = camera.position,
+                .nearPlane = camera.nearPlane,
+                .farPlane = camera.farPlane,
+            };
+            if (desc.kind == EditorViewportKind::Scene) {
+                debugLines.assign(kMinimalSceneAxes.begin(), kMinimalSceneAxes.end());
+                debugLines.reserve(debugLines.size() + (desc.debugProxies.size() * 3U));
+                for (const EditorSharedViewportDebugProxy& proxy : desc.debugProxies) {
+                    appendDebugProxyAxes(debugLines, proxy);
+                }
+            }
+            view.overlay = BasicRenderViewOverlayDesc{
+                .enabled = desc.kind == EditorViewportKind::Scene,
+                .worldGrid =
+                    BasicRenderViewWorldGridDesc{
+                        .enabled = desc.kind == EditorViewportKind::Scene,
+                        .planeY = 0.0F,
+                        .minorSpacing = 1.0F,
+                        .majorSpacing = 10.0F,
+                        .fadeStart = 12.0F,
+                        .fadeEnd = 80.0F,
+                        .opacity = 0.72F,
+                        .color = {0.36F, 0.39F, 0.44F, 1.0F},
+                    },
+                .debugWorldLines = std::span<const BasicDebugWorldLine>{debugLines},
+            };
+        }
+
         [[nodiscard]] Result<void>
         recordSharedViewportFrame(VkQueue graphicsQueue, BasicFullscreenTextureRenderer& renderer,
                                   EditorSharedViewportFrameEpochTracker& frameEpochTracker,
@@ -451,43 +596,21 @@ namespace asharia::editor {
             view.viewKind = *viewKind;
             view.frameParams = frameParams;
             view.viewName = desc.panelId.empty() ? "Studio Viewport" : desc.panelId;
+            const scene_rendering::SceneMeshExtraction extraction = extractAuthoredMeshes(desc);
+            EditorSharedViewportSceneMeshReceipt& receipt = state.sceneMeshReceipt;
+            populateSceneMeshReceipt(desc, extraction, receipt);
+            view.scene = BasicRenderViewSceneDesc{
+                .sourceRevision = extraction.revision(),
+                .drawItems = extraction.drawItems(),
+                .rasterMode = basicRasterMode(desc.sceneRasterMode),
+            };
             std::vector<BasicDebugWorldLine> debugLines;
-            if (desc.hasScene) {
-                const EditorViewportCamera camera =
-                    desc.hasCamera ? editorViewportCameraForExtent(desc.camera, desc.logicalExtent)
-                                   : defaultEditorSceneViewCamera(desc.logicalExtent);
-                view.camera = BasicRenderViewCamera{
-                    .view = camera.view,
-                    .projection = camera.projection,
-                    .viewProjection = camera.viewProjection,
-                    .position = camera.position,
-                    .nearPlane = camera.nearPlane,
-                    .farPlane = camera.farPlane,
-                };
-                if (desc.kind == EditorViewportKind::Scene) {
-                    debugLines.assign(kMinimalSceneAxes.begin(), kMinimalSceneAxes.end());
-                    debugLines.reserve(debugLines.size() + (desc.debugProxies.size() * 3U));
-                    for (const EditorSharedViewportDebugProxy& proxy : desc.debugProxies) {
-                        appendDebugProxyAxes(debugLines, proxy);
-                    }
-                }
-                view.overlay = BasicRenderViewOverlayDesc{
-                    .enabled = desc.kind == EditorViewportKind::Scene,
-                    .worldGrid =
-                        BasicRenderViewWorldGridDesc{
-                            .enabled = desc.kind == EditorViewportKind::Scene,
-                            .planeY = 0.0F,
-                            .minorSpacing = 1.0F,
-                            .majorSpacing = 10.0F,
-                            .fadeStart = 12.0F,
-                            .fadeEnd = 80.0F,
-                            .opacity = 0.72F,
-                            .color = {0.36F, 0.39F, 0.44F, 1.0F},
-                        },
-                    .debugWorldLines = std::span<const BasicDebugWorldLine>{debugLines},
-                };
-            }
+            configureSceneCameraAndOverlay(desc, view, debugLines);
 
+            BasicRenderViewDiagnostics diagnostics;
+            if (desc.captureSceneMeshEvidence) {
+                view.diagnostics = &diagnostics;
+            }
             auto recorded =
                 renderer.recordViewFrame(frame, view, *state.frameResources,
                                          state.transientImagePool, state.transientImages);
@@ -497,6 +620,11 @@ namespace asharia::editor {
                     logError("Shared viewport command buffer could not end after record failure.");
                 }
                 return std::unexpected{std::move(recorded.error())};
+            }
+            if (desc.captureSceneMeshEvidence) {
+                receipt.evidenceAvailable = true;
+                receipt.indexedDrawCount =
+                    static_cast<std::uint32_t>(diagnostics.scene.indexedDrawCount);
             }
 
             if (hasFlashSentinel(desc)) {

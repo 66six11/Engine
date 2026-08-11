@@ -735,7 +735,7 @@ namespace asharia::sample_viewer {
 
             const std::optional<std::uint32_t> targetResource = accessResourceIndex(
                 diagnostics, scenePass->passIndex, "target", RenderGraphResourceKind::Image,
-                RenderGraphSlotAccess::ColorWrite);
+                RenderGraphSlotAccess::ColorReadWrite);
             const std::optional<std::uint32_t> depthResource = accessResourceIndex(
                 diagnostics, scenePass->passIndex, "depth", RenderGraphResourceKind::Image,
                 RenderGraphSlotAccess::DepthAttachmentWrite);

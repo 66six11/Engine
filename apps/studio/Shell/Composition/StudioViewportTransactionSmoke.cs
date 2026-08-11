@@ -36,6 +36,10 @@ internal static class StudioViewportTransactionSmoke
             string.Equals(
                 argument,
                 StudioViewportTransactionWindowResizeSmoke.CommandLineSwitch,
+                StringComparison.Ordinal) ||
+            string.Equals(
+                argument,
+                StudioSceneMeshSmoke.CommandLineSwitch,
                 StringComparison.Ordinal));
 
     public static Task RunAsync(
@@ -85,6 +89,12 @@ internal static class StudioViewportTransactionSmoke
                 StringComparer.Ordinal))
         {
             return StudioViewportTransactionWindowResizeSmoke.RunAsync(desktop, arguments);
+        }
+        if (arguments.Contains(
+                StudioSceneMeshSmoke.CommandLineSwitch,
+                StringComparer.Ordinal))
+        {
+            return StudioSceneMeshSmoke.RunAsync(desktop);
         }
 
         throw new InvalidOperationException(

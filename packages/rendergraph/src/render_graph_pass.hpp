@@ -14,6 +14,7 @@ namespace asharia::rendergraph_internal {
         std::string paramsType;
         std::vector<std::byte> paramsData;
         std::vector<RenderGraphImageSlot> colorWriteSlots;
+        std::vector<RenderGraphImageSlot> colorReadWriteSlots;
         std::vector<RenderGraphImageSlot> shaderReadSlots;
         std::vector<RenderGraphImageSlot> depthReadSlots;
         std::vector<RenderGraphImageSlot> depthWriteSlots;

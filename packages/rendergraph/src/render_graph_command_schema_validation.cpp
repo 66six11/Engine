@@ -43,6 +43,7 @@ namespace asharia {
         [[nodiscard]] bool clearColorSlotExists(const rendergraph_internal::Pass& pass,
                                                 std::string_view name) {
             return imageSlotExists(pass.colorWriteSlots, name) ||
+                   imageSlotExists(pass.colorReadWriteSlots, name) ||
                    imageSlotExists(pass.transferWriteSlots, name);
         }
 
@@ -73,7 +74,7 @@ namespace asharia {
             case RenderGraphCommandKind::ClearColor:
                 if (!clearColorSlotExists(pass, command.name)) {
                     return invalidCommandSlot(pass, command, command.name,
-                                              "ColorWrite or TransferWrite image slot");
+                                              "ColorWrite, ColorReadWrite, or TransferWrite image slot");
                 }
                 break;
             case RenderGraphCommandKind::FillBuffer:

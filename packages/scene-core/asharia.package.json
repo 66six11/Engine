@@ -10,7 +10,7 @@
   "version": "0.1.0",
   "displayName": "Asharia Engine Scene Core",
   "description": "Headless scene world, canonical scene-document persistence, revisioned editing, and narrow native adapters.",
-  "dependencies": ["com.asharia.core", "com.asharia.archive"],
+  "dependencies": ["com.asharia.core", "com.asharia.archive", "com.asharia.asset-core"],
   "targets": ["asharia-scene-core", "asharia-scene-core-io", "asharia-scene-native"],
   "testTargets": [
     "asharia-scene-core-smoke-tests",
@@ -34,7 +34,7 @@
     "asharia-scene-native-c-smoke-tests": "test"
   },
   "targetDependencies": {
-    "asharia-scene-core": ["asharia-core"],
+    "asharia-scene-core": ["asharia-asset-core", "asharia-core"],
     "asharia-scene-core-io": ["asharia-scene-core", "asharia-archive"],
     "asharia-scene-native": ["asharia-scene-core", "asharia-scene-core-io"],
     "asharia-scene-core-smoke-tests": ["asharia-scene-core"],

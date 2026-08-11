@@ -1603,7 +1603,7 @@ namespace {
             });
         graph.addPass("BenchDepthDraw", asharia::kBasicRasterDepthTrianglePassType)
             .setParamsType(asharia::kBasicRasterDepthTriangleParamsType)
-            .writeColor("target", sceneColor)
+            .readWriteColor("target", sceneColor)
             .writeDepth("depth", depth);
         graph.addPass("BenchComposite", asharia::kBasicRasterFullscreenPassType)
             .setParams(asharia::kBasicRasterFullscreenParamsType,
@@ -4225,6 +4225,20 @@ namespace {
             asharia::logError("Fullscreen texture smoke did not record a debug-line overlay pass.");
             return false;
         }
+        const auto overlayTargetAccess = std::ranges::find_if(
+            diagnostics.renderGraph.accessEdges,
+            [passIndex = overlayPass->passIndex](
+                const asharia::RenderGraphDiagnosticsAccessEdge& edge) {
+                return edge.passIndex == passIndex && edge.resourceKind ==
+                                                          asharia::RenderGraphResourceKind::Image &&
+                       edge.slotName == "target" &&
+                       edge.access == asharia::RenderGraphSlotAccess::ColorReadWrite;
+            });
+        if (overlayTargetAccess == diagnostics.renderGraph.accessEdges.end()) {
+            asharia::logError(
+                "Fullscreen texture smoke did not expose the overlay target as ColorReadWrite.");
+            return false;
+        }
         const auto drawLines = std::ranges::find_if(
             diagnostics.executionEvents, [](const asharia::BasicRenderViewExecutionEvent& event) {
                 return event.kind == asharia::BasicRenderViewExecutionEventKind::Draw &&
@@ -4678,6 +4692,21 @@ namespace {
                                  });
         if (gridPass == diagnostics.renderGraph.passes.end()) {
             asharia::logError("RenderView grid readback smoke did not record the world-grid pass.");
+            return false;
+        }
+        const auto gridTargetAccess = std::ranges::find_if(
+            diagnostics.renderGraph.accessEdges,
+            [passIndex = gridPass->passIndex](
+                const asharia::RenderGraphDiagnosticsAccessEdge& edge) {
+                return edge.passIndex == passIndex && edge.resourceKind ==
+                                                          asharia::RenderGraphResourceKind::Image &&
+                       edge.slotName == "target" &&
+                       edge.access == asharia::RenderGraphSlotAccess::ColorReadWrite;
+            });
+        if (gridTargetAccess == diagnostics.renderGraph.accessEdges.end()) {
+            asharia::logError(
+                "RenderView grid readback smoke did not expose the grid target as "
+                "ColorReadWrite.");
             return false;
         }
 
@@ -5967,7 +5996,7 @@ namespace {
                 .name = "BuiltinSchemaColorTarget",
                 .format = asharia::RenderGraphImageFormat::B8G8R8A8Srgb,
                 .extent = asharia::RenderGraphExtent2D{.width = 16, .height = 16},
-                .initialState = asharia::RenderGraphImageState::Undefined,
+                .initialState = asharia::RenderGraphImageState::ColorAttachment,
                 .finalState = asharia::RenderGraphImageState::Present,
             }),
             .colorTarget1 = graph.importImage(asharia::RenderGraphImageDesc{
@@ -6053,6 +6082,14 @@ namespace {
         }
     }
 
+    void readWriteColorSlotUnlessOmitted(asharia::RenderGraph::PassBuilder& pass,
+                                         std::string_view omittedSlot, std::string_view slot,
+                                         asharia::RenderGraphImageHandle image) {
+        if (omittedSlot != slot) {
+            pass.readWriteColor(std::string{slot}, image);
+        }
+    }
+
     void readTextureSlotUnlessOmitted(asharia::RenderGraph::PassBuilder& pass,
                                       std::string_view omittedSlot, std::string_view slot,
                                       asharia::RenderGraphImageHandle image) {
@@ -6096,13 +6133,15 @@ namespace {
             writeTransferSlotUnlessOmitted(pass, omittedSlot, "target", images.colorTarget);
             break;
         case BuiltinSchemaSmokePass::DynamicClear:
+            writeColorSlotUnlessOmitted(pass, omittedSlot, "target", images.colorTarget);
+            break;
         case BuiltinSchemaSmokePass::RasterTriangle:
         case BuiltinSchemaSmokePass::RenderViewWorldGrid:
         case BuiltinSchemaSmokePass::RenderViewOverlay:
-            writeColorSlotUnlessOmitted(pass, omittedSlot, "target", images.colorTarget);
+            readWriteColorSlotUnlessOmitted(pass, omittedSlot, "target", images.colorTarget);
             break;
         case BuiltinSchemaSmokePass::RenderViewSceneMesh:
-            writeColorSlotUnlessOmitted(pass, omittedSlot, "target", images.colorTarget);
+            readWriteColorSlotUnlessOmitted(pass, omittedSlot, "target", images.colorTarget);
             writeDepthSlotUnlessOmitted(pass, omittedSlot, "depth", images.depthTarget);
             if (omittedSlot != "vertices") {
                 pass.readVertexBuffer("vertices", images.vertexTarget);
@@ -6118,7 +6157,7 @@ namespace {
         case BuiltinSchemaSmokePass::RasterDepthTriangle:
         case BuiltinSchemaSmokePass::RasterMesh3D:
         case BuiltinSchemaSmokePass::RasterDrawList:
-            writeColorSlotUnlessOmitted(pass, omittedSlot, "target", images.colorTarget);
+            readWriteColorSlotUnlessOmitted(pass, omittedSlot, "target", images.colorTarget);
             writeDepthSlotUnlessOmitted(pass, omittedSlot, "depth", images.depthTarget);
             break;
         case BuiltinSchemaSmokePass::RasterMrt:
@@ -6167,6 +6206,17 @@ namespace {
 
     bool validateBuiltinSchemaSmokeCase(const asharia::RenderGraphSchemaRegistry& builtinSchemas,
                                         const BuiltinSchemaSmokeCase& testCase) {
+        auto valid = compileBuiltinSchemaSmokePass(testCase, builtinSchemas,
+                                                   BuiltinSchemaSmokeCompileOptions{
+                                                       .paramsType = testCase.paramsType,
+                                                       .omittedSlot = {},
+                                                       .addUnexpectedSlot = false,
+                                                   });
+        if (!valid) {
+            asharia::logError("Builtin schema smoke rejected valid pass '" +
+                              std::string{testCase.context} + "': " + valid.error().message);
+            return false;
+        }
         if (!testCase.missingSlot.empty()) {
             if (!expectRenderGraphCompileFailure(
                     compileBuiltinSchemaSmokePass(testCase, builtinSchemas,
@@ -6336,6 +6386,34 @@ namespace {
                 .context = "builtin debug image copy",
             },
         };
+
+        constexpr std::array<std::string_view, 7> kColorLoadPassTypes{
+            asharia::kBasicRasterTrianglePassType,
+            asharia::kBasicRasterDepthTrianglePassType,
+            asharia::kBasicRasterMesh3DPassType,
+            asharia::kBasicRenderViewWorldGridPassType,
+            asharia::kBasicRenderViewSceneMeshPassType,
+            asharia::kBasicRenderViewOverlayPassType,
+            asharia::kBasicRasterDrawListPassType,
+        };
+        for (const std::string_view passType : kColorLoadPassTypes) {
+            const asharia::RenderGraphPassSchema* schema = builtinSchemas.find(passType);
+            if (schema == nullptr) {
+                asharia::logError("Builtin schema smoke could not find color LOAD pass type '" +
+                                  std::string{passType} + "'.");
+                return false;
+            }
+            const auto target = std::ranges::find_if(
+                schema->resourceSlots, [](const asharia::RenderGraphResourceSlotSchema& slot) {
+                    return slot.name == "target";
+                });
+            if (target == schema->resourceSlots.end() ||
+                target->access != asharia::RenderGraphSlotAccess::ColorReadWrite) {
+                asharia::logError("Builtin color LOAD pass '" + std::string{passType} +
+                                  "' did not declare a ColorReadWrite target.");
+                return false;
+            }
+        }
 
         return std::ranges::all_of(
             builtinCases, [&builtinSchemas](const BuiltinSchemaSmokeCase& testCase) {
@@ -7371,6 +7449,37 @@ namespace {
     }
 
     int runSmokeRenderGraph() {
+        constexpr asharia::RenderGraphImageHandle kLoadTarget{.index = 42};
+        const std::array loadSlots{
+            asharia::RenderGraphImageSlot{
+                .name = "target",
+                .image = kLoadTarget,
+                .shaderStage = asharia::RenderGraphShaderStage::None,
+            },
+        };
+        const std::array loadBindings{
+            asharia::VulkanRenderGraphImageBinding{
+                .image = kLoadTarget,
+                .vulkanImage = VK_NULL_HANDLE,
+                .vulkanImageView = VK_NULL_HANDLE,
+                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                .debugName = "LoadTarget",
+            },
+        };
+        asharia::RenderGraphPassContext loadContext{};
+        loadContext.name = "ColorLoad";
+        loadContext.type = "basic.color-load";
+        loadContext.colorReadWriteSlots = loadSlots;
+        const std::string loadLabel =
+            asharia::renderGraphPassDebugLabel(loadContext, loadBindings);
+        if (loadLabel !=
+            "RG Pass: ColorLoad [basic.color-load] colorReadWrite.target=LoadTarget") {
+            asharia::logError(
+                "RenderGraph smoke omitted the ColorReadWrite slot from the Vulkan debug label: " +
+                loadLabel);
+            return EXIT_FAILURE;
+        }
+
         asharia::RenderGraph graph;
         const auto backbuffer = graph.importImage(asharia::RenderGraphImageDesc{
             .name = "Backbuffer",

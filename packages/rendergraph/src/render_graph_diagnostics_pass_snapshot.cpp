@@ -180,6 +180,9 @@ namespace asharia::rendergraph_internal {
             appendImageAccessEdges(declarations, snapshot, passIndex, pass,
                                    RenderGraphSlotAccess::ColorWrite, pass.colorWriteSlots);
             appendImageAccessEdges(declarations, snapshot, passIndex, pass,
+                                   RenderGraphSlotAccess::ColorReadWrite,
+                                   pass.colorReadWriteSlots);
+            appendImageAccessEdges(declarations, snapshot, passIndex, pass,
                                    RenderGraphSlotAccess::ShaderRead, pass.shaderReadSlots);
             appendImageAccessEdges(declarations, snapshot, passIndex, pass,
                                    RenderGraphSlotAccess::DepthAttachmentRead, pass.depthReadSlots);

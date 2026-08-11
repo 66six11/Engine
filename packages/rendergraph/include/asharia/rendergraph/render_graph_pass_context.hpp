@@ -22,6 +22,7 @@ namespace asharia {
         std::span<const RenderGraphCommand> commands;
         std::span<const RenderGraphImageTransition> transitionsBefore;
         std::span<const RenderGraphImageHandle> colorWrites;
+        std::span<const RenderGraphImageHandle> colorReadWrites;
         std::span<const RenderGraphImageHandle> shaderReads;
         std::span<const RenderGraphImageHandle> depthReads;
         std::span<const RenderGraphImageHandle> depthWrites;
@@ -35,6 +36,7 @@ namespace asharia {
         std::span<const RenderGraphBufferHandle> bufferWrites;
         std::span<const RenderGraphBufferHandle> bufferStorageReadWrites;
         std::span<const RenderGraphImageSlot> colorWriteSlots;
+        std::span<const RenderGraphImageSlot> colorReadWriteSlots;
         std::span<const RenderGraphImageSlot> shaderReadSlots;
         std::span<const RenderGraphImageSlot> depthReadSlots;
         std::span<const RenderGraphImageSlot> depthWriteSlots;

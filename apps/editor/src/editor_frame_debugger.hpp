@@ -71,6 +71,7 @@ namespace asharia::editor {
     struct EditorFrameDebugCapture {
         int frameIndex{};
         std::uint64_t submittedFrameEpoch{};
+        std::uint64_t sourceRevision{};
         EditorViewportKind viewKind{EditorViewportKind::Scene};
         EditorExtent2D requestedExtent;
         asharia::BasicRenderViewDiagnostics diagnostics;

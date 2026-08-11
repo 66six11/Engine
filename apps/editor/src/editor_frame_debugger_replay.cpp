@@ -60,6 +60,7 @@ namespace asharia::editor {
                                               asharia::RenderGraphSlotAccess preferredAccess) {
             return access == preferredAccess &&
                    (access == asharia::RenderGraphSlotAccess::ColorWrite ||
+                    access == asharia::RenderGraphSlotAccess::ColorReadWrite ||
                     access == asharia::RenderGraphSlotAccess::TransferWrite);
         }
 
@@ -74,6 +75,7 @@ namespace asharia::editor {
             bool hasImageOutput = false;
             constexpr std::array kPreferredOutputAccess{
                 asharia::RenderGraphSlotAccess::ColorWrite,
+                asharia::RenderGraphSlotAccess::ColorReadWrite,
                 asharia::RenderGraphSlotAccess::TransferWrite,
             };
             for (const asharia::RenderGraphSlotAccess preferredAccess : kPreferredOutputAccess) {

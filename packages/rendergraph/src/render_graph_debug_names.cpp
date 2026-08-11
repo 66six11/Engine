@@ -23,6 +23,8 @@ namespace asharia::rendergraph_internal {
         switch (state) {
         case RenderGraphImageState::ColorAttachment:
             return "ColorAttachment";
+        case RenderGraphImageState::ColorReadWrite:
+            return "ColorReadWrite";
         case RenderGraphImageState::ShaderRead:
             return "ShaderRead";
         case RenderGraphImageState::DepthAttachmentRead:

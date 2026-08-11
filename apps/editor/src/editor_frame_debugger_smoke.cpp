@@ -59,6 +59,7 @@ namespace asharia::editor {
 
         [[nodiscard]] bool isPreviewableWriteAccess(asharia::RenderGraphSlotAccess access) {
             return access == asharia::RenderGraphSlotAccess::ColorWrite ||
+                   access == asharia::RenderGraphSlotAccess::ColorReadWrite ||
                    access == asharia::RenderGraphSlotAccess::TransferWrite;
         }
 
@@ -272,9 +273,12 @@ namespace asharia::editor {
         constexpr std::uint32_t kProjectedSceneFirstIndex = 5U;
         constexpr std::int32_t kProjectedSceneVertexOffset = -2;
         constexpr std::uint32_t kProjectedSceneFirstInstance = 9U;
+        constexpr std::uint64_t kProjectedSceneSourceRevision = 0x1234U;
 
         [[nodiscard]] asharia::BasicRenderViewExecutionEventId
         appendSceneDrawProjectionFixture(EditorFrameDebugCapture& capture) {
+            capture.sourceRevision = kProjectedSceneSourceRevision;
+            capture.diagnostics.scene.sourceRevision = kProjectedSceneSourceRevision;
             asharia::RenderGraphDiagnosticsSnapshot& graph = capture.diagnostics.renderGraph;
             const std::size_t scenePassIndex = graph.passes.size();
             const std::size_t sceneDeclarationIndex = graph.declaredPassCount;
@@ -295,7 +299,7 @@ namespace asharia::editor {
             color.imageFormat = asharia::RenderGraphImageFormat::B8G8R8A8Srgb;
             color.imageExtent.width = capture.requestedExtent.width;
             color.imageExtent.height = capture.requestedExtent.height;
-            color.imageFinalAccess.state = asharia::RenderGraphImageState::ColorAttachment;
+            color.imageFinalAccess.state = asharia::RenderGraphImageState::ColorReadWrite;
             graph.resources.push_back(std::move(color));
 
             asharia::RenderGraphDiagnosticsResourceNode depth;
@@ -334,7 +338,7 @@ namespace asharia::editor {
             colorAccess.resourceIndex = kProjectedSceneColorResourceIndex;
             colorAccess.resourceName = "SceneMeshColor";
             colorAccess.slotName = "color";
-            colorAccess.access = asharia::RenderGraphSlotAccess::ColorWrite;
+            colorAccess.access = asharia::RenderGraphSlotAccess::ColorReadWrite;
             graph.accessEdges.push_back(std::move(colorAccess));
 
             asharia::RenderGraphDiagnosticsAccessEdge depthAccess;
@@ -548,8 +552,8 @@ namespace asharia::editor {
                 requiredArrayMember(root, "executionEvents");
             const asharia::archive::ArchiveValue* preview =
                 requiredObjectMember(root, "preview");
-            if (!requiredIntegerMemberEquals(root, "schemaVersion", 1) ||
-                !requiredIntegerMemberEquals(root, "version", 1) ||
+            if (!requiredIntegerMemberEquals(root, "schemaVersion", 2) ||
+                !requiredIntegerMemberEquals(root, "version", 2) ||
                 !requiredStringMemberEquals(root, "state", "PausedFrameDebug") ||
                 captureJson == nullptr || passes == nullptr || resources == nullptr ||
                 events == nullptr || preview == nullptr) {
@@ -562,6 +566,9 @@ namespace asharia::editor {
                 !requiredIntegerMemberEquals(
                     *captureJson, "submittedFrameEpoch",
                     static_cast<std::int64_t>(projectionCapture.submittedFrameEpoch)) ||
+                !requiredIntegerMemberEquals(
+                    *captureJson, "sourceRevision",
+                    static_cast<std::int64_t>(kProjectedSceneSourceRevision)) ||
                 !requiredStringMemberEquals(*captureJson, "viewKind", "Scene")) {
                 asharia::logError(
                     "Editor frame debugger smoke wrote an incomplete Studio capture snapshot.");
@@ -681,11 +688,16 @@ namespace asharia::editor {
             asharia::logError("Editor frame debugger smoke did not keep a captured snapshot.");
             return false;
         }
+        if (capture->sourceRevision != capture->diagnostics.scene.sourceRevision) {
+            asharia::logError(
+                "Editor frame debugger smoke did not retain the captured source revision.");
+            return false;
+        }
         if (capture->diagnostics.renderGraph.passes.size() != 3 ||
             capture->diagnostics.renderGraph.resources.size() != 2 ||
             capture->diagnostics.renderGraph.accessEdges.size() != 4 ||
-            capture->diagnostics.renderGraph.dependencyEdges.size() != 2 ||
-            capture->diagnostics.renderGraph.transitions.size() != 4) {
+            capture->diagnostics.renderGraph.dependencyEdges.size() != 3 ||
+            capture->diagnostics.renderGraph.transitions.size() != 5) {
             asharia::logError(
                 "Editor frame debugger smoke captured unexpected RenderGraph diagnostics: passes " +
                 std::to_string(capture->diagnostics.renderGraph.passes.size()) + ", resources " +

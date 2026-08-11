@@ -77,6 +77,8 @@ namespace asharia::editor {
             switch (access) {
             case asharia::RenderGraphSlotAccess::ColorWrite:
                 return "ColorWrite";
+            case asharia::RenderGraphSlotAccess::ColorReadWrite:
+                return "ColorReadWrite";
             case asharia::RenderGraphSlotAccess::ShaderRead:
                 return "ShaderRead";
             case asharia::RenderGraphSlotAccess::DepthAttachmentRead:
@@ -620,6 +622,11 @@ namespace asharia::editor {
             const EditorFrameDebugPreview& preview) {
             static_cast<void>(status);
             static_cast<void>(snapshot);
+
+            const std::string sourceRevisionText =
+                "Scene revision: " + std::to_string(capture.sourceRevision);
+            ImGui::TextUnformatted(sourceRevisionText.c_str());
+            ImGui::Separator();
 
             const float availableWidth = std::max(1.0F, ImGui::GetContentRegionAvail().x);
             float eventListWidth = std::clamp(availableWidth * kEventListWidthRatio,

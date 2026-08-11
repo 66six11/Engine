@@ -169,6 +169,7 @@ public sealed class ViewportSessionTests
             savedRevision: 2,
             original.Entities.Select(entity => new SceneEntitySnapshot(
                 entity.ObjectId,
+                entity.RuntimeEntityId,
                 entity.Name,
                 new TransformValue(new Float3(3, 2, 1), Quaternion.Identity, Float3.One))));
         session.SynchronizeDocument(updated);
@@ -358,7 +359,7 @@ public sealed class ViewportSessionTests
     }
 
     [Fact]
-    public void V5_publish_does_not_wait_for_an_older_frame_completion()
+    public void V6_publish_does_not_wait_for_an_older_frame_completion()
     {
         var session = new ViewportSession(
             ViewportSessionId.Create(),
@@ -379,7 +380,7 @@ public sealed class ViewportSessionTests
     }
 
     [Fact]
-    public void V5_rejected_publish_restores_its_invalidation_reasons()
+    public void V6_rejected_publish_restores_its_invalidation_reasons()
     {
         var session = new ViewportSession(
             ViewportSessionId.Create(),
@@ -424,12 +425,65 @@ public sealed class ViewportSessionTests
             1000.0f));
     }
 
+    [Fact]
+    public void Oversized_authored_mesh_snapshot_does_not_partially_advance_the_session()
+    {
+        var sceneId = Guid.NewGuid();
+        var originalObjectId = Guid.NewGuid();
+        var original = new SceneDocumentSnapshot(
+            sceneId,
+            "C:\\Projects\\Sample\\Assets\\Scenes\\Default.asharia.scene.json",
+            revision: 1,
+            savedRevision: 1,
+            [
+                new SceneEntitySnapshot(
+                    originalObjectId,
+                    new EntityId(1, 1),
+                    "Original mesh",
+                    TransformValue.Identity,
+                    SceneMeshReference.DirectionalWedgeValidation),
+            ]);
+        var session = new ViewportSession(
+            ViewportSessionId.Create(),
+            ViewportRenderKind.Scene,
+            original,
+            ViewportCameraSnapshot.DefaultScene);
+        var size = new ViewportRenderSize(
+            new ViewportExtent(640, 360),
+            new ViewportExtent(640, 360));
+        Assert.True(session.TryPublishLatest(size, out var first));
+        Assert.Equal(originalObjectId, Assert.Single(first.AuthoredMeshes).ObjectId);
+
+        var oversized = new SceneDocumentSnapshot(
+            sceneId,
+            original.Path,
+            revision: 2,
+            savedRevision: 1,
+            Enumerable.Range(0, ViewportRenderRequest.MaximumAuthoredMeshCount + 1)
+                .Select(index => new SceneEntitySnapshot(
+                    Guid.NewGuid(),
+                    new EntityId(checked((uint)index) + 1U, 1U),
+                    $"Mesh {index}",
+                    TransformValue.Identity,
+                    SceneMeshReference.DirectionalWedgeValidation)));
+
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            session.SynchronizeDocument(oversized));
+
+        Assert.Equal(original.Revision, session.Current.TargetRevision);
+        session.Invalidate(ViewportInvalidationReason.TargetChanged);
+        Assert.True(session.TryPublishLatest(size, out var retained));
+        Assert.Equal(original.Revision, retained.TargetRevision);
+        Assert.Equal(originalObjectId, Assert.Single(retained.AuthoredMeshes).ObjectId);
+    }
+
     private static SceneDocumentSnapshot Document(ulong revision, int entityCount)
     {
         var sceneId = Guid.NewGuid();
         var entities = Enumerable.Range(0, entityCount)
             .Select(index => new SceneEntitySnapshot(
                 Guid.NewGuid(),
+                new EntityId(checked((uint)index + 1U), 1U),
                 $"Entity {index}",
                 new TransformValue(
                     new Float3(index, 0, 0),

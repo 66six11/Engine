@@ -51,6 +51,12 @@ namespace asharia {
                     return added;
                 }
             }
+            for (const RenderGraphImageSlot& slot : pass.colorReadWriteSlots) {
+                auto added = addName(slot.name);
+                if (!added) {
+                    return added;
+                }
+            }
             for (const RenderGraphImageSlot& slot : pass.shaderReadSlots) {
                 auto added = addName(slot.name);
                 if (!added) {

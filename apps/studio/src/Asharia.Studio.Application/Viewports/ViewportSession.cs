@@ -15,6 +15,8 @@ public sealed class ViewportSession
     private ViewportCameraSnapshot camera_;
     private ViewportDebugProxySnapshot[] debugProxies_;
     private int totalDebugProxyCount_;
+    private ViewportAuthoredMeshSnapshot[] authoredMeshes_;
+    private ViewportSceneRasterMode sceneRasterMode_ = ViewportSceneRasterMode.Solid;
     private ViewportRenderSize? lastRenderSize_;
     private ViewportInvalidationReason pendingReasons_ = ViewportInvalidationReason.InitialFrame;
     private ulong lastSequence_;
@@ -49,6 +51,7 @@ public sealed class ViewportSession
         targetRevision_ = document.Revision;
         camera_ = camera;
         (debugProxies_, totalDebugProxyCount_) = CaptureDebugProxies(document);
+        authoredMeshes_ = CaptureAuthoredMeshes(document);
     }
 
     public ViewportSessionSnapshot Current
@@ -86,8 +89,12 @@ public sealed class ViewportSession
                     "Viewport document revisions must advance monotonically.");
             }
 
+            var (nextDebugProxies, nextTotalDebugProxyCount) = CaptureDebugProxies(document);
+            var nextAuthoredMeshes = CaptureAuthoredMeshes(document);
             targetRevision_ = document.Revision;
-            (debugProxies_, totalDebugProxyCount_) = CaptureDebugProxies(document);
+            debugProxies_ = nextDebugProxies;
+            totalDebugProxyCount_ = nextTotalDebugProxyCount;
+            authoredMeshes_ = nextAuthoredMeshes;
             requestRefresh = InvalidateLocked(
                 ViewportInvalidationReason.TargetChanged,
                 advancePresentationFence: true);
@@ -110,6 +117,29 @@ public sealed class ViewportSession
             camera_ = camera;
             requestRefresh = InvalidateLocked(
                 ViewportInvalidationReason.CameraChanged,
+                advancePresentationFence: true);
+        }
+        RaiseRefreshRequested(requestRefresh);
+    }
+
+    public void SetSceneRasterMode(ViewportSceneRasterMode rasterMode)
+    {
+        if (!Enum.IsDefined(rasterMode))
+        {
+            throw new ArgumentOutOfRangeException(nameof(rasterMode), rasterMode, null);
+        }
+
+        var requestRefresh = false;
+        lock (gate_)
+        {
+            ThrowIfClosed();
+            if (sceneRasterMode_ == rasterMode)
+            {
+                return;
+            }
+            sceneRasterMode_ = rasterMode;
+            requestRefresh = InvalidateLocked(
+                ViewportInvalidationReason.TargetChanged,
                 advancePresentationFence: true);
         }
         RaiseRefreshRequested(requestRefresh);
@@ -179,7 +209,9 @@ public sealed class ViewportSession
                 camera_,
                 reasons,
                 debugProxies_,
-                totalDebugProxyCount_);
+                totalDebugProxyCount_,
+                authoredMeshes_,
+                sceneRasterMode_);
             return true;
         }
     }
@@ -224,7 +256,9 @@ public sealed class ViewportSession
                 camera_,
                 reasons,
                 debugProxies_,
-                totalDebugProxyCount_);
+                totalDebugProxyCount_,
+                authoredMeshes_,
+                sceneRasterMode_);
             return true;
         }
     }
@@ -324,6 +358,26 @@ public sealed class ViewportSession
             .Select(entity => new ViewportDebugProxySnapshot(entity.ObjectId, entity.Transform))
             .ToArray();
         return (proxies, document.Entities.Count);
+    }
+
+    private static ViewportAuthoredMeshSnapshot[] CaptureAuthoredMeshes(
+        SceneDocumentSnapshot document)
+    {
+        var meshes = document.Entities
+        .Where(entity => entity.Mesh is not null)
+        .Select(entity => new ViewportAuthoredMeshSnapshot(
+            entity.ObjectId,
+            entity.RuntimeEntityId,
+            entity.Mesh!.Value.AssetId,
+            entity.Transform))
+        .ToArray();
+        if (meshes.Length > ViewportRenderRequest.MaximumAuthoredMeshCount)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(document),
+                $"Viewport authored mesh count exceeds {ViewportRenderRequest.MaximumAuthoredMeshCount}.");
+        }
+        return meshes;
     }
 
     private ViewportSessionSnapshot SnapshotLocked() => new(

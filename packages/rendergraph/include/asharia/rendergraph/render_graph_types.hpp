@@ -37,6 +37,7 @@ namespace asharia {
     enum class RenderGraphImageState {
         Undefined,
         ColorAttachment,
+        ColorReadWrite,
         ShaderRead,
         DepthAttachmentRead,
         DepthAttachmentWrite,
@@ -142,6 +143,7 @@ namespace asharia {
 
     enum class RenderGraphSlotAccess {
         ColorWrite,
+        ColorReadWrite,
         ShaderRead,
         DepthAttachmentRead,
         DepthAttachmentWrite,

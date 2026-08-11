@@ -76,11 +76,13 @@ namespace asharia {
     };
 
     struct BasicRenderViewSceneDesc {
+        std::uint64_t sourceRevision{};
         std::span<const BasicDrawListItem> drawItems{};
         BasicSceneRasterMode rasterMode{BasicSceneRasterMode::Solid};
     };
 
     struct BasicRenderViewSceneDiagnostics {
+        std::uint64_t sourceRevision{};
         std::uint64_t drawItemCount{};
         std::uint64_t indexedDrawCount{};
         BasicSceneRasterMode rasterMode{BasicSceneRasterMode::Solid};

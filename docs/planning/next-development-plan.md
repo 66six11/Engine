@@ -10,8 +10,8 @@
 
 - 已有 package-first 基线：`rendergraph` 后端无关，`rhi-vulkan` 不依赖 RenderGraph，Vulkan/RG 翻译在 `rhi_vulkan_rendergraph`，`renderer_basic` 不暴露 Vulkan。
 - Vulkan 主路径已覆盖 dynamic rendering、synchronization2 barrier、descriptor/pipeline wrapper、transient image pool、buffer upload、compute dispatch、offscreen RenderView、Frame Debug replay、editor viewport sampled texture，以及真实 RenderView indexed scene-mesh pass。后者使用 Color/Depth + VertexRead/IndexRead、`DrawIndexed` 和 draw packet context，并支持 per-view Solid/Wireframe。
-- native Dear ImGui Editor 已具备 production workbench shell、Scene View camera/grid/debug-line、Live RG View、Frame Debugger、Asset Browser snapshot-backed catalog 和多项 smoke。Avalonia Studio 已完成 R0 硬切；#352 建立真实 ProjectSession，#353 已接通 `SceneDocument -> EditWorld -> Hierarchy/Inspector -> dirty/save/reopen`。#359 建立 UI-neutral `ViewportSession`、EngineBridge typed frame lease 和 native Scene/Game/Preview V4 request；当前 #361 正把首个 dirty-only Avalonia Scene View、composition import、drain/shutdown 与 Release deployment 接到同一边界。最近项目、模板、asset catalog、多 viewport/input/preview 与 Play Mode 尚未接入。
-- `asset-core` / `asset-pipeline` / `project-core` / `material-core` / `scene-core` 已是 CPU/headless 数据模型或 baseline package，但尚未形成“真实 scene object -> material/mesh/texture product -> GPU resource -> editor authoring”的完整闭环。
+- native Dear ImGui Editor 已具备 production workbench shell、Scene View camera/grid/debug-line、Live RG View、Frame Debugger、Asset Browser snapshot-backed catalog 和多项 smoke。Avalonia Studio 已完成 R0 硬切；#352 建立真实 ProjectSession，#353 已接通 `SceneDocument -> EditWorld -> Hierarchy/Inspector -> dirty/save/reopen`。#359 建立 UI-neutral `ViewportSession`、EngineBridge typed frame lease；当前 Viewport V6、Document ABI v2 与 Scene schema v2 均为硬切合同。最近项目、模板、asset catalog、多 viewport/input/preview 与 Play Mode 尚未接入。
+- `asset-core` / `asset-pipeline` / `project-core` / `material-core` / `scene-core` 已是 CPU/headless 数据模型或 baseline package。#367 已闭合 authored typed mesh GUID -> backend-neutral extraction -> validation product binding -> indexed scene raster -> Frame Debug source revision 的受限路径；通用 mesh product/runtime GPU resource、reload/deferred deletion、material authoring 仍未完成。
 - 当前风险不是缺少大系统名词，而是 route 太多：渲染、资产、scene、editor、material、play/session 必须按可验证切片合流。
 
 ### 外部案例结论
@@ -25,8 +25,10 @@
 - Unreal 把 transform/attachment-only `USceneComponent` 与拥有 mesh、创建 scene proxy 的
   `UStaticMeshComponent` 分开；Godot 同样区分 `Node3D` 与 `MeshInstance3D`，并把 wireframe 放在 Viewport
   debug draw policy；O3DE 让 renderer-owned Feature Processor 生成 Draw Packet。Asharia 采用“显式 mesh component/
-  resource reference -> immutable draw packet -> renderer-owned GPU state”和 per-view Solid/Wireframe，拒绝空 Entity、
-  bounds/debug lines 冒充 mesh，也拒绝 editor/Avalonia 持有 GPU resource 或 source path。
+  resource reference -> immutable draw packet -> renderer-owned GPU state”和 per-view Solid/Wireframe。采用该 owner
+  分离，拒绝照搬 Unreal proxy/UObject API、Godot scene tree 或 O3DE Feature Processor/service；当前复用需求只证明
+  `scene-rendering` 的 CPU extraction 和 explicit binding。继续拒绝空 Entity、bounds/debug lines 冒充 mesh，也拒绝
+  editor/Avalonia 持有 GPU resource 或 source path。
   参考：<https://dev.epicgames.com/documentation/unreal-engine/API/Runtime/Engine/Components/USceneComponent>、
   <https://dev.epicgames.com/documentation/unreal-engine/API/Runtime/Engine/UStaticMeshComponent>、
   <https://docs.godotengine.org/en/stable/classes/class_node3d.html>、
@@ -251,33 +253,41 @@ code-only control composition 与 Asharia 的受限 Code-first schema，不把�
 
 ### Phase C：Scene Draw Packet MVP
 
-目标：让 `scene-core` 的最小 world 能产生 renderer 可消费的 immutable draw packet，打通多个 mesh object 的 Scene View 渲染。
+目标：以可审计的最小边界把 authored scene mesh snapshot 提取成 renderer 可消费的 immutable draw packet，并把其 revision
+证据带到 Frame Debug；不把 validation fixture 误扩展为 runtime asset pipeline。
 
 当前进度：
 
-- #139 已完成 backend-neutral scene draw packet contract。
+- #367 的当前实现使用新 package `asharia::scene_rendering`（`scene-core` + `asset-core` + `renderer_basic`）：输入 scene
+  revision、object id、transient `EntityId`、TRS、optional typed mesh reference 和 explicit product binding；输出拥有
+  生命周期的 immutable `BasicDrawListItem` vector 与逐项 contextual diagnostics。row-major model matrix 是 `T * R * S`。
+- Scene schema v2 / Document ABI v2 是硬切：scene 只持久化 authored mesh GUID/type，不写 runtime entity、product hash/
+  generation、Basic resource/material key 或 GPU handle；不保留 schema/ABI v1 compatibility。
 - #366 已把该合同接到真实 `builtin.render-view-scene-mesh`：RenderGraph 显式声明 Color/Depth attachment、
   VertexRead/IndexRead buffer 和 `DrawIndexed`，Vulkan execution event 保留 draw item index 与
   `BasicDrawPacketContext`；Solid/Wireframe 是 per-view policy。
-- Wireframe 只在 logical device 已启用 optional `fillModeNonSolid` 时使用 `VK_POLYGON_MODE_LINE`；不可用时返回
-  typed unavailable receipt，不让 capability 成为 context 启动硬要求，不回退 Solid，也不启用 `wideLines`。
+- Wireframe 只在 logical device 已启用 optional `fillModeNonSolid` 时使用 `VK_POLYGON_MODE_LINE`；不可用时 V6
+  submit 在复制/入队前返回 typed `FeatureUnavailable`，stream 保持 Open 且可由后续 Solid request 恢复；不让
+  capability 成为 context 启动硬要求，不重试稳定失败，不回退 Solid，也不启用 `wideLines`。
 - 当前 directional-wedge OBJ -> deterministic generated product 只属于 repository fixture/tool，用于证明真实
-  vertex/index data 与像素结果；它不是通用 OBJ importer、runtime mesh product schema 或 asset resource registry。
-  空 Entity/Transform 也不会隐式产生 mesh。
+  vertex/index data 与像素结果。native resolver 仅为该封闭 fixture 提供 explicit binding；它不是通用 OBJ importer、
+  runtime mesh product schema、asset/resource registry 或 service。空 Entity/Transform 也不会隐式产生 mesh。
+- `BasicRenderViewSceneDesc.sourceRevision` 进入 diagnostics，并由 Frame Debug capture/JSON/panel 冻结和回显；Scene/Game
+  共享 authored mesh input，Solid/Wireframe 仍是 per-view raster policy。
 
 当前范围：
 
-- scene snapshot：entity id、transform、mesh resource handle、material handle。
-- renderer draw packet：不持有 scene/editor 指针，只持有稳定 id、transform、resource/material key。
+- scene snapshot：object id、transient entity id、transform、optional typed mesh asset reference；不含 runtime/GPU key。
+- renderer draw packet：不持有 scene/editor 指针；只从 caller-explicit product binding 取得 resource/material key 与 draw item。
 - Scene View / Game View 可同帧使用不同 camera/view request。
 - Scene View / Game View 可同帧使用不同 Solid/Wireframe policy，且不修改 scene object/material/source asset。
 
 验收：
 
-- `--smoke-scene-draw-packet` 保留 CPU/contract 负向覆盖；`--smoke-render-view-scene-mesh` 验证两个 object
-  进入真实 RenderGraph scene-mesh pass、indexed execution event 与 Vulkan draw。
-- invalid/unknown mesh/material resource、draw range 和 capability fail early，并保留 entity/resource/draw context；
-  空 scene 不生成 scene-mesh pass。
+- `asharia-scene-rendering-smoke-tests` 覆盖空输入、ready、missing/wrong-kind/stale/invalid binding、revision replacement 和
+  matrix/diagnostics；`--smoke-render-view-scene-mesh` 验证真实 RenderGraph scene-mesh pass、indexed execution event 与 Vulkan draw。
+- missing/wrong-kind/stale/invalid binding 逐 item no-draw，并保留 scene object/asset/revision context；空 scene 不生成
+  scene-mesh pass。malformed V6 packet 必须拒绝整帧，不提交部分 draw。
 - 下一 Slice 仍需定义 asset-backed mesh product/handle、runtime GPU resource owner、reload/deferred deletion 与 material
   compatibility；不能把 validation generator 当作 importer 来绕过该缺口。
 

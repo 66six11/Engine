@@ -341,9 +341,9 @@ foreach ($preset in @("clangcl-debug", "msvc-debug")) {
 policy 或 Vulkan polygon mode capability 时，`--smoke-render-view-scene-mesh` 必须在两个 compiler preset 上运行。
 审查证据至少确认：`builtin.render-view-scene-mesh` 的 Color/Depth + `vertices: BufferVertexRead` +
 `indices: BufferIndexRead` schema、`DrawIndexed` 五参数与 packet context、空 scene 不插入 pass、unknown resource
-保留 typed context，以及同帧 per-view Solid/Wireframe 不互相污染。`fillModeNonSolid` 未启用时，typed unavailable
-receipt 是合法 capability 分支；实现不得创建非法 line pipeline、静默回退 Solid 或为 1 px 线宽启用
-`wideLines`。
+保留 typed context，以及同帧 per-view Solid/Wireframe 不互相污染。`fillModeNonSolid` 未启用时，V6 submit 必须在
+复制/入队前返回 typed `FeatureUnavailable`，stream 保持 Open 且不得重试同一 Wireframe request；后续显式 Solid
+request 必须可恢复。实现不得创建非法 line pipeline、静默回退 Solid 或为 1 px 线宽启用 `wideLines`。
 
 修改 validation mesh fixture/generator 时，还必须运行：
 
@@ -355,6 +355,23 @@ python -m unittest tools.tests.test_validation_mesh_product
 `tools/generate_validation_mesh_product.py` 只证明 deterministic fixture -> generated product -> renderer-owned
 GPU buffer 的门禁链路。它们不是通用 OBJ importer 或稳定 runtime mesh product schema；review 不得据此宣称
 asset-backed mesh resource pipeline 已完成。
+
+涉及 Scene schema v2、Document ABI v2、`SceneMeshComponent` 或 `packages/scene-rendering` extraction 时，必须同时在
+两个 test preset 构建并运行 CPU smoke。审查要确认 typed mesh reference 仅持久化 authored GUID/type、runtime `EntityId`
+与 product/GPU key 不进入 scene，`T * R * S` matrix、empty zero-draw、ready binding、missing/wrong-kind/stale/invalid
+逐 item no-draw diagnostics、revision replacement 不共享旧 draw vector 均未漂移：
+
+```powershell
+foreach ($preset in @("clangcl-debug-tests", "msvc-debug-tests")) {
+    cmake --build --preset $preset --target asharia-scene-rendering-smoke-tests
+    ctest --test-dir "build\cmake\$preset" -C Debug `
+        -R "^asharia-scene-rendering-smoke-tests$" --output-on-failure
+}
+```
+
+`scene-rendering` 只接受 caller-explicit product bindings；封闭 validation product native resolver 不是 importer、asset
+database 或 runtime resource registry。任何把 fixture resolver 扩展为通用加载/注册服务的改动必须先有独立的 owner 合同和
+review slice，不能以 #367 的 smoke 作为授权。
 
 所有 `asharia-sample-viewer --smoke-*` 图形路径，以及通过 `EditorRunMode` 启动的图形 editor smoke，都必须
 创建隐藏 GLFW 窗口，不得显示顶层窗口或取得前台焦点。sample-viewer 的 smoke 窗口必须通过唯一
@@ -435,6 +452,11 @@ Studio R0 删除的旧 `editor_project_*` bridge 仍不得恢复。当前真实 
 数据一致”。Release distribution closure 必须精确包含 `bin/asharia_scene_native.dll` 并验证全部 SceneDocument exports；
 缺失、错名、嵌套或同 stem 副产物都必须失败。
 
+对 v2 schema/Document ABI 改动，验收还必须确认 hard cut：不导出或接受 schema/ABI v1 fallback，mesh authored GUID/type
+round-trip 后不出现 runtime EntityId、product generation/hash、Basic resource/material key 或 GPU handle。若同时改动 V6
+viewport producer/native ABI，必须证明 malformed V6 packet 被整帧拒绝；item-level asset binding failure 不能被提升为
+packet-level partial submit。
+
 涉及 `packages/resource-runtime` runtime handle/status/product-record resolution/diagnostics 时，必须跑
 package-local tests，证明 pending / ready / failed、generation、product key mismatch 和 product record
 诊断矩阵没有漂移：
@@ -466,6 +488,12 @@ foreach ($preset in @("clangcl-debug", "msvc-debug")) {
     }
 }
 ```
+
+涉及 V6 scene packet、`BasicRenderViewSceneDesc::sourceRevision` 或 Frame Debug projection 时，`--smoke-editor-frame-debugger`
+必须断言 capture JSON、panel 与冻结的 RenderView diagnostics 精确记录同一个 `sourceRevision`；旧 ImGui viewport 未绑定
+authoritative SceneDocument 时允许为 `0`。Studio V6 scene-mesh process acceptance 必须另行断言 request、receipt 与实际 scene
+snapshot 的 revision 非零且精确相等。Scene/Game 可共享 authored mesh snapshot，但审查必须确认 raster policy 仍按 view
+独立，不能由 Frame Debug 或另一个 viewport 覆盖。
 
 ## 设计审查门禁
 

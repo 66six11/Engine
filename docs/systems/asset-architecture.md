@@ -571,9 +571,12 @@ struct RuntimeResourceRecord {
 
 ### Scene / World
 
-- `MeshRendererComponent` 保存 mesh/material handle。
-- World snapshot 中可以携带 `AssetHandle<MeshAsset>` / `AssetHandle<MaterialAsset>`，但 renderer 接收前应解析为可用 resource 或 fallback。
-- Play World 与 Edit World 可共享 GUID；不能共享 runtime pointer。
+- 当前 Scene schema v2 的 `SceneMeshComponent` 只保存 optional typed `AssetReference`（authored mesh GUID/type）。它不保存
+  runtime `EntityId`、product hash/generation、Basic mesh/material resource key 或 GPU handle。
+- `scene-rendering` 从 revision snapshot、transient entity/object identity、TRS 和显式 product binding 提取 renderer-facing
+  immutable draw list。missing/wrong-kind/stale/invalid binding 只令该 object no-draw 并保留 diagnostics；没有 fallback
+  resource 来掩盖 asset/product 失败。
+- Play World 与 Edit World 可共享 authored GUID；不能共享 runtime pointer、runtime EntityId 或 GPU resource。
 
 ### Material / Renderer
 
@@ -1067,6 +1070,10 @@ scan-to-planning bridge baseline 稳定。
   data，不读取 source path 或 importer state。该 fixture/tool 不属于 `asset-pipeline` importer，不建立通用 OBJ
   source support、稳定 mesh product schema、runtime mesh handle/registry 或 reload/lifetime owner，也不改变“mesh
   product/runtime 闭环尚未完成”的事实。
+- validation product native resolver 仅把这个封闭 fixture 的已知 asset identity 提供为 `scene-rendering` 的显式
+  product binding；它不是 generic importer、asset database、resource service 或 runtime registry。该 resolver 的
+  Ready/Stale、type、asset identity、product hash/generation 与 Basic draw keys 都只在 validation input 中存在，
+  不会写回 `.ascene`。
 - staging/upload 仍放在 RHI/resource runtime，不放在 `asset-core`、`project-core` 或 `.ameta`。
 
 验收：

@@ -18,6 +18,7 @@
     "com.asharia.project-core",
     "com.asharia.renderer-basic",
     "com.asharia.scene-core",
+    "com.asharia.scene-rendering",
     "com.asharia.shader-slang",
     "com.asharia.window-glfw",
     "com.asharia.rhi-vulkan"
@@ -48,7 +49,8 @@
       "asharia-archive",
       "asharia-renderer-basic-vulkan",
       "asharia-renderer-basic-shaders",
-      "asharia-rhi-vulkan"
+      "asharia-rhi-vulkan",
+      "asharia-scene-rendering"
     ],
     "asharia-editor-imgui-shaders": ["asharia-editor-imgui-frag"]
   }

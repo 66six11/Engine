@@ -125,6 +125,7 @@ public enum ProjectSessionFailureKind
     RevisionConflict,
     InvalidObject,
     InvalidTransform,
+    InvalidAssetReference,
     IoFailure,
     NativeUnavailable,
     NoProject,
@@ -137,7 +138,8 @@ public sealed record ProjectSessionOperationResult
         bool succeeded,
         ProjectSessionSnapshot current,
         string message,
-        ProjectSessionFailureKind? failureKind)
+        ProjectSessionFailureKind? failureKind,
+        Guid? createdObjectId)
     {
         if (string.IsNullOrWhiteSpace(message))
         {
@@ -151,11 +153,24 @@ public sealed record ProjectSessionOperationResult
                 "Only a failed project session operation may contain a failure kind.",
                 nameof(failureKind));
         }
+        if (!succeeded && createdObjectId is not null)
+        {
+            throw new ArgumentException(
+                "A failed project session operation cannot contain a created object id.",
+                nameof(createdObjectId));
+        }
+        if (createdObjectId == Guid.Empty)
+        {
+            throw new ArgumentException(
+                "A created object id must not be empty.",
+                nameof(createdObjectId));
+        }
 
         Succeeded = succeeded;
         Current = current;
         Message = message;
         FailureKind = failureKind;
+        CreatedObjectId = createdObjectId;
     }
 
     public bool Succeeded { get; }
@@ -166,10 +181,13 @@ public sealed record ProjectSessionOperationResult
 
     public ProjectSessionFailureKind? FailureKind { get; }
 
+    public Guid? CreatedObjectId { get; }
+
     public static ProjectSessionOperationResult Success(
         ProjectSessionSnapshot current,
-        string message) =>
-        new(succeeded: true, current, message, failureKind: null);
+        string message,
+        Guid? createdObjectId = null) =>
+        new(succeeded: true, current, message, failureKind: null, createdObjectId);
 
     public static ProjectSessionOperationResult Failed(
         ProjectSessionSnapshot current,
@@ -180,7 +198,8 @@ public sealed record ProjectSessionOperationResult
             succeeded: false,
             current,
             message,
-            failureKind);
+            failureKind,
+            createdObjectId: null);
     }
 }
 
@@ -204,6 +223,11 @@ public interface IProjectSession : IAsyncDisposable
 
     ValueTask<ProjectSessionOperationResult> CreateEntityAsync(
         string name,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<ProjectSessionOperationResult> CreateMeshEntityAsync(
+        string name,
+        SceneMeshReference mesh,
         CancellationToken cancellationToken = default);
 
     ValueTask<ProjectSessionOperationResult> SetEntityNameAsync(

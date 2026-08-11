@@ -187,6 +187,19 @@ internal static class StudioEditorImageIdentityInspector
         string expectedDllName,
         IReadOnlyCollection<string> requiredExports,
         out string error)
+        => HasRequiredExports(
+            path,
+            expectedDllName,
+            requiredExports,
+            [],
+            out error);
+
+    public static bool HasRequiredExports(
+        string path,
+        string expectedDllName,
+        IReadOnlyCollection<string> requiredExports,
+        IReadOnlyCollection<string> disallowedExports,
+        out string error)
     {
         try
         {
@@ -205,6 +218,16 @@ internal static class StudioEditorImageIdentityInspector
             if (missing.Length != 0)
             {
                 error = $"Required native exports are missing: {string.Join(", ", missing)}.";
+                return false;
+            }
+
+            var disallowed = disallowedExports
+                .Where(exportTable.Exports.ContainsKey)
+                .Order(StringComparer.Ordinal)
+                .ToArray();
+            if (disallowed.Length != 0)
+            {
+                error = $"Disallowed native exports are present: {string.Join(", ", disallowed)}.";
                 return false;
             }
 

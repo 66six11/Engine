@@ -85,6 +85,7 @@ void setBasicRenderViewWireframeUnavailableDiagnostics(const BasicRenderViewDesc
         .frameParams = view.frameParams,
         .scene =
             BasicRenderViewSceneDiagnostics{
+                .sourceRevision = view.scene.sourceRevision,
                 .drawItemCount = static_cast<std::uint64_t>(view.scene.drawItems.size()),
                 .indexedDrawCount = static_cast<std::uint64_t>(view.scene.drawItems.size()),
                 .rasterMode = view.scene.rasterMode,
@@ -124,6 +125,7 @@ void setBasicRenderViewDiagnostics(const BasicRenderViewDesc& view, const Render
         .frameParams = view.frameParams,
         .scene =
             BasicRenderViewSceneDiagnostics{
+                .sourceRevision = view.scene.sourceRevision,
                 .drawItemCount = static_cast<std::uint64_t>(view.scene.drawItems.size()),
                 .indexedDrawCount = indexedDrawCount,
                 .rasterMode = view.scene.rasterMode,

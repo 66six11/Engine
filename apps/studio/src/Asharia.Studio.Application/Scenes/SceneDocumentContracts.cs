@@ -8,26 +8,67 @@ using Asharia.Runtime;
 
 namespace Asharia.Studio.Application.Scenes;
 
+public readonly record struct SceneMeshReference
+{
+    public SceneMeshReference(Guid assetId)
+    {
+        if (assetId == Guid.Empty)
+        {
+            throw new ArgumentException("Mesh asset id must not be empty.", nameof(assetId));
+        }
+
+        AssetId = assetId;
+    }
+
+    public Guid AssetId { get; }
+
+    public static SceneMeshReference DirectionalWedgeValidation { get; } =
+        new(Guid.Parse("7c9fe8ac-3c8b-4f66-9665-0af0fd7b693e"));
+}
+
 public sealed record SceneEntitySnapshot
 {
-    public SceneEntitySnapshot(Guid objectId, string name, TransformValue transform)
+    public SceneEntitySnapshot(
+        Guid objectId,
+        EntityId runtimeEntityId,
+        string name,
+        TransformValue transform,
+        SceneMeshReference? mesh = null)
     {
         if (objectId == Guid.Empty)
         {
             throw new ArgumentException("Scene object id must not be empty.", nameof(objectId));
         }
+        if (!runtimeEntityId.IsValid)
+        {
+            throw new ArgumentException(
+                "Scene runtime entity id must be valid.",
+                nameof(runtimeEntityId));
+        }
+        if (mesh.HasValue && mesh.Value.AssetId == Guid.Empty)
+        {
+            throw new ArgumentException(
+                "Scene mesh asset id must not be empty.",
+                nameof(mesh));
+        }
         ArgumentNullException.ThrowIfNull(name);
 
         ObjectId = objectId;
+        RuntimeEntityId = runtimeEntityId;
         Name = name;
         Transform = transform;
+        Mesh = mesh;
     }
 
     public Guid ObjectId { get; }
 
+    public EntityId RuntimeEntityId { get; }
+
     public string Name { get; }
 
     public TransformValue Transform { get; }
+
+    public SceneMeshReference? Mesh { get; }
 }
 
 public sealed record SceneDocumentSnapshot
@@ -82,6 +123,7 @@ public enum SceneDocumentFailureKind
     RevisionConflict,
     InvalidObject,
     InvalidTransform,
+    InvalidAssetReference,
     IoFailure,
     NativeUnavailable,
     InternalError,
@@ -186,6 +228,13 @@ public interface ISceneDocumentConnection : IAsyncDisposable
     ValueTask<SceneDocumentOperationResult> CreateEntityAsync(
         Guid objectId,
         string name,
+        ulong expectedRevision,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<SceneDocumentOperationResult> CreateMeshEntityAsync(
+        Guid objectId,
+        string name,
+        SceneMeshReference mesh,
         ulong expectedRevision,
         CancellationToken cancellationToken = default);
 

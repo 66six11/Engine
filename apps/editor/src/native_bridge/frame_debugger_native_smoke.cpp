@@ -54,7 +54,7 @@ namespace asharia::editor {
                 return false;
             }
 
-            if (!requiredIntegerMemberEquals(*parsed, "schemaVersion", 1) ||
+            if (!requiredIntegerMemberEquals(*parsed, "schemaVersion", 2) ||
                 !requiredStringMemberEquals(*parsed, "state", expectedState)) {
                 asharia::logError(
                     "Editor native bridge smoke acquired an unexpected snapshot schema/state.");

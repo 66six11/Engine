@@ -671,9 +671,14 @@ public sealed class ViewportCompositionControl : Control
             }
             QueueUncommittedPresentationRetirement(operation);
             ResumeFrontPresentation();
-            if (exception is not (OperationCanceledException or
-                    ViewportPresentationRecoverableException) &&
+            if (exception is ViewportPresentationUnsupportedFeatureException unsupported &&
                 IsCurrent(operation.AttachmentGeneration))
+            {
+                SetDegraded(ViewportPresentationState.Unsupported, unsupported.Message);
+            }
+            else if (exception is not (OperationCanceledException or
+                         ViewportPresentationRecoverableException) &&
+                     IsCurrent(operation.AttachmentGeneration))
             {
                 SetDegraded(
                     ViewportPresentationState.RenderFailed,
@@ -1148,7 +1153,10 @@ public sealed class ViewportCompositionControl : Control
             testHooks_?.DiagnosticOverlay ?? ViewportRenderDiagnosticOverlay.None);
         if (!submitted.Succeeded)
         {
-            session.RetryPublishedFrame(request);
+            if (submitted.Failure!.Kind != ViewportFrameFailureKind.UnsupportedFeature)
+            {
+                session.RetryPublishedFrame(request);
+            }
             HandleSubmissionFailure(submitted.Failure!);
             return;
         }
@@ -1339,6 +1347,15 @@ public sealed class ViewportCompositionControl : Control
 
             var lease = taken.Lease!;
             stream.ExposedSlots.Add(lease.SlotIdentity);
+            try
+            {
+                testHooks_?.ObserveLease(lease);
+            }
+            catch
+            {
+                ReleaseNotSubmittedOrQuarantine(stream, lease, lifetime);
+                throw;
+            }
             if (stream.WorkFence.IsRetiring || !IsCurrent(generation) ||
                 !ReferenceEquals(Lifetime, lifetime) ||
                 !ReferenceEquals(desiredStream_, stream))
@@ -1590,6 +1607,13 @@ public sealed class ViewportCompositionControl : Control
             throw new InvalidOperationException(
                 "The viewport session did not publish the prepared presentation request.");
         }
+        if (request.SceneRasterMode == ViewportSceneRasterMode.Wireframe &&
+            !operation.Stream.Stream.SupportsWireframe)
+        {
+            throw new ViewportPresentationUnsupportedFeatureException(
+                "Viewport wireframe is unavailable because the native stream device did not " +
+                "enable fillModeNonSolid.");
+        }
 
         var requestWasSubmitted = false;
         var backpressureStartedAt = Stopwatch.GetTimestamp();
@@ -1657,6 +1681,7 @@ public sealed class ViewportCompositionControl : Control
         var lease = wait.Take.Lease!;
         Interlocked.Increment(ref candidateLeasesAcquired_);
         operation.Stream.ExposedSlots.Add(lease.SlotIdentity);
+        testHooks_?.ObserveLease(lease);
         var releaseLease = true;
         try
         {
@@ -1809,7 +1834,7 @@ public sealed class ViewportCompositionControl : Control
             if (existing.Handles != lease.NativeHandles)
             {
                 throw new InvalidOperationException(
-                    "Native viewport changed handles for a persistent V5 slot.");
+                    "Native viewport changed handles for a persistent V6 slot.");
             }
             return existing;
         }
@@ -3228,6 +3253,8 @@ public sealed class ViewportCompositionControl : Control
                 ViewportPresentationState.DeviceMismatch,
             ViewportFrameFailureKind.UnsupportedInterop =>
                 ViewportPresentationState.Unsupported,
+            ViewportFrameFailureKind.UnsupportedFeature =>
+                ViewportPresentationState.Unsupported,
             _ => ViewportPresentationState.RenderFailed,
         };
         SetDegraded(state, failure.Message);
@@ -3332,6 +3359,14 @@ public sealed class ViewportCompositionControl : Control
             {
                 admission?.Dispose();
             }
+        }
+    }
+
+    private sealed class ViewportPresentationUnsupportedFeatureException : Exception
+    {
+        public ViewportPresentationUnsupportedFeatureException(string message)
+            : base(message)
+        {
         }
     }
 }

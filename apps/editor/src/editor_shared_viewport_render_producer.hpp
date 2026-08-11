@@ -35,6 +35,22 @@ namespace asharia::editor {
         std::array<float, 3> scale{1.0F, 1.0F, 1.0F};
     };
 
+    enum class EditorSharedViewportSceneRasterMode : std::uint32_t {
+        Solid,
+        Wireframe,
+    };
+
+    struct EditorSharedViewportAuthoredMeshSnapshot {
+        std::array<std::uint8_t, 16> objectId{};
+        std::uint32_t runtimeEntityIndex{};
+        std::uint32_t runtimeEntityGeneration{};
+        std::array<std::uint8_t, 16> assetId{};
+        std::uint64_t expectedMeshType{};
+        std::array<float, 3> position{};
+        std::array<float, 4> rotation{0.0F, 0.0F, 0.0F, 1.0F};
+        std::array<float, 3> scale{1.0F, 1.0F, 1.0F};
+    };
+
     struct EditorSharedViewportPresentDesc {
         std::string_view panelId;
         EditorViewportKind kind{EditorViewportKind::Scene};
@@ -50,6 +66,10 @@ namespace asharia::editor {
         bool hasCamera{};
         EditorViewportCamera camera;
         std::span<const EditorSharedViewportDebugProxy> debugProxies;
+        std::span<const EditorSharedViewportAuthoredMeshSnapshot> authoredMeshes;
+        EditorSharedViewportSceneRasterMode sceneRasterMode{
+            EditorSharedViewportSceneRasterMode::Solid};
+        bool captureSceneMeshEvidence{};
         bool flashSentinelCorners{};
     };
 
@@ -62,6 +82,25 @@ namespace asharia::editor {
         VkExtent2D allocationExtent{};
         std::uint64_t memorySizeBytes{};
         std::uint64_t frameIndex{};
+    };
+
+    struct EditorSharedViewportSceneMeshReceipt {
+        std::uint32_t inputCount{};
+        std::uint32_t resolvedCount{};
+        std::uint32_t rejectedCount{};
+        std::uint32_t indexedDrawCount{};
+        EditorSharedViewportSceneRasterMode rasterMode{
+            EditorSharedViewportSceneRasterMode::Solid};
+        std::uint32_t representativeSourceEntityIndex{};
+        std::uint32_t representativeSourceEntityGeneration{};
+        bool hasResolved{};
+        bool evidenceAvailable{};
+        std::array<std::uint8_t, 16> representativeObjectId{};
+        std::array<std::uint8_t, 16> representativeAssetId{};
+        std::uint64_t meshResourceKey{};
+        std::uint64_t materialResourceKey{};
+        std::uint64_t productHash{};
+        std::uint64_t sceneRevision{};
     };
 
     struct EditorSharedViewportRenderProducerStats {
@@ -130,6 +169,7 @@ namespace asharia::editor {
         void* signalSemaphoreHandle{};
         std::uint64_t frameIndex{};
         VkExtent2D renderExtent{};
+        EditorSharedViewportSceneMeshReceipt sceneMeshReceipt;
     };
 
     class EditorSharedViewportRenderProducer final {

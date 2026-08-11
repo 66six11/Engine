@@ -23,6 +23,12 @@ internal interface ISceneDocumentNativeApi
         ulong responseCapacity,
         out SceneNativeDocumentOperationResult result);
 
+    SceneNativeStatus CreateMeshEntity(
+        in SceneNativeDocumentCreateMeshEntityRequest request,
+        nint responseBuffer,
+        ulong responseCapacity,
+        out SceneNativeDocumentOperationResult result);
+
     SceneNativeStatus SetEntityName(
         in SceneNativeDocumentSetEntityNameRequest request,
         nint responseBuffer,

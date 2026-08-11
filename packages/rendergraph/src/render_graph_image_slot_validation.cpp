@@ -112,6 +112,11 @@ namespace asharia {
                 return std::unexpected{std::move(colorSlots.error())};
             }
 
+            auto colorReadWriteSlots = validateSlots(images, pass, pass.colorReadWriteSlots);
+            if (!colorReadWriteSlots) {
+                return std::unexpected{std::move(colorReadWriteSlots.error())};
+            }
+
             auto shaderReadSlots = validateShaderReadSlots(images, pass);
             if (!shaderReadSlots) {
                 return std::unexpected{std::move(shaderReadSlots.error())};

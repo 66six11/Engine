@@ -37,6 +37,7 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
     private readonly AsyncCommand openProjectCommand_;
     private readonly AsyncCommand closeProjectCommand_;
     private readonly AsyncCommand createEntityCommand_;
+    private readonly AsyncCommand createMeshEntityCommand_;
     private readonly AsyncCommand saveSceneCommand_;
     private readonly AsyncCommand applyEntityNameCommand_;
     private readonly AsyncCommand applyEntityTransformCommand_;
@@ -76,6 +77,9 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
         openProjectCommand_ = new AsyncCommand(OpenProjectAsync, CanRunProjectOperation);
         closeProjectCommand_ = new AsyncCommand(CloseProjectAsync, CanEditDocument);
         createEntityCommand_ = new AsyncCommand(CreateEntityAsync, CanEditDocument);
+        createMeshEntityCommand_ = new AsyncCommand(
+            CreateMeshEntityAsync,
+            CanEditDocument);
         saveSceneCommand_ = new AsyncCommand(SaveSceneAsync, CanSaveDocument);
         applyEntityNameCommand_ = new AsyncCommand(ApplyEntityNameAsync, CanEditSelection);
         applyEntityTransformCommand_ = new AsyncCommand(
@@ -233,6 +237,7 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
     public ICommand OpenProjectCommand => openProjectCommand_;
     public ICommand CloseProjectCommand => closeProjectCommand_;
     public ICommand CreateEntityCommand => createEntityCommand_;
+    public ICommand CreateMeshEntityCommand => createMeshEntityCommand_;
     public ICommand SaveSceneCommand => saveSceneCommand_;
     public ICommand ApplyEntityNameCommand => applyEntityNameCommand_;
     public ICommand ApplyEntityTransformCommand => applyEntityTransformCommand_;
@@ -377,9 +382,39 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
 
     private async Task CreateEntityAsync()
     {
+        ProjectSessionOperationResult? result = null;
         await RunProjectOperationAsync(async token =>
-            await projectSession_.CreateEntityAsync("Entity", token));
-        SelectedEntity = SceneEntities.LastOrDefault();
+            result = await projectSession_.CreateEntityAsync("Entity", token));
+        SelectCreatedEntity(result);
+    }
+
+    private async Task CreateMeshEntityAsync()
+    {
+        ProjectSessionOperationResult? result = null;
+        await RunProjectOperationAsync(async token =>
+            result = await projectSession_.CreateMeshEntityAsync(
+                "Directional Wedge",
+                SceneMeshReference.DirectionalWedgeValidation,
+                token));
+        SelectCreatedEntity(result);
+    }
+
+    private void SelectCreatedEntity(ProjectSessionOperationResult? result)
+    {
+        if (result is not { Succeeded: true, CreatedObjectId: { } objectId })
+        {
+            return;
+        }
+
+        var created = SceneEntities.SingleOrDefault(entity => entity.ObjectId == objectId);
+        if (created is null)
+        {
+            ProjectOperationMessage =
+                "The created scene entity was not present in the applied project snapshot.";
+            return;
+        }
+
+        SelectedEntity = created;
     }
 
     private Task SaveSceneAsync() =>
@@ -584,6 +619,7 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
         openProjectCommand_.RaiseCanExecuteChanged();
         closeProjectCommand_.RaiseCanExecuteChanged();
         createEntityCommand_.RaiseCanExecuteChanged();
+        createMeshEntityCommand_.RaiseCanExecuteChanged();
         saveSceneCommand_.RaiseCanExecuteChanged();
         applyEntityNameCommand_.RaiseCanExecuteChanged();
         applyEntityTransformCommand_.RaiseCanExecuteChanged();

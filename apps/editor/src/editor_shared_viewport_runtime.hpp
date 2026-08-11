@@ -89,6 +89,7 @@ namespace asharia::editor {
         std::uint64_t requestSequence{};
         EditorViewportKind kind{EditorViewportKind::Scene};
         EditorExtent2D logicalExtent;
+        EditorSharedViewportSceneMeshReceipt sceneMeshReceipt;
     };
 
     enum class EditorSharedViewportStreamLifecycle {
@@ -113,6 +114,7 @@ namespace asharia::editor {
     struct EditorSharedViewportDeviceSnapshot {
         std::uint32_t vendorId{};
         std::uint32_t deviceId{};
+        bool fillModeNonSolid{};
         asharia::VulkanDeviceIdentity identity;
     };
 
@@ -172,7 +174,11 @@ namespace asharia::editor {
     public:
         [[nodiscard]] static EditorSharedViewportRuntime& instance();
         [[nodiscard]] asharia::Result<EditorSharedViewportDeviceSnapshot> ensureDeviceSnapshot();
-        [[nodiscard]] asharia::Result<EditorSharedViewportStreamId> openStream();
+        [[nodiscard]] asharia::Result<EditorSharedViewportStreamId>
+        openStream(bool supportsWireframe);
+        [[nodiscard]] asharia::Result<void> validateSceneRasterMode(
+            EditorSharedViewportStreamId streamId,
+            EditorSharedViewportSceneRasterMode rasterMode);
         [[nodiscard]] asharia::Result<void> submitLatest(EditorSharedViewportStreamId streamId,
                                                          EditorSharedViewportPresentDesc desc);
         [[nodiscard]] asharia::Result<std::optional<EditorSharedViewportReadyFrame>>
@@ -216,6 +222,10 @@ namespace asharia::editor {
             bool hasCamera{};
             EditorViewportCamera camera;
             std::vector<EditorSharedViewportDebugProxy> debugProxies;
+            std::vector<EditorSharedViewportAuthoredMeshSnapshot> authoredMeshes;
+            EditorSharedViewportSceneRasterMode sceneRasterMode{
+                EditorSharedViewportSceneRasterMode::Solid};
+            bool captureSceneMeshEvidence{};
             bool flashSentinelCorners{};
 
             [[nodiscard]] static RenderFramePacket copyOf(EditorSharedViewportPresentDesc desc);
@@ -261,6 +271,7 @@ namespace asharia::editor {
             bool closeRequested{};
             bool closed{};
             bool faulted{};
+            bool supportsWireframe{};
             std::uint64_t submittedRequests{};
             std::uint64_t coalescedRequests{};
             std::uint64_t renderedFrames{};

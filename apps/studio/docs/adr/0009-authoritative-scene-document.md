@@ -4,7 +4,9 @@
 
 日期：2026-08-04
 
-关联：GitHub Epic #351、Slice #353；延续 [ADR-0008](0008-authoritative-project-session.md) 的活动项目边界。
+最近修订：2026-08-11（Scene schema / Document ABI v2 硬切与 typed mesh entity）
+
+关联：GitHub Epic #351、Slice #353、#367；延续 [ADR-0008](0008-authoritative-project-session.md) 的活动项目边界。
 
 ## 背景
 
@@ -20,24 +22,28 @@ automation 都通过编辑器拥有的实体/组件操作修改场景。Asharia 
 ## 决策
 
 1. `asharia::scene::SceneDocument` 是 scene identity、revision/savepoint、stable object ID 与 `World` 的唯一 native
-   owner。默认文档固定为 `Assets/Scenes/Default.asharia.scene.json`；新项目首次打开时创建一个包含默认实体的场景，
+   owner。默认文档固定为 `Assets/Scenes/Default.asharia.scene.json`；新项目首次打开时创建一个空场景，
    后续打开只加载既有文件。
-2. `scene-core` 的 strict JSON IO 拥有 schema `com.asharia.scene` version 1。文档读取验证 UTF-8、字段、GUID、有限
-   Transform、单位四元数、重复 object ID、64 MiB 文件上限与 10,000 实体上限；写入使用 sibling staging 和 replace，
-   不把 JSON 真相复制到 managed 层。
+2. `scene-core` 的 strict JSON IO 只接受 schema `com.asharia.scene` version 2。entity 可选携带
+   `mesh { assetGuid, assetType: "com.asharia.asset.Mesh" }`；它是 authored reference，不是 source path、product hash 或 GPU handle。
+   文档读取验证 UTF-8、closed fields、GUID、asset type、有限 Transform、单位四元数、重复 object ID、64 MiB 文件上限与
+   10,000 实体上限；写入使用 sibling staging 和 replace，不把 JSON 真相复制到 managed 层。开发期硬切不读取 v1，也不做迁移。
 3. 每个 mutation 携带 expected revision。成功后 revision 单调推进并由 authoritative snapshot 决定 dirty；失败或
    revision conflict 不发布猜测状态。Save 只在同一文档 revision 上推进 saved revision。本 Slice 不伪造 undo/redo；
    后续 history 必须继续通过相同 mutation boundary。
-4. `asharia_scene_native.dll` 新增专用 SceneDocument C ABI。registry 使用 generation-safe opaque token，所有文档操作
+4. `asharia_scene_native.dll` 的 SceneDocument ABI 原位硬切为 version 2。snapshot entry 同时返回 stable object ID、
+   transient runtime `EntityId`、Transform 与 optional mesh GUID；`create_mesh_entity` 以单次 revision mutation 原子创建 entity 和
+   authored mesh reference。registry 使用 generation-safe opaque token，所有文档操作
    强制在创建线程执行，响应采用 caller-owned bounded buffer，snapshot 用固定布局 entry 与 UTF-8 span 表达；raw
    `World*`、entity handle 和 native-owned string 均不跨 ABI。
 5. `Asharia.Studio.EngineBridge` 为每个文档连接建立专用 owner lane，所有 native open/mutate/snapshot/save/close 都在
    同一线程执行。它验证 ABI 布局、状态、长度和 UTF-8，只向 Application 暴露 typed command/result/snapshot，不向
    Avalonia 暴露句柄或 P/Invoke。
 6. `ProjectSession` 先取得 canonical project descriptor，再创建或打开默认 SceneDocument；两者都成功才发布 `Ready`。
-   关闭顺序为停止新命令、关闭文档连接、最后清除项目状态。创建实体、修改名称/Transform 与保存均由 session 串行化。
+   关闭顺序为停止新命令、关闭文档连接、最后清除项目状态。创建空实体、创建 mesh entity、修改名称/Transform 与保存均由
+   session 串行化；成功 receipt 明确携带 `CreatedObjectId`，UI 不用集合尾项猜新对象。
 7. 最小 Avalonia 编辑面只投影 authoritative snapshot：Hierarchy 显示实体，Inspector 编辑所选实体的名称和 local
-   Transform，工具栏提供 Create Entity 与 Save，标题显示 dirty `*`。selection 是 UI 状态，并在每次 snapshot 后按
+   Transform，工具栏提供 Create Entity、Create Mesh Entity 与 Save，标题显示 dirty `*`。selection 是 UI 状态，并在每次 snapshot 后按
    stable object ID remap；它不是 native truth。Debug 只读观察树用 `StudioDocumentState` 稳定语义节点投影文件名、
    revision 与 Saved/Unsaved，MCP 不从普通视觉文本或 ViewModel 反射猜测 dirty 状态。
 8. Release Editor Image 必须精确包含 `bin/asharia_scene_native.dll`，验证 PE/DLL identity 和全部 SceneDocument exports；
@@ -49,8 +55,10 @@ automation 都通过编辑器拥有的实体/组件操作修改场景。Asharia 
 - 不让 Avalonia 持有原生句柄或直接调用 ABI；线程、关闭和 stale-handle 规则只能由 EngineBridge 统一维护。
 - 不把旧逐实体 World ABI 当作文档协议；它没有 stable object ID、revision、snapshot 或 savepoint。
 - 不返回 native-owned字符串或可长期借用的 snapshot；caller-owned response 明确了跨语言生命周期。
-- 不在本 Slice 建立完整 transaction/undo/redo、hierarchy parenting、组件反射、Asset Browser、Dock、Viewport、Play
-  Mode 或 package manifest/lock。它们需要后续独立垂直切片与恢复策略。
+- 不在 SceneDocument 中存 product hash、renderer resource key、wireframe mode 或 selection；这些分别属于 asset/runtime
+  product binding、per-view rendering policy 与 editor state。
+- 不在本 Slice 建立完整 transaction/undo/redo、hierarchy parenting、组件反射、通用 mesh importer/asset resolver 或 Play
+  Mode。它们需要后续独立垂直切片与恢复策略。
 
 ## 后果
 
@@ -67,7 +75,7 @@ automation 都通过编辑器拥有的实体/组件操作修改场景。Asharia 
 
 ## 验证
 
-- scene-core create/load/save、schema/UTF-8/duplicate/size/revision failure 和 C/C++ header smoke；
+- scene-core create/load/save、v2-only schema/UTF-8/duplicate/asset/size/revision failure、v1 fail-closed 和 C/C++ header smoke；
 - native document ABI lifecycle、owner-thread、stale handle、buffer sizing、mutation 与 persistence smoke；
 - Application session ownership、failure、revision、dirty、save、close/dispose tests；
 - EngineBridge ABI layout、owner lane、status/UTF-8/response-bound tests；

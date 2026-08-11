@@ -12,6 +12,28 @@
 
 namespace asharia::rendergraph_internal {
 
+    namespace {
+
+        [[nodiscard]] bool imageStateWrites(RenderGraphImageState state) {
+            switch (state) {
+            case RenderGraphImageState::ColorAttachment:
+            case RenderGraphImageState::ColorReadWrite:
+            case RenderGraphImageState::DepthAttachmentWrite:
+            case RenderGraphImageState::TransferDst:
+                return true;
+            case RenderGraphImageState::Undefined:
+            case RenderGraphImageState::ShaderRead:
+            case RenderGraphImageState::DepthAttachmentRead:
+            case RenderGraphImageState::DepthSampledRead:
+            case RenderGraphImageState::TransferSrc:
+            case RenderGraphImageState::Present:
+                return false;
+            }
+            return false;
+        }
+
+    } // namespace
+
     Result<RenderGraphTransientImageAllocation>
     makeTransientAllocation(std::span<const RenderGraphImageDesc> images, std::size_t imageIndex,
                             std::span<const RenderGraphCompiledPass> passes,
@@ -125,7 +147,8 @@ namespace asharia::rendergraph_internal {
             }
 
             const RenderGraphImageDesc& image = images[imageHandle.index];
-            if (currentAccesses[imageHandle.index] != slotAccess) {
+            const bool requiresSameAccessBarrier = imageStateWrites(slotAccess.state);
+            if (currentAccesses[imageHandle.index] != slotAccess || requiresSameAccessBarrier) {
                 compiledPass.transitionsBefore.push_back(makeTransition(
                     imageHandle, image, currentAccesses[imageHandle.index], slotAccess));
                 currentAccesses[imageHandle.index] = slotAccess;

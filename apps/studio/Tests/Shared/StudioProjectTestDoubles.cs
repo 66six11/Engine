@@ -3,6 +3,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Asharia.Runtime;
 using Asharia.Studio.Application.Projects;
+using Asharia.Studio.Application.Scenes;
 using Editor.Shell.Services.Projects;
 using Editor.Shell.ViewModels.Windowing;
 
@@ -31,25 +32,36 @@ internal sealed class TestProjectSession : IProjectSession
         ProjectSessionSnapshot.NoProject;
 
     public Func<string, string, CancellationToken, ValueTask<ProjectSessionOperationResult>>?
-        CreateHandler { get; set; }
+        CreateHandler
+    { get; set; }
 
     public Func<string, CancellationToken, ValueTask<ProjectSessionOperationResult>>?
-        OpenHandler { get; set; }
+        OpenHandler
+    { get; set; }
 
     public Func<CancellationToken, ValueTask<ProjectSessionOperationResult>>?
-        CloseHandler { get; set; }
+        CloseHandler
+    { get; set; }
 
     public Func<string, CancellationToken, ValueTask<ProjectSessionOperationResult>>?
-        CreateEntityHandler { get; set; }
+        CreateEntityHandler
+    { get; set; }
+
+    public Func<string, SceneMeshReference, CancellationToken,
+        ValueTask<ProjectSessionOperationResult>>? CreateMeshEntityHandler
+    { get; set; }
 
     public Func<Guid, string, CancellationToken, ValueTask<ProjectSessionOperationResult>>?
-        SetNameHandler { get; set; }
+        SetNameHandler
+    { get; set; }
 
     public Func<Guid, TransformValue, CancellationToken,
-        ValueTask<ProjectSessionOperationResult>>? SetTransformHandler { get; set; }
+        ValueTask<ProjectSessionOperationResult>>? SetTransformHandler
+    { get; set; }
 
     public Func<CancellationToken, ValueTask<ProjectSessionOperationResult>>?
-        SaveHandler { get; set; }
+        SaveHandler
+    { get; set; }
 
     public int DisposeCount { get; private set; }
 
@@ -76,6 +88,13 @@ internal sealed class TestProjectSession : IProjectSession
         CancellationToken cancellationToken = default) =>
         CreateEntityHandler?.Invoke(name, cancellationToken)
         ?? throw new InvalidOperationException("No create-entity result was configured.");
+
+    public ValueTask<ProjectSessionOperationResult> CreateMeshEntityAsync(
+        string name,
+        SceneMeshReference mesh,
+        CancellationToken cancellationToken = default) =>
+        CreateMeshEntityHandler?.Invoke(name, mesh, cancellationToken)
+        ?? throw new InvalidOperationException("No create-mesh-entity result was configured.");
 
     public ValueTask<ProjectSessionOperationResult> SetEntityNameAsync(
         Guid objectId,

@@ -15,6 +15,8 @@
 namespace {
 
     constexpr std::string_view kColorWritePass = "test.color-write";
+    constexpr std::string_view kColorReadWritePass = "test.color-read-write";
+    constexpr std::string_view kDepthWritePass = "test.depth-write";
     constexpr std::string_view kTransferWritePass = "test.transfer-write";
     constexpr std::string_view kSamplePresentPass = "test.sample-present";
     constexpr std::string_view kTextureReadPass = "test.texture-read";
@@ -145,6 +147,36 @@ namespace {
                     asharia::RenderGraphResourceSlotSchema{
                         .name = "target",
                         .access = asharia::RenderGraphSlotAccess::ColorWrite,
+                        .shaderStage = asharia::RenderGraphShaderStage::None,
+                        .optional = false,
+                    },
+                },
+            .allowedCommands = {},
+            .allowCulling = true,
+        });
+        schemas.registerSchema(asharia::RenderGraphPassSchema{
+            .type = std::string{kColorReadWritePass},
+            .paramsType = {},
+            .resourceSlots =
+                {
+                    asharia::RenderGraphResourceSlotSchema{
+                        .name = "target",
+                        .access = asharia::RenderGraphSlotAccess::ColorReadWrite,
+                        .shaderStage = asharia::RenderGraphShaderStage::None,
+                        .optional = false,
+                    },
+                },
+            .allowedCommands = {},
+            .allowCulling = true,
+        });
+        schemas.registerSchema(asharia::RenderGraphPassSchema{
+            .type = std::string{kDepthWritePass},
+            .paramsType = {},
+            .resourceSlots =
+                {
+                    asharia::RenderGraphResourceSlotSchema{
+                        .name = "depth",
+                        .access = asharia::RenderGraphSlotAccess::DepthAttachmentWrite,
                         .shaderStage = asharia::RenderGraphShaderStage::None,
                         .optional = false,
                     },
@@ -354,6 +386,166 @@ namespace {
         });
 
         return schemas;
+    }
+
+    [[nodiscard]] bool compilesColorAttachmentWriteHazards(
+        const asharia::RenderGraphSchemaRegistry& schemas) {
+        asharia::RenderGraph graph;
+        const auto color = graph.importImage(importedColorDesc("ColorHazardTarget"));
+
+        graph.addPass("InitialColorWrite", std::string{kColorWritePass})
+            .writeColor("target", color);
+        graph.addPass("RepeatedColorWrite", std::string{kColorWritePass})
+            .writeColor("target", color);
+        graph.addPass("LoadColor", std::string{kColorReadWritePass})
+            .readWriteColor("target", color);
+        graph.addPass("RepeatedLoadColor", std::string{kColorReadWritePass})
+            .readWriteColor("target", color);
+
+        auto compiled = graph.compile(schemas);
+        if (!compiled) {
+            std::cerr << compiled.error().message << '\n';
+            return false;
+        }
+        if (!expect(compiled->passes.size() == 4,
+                    "RenderGraph did not preserve the color hazard pass sequence.")) {
+            return false;
+        }
+
+        const auto hasSingleTransition =
+            [](const asharia::RenderGraphCompiledPass& pass,
+               asharia::RenderGraphImageState oldState,
+               asharia::RenderGraphImageState newState) {
+                return pass.transitionsBefore.size() == 1 &&
+                       pass.transitionsBefore.front().oldState == oldState &&
+                       pass.transitionsBefore.front().newState == newState;
+            };
+
+        if (!expect(hasSingleTransition(compiled->passes[1],
+                                        asharia::RenderGraphImageState::ColorAttachment,
+                                        asharia::RenderGraphImageState::ColorAttachment),
+                    "RenderGraph omitted the repeated ColorAttachment WAW barrier.")) {
+            return false;
+        }
+        if (!expect(hasSingleTransition(compiled->passes[2],
+                                        asharia::RenderGraphImageState::ColorAttachment,
+                                        asharia::RenderGraphImageState::ColorReadWrite),
+                    "RenderGraph omitted the ColorAttachment to ColorReadWrite barrier.")) {
+            return false;
+        }
+        if (!expect(hasSingleTransition(compiled->passes[3],
+                                        asharia::RenderGraphImageState::ColorReadWrite,
+                                        asharia::RenderGraphImageState::ColorReadWrite),
+                    "RenderGraph omitted the repeated ColorReadWrite RAW/WAW barrier.")) {
+            return false;
+        }
+        if (!expect(compiled->passes[2].colorReadWrites.size() == 1 &&
+                        compiled->passes[2].colorReadWriteSlots.size() == 1 &&
+                        compiled->passes[2].colorWrites.empty(),
+                    "RenderGraph did not preserve the compiled ColorReadWrite contract.")) {
+            return false;
+        }
+
+        const asharia::RenderGraphDiagnosticsSnapshot snapshot =
+            graph.diagnosticsSnapshot(*compiled);
+        const bool hasColorReadWriteEdge = std::ranges::any_of(
+            snapshot.accessEdges,
+            [](const asharia::RenderGraphDiagnosticsAccessEdge& edge) {
+                return edge.passName == "LoadColor" && edge.slotName == "target" &&
+                       edge.access == asharia::RenderGraphSlotAccess::ColorReadWrite;
+            });
+        if (!expect(hasColorReadWriteEdge,
+                    "RenderGraph diagnostics omitted the ColorReadWrite access edge.")) {
+            return false;
+        }
+
+        const std::string debugTables = graph.formatDebugTables(*compiled);
+        if (!expect(contains(debugTables, "ColorReadWrite"),
+                    "RenderGraph debug tables omitted the ColorReadWrite contract.")) {
+            return false;
+        }
+
+        asharia::RenderGraph importedInitialGraph;
+        asharia::RenderGraphImageDesc importedInitialDesc =
+            importedColorDesc("ImportedColorReadWrite");
+        importedInitialDesc.initialState = asharia::RenderGraphImageState::ColorReadWrite;
+        const auto importedInitial =
+            importedInitialGraph.importImage(std::move(importedInitialDesc));
+        bool observedContext = false;
+        importedInitialGraph
+            .addPass("LoadImportedColor", std::string{kColorReadWritePass})
+            .readWriteColor("target", importedInitial)
+            .execute([&observedContext](asharia::RenderGraphPassContext context) {
+                observedContext = context.colorReadWrites.size() == 1 &&
+                                  context.colorReadWriteSlots.size() == 1 &&
+                                  context.colorWrites.empty();
+                return asharia::Result<void>{};
+            });
+        auto importedCompiled = importedInitialGraph.compile(schemas);
+        if (!expect(importedCompiled.has_value() && importedCompiled->passes.size() == 1 &&
+                        importedCompiled->passes.front().transitionsBefore.size() == 1,
+                    "RenderGraph rejected ColorReadWrite from a known imported initial state.")) {
+            return false;
+        }
+        auto executed = importedInitialGraph.execute(*importedCompiled);
+        return expect(executed.has_value() && observedContext,
+                      "RenderGraph executor omitted the ColorReadWrite pass context contract.");
+    }
+
+    [[nodiscard]] bool rejectsColorReadWriteWithoutProducer(
+        const asharia::RenderGraphSchemaRegistry& schemas) {
+        asharia::RenderGraph graph;
+        const auto transient =
+            graph.createTransientImage(transientColorDesc("UndefinedLoadTarget"));
+        graph.addPass("LoadUndefinedColor", std::string{kColorReadWritePass})
+            .readWriteColor("target", transient);
+        return expectCompileFailure(graph.compile(schemas),
+                                    "reads image '#0 UndefinedLoadTarget' before any pass writes it",
+                                    "ColorReadWrite from an undefined transient image");
+    }
+
+    [[nodiscard]] bool compilesNonColorImageWriteHazards(
+        const asharia::RenderGraphSchemaRegistry& schemas) {
+        const auto hasSameStateTransition = [](const asharia::RenderGraphCompiledPass& pass,
+                                               asharia::RenderGraphImageState state) {
+            return pass.transitionsBefore.size() == 1 &&
+                   pass.transitionsBefore.front().oldState == state &&
+                   pass.transitionsBefore.front().newState == state;
+        };
+
+        asharia::RenderGraph depthGraph;
+        const auto depth = depthGraph.importImage(asharia::RenderGraphImageDesc{
+            .name = "DepthWriteHazard",
+            .format = asharia::RenderGraphImageFormat::D32Sfloat,
+            .extent = asharia::RenderGraphExtent2D{.width = 64, .height = 64},
+            .initialState = asharia::RenderGraphImageState::Undefined,
+            .finalState = asharia::RenderGraphImageState::DepthAttachmentWrite,
+        });
+        depthGraph.addPass("InitialDepthWrite", std::string{kDepthWritePass})
+            .writeDepth("depth", depth);
+        depthGraph.addPass("RepeatedDepthWrite", std::string{kDepthWritePass})
+            .writeDepth("depth", depth);
+        auto depthCompiled = depthGraph.compile(schemas);
+        if (!expect(depthCompiled.has_value() && depthCompiled->passes.size() == 2 &&
+                        hasSameStateTransition(depthCompiled->passes[1],
+                                               asharia::RenderGraphImageState::DepthAttachmentWrite),
+                    "RenderGraph omitted the repeated DepthAttachmentWrite WAW barrier.")) {
+            return false;
+        }
+
+        asharia::RenderGraph transferGraph;
+        const auto transfer =
+            transferGraph.importImage(importedColorDesc("TransferWriteHazard"));
+        transferGraph.addPass("InitialTransferWrite", std::string{kTransferWritePass})
+            .writeTransfer("target", transfer);
+        transferGraph.addPass("RepeatedTransferWrite", std::string{kTransferWritePass})
+            .writeTransfer("target", transfer);
+        auto transferCompiled = transferGraph.compile(schemas);
+        return expect(
+            transferCompiled.has_value() && transferCompiled->passes.size() == 2 &&
+                hasSameStateTransition(transferCompiled->passes[1],
+                                       asharia::RenderGraphImageState::TransferDst),
+            "RenderGraph omitted the repeated TransferDst WAW barrier.");
     }
 
     [[nodiscard]] bool
@@ -1601,6 +1793,9 @@ namespace {
     [[nodiscard]] int runRenderGraphCompileTests() {
         const asharia::RenderGraphSchemaRegistry schemas = makeCompileTestSchemas();
         const bool passed =
+            compilesColorAttachmentWriteHazards(schemas) &&
+            compilesNonColorImageWriteHazards(schemas) &&
+            rejectsColorReadWriteWithoutProducer(schemas) &&
             cullsUnusedTransientButKeepsImportedWrites(schemas) &&
             keepsSideEffectPassAndExecutesIt(schemas) &&
             reordersFutureProducerBeforeConsumer(schemas) &&

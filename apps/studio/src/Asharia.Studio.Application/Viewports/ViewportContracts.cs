@@ -37,6 +37,12 @@ public enum ViewportTargetKind : uint
     DocumentScene = 0,
 }
 
+public enum ViewportSceneRasterMode : uint
+{
+    Solid = 0,
+    Wireframe = 1,
+}
+
 [Flags]
 public enum ViewportInvalidationReason : uint
 {
@@ -175,9 +181,38 @@ public sealed record ViewportDebugProxySnapshot
     public TransformValue Transform { get; }
 }
 
+public sealed record ViewportAuthoredMeshSnapshot
+{
+    public const ulong ExpectedMeshType = 0x900405520f80e8e6UL;
+
+    public ViewportAuthoredMeshSnapshot(
+        Guid objectId,
+        EntityId runtimeEntityId,
+        Guid assetId,
+        TransformValue transform)
+    {
+        if (objectId == Guid.Empty || assetId == Guid.Empty || !runtimeEntityId.IsValid)
+        {
+            throw new ArgumentException("Viewport authored mesh identity is invalid.");
+        }
+
+        ObjectId = objectId;
+        RuntimeEntityId = runtimeEntityId;
+        AssetId = assetId;
+        Transform = transform;
+    }
+
+    public Guid ObjectId { get; }
+    public EntityId RuntimeEntityId { get; }
+    public Guid AssetId { get; }
+    public ulong ExpectedType => ExpectedMeshType;
+    public TransformValue Transform { get; }
+}
+
 public sealed record ViewportRenderRequest
 {
     public const int MaximumDebugProxyCount = 256;
+    public const int MaximumAuthoredMeshCount = 10_000;
 
     internal ViewportRenderRequest(
         ViewportSessionId sessionId,
@@ -190,7 +225,9 @@ public sealed record ViewportRenderRequest
         ViewportCameraSnapshot camera,
         ViewportInvalidationReason reasons,
         IEnumerable<ViewportDebugProxySnapshot> debugProxies,
-        int totalDebugProxyCount)
+        int totalDebugProxyCount,
+        IEnumerable<ViewportAuthoredMeshSnapshot> authoredMeshes,
+        ViewportSceneRasterMode sceneRasterMode)
     {
         SessionId = sessionId;
         Sequence = sequence;
@@ -205,6 +242,8 @@ public sealed record ViewportRenderRequest
         Reasons = reasons;
         DebugProxies = new ReadOnlyCollection<ViewportDebugProxySnapshot>(debugProxies.ToArray());
         TotalDebugProxyCount = totalDebugProxyCount;
+        AuthoredMeshes = new ReadOnlyCollection<ViewportAuthoredMeshSnapshot>(authoredMeshes.ToArray());
+        SceneRasterMode = sceneRasterMode;
     }
 
     public ViewportSessionId SessionId { get; }
@@ -234,6 +273,10 @@ public sealed record ViewportRenderRequest
     public int TotalDebugProxyCount { get; }
 
     public bool DebugProxiesTruncated => DebugProxies.Count < TotalDebugProxyCount;
+
+    public IReadOnlyList<ViewportAuthoredMeshSnapshot> AuthoredMeshes { get; }
+
+    public ViewportSceneRasterMode SceneRasterMode { get; }
 }
 
 public sealed record ViewportSessionSnapshot(

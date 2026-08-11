@@ -28,6 +28,7 @@ public sealed class StudioEditorImageTestInputs : IDisposable
         "asharia_scene_document_close",
         "asharia_scene_document_snapshot",
         "asharia_scene_document_create_entity",
+        "asharia_scene_document_create_mesh_entity",
         "asharia_scene_document_set_entity_name",
         "asharia_scene_document_set_entity_transform",
         "asharia_scene_document_save",
@@ -36,16 +37,20 @@ public sealed class StudioEditorImageTestInputs : IDisposable
     [
         "editor_viewport_query_composition_compatibility",
         "editor_viewport_release_compatibility_result",
-        "editor_viewport_open_stream_v5",
-        "editor_viewport_submit_latest_v5",
-        "editor_viewport_try_take_ready_v5",
-        "editor_viewport_complete_frame_v5",
-        "editor_viewport_release_slot_import_v5",
-        "editor_viewport_close_stream_v5",
-        "editor_viewport_poll_stream_v5",
-        "editor_viewport_destroy_stream_v5",
+        "editor_viewport_open_stream_v6",
+        "editor_viewport_submit_latest_v6",
+        "editor_viewport_try_take_ready_v6",
+        "editor_viewport_complete_frame_v6",
+        "editor_viewport_release_slot_import_v6",
+        "editor_viewport_close_stream_v6",
+        "editor_viewport_poll_stream_v6",
+        "editor_viewport_destroy_stream_v6",
         "editor_viewport_shutdown",
     ];
+
+    internal static string[] CreateViewportNativeExports(params string[] additionalExports) =>
+        [.. ViewportNativeRequiredExports, .. additionalExports];
+
     private static readonly string[] ViewportShaderFiles =
     [
         "basic_mesh3d.frag.reflection.json",

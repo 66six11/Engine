@@ -161,6 +161,16 @@ public sealed class StudioProcessAcceptanceTests
             StudioViewportCadenceSmoke.CommandLineSwitch);
     }
 
+    [StudioGpuFact]
+    [Trait("Category", "StudioGpuAcceptance")]
+    public void Scene_mesh_closes_from_v2_document_to_presented_wireframe_draw()
+    {
+        RunGpuSmoke(
+            "scene-mesh-closure",
+            timeoutMilliseconds: 45_000,
+            StudioSceneMeshSmoke.CommandLineSwitch);
+    }
+
     [StudioGpuTheory]
     [Trait("Category", "StudioGpuAcceptance")]
     [MemberData(nameof(ViewportTransactionSmokeCases))]
@@ -333,9 +343,17 @@ public sealed class StudioProcessAcceptanceTests
         StudioGpuAcceptanceGate.RequireEnabled();
 
         var transactionContract = TryResolveTransactionSmokeContract(arguments);
+        var isSceneMeshSmoke = arguments.Length == 1 && string.Equals(
+            arguments[0],
+            StudioSceneMeshSmoke.CommandLineSwitch,
+            StringComparison.Ordinal);
         if (transactionContract is not null)
         {
             Assert.Equal(transactionContract.CaseScenario, scenario);
+        }
+        else if (isSceneMeshSmoke)
+        {
+            Assert.Equal("scene-mesh-closure", scenario);
         }
         else
         {
@@ -404,6 +422,11 @@ public sealed class StudioProcessAcceptanceTests
                 output,
                 StringComparison.Ordinal);
             AssertStructuredTransactionSummary(transactionContract, output);
+        }
+        else if (isSceneMeshSmoke)
+        {
+            Assert.Contains(StudioSceneMeshSmoke.PassMarker, output, StringComparison.Ordinal);
+            AssertStructuredSceneMeshEvidence(output);
         }
         else
         {
@@ -580,6 +603,193 @@ public sealed class StudioProcessAcceptanceTests
         var value = argument[prefix.Length..];
         Assert.False(string.IsNullOrWhiteSpace(value));
         return value;
+    }
+
+    internal static void AssertStructuredSceneMeshEvidence(string output)
+    {
+        var line = Assert.Single(
+            output.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries),
+            static candidate => candidate.StartsWith(
+                StudioSceneMeshSmoke.EvidencePrefix,
+                StringComparison.Ordinal));
+        using var document = JsonDocument.Parse(
+            line[StudioSceneMeshSmoke.EvidencePrefix.Length..]);
+        var root = document.RootElement;
+        Assert.Equal("scene-mesh-closure", root.GetProperty("scenario").GetString());
+        Assert.Equal(
+            "studio-scene-mesh-vulkan",
+            root.GetProperty("evidenceKind").GetString());
+        Assert.False(root.GetProperty("pixelEvidenceAvailable").GetBoolean());
+        Assert.False(root.GetProperty("physicalDisplayedEvidenceAvailable").GetBoolean());
+        Assert.Equal(2, root.GetProperty("sceneSchemaVersion").GetInt32());
+        Assert.True(root.GetProperty("revisionOrderStrict").GetBoolean());
+        Assert.True(root.GetProperty("finalExactSurface").GetBoolean());
+        Assert.True(root.GetProperty("stalePresentationExcluded").GetBoolean());
+
+        var meshObjectId = root.GetProperty("meshObjectId").GetGuid();
+        var emptyObjectId = root.GetProperty("emptyObjectId").GetGuid();
+        var assetId = root.GetProperty("assetId").GetGuid();
+        Assert.NotEqual(Guid.Empty, meshObjectId);
+        Assert.NotEqual(Guid.Empty, emptyObjectId);
+        Assert.NotEqual(meshObjectId, emptyObjectId);
+        Assert.Equal(
+            Asharia.Studio.Application.Scenes.SceneMeshReference
+                .DirectionalWedgeValidation.AssetId,
+            assetId);
+
+        var initial = root.GetProperty("initial");
+        var mesh = root.GetProperty("meshCreated");
+        var empty = root.GetProperty("emptyEntityCreated");
+        var transformed = root.GetProperty("transformUpdated");
+        AssertStage(initial, "initial-empty", expectedEntityCount: 0);
+        AssertStage(mesh, "mesh-created", expectedEntityCount: 1);
+        AssertStage(empty, "empty-entity-created", expectedEntityCount: 2);
+        AssertStage(transformed, "transform-updated", expectedEntityCount: 2);
+
+        var initialRevision = initial.GetProperty("targetRevision").GetUInt64();
+        var meshRevision = mesh.GetProperty("targetRevision").GetUInt64();
+        var emptyRevision = empty.GetProperty("targetRevision").GetUInt64();
+        var supersededRevision = root.GetProperty("supersededRevision").GetUInt64();
+        var transformedRevision = transformed.GetProperty("targetRevision").GetUInt64();
+        Assert.True(initialRevision < meshRevision);
+        Assert.True(meshRevision < emptyRevision);
+        Assert.True(emptyRevision < supersededRevision);
+        Assert.True(supersededRevision < transformedRevision);
+        Assert.True(
+            initial.GetProperty("requestSequence").GetUInt64() <
+            mesh.GetProperty("requestSequence").GetUInt64());
+        Assert.True(
+            mesh.GetProperty("requestSequence").GetUInt64() <
+            empty.GetProperty("requestSequence").GetUInt64());
+        Assert.True(
+            empty.GetProperty("requestSequence").GetUInt64() <
+            root.GetProperty("supersededRequestSequence").GetUInt64());
+        Assert.True(
+            root.GetProperty("supersededRequestSequence").GetUInt64() <
+            transformed.GetProperty("requestSequence").GetUInt64());
+        Assert.True(root.GetProperty("supersededFrameIndex").GetUInt64() > 0);
+        Assert.Equal(
+            1UL,
+            root.GetProperty("presentedFramesAcrossSupersede").GetUInt64());
+        Assert.Equal(
+            transformedRevision,
+            root.GetProperty("finalPresentedRevision").GetUInt64());
+
+        var initialReceipt = initial.GetProperty("receipt");
+        Assert.Equal(0U, initialReceipt.GetProperty("inputCount").GetUInt32());
+        Assert.Equal(0U, initialReceipt.GetProperty("resolvedCount").GetUInt32());
+        Assert.Equal(0U, initialReceipt.GetProperty("rejectedCount").GetUInt32());
+        Assert.Equal(0U, initialReceipt.GetProperty("indexedDrawCount").GetUInt32());
+        Assert.Equal(
+            JsonValueKind.Null,
+            initialReceipt.GetProperty("representativeSourceEntityId").ValueKind);
+        Assert.Equal(
+            JsonValueKind.Null,
+            initialReceipt.GetProperty("representativeObjectId").ValueKind);
+        Assert.Equal(
+            JsonValueKind.Null,
+            initialReceipt.GetProperty("representativeAssetId").ValueKind);
+        Assert.Equal(0UL, initialReceipt.GetProperty("meshResourceKey").GetUInt64());
+        Assert.Equal(0UL, initialReceipt.GetProperty("materialResourceKey").GetUInt64());
+        Assert.Equal(0UL, initialReceipt.GetProperty("productHash").GetUInt64());
+
+        var meshReceipt = mesh.GetProperty("receipt");
+        var emptyReceipt = empty.GetProperty("receipt");
+        var transformedReceipt = transformed.GetProperty("receipt");
+        var supersededReceipt = root.GetProperty("supersededReceipt");
+        AssertMeshReceipt(meshReceipt, meshObjectId, assetId);
+        AssertMeshReceipt(emptyReceipt, meshObjectId, assetId);
+        AssertMeshReceipt(transformedReceipt, meshObjectId, assetId);
+        AssertMeshReceipt(supersededReceipt, meshObjectId, assetId);
+        Assert.True(supersededReceipt.GetProperty("evidenceAvailable").GetBoolean());
+        Assert.Equal(
+            "wireframe",
+            supersededReceipt.GetProperty("rasterMode").GetString());
+        Assert.Equal(
+            supersededRevision,
+            supersededReceipt.GetProperty("sceneRevision").GetUInt64());
+        Assert.Equal(
+            meshReceipt.GetProperty("representativeSourceEntityId")
+                .GetProperty("index").GetUInt32(),
+            emptyReceipt.GetProperty("representativeSourceEntityId")
+                .GetProperty("index").GetUInt32());
+        Assert.Equal(
+            meshReceipt.GetProperty("representativeSourceEntityId")
+                .GetProperty("generation").GetUInt32(),
+            emptyReceipt.GetProperty("representativeSourceEntityId")
+                .GetProperty("generation").GetUInt32());
+        Assert.Equal(
+            meshReceipt.GetProperty("representativeSourceEntityId")
+                .GetProperty("index").GetUInt32(),
+            transformedReceipt.GetProperty("representativeSourceEntityId")
+                .GetProperty("index").GetUInt32());
+        Assert.Equal(
+            meshReceipt.GetProperty("representativeSourceEntityId")
+                .GetProperty("generation").GetUInt32(),
+            transformedReceipt.GetProperty("representativeSourceEntityId")
+                .GetProperty("generation").GetUInt32());
+        Assert.Equal(
+            meshReceipt.GetProperty("representativeSourceEntityId")
+                .GetProperty("index").GetUInt32(),
+            supersededReceipt.GetProperty("representativeSourceEntityId")
+                .GetProperty("index").GetUInt32());
+        Assert.Equal(
+            meshReceipt.GetProperty("representativeSourceEntityId")
+                .GetProperty("generation").GetUInt32(),
+            supersededReceipt.GetProperty("representativeSourceEntityId")
+                .GetProperty("generation").GetUInt32());
+
+        static void AssertStage(
+            JsonElement stage,
+            string expectedStage,
+            int expectedEntityCount)
+        {
+            Assert.Equal(expectedStage, stage.GetProperty("stage").GetString());
+            Assert.Equal(
+                expectedEntityCount,
+                stage.GetProperty("documentEntityCount").GetInt32());
+            Assert.True(stage.GetProperty("requestSequence").GetUInt64() > 0);
+            Assert.True(stage.GetProperty("frameIndex").GetUInt64() > 0);
+            Assert.True(stage.GetProperty("currentSurfaceIsExact").GetBoolean());
+            Assert.True(stage.GetProperty("lastPresentationIsExact").GetBoolean());
+            var revision = stage.GetProperty("targetRevision").GetUInt64();
+            Assert.True(StudioSceneMeshSmoke.IsPresentedRevision(
+                stage.GetProperty("presentationStatus").GetString()!,
+                revision));
+            var receipt = stage.GetProperty("receipt");
+            Assert.True(receipt.GetProperty("evidenceAvailable").GetBoolean());
+            Assert.Equal("wireframe", receipt.GetProperty("rasterMode").GetString());
+            Assert.Equal(revision, receipt.GetProperty("sceneRevision").GetUInt64());
+        }
+
+        static void AssertMeshReceipt(
+            JsonElement receipt,
+            Guid expectedObjectId,
+            Guid expectedAssetId)
+        {
+            Assert.Equal(1U, receipt.GetProperty("inputCount").GetUInt32());
+            Assert.Equal(1U, receipt.GetProperty("resolvedCount").GetUInt32());
+            Assert.Equal(0U, receipt.GetProperty("rejectedCount").GetUInt32());
+            Assert.Equal(1U, receipt.GetProperty("indexedDrawCount").GetUInt32());
+            var source = receipt.GetProperty("representativeSourceEntityId");
+            Assert.True(source.GetProperty("index").GetUInt32() > 0);
+            Assert.True(source.GetProperty("generation").GetUInt32() > 0);
+            Assert.Equal(
+                expectedObjectId,
+                receipt.GetProperty("representativeObjectId").GetGuid());
+            Assert.Equal(
+                expectedAssetId,
+                receipt.GetProperty("representativeAssetId").GetGuid());
+            Assert.Equal(
+                StudioSceneMeshSmoke.ValidationMeshResourceKey,
+                receipt.GetProperty("meshResourceKey").GetUInt64());
+            Assert.Equal(
+                StudioSceneMeshSmoke.DefaultUnlitMaterialResourceKey,
+                receipt.GetProperty("materialResourceKey").GetUInt64());
+            Assert.Equal(
+                StudioSceneMeshSmoke.ValidationProductHash,
+                receipt.GetProperty("productHash").GetUInt64());
+        }
     }
 
     private static void AssertStructuredResizeEvidence(

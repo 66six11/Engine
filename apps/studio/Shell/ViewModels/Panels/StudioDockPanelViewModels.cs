@@ -29,6 +29,7 @@ internal sealed class StudioScenePanelViewModel :
     private ViewportSession? session_;
     private ulong viewportRevision_;
     private bool isRealtime_ = true;
+    private bool isWireframe_;
     private bool isDisposed_;
 
     public StudioScenePanelViewModel(StudioShellViewModel shell)
@@ -55,6 +56,24 @@ internal sealed class StudioScenePanelViewModel :
                 return;
             }
             isRealtime_ = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public bool IsWireframe
+    {
+        get => isWireframe_;
+        set
+        {
+            if (isWireframe_ == value)
+            {
+                return;
+            }
+            isWireframe_ = value;
+            session_?.SetSceneRasterMode(
+                value
+                    ? ViewportSceneRasterMode.Wireframe
+                    : ViewportSceneRasterMode.Solid);
             OnPropertyChanged();
         }
     }
@@ -110,11 +129,16 @@ internal sealed class StudioScenePanelViewModel :
             return;
         }
 
-        ReplaceSession(new ViewportSession(
+        var replacement = new ViewportSession(
             ViewportSessionId.Create(),
             ViewportRenderKind.Scene,
             document,
-            ViewportCameraSnapshot.DefaultScene));
+            ViewportCameraSnapshot.DefaultScene);
+        replacement.SetSceneRasterMode(
+            isWireframe_
+                ? ViewportSceneRasterMode.Wireframe
+                : ViewportSceneRasterMode.Solid);
+        ReplaceSession(replacement);
         viewportRevision_ = document.Revision;
         OnPropertyChanged(nameof(ViewportRevision));
     }

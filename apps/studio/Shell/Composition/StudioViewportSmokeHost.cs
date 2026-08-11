@@ -39,6 +39,12 @@ internal sealed class StudioViewportSmokeHost : IAsyncDisposable
         return CreateSession(document, ViewportRenderKind.Scene);
     }
 
+    public ViewportSession CreateSceneSession(SceneDocumentSnapshot document)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        return CreateSession(document, ViewportRenderKind.Scene);
+    }
+
     public (ViewportSession First, ViewportSession Second) CreateSceneSessionPair(
         string fileName)
     {

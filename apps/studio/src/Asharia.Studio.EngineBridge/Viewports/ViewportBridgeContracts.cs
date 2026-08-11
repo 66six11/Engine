@@ -1,6 +1,7 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Asharia.Runtime;
 using Asharia.Studio.Application.Viewports;
 using Asharia.Studio.EngineBridge.Viewports.Abi;
 
@@ -35,6 +36,7 @@ public enum ViewportFrameFailureKind
     Backpressure,
     NativeUnavailable,
     UnsupportedInterop,
+    UnsupportedFeature,
     DeviceMismatch,
     RenderFailed,
     InternalError,
@@ -79,6 +81,21 @@ public sealed record ViewportFrameTakeResult(
     public bool HasFrame => Lease is not null;
 }
 
+public sealed record ViewportSceneMeshReceipt(
+    uint InputCount,
+    uint ResolvedCount,
+    uint RejectedCount,
+    uint IndexedDrawCount,
+    ViewportSceneRasterMode RasterMode,
+    bool EvidenceAvailable,
+    EntityId? RepresentativeSourceEntityId,
+    Guid? RepresentativeObjectId,
+    Guid? RepresentativeAssetId,
+    ulong MeshResourceKey,
+    ulong MaterialResourceKey,
+    ulong ProductHash,
+    ulong SceneRevision);
+
 public sealed record ViewportRenderStreamSnapshot(
     ViewportRenderStreamLifecycle Lifecycle,
     bool HasPendingLatest,
@@ -95,6 +112,7 @@ internal enum ViewportRenderDiagnosticOverlay
 {
     None = 0,
     FlashSentinelCorners = 1 << 0,
+    CaptureSceneMeshEvidence = 1 << 1,
 }
 
 public sealed class ViewportRenderStream : IDisposable, IAsyncDisposable
@@ -104,13 +122,19 @@ public sealed class ViewportRenderStream : IDisposable, IAsyncDisposable
     private bool closeRequested_;
     private bool destroyed_;
 
-    internal ViewportRenderStream(ViewportBridge bridge, ulong streamId)
+    internal ViewportRenderStream(
+        ViewportBridge bridge,
+        ulong streamId,
+        bool supportsWireframe)
     {
         bridge_ = bridge;
         StreamId = streamId;
+        SupportsWireframe = supportsWireframe;
     }
 
     internal ulong StreamId { get; }
+
+    public bool SupportsWireframe { get; }
 
     public ViewportSubmitResult SubmitLatest(ViewportRenderRequest request)
     {
@@ -123,7 +147,8 @@ public sealed class ViewportRenderStream : IDisposable, IAsyncDisposable
     {
         ArgumentNullException.ThrowIfNull(request);
         if ((diagnosticOverlay &
-             ~ViewportRenderDiagnosticOverlay.FlashSentinelCorners) !=
+             ~(ViewportRenderDiagnosticOverlay.FlashSentinelCorners |
+               ViewportRenderDiagnosticOverlay.CaptureSceneMeshEvidence)) !=
             ViewportRenderDiagnosticOverlay.None)
         {
             throw new ArgumentOutOfRangeException(nameof(diagnosticOverlay));
@@ -136,6 +161,14 @@ public sealed class ViewportRenderStream : IDisposable, IAsyncDisposable
                 return new ViewportSubmitResult(new ViewportFrameFailure(
                     ViewportFrameFailureKind.NativeUnavailable,
                     "Viewport render stream is closing."));
+            }
+            if (request.SceneRasterMode == ViewportSceneRasterMode.Wireframe &&
+                !SupportsWireframe)
+            {
+                return new ViewportSubmitResult(new ViewportFrameFailure(
+                    ViewportFrameFailureKind.UnsupportedFeature,
+                    "Viewport wireframe is unavailable because the native stream device did " +
+                    "not enable fillModeNonSolid."));
             }
 
             var submitted = bridge_.SubmitLatest(StreamId, request, diagnosticOverlay);
@@ -221,7 +254,7 @@ public sealed class ViewportFrameLease : IDisposable, IAsyncDisposable
 
     internal ViewportFrameLease(
         ViewportRenderStream stream,
-        ViewportNativeReadyFrameV5 frame,
+        ViewportNativeReadyFrameV6 frame,
         ViewportFrameFormat format)
     {
         stream_ = stream;
@@ -236,6 +269,7 @@ public sealed class ViewportFrameLease : IDisposable, IAsyncDisposable
             frame.LogicalWidthPixels,
             frame.LogicalHeightPixels);
         AllocationExtent = new ViewportExtent(frame.WidthPixels, frame.HeightPixels);
+        SceneMeshReceipt = CreateSceneMeshReceipt(frame.SceneMeshReceipt);
         Format = format;
         MemorySizeBytes = frame.MemorySizeBytes;
         FrameIndex = frame.FrameIndex;
@@ -266,6 +300,8 @@ public sealed class ViewportFrameLease : IDisposable, IAsyncDisposable
     public ulong MemorySizeBytes { get; }
 
     public ulong FrameIndex { get; }
+
+    public ViewportSceneMeshReceipt SceneMeshReceipt { get; }
 
     public ViewportFrameCompletionKind? CompletionKind
     {
@@ -307,6 +343,30 @@ public sealed class ViewportFrameLease : IDisposable, IAsyncDisposable
     }
 
     public void Quarantine() => Interlocked.Exchange(ref completionState_, int.MinValue);
+
+    private static ViewportSceneMeshReceipt CreateSceneMeshReceipt(
+        ViewportNativeSceneMeshReceiptV6 receipt)
+    {
+        var hasResolved = receipt.ResolvedCount != 0;
+        return new ViewportSceneMeshReceipt(
+            receipt.InputCount,
+            receipt.ResolvedCount,
+            receipt.RejectedCount,
+            receipt.IndexedDrawCount,
+            (ViewportSceneRasterMode)receipt.RasterMode,
+            receipt.EvidenceAvailable != 0,
+            hasResolved
+                ? new EntityId(
+                    receipt.RepresentativeSourceEntityIndex,
+                    receipt.RepresentativeSourceEntityGeneration)
+                : null,
+            hasResolved ? receipt.RepresentativeObjectId.ToGuid() : null,
+            hasResolved ? receipt.RepresentativeAssetId.ToGuid() : null,
+            receipt.MeshResourceKey,
+            receipt.MaterialResourceKey,
+            receipt.ProductHash,
+            receipt.SceneRevision);
+    }
 
 }
 

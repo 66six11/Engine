@@ -33,6 +33,8 @@ namespace asharia {
         public:
             PassBuilder& writeColor(RenderGraphImageHandle image);
             PassBuilder& writeColor(std::string slotName, RenderGraphImageHandle image);
+            PassBuilder& readWriteColor(RenderGraphImageHandle image);
+            PassBuilder& readWriteColor(std::string slotName, RenderGraphImageHandle image);
             PassBuilder& readTexture(std::string slotName, RenderGraphImageHandle image,
                                      RenderGraphShaderStage shaderStage);
 

@@ -3,10 +3,12 @@
 #include <array>
 #include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
 
+#include "asharia/asset_core/asset_reference.hpp"
 #include "asharia/core/result.hpp"
 #include "asharia/scene/entity_id.hpp"
 #include "asharia/scene/transform.hpp"
@@ -15,7 +17,10 @@
 namespace asharia::scene {
 
     inline constexpr std::string_view kAshariaSceneSchema = "com.asharia.scene";
-    inline constexpr std::uint32_t kAshariaSceneSchemaVersion = 1;
+    inline constexpr std::uint32_t kAshariaSceneSchemaVersion = 2;
+    inline constexpr std::string_view kSceneMeshAssetTypeName = "com.asharia.asset.Mesh";
+    inline constexpr asset::AssetTypeId kSceneMeshAssetType =
+        asset::makeAssetTypeId(kSceneMeshAssetTypeName);
     inline constexpr std::string_view kDefaultSceneRelativePath =
         "Assets/Scenes/Default.asharia.scene.json";
     inline constexpr std::uint64_t kInitialSceneDocumentRevision = 1;
@@ -29,6 +34,7 @@ namespace asharia::scene {
         DuplicateObjectId = 4,
         InvalidObjectId = 5,
         InvalidTransform = 6,
+        InvalidAssetReference = 7,
     };
 
     struct SceneId {
@@ -49,6 +55,7 @@ namespace asharia::scene {
         SceneObjectId objectId{};
         std::string name;
         TransformComponent transform{};
+        std::optional<asset::AssetReference> mesh;
 
         [[nodiscard]] friend bool operator==(const SceneEntityData&,
                                              const SceneEntityData&) = default;
@@ -63,7 +70,16 @@ namespace asharia::scene {
     };
 
     struct SceneDocumentSnapshot {
+        struct RuntimeEntityBinding {
+            SceneObjectId objectId{};
+            EntityId entity{};
+
+            [[nodiscard]] friend bool operator==(RuntimeEntityBinding,
+                                                 RuntimeEntityBinding) = default;
+        };
+
         SceneDocumentData data;
+        std::vector<RuntimeEntityBinding> runtimeEntities;
         std::uint64_t revision{};
         std::uint64_t savedRevision{};
 
@@ -88,6 +104,9 @@ namespace asharia::scene {
 
         [[nodiscard]] VoidResult createEntity(SceneObjectId objectId, std::string_view name,
                                               std::uint64_t expectedRevision);
+        [[nodiscard]] VoidResult createMeshEntity(SceneObjectId objectId, std::string_view name,
+                                                  asset::AssetGuid meshAsset,
+                                                  std::uint64_t expectedRevision);
         [[nodiscard]] VoidResult setEntityName(SceneObjectId objectId, std::string_view name,
                                                std::uint64_t expectedRevision);
         [[nodiscard]] VoidResult setEntityTransform(SceneObjectId objectId,
@@ -106,6 +125,8 @@ namespace asharia::scene {
 
         [[nodiscard]] RuntimeEntity* findRuntimeEntity(SceneObjectId objectId) noexcept;
         [[nodiscard]] const RuntimeEntity* findRuntimeEntity(SceneObjectId objectId) const noexcept;
+        [[nodiscard]] VoidResult createPreparedEntity(SceneEntityData prepared,
+                                                      std::uint64_t expectedRevision);
         [[nodiscard]] VoidResult requireRevision(std::uint64_t expectedRevision) const;
         void advanceRevision() noexcept;
 

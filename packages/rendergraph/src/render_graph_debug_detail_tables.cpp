@@ -150,6 +150,8 @@ namespace asharia::rendergraph_internal {
         output += "|---|---|---|---|\n";
         for (const RenderGraphCompiledPass& pass : compiled.passes) {
             appendSlotRows(declarations, output, pass.name, "ColorWrite", pass.colorWriteSlots);
+            appendSlotRows(declarations, output, pass.name, "ColorReadWrite",
+                           pass.colorReadWriteSlots);
             appendSlotRows(declarations, output, pass.name, "ShaderRead", pass.shaderReadSlots);
             appendSlotRows(declarations, output, pass.name, "DepthAttachmentRead",
                            pass.depthReadSlots);

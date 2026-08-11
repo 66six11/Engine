@@ -182,7 +182,11 @@ public sealed class StudioHierarchyPanelViewModelTests
         Entity(Guid.NewGuid(), name);
 
     private static SceneEntitySnapshot Entity(Guid objectId, string name) =>
-        new(objectId, name, TransformValue.Identity);
+        new(
+            objectId,
+            new EntityId((uint)(name.GetHashCode() & int.MaxValue) + 1U, 1U),
+            name,
+            TransformValue.Identity);
 
     private static ProjectSessionSnapshot Ready(
         Guid sceneId,

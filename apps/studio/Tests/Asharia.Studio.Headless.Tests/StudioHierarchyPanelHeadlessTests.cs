@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
@@ -21,6 +22,8 @@ namespace Asharia.Studio.Headless.Tests;
 
 public sealed class StudioHierarchyPanelHeadlessTests
 {
+    private static int nextRuntimeEntityIndex_;
+
     [AvaloniaFact]
     public void Snapshot_replacement_remaps_selection_to_the_new_entity_instance()
     {
@@ -393,7 +396,13 @@ public sealed class StudioHierarchyPanelHeadlessTests
         Entity(Guid.NewGuid(), name);
 
     private static SceneEntitySnapshot Entity(Guid objectId, string name) =>
-        new(objectId, name, TransformValue.Identity);
+        new(
+            objectId,
+            new EntityId(
+                checked((uint)Interlocked.Increment(ref nextRuntimeEntityIndex_)),
+                1U),
+            name,
+            TransformValue.Identity);
 
     private static ProjectSessionSnapshot Ready(
         Guid sceneId,

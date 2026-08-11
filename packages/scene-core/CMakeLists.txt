@@ -11,6 +11,7 @@ include("${ASHARIA_REPOSITORY_ROOT}/cmake/AshariaPackage.cmake")
 asharia_package_init()
 asharia_require_package_target(asharia::core engine/core)
 asharia_require_package_target(asharia::archive packages/archive)
+asharia_require_package_target(asharia::asset_core packages/asset-core)
 
 add_library(asharia-scene-core STATIC
     src/world.cpp
@@ -37,6 +38,7 @@ target_include_directories(asharia-scene-core
 
 target_link_libraries(asharia-scene-core
     PUBLIC
+        asharia::asset_core
         asharia::core
 )
 
