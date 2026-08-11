@@ -144,8 +144,8 @@ release contract。使用标准 `dotnet publish` 与 `EditorImage.pubxml` 生成
 Studio publish 目录；`dotnet publish` 不负责清理旧 `PublishDir`。当前 Studio 的 Project、SceneDocument 与 Scene View
 都有 native consumer，因此必须先按本文规则运行 Conan，并构建所选 `msvc-release` preset。publish 精确复制
 `asharia_project_native.dll`、`asharia_scene_native.dll`、`editor_native.dll` 与 16 个 renderer-basic shader/reflection 文件；
-仍不复制 `slang.dll`、Vulkan SDK 或 validation layer。Scene schema v2、Document ABI v2 与 Viewport V6 是 hard-cut
-native consumer contract；发行验证必须拒绝遗留 v1 document/v1--v5 viewport exports。shader/reflection closure 必须仍为
+仍不复制 `slang.dll`、Vulkan SDK 或 validation layer。Scene schema v2、Document ABI v2 与 Viewport V7 是 hard-cut
+native consumer contract；发行验证必须拒绝遗留 v1 document/v1--v6 viewport exports。shader/reflection closure 必须仍为
 精确 16 个文件，不能因 Scene mesh / Frame Debug 改动少复制、重复复制或以旧 shader 代替。
 完整可复制命令、required file set、参数、输出布局、receipt 与失败恢复见
 `tools/studio-distribution/README.md`。

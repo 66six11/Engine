@@ -1,6 +1,6 @@
 # Studio viewport rendering
 
-最近更新：2026-08-11
+最近更新：2026-08-12
 
 ## 当前 production 链路
 
@@ -13,7 +13,7 @@ Viewport presentation proposal (Scene exact / Game fit / Frame Debug immutable c
   -> workspace host keeps one active request + one queued latest; committed layout/front stay visible
   -> ViewportPresentationTransactionCoordinator
   -> ViewportSession.TryPublishLatest immutable snapshot
-  -> EngineBridge ViewportRenderStream (V6)
+  -> EngineBridge ViewportRenderStream (V7)
   -> editor_native per-stream pending-latest
   -> process-level EditorSharedViewportRuntime RenderThread
   -> renderer_basic_vulkan offscreen external image
@@ -34,7 +34,7 @@ validation mesh；未知或未就绪 asset 逐项 no-draw，不能替换成默�
 | 模块 | 责任 | 禁止 |
 | --- | --- | --- |
 | `ViewportSession` | document/camera/extent/exposed invalidation；coalesced refresh signal；发布 immutable request；维护内容呈现序列下界 | 持有 native/GPU handle；等待 frame completion 才允许新 request；把 geometry revision 冒充内容 revision |
-| `ViewportBridge` / `ViewportRenderStream` | V6 ABI 映射、typed status、authored-mesh snapshot、slot/frame lease 与 request-correlated mesh receipt | 调 Vulkan；猜测 stale native metadata；把 asset GUID 替换成 backend resource key |
+| `ViewportBridge` / `ViewportRenderStream` | V7 ABI 映射、typed status、view-local FOV axis、authored-mesh snapshot、slot/frame lease 与 request-correlated mesh receipt | 调 Vulkan；猜测 stale native metadata；把 asset GUID 替换成 backend resource key |
 | `ViewportPresentationTransactionCoordinator` | 以 `SessionId + EndpointEpoch + TransactionId` 协调 Proposal→Completed/Aborted/Quarantined；同 compositor group barrier | 假定跨 compositor 原子；拥有 endpoint surface/stream；把 dock policy 写进通用状态机 |
 | `EditorDockStagedGridSplitter` / `EditorDockSplitResizePolicy` / `EditorDockSplitResizeCoordinator` | latest splitter layout proposal、min/max/layout-rounding、同步 probe、requested/committed `GridLength`；作为 transaction adapter | 直接写 GPU handle；拥有 transaction/resource lifetime；把 drag event 变成 FIFO；只在 drag-end resize |
 | `EditorDockPresentationLayoutHost` / `Asharia.Studio.Presentation.Avalonia.Windowing` capability | Main/Floating Window 共用 workspace layout owner；以 `IInteractiveTopLevelResizeAdapterProvider`、`IInteractiveTopLevelResizeAdapterFactory`、`IInteractiveTopLevelResizeAttachment`、`IInteractiveTopLevelResizeSink`、`IInteractiveTopLevelResizeCommit` 与 `InteractiveTopLevelResizeProjection` 接收可选 outer-layout proposal，并以 active + queued-latest 驱动 workspace transaction | 引用 HWND、WM message、USER32 或 P/Invoke；拥有 native hook；假定每个平台都有 precommit seam |
@@ -43,22 +43,22 @@ validation mesh；未知或未就绪 asset 逐项 no-draw，不能替换成默�
 | `EditorSharedViewportRuntime` | stream registry、latest/ready/slot scheduler、唯一 owner thread、retirement | 引用 managed/SceneDocument object |
 | `EditorSharedViewportRenderProducer` | full slot Vulkan resources、显式 product binding、scene-mesh extraction、record/submit、grid/debug overlay | composition API；UI layout policy；从 source path 或 Avalonia 猜 mesh product |
 
-## V6 ABI
+## V7 ABI
 
 Frame path 只使用：
 
 ```text
-open_stream_v6(compatibility) -> streamId
-submit_latest_v6(streamId, owning request snapshot)
-try_take_ready_v6(streamId) -> optional self-describing frame
-complete_frame_v6(streamId, slotId, completionKind)
-release_slot_import_v6(streamId, slotId)
-close_stream_v6(streamId)
-poll_stream_v6(streamId)
-destroy_stream_v6(streamId)
+open_stream_v7(compatibility) -> streamId
+submit_latest_v7(streamId, owning request snapshot)
+try_take_ready_v7(streamId) -> optional self-describing frame
+complete_frame_v7(streamId, slotId, completionKind)
+release_slot_import_v7(streamId, slotId)
+close_stream_v7(streamId)
+poll_stream_v7(streamId)
+destroy_stream_v7(streamId)
 ```
 
-V5 frame symbols不导出，也没有 managed fallback。`query_composition_compatibility` 是一次性 device/handle control plane；
+V1–V6 frame symbols 不导出，也没有 managed fallback。`query_composition_compatibility` 是一次性 device/handle control plane；
 `query_runtime_stats_*` 是 diagnostics，不属于 frame ownership。
 
 request 复制：session id、target id/revision、sequence、kind、logical/allocation extent、camera、最多 256 个 debug proxy、
@@ -68,6 +68,20 @@ ready frame 除 session/target/revision/sequence、kind、extent、slot、extern
 还携 request-correlated Scene mesh receipt。只有显式 diagnostic flag 才收集 indexed draw evidence；receipt 的 scene revision、
 resolved/rejected counts 与 indexed draw count 是整批证据，`Representative*` source/asset/product/resource 字段只标识首个已解析 draw，
 不得外推为每个 mesh 的逐项 receipt；这些字段必须自洽，否则整帧 fail closed。
+
+## 视图局部的投影轴策略
+
+`ViewportCameraSnapshot` 以 `FieldOfViewRadians + ViewportFieldOfViewAxis` 明确投影合同；这两个字段属于
+viewport session/request 的 transient view state，不写入 `SceneDocument`。Scene View 默认使用 90°
+`MaintainHorizontal`：宽度不变而只调整 dock 高度时，水平和垂直方向的像素尺度保持稳定，变化只增加或减少上下可见内容，
+不会通过 camera dolly、auto-focus 或 FOV 插值制造第二次构图跳变。Game View 与 Preview 默认使用 60°
+`MaintainVertical`，保留 authored/runtime camera 常见的垂直 FOV 语义；多个 endpoint 即使指向同一 document，也不能共享可变
+camera 或投影策略。
+
+采用依据：Unreal 的公开 `EAspectRatioAxisConstraint` 与 Editor viewport preference 证明编辑器需要显式选择保持水平或垂直
+FOV；Godot `Camera3D` 的 `KEEP_WIDTH` / `KEEP_HEIGHT` 证明同类 axis constraint 可作为相机投影合同；Unity `Camera.fieldOfView`
+则明确是垂直 FOV，因此支持 Game/Preview 保持垂直语义。Asharia 采用“显式、per-view axis constraint”，但不复制外部枚举/API，
+也暂不实现 `MajorAxisFOV`、physical camera/gate fit 或 UI preference：当前只有 Scene 与 Game/Preview 两个已证实需求。
 
 ## 帧与槽状态
 
@@ -143,7 +157,7 @@ proposal adapter：它提供同步 layout probe 和可回滚 layout mutation，s
 ## Scene exact resize policy
 
 control 以 `ceil(Bounds * RenderScaling)` 采样当前 panel `PixelSize`，并把同一个 extent 同时写入 request 的 logical/allocation
-字段。V6 保留双字段以维持自描述 ABI，但 Studio surface presentation 的硬约束是：
+字段。V7 保留双字段以维持自描述 ABI，但 Studio surface presentation 的硬约束是：
 
 ```text
 external-image allocation == frame logical extent == commit-time panel PixelSize
@@ -270,8 +284,8 @@ hook 留在独立 integration assembly、而非 shared transaction owner，是 p
 内容门禁，exact size 由 geometry generation + commit-time extent 独占裁决。dirty-only 长时间空闲后，下一帧的绝对时间跳到
 当前 monotonic elapsed，delta 反映真实空闲间隔，不按 `frameIndex / 60` 补播假帧。
 
-selection 与 native overlay intent 当前还没有进入 V6 immutable request；现有 selection 只属于 shell，grid/axes 仍是 producer
-固定策略。authored mesh snapshots 与 Scene raster mode 已进入 V6，但 raster 是 per-view policy，不写回 SceneDocument。未来 selection
+selection 与 native overlay intent 当前还没有进入 V7 immutable request；现有 selection 只属于 shell，grid/axes 仍是 producer
+固定策略。FOV axis、authored mesh snapshots 与 Scene raster mode 已进入 V7，但这些都是 per-view policy，不写回 SceneDocument。未来 selection
 接线必须增加显式 view-state snapshot/revision，并纳入内容门禁，不能复用 `TargetRevision` 或只设置 managed flag。
 
 ## Close 与 quarantine
@@ -314,9 +328,9 @@ WGC observer 才提供 DWM-composited pixel evidence，但同样不能冒充物�
 | `--smoke-viewport-transaction-overload` | 注入 5/15/30/50 ms prepare 与 `Rendered` 延迟；同一 drag 只保留一个 active candidate + queued latest，不取消已经开始的 candidate，candidate Publish 前只生产一帧，最终 latest 收敛。 |
 | `--smoke-viewport-transaction-faults` | 13 个真实阶段覆盖 surface/stream/create-submit、lease 后取消、partial import、surface update 已提交、prepare/publish/finalize/Rendered/retirement；pre-publish 保留旧 front，post-publish 只 quarantine，不错误 rollback，`RetirementCompletion` 单独给出最终资源 receipt。 |
 | `--smoke-viewport-transaction-supersede` | A 已 Published 未 Rendered 时接收 B；B failure/cancel 后以最新 Published A 为 committed baseline；A→B→A 使用新 transaction/generation/surface，不复活旧 bitmap。 |
-| `--smoke-viewport-multi-endpoint` | 同 compositor 两 endpoint：同文档双 Scene 与 Scene+Game ownership、all-prepared→同 batch publish、validation reject 的 0 publish、post-publish finalize ambiguity 的整组 quarantine。3–4 endpoint steady、不同速率公平、单 endpoint slow/fault/detach 后其他 endpoint 继续推进，以及 slow-consumer queue 隔离尚未通过，见下文 native blocker。 |
-| `--smoke-viewport-transaction-flash` | typed V6 diagnostic flag 把四色 corner sentinel 写入同一 native Scene external image；逐个成功 transaction 的共享 group composition batch 输出 Bounds/front/candidate/visual/surface/opacity/全部 identity，并拒绝结构上的 out-of-bounds、blank、stretch、crop、extent mismatch。它不是“每个物理显示帧”的采样，也尚未为 Win32 outer-Window precommit 提供逐帧像素证据；当前明确输出 `pixelEvidenceAvailable=false`。 |
-| `--smoke-viewport-transaction-window-resize` | 真实 Win32 HWND、Avalonia compositor 与 Vulkan external surface；以 `WM_SIZING` 驱动 last-accepted RECT precommit。`--viewport-window-evidence=performance` 不启动连续 batch recorder，以 first `Proposed`→final exact `Rendered` 计算 unique rate；`continuous` 连续采样 outer/client/workspace/panel/front/surface composition batches 并拒绝 blank/stretch/crop/gap/mismatch。release policy 在 `WM_EXITSIZEMOVE` 关闭 epoch，不追赶 stale raw final，必须输出 raw/accepted final 与 0–1 candidate lag。两个通道都输出 `pixelEvidenceAvailable=false` 与 `physicalDisplayedEvidenceAvailable=false`，不能关闭 WGC pixel gate。 |
+| `--smoke-viewport-multi-endpoint` | 同 compositor 两 endpoint：同文档双 Scene 与 Scene+Game ownership；从实际发布的 immutable request 断言 Scene `MaintainHorizontal`、Game `MaintainVertical`，防止 endpoint policy 串扰；覆盖 all-prepared→同 batch publish、validation reject 的 0 publish、post-publish finalize ambiguity 的整组 quarantine。3–4 endpoint steady、不同速率公平、单 endpoint slow/fault/detach 后其他 endpoint 继续推进，以及 slow-consumer queue 隔离尚未通过，见下文 native blocker。 |
+| `--smoke-viewport-transaction-flash` | typed V7 diagnostic flag 把四色 corner sentinel 写入同一 native Scene external image；逐个成功 transaction 的共享 group composition batch 输出 Bounds/front/candidate/visual/surface/opacity/全部 identity，并拒绝结构上的 out-of-bounds、blank、stretch、crop、extent mismatch。它不是“每个物理显示帧”的采样，也尚未为 Win32 outer-Window precommit 提供逐帧像素证据；当前明确输出 `pixelEvidenceAvailable=false`。 |
+| `--smoke-viewport-transaction-window-resize` | 真实 Win32 HWND、Avalonia compositor 与 Vulkan external surface；以 `WM_SIZING` 驱动 last-accepted RECT precommit。`--viewport-window-evidence=performance` 不启动连续 batch recorder，以 first `Proposed`→final exact `Rendered` 计算 unique rate；`continuous` 连续采样 outer/client/workspace/panel/front/surface composition batches 并拒绝 blank/stretch/crop/gap/mismatch。`--viewport-window-pattern=height-aba` 是 Scene projection 验收：outer/client/Scene/surface 宽度固定，至少两个 exact rendered 高度，把实际 request、native lease、呈现 sequence、extent/revision、90° `MaintainHorizontal` 与推导的 x/y pixel scale 写入 JSON，要求 scale drift `<=1 px`。release policy 在 `WM_EXITSIZEMOVE` 关闭 epoch，不追赶 stale raw final；height lane 还要求 final exact projection request 唯一、最终呈现 sequence 匹配，且 release 后 request/camera/projection mutation 均为 0。所有通道都输出 `pixelEvidenceAvailable=false` 与 `physicalDisplayedEvidenceAvailable=false`，不能关闭 WGC pixel gate。 |
 | `Asharia.Studio.WindowsCapture.Tests` | Windows-only、显式 opt-in 的外部像素 observer；设置 `ASHARIA_RUN_STUDIO_WGC_DWM_ACCEPTANCE=1` 后启动真实 Editor/Vulkan Window smoke。drag 样本继续分类 blank/stretch/crop/gap/spill；release handshake 从 interaction epoch 关闭起要求每个 WGC-delivered sample 都与 child 报告的 accepted/Published exact extent 一致，不允许 release gap/crop/stretch/blank/spill。该 gate 不覆盖 WGC 未交付的 DWM refresh，也不证明 LCD scanout。 |
 
 unique geometry 不可能快于 geometry input；因此 30 Hz lane 门控至少 95% 输入覆盖，60 Hz lane 允许 59 Hz 显示/调度容差，
@@ -380,7 +394,7 @@ display cadence；exact panel generation 由应用侧 unique gate 证明。后�
 
 ## 后续边界
 
-- 用 authoritative asset catalog/resource runtime 替换当前 validation-only product binding，并补 imported mesh hot-reload；V6 presentation ownership 不变；
+- 用 authoritative asset catalog/resource runtime 替换当前 validation-only product binding，并补 imported mesh hot-reload；V7 presentation ownership 不变；
 - selection outline/gizmo 继续作为 per-view editor feedback 独立接线，不写入 Scene schema 或 mesh material；
 - 多 Scene/Game/Preview/Frame Debugger endpoint 共用 runtime 与 transaction contract；stable round-robin 已成立，但 global cap 4
   只够四 cold first slots，3–4 realtime 的 slot/context/显存预算仍须单独设计和实测；
@@ -391,7 +405,12 @@ display cadence；exact panel generation 由应用侧 unique gate 证明。后�
 
 - [ADR-0006](../adr/0006-viewport-interactive-resize.md)
 - [ADR-0011](../adr/0011-native-shared-viewport-render-thread.md)
+- [ADR-0012](../adr/0012-viewport-field-of-view-axis.md)
 - Unreal threaded rendering: https://dev.epicgames.com/documentation/en-us/unreal-engine/threaded-rendering-in-unreal-engine
+- Unreal Editor viewport FOV axis preference: https://dev.epicgames.com/documentation/unreal-engine/unreal-editor-preferences?lang=en-US
+- Unreal `EAspectRatioAxisConstraint`: https://dev.epicgames.com/documentation/unreal-engine/API/Runtime/Engine/EAspectRatioAxisConstraint
+- Unity `Camera.fieldOfView`: https://docs.unity3d.com/cn/6000.0/ScriptReference/Camera-fieldOfView.html
+- Godot `Camera3D.KeepAspect`: https://docs.godotengine.org/en/stable/classes/class_camera3d.html
 - Avalonia GPU interop sample: https://github.com/AvaloniaUI/Avalonia/blob/12.1.0/samples/GpuInterop/DrawingSurfaceDemoBase.cs
 - Avalonia 12.1 GridSplitter source: https://github.com/AvaloniaUI/Avalonia/blob/12.1.0/src/Avalonia.Controls/GridSplitter.cs
 - Avalonia 12.1 Win32 WndProc hook property: https://github.com/AvaloniaUI/Avalonia/blob/12.1.0/src/Avalonia.Controls/Platform/Win32Properties.cs

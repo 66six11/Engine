@@ -2,7 +2,7 @@
 
 状态：Current
 
-更新日期：2026-07-31
+更新日期：2026-08-12
 
 本目录是 `apps/studio` 的正式框架技术文档入口。目标读者是修改 Studio 框架、编辑器功能、native bridge、Viewport、Play Mode 或扩展系统的开发者。
 
@@ -66,6 +66,7 @@ Studio 文档分为三类，不能混用：
 - [ADR-0006：面板交互 Resize 采用连续呈现与最新尺寸收敛](../adr/0006-viewport-interactive-resize.md)
 - [ADR-0007：Studio 前端采用 Document-first 硬切重构](../adr/0007-studio-frontend-hard-cut.md)
 - [ADR-0011：Studio shared viewport 由 native 进程级 RenderThread 拥有](../adr/0011-native-shared-viewport-render-thread.md)
+- [ADR-0012：Viewport 显式保持水平或垂直 FOV](../adr/0012-viewport-field-of-view-axis.md)
 
 ## Current guides
 

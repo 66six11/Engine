@@ -290,7 +290,7 @@ raw final by 0–1 candidate, and diagnostics must report both values plus pixel
 `SetWindowPos` removes that additional grow-gap/shrink-crop transition, but does not make drag-time USER32/DWM and Avalonia commits
 physically atomic.
 
-The V6 native stream still keeps at most one executing request, one latest pending replacement and one ready frame per
+The V7 native stream still keeps at most one executing request, one latest pending replacement and one ready frame per
 viewport, with at most three persistent full presentation slots. Each slot keeps its external image, producer/consumer
 semaphores, command resources and retirement proof together across frames. The old three-slot steady front plus the one-frame
 candidate stay within the process-wide four-resource cap; Realtime prefill resumes only after the prepared switch. Snap,
@@ -329,7 +329,7 @@ and blend policy, plus a data-only debug world-line span. It does not use `Edito
 `EditorViewportOverlayFlags`, ImGui ids or Vulkan handles from panels. Grid, gizmo and debug draw passes must consume this
 contract in later slices instead of reading editor panel state directly.
 
-The Studio V6 request does not yet carry selection or mutable overlay intent. Those features require an explicit immutable
+The Studio V7 request carries a view-local FOV axis but does not yet carry selection or mutable overlay intent. Those features require an explicit immutable
 view-state snapshot/revision before they can participate in the content fence; document revision or a managed invalidation bit
 must not be used as a substitute.
 

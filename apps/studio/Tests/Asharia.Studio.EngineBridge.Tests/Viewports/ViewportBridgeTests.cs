@@ -14,7 +14,7 @@ namespace Asharia.Studio.EngineBridge.Tests.Viewports;
 public sealed class ViewportBridgeTests
 {
     [Fact]
-    public void V6_stream_maps_latest_request_and_returns_a_bound_frame()
+    public void V7_stream_maps_latest_request_and_returns_a_bound_frame()
     {
         var api = new StubViewportNativeApi();
         var bridge = new ViewportBridge(api);
@@ -46,8 +46,12 @@ public sealed class ViewportBridgeTests
         Assert.Equal(request.AllocationExtent.Height, api.Request.HeightPixels);
         Assert.Equal(request.LogicalExtent.Width, api.Request.LogicalWidthPixels);
         Assert.Equal(request.LogicalExtent.Height, api.Request.LogicalHeightPixels);
+        Assert.Equal(request.Camera.FieldOfViewRadians, api.Request.Camera.FieldOfViewRadians);
         Assert.Equal(
-            (uint)ViewportNativePresentRequestV6Flags.HasLogicalExtent,
+            (uint)ViewportNativeFieldOfViewAxis.MaintainVertical,
+            api.Request.Camera.FieldOfViewAxis);
+        Assert.Equal(
+            (uint)ViewportNativePresentRequestV7Flags.HasLogicalExtent,
             api.Request.Flags);
         Assert.Single(api.DebugProxies);
 
@@ -60,7 +64,7 @@ public sealed class ViewportBridgeTests
     }
 
     [Fact]
-    public void V6_stream_maps_the_explicit_flash_sentinel_diagnostic_flag()
+    public void V7_stream_maps_the_explicit_flash_sentinel_diagnostic_flag()
     {
         var api = new StubViewportNativeApi();
         var stream = new ViewportBridge(api)
@@ -72,13 +76,17 @@ public sealed class ViewportBridgeTests
             ViewportRenderDiagnosticOverlay.FlashSentinelCorners).Succeeded);
 
         Assert.Equal(
-            (uint)(ViewportNativePresentRequestV6Flags.HasLogicalExtent |
-                   ViewportNativePresentRequestV6Flags.FlashSentinelCorners),
+            (uint)(ViewportNativePresentRequestV7Flags.HasLogicalExtent |
+                   ViewportNativePresentRequestV7Flags.FlashSentinelCorners),
             api.Request.Flags);
+        Assert.Equal(MathF.PI / 2, api.Request.Camera.FieldOfViewRadians);
+        Assert.Equal(
+            (uint)ViewportNativeFieldOfViewAxis.MaintainHorizontal,
+            api.Request.Camera.FieldOfViewAxis);
     }
 
     [Fact]
-    public void V6_stream_rejects_unsupported_wireframe_before_native_submit_and_recovers_to_solid()
+    public void V7_stream_rejects_unsupported_wireframe_before_native_submit_and_recovers_to_solid()
     {
         var document = new SceneDocumentSnapshot(
             Guid.NewGuid(),
@@ -115,11 +123,11 @@ public sealed class ViewportBridgeTests
     }
 
     [Fact]
-    public void V6_stream_maps_native_feature_unavailable_without_faulting_the_bridge()
+    public void V7_stream_maps_native_feature_unavailable_without_faulting_the_bridge()
     {
         var api = new StubViewportNativeApi
         {
-            StreamCapabilities = ViewportNativeStreamCapabilitiesV6.Wireframe,
+            StreamCapabilities = ViewportNativeStreamCapabilitiesV7.Wireframe,
             SubmitStatus = ViewportNativeStatus.FeatureUnavailable,
         };
         var stream = new ViewportBridge(api)
@@ -149,12 +157,12 @@ public sealed class ViewportBridgeTests
     }
 
     [Fact]
-    public void V6_open_rejects_unknown_stream_capabilities()
+    public void V7_open_rejects_unknown_stream_capabilities()
     {
         var result = new ViewportBridge(new StubViewportNativeApi
-            {
-                StreamCapabilities = (ViewportNativeStreamCapabilitiesV6)(1U << 31),
-            })
+        {
+            StreamCapabilities = (ViewportNativeStreamCapabilitiesV7)(1U << 31),
+        })
             .OpenStream(ViewportDeviceCompatibility.VulkanOpaqueNt);
 
         Assert.False(result.Succeeded);
@@ -162,7 +170,7 @@ public sealed class ViewportBridgeTests
     }
 
     [Fact]
-    public void V6_stream_reuses_the_same_slot_identity_across_frames()
+    public void V7_stream_reuses_the_same_slot_identity_across_frames()
     {
         var api = new StubViewportNativeApi();
         var stream = new ViewportBridge(api)
@@ -183,7 +191,7 @@ public sealed class ViewportBridgeTests
     }
 
     [Fact]
-    public void V6_try_take_reports_no_frame_without_fabricating_a_failure()
+    public void V7_try_take_reports_no_frame_without_fabricating_a_failure()
     {
         var api = new StubViewportNativeApi { ReturnReadyFrame = false };
         var stream = new ViewportBridge(api)
@@ -197,7 +205,7 @@ public sealed class ViewportBridgeTests
     }
 
     [Fact]
-    public void V6_stream_close_releases_import_and_destroys_only_after_closed_poll()
+    public void V7_stream_close_releases_import_and_destroys_only_after_closed_poll()
     {
         var api = new StubViewportNativeApi();
         var stream = new ViewportBridge(api)
@@ -222,7 +230,7 @@ public sealed class ViewportBridgeTests
     [InlineData(5U, ViewportFrameFailureKind.DeviceMismatch)]
     [InlineData(3U, ViewportFrameFailureKind.UnsupportedInterop)]
     [InlineData(2U, ViewportFrameFailureKind.NativeUnavailable)]
-    public void V6_open_maps_native_failures(
+    public void V7_open_maps_native_failures(
         uint rawStatus,
         ViewportFrameFailureKind expected)
     {
@@ -235,24 +243,50 @@ public sealed class ViewportBridgeTests
     }
 
     [Fact]
-    public void V6_abi_layout_is_explicit_and_pointer_sized()
+    public void V7_abi_layout_is_explicit_and_pointer_sized()
     {
-        Assert.Equal(24, Marshal.SizeOf<ViewportNativeStreamHandleV6>());
-        Assert.Equal(160, Marshal.SizeOf<ViewportNativePresentRequestV6>());
-        Assert.Equal(248, Marshal.SizeOf<ViewportNativeReadyFrameV6>());
-        Assert.Equal(64, Marshal.SizeOf<ViewportNativeStreamPollV6>());
+        Assert.Equal(52, Marshal.SizeOf<ViewportNativeCamera>());
         Assert.Equal(
-            (nint)136,
-            Marshal.OffsetOf<ViewportNativePresentRequestV6>(
-                "<LogicalWidthPixels>k__BackingField"));
+            (nint)36,
+            Marshal.OffsetOf<ViewportNativeCamera>(
+                "<FieldOfViewRadians>k__BackingField"));
+        Assert.Equal(
+            (nint)40,
+            Marshal.OffsetOf<ViewportNativeCamera>(
+                "<FieldOfViewAxis>k__BackingField"));
+        Assert.Equal(
+            (nint)44,
+            Marshal.OffsetOf<ViewportNativeCamera>("<NearPlane>k__BackingField"));
+        Assert.Equal(
+            (nint)48,
+            Marshal.OffsetOf<ViewportNativeCamera>("<FarPlane>k__BackingField"));
+        Assert.Equal(24, Marshal.SizeOf<ViewportNativeStreamHandleV7>());
+        Assert.Equal(168, Marshal.SizeOf<ViewportNativePresentRequestV7>());
+        Assert.Equal(248, Marshal.SizeOf<ViewportNativeReadyFrameV7>());
+        Assert.Equal(64, Marshal.SizeOf<ViewportNativeStreamPollV7>());
+        Assert.Equal(
+            (nint)88,
+            Marshal.OffsetOf<ViewportNativePresentRequestV7>("<Camera>k__BackingField"));
         Assert.Equal(
             (nint)140,
-            Marshal.OffsetOf<ViewportNativePresentRequestV6>(
+            Marshal.OffsetOf<ViewportNativePresentRequestV7>(
+                "<LogicalWidthPixels>k__BackingField"));
+        Assert.Equal(
+            (nint)144,
+            Marshal.OffsetOf<ViewportNativePresentRequestV7>(
                 "<LogicalHeightPixels>k__BackingField"));
+        Assert.Equal(
+            (nint)152,
+            Marshal.OffsetOf<ViewportNativePresentRequestV7>(
+                "<AuthoredMeshes>k__BackingField"));
+        Assert.Equal(
+            (nint)164,
+            Marshal.OffsetOf<ViewportNativePresentRequestV7>(
+                "<SceneRasterMode>k__BackingField"));
     }
 
     [Fact]
-    public void V6_canonical_uuid_uses_network_byte_order()
+    public void V7_canonical_uuid_uses_network_byte_order()
     {
         var guid = Guid.Parse("7c9fe8ac-3c8b-4f66-9665-0af0fd7b693e");
         var native = ViewportNativeCanonicalUuid.FromGuid(guid);
@@ -268,7 +302,7 @@ public sealed class ViewportBridgeTests
     }
 
     [Fact]
-    public void V6_submit_marshals_authored_meshes_without_renderer_keys()
+    public void V7_submit_marshals_authored_meshes_without_renderer_keys()
     {
         var objectId = Guid.NewGuid();
         var document = new SceneDocumentSnapshot(
@@ -323,7 +357,7 @@ public sealed class ViewportBridgeTests
             ViewportSessionId.Create(),
             kind,
             document,
-            ViewportCameraSnapshot.DefaultScene);
+            ViewportCameraSnapshot.DefaultFor(kind));
         Assert.True(session.TryPublishLatest(
             new ViewportRenderSize(
                 new ViewportExtent(801, 451),
@@ -341,15 +375,15 @@ public sealed class ViewportBridgeTests
 
         public ViewportNativeStatus SubmitStatus { get; set; } = ViewportNativeStatus.Success;
 
-        public ViewportNativeStreamCapabilitiesV6 StreamCapabilities { get; set; }
+        public ViewportNativeStreamCapabilitiesV7 StreamCapabilities { get; set; }
 
         public bool ReturnReadyFrame { get; set; } = true;
 
-        public ViewportNativePresentRequestV6 Request { get; private set; }
+        public ViewportNativePresentRequestV7 Request { get; private set; }
 
         public ViewportNativeDebugProxy[] DebugProxies { get; private set; } = [];
 
-        public ViewportNativeAuthoredMeshSnapshotV6[] AuthoredMeshes { get; private set; } = [];
+        public ViewportNativeAuthoredMeshSnapshotV7[] AuthoredMeshes { get; private set; } = [];
 
         public int CompleteCalls { get; private set; }
 
@@ -375,21 +409,21 @@ public sealed class ViewportBridgeTests
         {
         }
 
-        public ViewportNativeStatus OpenStreamV6(
+        public ViewportNativeStatus OpenStreamV7(
             in ViewportNativeCompatibilityRequest compatibility,
-            out ViewportNativeStreamHandleV6 stream)
+            out ViewportNativeStreamHandleV7 stream)
         {
-            stream = new ViewportNativeStreamHandleV6(
-                ViewportNativeAbiHeader.Current<ViewportNativeStreamHandleV6>(),
+            stream = new ViewportNativeStreamHandleV7(
+                ViewportNativeAbiHeader.Current<ViewportNativeStreamHandleV7>(),
                 (uint)Status,
                 (uint)StreamCapabilities,
                 Status == ViewportNativeStatus.Success ? 7UL : 0UL);
             return Status;
         }
 
-        public ViewportNativeStatus SubmitLatestV6(
+        public ViewportNativeStatus SubmitLatestV7(
             ulong streamId,
-            in ViewportNativePresentRequestV6 request)
+            in ViewportNativePresentRequestV7 request)
         {
             SubmitCalls++;
             Request = request;
@@ -401,19 +435,19 @@ public sealed class ViewportBridgeTests
                     checked((int)request.DebugProxyCount)).ToArray();
             AuthoredMeshes = request.AuthoredMeshCount == 0
                 ? []
-                : new ReadOnlySpan<ViewportNativeAuthoredMeshSnapshotV6>(
+                : new ReadOnlySpan<ViewportNativeAuthoredMeshSnapshotV7>(
                     request.AuthoredMeshes.ToPointer(),
                     checked((int)request.AuthoredMeshCount)).ToArray();
             return SubmitStatus;
         }
 
-        public ViewportNativeStatus TryTakeReadyV6(
+        public ViewportNativeStatus TryTakeReadyV7(
             ulong streamId,
-            out ViewportNativeReadyFrameV6 frame)
+            out ViewportNativeReadyFrameV7 frame)
         {
             var hasFrame = ReturnReadyFrame && readySequence_ != 0;
-            frame = new ViewportNativeReadyFrameV6(
-                ViewportNativeAbiHeader.Current<ViewportNativeReadyFrameV6>(),
+            frame = new ViewportNativeReadyFrameV7(
+                ViewportNativeAbiHeader.Current<ViewportNativeReadyFrameV7>(),
                 (uint)Status,
                 hasFrame ? 1U : 0U,
                 hasFrame ? streamId : 0UL,
@@ -435,7 +469,7 @@ public sealed class ViewportBridgeTests
                 hasFrame ? Request.TargetKind : 0,
                 hasFrame ? Request.LogicalWidthPixels : 0,
                 hasFrame ? Request.LogicalHeightPixels : 0,
-                new ViewportNativeSceneMeshReceiptV6(
+                new ViewportNativeSceneMeshReceiptV7(
                     0,
                     0,
                     0,
@@ -454,7 +488,7 @@ public sealed class ViewportBridgeTests
             return Status;
         }
 
-        public void CompleteFrameV6(
+        public void CompleteFrameV7(
             ulong streamId,
             nint nativeSlot,
             ViewportNativePresentCompletionKind completionKind)
@@ -463,21 +497,21 @@ public sealed class ViewportBridgeTests
             LastCompletionKind = completionKind;
         }
 
-        public void ReleaseSlotImportV6(ulong streamId, nint nativeSlot) =>
+        public void ReleaseSlotImportV7(ulong streamId, nint nativeSlot) =>
             ReleaseImportCalls++;
 
-        public void CloseStreamV6(ulong streamId)
+        public void CloseStreamV7(ulong streamId)
         {
             CloseCalls++;
             closed_ = true;
         }
 
-        public ViewportNativeStatus PollStreamV6(
+        public ViewportNativeStatus PollStreamV7(
             ulong streamId,
-            out ViewportNativeStreamPollV6 poll)
+            out ViewportNativeStreamPollV7 poll)
         {
-            poll = new ViewportNativeStreamPollV6(
-                ViewportNativeAbiHeader.Current<ViewportNativeStreamPollV6>(),
+            poll = new ViewportNativeStreamPollV7(
+                ViewportNativeAbiHeader.Current<ViewportNativeStreamPollV7>(),
                 (uint)ViewportNativeStatus.Success,
                 (uint)(closed_
                     ? ViewportNativeStreamLifecycle.Closed
@@ -494,7 +528,7 @@ public sealed class ViewportBridgeTests
             return ViewportNativeStatus.Success;
         }
 
-        public void DestroyStreamV6(ulong streamId) => DestroyCalls++;
+        public void DestroyStreamV7(ulong streamId) => DestroyCalls++;
 
         public void Shutdown()
         {

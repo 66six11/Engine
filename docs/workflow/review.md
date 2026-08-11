@@ -341,7 +341,7 @@ foreach ($preset in @("clangcl-debug", "msvc-debug")) {
 policy 或 Vulkan polygon mode capability 时，`--smoke-render-view-scene-mesh` 必须在两个 compiler preset 上运行。
 审查证据至少确认：`builtin.render-view-scene-mesh` 的 Color/Depth + `vertices: BufferVertexRead` +
 `indices: BufferIndexRead` schema、`DrawIndexed` 五参数与 packet context、空 scene 不插入 pass、unknown resource
-保留 typed context，以及同帧 per-view Solid/Wireframe 不互相污染。`fillModeNonSolid` 未启用时，V6 submit 必须在
+保留 typed context，以及同帧 per-view Solid/Wireframe 不互相污染。`fillModeNonSolid` 未启用时，V7 submit 必须在
 复制/入队前返回 typed `FeatureUnavailable`，stream 保持 Open 且不得重试同一 Wireframe request；后续显式 Solid
 request 必须可恢复。实现不得创建非法 line pipeline、静默回退 Solid 或为 1 px 线宽启用 `wideLines`。
 
@@ -453,8 +453,8 @@ Studio R0 删除的旧 `editor_project_*` bridge 仍不得恢复。当前真实 
 缺失、错名、嵌套或同 stem 副产物都必须失败。
 
 对 v2 schema/Document ABI 改动，验收还必须确认 hard cut：不导出或接受 schema/ABI v1 fallback，mesh authored GUID/type
-round-trip 后不出现 runtime EntityId、product generation/hash、Basic resource/material key 或 GPU handle。若同时改动 V6
-viewport producer/native ABI，必须证明 malformed V6 packet 被整帧拒绝；item-level asset binding failure 不能被提升为
+round-trip 后不出现 runtime EntityId、product generation/hash、Basic resource/material key 或 GPU handle。若同时改动 V7
+viewport producer/native ABI，必须证明 malformed V7 packet 被整帧拒绝；item-level asset binding failure 不能被提升为
 packet-level partial submit。
 
 涉及 `packages/resource-runtime` runtime handle/status/product-record resolution/diagnostics 时，必须跑
@@ -489,11 +489,30 @@ foreach ($preset in @("clangcl-debug", "msvc-debug")) {
 }
 ```
 
-涉及 V6 scene packet、`BasicRenderViewSceneDesc::sourceRevision` 或 Frame Debug projection 时，`--smoke-editor-frame-debugger`
+涉及 V7 scene packet、`BasicRenderViewSceneDesc::sourceRevision` 或 Frame Debug projection 时，`--smoke-editor-frame-debugger`
 必须断言 capture JSON、panel 与冻结的 RenderView diagnostics 精确记录同一个 `sourceRevision`；旧 ImGui viewport 未绑定
-authoritative SceneDocument 时允许为 `0`。Studio V6 scene-mesh process acceptance 必须另行断言 request、receipt 与实际 scene
+authoritative SceneDocument 时允许为 `0`。Studio V7 scene-mesh process acceptance 必须另行断言 request、receipt 与实际 scene
 snapshot 的 revision 非零且精确相等。Scene/Game 可共享 authored mesh snapshot，但审查必须确认 raster policy 仍按 view
 独立，不能由 Frame Debug 或另一个 viewport 覆盖。
+
+涉及 viewport camera projection、aspect ratio 或 FOV axis 时，Scene 默认必须保持 90° horizontal FOV，Game/Preview 默认必须
+保持 60° vertical FOV；这些策略属于 per-session immutable request，不写入 SceneDocument。native camera smoke 必须在固定宽度、
+至少两个不同高度下验证 Scene 顶点像素间距误差 `<=1 px`，并确认 camera position/target/canonical FOV 不变。Studio
+`--smoke-viewport-multi-endpoint --viewport-multi-mode=scene-game` 必须从实际发布的 request 断言两个 endpoint 的策略互不串扰。
+不得用 resize-time camera dolly、auto-focus、FOV interpolation 或 release 后二次 mutation 掩盖构图变化。
+真实 Studio/Vulkan 验收还必须运行固定宽度的 height-only Window lane：
+
+```powershell
+$env:ASHARIA_RUN_STUDIO_GPU_ACCEPTANCE = "1"
+dotnet test apps\studio\Tests\Editor.Tests\Editor.Tests.csproj --no-restore `
+    -p:StudioNativeBuildPreset=msvc-debug-tests `
+    --filter "DisplayName~window-resize-main-height-aba-projection"
+```
+
+该 lane 必须从实际 published requests、native leases 与 `LastPresentedSequence` 证明至少两个 exact rendered 高度、同一非零
+revision、90° `MaintainHorizontal`、固定 outer/client/Scene/surface 宽度、x/y pixel scale drift `<=1 px`，并证明 final exact
+projection request 唯一、最终 presented sequence 匹配且 `WM_EXITSIZEMOVE` 后没有 request 或 camera/projection mutation。它不采集
+WGC 像素，不能据此声称 DWM refresh 或物理 scanout。
 
 ## 设计审查门禁
 

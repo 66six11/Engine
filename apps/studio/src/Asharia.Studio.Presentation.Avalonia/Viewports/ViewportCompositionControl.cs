@@ -520,6 +520,7 @@ public sealed class ViewportCompositionControl : Control
             geometryState_.CurrentGeneration,
             geometryState_.SurfaceGeneration,
             geometryState_.HasExactSurface,
+            presentationState_.LastPresentedSequence,
             Interlocked.Read(ref candidateSurfaceCreateAttempts_),
             Interlocked.Read(ref candidateSurfacesCreated_),
             Interlocked.Read(ref candidateStreamOpenAttempts_),
@@ -1136,6 +1137,7 @@ public sealed class ViewportCompositionControl : Control
         {
             return;
         }
+        testHooks_?.ObserveRequest(request);
 
         var stream = EnsureDesiredStream(
             request.AllocationExtent,
@@ -1607,6 +1609,7 @@ public sealed class ViewportCompositionControl : Control
             throw new InvalidOperationException(
                 "The viewport session did not publish the prepared presentation request.");
         }
+        testHooks_?.ObserveRequest(request);
         if (request.SceneRasterMode == ViewportSceneRasterMode.Wireframe &&
             !operation.Stream.Stream.SupportsWireframe)
         {
@@ -1834,7 +1837,7 @@ public sealed class ViewportCompositionControl : Control
             if (existing.Handles != lease.NativeHandles)
             {
                 throw new InvalidOperationException(
-                    "Native viewport changed handles for a persistent V6 slot.");
+                    "Native viewport changed handles for a persistent V7 slot.");
             }
             return existing;
         }

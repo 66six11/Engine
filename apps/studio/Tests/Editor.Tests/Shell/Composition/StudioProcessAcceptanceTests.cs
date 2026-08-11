@@ -252,6 +252,21 @@ public sealed class StudioProcessAcceptanceTests
             },
         ];
 
+        yield return
+        [
+            "window-resize-main-height-aba-projection",
+            45_000,
+            new[]
+            {
+                StudioViewportTransactionWindowResizeSmoke.CommandLineSwitch,
+                "--viewport-window-pattern=height-aba",
+                "--viewport-window-input-hz=60",
+                "--viewport-window-input-count=12",
+                $"{StudioViewportTransactionWindowResizeSmoke.EvidenceOptionPrefix}" +
+                    "continuous",
+            },
+        ];
+
         foreach (var delay in new[] { 5, 15, 30, 50 })
         {
             yield return
@@ -584,12 +599,19 @@ public sealed class StudioProcessAcceptanceTests
             StudioViewportTransactionWindowResizeSmoke.EvidenceOptionPrefix);
         var performance = evidence == "performance";
         Assert.True(performance || evidence == "continuous");
+        var capturesProjection = pattern == "height-aba";
         return new StudioTransactionSmokeContract(
-            performance
+            capturesProjection
+                ? "window-resize-main-height-aba-projection"
+                : performance
                 ? $"window-resize-main-{pattern}-{inputRate}hz-performance"
                 : $"window-resize-main-{pattern}-structural",
-            performance ? "window-resize-performance" : "window-resize-structural",
-            performance ? "window-resize-performance" : "window-resize-structural",
+            capturesProjection
+                ? "window-resize-projection"
+                : performance ? "window-resize-performance" : "window-resize-structural",
+            capturesProjection
+                ? "window-resize-projection"
+                : performance ? "window-resize-performance" : "window-resize-structural",
             "viewport-transaction-window-resize PASS:");
     }
 
@@ -924,11 +946,16 @@ public sealed class StudioProcessAcceptanceTests
             arguments,
             StudioViewportTransactionWindowResizeSmoke.EvidenceOptionPrefix);
         var measuresPerformance = evidenceLane == "performance";
+        var capturesProjection = pattern == "height-aba";
         var releasePolicy = StudioViewportTransactionWindowResizeSmoke.ParseReleasePolicy(
             arguments);
 
         Assert.Equal(
-            measuresPerformance ? "window-resize-performance" : "window-resize-structural",
+            capturesProjection
+                ? "window-resize-projection"
+                : measuresPerformance
+                    ? "window-resize-performance"
+                    : "window-resize-structural",
             root.GetProperty("scenario").GetString());
         Assert.Equal("main", root.GetProperty("hostKind").GetString());
         Assert.Equal(pattern, root.GetProperty("pattern").GetString());
@@ -936,7 +963,9 @@ public sealed class StudioProcessAcceptanceTests
             StudioViewportTransactionWindowResizeSmoke.ReleasePolicyName(releasePolicy),
             root.GetProperty("releasePolicy").GetString());
         Assert.Equal(
-            measuresPerformance
+            capturesProjection
+                ? "scene-horizontal-fov-height-resize"
+                : measuresPerformance
                 ? "transaction-rendered-performance"
                 : "continuous-composition-batch-structural",
             root.GetProperty("evidenceKind").GetString());
@@ -1004,6 +1033,164 @@ public sealed class StudioProcessAcceptanceTests
             Assert.Equal(0, batches.GetProperty("clientMismatch").GetInt32());
         }
 
+        var projection = root.GetProperty("projection");
+        if (!capturesProjection)
+        {
+            Assert.Equal(JsonValueKind.Null, projection.ValueKind);
+        }
+        else
+        {
+            Assert.Equal(JsonValueKind.Object, projection.ValueKind);
+            Assert.True(projection.GetProperty("evidenceAvailable").GetBoolean());
+            Assert.Equal(
+                "MaintainHorizontal",
+                projection.GetProperty("axis").GetString());
+            Assert.InRange(
+                Math.Abs(
+                    projection.GetProperty("fieldOfViewRadians").GetDouble() -
+                    Math.PI / 2d),
+                0,
+                1.0e-5);
+            var targetRevision = projection.GetProperty("targetRevision").GetUInt64();
+            Assert.True(targetRevision > 0);
+
+            var fixedWidth = projection.GetProperty("fixedWidth");
+            Assert.True(fixedWidth.GetProperty("proposed").GetBoolean());
+            Assert.True(fixedWidth.GetProperty("rendered").GetBoolean());
+            Assert.True(fixedWidth.GetProperty("windowPixels").GetInt32() > 0);
+            Assert.True(fixedWidth.GetProperty("clientPixels").GetInt32() > 0);
+            Assert.True(fixedWidth.GetProperty("sceneLogical").GetDouble() > 0);
+            var fixedSurfaceWidth = fixedWidth.GetProperty("surfacePixels").GetUInt32();
+            Assert.True(fixedSurfaceWidth > 0);
+
+            var requests = projection.GetProperty("requests")
+                .EnumerateArray()
+                .ToArray();
+            Assert.True(requests.Length >= 3, scenario);
+            var baselineCamera = requests[0].GetProperty("camera").GetRawText();
+            var requestSequences = new HashSet<ulong>();
+            var previousSequence = 0UL;
+            foreach (var request in requests)
+            {
+                var sequence = request.GetProperty("sequence").GetUInt64();
+                Assert.True(sequence > previousSequence, scenario);
+                previousSequence = sequence;
+                Assert.True(requestSequences.Add(sequence));
+                Assert.Equal(targetRevision, request.GetProperty("targetRevision").GetUInt64());
+                Assert.Equal("Scene", request.GetProperty("kind").GetString());
+                Assert.NotEqual(Guid.Empty, request.GetProperty("session").GetGuid());
+                var logicalExtent = request.GetProperty("logicalExtent");
+                var allocationExtent = request.GetProperty("allocationExtent");
+                Assert.Equal(
+                    allocationExtent.GetProperty("width").GetUInt32(),
+                    logicalExtent.GetProperty("width").GetUInt32());
+                Assert.Equal(
+                    allocationExtent.GetProperty("height").GetUInt32(),
+                    logicalExtent.GetProperty("height").GetUInt32());
+                Assert.Equal(
+                    fixedSurfaceWidth,
+                    allocationExtent.GetProperty("width").GetUInt32());
+                var camera = request.GetProperty("camera");
+                Assert.Equal(baselineCamera, camera.GetRawText());
+                Assert.Equal(
+                    "MaintainHorizontal",
+                    camera.GetProperty("fieldOfViewAxis").GetString());
+                Assert.InRange(
+                    Math.Abs(camera.GetProperty("fieldOfViewRadians").GetDouble() -
+                             Math.PI / 2d),
+                    0,
+                    1.0e-5);
+            }
+
+            var leases = projection.GetProperty("leases")
+                .EnumerateArray()
+                .ToArray();
+            var rendered = projection.GetProperty("rendered");
+            Assert.True(rendered.GetProperty("distinctExactHeights").GetInt32() >= 2);
+            var scaleTolerance = rendered.GetProperty("tolerancePixels").GetDouble();
+            Assert.True(scaleTolerance > 0);
+            Assert.InRange(
+                rendered.GetProperty("maximumPixelScaleDelta").GetDouble(),
+                0,
+                scaleTolerance);
+            var samples = rendered.GetProperty("samples")
+                .EnumerateArray()
+                .ToArray();
+            Assert.True(samples.Length >= 2, scenario);
+            Assert.True(
+                samples.Select(sample => sample.GetProperty("extent")
+                        .GetProperty("height").GetUInt32())
+                    .Distinct()
+                    .Count() >= 2,
+                scenario);
+            var baselinePixelScale = samples[0].GetProperty("xPixelScale").GetDouble();
+            foreach (var sample in samples)
+            {
+                var sequence = sample.GetProperty("requestSequence").GetUInt64();
+                Assert.Contains(sequence, requestSequences);
+                Assert.Equal(targetRevision, sample.GetProperty("targetRevision").GetUInt64());
+                Assert.True(sample.GetProperty("geometryGeneration").GetUInt64() > 0);
+                var extent = sample.GetProperty("extent");
+                Assert.Equal(fixedSurfaceWidth, extent.GetProperty("width").GetUInt32());
+                Assert.InRange(
+                    sample.GetProperty("derivedVerticalFovRadians").GetDouble(),
+                    0,
+                    Math.PI);
+                var xPixelScale = sample.GetProperty("xPixelScale").GetDouble();
+                var yPixelScale = sample.GetProperty("yPixelScale").GetDouble();
+                Assert.InRange(Math.Abs(xPixelScale - baselinePixelScale), 0, scaleTolerance);
+                Assert.InRange(Math.Abs(yPixelScale - baselinePixelScale), 0, scaleTolerance);
+
+                var matchingLease = Assert.Single(
+                    leases,
+                    lease => lease.GetProperty("requestSequence").GetUInt64() == sequence);
+                Assert.Equal(
+                    targetRevision,
+                    matchingLease.GetProperty("targetRevision").GetUInt64());
+                Assert.Equal(
+                    extent.GetProperty("width").GetUInt32(),
+                    matchingLease.GetProperty("allocationExtent")
+                        .GetProperty("width").GetUInt32());
+                Assert.Equal(
+                    extent.GetProperty("height").GetUInt32(),
+                    matchingLease.GetProperty("allocationExtent")
+                        .GetProperty("height").GetUInt32());
+            }
+
+            var release = projection.GetProperty("release");
+            var inputStartedQpc = release.GetProperty("inputStartedQpc").GetInt64();
+            var finalRequestSentQpc = release.GetProperty("finalRequestSentQpc").GetInt64();
+            var exitSizeMoveQpc = release.GetProperty("exitSizeMoveQpc").GetInt64();
+            var endedQpc = release.GetProperty("endedQpc").GetInt64();
+            Assert.True(inputStartedQpc < finalRequestSentQpc);
+            Assert.True(finalRequestSentQpc <= exitSizeMoveQpc);
+            Assert.True(exitSizeMoveQpc < endedQpc);
+            var finalProjectionRequestSequence = release
+                .GetProperty("finalProjectionRequestSequence")
+                .GetUInt64();
+            Assert.True(
+                release.GetProperty("initialPresentedSequence").GetUInt64() <
+                finalProjectionRequestSequence);
+            var finalProjectionRequest = Assert.Single(
+                requests,
+                request => request.GetProperty("sequence").GetUInt64() ==
+                    finalProjectionRequestSequence);
+            Assert.True(
+                finalProjectionRequest.GetProperty("timestampQpc").GetInt64() <
+                exitSizeMoveQpc);
+            Assert.All(
+                requests,
+                request => Assert.True(
+                    request.GetProperty("timestampQpc").GetInt64() < exitSizeMoveQpc));
+            Assert.Equal(1, release.GetProperty("finalExactRequestCount").GetInt32());
+            Assert.Equal(0, release.GetProperty("postReleaseRequestCount").GetInt32());
+            Assert.Equal(
+                0,
+                release.GetProperty("postReleaseProjectionMutationCount").GetInt32());
+            Assert.True(release.GetProperty("cameraIsDefaultScene").GetBoolean());
+            Assert.True(release.GetProperty("finalPresentedSequenceMatches").GetBoolean());
+        }
+
         var final = root.GetProperty("final");
         Assert.True(final.GetProperty("exact").GetBoolean(), scenario);
         Assert.True(final.GetProperty("rendered").GetBoolean(), scenario);
@@ -1034,7 +1221,7 @@ public sealed class StudioProcessAcceptanceTests
                 final.GetProperty("maximumCatchUp60HzBudgetMs").GetDouble(),
             scenario);
 
-        if (pattern == "aba")
+        if (pattern is "aba" or "height-aba")
         {
             Assert.True(root.GetProperty("renderedNonOrigin").GetBoolean(), scenario);
         }
@@ -1063,6 +1250,14 @@ public sealed class StudioProcessAcceptanceTests
             Assert.False(batchRoot.GetProperty("gap").GetBoolean(), scenario);
             Assert.False(batchRoot.GetProperty("extentMismatch").GetBoolean(), scenario);
             Assert.False(batchRoot.GetProperty("clientMismatch").GetBoolean(), scenario);
+            if (capturesProjection)
+            {
+                Assert.True(
+                    batchRoot.GetProperty("scene")
+                        .GetProperty("lastPresentedSequence")
+                        .GetUInt64() > 0,
+                    scenario);
+            }
         }
     }
 

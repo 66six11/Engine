@@ -33,32 +33,45 @@ internal static class StudioViewportMultiEndpointSmoke
             var validationRejected = false;
             var applyFaultInjected = false;
             var rollbackLayoutFaultInjected = false;
-            var secondEndpointHooks = mode is MultiEndpointMode.ValidationReject
-                ? new ViewportCompositionControlTestHooks
+            ViewportRenderRequest? firstPublishedRequest = null;
+            ViewportRenderRequest? secondPublishedRequest = null;
+            Func<bool>? rejectPreparedValidation = null;
+            Action<ViewportCompositionControlTestPoint>? atSecondSynchronousStage = null;
+            if (mode is MultiEndpointMode.ValidationReject)
+            {
+                rejectPreparedValidation = () =>
                 {
-                    RejectPreparedValidation = () =>
+                    validationRejected = true;
+                    return true;
+                };
+            }
+            else if (mode is MultiEndpointMode.ApplyMidFault or
+                     MultiEndpointMode.RollbackLayoutFault)
+            {
+                atSecondSynchronousStage = point =>
+                {
+                    if (!applyFaultInjected &&
+                        point == ViewportCompositionControlTestPoint.AfterApplySurface)
                     {
-                        validationRejected = true;
-                        return true;
-                    },
-                }
-                : mode is MultiEndpointMode.ApplyMidFault or
-                    MultiEndpointMode.RollbackLayoutFault
-                    ? new ViewportCompositionControlTestHooks
-                    {
-                        AtSynchronousStage = point =>
-                        {
-                            if (!applyFaultInjected &&
-                                point == ViewportCompositionControlTestPoint.AfterApplySurface)
-                            {
-                                applyFaultInjected = true;
-                                throw new InvalidOperationException(
-                                    "Injected second-participant mid-apply failure.");
-                            }
-                        },
+                        applyFaultInjected = true;
+                        throw new InvalidOperationException(
+                            "Injected second-participant mid-apply failure.");
                     }
-                : null;
-            var firstControl = host.CreateControl(firstSession);
+                };
+            }
+            var firstEndpointHooks = new ViewportCompositionControlTestHooks
+            {
+                RequestPublished = request => firstPublishedRequest = request,
+            };
+            var secondEndpointHooks = new ViewportCompositionControlTestHooks
+            {
+                RequestPublished = request => secondPublishedRequest = request,
+                RejectPreparedValidation = rejectPreparedValidation,
+                AtSynchronousStage = atSecondSynchronousStage,
+            };
+            var firstControl = host.CreateControl(
+                firstSession,
+                testHooks: firstEndpointHooks);
             var secondControl = host.CreateControl(
                 secondSession,
                 testHooks: secondEndpointHooks);
@@ -120,6 +133,25 @@ internal static class StudioViewportMultiEndpointSmoke
             {
                 throw new InvalidOperationException(
                     "The mixed endpoint lane lost its distinct Scene and Game session owners.");
+            }
+            if (firstPublishedRequest is null || secondPublishedRequest is null ||
+                firstPublishedRequest.Camera.FieldOfViewAxis is not
+                    ViewportFieldOfViewAxis.MaintainHorizontal ||
+                MathF.Abs(firstPublishedRequest.Camera.FieldOfViewRadians - (MathF.PI / 2)) >
+                    1.0e-6f ||
+                (mode is MultiEndpointMode.SceneGame &&
+                 (secondPublishedRequest.Camera.FieldOfViewAxis is not
+                      ViewportFieldOfViewAxis.MaintainVertical ||
+                  MathF.Abs(secondPublishedRequest.Camera.FieldOfViewRadians - (MathF.PI / 3)) >
+                      1.0e-6f)) ||
+                (mode is not MultiEndpointMode.SceneGame &&
+                 (secondPublishedRequest.Camera.FieldOfViewAxis is not
+                      ViewportFieldOfViewAxis.MaintainHorizontal ||
+                  MathF.Abs(secondPublishedRequest.Camera.FieldOfViewRadians - (MathF.PI / 2)) >
+                      1.0e-6f)))
+            {
+                throw new InvalidOperationException(
+                    "The mixed endpoint lane lost its view-local field-of-view policy.");
             }
 
             if (firstControl.PresentationAtomicScope is not { } firstScope ||

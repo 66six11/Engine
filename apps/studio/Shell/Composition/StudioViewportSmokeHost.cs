@@ -171,7 +171,7 @@ internal sealed class StudioViewportSmokeHost : IAsyncDisposable
             ViewportSessionId.Create(),
             kind,
             document,
-            ViewportCameraSnapshot.DefaultScene);
+            ViewportCameraSnapshot.DefaultFor(kind));
         sessions_.Add(session);
         return session;
     }

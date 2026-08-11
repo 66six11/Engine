@@ -29,6 +29,11 @@ namespace asharia::editor {
         };
     }
 
+    enum class EditorViewportFieldOfViewAxis : std::uint32_t {
+        MaintainHorizontal = 0U,
+        MaintainVertical = 1U,
+    };
+
     struct EditorViewportCamera {
         EditorViewportMatrix4x4 view{editorViewportIdentityMatrix()};
         EditorViewportMatrix4x4 projection{editorViewportIdentityMatrix()};
@@ -36,7 +41,9 @@ namespace asharia::editor {
         std::array<float, 3> position{};
         std::array<float, 3> target{};
         std::array<float, 3> up{0.0F, 1.0F, 0.0F};
-        float verticalFovRadians{1.04719758F};
+        float fieldOfViewRadians{1.57079633F};
+        EditorViewportFieldOfViewAxis fieldOfViewAxis{
+            EditorViewportFieldOfViewAxis::MaintainHorizontal};
         float aspectRatio{1.0F};
         float nearPlane{0.1F};
         float farPlane{1000.0F};

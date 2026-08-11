@@ -238,6 +238,19 @@ public sealed class StudioViewportTransactionSmokeTests
         Assert.Equal(
             Asharia.Studio.Application.Viewports.ViewportRenderKind.Game,
             game.Current.Kind);
+        var renderSize = new ViewportRenderSize(
+            new ViewportExtent(1280, 720),
+            new ViewportExtent(1280, 720));
+        Assert.True(scene.TryPublishLatest(renderSize, out var sceneRequest));
+        Assert.True(game.TryPublishLatest(renderSize, out var gameRequest));
+        Assert.Equal(
+            ViewportFieldOfViewAxis.MaintainHorizontal,
+            sceneRequest.Camera.FieldOfViewAxis);
+        Assert.Equal(MathF.PI / 2, sceneRequest.Camera.FieldOfViewRadians);
+        Assert.Equal(
+            ViewportFieldOfViewAxis.MaintainVertical,
+            gameRequest.Camera.FieldOfViewAxis);
+        Assert.Equal(MathF.PI / 3, gameRequest.Camera.FieldOfViewRadians);
         Assert.NotEqual(scene.Current.SessionId, game.Current.SessionId);
         Assert.Equal(scene.Current.TargetId, game.Current.TargetId);
     }
@@ -369,6 +382,8 @@ public sealed class StudioViewportTransactionSmokeTests
             .BuildProposedRects("shrink", 90, initial, renderScaling: 1.25);
         var aba = Editor.Shell.Composition.StudioViewportTransactionWindowResizeSmoke
             .BuildProposedRects("aba", 91, initial, renderScaling: 1.25);
+        var heightAba = Editor.Shell.Composition.StudioViewportTransactionWindowResizeSmoke
+            .BuildProposedRects("height-aba", 13, initial, renderScaling: 1.25);
 
         Assert.All(grow, rectangle =>
         {
@@ -386,6 +401,16 @@ public sealed class StudioViewportTransactionSmokeTests
         Assert.Equal(initial, aba[0]);
         Assert.Equal(initial, aba[^1]);
         Assert.Contains(aba, rectangle => rectangle.Width > initial.Width);
+        Assert.Equal(initial, heightAba[0]);
+        Assert.Equal(initial, heightAba[^1]);
+        Assert.Contains(heightAba, rectangle => rectangle.Height > initial.Height);
+        Assert.All(heightAba, rectangle =>
+        {
+            Assert.Equal(initial.Left, rectangle.Left);
+            Assert.Equal(initial.Top, rectangle.Top);
+            Assert.Equal(initial.Right, rectangle.Right);
+            Assert.Equal(initial.Width, rectangle.Width);
+        });
     }
 
     [Fact]
@@ -508,6 +533,7 @@ public sealed class StudioViewportTransactionSmokeTests
             Assert.Contains($"window-resize-main-{pattern}-120hz-performance", scenarios);
         }
         Assert.Contains("window-resize-main-aba-structural", scenarios);
+        Assert.Contains("window-resize-main-height-aba-projection", scenarios);
     }
 
     [Fact]
@@ -687,6 +713,7 @@ public sealed class StudioViewportTransactionSmokeTests
             "flash-structural",
             "window-resize-performance",
             "window-resize-structural",
+            "window-resize-projection",
         };
 
         foreach (var testCase in StudioProcessAcceptanceTests.ViewportTransactionSmokeCases())

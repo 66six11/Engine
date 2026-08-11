@@ -203,9 +203,9 @@ flowchart TD
   execution 依赖。
 - `apps/studio` 是 Avalonia managed Studio shell，不属于 C++ CMake target graph。Project/document 产品链为
   `App/Shell -> Application ProjectSession -> EngineBridge project + scene adapters -> project/scene native ABI`；Scene View
-  产品链为 `StudioScenePanelView -> ViewportCompositionControl -> Application ViewportSession -> EngineBridge V6 stream
+  产品链为 `StudioScenePanelView -> ViewportCompositionControl -> Application ViewportSession -> EngineBridge V7 stream
   -> editor_native bounded scheduler -> process-level viewport RenderThread -> shared viewport producer -> renderer_basic_vulkan`。
-  V1–V5 frame exports 已硬切删除；Vulkan context、producer、queue submit、retirement 与 shutdown 只由 native owner thread
+  V1–V6 frame exports 已硬切删除；Vulkan context、producer、queue submit、retirement 与 shutdown 只由 native owner thread
   执行。Shell 只选择路径、发命令和投影 snapshot；
   ViewModel、Dock 与 Application 不解析 descriptor/scene JSON，也不持有 native/GPU handle。Windows composition root 优先
   选择 Avalonia Vulkan compositor，由专用 presentation adapter 导入 opaque NT image/semaphore；AngleEgl/Software 只保留
@@ -614,6 +614,7 @@ flowchart LR
 ## 当前 Studio Viewport 与 native RenderThread 流程
 
 #359 建立 render-session/native 边界，#361 接入首个 Avalonia Scene View；#367 将其硬切为 V6 异步
+authored-mesh/raster contract，#370 再硬切为携 view-local FOV axis 的 V7
 stream，并由同进程 `editor_native.dll` 内唯一 shared viewport RenderThread 调度：
 
 ### Scene mesh revision 到 Frame Debug 证据
@@ -629,14 +630,14 @@ hash/generation、Basic resource/material key 和所有 GPU handle 都不进入 
 Scene schema v2 / Document ABI v2 snapshot
   -> scene-rendering extraction(revision, typed mesh reference, explicit binding)
   -> immutable draw list + item diagnostics
-  -> V6 owning frame packet(source revision)
+  -> V7 owning frame packet(source revision + FOV axis)
   -> Scene/Game shared authored list, per-view raster policy
   -> RenderView diagnostics.sourceRevision
   -> frozen Frame Debug capture / JSON / panel
 ```
 
 missing、wrong-kind、stale 或 invalid binding 只导致该 object 没有 draw，并在 diagnostics 中保留 scene object、asset 和
-revision context；空输入产生零 draw。相反，malformed V6 packet 是 ABI 边界失败，native scheduler 拒绝整帧而不提交部分内容。
+revision context；空输入产生零 draw。相反，malformed V7 packet 是 ABI 边界失败，native scheduler 拒绝整帧而不提交部分内容。
 Scene 与 Game 可共享同一个 authored mesh snapshot，但它们的 raster policy（包括 Solid/Wireframe）仍按 view 独立计算，
 不修改 scene、material 或 source asset。
 
@@ -650,7 +651,7 @@ sequenceDiagram
     participant Consumer as Avalonia presentation endpoint owner
     participant Session as Application ViewportSession
     participant Bridge as EngineBridge ViewportBridge
-    participant Native as editor_native V6 stream ABI
+    participant Native as editor_native V7 stream ABI
     participant Scheduler as Bounded latest-wins scheduler
     participant Owner as Native viewport RenderThread
     participant Renderer as renderer_basic_vulkan
@@ -699,7 +700,7 @@ sequenceDiagram
         Note over Bridge,Native: do not guess a completion kind
     end
     opt completion kind is known
-        Bridge->>Native: editor_viewport_complete_frame_v6(stream, slot, completionKind)
+        Bridge->>Native: editor_viewport_complete_frame_v7(stream, slot, completionKind)
         Native->>Scheduler: Presented -> Completing
         alt NotSubmittedToConsumer
             Owner->>Owner: poll producer fence
@@ -786,8 +787,8 @@ release-stop 是 Asharia 的 package-first/cross-platform 推论，不是外部�
 - Application request 不含 Avalonia、OS/Vulkan handle 或 mutable World pointer；进入 native mailbox 前，借用的
   string/span/proxy 字段会复制为 owning immutable `RenderFramePacket`。Transform proxy array 是当前 Scene View 的
   有界调试表示，不是最终 mesh/material render snapshot。
-- native V6 request/ready frame 是 self-described、owning ABI packet；V1–V5 frame
-  exports 与 managed fallback 均已删除。V6 smoke 覆盖 burst request 只留下最新 sequence、ready 被占用时不覆盖、
+- native V7 request/ready frame 是 self-described、owning ABI packet，并携 view-local FOV axis；V1–V6 frame
+  exports 与 managed fallback 均已删除。V7 smoke 覆盖 burst request 只留下最新 sequence、ready 被占用时不覆盖、
   steady-state 最多三个 distinct full slots，第四个请求等待 slot 回收。ABI 保留 logical/allocation 双 extent；Studio
   Scene exact request 对 logical/allocation 使用相同 panel `PixelSize`，并在 surface commit 前再次复验相等；Game fit 与 Frame Debug
   participant 则分别复验 proposal 中冻结的 fit target 或 capture identity/extent。caller 或 managed pump 不是 Vulkan owner。
@@ -875,7 +876,7 @@ release-stop 是 Asharia 的 package-first/cross-platform 推论，不是外部�
 - native `frameIndex` 只是 render-attempt identity，失败允许留 gap；`EditorSharedViewportRuntime` 在唯一 RenderThread 上采样
   steady-clock elapsed 与上次任意 stream 成功 render delta，形成 immutable frame params。刷新率只改变采样密度，不再通过
   `frameIndex / 60` 改变 shader 时间速度。
-- V6 completion hard cut 只有 `editor_viewport_complete_frame_v6(stream, slot, completionKind)`。未进入
+- V7 completion hard cut 只有 `editor_viewport_complete_frame_v7(stream, slot, completionKind)`。未进入
   `UpdateWithSemaphoresAsync` 的 frame 报告 `NotSubmittedToConsumer`；update 已完成的 frame 报告
   `ConsumerAccessed`，并在 native RenderThread 上提交空 queue wait，把 compositor consumer-done semaphore 转为
   retirement fence。producer 与 consumer proof 都完成后，同一个 full slot 才重新 Available。
@@ -989,10 +990,10 @@ sequenceDiagram
 - Windows `VulkanOpaqueNt` is the current validated composition backend. Other
   platforms must map their handle family through compatibility probing and a
   distinct pool key before image reuse.
-- `editor_viewport_query_runtime_stats_v2..v8` 是仅供 native smoke / diagnostics 的历史版本链，不属于 V6 stream
+- `editor_viewport_query_runtime_stats_v2..v8` 是仅供 native smoke / diagnostics 的历史版本链，不属于 V7 stream
   compatibility surface；当前 smoke 使用 v8 记录 epoch、renderer creation/reuse、backpressure、已消费 scene frame、最后
   scene revision、Scene/Game/Preview frame count，以及最后一次 session/target/revision/sequence/render-kind/debug-proxy count、
-  Scene world-grid 开关与实际 debug world-line count。V1–V5 stream exports 不再导出，也没有 managed fallback。
+  Scene world-grid 开关与实际 debug world-line count。V1–V6 stream exports 不再导出，也没有 managed fallback。
 - retired `SceneViewPresentationSession` 曾被设计成单 viewport、双 slot 的 latest-wins slice（不是当前合同）：
   相同在途观察去重，变化的
   Bounds 只保留最新 request；Busy/Backpressure 通过 1–16 ms 有界退避或 slot
@@ -1167,7 +1168,7 @@ flowchart TD
   product 进入 renderer-owned vertex/index buffer，`builtin.render-view-scene-mesh` 显式声明
   ColorReadWrite/Depth +
   VertexRead/IndexRead slots，以 `DrawIndexed` execution event 和 `BasicDrawPacketContext` 关联 draw 与资源身份；
-  Solid/Wireframe 是独立 per-view policy；Wireframe capability 缺失在 V6 submit 复制/入队前返回 typed
+  Solid/Wireframe 与 FOV axis 是独立 per-view policy；Wireframe capability 缺失在 V7 submit 复制/入队前返回 typed
   `FeatureUnavailable`，stream 保持 Open，并等待显式 Solid request 恢复。
 - `--smoke-mrt` 已接入独立 `BasicMrtRenderer`：使用 `builtin.raster-mrt` schema、两个 named color
   slots、两张 transient color attachments 和 dynamic rendering multi-color clear，验证 transient image

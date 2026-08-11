@@ -507,7 +507,7 @@ public sealed class StudioEditorImageProducerTests
         StudioEditorImageTestInputs.WriteNativeDll(
             Path.Combine(fixture.PublishRoot, "editor_native.dll"),
             "editor_native.dll",
-            ["editor_viewport_open_stream_v6"]);
+            ["editor_viewport_open_stream_v7"]);
 
         var result = StudioEditorImageProducer.Produce(fixture.Request);
 
@@ -535,6 +535,14 @@ public sealed class StudioEditorImageProducerTests
     [InlineData("editor_viewport_close_stream_v5")]
     [InlineData("editor_viewport_poll_stream_v5")]
     [InlineData("editor_viewport_destroy_stream_v5")]
+    [InlineData("editor_viewport_open_stream_v6")]
+    [InlineData("editor_viewport_submit_latest_v6")]
+    [InlineData("editor_viewport_try_take_ready_v6")]
+    [InlineData("editor_viewport_complete_frame_v6")]
+    [InlineData("editor_viewport_release_slot_import_v6")]
+    [InlineData("editor_viewport_close_stream_v6")]
+    [InlineData("editor_viewport_poll_stream_v6")]
+    [InlineData("editor_viewport_destroy_stream_v6")]
     public void Produce_rejects_legacy_viewport_stream_abi_export(string legacyExport)
     {
         if (!OperatingSystem.IsWindows())

@@ -37,14 +37,14 @@ public sealed class StudioEditorImageTestInputs : IDisposable
     [
         "editor_viewport_query_composition_compatibility",
         "editor_viewport_release_compatibility_result",
-        "editor_viewport_open_stream_v6",
-        "editor_viewport_submit_latest_v6",
-        "editor_viewport_try_take_ready_v6",
-        "editor_viewport_complete_frame_v6",
-        "editor_viewport_release_slot_import_v6",
-        "editor_viewport_close_stream_v6",
-        "editor_viewport_poll_stream_v6",
-        "editor_viewport_destroy_stream_v6",
+        "editor_viewport_open_stream_v7",
+        "editor_viewport_submit_latest_v7",
+        "editor_viewport_try_take_ready_v7",
+        "editor_viewport_complete_frame_v7",
+        "editor_viewport_release_slot_import_v7",
+        "editor_viewport_close_stream_v7",
+        "editor_viewport_poll_stream_v7",
+        "editor_viewport_destroy_stream_v7",
         "editor_viewport_shutdown",
     ];
 

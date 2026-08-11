@@ -8,6 +8,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Asharia.Studio.Application.Viewports;
+using Asharia.Studio.EngineBridge.Viewports;
 using Asharia.Studio.Presentation.Avalonia.Viewports;
 using Avalonia;
 using Avalonia.Controls;
@@ -59,11 +60,19 @@ internal static partial class StudioViewportTransactionWindowResizeSmoke
             await host.WarmUpRuntimeAsync();
             var session = host.CreateSceneSession(
                 "viewport-transaction-window-resize.scene.json");
+            var projectionRecorder = new ProjectionRequestRecorder();
             var control = host.CreateControl(
                 session,
+                isRealtime: !options.CapturesProjectionEvidence,
                 testHooks: new ViewportCompositionControlTestHooks
                 {
                     EnableFlashSentinelCorners = true,
+                    RequestPublished = options.CapturesProjectionEvidence
+                        ? projectionRecorder.ObserveRequest
+                        : null,
+                    LeaseAcquired = options.CapturesProjectionEvidence
+                        ? projectionRecorder.ObserveLease
+                        : null,
                 });
             var layoutHost = new EditorDockPresentationLayoutHost
             {
@@ -78,7 +87,9 @@ internal static partial class StudioViewportTransactionWindowResizeSmoke
             };
             desktop.MainWindow = window;
             window.Show();
-            await StudioViewportSmokeHost.WaitForWarmUpAsync([control]);
+            await StudioViewportSmokeHost.WaitForWarmUpAsync(
+                [control],
+                minimumFrames: options.CapturesProjectionEvidence ? 1UL : 30UL);
 
             var platformHandle = window.TryGetPlatformHandle();
             if (platformHandle is null ||
@@ -134,6 +145,7 @@ internal static partial class StudioViewportTransactionWindowResizeSmoke
             var finalRequestGeometryGenerationBaseline = 0UL;
             var finalRequestSentAt = 0L;
             var finalRequestObservedAt = 0L;
+            var exitSizeMoveAt = 0L;
             Size finalRequestedSize = default;
             WriteMarker("resize_begin", inputStartedAt, options);
             _ = SendMessage(
@@ -209,6 +221,9 @@ internal static partial class StudioViewportTransactionWindowResizeSmoke
             WriteExternalObserverMarker(
                 options.ObserverReadyEventName,
                 "release-imminent");
+            exitSizeMoveAt = options.CapturesProjectionEvidence
+                ? projectionRecorder.CaptureReleaseBoundary()
+                : Stopwatch.GetTimestamp();
             _ = SendMessage(
                 platformHandle.Handle,
                 kWindowMessageExitSizeMove,
@@ -339,6 +354,20 @@ internal static partial class StudioViewportTransactionWindowResizeSmoke
                     ? finalObservation.WindowRect == finalWindowRect &&
                       AreClose(finalObservation.HostCommittedSize, finalTruthSize)
                     : finalWindowRect == proposedRects[^1]);
+            var projectionEvidence = options.CapturesProjectionEvidence
+                ? CaptureProjectionResizeEvidence(
+                    projectionRecorder,
+                    batches,
+                    initialSnapshot,
+                    finalSnapshot,
+                    finalObservation,
+                    initialWindowRect,
+                    proposedRects,
+                    inputStartedAt,
+                    finalRequestSentAt,
+                    exitSizeMoveAt,
+                    endedAt)
+                : null;
             var expectedMinimumRate = options.InputHz >= 60 ? 60 : options.InputHz * 0.95;
 
             StudioViewportTransactionSmokeOutput.WriteSummary(
@@ -381,7 +410,7 @@ internal static partial class StudioViewportTransactionWindowResizeSmoke
                 publishedRenderedCatchUpElapsed > kMaximumCatchUp60HzBudget ||
                 !finalWindowRectMatches ||
                 finalSnapshot.GeometryGeneration <= initialSnapshot.GeometryGeneration ||
-                options.Pattern == "aba" && !renderedNonOrigin)
+                options.IsAbaPattern && !renderedNonOrigin)
             {
                 throw new InvalidOperationException(
                     $"Window resize transaction acceptance failed: " +
@@ -493,6 +522,94 @@ internal static partial class StudioViewportTransactionWindowResizeSmoke
                                 static batch => batch.ClientMismatch),
                         }
                         : null,
+                    projection = projectionEvidence is null
+                        ? null
+                        : new
+                        {
+                            evidenceAvailable = true,
+                            axis = ViewportFieldOfViewAxis.MaintainHorizontal.ToString(),
+                            fieldOfViewRadians = projectionEvidence.Requests[0]
+                                .Camera.FieldOfViewRadians,
+                            targetRevision = projectionEvidence.TargetRevision,
+                            fixedWidth = new
+                            {
+                                proposed = projectionEvidence.ProposedWidthIsFixed,
+                                rendered = projectionEvidence.RenderedWidthIsFixed,
+                                windowPixels = projectionEvidence.FixedWindowWidth,
+                                clientPixels = projectionEvidence.FixedClientWidth,
+                                sceneLogical = projectionEvidence.FixedSceneLogicalWidth,
+                                surfacePixels = projectionEvidence.FixedSurfaceWidth,
+                            },
+                            rendered = new
+                            {
+                                distinctExactHeights =
+                                    projectionEvidence.DistinctRenderedHeights,
+                                maximumPixelScaleDelta =
+                                    projectionEvidence.MaximumPixelScaleDelta,
+                                tolerancePixels = 1d,
+                                samples = projectionEvidence.Samples.Select(sample => new
+                                {
+                                    renderedQpc = sample.RenderedTimestamp,
+                                    requestSequence = sample.RequestSequence,
+                                    targetRevision = sample.TargetRevision,
+                                    extent = Extent(sample.Extent),
+                                    geometryGeneration = sample.GeometryGeneration,
+                                    horizontalFovRadians = sample.HorizontalFovRadians,
+                                    derivedVerticalFovRadians = sample.VerticalFovRadians,
+                                    xPixelScale = sample.XPixelScale,
+                                    yPixelScale = sample.YPixelScale,
+                                }),
+                            },
+                            requests = projectionEvidence.Requests.Select(request => new
+                            {
+                                timestampQpc = request.Timestamp,
+                                session = request.SessionId.Value,
+                                sequence = request.Sequence,
+                                targetRevision = request.TargetRevision,
+                                kind = request.Kind.ToString(),
+                                logicalExtent = Extent(request.LogicalExtent),
+                                allocationExtent = Extent(request.AllocationExtent),
+                                camera = new
+                                {
+                                    position = Vector(request.Camera.Position),
+                                    target = Vector(request.Camera.Target),
+                                    up = Vector(request.Camera.Up),
+                                    fieldOfViewRadians = request.Camera.FieldOfViewRadians,
+                                    fieldOfViewAxis = request.Camera.FieldOfViewAxis.ToString(),
+                                    nearPlane = request.Camera.NearPlane,
+                                    farPlane = request.Camera.FarPlane,
+                                },
+                            }),
+                            leases = projectionEvidence.Leases.Select(lease => new
+                            {
+                                timestampQpc = lease.Timestamp,
+                                requestSequence = lease.Sequence,
+                                targetRevision = lease.TargetRevision,
+                                logicalExtent = Extent(lease.LogicalExtent),
+                                allocationExtent = Extent(lease.AllocationExtent),
+                            }),
+                            release = new
+                            {
+                                inputStartedQpc = projectionEvidence.InputStartedAt,
+                                finalRequestSentQpc = projectionEvidence.FinalRequestSentAt,
+                                exitSizeMoveQpc = projectionEvidence.ExitSizeMoveAt,
+                                endedQpc = projectionEvidence.EndedAt,
+                                initialPresentedSequence =
+                                    projectionEvidence.InitialRequestSequence,
+                                finalProjectionRequestSequence =
+                                    projectionEvidence.FinalRequestSequence,
+                                finalExactRequestCount =
+                                    projectionEvidence.FinalExactRequestCount,
+                                postReleaseRequestCount =
+                                    projectionEvidence.PostReleaseRequestCount,
+                                postReleaseProjectionMutationCount =
+                                    projectionEvidence.PostReleaseProjectionMutationCount,
+                                cameraIsDefaultScene =
+                                    projectionEvidence.CameraIsDefaultScene,
+                                finalPresentedSequenceMatches =
+                                    projectionEvidence.FinalPresentedSequenceMatches,
+                            },
+                        },
                     final = new
                     {
                         requested = LogicalSize(finalRequestedSize),
@@ -585,21 +702,28 @@ internal static partial class StudioViewportTransactionWindowResizeSmoke
             throw new ArgumentOutOfRangeException(nameof(renderScaling));
         }
 
-        var logicalOriginWidth = initialRect.Width / renderScaling;
-        var widths = StudioViewportResizeStimulus.Build(
-            pattern,
+        var heightOnly = pattern == "height-aba";
+        var logicalOrigin = (heightOnly ? initialRect.Height : initialRect.Width) /
+            renderScaling;
+        var lengths = StudioViewportResizeStimulus.Build(
+            heightOnly ? "aba" : pattern,
             inputCount,
-            logicalOriginWidth,
+            logicalOrigin,
             renderScaling);
-        return widths.Select(width =>
+        return lengths.Select(length =>
         {
-            var logicalDelta = width - logicalOriginWidth;
-            var physicalWidthDelta = checked((int)Math.Round(
+            var logicalDelta = length - logicalOrigin;
+            var primaryPhysicalDelta = checked((int)Math.Round(
                 logicalDelta * renderScaling,
                 MidpointRounding.AwayFromZero));
-            var physicalHeightDelta = checked((int)Math.Round(
-                logicalDelta * renderScaling * 0.25,
-                MidpointRounding.AwayFromZero));
+            var physicalWidthDelta = heightOnly ? 0 : primaryPhysicalDelta;
+            var physicalHeightDelta = heightOnly
+                ? checked((int)Math.Round(
+                    primaryPhysicalDelta * 0.25,
+                    MidpointRounding.AwayFromZero))
+                : checked((int)Math.Round(
+                    logicalDelta * renderScaling * 0.25,
+                    MidpointRounding.AwayFromZero));
             return new NativeRect
             {
                 Left = initialRect.Left,
@@ -1032,6 +1156,7 @@ internal static partial class StudioViewportTransactionWindowResizeSmoke
                     opacity = batch.Opacity,
                     geometryGeneration = batch.GeometryGeneration,
                     surfaceGeneration = batch.SurfaceGeneration,
+                    lastPresentedSequence = batch.LastPresentedSequence,
                     hasSurface = batch.HasSurface,
                     hasExactSurface = batch.HasExactSurface,
                 },
@@ -1074,6 +1199,218 @@ internal static partial class StudioViewportTransactionWindowResizeSmoke
         width = rectangle.Width,
         height = rectangle.Height,
     };
+
+    private static object Vector(Asharia.Runtime.Float3 value) => new
+    {
+        x = value.X,
+        y = value.Y,
+        z = value.Z,
+    };
+
+    private static ProjectionResizeEvidence CaptureProjectionResizeEvidence(
+        ProjectionRequestRecorder recorder,
+        IReadOnlyList<CompositionBatchSnapshot> batches,
+        ViewportPresentationTestSnapshot initialSnapshot,
+        ViewportPresentationTestSnapshot finalSnapshot,
+        CompositionBatchSnapshot finalObservation,
+        NativeRect initialWindowRect,
+        IReadOnlyList<NativeRect> proposedRects,
+        long inputStartedAt,
+        long finalRequestSentAt,
+        long exitSizeMoveAt,
+        long endedAt)
+    {
+        var requests = recorder.CaptureRequests()
+            .Where(request => request.Timestamp <= endedAt)
+            .OrderBy(static request => request.Timestamp)
+            .ToArray();
+        var leases = recorder.CaptureLeases()
+            .Where(lease => lease.Timestamp <= endedAt)
+            .OrderBy(static lease => lease.Timestamp)
+            .ToArray();
+        var initialRequest = requests.SingleOrDefault(request =>
+            request.Sequence == initialSnapshot.LastPresentedSequence) ??
+            throw new InvalidOperationException(
+                "Projection evidence could not correlate the initial presented request.");
+        var baselineCamera = initialRequest.Camera;
+        var evidenceRequests = requests
+            .Where(request => request.Sequence >= initialRequest.Sequence)
+            .ToArray();
+        var evidenceLeases = leases
+            .Where(lease => lease.Sequence >= initialRequest.Sequence)
+            .ToArray();
+        var relevantRequests = requests
+            .Where(request => request.Timestamp >= inputStartedAt)
+            .ToArray();
+        var finalExtentRequests = relevantRequests
+            .Where(request => request.Timestamp >= finalRequestSentAt &&
+                              request.AllocationExtent == finalSnapshot.SurfaceExtent)
+            .ToArray();
+        var postReleaseRequests = relevantRequests
+            .Where(request => request.Timestamp >= exitSizeMoveAt)
+            .ToArray();
+        var postReleaseProjectionMutations = postReleaseRequests
+            .Where(request => request.TargetRevision != initialRequest.TargetRevision ||
+                              !SameCamera(request.Camera, baselineCamera))
+            .ToArray();
+        var exactRenderedBatches = batches
+            .Where(batch => batch.RenderedTimestamp >= inputStartedAt &&
+                            batch.StructurallyExact &&
+                            batch.LastPresentedSequence != 0)
+            .ToArray();
+        var representativeBatches = exactRenderedBatches
+            .GroupBy(static batch => batch.SurfaceExtent.Height)
+            .Select(static group => group.Last())
+            .OrderBy(static batch => batch.SurfaceExtent.Height)
+            .ToArray();
+        var fixedSurfaceWidth = initialSnapshot.SurfaceExtent.Width;
+        var fixedWindowWidth = initialWindowRect.Width;
+        var fixedClientWidth = exactRenderedBatches.Length == 0
+            ? 0
+            : exactRenderedBatches[0].ClientRect.Width;
+        var fixedSceneLogicalWidth = exactRenderedBatches.Length == 0
+            ? 0
+            : exactRenderedBatches[0].SceneBoundsSize.Width;
+        var proposedWidthIsFixed = proposedRects.All(rectangle =>
+            rectangle.Left == initialWindowRect.Left &&
+            rectangle.Right == initialWindowRect.Right &&
+            rectangle.Width == fixedWindowWidth);
+        var renderedWidthIsFixed = exactRenderedBatches.All(batch =>
+            batch.WindowRect.Width == fixedWindowWidth &&
+            batch.ClientRect.Width == fixedClientWidth &&
+            Math.Abs(batch.SceneBoundsSize.Width - fixedSceneLogicalWidth) <=
+                kLayoutEpsilon &&
+            batch.PanelExtent.Width == fixedSurfaceWidth &&
+            batch.VisualExtent.Width == fixedSurfaceWidth &&
+            batch.SurfaceExtent.Width == fixedSurfaceWidth &&
+            batch.FrontExtent.Width == fixedSurfaceWidth &&
+            batch.CurrentExtent.Width == fixedSurfaceWidth);
+        var cameraIsDefaultScene = SameCamera(
+            baselineCamera,
+            ViewportCameraSnapshot.DefaultScene);
+        var requestsAreExactAndStable = evidenceRequests.All(request =>
+            request.Kind == ViewportRenderKind.Scene &&
+            request.TargetRevision == initialRequest.TargetRevision &&
+            request.TargetRevision != 0 &&
+            request.LogicalExtent == request.AllocationExtent &&
+            request.AllocationExtent.Width == fixedSurfaceWidth &&
+            SameCamera(request.Camera, baselineCamera));
+        var requestSequencesAreStrict = evidenceRequests
+            .Zip(
+                evidenceRequests.Skip(1),
+                static (left, right) => left.Sequence < right.Sequence)
+            .All(static ordered => ordered);
+        if (!cameraIsDefaultScene || !requestsAreExactAndStable ||
+            !requestSequencesAreStrict || !proposedWidthIsFixed ||
+            !renderedWidthIsFixed || representativeBatches.Length < 2 ||
+            finalExtentRequests.Length != 1 || postReleaseRequests.Length != 0)
+        {
+            throw new InvalidOperationException(
+                "Height-only projection evidence lost its fixed-width, camera, request, " +
+                "or release invariant.");
+        }
+
+        var finalRequest = finalExtentRequests[0];
+        if (finalRequest.Timestamp >= exitSizeMoveAt ||
+            finalRequest.Sequence != finalSnapshot.LastPresentedSequence ||
+            finalRequest.Sequence != finalObservation.LastPresentedSequence ||
+            finalRequest.AllocationExtent != finalSnapshot.SurfaceExtent ||
+            finalObservation.SurfaceExtent != finalSnapshot.SurfaceExtent)
+        {
+            throw new InvalidOperationException(
+                "The final exact projection request did not remain the presented release truth.");
+        }
+
+        var samples = new List<ProjectionScaleSample>(representativeBatches.Length);
+        foreach (var batch in representativeBatches)
+        {
+            var request = requests.SingleOrDefault(candidate =>
+                candidate.Sequence == batch.LastPresentedSequence) ??
+                throw new InvalidOperationException(
+                    $"Rendered projection sequence {batch.LastPresentedSequence} has no request evidence.");
+            var lease = leases.LastOrDefault(candidate =>
+                candidate.Sequence == batch.LastPresentedSequence) ??
+                throw new InvalidOperationException(
+                    $"Rendered projection sequence {batch.LastPresentedSequence} has no native lease evidence.");
+            if (request.AllocationExtent != batch.SurfaceExtent ||
+                request.LogicalExtent != batch.SurfaceExtent ||
+                lease.AllocationExtent != batch.SurfaceExtent ||
+                lease.LogicalExtent != batch.SurfaceExtent ||
+                lease.TargetRevision != request.TargetRevision)
+            {
+                throw new InvalidOperationException(
+                    $"Projection sequence {batch.LastPresentedSequence} lost exact extent/revision correlation.");
+            }
+
+            var horizontalFov = request.Camera.FieldOfViewRadians;
+            var aspect = request.AllocationExtent.Width /
+                (double)request.AllocationExtent.Height;
+            var verticalFov = 2d * Math.Atan(
+                Math.Tan(horizontalFov / 2d) / aspect);
+            var xPixelScale = request.AllocationExtent.Width /
+                (2d * Math.Tan(horizontalFov / 2d));
+            var yPixelScale = request.AllocationExtent.Height /
+                (2d * Math.Tan(verticalFov / 2d));
+            samples.Add(new ProjectionScaleSample(
+                batch.RenderedTimestamp,
+                request.Sequence,
+                request.TargetRevision,
+                request.AllocationExtent,
+                batch.GeometryGeneration,
+                horizontalFov,
+                verticalFov,
+                xPixelScale,
+                yPixelScale));
+        }
+
+        var baselineScale = samples[0].XPixelScale;
+        var maximumScaleDelta = samples.Max(sample => Math.Max(
+            Math.Abs(sample.XPixelScale - baselineScale),
+            Math.Max(
+                Math.Abs(sample.YPixelScale - baselineScale),
+                Math.Abs(sample.XPixelScale - sample.YPixelScale))));
+        if (maximumScaleDelta > 1d)
+        {
+            throw new InvalidOperationException(
+                $"Fixed-width Scene projection scale drifted by {maximumScaleDelta:F4} px.");
+        }
+
+        return new ProjectionResizeEvidence(
+            inputStartedAt,
+            finalRequestSentAt,
+            exitSizeMoveAt,
+            endedAt,
+            evidenceRequests,
+            evidenceLeases,
+            samples,
+            initialRequest.Sequence,
+            finalRequest.Sequence,
+            initialRequest.TargetRevision,
+            fixedWindowWidth,
+            fixedClientWidth,
+            fixedSceneLogicalWidth,
+            fixedSurfaceWidth,
+            representativeBatches.Length,
+            finalExtentRequests.Length,
+            postReleaseRequests.Length,
+            postReleaseProjectionMutations.Length,
+            maximumScaleDelta,
+            proposedWidthIsFixed,
+            renderedWidthIsFixed,
+            cameraIsDefaultScene,
+            finalSnapshot.LastPresentedSequence == finalRequest.Sequence);
+
+        static bool SameCamera(
+            ViewportCameraSnapshot left,
+            ViewportCameraSnapshot right) =>
+            left.Position == right.Position &&
+            left.Target == right.Target &&
+            left.Up == right.Up &&
+            left.FieldOfViewAxis == right.FieldOfViewAxis &&
+            Math.Abs(left.FieldOfViewRadians - right.FieldOfViewRadians) <= 1.0e-6F &&
+            Math.Abs(left.NearPlane - right.NearPlane) <= 1.0e-6F &&
+            Math.Abs(left.FarPlane - right.FarPlane) <= 1.0e-6F;
+    }
 
     private static CompositionBatchSnapshot CaptureCompositionBatchSnapshot(
         Window window,
@@ -1151,6 +1488,7 @@ internal static partial class StudioViewportTransactionWindowResizeSmoke
             CurrentExtent: snapshot.CurrentExtent,
             GeometryGeneration: snapshot.GeometryGeneration,
             SurfaceGeneration: snapshot.SurfaceGeneration,
+            LastPresentedSequence: snapshot.LastPresentedSequence,
             Opacity: snapshot.VisualOpacity,
             HasSurface: snapshot.VisualSurface is not null,
             HasExactSurface: snapshot.HasExactSurface,
@@ -1224,6 +1562,131 @@ internal static partial class StudioViewportTransactionWindowResizeSmoke
 
         public void Dispose() => Marshal.FreeHGlobal(pointer_);
     }
+
+    private sealed class ProjectionRequestRecorder
+    {
+        private readonly object gate_ = new();
+        private readonly List<ProjectionRequestObservation> requests_ = [];
+        private readonly List<ProjectionLeaseObservation> leases_ = [];
+
+        public void ObserveRequest(ViewportRenderRequest request)
+        {
+            ArgumentNullException.ThrowIfNull(request);
+            var observation = new ProjectionRequestObservation(
+                Stopwatch.GetTimestamp(),
+                request.SessionId,
+                request.Sequence,
+                request.TargetRevision,
+                request.Kind,
+                request.LogicalExtent,
+                request.AllocationExtent,
+                request.Camera);
+            lock (gate_)
+            {
+                requests_.Add(observation);
+            }
+        }
+
+        public void ObserveLease(ViewportFrameLease lease)
+        {
+            ArgumentNullException.ThrowIfNull(lease);
+            var observation = new ProjectionLeaseObservation(
+                Stopwatch.GetTimestamp(),
+                lease.RequestSequence,
+                lease.TargetRevision,
+                lease.LogicalExtent,
+                lease.AllocationExtent);
+            lock (gate_)
+            {
+                leases_.Add(observation);
+            }
+        }
+
+        public IReadOnlyList<ProjectionRequestObservation> CaptureRequests()
+        {
+            lock (gate_)
+            {
+                return requests_.ToArray();
+            }
+        }
+
+        public IReadOnlyList<ProjectionLeaseObservation> CaptureLeases()
+        {
+            lock (gate_)
+            {
+                return leases_.ToArray();
+            }
+        }
+
+        public long CaptureReleaseBoundary()
+        {
+            lock (gate_)
+            {
+                var latestRequestTimestamp = requests_.Count == 0
+                    ? 0
+                    : requests_[^1].Timestamp;
+                var boundary = Stopwatch.GetTimestamp();
+                while (boundary <= latestRequestTimestamp)
+                {
+                    boundary = Stopwatch.GetTimestamp();
+                }
+                return boundary;
+            }
+        }
+    }
+
+    private sealed record ProjectionRequestObservation(
+        long Timestamp,
+        ViewportSessionId SessionId,
+        ulong Sequence,
+        ulong TargetRevision,
+        ViewportRenderKind Kind,
+        ViewportExtent LogicalExtent,
+        ViewportExtent AllocationExtent,
+        ViewportCameraSnapshot Camera);
+
+    private sealed record ProjectionLeaseObservation(
+        long Timestamp,
+        ulong Sequence,
+        ulong TargetRevision,
+        ViewportExtent LogicalExtent,
+        ViewportExtent AllocationExtent);
+
+    private sealed record ProjectionScaleSample(
+        long RenderedTimestamp,
+        ulong RequestSequence,
+        ulong TargetRevision,
+        ViewportExtent Extent,
+        ulong GeometryGeneration,
+        double HorizontalFovRadians,
+        double VerticalFovRadians,
+        double XPixelScale,
+        double YPixelScale);
+
+    private sealed record ProjectionResizeEvidence(
+        long InputStartedAt,
+        long FinalRequestSentAt,
+        long ExitSizeMoveAt,
+        long EndedAt,
+        IReadOnlyList<ProjectionRequestObservation> Requests,
+        IReadOnlyList<ProjectionLeaseObservation> Leases,
+        IReadOnlyList<ProjectionScaleSample> Samples,
+        ulong InitialRequestSequence,
+        ulong FinalRequestSequence,
+        ulong TargetRevision,
+        int FixedWindowWidth,
+        int FixedClientWidth,
+        double FixedSceneLogicalWidth,
+        uint FixedSurfaceWidth,
+        int DistinctRenderedHeights,
+        int FinalExactRequestCount,
+        int PostReleaseRequestCount,
+        int PostReleaseProjectionMutationCount,
+        double MaximumPixelScaleDelta,
+        bool ProposedWidthIsFixed,
+        bool RenderedWidthIsFixed,
+        bool CameraIsDefaultScene,
+        bool FinalPresentedSequenceMatches);
 
     private sealed class ContinuousCompositionBatchRecorder : IAsyncDisposable
     {
@@ -1386,6 +1849,7 @@ internal static partial class StudioViewportTransactionWindowResizeSmoke
         ViewportExtent CurrentExtent,
         ulong GeometryGeneration,
         ulong SurfaceGeneration,
+        ulong LastPresentedSequence,
         float Opacity,
         bool HasSurface,
         bool HasExactSurface,
@@ -1439,18 +1903,26 @@ internal static partial class StudioViewportTransactionWindowResizeSmoke
 
         public bool CollectsContinuousCompositionBatches => Evidence == "continuous";
 
-        public string StructuredScenario => MeasuresRenderedPerformance
-            ? "window-resize-performance"
-            : "window-resize-structural";
+        public bool CapturesProjectionEvidence => Pattern == "height-aba";
 
-        public string EvidenceKind => MeasuresRenderedPerformance
-            ? "transaction-rendered-performance"
-            : "continuous-composition-batch-structural";
+        public bool IsAbaPattern => Pattern is "aba" or "height-aba";
+
+        public string StructuredScenario => CapturesProjectionEvidence
+            ? "window-resize-projection"
+            : MeasuresRenderedPerformance
+                ? "window-resize-performance"
+                : "window-resize-structural";
+
+        public string EvidenceKind => CapturesProjectionEvidence
+            ? "scene-horizontal-fov-height-resize"
+            : MeasuresRenderedPerformance
+                ? "transaction-rendered-performance"
+                : "continuous-composition-batch-structural";
 
         public static WindowResizeOptions Parse(string[] arguments)
         {
             var pattern = Read(arguments, "--viewport-window-pattern=") ?? "aba";
-            if (pattern is not ("grow" or "shrink" or "aba"))
+            if (pattern is not ("grow" or "shrink" or "aba" or "height-aba"))
             {
                 throw new ArgumentException(
                     $"Unknown Window resize pattern '{pattern}'.",
@@ -1469,6 +1941,12 @@ internal static partial class StudioViewportTransactionWindowResizeSmoke
             {
                 throw new ArgumentException(
                     $"Unknown Window resize evidence lane '{evidence}'.",
+                    nameof(arguments));
+            }
+            if (pattern == "height-aba" && evidence != "continuous")
+            {
+                throw new ArgumentException(
+                    "Height-only projection evidence requires continuous composition sampling.",
                     nameof(arguments));
             }
             if (!double.IsFinite(inputHz) || inputHz < 1 || inputHz > 1000)

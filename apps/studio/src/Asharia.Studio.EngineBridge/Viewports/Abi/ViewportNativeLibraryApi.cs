@@ -22,27 +22,27 @@ internal sealed class ViewportNativeLibraryApi : IViewportNativeApi
     public void ReleaseCompatibilityResult(ViewportNativeCompatibilityResult result) =>
         ViewportNativeEntryPoints.ReleaseCompatibilityResult(result);
 
-    public ViewportNativeStatus OpenStreamV6(
+    public ViewportNativeStatus OpenStreamV7(
         in ViewportNativeCompatibilityRequest compatibility,
-        out ViewportNativeStreamHandleV6 stream) =>
-        (ViewportNativeStatus)ViewportNativeEntryPoints.OpenStreamV6(in compatibility, out stream);
+        out ViewportNativeStreamHandleV7 stream) =>
+        (ViewportNativeStatus)ViewportNativeEntryPoints.OpenStreamV7(in compatibility, out stream);
 
-    public ViewportNativeStatus SubmitLatestV6(
+    public ViewportNativeStatus SubmitLatestV7(
         ulong streamId,
-        in ViewportNativePresentRequestV6 request) =>
-        (ViewportNativeStatus)ViewportNativeEntryPoints.SubmitLatestV6(streamId, in request);
+        in ViewportNativePresentRequestV7 request) =>
+        (ViewportNativeStatus)ViewportNativeEntryPoints.SubmitLatestV7(streamId, in request);
 
-    public ViewportNativeStatus TryTakeReadyV6(
+    public ViewportNativeStatus TryTakeReadyV7(
         ulong streamId,
-        out ViewportNativeReadyFrameV6 frame) =>
-        (ViewportNativeStatus)ViewportNativeEntryPoints.TryTakeReadyV6(streamId, out frame);
+        out ViewportNativeReadyFrameV7 frame) =>
+        (ViewportNativeStatus)ViewportNativeEntryPoints.TryTakeReadyV7(streamId, out frame);
 
-    public void CompleteFrameV6(
+    public void CompleteFrameV7(
         ulong streamId,
         nint nativeSlot,
         ViewportNativePresentCompletionKind completionKind)
     {
-        var status = (ViewportNativeStatus)ViewportNativeEntryPoints.CompleteFrameV6(
+        var status = (ViewportNativeStatus)ViewportNativeEntryPoints.CompleteFrameV7(
             streamId,
             nativeSlot,
             (uint)completionKind);
@@ -53,21 +53,21 @@ internal sealed class ViewportNativeLibraryApi : IViewportNativeApi
         }
     }
 
-    public void ReleaseSlotImportV6(ulong streamId, nint nativeSlot) =>
+    public void ReleaseSlotImportV7(ulong streamId, nint nativeSlot) =>
         EnsureSuccess(
-            ViewportNativeEntryPoints.ReleaseSlotImportV6(streamId, nativeSlot),
+            ViewportNativeEntryPoints.ReleaseSlotImportV7(streamId, nativeSlot),
             "slot import release");
 
-    public void CloseStreamV6(ulong streamId) =>
-        EnsureSuccess(ViewportNativeEntryPoints.CloseStreamV6(streamId), "stream close");
+    public void CloseStreamV7(ulong streamId) =>
+        EnsureSuccess(ViewportNativeEntryPoints.CloseStreamV7(streamId), "stream close");
 
-    public ViewportNativeStatus PollStreamV6(
+    public ViewportNativeStatus PollStreamV7(
         ulong streamId,
-        out ViewportNativeStreamPollV6 poll) =>
-        (ViewportNativeStatus)ViewportNativeEntryPoints.PollStreamV6(streamId, out poll);
+        out ViewportNativeStreamPollV7 poll) =>
+        (ViewportNativeStatus)ViewportNativeEntryPoints.PollStreamV7(streamId, out poll);
 
-    public void DestroyStreamV6(ulong streamId) =>
-        EnsureSuccess(ViewportNativeEntryPoints.DestroyStreamV6(streamId), "stream destroy");
+    public void DestroyStreamV7(ulong streamId) =>
+        EnsureSuccess(ViewportNativeEntryPoints.DestroyStreamV7(streamId), "stream destroy");
 
     public void Shutdown() => ViewportNativeEntryPoints.Shutdown();
 
@@ -97,48 +97,48 @@ internal static partial class ViewportNativeEntryPoints
     internal static partial void ReleaseCompatibilityResult(
         ViewportNativeCompatibilityResult result);
 
-    [LibraryImport(LibraryName, EntryPoint = "editor_viewport_open_stream_v6")]
+    [LibraryImport(LibraryName, EntryPoint = "editor_viewport_open_stream_v7")]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
-    internal static partial uint OpenStreamV6(
+    internal static partial uint OpenStreamV7(
         in ViewportNativeCompatibilityRequest compatibility,
-        out ViewportNativeStreamHandleV6 stream);
+        out ViewportNativeStreamHandleV7 stream);
 
-    [LibraryImport(LibraryName, EntryPoint = "editor_viewport_submit_latest_v6")]
+    [LibraryImport(LibraryName, EntryPoint = "editor_viewport_submit_latest_v7")]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
-    internal static partial uint SubmitLatestV6(
+    internal static partial uint SubmitLatestV7(
         ulong streamId,
-        in ViewportNativePresentRequestV6 request);
+        in ViewportNativePresentRequestV7 request);
 
-    [LibraryImport(LibraryName, EntryPoint = "editor_viewport_try_take_ready_v6")]
+    [LibraryImport(LibraryName, EntryPoint = "editor_viewport_try_take_ready_v7")]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
-    internal static partial uint TryTakeReadyV6(
+    internal static partial uint TryTakeReadyV7(
         ulong streamId,
-        out ViewportNativeReadyFrameV6 frame);
+        out ViewportNativeReadyFrameV7 frame);
 
-    [LibraryImport(LibraryName, EntryPoint = "editor_viewport_complete_frame_v6")]
+    [LibraryImport(LibraryName, EntryPoint = "editor_viewport_complete_frame_v7")]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
-    internal static partial uint CompleteFrameV6(
+    internal static partial uint CompleteFrameV7(
         ulong streamId,
         nint nativeSlot,
         uint completionKind);
 
-    [LibraryImport(LibraryName, EntryPoint = "editor_viewport_release_slot_import_v6")]
+    [LibraryImport(LibraryName, EntryPoint = "editor_viewport_release_slot_import_v7")]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
-    internal static partial uint ReleaseSlotImportV6(ulong streamId, nint nativeSlot);
+    internal static partial uint ReleaseSlotImportV7(ulong streamId, nint nativeSlot);
 
-    [LibraryImport(LibraryName, EntryPoint = "editor_viewport_close_stream_v6")]
+    [LibraryImport(LibraryName, EntryPoint = "editor_viewport_close_stream_v7")]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
-    internal static partial uint CloseStreamV6(ulong streamId);
+    internal static partial uint CloseStreamV7(ulong streamId);
 
-    [LibraryImport(LibraryName, EntryPoint = "editor_viewport_poll_stream_v6")]
+    [LibraryImport(LibraryName, EntryPoint = "editor_viewport_poll_stream_v7")]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
-    internal static partial uint PollStreamV6(
+    internal static partial uint PollStreamV7(
         ulong streamId,
-        out ViewportNativeStreamPollV6 poll);
+        out ViewportNativeStreamPollV7 poll);
 
-    [LibraryImport(LibraryName, EntryPoint = "editor_viewport_destroy_stream_v6")]
+    [LibraryImport(LibraryName, EntryPoint = "editor_viewport_destroy_stream_v7")]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
-    internal static partial uint DestroyStreamV6(ulong streamId);
+    internal static partial uint DestroyStreamV7(ulong streamId);
 
     [LibraryImport(LibraryName, EntryPoint = "editor_viewport_shutdown")]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
