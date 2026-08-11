@@ -28,10 +28,9 @@ namespace asharia {
     inline constexpr char kBasicRenderViewWorldGridPassType[] = "builtin.render-view-world-grid";
     inline constexpr char kBasicRenderViewWorldGridParamsType[] =
         "builtin.render-view-world-grid.params";
-    inline constexpr char kBasicRenderViewSceneInputsPassType[] =
-        "builtin.render-view-scene-inputs";
-    inline constexpr char kBasicRenderViewSceneInputsParamsType[] =
-        "builtin.render-view-scene-inputs.params";
+    inline constexpr char kBasicRenderViewSceneMeshPassType[] = "builtin.render-view-scene-mesh";
+    inline constexpr char kBasicRenderViewSceneMeshParamsType[] =
+        "builtin.render-view-scene-mesh.params";
     inline constexpr char kBasicRenderViewOverlayPassType[] = "builtin.render-view-overlay";
     inline constexpr char kBasicRenderViewOverlayParamsType[] =
         "builtin.render-view-overlay.params";
@@ -75,11 +74,11 @@ namespace asharia {
         std::uint32_t reserved1{};
     };
 
-    struct BasicRenderViewSceneInputsParams {
+    struct BasicRenderViewSceneMeshParams {
         std::uint32_t drawItemCount{};
         std::uint32_t viewKind{};
-        std::uint32_t reserved0{};
-        std::uint32_t reserved1{};
+        std::uint32_t rasterMode{};
+        std::uint32_t indexedDrawCount{};
     };
 
     struct BasicDrawListParams {
@@ -290,14 +289,43 @@ namespace asharia {
         });
     }
 
-    inline void registerBasicRenderViewSceneInputsSchema(RenderGraphSchemaRegistry& schemas) {
+    inline void registerBasicRenderViewSceneMeshSchema(RenderGraphSchemaRegistry& schemas) {
         schemas.registerSchema(RenderGraphPassSchema{
-            .type = kBasicRenderViewSceneInputsPassType,
-            .paramsType = kBasicRenderViewSceneInputsParamsType,
-            .resourceSlots = {},
-            .allowedCommands = {RenderGraphCommandKind::SetInt},
-            .allowCulling = false,
-            .hasSideEffects = true,
+            .type = kBasicRenderViewSceneMeshPassType,
+            .paramsType = kBasicRenderViewSceneMeshParamsType,
+            .resourceSlots =
+                {
+                    RenderGraphResourceSlotSchema{
+                        .name = "target",
+                        .access = RenderGraphSlotAccess::ColorWrite,
+                        .shaderStage = RenderGraphShaderStage::None,
+                        .optional = false,
+                    },
+                    RenderGraphResourceSlotSchema{
+                        .name = "depth",
+                        .access = RenderGraphSlotAccess::DepthAttachmentWrite,
+                        .shaderStage = RenderGraphShaderStage::None,
+                        .optional = false,
+                    },
+                    RenderGraphResourceSlotSchema{
+                        .name = "vertices",
+                        .access = RenderGraphSlotAccess::BufferVertexRead,
+                        .shaderStage = RenderGraphShaderStage::None,
+                        .optional = false,
+                    },
+                    RenderGraphResourceSlotSchema{
+                        .name = "indices",
+                        .access = RenderGraphSlotAccess::BufferIndexRead,
+                        .shaderStage = RenderGraphShaderStage::None,
+                        .optional = false,
+                    },
+                },
+            .allowedCommands =
+                {
+                    RenderGraphCommandKind::SetShader,
+                    RenderGraphCommandKind::SetInt,
+                    RenderGraphCommandKind::DrawIndexed,
+                },
         });
     }
 
@@ -464,7 +492,7 @@ namespace asharia {
         registerBasicRasterMrtSchema(schemas);
         registerBasicRasterFullscreenSchema(schemas);
         registerBasicRenderViewWorldGridSchema(schemas);
-        registerBasicRenderViewSceneInputsSchema(schemas);
+        registerBasicRenderViewSceneMeshSchema(schemas);
         registerBasicRenderViewOverlaySchema(schemas);
         registerBasicRasterDrawListSchema(schemas);
         registerBasicTransferFillBufferSchema(schemas);

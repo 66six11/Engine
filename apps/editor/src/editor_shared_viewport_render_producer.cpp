@@ -714,6 +714,7 @@ namespace asharia::editor {
             .device = producer.device_,
             .allocator = producer.allocator_,
             .shaderDirectory = shaderDirectory,
+            .deviceCapabilities = context.capabilities(),
         });
         if (!renderer) {
             return std::unexpected{std::move(renderer.error())};

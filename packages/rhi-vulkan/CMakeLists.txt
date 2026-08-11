@@ -67,6 +67,14 @@ if(ASHARIA_BUILD_TESTS)
       tests/vulkan_enumeration_tests.cpp
   )
 
+  add_executable(asharia-rhi-vulkan-pipeline-tests
+      tests/vulkan_pipeline_tests.cpp
+  )
+
+  add_executable(asharia-rhi-vulkan-rendergraph-tests
+      tests/vulkan_render_graph_tests.cpp
+  )
+
   target_include_directories(asharia-rhi-vulkan-enumeration-tests
       PRIVATE
           "${CMAKE_CURRENT_SOURCE_DIR}/src"
@@ -77,7 +85,23 @@ if(ASHARIA_BUILD_TESTS)
           asharia::rhi_vulkan
   )
 
+  target_link_libraries(asharia-rhi-vulkan-pipeline-tests
+      PRIVATE
+          asharia::rhi_vulkan
+  )
+
+  target_link_libraries(asharia-rhi-vulkan-rendergraph-tests
+      PRIVATE
+          asharia::rhi_vulkan_rendergraph
+  )
+
   asharia_configure_target(asharia-rhi-vulkan-enumeration-tests)
+  asharia_configure_target(asharia-rhi-vulkan-pipeline-tests)
+  asharia_configure_target(asharia-rhi-vulkan-rendergraph-tests)
   add_test(NAME asharia-rhi-vulkan-enumeration-tests
            COMMAND asharia-rhi-vulkan-enumeration-tests)
+  add_test(NAME asharia-rhi-vulkan-pipeline-tests
+           COMMAND asharia-rhi-vulkan-pipeline-tests)
+  add_test(NAME asharia-rhi-vulkan-rendergraph-tests
+           COMMAND asharia-rhi-vulkan-rendergraph-tests)
 endif()

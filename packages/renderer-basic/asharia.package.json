@@ -20,22 +20,26 @@
   "targets": [
     "asharia-renderer-basic",
     "asharia-renderer-basic-vulkan",
+    "asharia-renderer-basic-validation-mesh-product",
     "asharia-renderer-basic-shaders"
   ],
   "targetRoles": {
     "asharia-renderer-basic": "contract",
     "asharia-renderer-basic-vulkan": "backend",
+    "asharia-renderer-basic-validation-mesh-product": "content-build",
     "asharia-renderer-basic-shaders": "content-build"
   },
   "targetDependencies": {
     "asharia-renderer-basic": ["asharia-core", "asharia-rendergraph"],
     "asharia-renderer-basic-vulkan": [
       "asharia-renderer-basic",
+      "asharia-renderer-basic-validation-mesh-product",
       "asharia-material-core",
       "asharia-rhi-vulkan",
       "asharia-rhi-vulkan-rendergraph",
       "asharia-shader-slang"
     ],
+    "asharia-renderer-basic-validation-mesh-product": [],
     "asharia-renderer-basic-shaders": [
       "asharia-renderer-basic-triangle-vert",
       "asharia-renderer-basic-triangle-frag",

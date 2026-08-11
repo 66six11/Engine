@@ -93,6 +93,18 @@ namespace asharia {
                     return added;
                 }
             }
+            for (const RenderGraphBufferSlot& slot : pass.bufferVertexReadSlots) {
+                auto added = addName(slot.name);
+                if (!added) {
+                    return added;
+                }
+            }
+            for (const RenderGraphBufferSlot& slot : pass.bufferIndexReadSlots) {
+                auto added = addName(slot.name);
+                if (!added) {
+                    return added;
+                }
+            }
             for (const RenderGraphBufferSlot& slot : pass.bufferTransferReadSlots) {
                 auto added = addName(slot.name);
                 if (!added) {

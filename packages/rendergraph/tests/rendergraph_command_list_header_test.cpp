@@ -8,6 +8,7 @@ namespace asharia::rendergraph_header_tests {
             .setTexture("sourceTexture", "source")
             .setVec4("tint", {1.0F, 0.5F, 0.25F, 1.0F})
             .drawFullscreenTriangle()
+            .drawIndexed(36, 2, 3, -4, 5)
             .fillBuffer("upload", 42)
             .copyBuffer("staging", "device")
             .copyBufferToImage("staging", "texture")

@@ -101,6 +101,10 @@ public static partial class StudioEditorImageProducer
     ];
     private static readonly string[] ViewportShaderFiles =
     [
+        "basic_mesh3d.frag.reflection.json",
+        "basic_mesh3d.frag.spv",
+        "basic_mesh3d.vert.reflection.json",
+        "basic_mesh3d.vert.spv",
         "debug_line.frag.reflection.json",
         "debug_line.frag.spv",
         "debug_line.vert.reflection.json",

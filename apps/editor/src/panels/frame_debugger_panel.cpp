@@ -91,6 +91,10 @@ namespace asharia::editor {
                 return "TransferWrite";
             case asharia::RenderGraphSlotAccess::BufferShaderRead:
                 return "BufferShaderRead";
+            case asharia::RenderGraphSlotAccess::BufferVertexRead:
+                return "BufferVertexRead";
+            case asharia::RenderGraphSlotAccess::BufferIndexRead:
+                return "BufferIndexRead";
             case asharia::RenderGraphSlotAccess::BufferTransferRead:
                 return "BufferTransferRead";
             case asharia::RenderGraphSlotAccess::BufferTransferWrite:
@@ -115,6 +119,8 @@ namespace asharia::editor {
                 return "SetVec4";
             case asharia::RenderGraphCommandKind::DrawFullscreenTriangle:
                 return "DrawFullscreenTriangle";
+            case asharia::RenderGraphCommandKind::DrawIndexed:
+                return "DrawIndexed";
             case asharia::RenderGraphCommandKind::ClearColor:
                 return "ClearColor";
             case asharia::RenderGraphCommandKind::FillBuffer:
@@ -369,31 +375,88 @@ namespace asharia::editor {
             return index ? std::to_string(*index) : std::string{"-"};
         }
 
+        [[nodiscard]] std::string
+        sourceObjectText(const asharia::BasicDrawSourceId& sourceObject) {
+            return std::to_string(sourceObject.index) + ":" +
+                   std::to_string(sourceObject.generation);
+        }
+
+        [[nodiscard]] std::string resourceKeyText(std::uint64_t value) {
+            constexpr std::string_view kHexDigits = "0123456789abcdef";
+            std::string text(18, '0');
+            text[0] = '0';
+            text[1] = 'x';
+            for (std::size_t index = 0; index < 16U; ++index) {
+                const auto shift = static_cast<std::uint32_t>((15U - index) * 4U);
+                text[index + 2U] = kHexDigits[(value >> shift) & 0xFU];
+            }
+            return text;
+        }
+
         void
         drawSelectedExecutionEventDetails(const EditorI18n& i18n,
                                           const asharia::BasicRenderViewExecutionEvent& event) {
             textUnformatted(executionEventLabel(event));
             const std::string passText =
-                std::string{i18n.text("renderGraph.pass")} + ": " + event.passName;
+                std::string{i18n.text("renderGraph.pass")} + ": " + event.passName + " (#" +
+                std::to_string(event.passIndex) + ", declaration #" +
+                std::to_string(event.declarationIndex) + ")";
             ImGui::TextUnformatted(passText.c_str());
             if (event.commandIndex) {
                 const std::string commandText = std::string{i18n.text("renderGraph.commands")} +
                                                 ": " + std::to_string(*event.commandIndex);
                 ImGui::TextUnformatted(commandText.c_str());
             }
-            if (event.draw.vertexCount != 0 || event.draw.indexCount != 0) {
+            if (event.kind == asharia::BasicRenderViewExecutionEventKind::DrawIndexed) {
+                const std::string drawText =
+                    "Draw: indices " + std::to_string(event.draw.indexCount) + ", instances " +
+                    std::to_string(event.draw.instanceCount);
+                const std::string rangeText =
+                    "Range: first vertex " + std::to_string(event.draw.firstVertex) +
+                    ", first index " + std::to_string(event.draw.firstIndex) +
+                    ", vertex offset " + std::to_string(event.draw.vertexOffset) +
+                    ", first instance " + std::to_string(event.draw.firstInstance);
+                ImGui::TextUnformatted(drawText.c_str());
+                ImGui::TextUnformatted(rangeText.c_str());
+            } else if (event.draw.vertexCount != 0 || event.draw.indexCount != 0) {
                 const std::string drawText =
                     "Draw: vertices " + std::to_string(event.draw.vertexCount) + ", indices " +
                     std::to_string(event.draw.indexCount) + ", instances " +
                     std::to_string(event.draw.instanceCount);
                 ImGui::TextUnformatted(drawText.c_str());
             }
-            if (event.sourceImageResourceIndex || event.targetImageResourceIndex) {
-                const std::string resourceText =
-                    "Resources: source " +
+            if (event.sceneDrawItemIndex) {
+                const std::string itemText =
+                    "Scene item: " + std::to_string(*event.sceneDrawItemIndex);
+                ImGui::TextUnformatted(itemText.c_str());
+            }
+            if (event.drawPacketContext) {
+                const asharia::BasicDrawPacketContext& packet = *event.drawPacketContext;
+                const std::string sourceText =
+                    "Source object: " + sourceObjectText(packet.sourceObject);
+                const std::string meshText =
+                    "Mesh key: " + resourceKeyText(packet.meshResource.value);
+                const std::string materialText =
+                    "Material key: " + resourceKeyText(packet.materialResource.value);
+                ImGui::TextUnformatted(sourceText.c_str());
+                ImGui::TextUnformatted(meshText.c_str());
+                ImGui::TextUnformatted(materialText.c_str());
+            }
+            if (event.sourceImageResourceIndex || event.targetImageResourceIndex ||
+                event.depthImageResourceIndex) {
+                const std::string imageText =
+                    "Images: source " +
                     optionalResourceIndexText(event.sourceImageResourceIndex) + ", target " +
-                    optionalResourceIndexText(event.targetImageResourceIndex);
-                ImGui::TextUnformatted(resourceText.c_str());
+                    optionalResourceIndexText(event.targetImageResourceIndex) + ", depth " +
+                    optionalResourceIndexText(event.depthImageResourceIndex);
+                ImGui::TextUnformatted(imageText.c_str());
+            }
+            if (event.vertexBufferResourceIndex || event.indexBufferResourceIndex) {
+                const std::string bufferText =
+                    "Buffers: vertex " +
+                    optionalResourceIndexText(event.vertexBufferResourceIndex) + ", index " +
+                    optionalResourceIndexText(event.indexBufferResourceIndex);
+                ImGui::TextUnformatted(bufferText.c_str());
             }
         }
 

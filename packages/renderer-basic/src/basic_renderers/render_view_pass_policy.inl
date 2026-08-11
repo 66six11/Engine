@@ -1,20 +1,24 @@
 ﻿struct BasicRenderViewPassPolicy {
-    bool sceneInputsEnabled{};
+    bool sceneMeshEnabled{};
     bool worldGridEnabled{};
     bool debugLineOverlayEnabled{};
-    BasicRenderViewSceneInputsParams sceneInputsParams{};
+    BasicRenderViewSceneMeshParams sceneMeshParams{};
     BasicRenderViewWorldGridParams worldGridParams{};
     BasicRenderViewOverlayParams overlayParams{};
 };
 
-[[nodiscard]] BasicRenderViewPassPolicy
+[[nodiscard]] Result<BasicRenderViewPassPolicy>
 basicRenderViewPassPolicy(const BasicRenderViewDesc& view,
                           std::span<const BasicDebugWorldLine> debugWorldLines) {
+    auto sceneMeshParams = basicRenderViewSceneMeshParams(view);
+    if (!sceneMeshParams) {
+        return std::unexpected{std::move(sceneMeshParams.error())};
+    }
     return BasicRenderViewPassPolicy{
-        .sceneInputsEnabled = !view.scene.drawItems.empty(),
+        .sceneMeshEnabled = !view.scene.drawItems.empty(),
         .worldGridEnabled = view.overlay.enabled && view.overlay.worldGrid.enabled,
         .debugLineOverlayEnabled = view.overlay.enabled && !debugWorldLines.empty(),
-        .sceneInputsParams = basicRenderViewSceneInputsParams(view),
+        .sceneMeshParams = *sceneMeshParams,
         .worldGridParams = basicRenderViewWorldGridParams(view),
         .overlayParams = basicRenderViewOverlayParams(view),
     };

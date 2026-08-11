@@ -127,6 +127,7 @@ namespace asharia {
             case RenderGraphCommandKind::SetInt:
             case RenderGraphCommandKind::SetVec4:
             case RenderGraphCommandKind::DrawFullscreenTriangle:
+            case RenderGraphCommandKind::DrawIndexed:
             case RenderGraphCommandKind::Dispatch:
                 break;
             }

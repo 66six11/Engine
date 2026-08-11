@@ -107,6 +107,28 @@ namespace asharia {
     }
 
     RenderGraph::PassBuilder&
+    RenderGraph::PassBuilder::readVertexBuffer(std::string slotName,
+                                               RenderGraphBufferHandle buffer) {
+        graph_->impl_->passes_[passIndex_].bufferVertexReadSlots.push_back(RenderGraphBufferSlot{
+            .name = std::move(slotName),
+            .buffer = buffer,
+        });
+        ++graph_->impl_->mutationGeneration_;
+        return *this;
+    }
+
+    RenderGraph::PassBuilder&
+    RenderGraph::PassBuilder::readIndexBuffer(std::string slotName,
+                                              RenderGraphBufferHandle buffer) {
+        graph_->impl_->passes_[passIndex_].bufferIndexReadSlots.push_back(RenderGraphBufferSlot{
+            .name = std::move(slotName),
+            .buffer = buffer,
+        });
+        ++graph_->impl_->mutationGeneration_;
+        return *this;
+    }
+
+    RenderGraph::PassBuilder&
     RenderGraph::PassBuilder::readTransferBuffer(std::string slotName,
                                                  RenderGraphBufferHandle buffer) {
         graph_->impl_->passes_[passIndex_].bufferTransferReadSlots.push_back(RenderGraphBufferSlot{

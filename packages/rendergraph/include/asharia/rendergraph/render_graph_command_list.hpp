@@ -18,6 +18,11 @@ namespace asharia {
         RenderGraphCommandList& setInt(std::string bindingName, int value);
         RenderGraphCommandList& setVec4(std::string bindingName, std::array<float, 4> value);
         RenderGraphCommandList& drawFullscreenTriangle();
+        RenderGraphCommandList& drawIndexed(std::uint32_t indexCount,
+                                            std::uint32_t instanceCount = 1,
+                                            std::uint32_t firstIndex = 0,
+                                            std::int32_t vertexOffset = 0,
+                                            std::uint32_t firstInstance = 0);
         RenderGraphCommandList& clearColor(std::string slotName, std::array<float, 4> color);
         RenderGraphCommandList& fillBuffer(std::string slotName, std::uint32_t value);
         RenderGraphCommandList& copyImage(std::string sourceSlotName, std::string targetSlotName);

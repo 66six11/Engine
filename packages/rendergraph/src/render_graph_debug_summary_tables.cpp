@@ -177,10 +177,10 @@ namespace asharia::rendergraph_internal {
         output += "| # | Decl # | Name | Type | Params | Cullable | Side Effects | "
                   "Before Transitions | Buffer Transitions | Color Writes | Shader Reads | "
                   "Depth Reads | Depth Writes | Depth Sampled Reads | Transfer Reads | "
-                  "Transfer Writes | Buffer Reads | Buffer Transfer Reads | Buffer Writes | "
-                  "Buffer Storage Read/Writes |\n";
+                  "Transfer Writes | Buffer Reads | Buffer Vertex Reads | Buffer Index Reads | "
+                  "Buffer Transfer Reads | Buffer Writes | Buffer Storage Read/Writes |\n";
         output += "|---:|---:|---|---|---|---|---|---:|---:|---|---|---|---|---|---|---|---|---"
-                  "|---|\n";
+                  "|---|---|---|---|\n";
         for (std::size_t index = 0; index < compiled.passes.size(); ++index) {
             const RenderGraphCompiledPass& pass = compiled.passes[index];
             output += "| ";
@@ -217,6 +217,10 @@ namespace asharia::rendergraph_internal {
             output += imageSlotList(declarations, pass.transferWriteSlots);
             output += " | ";
             output += bufferSlotList(declarations, pass.bufferReadSlots);
+            output += " | ";
+            output += bufferSlotList(declarations, pass.bufferVertexReadSlots);
+            output += " | ";
+            output += bufferSlotList(declarations, pass.bufferIndexReadSlots);
             output += " | ";
             output += bufferSlotList(declarations, pass.bufferTransferReadSlots);
             output += " | ";

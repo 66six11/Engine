@@ -161,6 +161,16 @@ namespace asharia {
                 .stageMask = VK_PIPELINE_STAGE_2_HOST_BIT,
                 .accessMask = VK_ACCESS_2_HOST_READ_BIT,
             };
+        case RenderGraphBufferState::VertexRead:
+            return VulkanRenderGraphBufferUsage{
+                .stageMask = VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT,
+                .accessMask = VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT,
+            };
+        case RenderGraphBufferState::IndexRead:
+            return VulkanRenderGraphBufferUsage{
+                .stageMask = VK_PIPELINE_STAGE_2_INDEX_INPUT_BIT,
+                .accessMask = VK_ACCESS_2_INDEX_READ_BIT,
+            };
         case RenderGraphBufferState::ShaderRead:
             return VulkanRenderGraphBufferUsage{
                 .stageMask = vulkanShaderStage(shaderStage),

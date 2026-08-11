@@ -21,6 +21,7 @@ namespace asharia::rendergraph_header_tests {
             .floatValues = {},
             .intValue = 0,
             .uintValues = {42, 0, 0},
+            .uintValue = 0,
         };
     }
 

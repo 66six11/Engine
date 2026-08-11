@@ -77,10 +77,16 @@ namespace asharia {
 
     struct BasicRenderViewSceneDesc {
         std::span<const BasicDrawListItem> drawItems{};
+        BasicSceneRasterMode rasterMode{BasicSceneRasterMode::Solid};
     };
 
     struct BasicRenderViewSceneDiagnostics {
         std::uint64_t drawItemCount{};
+        std::uint64_t indexedDrawCount{};
+        BasicSceneRasterMode rasterMode{BasicSceneRasterMode::Solid};
+        BasicSceneWireframePath wireframePath{BasicSceneWireframePath::NotRequested};
+        BasicDrawResourceKey meshResource{};
+        BasicDrawResourceKey materialResource{};
         std::vector<BasicDrawPacketContext> drawPacketContexts;
     };
 
@@ -178,8 +184,13 @@ namespace asharia {
         std::string label;
         BasicRenderViewDrawEvent draw;
         BasicRenderViewDispatchEvent dispatch;
+        std::optional<std::size_t> sceneDrawItemIndex;
+        std::optional<BasicDrawPacketContext> drawPacketContext;
         std::optional<std::uint32_t> sourceImageResourceIndex;
         std::optional<std::uint32_t> targetImageResourceIndex;
+        std::optional<std::uint32_t> depthImageResourceIndex;
+        std::optional<std::uint32_t> vertexBufferResourceIndex;
+        std::optional<std::uint32_t> indexBufferResourceIndex;
     };
 
     struct BasicRenderViewDiagnostics {

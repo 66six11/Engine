@@ -384,6 +384,10 @@ public sealed class StudioLayeringTests
             projectSource,
             StringComparison.Ordinal);
         Assert.Contains("shaders\\renderer-basic", projectSource, StringComparison.Ordinal);
+        Assert.Contains("basic_mesh3d.vert.spv", projectSource, StringComparison.Ordinal);
+        Assert.Contains("basic_mesh3d.vert.reflection.json", projectSource, StringComparison.Ordinal);
+        Assert.Contains("basic_mesh3d.frag.spv", projectSource, StringComparison.Ordinal);
+        Assert.Contains("basic_mesh3d.frag.reflection.json", projectSource, StringComparison.Ordinal);
         Assert.DoesNotContain("slang.dll", projectSource, StringComparison.Ordinal);
         Assert.Contains("asharia_project_native.dll", projectSource, StringComparison.Ordinal);
         Assert.Contains("asharia_scene_native.dll", projectSource, StringComparison.Ordinal);

@@ -73,6 +73,9 @@ public sealed class StudioEditorImageProducerTests
         Assert.Contains(
             receipt.Files,
             file => file.Path == "bin/shaders/renderer-basic/world_grid.vert.spv");
+        Assert.Contains(
+            receipt.Files,
+            file => file.Path == "bin/shaders/renderer-basic/basic_mesh3d.vert.spv");
         Assert.DoesNotContain(
             receipt.Files,
             file => file.Path is "bin/Asharia.Editor.dll"

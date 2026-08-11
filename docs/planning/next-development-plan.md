@@ -1,6 +1,6 @@
 # 整体路线图
 
-更新日期：2026-08-04
+更新日期：2026-08-10
 
 本文是全项目下一阶段的唯一**功能阶段路线图**；目标系统框架、package/target 收敛方向、跨系统契约和架构迁移门禁见 `docs/planning/system-architecture-roadmap.md`，Kernel、Host Runtime、Foundation Systems、scope/activation 和基础门禁见 `docs/architecture/foundation-framework.md`；每项能力的最早/最迟接入窗口、Integration Gates 和 Owner Card 见 `docs/workflow/architecture-health.md`。RenderGraph 当前语义见 `docs/rendergraph/mvp.md` 与 `docs/rendergraph/rhi-boundary.md`，可编程管线边界见 `docs/rendergraph/programmable-pipeline.md`；Editor 当前事实见 `docs/architecture/editor.md`；资产系统见 `docs/systems/asset-architecture.md`；shader/material authoring 见 `docs/systems/shader-material-authoring.md` 及 V2 specs。实际 Slice 顺序、状态、阻塞和 Done evidence 维护在 GitHub Issues / Project，不在本文重复。
 
@@ -9,7 +9,7 @@
 ### 当前项目事实
 
 - 已有 package-first 基线：`rendergraph` 后端无关，`rhi-vulkan` 不依赖 RenderGraph，Vulkan/RG 翻译在 `rhi_vulkan_rendergraph`，`renderer_basic` 不暴露 Vulkan。
-- Vulkan 主路径已覆盖 dynamic rendering、synchronization2 barrier、descriptor/pipeline wrapper、transient image pool、buffer upload、compute dispatch、offscreen RenderView、Frame Debug replay 和 editor viewport sampled texture。
+- Vulkan 主路径已覆盖 dynamic rendering、synchronization2 barrier、descriptor/pipeline wrapper、transient image pool、buffer upload、compute dispatch、offscreen RenderView、Frame Debug replay、editor viewport sampled texture，以及真实 RenderView indexed scene-mesh pass。后者使用 Color/Depth + VertexRead/IndexRead、`DrawIndexed` 和 draw packet context，并支持 per-view Solid/Wireframe。
 - native Dear ImGui Editor 已具备 production workbench shell、Scene View camera/grid/debug-line、Live RG View、Frame Debugger、Asset Browser snapshot-backed catalog 和多项 smoke。Avalonia Studio 已完成 R0 硬切；#352 建立真实 ProjectSession，#353 已接通 `SceneDocument -> EditWorld -> Hierarchy/Inspector -> dirty/save/reopen`。#359 建立 UI-neutral `ViewportSession`、EngineBridge typed frame lease 和 native Scene/Game/Preview V4 request；当前 #361 正把首个 dirty-only Avalonia Scene View、composition import、drain/shutdown 与 Release deployment 接到同一边界。最近项目、模板、asset catalog、多 viewport/input/preview 与 Play Mode 尚未接入。
 - `asset-core` / `asset-pipeline` / `project-core` / `material-core` / `scene-core` 已是 CPU/headless 数据模型或 baseline package，但尚未形成“真实 scene object -> material/mesh/texture product -> GPU resource -> editor authoring”的完整闭环。
 - 当前风险不是缺少大系统名词，而是 route 太多：渲染、资产、scene、editor、material、play/session 必须按可验证切片合流。
@@ -22,6 +22,17 @@
   参考：<https://dev.epicgames.com/documentation/unreal-engine/render-dependency-graph-in-unreal-engine>
 - O3DE Atom 把 Scene、Render Pipeline、View、Feature Processor 分开，支持多 viewport / 多 pipeline；Asharia 应把 Scene/Game/Preview View 作为同一 renderer/RG 后端上的不同 view request，而不是复制渲染路径。
   参考：<https://docs.o3de.org/docs/atom-guide/dev-guide/rpi/working-with-scene-and-rendering-pipeline/>
+- Unreal 把 transform/attachment-only `USceneComponent` 与拥有 mesh、创建 scene proxy 的
+  `UStaticMeshComponent` 分开；Godot 同样区分 `Node3D` 与 `MeshInstance3D`，并把 wireframe 放在 Viewport
+  debug draw policy；O3DE 让 renderer-owned Feature Processor 生成 Draw Packet。Asharia 采用“显式 mesh component/
+  resource reference -> immutable draw packet -> renderer-owned GPU state”和 per-view Solid/Wireframe，拒绝空 Entity、
+  bounds/debug lines 冒充 mesh，也拒绝 editor/Avalonia 持有 GPU resource 或 source path。
+  参考：<https://dev.epicgames.com/documentation/unreal-engine/API/Runtime/Engine/Components/USceneComponent>、
+  <https://dev.epicgames.com/documentation/unreal-engine/API/Runtime/Engine/UStaticMeshComponent>、
+  <https://docs.godotengine.org/en/stable/classes/class_node3d.html>、
+  <https://docs.godotengine.org/en/stable/classes/class_meshinstance3d.html>、
+  <https://docs.godotengine.org/en/stable/classes/class_viewport.html>、
+  <https://docs.o3de.org/docs/atom-guide/dev-guide/frame-rendering/>
 - Unity、Unreal、Godot 的资产系统都强调 source discovery、metadata/import settings、import/reimport、asset registry/catalog 与 runtime reference 的分离；Asharia 应先稳定 deterministic product/cache 和 resource handle，再做 watcher、热更新或完整 importer UI。
   参考：<https://docs.unity3d.com/6000.4/Documentation/Manual/AssetDatabaseRefreshing.html>、<https://dev.epicgames.com/documentation/unreal-engine/asset-management-in-unreal-engine>、<https://docs.godotengine.org/en/stable/tutorials/assets_pipeline/import_process.html>
 - Unreal Project Browser、Unity Hub、Godot/O3DE Project Manager 把工程选择、版本、构建或恢复与编辑器内 asset browser 分开；Asharia 当前采用 Shell-owned launch/recovery surface 作为过渡，不把这些动作放进 Project asset panel，等安装/版本管理需求成熟后再判断是否拆独立进程。
@@ -44,14 +55,14 @@
 | 主线 | 当前状态 | 下一步缺口 |
 | --- | --- | --- |
 | Foundation / Host | `core` 有 error/log/file baseline，`platform` 仍为空 INTERFACE；package/Host/Settings/Storage/Tasks 为目标设计 | inventory + resolver/lock/Host Profiles；Host scope/lease/registry/rollback；Storage/Settings/Tasks/Observability headless smoke |
-| RenderGraph / RHI / Vulkan | 已有 typed pass、slot/schema、abstract access、transient image/buffer、debug labels、timestamp、Frame Debug replay | 更细 compiler diagnostics、backend lifetime/cache 继续收敛，避免新增 graph 外 GPU work |
-| Renderer / RenderView | 已有 Scene/Game/Preview keyed request、world grid、debug line、offscreen sampled target、多 view diagnostics、scene draw packet contract | 引入真实 mesh/material/resource-backed scene rendering 和 lighting/postprocess feature |
+| RenderGraph / RHI / Vulkan | 已有 typed pass、slot/schema、abstract access、transient image/buffer、VertexRead/IndexRead、`DrawIndexed`、debug labels、timestamp、Frame Debug replay；`fillModeNonSolid` 是 optional typed capability | 更细 compiler diagnostics、backend lifetime/cache 继续收敛，避免新增 graph 外 GPU work |
+| Renderer / RenderView | 已有 Scene/Game/Preview keyed request、world grid、debug line、offscreen sampled target、多 view diagnostics、真实 validation scene-mesh pass、draw packet context 和 per-view Solid/Wireframe | 把 validation product 升级为 asset/runtime resource-backed mesh/material，再扩 lighting/postprocess feature |
 | Asset / Project | 已有 project descriptor、source scan、metadata discovery、product manifest、dry-run/execute asset-processor baseline、texture product upload smoke、runtime resource handle baseline | texture/mesh importer 最小闭环、dependency invalidation、GPU resource owner 收敛 |
 | Material | 已有 CPU-only signature、descriptor contract、pipeline key hash smoke、renderer binding smoke、shader reflection adapter、CPU-only `.ashader` parser/document diagnostics、generated Slang skeleton、generated Slang compile/reflection smoke、generated entry manifest、CPU-only `.amat` minimal IO、#156 deterministic `.amat` product blob 和 #158 deterministic `.ashader` generated Slang product blob | #163 Slang compile/reflection product、material product dependency invalidation、renderer material product 消费和 editor preview |
 | Scene / Editor | 已有 SceneDocument-owned EditWorld、默认场景持久化、Hierarchy/Inspector、dirty/save/reopen、production workbench shell 与 viewport foundation | #361 首个可见 Scene View 收口；随后补 transaction/Undo、selection outline/gizmo |
 | Workflow / Project | Project fields 完整；#20 是 roadmap/docs sync 入口 | 重复 Project item 候选需单独审查，计划变更后同步 #20 |
 
-## 当前执行优先级（2026-08-04）
+## 当前执行优先级（2026-08-10）
 
 ### P0：可复用 Viewport foundation 与首个可见 Scene View
 
@@ -244,19 +255,31 @@ code-only control composition 与 Asharia 的受限 Code-first schema，不把�
 
 当前进度：
 
-- #139 已完成 backend-neutral scene draw packet contract；后续真实 mesh/material/resource-backed scene rendering
-  继续从当前 renderer/resource owner 缺口拆分。
+- #139 已完成 backend-neutral scene draw packet contract。
+- #366 已把该合同接到真实 `builtin.render-view-scene-mesh`：RenderGraph 显式声明 Color/Depth attachment、
+  VertexRead/IndexRead buffer 和 `DrawIndexed`，Vulkan execution event 保留 draw item index 与
+  `BasicDrawPacketContext`；Solid/Wireframe 是 per-view policy。
+- Wireframe 只在 logical device 已启用 optional `fillModeNonSolid` 时使用 `VK_POLYGON_MODE_LINE`；不可用时返回
+  typed unavailable receipt，不让 capability 成为 context 启动硬要求，不回退 Solid，也不启用 `wideLines`。
+- 当前 directional-wedge OBJ -> deterministic generated product 只属于 repository fixture/tool，用于证明真实
+  vertex/index data 与像素结果；它不是通用 OBJ importer、runtime mesh product schema 或 asset resource registry。
+  空 Entity/Transform 也不会隐式产生 mesh。
 
-范围：
+当前范围：
 
 - scene snapshot：entity id、transform、mesh resource handle、material handle。
 - renderer draw packet：不持有 scene/editor 指针，只持有稳定 id、transform、resource/material key。
 - Scene View / Game View 可同帧使用不同 camera/view request。
+- Scene View / Game View 可同帧使用不同 Solid/Wireframe policy，且不修改 scene object/material/source asset。
 
 验收：
 
-- 新增 `--smoke-scene-draw-packet` 或 editor smoke，验证两个 object 进入 RenderGraph pass / execution event。
-- invalid mesh/material handle fail early，并保留 entity/resource context。
+- `--smoke-scene-draw-packet` 保留 CPU/contract 负向覆盖；`--smoke-render-view-scene-mesh` 验证两个 object
+  进入真实 RenderGraph scene-mesh pass、indexed execution event 与 Vulkan draw。
+- invalid/unknown mesh/material resource、draw range 和 capability fail early，并保留 entity/resource/draw context；
+  空 scene 不生成 scene-mesh pass。
+- 下一 Slice 仍需定义 asset-backed mesh product/handle、runtime GPU resource owner、reload/deferred deletion 与 material
+  compatibility；不能把 validation generator 当作 importer 来绕过该缺口。
 
 ### Phase D：Material And Pipeline Binding
 

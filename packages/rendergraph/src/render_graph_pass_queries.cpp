@@ -79,6 +79,8 @@ namespace asharia::rendergraph_internal {
 
     bool passReadsBuffer(const Pass& pass, RenderGraphBufferHandle buffer) {
         return slotsUseBuffer(pass.bufferReadSlots, buffer) ||
+               slotsUseBuffer(pass.bufferVertexReadSlots, buffer) ||
+               slotsUseBuffer(pass.bufferIndexReadSlots, buffer) ||
                slotsUseBuffer(pass.bufferTransferReadSlots, buffer) ||
                slotsUseBuffer(pass.bufferStorageReadWriteSlots, buffer);
     }
@@ -107,6 +109,8 @@ namespace asharia::rendergraph_internal {
 
     bool passUsesBuffer(const RenderGraphCompiledPass& pass, RenderGraphBufferHandle buffer) {
         return slotsUseBuffer(pass.bufferReadSlots, buffer) ||
+               slotsUseBuffer(pass.bufferVertexReadSlots, buffer) ||
+               slotsUseBuffer(pass.bufferIndexReadSlots, buffer) ||
                slotsUseBuffer(pass.bufferTransferReadSlots, buffer) ||
                slotsUseBuffer(pass.bufferWriteSlots, buffer) ||
                slotsUseBuffer(pass.bufferStorageReadWriteSlots, buffer);

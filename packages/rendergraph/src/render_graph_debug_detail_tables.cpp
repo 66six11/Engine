@@ -162,6 +162,10 @@ namespace asharia::rendergraph_internal {
                            pass.transferWriteSlots);
             appendBufferSlotRows(declarations, output, pass.name, "BufferShaderRead",
                                  pass.bufferReadSlots);
+            appendBufferSlotRows(declarations, output, pass.name, "BufferVertexRead",
+                                 pass.bufferVertexReadSlots);
+            appendBufferSlotRows(declarations, output, pass.name, "BufferIndexRead",
+                                 pass.bufferIndexReadSlots);
             appendBufferSlotRows(declarations, output, pass.name, "BufferTransferRead",
                                  pass.bufferTransferReadSlots);
             appendBufferSlotRows(declarations, output, pass.name, "BufferTransferWrite",

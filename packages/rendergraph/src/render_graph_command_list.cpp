@@ -74,6 +74,23 @@ namespace asharia {
         return *this;
     }
 
+    RenderGraphCommandList& RenderGraphCommandList::drawIndexed(std::uint32_t indexCount,
+                                                                std::uint32_t instanceCount,
+                                                                std::uint32_t firstIndex,
+                                                                std::int32_t vertexOffset,
+                                                                std::uint32_t firstInstance) {
+        commands_.push_back(RenderGraphCommand{
+            .kind = RenderGraphCommandKind::DrawIndexed,
+            .name = {},
+            .secondaryName = {},
+            .floatValues = {},
+            .intValue = vertexOffset,
+            .uintValues = {indexCount, instanceCount, firstIndex},
+            .uintValue = firstInstance,
+        });
+        return *this;
+    }
+
     RenderGraphCommandList& RenderGraphCommandList::clearColor(std::string slotName,
                                                                std::array<float, 4> color) {
         commands_.push_back(RenderGraphCommand{

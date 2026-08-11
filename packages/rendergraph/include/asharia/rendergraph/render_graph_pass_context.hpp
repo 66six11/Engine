@@ -29,6 +29,8 @@ namespace asharia {
         std::span<const RenderGraphImageHandle> transferReads;
         std::span<const RenderGraphImageHandle> transferWrites;
         std::span<const RenderGraphBufferHandle> bufferReads;
+        std::span<const RenderGraphBufferHandle> bufferVertexReads;
+        std::span<const RenderGraphBufferHandle> bufferIndexReads;
         std::span<const RenderGraphBufferHandle> bufferTransferReads;
         std::span<const RenderGraphBufferHandle> bufferWrites;
         std::span<const RenderGraphBufferHandle> bufferStorageReadWrites;
@@ -40,6 +42,8 @@ namespace asharia {
         std::span<const RenderGraphImageSlot> transferReadSlots;
         std::span<const RenderGraphImageSlot> transferWriteSlots;
         std::span<const RenderGraphBufferSlot> bufferReadSlots;
+        std::span<const RenderGraphBufferSlot> bufferVertexReadSlots;
+        std::span<const RenderGraphBufferSlot> bufferIndexReadSlots;
         std::span<const RenderGraphBufferSlot> bufferTransferReadSlots;
         std::span<const RenderGraphBufferSlot> bufferWriteSlots;
         std::span<const RenderGraphBufferSlot> bufferStorageReadWriteSlots;

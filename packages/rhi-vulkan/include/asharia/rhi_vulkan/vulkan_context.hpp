@@ -12,6 +12,7 @@
 
 #include "asharia/core/result.hpp"
 #include "asharia/rhi_vulkan/vma_fwd.hpp"
+#include "asharia/rhi_vulkan/vulkan_device_capabilities.hpp"
 #include "asharia/rhi_vulkan/vulkan_error.hpp"
 
 namespace asharia {
@@ -37,6 +38,8 @@ namespace asharia {
         VulkanDebugLabelMode debugLabels{VulkanDebugLabelMode::Optional};
         bool requireVulkan14{true};
         VulkanExternalInteropOptions externalInterop;
+        // Enable when supported without making it a physical-device selection requirement.
+        bool enableFillModeNonSolid{true};
     };
 
     struct VulkanDeviceIdentity {
@@ -83,6 +86,7 @@ namespace asharia {
         [[nodiscard]] std::uint32_t graphicsQueueFamily() const;
         [[nodiscard]] VmaAllocator allocator() const;
         [[nodiscard]] const VulkanDeviceInfo& deviceInfo() const;
+        [[nodiscard]] const VulkanDeviceCapabilities& capabilities() const;
         [[nodiscard]] VulkanDebugLabelFunctions debugLabelFunctions() const;
 
     private:
@@ -98,6 +102,7 @@ namespace asharia {
         std::uint32_t graphicsQueueFamily_{0};
         VmaAllocator allocator_{nullptr};
         VulkanDeviceInfo deviceInfo_{};
+        VulkanDeviceCapabilities capabilities_{};
         VulkanDebugLabelFunctions debugLabelFunctions_{};
     };
 

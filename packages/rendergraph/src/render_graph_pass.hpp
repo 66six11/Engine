@@ -21,6 +21,8 @@ namespace asharia::rendergraph_internal {
         std::vector<RenderGraphImageSlot> transferReadSlots;
         std::vector<RenderGraphImageSlot> transferWriteSlots;
         std::vector<RenderGraphBufferSlot> bufferReadSlots;
+        std::vector<RenderGraphBufferSlot> bufferVertexReadSlots;
+        std::vector<RenderGraphBufferSlot> bufferIndexReadSlots;
         std::vector<RenderGraphBufferSlot> bufferTransferReadSlots;
         std::vector<RenderGraphBufferSlot> bufferWriteSlots;
         std::vector<RenderGraphBufferSlot> bufferStorageReadWriteSlots;

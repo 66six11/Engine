@@ -51,6 +51,10 @@ namespace asharia::rendergraph_internal {
             return "TransferWrite";
         case RenderGraphBufferState::HostRead:
             return "HostRead";
+        case RenderGraphBufferState::VertexRead:
+            return "VertexRead";
+        case RenderGraphBufferState::IndexRead:
+            return "IndexRead";
         case RenderGraphBufferState::ShaderRead:
             return "ShaderRead";
         case RenderGraphBufferState::StorageReadWrite:
@@ -107,6 +111,8 @@ namespace asharia::rendergraph_internal {
             return "SetVec4";
         case RenderGraphCommandKind::DrawFullscreenTriangle:
             return "DrawFullscreenTriangle";
+        case RenderGraphCommandKind::DrawIndexed:
+            return "DrawIndexed";
         case RenderGraphCommandKind::ClearColor:
             return "ClearColor";
         case RenderGraphCommandKind::FillBuffer:
@@ -149,6 +155,12 @@ namespace asharia::rendergraph_internal {
             return command.name + " -> " + command.secondaryName;
         case RenderGraphCommandKind::DrawFullscreenTriangle:
             return "-";
+        case RenderGraphCommandKind::DrawIndexed:
+            return "indexCount=" + std::to_string(command.uintValues[0]) +
+                   ", instanceCount=" + std::to_string(command.uintValues[1]) +
+                   ", firstIndex=" + std::to_string(command.uintValues[2]) +
+                   ", vertexOffset=" + std::to_string(command.intValue) +
+                   ", firstInstance=" + std::to_string(command.uintValue);
         case RenderGraphCommandKind::Dispatch:
             return std::to_string(command.uintValues[0]) + " x " +
                    std::to_string(command.uintValues[1]) + " x " +

@@ -56,10 +56,18 @@ namespace asharia {
         [[nodiscard]] Result<void>
         validateUniqueBufferAccesses(std::span<const RenderGraphBufferDesc> buffers,
                                      const DeclaredPass& pass) {
-            const std::array<BufferSlotGroup, 4> namedGroups{
+            const std::array<BufferSlotGroup, 6> namedGroups{
                 BufferSlotGroup{
                     .access = "BufferShaderRead",
                     .slots = pass.bufferReadSlots,
+                },
+                BufferSlotGroup{
+                    .access = "BufferVertexRead",
+                    .slots = pass.bufferVertexReadSlots,
+                },
+                BufferSlotGroup{
+                    .access = "BufferIndexRead",
+                    .slots = pass.bufferIndexReadSlots,
                 },
                 BufferSlotGroup{
                     .access = "BufferTransferRead",
