@@ -1,6 +1,6 @@
 # ADR-0012：Viewport 显式保持水平或垂直 FOV
 
-状态：Accepted / Implemented  
+状态：Accepted / Implemented
 日期：2026-08-12
 
 ## 背景
