@@ -18,10 +18,12 @@ using Asharia.Studio.Presentation.Avalonia.Viewports;
 using Avalonia.Threading;
 using Editor.Shell.Actions;
 using Editor.Shell.Commands;
+using Editor.Shell.Diagnostics;
 using Editor.Shell.Docking.Panels;
 using Editor.Shell.Services.Projects;
 using Editor.Shell.ViewModels.Docking;
 using Editor.Shell.ViewModels.Panels;
+using Editor.Shell.Views.Windowing;
 using Editor.UI.Icons;
 
 namespace Editor.Shell.ViewModels.Windowing;
@@ -159,6 +161,7 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
         RegisterActions();
         CreateActionCommands();
         dockWorkspace_.DockContentChanged += OnDockContentChanged;
+        EditorDockFloatingWindowRegistry.DockContentChanged += OnDockContentChanged;
         projectSession_.SnapshotChanged += OnProjectSnapshotChanged;
     }
 
@@ -404,11 +407,15 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
         GetActionCommand(StudioShellActionIds.OpenSceneViewPanel);
     public ICommand OpenInspectorPanelCommand =>
         GetActionCommand(StudioShellActionIds.OpenInspectorPanel);
+    public ICommand OpenDiagnosticsPanelCommand =>
+        GetActionCommand(StudioShellActionIds.OpenDiagnosticsPanel);
     public ImmutableArray<StudioActionCatalogEntry> ActionCatalog =>
         actionRegistry_.GetActions();
     public EditorDockWorkspaceViewModel DockWorkspace => dockWorkspace_;
 
     internal IProjectSession ProjectSession => projectSession_;
+
+    internal IStudioDiagnosticSource DiagnosticSource => diagnostics_.Source;
 
     internal ProjectSessionSnapshot AppliedProjectSnapshot => projectSnapshot_;
 
@@ -649,6 +656,7 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
         isDisposed_ = true;
         projectSession_.SnapshotChanged -= OnProjectSnapshotChanged;
         dockWorkspace_.DockContentChanged -= OnDockContentChanged;
+        EditorDockFloatingWindowRegistry.DockContentChanged -= OnDockContentChanged;
         dockWorkspace_.Dispose();
         lifetimeCancellation_.Cancel();
         RaiseProjectCommandStateChanged();
@@ -704,6 +712,18 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
             EditorIconKey.PanelInspector,
             "ENTITY",
             "Selection context",
+            "tool"));
+        panels.Register(new PanelDescriptor(
+            "diagnostics",
+            "Diagnostics",
+            PanelKind.Tool,
+            EditorDockArea.Bottom,
+            "Window/Panels/Diagnostics",
+            DockContentCachePolicy.KeepAlive,
+            () => new StudioDiagnosticsPanelViewModel(DiagnosticSource),
+            EditorIconKey.PanelConsole,
+            "DIAGNOSTICS",
+            "Console and actionable problems",
             "tool"));
         return new EditorDockWorkspaceViewModel(panels);
     }
@@ -903,6 +923,11 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
             "Inspector",
             "inspector",
             order: 40040);
+        RegisterPanelAction(
+            StudioShellActionIds.OpenDiagnosticsPanel,
+            "Diagnostics",
+            "diagnostics",
+            order: 40050);
     }
 
     private void RegisterPanelAction(
@@ -997,7 +1022,8 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
         actionId == StudioShellActionIds.OpenHierarchyPanel ||
         actionId == StudioShellActionIds.OpenProjectPanel ||
         actionId == StudioShellActionIds.OpenSceneViewPanel ||
-        actionId == StudioShellActionIds.OpenInspectorPanel;
+        actionId == StudioShellActionIds.OpenInspectorPanel ||
+        actionId == StudioShellActionIds.OpenDiagnosticsPanel;
 
     private static StudioActionTarget PanelTarget(StudioActionId actionId) =>
         StudioActionTarget.Panel(new StudioPresentationId(actionId switch
@@ -1006,6 +1032,7 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
             var id when id == StudioShellActionIds.OpenProjectPanel => "project",
             var id when id == StudioShellActionIds.OpenSceneViewPanel => "scene-view",
             var id when id == StudioShellActionIds.OpenInspectorPanel => "inspector",
+            var id when id == StudioShellActionIds.OpenDiagnosticsPanel => "diagnostics",
             _ => throw new ArgumentOutOfRangeException(nameof(actionId)),
         }));
 
@@ -1104,16 +1131,32 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
         StudioActionContextSnapshot context,
         StudioPresentationId panelId)
     {
-        if (!CanRunProjectOperation() ||
-            context.Target.PanelId != panelId ||
-            !dockWorkspace_.CanOpenPanel(panelId.Value))
+        if (isDisposed_ || stage_ != StudioShellStage.Ready)
+        {
+            return StudioActionState.Blocked(
+                StudioActionBlockKind.Disabled,
+                "The Studio workspace is not ready.");
+        }
+        if (context.Target.PanelId != panelId)
+        {
+            return StudioActionState.Blocked(
+                StudioActionBlockKind.Stale,
+                $"Panel '{panelId}' no longer matches the captured action target.");
+        }
+
+        var isOpen = dockWorkspace_.ContainsPanel(panelId.Value) ||
+            EditorDockFloatingWindowRegistry.ContainsPanel(panelId.Value);
+        if (!isOpen && !dockWorkspace_.CanOpenPanel(panelId.Value))
         {
             return StudioActionState.Blocked(
                 StudioActionBlockKind.Disabled,
                 $"Panel '{panelId}' cannot be opened in the current workspace.");
         }
 
-        return StudioActionState.Available();
+        return StudioActionState.Available(
+            checkState: isOpen
+                ? StudioActionCheckState.Checked
+                : StudioActionCheckState.Unchecked);
     }
 
     private StudioActionState EvaluateWorkspaceAction(
@@ -1464,7 +1507,9 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
     {
         try
         {
-            return ValueTask.FromResult(dockWorkspace_.OpenPanel(panelId.Value)
+            var opened = EditorDockFloatingWindowRegistry.TryActivatePanel(panelId.Value) ||
+                dockWorkspace_.OpenPanel(panelId.Value);
+            return ValueTask.FromResult(opened
                 ? StudioActionCompletion.Succeeded($"Opened {panelId} panel.")
                 : StudioActionCompletion.Disabled(
                     $"Panel '{panelId}' could not be opened."));

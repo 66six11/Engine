@@ -330,6 +330,8 @@ public sealed class StudioOperationDiagnosticWriter
 
     public StudioProcessIdentity ProcessIdentity => diagnostics_.ProcessIdentity;
 
+    public IStudioDiagnosticSource Source => diagnostics_;
+
     public StudioDiagnosticRecord? PublishProjectSessionFailure(
         ProjectSessionOperationResult result,
         StudioUnexpectedOperationContext context)

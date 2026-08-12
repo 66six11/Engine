@@ -13,6 +13,7 @@ using Asharia.Studio.Application.Scenes;
 using Asharia.Studio.Application.Actions;
 using Asharia.Studio.TestSupport;
 using Editor.Shell.Docking.Layout;
+using Editor.Shell.Docking.DropTargets;
 using Editor.Shell.Docking.Panels;
 using Editor.Shell.Commands;
 using Editor.Shell.ViewModels.Docking;
@@ -269,8 +270,11 @@ public sealed class StudioShellHeadlessTests
             var panelsMenu = Assert.Single(windowMenu.Items.OfType<MenuItem>());
             Assert.Equal("Panels", panelsMenu.Header?.ToString());
             var panelItems = panelsMenu.Items.OfType<MenuItem>().ToArray();
-            Assert.Equal(4, panelItems.Length);
-            foreach (var panelId in new[] { "hierarchy", "project", "scene-view", "inspector" })
+            Assert.Equal(5, panelItems.Length);
+            foreach (var panelId in new[]
+            {
+                "hierarchy", "project", "scene-view", "inspector", "diagnostics",
+            })
             {
                 Assert.True(viewModel.DockWorkspace.ClosePanel(panelId));
                 Assert.False(viewModel.DockWorkspace.ContainsPanel(panelId));
@@ -280,6 +284,7 @@ public sealed class StudioShellHeadlessTests
                     "project" => "studio.window.open-project-panel",
                     "scene-view" => "studio.window.open-scene-view-panel",
                     "inspector" => "studio.window.open-inspector-panel",
+                    "diagnostics" => "studio.window.open-diagnostics-panel",
                     _ => throw new System.ArgumentOutOfRangeException(nameof(panelId)),
                 };
                 var item = panelItems.Single(candidate =>
@@ -361,6 +366,82 @@ public sealed class StudioShellHeadlessTests
         finally
         {
             floatingWindow.Close();
+        }
+    }
+
+    [AvaloniaFact]
+    public void Diagnostics_menu_activates_the_existing_floating_panel_without_duplicating_it()
+    {
+        using var shell = StudioShellTestFactory.Create();
+        var mainWindow = new MainWindow { DataContext = shell };
+        EditorDockFloatingWindow? floatingWindow = null;
+
+        try
+        {
+            mainWindow.Show();
+            shell.MarkReady();
+            Dispatcher.UIThread.RunJobs();
+
+            var diagnosticsTab = shell.DockWorkspace.BottomWindow.Tabs.Single(
+                tab => string.Equals(tab.Id, "diagnostics", System.StringComparison.Ordinal));
+            shell.DockWorkspace.BeginDrag(diagnosticsTab);
+            var floatingRequest = Assert.IsType<EditorDockFloatingWindowRequest>(
+                shell.DockWorkspace.CompleteDrag(new EditorDockDropTarget(
+                    EditorDockDropOperation.Float,
+                    EditorDockDropGuideKind.Float,
+                    EditorDockArea.Bottom,
+                    null,
+                    new Rect(100, 100, 640, 320),
+                    "Float diagnostics")));
+            var floatingWorkspace = floatingRequest.Window.DockWorkspace;
+
+            var sceneTab = shell.DockWorkspace.CenterWindow.Tabs.Single(
+                tab => string.Equals(tab.Id, "scene-view", System.StringComparison.Ordinal));
+            shell.DockWorkspace.BeginDrag(sceneTab);
+            Assert.Null(shell.DockWorkspace.CompleteDragInto(
+                floatingWorkspace,
+                new EditorDockDropTarget(
+                    EditorDockDropOperation.TabInto,
+                    EditorDockDropGuideKind.Merge,
+                    EditorDockArea.Bottom,
+                    floatingWorkspace.ActiveWindow!.Id,
+                    new Rect(100, 100, 640, 320),
+                    "Merge with floating diagnostics")));
+            Assert.Equal("scene-view", floatingWorkspace.ActiveWindow!.ActiveTab!.Id);
+
+            floatingWindow = new EditorDockFloatingWindow
+            {
+                DataContext = floatingRequest.Window,
+                Width = floatingRequest.Bounds.Width,
+                Height = floatingRequest.Bounds.Height,
+            };
+            floatingWindow.Show(mainWindow);
+            Dispatcher.UIThread.RunJobs();
+
+            var item = FindPanelMenuItem(
+                mainWindow,
+                "studio.window.open-diagnostics-panel");
+            Assert.True(item.Command!.CanExecute(item.CommandParameter));
+            item.Command.Execute(item.CommandParameter);
+            Dispatcher.UIThread.RunJobs();
+
+            Assert.False(shell.DockWorkspace.ContainsPanel("diagnostics"));
+            Assert.True(floatingWorkspace.ContainsPanel("diagnostics"));
+            Assert.Equal("diagnostics", floatingWorkspace.ActiveWindow!.ActiveTab!.Id);
+            Assert.Equal(
+                1,
+                EnumerateTabIds(shell.DockWorkspace.CaptureLayoutSnapshot().Root)
+                    .Concat(EnumerateTabIds(
+                        floatingWorkspace.CaptureLayoutSnapshot().Root))
+                    .Count(id => string.Equals(
+                        id,
+                        "diagnostics",
+                        System.StringComparison.Ordinal)));
+        }
+        finally
+        {
+            floatingWindow?.Close();
+            mainWindow.Close();
         }
     }
 
@@ -615,6 +696,41 @@ public sealed class StudioShellHeadlessTests
         return topLevel.Items.OfType<MenuItem>().Single(item =>
             string.Equals(item.Tag?.ToString(), actionId,
                 System.StringComparison.Ordinal));
+    }
+
+    private static MenuItem FindPanelMenuItem(MainWindow window, string actionId)
+    {
+        var menu = Assert.IsType<Menu>(window.FindControl<Menu>("StudioMainMenu"));
+        var windowMenu = menu.Items.OfType<MenuItem>().Single(item =>
+            string.Equals(item.Header?.ToString(), "Window", System.StringComparison.Ordinal));
+        var panelsMenu = windowMenu.Items.OfType<MenuItem>().Single(item =>
+            string.Equals(item.Header?.ToString(), "Panels", System.StringComparison.Ordinal));
+        return panelsMenu.Items.OfType<MenuItem>().Single(item =>
+            string.Equals(item.Tag?.ToString(), actionId, System.StringComparison.Ordinal));
+    }
+
+    private static System.Collections.Generic.IEnumerable<string> EnumerateTabIds(
+        EditorDockLayoutNodeSnapshot? node)
+    {
+        if (node is null)
+        {
+            yield break;
+        }
+
+        foreach (var tabId in node.TabIds)
+        {
+            yield return tabId;
+        }
+
+        foreach (var tabId in EnumerateTabIds(node.First))
+        {
+            yield return tabId;
+        }
+
+        foreach (var tabId in EnumerateTabIds(node.Second))
+        {
+            yield return tabId;
+        }
     }
 
     private static void Press(

@@ -675,8 +675,43 @@ flowchart LR
   `Window > Panels` 由 Dock action 重新打开已关闭 panel。Exit 属于 App lifetime，不伪装成 document action。
 - typed result 仍是调用方事实；只有 canonical producer 将 ProjectSession/transition unexpected failure、escaped Shell exception、
   viewport required-edge failure，以及 viewport degraded→ready episode 投影到同一个 bounded diagnostic hub。消息使用稳定安全文本，
-  原始异常、绝对路径和 secret 不进入 readonly observation。当前 Slice 不建立 Console/Problems UI、持久 Editor log、问题报告
-  bundle 或 crash uploader。
+  原始异常、绝对路径和 secret 不进入 readonly observation。#381在该truth上增加一个Diagnostics panel；持久Editor log、问题报告
+  bundle或crash uploader仍不在该流程内。
+
+### #381 Studio Diagnostics 当前流程
+
+Diagnostics是一个stable Dock tool panel，内部Console读取时序log、Problems读取`Problem` channel的可行动structured
+diagnostic。它们共享`StudioDiagnosticsPanelViewModel`的一次hub subscription；不会把两个record模型合并，也不会建立
+panel-local truth。
+
+```mermaid
+flowchart LR
+    Producers["Managed / native adapter / Avalonia producers"]
+    Hub["App-owned IStudioDiagnosticHub<br/>bounded log + diagnostic rings"]
+    Subscription["One panel subscription<br/>invalidation only"]
+    Dispatcher["Coalesced UI-dispatcher refresh"]
+    Windows["Bounded cursor windows<br/>drop / expired / truncation evidence"]
+    Console["Console tab<br/>sequence/time log projection"]
+    Problems["Problems tab<br/>actionable Problem projection"]
+    Observe["Readonly Host / CLI / MCP projection"]
+
+    Producers --> Hub
+    Hub --> Subscription --> Dispatcher --> Windows
+    Windows --> Console
+    Windows --> Problems
+    Hub --> Observe
+```
+
+- filter、search、selected row、collapse与两个tab各自的clear barrier都是panel-local view state。Collapse只在bounded
+  projection中计算repeat；Clear只推进当前tab读取位置并清除当前rows，不删除hub record、重置global sequence或影响另一个observer。
+- Console Pause冻结当前bounded可见窗口，pause期间的filter/collapse仍只重投影该窗口；独立cursor继续摄入Hub evidence并
+  累计可见的unseen，Resume从暂停点切回当前retained window。`TotalDropped`是source overwrite累计，`CursorExpired`才是
+  当前projection需要的sequence已经不可恢复；UI分别呈现，不能把普通overwrite伪装成view gap。
+- hub callback可来自任意producer thread；callback只合并一次dispatcher refresh，UI线程再读取immutable windows。panel为
+  `KeepAlive`：close/detach与floating host关闭不退订，隐藏期间继续有界推进cursor，reopen复用同一content；terminal
+  workspace/Shell dispose才释放subscription，已排队refresh必须检查disposed generation后返回。
+- cursor expired、total dropped、窗口仍有下一页及record字段截断必须成为可见状态；大列表由虚拟化控件承载，不按hub
+  capacity创建control。持久文件日志、problem report/crash、命令输入/CVar及缺少typed target时的导航继续延后。
 
 ## 当前 Studio Viewport 与 native RenderThread 流程
 

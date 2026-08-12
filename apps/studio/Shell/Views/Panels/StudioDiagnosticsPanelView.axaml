@@ -1,0 +1,356 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:diagnostics="using:Editor.Shell.Diagnostics"
+             x:Class="Editor.Shell.Views.Panels.StudioDiagnosticsPanelView"
+             x:DataType="diagnostics:StudioDiagnosticsPanelViewModel"
+             AutomationProperties.AutomationId="StudioDiagnosticsPanel"
+             AutomationProperties.Name="Diagnostics"
+             AutomationProperties.ControlTypeOverride="Group">
+    <UserControl.Styles>
+        <Style Selector="Border.diagnostics-toolbar">
+            <Setter Property="Padding" Value="6,5" />
+            <Setter Property="Background" Value="{DynamicResource EditorBrushSurface01}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource EditorBrushDivider}" />
+            <Setter Property="BorderThickness" Value="0,0,0,1" />
+        </Style>
+
+        <Style Selector="TextBox.diagnostics-search">
+            <Setter Property="Width" Value="220" />
+            <Setter Property="MinHeight" Value="22" />
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeDefault}" />
+        </Style>
+
+        <Style Selector="ComboBox.diagnostics-filter">
+            <Setter Property="MinWidth" Value="112" />
+            <Setter Property="MinHeight" Value="22" />
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeDefault}" />
+        </Style>
+
+        <Style Selector="Button.diagnostics-tool-button, ToggleButton.diagnostics-tool-button">
+            <Setter Property="MinHeight" Value="22" />
+            <Setter Property="Padding" Value="8,1" />
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeDefault}" />
+        </Style>
+
+        <Style Selector="Border.diagnostics-health">
+            <Setter Property="Padding" Value="7,3" />
+            <Setter Property="Background" Value="{DynamicResource EditorBrushSurface02}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource EditorBrushDivider}" />
+            <Setter Property="BorderThickness" Value="0,0,0,1" />
+        </Style>
+
+        <Style Selector="TextBlock.diagnostics-health-text">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextMuted}" />
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeSmall}" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+        </Style>
+
+        <Style Selector="Grid.diagnostics-column-header">
+            <Setter Property="Height" Value="22" />
+            <Setter Property="Background" Value="{DynamicResource EditorBrushBase01}" />
+        </Style>
+
+        <Style Selector="TextBlock.diagnostics-column-label">
+            <Setter Property="Margin" Value="6,0" />
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextDisabled}" />
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeSmall}" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+        </Style>
+
+        <Style Selector="ListBox.diagnostics-list">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="0" />
+        </Style>
+
+        <Style Selector="ListBox.diagnostics-list ListBoxItem">
+            <Setter Property="Height" Value="22" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="FocusAdorner" Value="{x:Null}" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        </Style>
+
+        <Style Selector="ListBox.diagnostics-list ListBoxItem:pointerover">
+            <Setter Property="Background" Value="{DynamicResource EditorBrushHierarchyRowHover}" />
+        </Style>
+
+        <Style Selector="ListBox.diagnostics-list ListBoxItem:selected">
+            <Setter Property="Background" Value="{DynamicResource EditorBrushSelectionInactive}" />
+        </Style>
+
+        <Style Selector="TextBlock.diagnostics-cell">
+            <Setter Property="Margin" Value="6,0" />
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextSecondary}" />
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeSmall}" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+        </Style>
+
+        <Style Selector="TextBlock.diagnostics-message">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextPrimary}" />
+        </Style>
+
+        <Style Selector="TextBlock.diagnostics-repeat">
+            <Setter Property="HorizontalAlignment" Value="Right" />
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushInfo}" />
+        </Style>
+
+        <Style Selector="Border.diagnostics-details">
+            <Setter Property="Height" Value="36" />
+            <Setter Property="Padding" Value="8,6" />
+            <Setter Property="Background" Value="{DynamicResource EditorBrushSurface01}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource EditorBrushDivider}" />
+            <Setter Property="BorderThickness" Value="0,1,0,0" />
+        </Style>
+
+        <Style Selector="TextBlock.diagnostics-details-text">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextSecondary}" />
+            <Setter Property="FontFamily" Value="Cascadia Mono, Consolas" />
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeSmall}" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+    </UserControl.Styles>
+
+    <Border Background="{DynamicResource EditorBrushBase00}">
+        <TabControl x:Name="DiagnosticsTabs"
+                    AutomationProperties.Name="Diagnostics views">
+            <TabItem x:Name="ConsoleTab"
+                     Header="Console"
+                     AutomationProperties.Name="Console">
+                <Grid RowDefinitions="Auto,Auto,Auto,*,Auto">
+                    <Border Grid.Row="0" Classes="diagnostics-toolbar">
+                        <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                                      VerticalScrollBarVisibility="Disabled">
+                            <StackPanel Orientation="Horizontal">
+                            <TextBox x:Name="ConsoleSearchBox"
+                                     Margin="0,0,6,0"
+                                     Classes="diagnostics-search"
+                                     Text="{Binding Console.SearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                     PlaceholderText="Search console"
+                                     AutomationProperties.Name="Search console" />
+                            <ComboBox x:Name="ConsoleLevelFilter"
+                                      Margin="0,0,6,0"
+                                      Classes="diagnostics-filter"
+                                      ItemsSource="{Binding Console.LevelOptions}"
+                                      SelectedItem="{Binding Console.MinimumLevel, Mode=TwoWay}"
+                                      AutomationProperties.Name="Minimum console level" />
+                            <ComboBox x:Name="ConsoleSourceFilter"
+                                      Margin="0,0,6,0"
+                                      Classes="diagnostics-filter"
+                                      ItemsSource="{Binding Console.SourceOptions}"
+                                      SelectedItem="{Binding Console.SourceFilter, Mode=TwoWay}"
+                                      AutomationProperties.Name="Console source" />
+                            <ToggleButton x:Name="ConsoleCollapseToggle"
+                                          Margin="0,0,6,0"
+                                          Classes="diagnostics-tool-button"
+                                          Content="Collapse"
+                                          IsChecked="{Binding Console.CollapseRepeated, Mode=TwoWay}"
+                                          AutomationProperties.Name="Collapse repeated console records" />
+                            <ToggleButton x:Name="ConsoleFollowToggle"
+                                          Margin="0,0,6,0"
+                                          Classes="diagnostics-tool-button"
+                                          Content="Follow"
+                                          IsChecked="{Binding Console.FollowTail, Mode=TwoWay}"
+                                          AutomationProperties.Name="Follow latest console record" />
+                            <Button x:Name="ConsolePauseButton"
+                                    Margin="0,0,6,0"
+                                    Classes="diagnostics-tool-button"
+                                    Command="{Binding Console.PauseCommand}"
+                                    Content="{Binding Console.PauseButtonText}"
+                                    AutomationProperties.Name="Pause or follow console" />
+                            <Button x:Name="ConsoleClearButton"
+                                    Classes="diagnostics-tool-button"
+                                    Command="{Binding Console.ClearCommand}"
+                                    Content="Clear"
+                                    AutomationProperties.Name="Clear console view" />
+                            </StackPanel>
+                        </ScrollViewer>
+                    </Border>
+
+                    <Border x:Name="ConsoleHealthBanner"
+                            Grid.Row="1"
+                            Classes="diagnostics-health"
+                            IsVisible="{Binding Console.HasHealthNotice}">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBlock Classes="diagnostics-health-text"
+                                       Text="{Binding Console.HealthSummary}" />
+                            <TextBlock Foreground="{DynamicResource EditorBrushWarning}"
+                                       FontSize="{DynamicResource EditorFontSizeSmall}"
+                                       IsVisible="{Binding Console.HasTruncatedRecords}"
+                                       Text="Some records were truncated." />
+                        </StackPanel>
+                    </Border>
+
+                    <Grid Grid.Row="2"
+                          Classes="diagnostics-column-header"
+                          ColumnDefinitions="82,78,120,100,*,52">
+                        <TextBlock Grid.Column="0" Classes="diagnostics-column-label" Text="Time" />
+                        <TextBlock Grid.Column="1" Classes="diagnostics-column-label" Text="Level" />
+                        <TextBlock Grid.Column="2" Classes="diagnostics-column-label" Text="Source" />
+                        <TextBlock Grid.Column="3" Classes="diagnostics-column-label" Text="Channel" />
+                        <TextBlock Grid.Column="4" Classes="diagnostics-column-label" Text="Message" />
+                        <TextBlock Grid.Column="5" Classes="diagnostics-column-label" Text="Count" />
+                    </Grid>
+
+                    <ListBox x:Name="ConsoleList"
+                             Grid.Row="3"
+                             Classes="diagnostics-list"
+                             ItemsSource="{Binding Console.Rows}"
+                             SelectedItem="{Binding Console.SelectedRow, Mode=TwoWay}"
+                             AutomationProperties.Name="Console records">
+                        <ListBox.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <VirtualizingStackPanel />
+                            </ItemsPanelTemplate>
+                        </ListBox.ItemsPanel>
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="diagnostics:StudioConsoleRowViewModel">
+                                <Grid Height="22"
+                                      ColumnDefinitions="82,78,120,100,*,52"
+                                      AutomationProperties.Name="{Binding DetailsText}">
+                                    <TextBlock Grid.Column="0" Classes="diagnostics-cell" Text="{Binding TimestampText}" />
+                                    <TextBlock Grid.Column="1" Classes="diagnostics-cell" Text="{Binding LevelText}" />
+                                    <TextBlock Grid.Column="2" Classes="diagnostics-cell" Text="{Binding Source}" />
+                                    <TextBlock Grid.Column="3" Classes="diagnostics-cell" Text="{Binding Channel}" />
+                                    <TextBlock Grid.Column="4" Classes="diagnostics-cell diagnostics-message" Text="{Binding Message}" />
+                                    <TextBlock Grid.Column="5" Classes="diagnostics-cell diagnostics-repeat" Text="{Binding RepeatText}" />
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+
+                    <Border x:Name="ConsoleDetails"
+                            Grid.Row="4"
+                            Classes="diagnostics-details"
+                            IsVisible="{Binding Console.HasSelection}">
+                        <ContentControl Content="{Binding Console.SelectedRow}">
+                            <ContentControl.ContentTemplate>
+                                <DataTemplate x:DataType="diagnostics:StudioConsoleRowViewModel">
+                                    <ScrollViewer HorizontalScrollBarVisibility="Disabled"
+                                                  VerticalScrollBarVisibility="Auto">
+                                        <TextBlock Classes="diagnostics-details-text"
+                                                   Text="{Binding DetailsText}" />
+                                    </ScrollViewer>
+                                </DataTemplate>
+                            </ContentControl.ContentTemplate>
+                        </ContentControl>
+                    </Border>
+                </Grid>
+            </TabItem>
+
+            <TabItem x:Name="ProblemsTab"
+                     Header="Problems"
+                     AutomationProperties.Name="Problems">
+                <Grid RowDefinitions="Auto,Auto,Auto,*,Auto">
+                    <Border Grid.Row="0" Classes="diagnostics-toolbar">
+                        <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                                      VerticalScrollBarVisibility="Disabled">
+                            <StackPanel Orientation="Horizontal">
+                            <TextBox x:Name="ProblemsSearchBox"
+                                     Margin="0,0,6,0"
+                                     Classes="diagnostics-search"
+                                     Text="{Binding Problems.SearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                     PlaceholderText="Search problems"
+                                     AutomationProperties.Name="Search problems" />
+                            <ComboBox x:Name="ProblemsSeverityFilter"
+                                      Margin="0,0,6,0"
+                                      Classes="diagnostics-filter"
+                                      ItemsSource="{Binding Problems.SeverityOptions}"
+                                      SelectedItem="{Binding Problems.MinimumSeverity, Mode=TwoWay}"
+                                      AutomationProperties.Name="Minimum problem severity" />
+                            <ComboBox x:Name="ProblemsSourceFilter"
+                                      Margin="0,0,6,0"
+                                      Classes="diagnostics-filter"
+                                      ItemsSource="{Binding Problems.SourceOptions}"
+                                      SelectedItem="{Binding Problems.SourceFilter, Mode=TwoWay}"
+                                      AutomationProperties.Name="Problem source" />
+                            <ToggleButton x:Name="ProblemsCollapseToggle"
+                                          Margin="0,0,6,0"
+                                          Classes="diagnostics-tool-button"
+                                          Content="Collapse"
+                                          IsChecked="{Binding Problems.CollapseRepeated, Mode=TwoWay}"
+                                          AutomationProperties.Name="Collapse repeated problems" />
+                            <Button x:Name="ProblemsClearButton"
+                                    Classes="diagnostics-tool-button"
+                                    Command="{Binding Problems.ClearCommand}"
+                                    Content="Clear"
+                                    AutomationProperties.Name="Clear problems view" />
+                            </StackPanel>
+                        </ScrollViewer>
+                    </Border>
+
+                    <Border x:Name="ProblemsHealthBanner"
+                            Grid.Row="1"
+                            Classes="diagnostics-health"
+                            IsVisible="{Binding Problems.HasHealthNotice}">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBlock Classes="diagnostics-health-text"
+                                       Text="{Binding Problems.HealthSummary}" />
+                            <TextBlock Foreground="{DynamicResource EditorBrushWarning}"
+                                       FontSize="{DynamicResource EditorFontSizeSmall}"
+                                       IsVisible="{Binding Problems.HasTruncatedRecords}"
+                                       Text="Some records were truncated." />
+                        </StackPanel>
+                    </Border>
+
+                    <Grid Grid.Row="2"
+                          Classes="diagnostics-column-header"
+                          ColumnDefinitions="82,78,110,120,*,52">
+                        <TextBlock Grid.Column="0" Classes="diagnostics-column-label" Text="Time" />
+                        <TextBlock Grid.Column="1" Classes="diagnostics-column-label" Text="Severity" />
+                        <TextBlock Grid.Column="2" Classes="diagnostics-column-label" Text="Code" />
+                        <TextBlock Grid.Column="3" Classes="diagnostics-column-label" Text="Source" />
+                        <TextBlock Grid.Column="4" Classes="diagnostics-column-label" Text="Problem" />
+                        <TextBlock Grid.Column="5" Classes="diagnostics-column-label" Text="Count" />
+                    </Grid>
+
+                    <ListBox x:Name="ProblemsList"
+                             Grid.Row="3"
+                             Classes="diagnostics-list"
+                             ItemsSource="{Binding Problems.Rows}"
+                             SelectedItem="{Binding Problems.SelectedRow, Mode=TwoWay}"
+                             AutomationProperties.Name="Actionable problems">
+                        <ListBox.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <VirtualizingStackPanel />
+                            </ItemsPanelTemplate>
+                        </ListBox.ItemsPanel>
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="diagnostics:StudioProblemRowViewModel">
+                                <Grid Height="22"
+                                      ColumnDefinitions="82,78,110,120,*,52"
+                                      AutomationProperties.Name="{Binding DetailsText}">
+                                    <TextBlock Grid.Column="0" Classes="diagnostics-cell" Text="{Binding TimestampText}" />
+                                    <TextBlock Grid.Column="1" Classes="diagnostics-cell" Text="{Binding SeverityText}" />
+                                    <TextBlock Grid.Column="2" Classes="diagnostics-cell" Text="{Binding Code}" />
+                                    <TextBlock Grid.Column="3" Classes="diagnostics-cell" Text="{Binding Source}" />
+                                    <TextBlock Grid.Column="4" Classes="diagnostics-cell diagnostics-message" Text="{Binding Message}" />
+                                    <TextBlock Grid.Column="5" Classes="diagnostics-cell diagnostics-repeat" Text="{Binding RepeatText}" />
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+
+                    <Border x:Name="ProblemsDetails"
+                            Grid.Row="4"
+                            Classes="diagnostics-details"
+                            IsVisible="{Binding Problems.HasSelection}">
+                        <ContentControl Content="{Binding Problems.SelectedRow}">
+                            <ContentControl.ContentTemplate>
+                                <DataTemplate x:DataType="diagnostics:StudioProblemRowViewModel">
+                                    <ScrollViewer HorizontalScrollBarVisibility="Disabled"
+                                                  VerticalScrollBarVisibility="Auto">
+                                        <TextBlock Classes="diagnostics-details-text"
+                                                   Text="{Binding DetailsText}" />
+                                    </ScrollViewer>
+                                </DataTemplate>
+                            </ContentControl.ContentTemplate>
+                        </ContentControl>
+                    </Border>
+                </Grid>
+            </TabItem>
+        </TabControl>
+    </Border>
+</UserControl>

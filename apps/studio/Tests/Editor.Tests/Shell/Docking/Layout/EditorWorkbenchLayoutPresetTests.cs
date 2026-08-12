@@ -17,9 +17,13 @@ public sealed class EditorWorkbenchLayoutPresetTests
 
         Assert.Equal("owned-dock-center", snapshot.ActiveWindowId);
         Assert.Equal(
-            ["hierarchy", "inspector", "project", "scene-view"],
+            ["diagnostics", "hierarchy", "inspector", "project", "scene-view"],
             windows.SelectMany(window => window.TabIds).Order().ToArray());
-        Assert.Equal(4, windows.Select(window => window.WindowId).Distinct().Count());
+        Assert.Equal(5, windows.Select(window => window.WindowId).Distinct().Count());
+        Assert.Contains(
+            windows,
+            window => window.WindowArea == EditorDockArea.Bottom &&
+                window.TabIds.SequenceEqual(["diagnostics"]));
         Assert.Empty(snapshot.FloatingWindows);
     }
 
@@ -30,9 +34,9 @@ public sealed class EditorWorkbenchLayoutPresetTests
         var windows = EnumerateWindows(snapshot.Root).ToArray();
 
         Assert.Equal(
-            ["hierarchy", "inspector", "project", "scene-view"],
+            ["diagnostics", "hierarchy", "inspector", "project", "scene-view"],
             windows.SelectMany(window => window.TabIds).Order().ToArray());
-        Assert.Equal(3, windows.Select(window => window.WindowId).Distinct().Count());
+        Assert.Equal(4, windows.Select(window => window.WindowId).Distinct().Count());
         Assert.Contains(
             windows,
             window => window.TabIds.SequenceEqual(["hierarchy", "project"]));
@@ -46,15 +50,17 @@ public sealed class EditorWorkbenchLayoutPresetTests
         RegisterPanel(registry, "project", EditorDockArea.Left);
         RegisterPanel(registry, "scene-view", EditorDockArea.Center);
         RegisterPanel(registry, "inspector", EditorDockArea.Right);
+        RegisterPanel(registry, "diagnostics", EditorDockArea.Bottom);
 
         using var workspace = new EditorDockWorkspaceViewModel(registry);
         var windows = EnumerateWindows(workspace.CaptureLayoutSnapshot().Root).ToArray();
 
-        Assert.Equal(4, windows.Length);
+        Assert.Equal(5, windows.Length);
         Assert.Contains(windows, window => window.TabIds.SequenceEqual(["hierarchy"]));
         Assert.Contains(windows, window => window.TabIds.SequenceEqual(["project"]));
         Assert.Contains(windows, window => window.TabIds.SequenceEqual(["scene-view"]));
         Assert.Contains(windows, window => window.TabIds.SequenceEqual(["inspector"]));
+        Assert.Contains(windows, window => window.TabIds.SequenceEqual(["diagnostics"]));
     }
 
     private static void RegisterPanel(

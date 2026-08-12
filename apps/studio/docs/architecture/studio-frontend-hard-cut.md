@@ -4,7 +4,7 @@
 R0.5 只读开发态观测面已由[对应 Slice 1→8](studio-development-observability.md#210-r05-slice-8-modern-read-only-stdio-mcp-adapter-cardclosed-evidence)关闭；后续 R1 仍受
 [ADR-0007](../adr/0007-studio-frontend-hard-cut.md)约束）
 
-更新日期：2026-08-12
+更新日期：2026-08-13
 
 > 2026-08-04 进展：R1 首个 writable vertical Slice 已由
 > [ADR-0009](../adr/0009-authoritative-scene-document.md) 关闭。下文 R0 审计表保留当时证据；凡写“SceneDocument
@@ -17,6 +17,10 @@ R0.5 只读开发态观测面已由[对应 Slice 1→8](studio-development-obser
 > viewport presentation consumer 完成 dirty transition guard、structured failure ingress 及最小 Action/menu/context/shortcut
 > 纵向闭环。4.8 仍只记录旧 Workbench runtime 被删除的历史事实；新 `Asharia.Studio.Application.Actions`
 > 不兼容旧 Workbench contract、adapter 或 public SDK。
+>
+> 2026-08-13，#381又在同一App-owned bounded hub上建立一个Diagnostics Dock panel：Console读取时序日志，
+> Problems读取可行动structured diagnostics。两个内部tab共享一次subscription与有界可重建projection；这不恢复
+> 旧Console/Problems Feature岛，也不引入持久日志、命令/CVar或第二truth。
 
 ## 1. 结论与范围
 
@@ -75,7 +79,8 @@ Studio 当前存在整体架构问题，适合无兼容硬切；但不需要推�
 - ProjectCode/legacy adapter删除后只由3份专属测试实例化的Application module registry/scope transaction/
   static generation host也已删除；R0不声明extension activation能力。
 - root `Features/**` 的Console/Problems/Hierarchy/Inspector/Project/SceneView/UiStyle均无模板、panel host或构造入口，
-  已连同18份专属tests删除；唯一diagnostic hub保留，未来Console/Problems只能作为其真实panel只读适配器重建。
+  已连同18份专属tests删除；唯一diagnostic hub保留。该R0门禁后来由#381以新的Diagnostics panel只读适配器满足，
+  没有恢复旧Feature类型。
 - Dialog host、design-time ViewModel与About request没有App/MainWindow/template/command producer，已连同专属tests删除；
   旧public data-only Dialog contracts留待public SDK closure独立审计，不把它们解释为R0可用弹窗能力。
 - Project launch View/ViewModel没有App/MainWindow/project-selection intent入边，已连同专属text projection、零复用
@@ -104,8 +109,8 @@ Studio 当前存在整体架构问题，适合无兼容硬切；但不需要推�
   UI frame pump 和发布 closing fact，不再拥有 process teardown。
 - `App` 创建唯一 `StudioDiagnosticHub` 并把同一 process identity 注入 composition；diagnostic/log 分别使用
   2048/8192 固定数组 ring，写入为 O(1)，cursor 明示 wrap/drop；subscriber 为 64 个固定 slot、逐个隔离；
-  Avalonia 使用自有 `ILogSink`，不再走 `Trace`；Console/Problems 已随断开的 Feature 岛删除，未来只能作为真实
-  consumer 重建并重读同一 hub，不能拥有第二 store。
+  Avalonia 使用自有 `ILogSink`，不再走 `Trace`；旧Console/Problems Feature岛保持删除，#381只以当前真实
+  Diagnostics panel重读同一hub，不能拥有第二store。
 - 断开的自研 Dock graph/hit-test/tab/floating-window runtime、panel registry/cache、View/ViewModel、全局
   `ViewLocator`、专属样式令牌与测试已删除；`App` 不再注册全局反射 DataTemplate。
 
@@ -342,13 +347,13 @@ timeout 是 typed fault/quarantine，不授权越过 native barrier。UI thread 
 
 | 字段 | 当前合同与证据 |
 | --- | --- |
-| Current evidence | `App.axaml.cs` 是 production 唯一 `new StudioDiagnosticHub()`；Application tests覆盖8 producers × 2000 records、wrap/drop/cursor、subscriber fault/capacity/dispose与blocked log subscriber。Avalonia adapter先把最多16个raw values单次投影为bounded strings：精确BCL标量使用invariant格式，未知对象只保留type marker，不调用其代码。Console/Problems已删除；Native/Subprocess目前只有typed origin合同和synthetic record投影测试，没有production producer。 |
-| Problem / trigger | 旧service的无界/shift与`Trace`双truth已切除；后续审查又发现Avalonia adapter曾在producer线程对任意property执行两次`ToString()`，catch不能约束阻塞、锁、IO或副作用，现已改为单次安全投影。Diagnostic invalidation仍同步调用subscriber，当前无production subscriber，最迟须在首个panel consumer前修正。 |
+| Current evidence | `App.axaml.cs` 是 production 唯一 `new StudioDiagnosticHub()`；Application tests覆盖8 producers × 2000 records、wrap/drop/cursor、subscriber fault/capacity/dispose与blocked log subscriber。Avalonia adapter先把最多16个raw values单次投影为bounded strings：精确BCL标量使用invariant格式，未知对象只保留type marker，不调用其代码。此R0格关闭时旧Console/Problems已删除；#381后来以新Diagnostics projection重建。Native/Subprocess目前只有typed origin合同和synthetic record投影测试，没有production producer。 |
+| Problem / trigger | 旧service的无界/shift与`Trace`双truth已切除；后续审查又发现Avalonia adapter曾在producer线程对任意property执行两次`ToString()`，catch不能约束阻塞、锁、IO或副作用，现已改为单次安全投影。此R0格关闭时Diagnostic invalidation仍同步调用且无production subscriber；#381首个panel consumer在callback边只合并dispatcher refresh并重读hub，没有在producer thread更新UI。 |
 | Engine/framework precedent adopted | Unreal [`FOutputDeviceRedirector`](https://dev.epicgames.com/documentation/unreal-engine/API/Runtime/Core/Misc/FOutputDeviceRedirector)集中多线程输出与backlog；Unity [`Application.logMessageReceivedThreaded`](https://docs.unity3d.com/6000.0/Documentation/ScriptReference/Application-logMessageReceivedThreaded.html)和Godot [`Logger`](https://docs.godotengine.org/en/stable/classes/class_logger.html)要求sink/callback承受并发producer。采用单一process truth、固定retention和不执行任意用户代码的adapter投影。 |
 | Rejected / Asharia rationale | 拒绝把任意`object.ToString()`包装在catch后称为non-blocking，也拒绝per-log `Task.Run`、unbounded queue、raw object retention或为已删除panel复制第二store。未知framework value只保留bounded type marker；真实consumer出现后才设计其dispatcher projection。 |
-| Owner / scope | `App` 拥有 process-scoped hub；hub 只拥有 value records、两个固定 ring 和 64 个 subscription slots。当前只读Host/CLI/MCP是同一 owner 的读适配器；Console、Problems、status均不是当前production capability。 |
-| Create → active → quiesce → destroy | App constructor 创建 hub并安装framework sink → composition与只读Host注入同一instance → teardown tail写入仍可读ring → process exit回收纯managed storage。当前没有panel lease；未来panel必须随真实consumer取得并dispose subscription。 |
-| Owner thread / safe points | 多producer可从任意线程发布；framework adapter不等待、不做IO/lock、不调用任意对象代码，只同步生成有界值；ring使用sequence-stamped固定slot。log invalidation最多一个queued work item，producer不等待subscriber；diagnostic invalidation当前仍同步，因无production subscriber暂不阻塞当前产品，但不能作为future UI adapter已安全的证据。 |
+| Owner / scope | `App` 拥有 process-scoped hub；hub只拥有value records、两个固定ring和64个subscription slots。此R0 card关闭时只有Host/CLI/MCP读适配；#381随后增加Diagnostics UI projection，owner不变。 |
+| Create → active → quiesce → destroy | App constructor创建hub并安装framework sink → composition与只读Host注入同一instance → #381 KeepAlive Diagnostics content取得一次subscription → teardown tail写入仍可读ring → terminal workspace/Shell dispose退订 → process exit回收纯managed storage。 |
+| Owner thread / safe points | 多producer可从任意线程发布；framework adapter不等待、不做IO/lock、不调用任意对象代码，只同步生成有界值；ring使用sequence-stamped固定slot。log invalidation最多一个queued work item；diagnostic subscriber仍会在publisher thread收到callback，因此#381 callback只做O(1) interlocked coalescing并post dispatcher，不读取window、不触摸ViewModel/Control。 |
 | Input / output | 输入是 typed diagnostic/log write；输出是 immutable record 或 `StudioCursorWindow<T>`，包含 oldest、next、total dropped、cursor-expired、truncated 与 items。 |
 | Identity / generation | hub 与 `StudioProcessSession` 共享一个 `StudioProcessIdentity`；当前真实 scope 只有 process generation 1。Project/Document/Engine scope 必须等对应 owner 创建后注册，不生成 fixture identity。 |
 | Mapping | 当前managed lifecycle/command → `Managed`，framework adapter → Application-neutral `Framework`、package=`avalonia`。`Native` stable status与`Subprocess` stream/operation/correlation只是后续producer必须采用的typed合同；当前不把synthetic mapping test冒充production ingress。 |
@@ -357,7 +362,7 @@ timeout 是 typed fault/quarantine，不授权越过 native barrier。UI thread 
 | Foundation relation | 这是 R0 本地 truth 与未来 Foundation router 的窄接缝；F3 接入时替换 adapter，不并存第二 ring，也不提前建立 metric/trace/crash。 |
 | Earliest / latest gate | R0 立即接入；它是 R0.5 Host 的前置，R0.5 只能暴露现有 cursor window，不能另建 protocol cache。 |
 | Non-goals | Pipe、CLI、MCP、remote access、Capture/Mutate、metric/trace/profiler、crash artifact、通用 logging framework。 |
-| Exit evidence | Avalonia focused 4/4覆盖普通映射、未知/抛异常对象零次调用、blocking对象不延迟publish、17项输入只保留16项并复用相同normalized values；architecture gate冻结`NormalizeValues`/type-marker且禁止`SafeValue`/`IFormattable`。bounded hub、唯一creator与无Trace/List-shift证据继续成立。Console/Problems与Native/Subprocess仍明确不是当前production capability。 |
+| Exit evidence | Avalonia focused 4/4覆盖普通映射、未知/抛异常对象零次调用、blocking对象不延迟publish、17项输入只保留16项并复用相同normalized values；architecture gate冻结`NormalizeValues`/type-marker且禁止`SafeValue`/`IFormattable`。bounded hub、唯一creator与无Trace/List-shift证据继续成立。此R0格当时未包含Console/Problems与Native/Subprocess production capability；#381 UI projection见4.41，Native/Subprocess状态不变。 |
 
 ### 4.5 R0 Shell/Headless/accessibility owner card（current）
 
@@ -484,7 +489,7 @@ timeout 是 typed fault/quarantine，不授权越过 native barrier。UI thread 
 | Problem / trigger | legacy composition、Workbench、Dock和`ViewLocator`删除后，7组built-in Feature没有DataTemplate、panel host、factory或手工构造入口；Scene/Hierarchy/Inspector仍投影旧fixture-era状态，Console/Problems/UiStyle虽局部正确也只是test-owned adapter。 |
 | Engine precedent adopted | [Unreal `FDocumentTracker`](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Editor/UnrealEd/WorkflowOrientedApp/FDocumentTracker?application_version=5.5)由真实document factory/payload驱动tab；[Unreal `FTabManager::RegisterTabSpawner`](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/Slate/FTabManager/RegisterTabSpawner)要求真实spawner；[Godot `EditorDock`](https://docs.godotengine.org/en/stable/classes/class_editordock.html)由真实EditorPlugin注册并在退出时移除。采用“vertical feature truth与owner先成立，再注册presentation”。 |
 | Rejected / Asharia rationale | 拒绝保留未接线panel/ViewModel来宣称built-in能力，也拒绝用source/XAML tests冒充production tree。Git history保存UI；R1以后按真实Document/use case逐个重建。 |
-| Owner / lifetime | R0没有Feature/panel owner或content lease；唯一Window/Shell owner不持有这些类型。`StudioDiagnosticHub`仍是Console/Problems未来唯一truth，删除适配器不创建第二hub。 |
+| Owner / lifetime | R0没有Feature/panel owner或content lease；唯一Window/Shell owner当时不持有这些类型。删除适配器没有创建第二hub；#381后来仍以同一`StudioDiagnosticHub`作为Console/Problems唯一truth。 |
 | Success / failure / timeout / cancel / shutdown | Feature岛没有异步production owner，不伪造证据。未来每个真实Feature需按其operation补success/failure/cancel与owner teardown；当前Headless/process-session证据保持。 |
 | Bounds / complexity | 7组built-in Feature、31个声明类型、SceneView resource/quarantine/presentation状态与所有Feature collections归零；R0最小control tree不变。 |
 | Earliest / latest gate | 在Workbench/Dock删除后切除；早于Dialog/Project Shell、UI resource closure与旧public SDK清理，不解锁R0.5。 |
@@ -883,12 +888,24 @@ timeout 是 typed fault/quarantine，不授权越过 native barrier。UI thread 
 | I0 → I6 gate | I0 是按钮、菜单、右键和快捷键各自直接调用导致 context/disabled/stale 语义漂移，以及关闭时绕过dirty事实、失败只留临时文字。I1由UI-neutral action/placement/context/state/result与transition contracts建立；I2由真实Shell、Hierarchy、floating window、ProjectSession和viewport coordinator接入；I3由执行前重新求值、stable identity/revision revalidation、single-flight transition、typed failure与同一bounded hub闭合。I4-I6的外部写命令、profile和第二外部consumer仍未进入。 |
 | Engine precedent adopted | Unreal公开[`FUICommandList`](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/Slate/Framework/Commands/FUICommandList)采用command mapping、can-execute与input binding分离；[ToolMenus](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Developer/ToolMenus)把菜单投影与业务command分开。O3DE [Action Manager](https://www.docs.o3de.org/docs/user-guide/action-manager/)区分action、context、menu/toolbar placement与hotkey。Unity公开[`MenuItem`](https://docs.unity3d.com/6000.0/Documentation/ScriptReference/MenuItem.html)、[`ShortcutManager`](https://docs.unity3d.com/6000.0/Documentation/ScriptReference/ShortcutManagement.ShortcutManager.html)与[`CommandEvent`](https://docs.unity3d.com/6000.0/Documentation/ScriptReference/CommandEvent.html)也证明菜单、快捷键和targeted command是同一意图的不同入口。Asharia采用共享执行路由和冻结context，不复制全局singleton或string command bus。 |
 | Rejected / Asharia rationale | 4.8 删除的旧 Workbench action runtime仍保持删除；本Slice不恢复legacy namespace、adapter、command palette、dynamic contribution/public SDK或兼容constructor。新`Asharia.Studio.Application.Actions`只因真实ProjectSession、selection、Dock panel、Hierarchy row与floating-window consumer存在而建立；MainWindow/Menu/ContextMenu/ICommand只是同一registry/executor的Avalonia投影。Console/Problems、持久日志、problem report、crash evidence与完整Task supervisor明确后置。 |
-| Owner / lifetime | `App`仍唯一拥有process hub与process session；Application registry在composition期原子注册action definition/placement/shortcut index，executor每次接收不可变context。Shell只注册当前14个内建action并提供ICommand投影；context menu冻结stable row target，执行前按当前session/scene/revision重新验证。`ProjectDocumentTransitionCoordinator`独占一个create/open/close/exit decision，`App`只在exit guard允许后启动既有process teardown。 |
+| Owner / lifetime | `App`仍唯一拥有process hub与process session；Application registry在composition期原子注册action definition/placement/shortcut index，executor每次接收不可变context。Shell只注册当前15个内建action并提供ICommand投影；context menu冻结stable row target，执行前按当前session/scene/revision重新验证。`ProjectDocumentTransitionCoordinator`独占一个create/open/close/exit decision，`App`只在exit guard允许后启动既有process teardown。 |
 | Thread / data / error | context携source、top-level/focused panel、ProjectSessionId、scene/revision、selection、显式target及operation/correlation/parent；结果区分Succeeded/Unknown/Disabled/Stale/Conflict/Cancelled/Failed。文本输入/IME先消费快捷键，再由UI-neutral chord解析；重复action/placement/shortcut registration fail closed。Project/Shell failure与viewport required-edge rejection保留stable code、scope/generation、operation/correlation和bounded attributes；UI文字不是第二diagnostics truth。 |
 | Success / failure / cancel / shutdown | Save保存被提示的content state后才继续；Discard只授权当前匹配的dirty snapshot；expectation在ProjectSession operation gate内与session/project/scene/revision/current+saved content state逐项比较，消除最终检查到destructive commit之间的竞态。Cancel、save failure、transition failure与并发新编辑都保持窗口/文档可继续使用。application close首次被取消并single-flight等待同一guard；允许后在gate内进入exit-prepared seal，Cancel允许下一次close重新提示。action state在执行前重新求值，stale target/revision和冲突typed reject；handler exception经diagnostic boundary转为Failed。viewport required edge非Applied时先发一次structured Problem再fail fast；重复degraded不刷屏且Ready只恢复一次。 |
 | Bounds / complexity | action/placement/shortcut集合只在composition期注册，随后Shell不再修改，lookup为O(1)；context与selection为调用时bounded immutable copy，不持有Control、row ViewModel或native handle。transition同时最多1个；dirty snapshot比较为O(1)。diagnostic仍写入既有2048 ring，未新增store、queue、subscriber或retention policy。 |
-| Earliest / latest gate | 此纵向Slice晚于真实SceneDocument write/undo/selection/Dock/viewport consumer，因而满足4.8规定的“真实use case后重建”；它只关闭到command/menu/context/shortcut。下一格若建设Console/Problems，必须只读同一hub并先定义bounded invalidation/dedup projection；持久日志、problem report与crash collector各需独立owner Slice。 |
-| Non-goals | legacy Workbench/API兼容、dynamic action contribution、command palette、remote/MCP Mutate、Console/Problems panel、persistent logs、problem report bundle、crash collector、generic task framework、全局service locator。 |
+| Earliest / latest gate | 此纵向Slice晚于真实SceneDocument write/undo/selection/Dock/viewport consumer，因而满足4.8规定的“真实use case后重建”；它只关闭到command/menu/context/shortcut。其后#381按本格门禁只读同一hub并定义bounded invalidation/dedup projection；持久日志、problem report与crash collector各需独立owner Slice。 |
+| Non-goals | 本#377–#379 Slice不包含legacy Workbench/API兼容、dynamic action contribution、command palette、remote/MCP Mutate、Console/Problems panel、persistent logs、problem report bundle、crash collector、generic task framework或全局service locator；#381只关闭其中的只读panel projection。 |
+
+### 4.41 R5 Diagnostics Console/Problems projection card（current）
+
+| 字段 | 当前合同与证据 |
+| --- | --- |
+| Current evidence | #381注册一个stable `diagnostics` tool panel并加入默认底部Dock及`Window > Panels > Diagnostics` action。面板内部Console按sequence/time显示log，Problems只显示`Problem` channel的structured diagnostic；两者共享一个panel lifetime、一次hub subscription和bounded rebuildable projection。 |
+| Engine precedent adopted | Unreal公开Output Log作为category/verbosity时序记录，Message Log listing作为可筛选、可行动的structured message surface；Unity Console、Godot Output/Debugger Errors与O3DE Console/error guidance交叉证明filter/collapse/clear属于view，并且持久log、错误恢复与命令/CVar是不同owner。Asharia采用两种语义、一个Dock panel；不复制外部UI/API。 |
+| Rejected / Asharia rationale | 不恢复旧Feature/Workbench adapter，不增加第二store/event bus；不让Clear删除hub或影响observer；不解析log文本生成Problem/source/target。persistent log、report/crash、command/CVar与无typed target时的导航明确后置。 |
+| Owner / lifetime / thread | `App`仍唯一拥有`IStudioDiagnosticHub`。`StudioDiagnosticsPanelViewModel`一次订阅只接收invalidation并在Avalonia dispatcher合并刷新；panel采用`KeepAlive`，关闭/floating close只detach presentation并继续有界推进cursor，reopen复用同一content且不重复subscribe；terminal workspace/Shell dispose才释放subscription并使pending refresh失效。Console/Problems的filter、collapse、selection与clear barrier只是view-local state。 |
+| Data / bounds / failure | panel读取hub的bounded cursor windows；projection可丢弃并重建。repeat只在projection按稳定key折叠；cursor expired、drop、仍有分页/窗口截断和record字段截断必须可见。列表虚拟化，不能按2048/8192 capacity创建control；subscriber或UI refresh failure不改写hub record。 |
+| Earliest / latest gate | 此Slice晚于#378真实producer与#379真实Dock action；只关闭只读panel projection。任何持久artifact、typed navigation、命令输入/CVar或新producer仍需独立owner Slice与负向测试。 |
+| Non-goals | legacy compatibility/public SDK、persistent Editor log、problem report、crash collector/uploader、command line/CVar、remote control、text-inferred navigation、generic notification/task framework。 |
 
 ## 5. Document 是中心聚合
 
@@ -953,7 +970,7 @@ save/discard/cancel，save 失败保持 Document 与 dirty state。
 | Document | `Dictionary<DocumentId, DocumentRecord>` + ordered `List<DocumentId>` | immutable snapshot array | lookup 与确定顺序兼得 |
 | Hierarchy | flat preorder row array + `Dictionary<SceneObjectId,int>` | `ImmutableArray<HierarchyRow>` | 连续迭代、virtualization、无每节点订阅 |
 | Selection | ordered `List<SelectionKey>` + membership `HashSet<SelectionKey>` | immutable array + explicit primary | 保序、去重、top-level selection |
-| Action（Current） | composition-time `StudioActionRegistry`，每次registration原子加入definition/placement/shortcut index | immutable catalog/context/state/result | 当前14个Shell action静态注册、O(1) lookup、无运行期隐式 mutation |
+| Action（Current） | composition-time `StudioActionRegistry`，每次registration原子加入definition/placement/shortcut index | immutable catalog/context/state/result | 当前15个Shell action静态注册、O(1) lookup、无运行期隐式 mutation |
 | Undo | `List<UndoEntry>` + cursor | counts/labels/capability snapshot | history 不需两个提前 pop 的 stack |
 | Mutation | per-document bounded `Queue<MutationEnvelope>`，最多一个 in-flight | typed request/result records | 串行 native authority、可背压 |
 | Task | active dictionary + owner index + bounded terminal ring | immutable task window | scoped cancel/await，避免无界历史 |
@@ -999,7 +1016,7 @@ filter 隐藏只修改 view-local visible mask，不清 content selection；Worl
 - `StudioActionHandler`：接收调用时冻结的 `StudioActionContextSnapshot`，异步返回 typed result。
 
 当前只注册Shell真实使用的project create/open/close/save、undo/redo、entity create/mesh、Inspector name/transform
-apply及四个Window panel reopen action。Menu、现有命令按钮、Hierarchy context menu、主窗口/floating window shortcut与命名
+apply及五个Window panel reopen action（含Diagnostics）。Menu、现有命令按钮、Hierarchy context menu、主窗口/floating window shortcut与命名
 `ICommand`属性都投影同一个registry/executor；面板按钮在attach时从真实TopLevel与承载Dock tab捕获context，拖入floating
 window后不沿用main-window attribution；command palette与dynamic contribution没有实现。Hierarchy context menu
 冻结stable scene/object target，handler执行前仍以当前ProjectSession/scene/revision重新验证，不能把row object当长期target。
@@ -1352,7 +1369,8 @@ canonical managed tests与fresh distribution closure全绿。
 
 - settings migration/quarantine/atomic save；
 - #378已把真实Project/Shell operation failure与viewport required-edge rejection接入唯一bounded hub；
-- Task supervisor、Console/Problems、完整retention/dedup policy、持久日志、problem report与crash evidence仍未实现；
+- #381已在一个Diagnostics panel内实现Console时序日志与Problems结构化诊断的bounded projection；
+- Task supervisor、持久日志、problem report/crash evidence、typed target导航与process级retention/dedup policy仍未实现；
 - layout missing panel placeholder；
 - 扩展 Headless/Windows UIA/视觉回归矩阵、native integration smoke、压力与 memory/handle leak canary。
 

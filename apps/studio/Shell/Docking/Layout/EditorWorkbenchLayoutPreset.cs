@@ -74,6 +74,20 @@ internal static class EditorWorkbenchLayoutPreset
             right,
             Star(1),
             Pixels(320));
+        var diagnostics = CreateWindow(
+            "node-bottom",
+            "owned-dock-bottom",
+            "Diagnostics",
+            EditorDockArea.Bottom,
+            "Console and actionable problems",
+            ["diagnostics"]);
+        var workAndDiagnostics = CreateSplit(
+            "split-work-diagnostics",
+            Orientation.Vertical,
+            centerAndInspector,
+            diagnostics,
+            Star(1),
+            Pixels(210));
 
         return new EditorDockLayoutSnapshot
         {
@@ -83,7 +97,7 @@ internal static class EditorWorkbenchLayoutPreset
                 "split-left-work",
                 Orientation.Horizontal,
                 left,
-                centerAndInspector,
+                workAndDiagnostics,
                 Pixels(260),
                 Star(1)),
         };
