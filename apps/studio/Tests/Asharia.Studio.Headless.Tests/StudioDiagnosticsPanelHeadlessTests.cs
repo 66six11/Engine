@@ -38,6 +38,7 @@ public sealed class StudioDiagnosticsPanelHeadlessTests
             "Shader compilation failed.",
             "Open the shader and correct the reported syntax."));
         using var viewModel = new StudioDiagnosticsPanelViewModel(hub);
+        viewModel.Problems.IsHistoryView = true;
         var view = new StudioDiagnosticsPanelView { DataContext = viewModel };
         var window = new Window { Width = 900, Height = 360, Content = view };
 
@@ -54,6 +55,12 @@ public sealed class StudioDiagnosticsPanelHeadlessTests
                 view.FindControl<ListBox>("ConsoleList"));
             Assert.Equal(1, consoleList.ItemCount);
             Assert.Single(consoleList.GetVisualDescendants().OfType<VirtualizingStackPanel>());
+            Assert.False(viewModel.Console.Rows[0].IsDetailsMaterialized);
+            Assert.Contains(
+                "Frame submitted.",
+                viewModel.Console.Rows[0].AccessibleText,
+                StringComparison.Ordinal);
+            Assert.False(viewModel.Console.Rows[0].IsDetailsMaterialized);
             consoleList.SelectedIndex = 0;
             Dispatcher.UIThread.RunJobs();
             Assert.Equal("Frame submitted.", viewModel.Console.SelectedRow?.Message);
@@ -71,6 +78,12 @@ public sealed class StudioDiagnosticsPanelHeadlessTests
                 view.FindControl<ListBox>("ProblemsList"));
             Assert.Equal(1, problemsList.ItemCount);
             Assert.Single(problemsList.GetVisualDescendants().OfType<VirtualizingStackPanel>());
+            Assert.False(viewModel.Problems.Rows[0].IsDetailsMaterialized);
+            Assert.Contains(
+                "STUDIO-RENDER-001",
+                viewModel.Problems.Rows[0].AccessibleText,
+                StringComparison.Ordinal);
+            Assert.False(viewModel.Problems.Rows[0].IsDetailsMaterialized);
             problemsList.SelectedIndex = 0;
             Dispatcher.UIThread.RunJobs();
             Assert.Equal("STUDIO-RENDER-001", viewModel.Problems.SelectedRow?.Code);
@@ -113,6 +126,7 @@ public sealed class StudioDiagnosticsPanelHeadlessTests
             "Project metadata is incomplete.",
             "Fill in the missing project metadata."));
         using var viewModel = new StudioDiagnosticsPanelViewModel(hub);
+        viewModel.Problems.IsHistoryView = true;
         var view = new StudioDiagnosticsPanelView { DataContext = viewModel };
         var window = new Window { Width = 900, Height = 360, Content = view };
 
@@ -124,6 +138,7 @@ public sealed class StudioDiagnosticsPanelHeadlessTests
             var consoleSearch = Assert.IsType<TextBox>(
                 view.FindControl<TextBox>("ConsoleSearchBox"));
             consoleSearch.Text = "submission";
+            viewModel.Refresh();
             Dispatcher.UIThread.RunJobs();
             Assert.Single(viewModel.Console.Rows);
             Assert.Equal("Frame submission failed.", viewModel.Console.Rows[0].Message);
@@ -164,6 +179,20 @@ public sealed class StudioDiagnosticsPanelHeadlessTests
             Assert.NotNull(view.FindControl<ComboBox>("ProblemsSourceFilter"));
             Assert.NotNull(view.FindControl<ToggleButton>("ProblemsCollapseToggle"));
             Assert.NotNull(view.FindControl<Button>("ProblemsClearButton"));
+
+            var activeMode = Assert.IsType<RadioButton>(
+                view.FindControl<RadioButton>("ProblemsActiveModeToggle"));
+            var historyMode = Assert.IsType<RadioButton>(
+                view.FindControl<RadioButton>("ProblemsHistoryModeToggle"));
+            Assert.False(activeMode.IsChecked);
+            Assert.True(historyMode.IsChecked);
+            Assert.Equal("ProblemsViewMode", activeMode.GroupName);
+            Assert.Equal(activeMode.GroupName, historyMode.GroupName);
+            activeMode.IsChecked = true;
+            Dispatcher.UIThread.RunJobs();
+            Assert.True(activeMode.IsChecked);
+            Assert.False(historyMode.IsChecked);
+            Assert.True(viewModel.Problems.IsActiveView);
         }
         finally
         {
@@ -186,6 +215,7 @@ public sealed class StudioDiagnosticsPanelHeadlessTests
         }
 
         using var viewModel = new StudioDiagnosticsPanelViewModel(hub);
+        viewModel.Problems.IsHistoryView = true;
         var view = new StudioDiagnosticsPanelView { DataContext = viewModel };
         var window = new Window { Width = 900, Height = 240, Content = view };
 
@@ -310,9 +340,12 @@ public sealed class StudioDiagnosticsPanelHeadlessTests
         {
             window.Show();
             Dispatcher.UIThread.RunJobs();
-
             var view = Assert.Single(
                 window.GetVisualDescendants().OfType<StudioDiagnosticsPanelView>());
+            Assert.IsType<StudioDiagnosticsPanelViewModel>(view.DataContext)
+                .Problems.IsHistoryView = true;
+            Dispatcher.UIThread.RunJobs();
+
             Assert.IsType<StudioDiagnosticsPanelViewModel>(view.DataContext).Refresh();
             AssertListsHaveViewport(view, "240x180 floating window");
         }

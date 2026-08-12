@@ -19,7 +19,8 @@ R0.5 只读开发态观测面已由[对应 Slice 1→8](studio-development-obser
 > 不兼容旧 Workbench contract、adapter 或 public SDK。
 >
 > 2026-08-13，#381又在同一App-owned bounded hub上建立一个Diagnostics Dock panel：Console读取时序日志，
-> Problems读取可行动structured diagnostics。两个内部tab共享一次subscription与有界可重建projection；这不恢复
+> Problems读取可行动structured diagnostics。两个内部tab共享同一hub与有界可重建projection；#383将通知硬切为
+> diagnostic/log两条stream-specific subscriptions；这不恢复
 > 旧Console/Problems Feature岛，也不引入持久日志、命令/CVar或第二truth。
 
 ## 1. 结论与范围
@@ -348,17 +349,17 @@ timeout 是 typed fault/quarantine，不授权越过 native barrier。UI thread 
 | 字段 | 当前合同与证据 |
 | --- | --- |
 | Current evidence | `App.axaml.cs` 是 production 唯一 `new StudioDiagnosticHub()`；Application tests覆盖8 producers × 2000 records、wrap/drop/cursor、subscriber fault/capacity/dispose与blocked log subscriber。Avalonia adapter先把最多16个raw values单次投影为bounded strings：精确BCL标量使用invariant格式，未知对象只保留type marker，不调用其代码。此R0格关闭时旧Console/Problems已删除；#381后来以新Diagnostics projection重建。Native/Subprocess目前只有typed origin合同和synthetic record投影测试，没有production producer。 |
-| Problem / trigger | 旧service的无界/shift与`Trace`双truth已切除；后续审查又发现Avalonia adapter曾在producer线程对任意property执行两次`ToString()`，catch不能约束阻塞、锁、IO或副作用，现已改为单次安全投影。此R0格关闭时Diagnostic invalidation仍同步调用且无production subscriber；#381首个panel consumer在callback边只合并dispatcher refresh并重读hub，没有在producer thread更新UI。 |
+| Problem / trigger | 旧service的无界/shift与`Trace`双truth已切除；后续审查又发现Avalonia adapter曾在producer线程对任意property执行两次`ToString()`，catch不能约束阻塞、锁、IO或副作用，现已改为单次安全投影。此R0格关闭时尚无production subscriber；#381首个panel consumer只把异步invalidation合并到dispatcher并重读hub，不在notification worker更新UI。 |
 | Engine/framework precedent adopted | Unreal [`FOutputDeviceRedirector`](https://dev.epicgames.com/documentation/unreal-engine/API/Runtime/Core/Misc/FOutputDeviceRedirector)集中多线程输出与backlog；Unity [`Application.logMessageReceivedThreaded`](https://docs.unity3d.com/6000.0/Documentation/ScriptReference/Application-logMessageReceivedThreaded.html)和Godot [`Logger`](https://docs.godotengine.org/en/stable/classes/class_logger.html)要求sink/callback承受并发producer。采用单一process truth、固定retention和不执行任意用户代码的adapter投影。 |
 | Rejected / Asharia rationale | 拒绝把任意`object.ToString()`包装在catch后称为non-blocking，也拒绝per-log `Task.Run`、unbounded queue、raw object retention或为已删除panel复制第二store。未知framework value只保留bounded type marker；真实consumer出现后才设计其dispatcher projection。 |
 | Owner / scope | `App` 拥有 process-scoped hub；hub只拥有value records、两个固定ring和64个subscription slots。此R0 card关闭时只有Host/CLI/MCP读适配；#381随后增加Diagnostics UI projection，owner不变。 |
-| Create → active → quiesce → destroy | App constructor创建hub并安装framework sink → composition与只读Host注入同一instance → #381 KeepAlive Diagnostics content取得一次subscription → teardown tail写入仍可读ring → terminal workspace/Shell dispose退订 → process exit回收纯managed storage。 |
-| Owner thread / safe points | 多producer可从任意线程发布；framework adapter不等待、不做IO/lock、不调用任意对象代码，只同步生成有界值；ring使用sequence-stamped固定slot。log invalidation最多一个queued work item；diagnostic subscriber仍会在publisher thread收到callback，因此#381 callback只做O(1) interlocked coalescing并post dispatcher，不读取window、不触摸ViewModel/Control。 |
+| Create → active → quiesce → destroy | App constructor创建hub并安装framework sink → composition与只读Host注入同一instance → #381/#383 KeepAlive Diagnostics content取得diagnostic/log两条subscriptions → teardown tail写入仍可读ring → terminal workspace/Shell dispose退订 → process exit回收纯managed storage。 |
+| Owner thread / safe points | 多producer可从任意线程发布；framework adapter不做IO或任意对象调用，只同步生成有界值；#383 ring以每stream短commit gate维护sequence-stamped固定slot和byte预算。diagnostic/log invalidation各自最多一个queued work item，subscriber callback在ThreadPool执行；#381/#383 callback只做O(1) coalescing并post dispatcher，不读取window、不触摸ViewModel/Control。 |
 | Input / output | 输入是 typed diagnostic/log write；输出是 immutable record 或 `StudioCursorWindow<T>`，包含 oldest、next、total dropped、cursor-expired、truncated 与 items。 |
 | Identity / generation | hub 与 `StudioProcessSession` 共享一个 `StudioProcessIdentity`；当前真实 scope 只有 process generation 1。Project/Document/Engine scope 必须等对应 owner 创建后注册，不生成 fixture identity。 |
 | Mapping | 当前managed lifecycle/command → `Managed`，framework adapter → Application-neutral `Framework`、package=`avalonia`。`Native` stable status与`Subprocess` stream/operation/correlation只是后续producer必须采用的typed合同；当前不把synthetic mapping test冒充production ingress。 |
-| Error / cancel / timeout / recovery | invalid input fail fast；framework string/标量截断，未知对象降级为type marker，超过16个property不进入attributes或render；sink exception不改变framework控制流。subscriber exception计数且不递归写诊断；subscription dispose等价取消；阻塞subscriber不阻塞log producer；ring饱和只覆盖旧slot并增加drop。 |
-| Bounds / complexity | diagnostic 2048、log 8192、subscriber 64、默认 read 200、attributes 16、message 4096；publish/overwrite O(1)，read O(requested window/capacity)，无无界 queue/history。 |
+| Error / cancel / timeout / recovery | invalid input fail fast；framework string/标量截断，未知对象降级为type marker，超过16个property不进入attributes或render；sink exception不改变framework控制流。subscriber exception计数且不递归写诊断；subscription dispose等价取消；阻塞subscriber不阻塞producer；history饱和显式drop/expired，active index饱和保留既有truth并标incomplete。 |
+| Bounds / complexity | diagnostic `2048 + 8 MiB`、log `8192 + 32 MiB`、active problems `1024 + 4 MiB`、subscriber每stream 64、默认 read 200、attributes 16、message 4096；publish commit与read在固定容量短gate内，byte eviction/read为O(capacity)，无无界 queue/history。 |
 | Foundation relation | 这是 R0 本地 truth 与未来 Foundation router 的窄接缝；F3 接入时替换 adapter，不并存第二 ring，也不提前建立 metric/trace/crash。 |
 | Earliest / latest gate | R0 立即接入；它是 R0.5 Host 的前置，R0.5 只能暴露现有 cursor window，不能另建 protocol cache。 |
 | Non-goals | Pipe、CLI、MCP、remote access、Capture/Mutate、metric/trace/profiler、crash artifact、通用 logging framework。 |
@@ -899,13 +900,25 @@ timeout 是 typed fault/quarantine，不授权越过 native barrier。UI thread 
 
 | 字段 | 当前合同与证据 |
 | --- | --- |
-| Current evidence | #381注册一个stable `diagnostics` tool panel并加入默认底部Dock及`Window > Panels > Diagnostics` action。面板内部Console按sequence/time显示log，Problems只显示`Problem` channel的structured diagnostic；两者共享一个panel lifetime、一次hub subscription和bounded rebuildable projection。 |
+| Current evidence | #381注册一个stable `diagnostics` tool panel并加入默认底部Dock及`Window > Panels > Diagnostics` action。面板内部Console按sequence/time显示log，Problems只显示`Problem` channel的structured diagnostic；#383继续复用一个panel lifetime和同一hub，以diagnostic/log两条stream-specific subscriptions驱动bounded rebuildable projection。 |
 | Engine precedent adopted | Unreal公开Output Log作为category/verbosity时序记录，Message Log listing作为可筛选、可行动的structured message surface；Unity Console、Godot Output/Debugger Errors与O3DE Console/error guidance交叉证明filter/collapse/clear属于view，并且持久log、错误恢复与命令/CVar是不同owner。Asharia采用两种语义、一个Dock panel；不复制外部UI/API。 |
 | Rejected / Asharia rationale | 不恢复旧Feature/Workbench adapter，不增加第二store/event bus；不让Clear删除hub或影响observer；不解析log文本生成Problem/source/target。persistent log、report/crash、command/CVar与无typed target时的导航明确后置。 |
-| Owner / lifetime / thread | `App`仍唯一拥有`IStudioDiagnosticHub`。`StudioDiagnosticsPanelViewModel`一次订阅只接收invalidation并在Avalonia dispatcher合并刷新；panel采用`KeepAlive`，关闭/floating close只detach presentation并继续有界推进cursor，reopen复用同一content且不重复subscribe；terminal workspace/Shell dispose才释放subscription并使pending refresh失效。Console/Problems的filter、collapse、selection与clear barrier只是view-local state。 |
+| Owner / lifetime / thread | `App`仍唯一拥有`IStudioDiagnosticHub`。`StudioDiagnosticsPanelViewModel`用diagnostic/log两条stream-specific订阅接收invalidation并在Avalonia dispatcher合并刷新；panel采用`KeepAlive`，关闭/floating close只detach presentation并继续有界推进cursor，reopen复用同一content且不重复subscribe；terminal workspace/Shell dispose才释放两条subscription并使pending refresh失效。Console/Problems的filter、collapse、selection与clear barrier只是view-local state。 |
 | Data / bounds / failure | panel读取hub的bounded cursor windows；projection可丢弃并重建。repeat只在projection按稳定key折叠；cursor expired、drop、仍有分页/窗口截断和record字段截断必须可见。列表虚拟化，不能按2048/8192 capacity创建control；subscriber或UI refresh failure不改写hub record。 |
 | Earliest / latest gate | 此Slice晚于#378真实producer与#379真实Dock action；只关闭只读panel projection。任何持久artifact、typed navigation、命令输入/CVar或新producer仍需独立owner Slice与负向测试。 |
 | Non-goals | legacy compatibility/public SDK、persistent Editor log、problem report、crash collector/uploader、command line/CVar、remote control、text-inferred navigation、generic notification/task framework。 |
+
+### 4.42 R5 Diagnostics bounded timeline / active problems hardening card（current）
+
+| 字段 | 当前合同与证据 |
+| --- | --- |
+| Current evidence | #383将history hard-cut为count + normalized UTF-8 payload双预算：diagnostic `2048 + 8 MiB`、log `8192 + 32 MiB`；hub同时拥有`1024 + 4 MiB`active problem index。Console默认不折叠，显式Collapse只合并相邻run；Problems默认Active并可切History查看Incident/Active/Resolved/Stale。 |
+| Engine precedent adopted | Unreal Output Log / Message Log提供“有序输出 / 可行动message listing”的主owner边界；Unity Console交叉确认filter/collapse是view能力，Unity Profiler又证明高频采样有独立启停与capacity。Asharia采用同一process diagnostic truth上的两种投影，并把完整Profiler保留为独立Capture owner。 |
+| Rejected / Asharia rationale | 拒绝只按record count声明内存有界、非相邻全局collapse、把所有历史Error伪装成active、让隐藏KeepAlive持续全量重建Rows，或把frame/pass/job日志默认灌入Console。payload预算不冒充CLR总内存；persistent log与Profiler不能复用hot ring伪装耐久/采样事实。 |
+| Owner / lifetime / thread | `StudioDiagnosticHub`原子维护history rings和active index；producer以同一`ProblemId`发布Active→Resolved/Stale。diagnostic invalidation即时post，log按75 ms窗口coalesce，search为150 ms debounce；隐藏panel只推进bounded raw cursor/health，显示时重建一次，terminal Shell dispose释放两条subscriptions。 |
+| Bounds / failure | count或payload任一超限即淘汰最老history；oversize record留下drop/cursor证据但不驻留。active饱和不静默淘汰既有未解决truth，而是累计loss并标记incomplete。Console Pause冻结自身bounded窗口并继续推进source cursor；Resume对不可恢复区间显示CursorExpired。 |
+| Runtime / profiler boundary | 当前没有production gameplay Runtime。未来Runtime默认只发稀疏milestone/transition/failure/threshold摘要；完整CPU/GPU/memory/counter timeline由显式、默认关闭的bounded Profiler Capture拥有，Console仅记录capture摘要和ID。 |
+| Non-goals | Runtime/native log ingress、persistent files、problem-report/crash、typed navigation、Profiler/trace capture、command/CVar、telemetry/upload。 |
 
 ## 5. Document 是中心聚合
 

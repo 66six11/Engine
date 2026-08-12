@@ -49,6 +49,42 @@ public enum StudioDataSensitivity
     Sensitive,
 }
 
+public enum StudioProblemTransition
+{
+    Active,
+    Resolved,
+    Stale,
+}
+
+public readonly record struct StudioProblemId
+{
+    public const int MaxLength = 256;
+
+    public StudioProblemId(string value)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(value);
+        if (!string.Equals(value, value.Trim(), StringComparison.Ordinal))
+        {
+            throw new ArgumentException(
+                "Studio problem identity cannot have leading or trailing whitespace.",
+                nameof(value));
+        }
+
+        if (value.Length > MaxLength)
+        {
+            throw new ArgumentException(
+                $"Studio problem identity cannot exceed {MaxLength} characters.",
+                nameof(value));
+        }
+
+        Value = value;
+    }
+
+    public string Value { get; }
+
+    public override string ToString() => Value ?? string.Empty;
+}
+
 public readonly record struct StudioDiagnosticAttribute(
     string Name,
     string Value);
@@ -80,7 +116,9 @@ public sealed record StudioDiagnosticWrite(
     StudioDiagnosticContext Context,
     string Message,
     string? Remediation = null,
-    ImmutableArray<StudioDiagnosticAttribute> Attributes = default);
+    ImmutableArray<StudioDiagnosticAttribute> Attributes = default,
+    StudioProblemId? ProblemId = null,
+    StudioProblemTransition? ProblemTransition = null);
 
 public sealed record StudioLogWrite(
     StudioLogLevel Level,
@@ -104,7 +142,9 @@ public sealed record StudioDiagnosticRecord(
     ImmutableArray<StudioDiagnosticAttribute> Attributes,
     string Fingerprint,
     int RepeatCount,
-    bool WasTruncated)
+    bool WasTruncated,
+    StudioProblemId? ProblemId = null,
+    StudioProblemTransition? ProblemTransition = null)
 {
     public string Source => Context.Component;
 }
@@ -133,6 +173,26 @@ public sealed record StudioCursorWindow<T>(
     bool Truncated,
     ImmutableArray<T> Items);
 
+public readonly record struct StudioDiagnosticBufferState(
+    int CountCapacity,
+    long PayloadByteCapacity,
+    int ResidentCount,
+    // Sum of normalized retained string payloads measured as UTF-8 bytes.
+    // CLR object, collection, and allocator overhead are intentionally excluded.
+    long EstimatedResidentPayloadBytes,
+    long TotalDropped);
+
+public sealed record StudioActiveProblemSnapshot(
+    long Version,
+    int CountCapacity,
+    long PayloadByteCapacity,
+    int ResidentCount,
+    // Uses the same normalized UTF-8 payload estimate as the history buffers.
+    long EstimatedResidentPayloadBytes,
+    long TotalDropped,
+    bool IsIncomplete,
+    ImmutableArray<StudioDiagnosticRecord> Items);
+
 public interface IStudioDiagnosticSource
 {
     StudioProcessIdentity ProcessIdentity { get; }
@@ -142,6 +202,14 @@ public interface IStudioDiagnosticSource
     int LogCapacity { get; }
 
     long SubscriberFailureCount { get; }
+
+    StudioDiagnosticBufferState DiagnosticBufferState { get; }
+
+    StudioDiagnosticBufferState LogBufferState { get; }
+
+    long DiagnosticSubscriberFailureCount { get; }
+
+    long LogSubscriberFailureCount { get; }
 
     StudioCursorWindow<StudioDiagnosticRecord> ReadDiagnostics(
         long afterSequence = 0,
@@ -154,7 +222,11 @@ public interface IStudioDiagnosticSource
 
     StudioDiagnosticRecord? GetLatestDiagnostic();
 
-    IDisposable Subscribe(Action invalidated);
+    StudioActiveProblemSnapshot ReadActiveProblems();
+
+    IDisposable SubscribeDiagnostics(Action invalidated);
+
+    IDisposable SubscribeLogs(Action invalidated);
 }
 
 public interface IStudioDiagnosticHub : IStudioDiagnosticSource

@@ -133,6 +133,18 @@ public sealed class StudioCompositionSessionDevelopmentHostTests
 
         public long SubscriberFailureCount => throw new NotSupportedException();
 
+        public StudioDiagnosticBufferState DiagnosticBufferState =>
+            throw new NotSupportedException();
+
+        public StudioDiagnosticBufferState LogBufferState =>
+            throw new NotSupportedException();
+
+        public long DiagnosticSubscriberFailureCount =>
+            throw new NotSupportedException();
+
+        public long LogSubscriberFailureCount =>
+            throw new NotSupportedException();
+
         public StudioDiagnosticRecord PublishDiagnostic(StudioDiagnosticWrite write) =>
             throw new NotSupportedException();
 
@@ -153,7 +165,13 @@ public sealed class StudioCompositionSessionDevelopmentHostTests
         public StudioDiagnosticRecord? GetLatestDiagnostic() =>
             throw new NotSupportedException();
 
-        public IDisposable Subscribe(Action invalidated) =>
+        public StudioActiveProblemSnapshot ReadActiveProblems() =>
+            throw new NotSupportedException();
+
+        public IDisposable SubscribeDiagnostics(Action invalidated) =>
+            throw new NotSupportedException();
+
+        public IDisposable SubscribeLogs(Action invalidated) =>
             throw new NotSupportedException();
     }
 

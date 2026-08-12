@@ -26,10 +26,15 @@
             <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeDefault}" />
         </Style>
 
-        <Style Selector="Button.diagnostics-tool-button, ToggleButton.diagnostics-tool-button">
+        <Style Selector="Button.diagnostics-tool-button, ToggleButton.diagnostics-tool-button, RadioButton.diagnostics-tool-button">
             <Setter Property="MinHeight" Value="22" />
             <Setter Property="Padding" Value="8,1" />
             <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeDefault}" />
+        </Style>
+
+        <Style Selector="RadioButton.diagnostics-tool-button">
+            <Setter Property="Height" Value="22" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
         </Style>
 
         <Style Selector="Border.diagnostics-health">
@@ -209,7 +214,7 @@
                             <DataTemplate x:DataType="diagnostics:StudioConsoleRowViewModel">
                                 <Grid Height="22"
                                       ColumnDefinitions="82,78,120,100,*,52"
-                                      AutomationProperties.Name="{Binding DetailsText}">
+                                      AutomationProperties.Name="{Binding AccessibleText}">
                                     <TextBlock Grid.Column="0" Classes="diagnostics-cell" Text="{Binding TimestampText}" />
                                     <TextBlock Grid.Column="1" Classes="diagnostics-cell" Text="{Binding LevelText}" />
                                     <TextBlock Grid.Column="2" Classes="diagnostics-cell" Text="{Binding Source}" />
@@ -248,6 +253,20 @@
                         <ScrollViewer HorizontalScrollBarVisibility="Auto"
                                       VerticalScrollBarVisibility="Disabled">
                             <StackPanel Orientation="Horizontal">
+                            <RadioButton x:Name="ProblemsActiveModeToggle"
+                                         Margin="0,0,6,0"
+                                         Classes="diagnostics-tool-button"
+                                         GroupName="ProblemsViewMode"
+                                         Content="Active"
+                                         IsChecked="{Binding Problems.IsActiveView, Mode=TwoWay}"
+                                         AutomationProperties.Name="Show active problems" />
+                            <RadioButton x:Name="ProblemsHistoryModeToggle"
+                                         Margin="0,0,6,0"
+                                         Classes="diagnostics-tool-button"
+                                         GroupName="ProblemsViewMode"
+                                         Content="History"
+                                         IsChecked="{Binding Problems.IsHistoryView, Mode=TwoWay}"
+                                         AutomationProperties.Name="Show problem history" />
                             <TextBox x:Name="ProblemsSearchBox"
                                      Margin="0,0,6,0"
                                      Classes="diagnostics-search"
@@ -270,12 +289,14 @@
                                           Margin="0,0,6,0"
                                           Classes="diagnostics-tool-button"
                                           Content="Collapse"
+                                          IsVisible="{Binding Problems.ShowHistoryControls}"
                                           IsChecked="{Binding Problems.CollapseRepeated, Mode=TwoWay}"
                                           AutomationProperties.Name="Collapse repeated problems" />
                             <Button x:Name="ProblemsClearButton"
                                     Classes="diagnostics-tool-button"
                                     Command="{Binding Problems.ClearCommand}"
                                     Content="Clear"
+                                    IsVisible="{Binding Problems.ShowHistoryControls}"
                                     AutomationProperties.Name="Clear problems view" />
                             </StackPanel>
                         </ScrollViewer>
@@ -297,13 +318,14 @@
 
                     <Grid Grid.Row="2"
                           Classes="diagnostics-column-header"
-                          ColumnDefinitions="82,78,110,120,*,52">
+                          ColumnDefinitions="82,78,76,110,120,*,52">
                         <TextBlock Grid.Column="0" Classes="diagnostics-column-label" Text="Time" />
                         <TextBlock Grid.Column="1" Classes="diagnostics-column-label" Text="Severity" />
-                        <TextBlock Grid.Column="2" Classes="diagnostics-column-label" Text="Code" />
-                        <TextBlock Grid.Column="3" Classes="diagnostics-column-label" Text="Source" />
-                        <TextBlock Grid.Column="4" Classes="diagnostics-column-label" Text="Problem" />
-                        <TextBlock Grid.Column="5" Classes="diagnostics-column-label" Text="Count" />
+                        <TextBlock Grid.Column="2" Classes="diagnostics-column-label" Text="State" />
+                        <TextBlock Grid.Column="3" Classes="diagnostics-column-label" Text="Code" />
+                        <TextBlock Grid.Column="4" Classes="diagnostics-column-label" Text="Source" />
+                        <TextBlock Grid.Column="5" Classes="diagnostics-column-label" Text="Problem" />
+                        <TextBlock Grid.Column="6" Classes="diagnostics-column-label" Text="Count" />
                     </Grid>
 
                     <ListBox x:Name="ProblemsList"
@@ -320,14 +342,15 @@
                         <ListBox.ItemTemplate>
                             <DataTemplate x:DataType="diagnostics:StudioProblemRowViewModel">
                                 <Grid Height="22"
-                                      ColumnDefinitions="82,78,110,120,*,52"
-                                      AutomationProperties.Name="{Binding DetailsText}">
+                                      ColumnDefinitions="82,78,76,110,120,*,52"
+                                      AutomationProperties.Name="{Binding AccessibleText}">
                                     <TextBlock Grid.Column="0" Classes="diagnostics-cell" Text="{Binding TimestampText}" />
                                     <TextBlock Grid.Column="1" Classes="diagnostics-cell" Text="{Binding SeverityText}" />
-                                    <TextBlock Grid.Column="2" Classes="diagnostics-cell" Text="{Binding Code}" />
-                                    <TextBlock Grid.Column="3" Classes="diagnostics-cell" Text="{Binding Source}" />
-                                    <TextBlock Grid.Column="4" Classes="diagnostics-cell diagnostics-message" Text="{Binding Message}" />
-                                    <TextBlock Grid.Column="5" Classes="diagnostics-cell diagnostics-repeat" Text="{Binding RepeatText}" />
+                                    <TextBlock Grid.Column="2" Classes="diagnostics-cell" Text="{Binding StateText}" />
+                                    <TextBlock Grid.Column="3" Classes="diagnostics-cell" Text="{Binding Code}" />
+                                    <TextBlock Grid.Column="4" Classes="diagnostics-cell" Text="{Binding Source}" />
+                                    <TextBlock Grid.Column="5" Classes="diagnostics-cell diagnostics-message" Text="{Binding Message}" />
+                                    <TextBlock Grid.Column="6" Classes="diagnostics-cell diagnostics-repeat" Text="{Binding RepeatText}" />
                                 </Grid>
                             </DataTemplate>
                         </ListBox.ItemTemplate>

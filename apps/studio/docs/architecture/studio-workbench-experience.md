@@ -17,7 +17,8 @@
 > Transform Undo/Redo 与逻辑保存点纵切。
 >
 > 2026-08-13：#381在当前生产Dock上建立一个Diagnostics面板，内部Console读取时序日志、Problems读取可行动
-> 结构化诊断；两者共享唯一App-owned bounded hub的一次订阅，不恢复本文已删除的旧Workbench/Feature框架。
+> 结构化诊断；#383将同一App-owned hub加固为双预算、stream-specific subscriptions和Active/History问题生命周期，
+> 不恢复本文已删除的旧Workbench/Feature框架。
 
 更新日期：2026-08-13
 
@@ -306,10 +307,12 @@ Scene View 不直接执行 engine mutation。picking 产生 selection intent；g
 规则：
 
 - diagnostic identity、severity、source 和 recovery action 由共享 snapshot 提供；
-- Console按sequence/time投影时序日志；Problems只投影`Problem` channel的可行动结构化diagnostic。两个tab位于
-  同一个Diagnostics panel并共享一次hub subscription，但不合并record语义；
+- Console按sequence/time投影时序日志；默认不折叠，显式Collapse也只合并相邻相同run，不重排时间流。Problems默认显示
+  hub-owned Active inventory，可切换History查看Incident/Active/Resolved/Stale。两个tab位于同一个Diagnostics panel，
+  使用同一hub的两条stream-specific subscriptions，但不合并record语义；
 - Clear是当前tab的sequence barrier，只隐藏较早投影；它不删除hub记录、不重置sequence，也不影响另一个tab或进程外observer；
-- collapse/search/severity/channel属于panel-local view state。折叠只改变projection，并显示repeat count；
+- collapse/search/severity/channel属于panel-local view state。折叠只改变projection，并显示repeat count；Active Problems不受
+  view-only Clear隐藏，只有producer发布Resolved/Stale才从current inventory移除；
 - cursor expired、drop、分页/窗口截断和字段截断必须在当前tab可见，不能用“0 items”掩盖证据缺口；
 - Status Bar 不滚动长日志，不显示多行堆栈；
 - warning/error 不自动抢焦点或展开底部抽屉；

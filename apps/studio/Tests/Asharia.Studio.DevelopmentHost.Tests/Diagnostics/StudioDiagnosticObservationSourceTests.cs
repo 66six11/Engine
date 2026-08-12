@@ -194,6 +194,14 @@ public sealed class StudioDiagnosticObservationSourceTests
 
         public long SubscriberFailureCount => 0;
 
+        public StudioDiagnosticBufferState DiagnosticBufferState => default;
+
+        public StudioDiagnosticBufferState LogBufferState => default;
+
+        public long DiagnosticSubscriberFailureCount => 0;
+
+        public long LogSubscriberFailureCount => 0;
+
         public StudioDiagnosticRecord PublishDiagnostic(StudioDiagnosticWrite write) =>
             throw new NotSupportedException();
 
@@ -213,7 +221,13 @@ public sealed class StudioDiagnosticObservationSourceTests
 
         public StudioDiagnosticRecord? GetLatestDiagnostic() => null;
 
-        public IDisposable Subscribe(Action invalidated) =>
+        public StudioActiveProblemSnapshot ReadActiveProblems() =>
+            throw new InvalidOperationException("boom");
+
+        public IDisposable SubscribeDiagnostics(Action invalidated) =>
+            throw new NotSupportedException();
+
+        public IDisposable SubscribeLogs(Action invalidated) =>
             throw new NotSupportedException();
     }
 }
