@@ -95,7 +95,8 @@ Avalonia command/Inspector
 - Avalonia 只提交 intent、投影 `CanUndo`/`CanRedo`/label/dirty，不持有 entry、native handle 或补偿逻辑。
 - EngineBridge 负责 ABI layout、owner lane 和 malformed receipt 验证，不拥有 history。
 - native SceneDocument 负责 validate-and-apply 与 authoritative mutation receipt，不拥有 editor history 或快捷键。
-- selection、Euler hint、字段草稿和 focus 都是 transient presentation state，不进入 history。
+- runtime、SceneDocument、snapshot 与 history 的 Transform 真相是 float `Position`/`Scale` 与单位 quaternion
+  `Rotation`；Inspector 文本、Euler hint、selection 和 focus 都是 transient presentation state，不进入 history。
 
 ### 2. Typed Transform mutation receipt
 
@@ -117,7 +118,39 @@ receipt 必须满足：
 Undo/Redo 不是内存复制：它们用 entry 的 stable `ObjectId` 和 immutable Transform 再次经过同一 typed native mutation，
 并使用当下 authoritative revision。当前 selection 不参与 target 解析。
 
-### 3. Revision、ContentState 与保存点
+本 Slice 的 document no-op 使用逐字段 exact Transform 值相等，不使用近似比较或 quaternion 符号归一化。
+因此，尽管 `q` 与 `-q` 表示同一空间姿态，把 authored quaternion 从 `q` 改为 `-q` 仍是
+`Changed` mutation，并按普通 changed success 进入 history。这是 #373 的显式值语义；Inspector 层的姿态
+等价不得反向改写 document no-op 合同。
+
+### 3. Inspector Transform 编辑会话
+
+当前单选 Inspector 在一个 `project session + scene + selected ObjectId` 范围内持有一个短命 Transform
+编辑会话。该会话同时跟踪：
+
+- Position、Rotation 和 Scale 的九个 source text；
+- 统一九字段 dirty mask、单调 edit version 与每字段最后 edit version；
+- 至多一个 pending Apply，包含 edit ID、session/scene/object scope、base revision、已提交 Transform/Euler/
+  source text、dirty mask 和 edit version。
+
+这些数据只用于把 authoritative snapshot 稳定投影回文本框，不是第二份 Transform 真相：
+
+- 自己的成功 publication 只有在 edit ID、scope、revision 和返回 Transform 都匹配 pending 提交时才视为
+  own acknowledgement。Position/Scale 按 float 值精确匹配；Rotation 可按姿态等价匹配。
+- own acknowledgement 保留已提交的 source text，但不覆盖 Apply 发出后又被编辑的字段；后者继续
+  dirty，并基于新 authoritative revision 重基。
+- 外部 mutation、Undo、Redo 或 failure snapshot 只把真正变化的 authoritative 值投影到 clean 字段；
+  dirty 字段的草稿保留并重基。相同 authoritative Transform 的重复 publication 不得重新格式化文本。
+- Rotation 只在 authoritative 姿态真正改变时，才根据当前 Euler hint 求最近的等价表示。`q`/`-q`
+  姿态等价可让 own acknowledgement 和后续 publication 保持显示稳定，但不会取消 document 层已发生的
+  changed mutation 或 history entry。
+- selection、project session、scene 或 selected object 变更时，丢弃整个 transient 编辑会话，并从新对象的
+  authoritative Transform 重新投影。
+
+该策略避免把用户输入的 `"1.2"` 在同一 float 值的 receipt/snapshot 上无条件改写成 `"1.20000005"`，
+也避免旧 Apply 完成覆盖用户在等待期间输入的更新草稿。
+
+### 4. Revision、ContentState 与保存点
 
 三个概念必须分离：
 
@@ -140,7 +173,7 @@ native `SavedRevision` 可以继续描述最近一次成功写盘对应的 engin
 Save 不清空 history、不移动 cursor，也不产生 history entry。Save 只有在 native write 成功且仍对应同一 logical content
 state 时才移动 `SavedContentStateId`；失败、取消或 stale completion 不移动保存点。
 
-### 4. Journal 结构与预算
+### 5. Journal 结构与预算
 
 每个 document history 使用 `List<SceneEditHistoryEntry> + cursor`：
 
@@ -159,7 +192,7 @@ history 同时受 256 entries 与 16 MiB 约束。超过任一预算时按完整
 数同步调整。淘汰只减少可 Undo 距离，不改变当前/保存 content state，也不制造 dirty。新 Slice 若需要可变 payload，必须
 先定义稳定、保守且可测试的 byte 估算。
 
-### 5. 未纳入 history 的 mutation
+### 6. 未纳入 history 的 mutation
 
 #373 只记录 successful changed Transform。当前 Create Entity、Create Mesh Entity 与 Rename 仍可修改文档，但不能允许
 Transform history 跨越一条未记录的 mutation，因为 entry 的 before/after `ContentStateId` 表示整个文档状态。
@@ -173,7 +206,7 @@ Transform history 跨越一条未记录的 mutation，因为 entry 的 before/af
 
 这是一条明确的安全 barrier，不是 silent history loss；后续只有在对应 operation 也具备 typed inverse/receipt 后才能移除。
 
-### 6. Failure 与不确定结果
+### 7. Failure 与不确定结果
 
 普通 typed failure 保证 native 未改变文档，因此 history、cursor 和 content state 保持不变，ProjectSession 发布返回的
 authoritative snapshot 与 diagnostic。
@@ -183,7 +216,7 @@ document connection 的 authoritative refresh 重读 snapshot；refresh 成功�
 history，并分配保守的新 content state。refresh 失败时 session fail closed 为 `NoProject`，关闭失去可信度的 document connection，
 返回要求重新打开项目/文档的 typed failure。不得执行 managed compensation，也不得在结果未知时移动 cursor。
 
-### 7. Command 与焦点
+### 8. Command 与焦点
 
 Shell 提供 document Undo/Redo command、toolbar affordance 和平台中立的 command gesture route。menu、toolbar 与 shortcut
 消费同一 `ProjectSessionSnapshot` enablement/label；production 代码不读取 Win32 message、平台 key code 或 OS 分支。
@@ -211,9 +244,12 @@ Shell 提供 document Undo/Redo command、toolbar affordance 和平台中立的 
 
 ## 验证
 
-- native/EngineBridge：changed/no-op/failure receipt、revision conflict、missing target、malformed layout 和 snapshot 一致性。
+- native/EngineBridge：changed/no-op/failure receipt、逐字段 exact Transform 值语义（包括 `q` -> `-q`
+  仍为 changed）、revision conflict、missing target、malformed layout 和 snapshot 一致性。
 - Application：`List + cursor`、redo truncation、success-only cursor、256/16 MiB eviction、unsupported-mutation barrier。
 - savepoint：`A -> B/save -> C -> Undo(B clean) -> Redo(C dirty)`，且 Apply/Undo/Redo revision 严格单调。
-- UI：toolbar/command label 与 enablement；focused TextBox 的局部 Undo 优先；selection 改变不影响 history target。
+- UI：toolbar/command label 与 enablement；focused TextBox 的局部 Undo 优先；九字段 own acknowledgement
+  保留 source text 与 Apply 后的更新草稿；外部/Undo/Redo 只改写 changed clean fields；selection
+  改变丢弃 Inspector 草稿但不影响 history target。
 - 端到端：真实 project/scene DLL 执行 Apply/Undo/Redo/Save/close/reopen，最终 Transform 与 clean state 一致。
 - 回归：Inspector quaternion/Euler presentation 不因 Undo/Redo receipt 产生字段抖动；Viewport revision/presentation fence 保持通过。
