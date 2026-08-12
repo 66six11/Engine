@@ -82,15 +82,28 @@ rotation matrix 的三列，translation 位于 4×4 row-major 数组的 `[3, 7, 
 rotation。authoritative mutation boundary 接受单位 quaternion，不静默 normalize、替换为 identity 或调整
 scale；有限 non-uniform、negative 与 zero scale 都保持为显式 local 值并进入前向 model matrix。
 
-Studio Inspector 是 editor-local presentation：显示 X/Y/Z degrees，固定按 local `YXZ` 顺序构造 rotation，随后在
-ViewModel/application mutation boundary 转成单位 quaternion `(x,y,z,w)`。当前选择会话保留 Euler hint、原始文本、
-dirty-axis mask、edit id 与 base revision；project snapshot event 还携带该 edit 的成功/失败结果。自己的成功 receipt
-只有在来源、revision、object scope 与 quaternion 姿态全部匹配时才保留提交文本而不重新分解；无变化的成功操作允许
-留在 base revision，失败 receipt 只用于清理 pending 并将草稿重基到返回的 authoritative revision。Apply 进行中继续编辑的
-轴由 per-axis edit version 保护，旧 receipt 不能覆盖新输入。同姿态 snapshot（包括 `q` / `-q`、改名与保存）也不得重写字段。真正外部的不同
-quaternion 才枚举固定 YXZ 的等价分支及 `±360n` 展开，并在重组验证姿态相同后选择最接近 hint 的表示；奇异区利用 hint
-选择连续解，而不是强制某轴为零。hint 与未提交输入不进入 runtime scene schema、revision 或 viewport ABI；本切片切换
-选择或关闭 Studio 后允许丢弃 hint，跨会话 winding persistence 仍 deferred。
+Studio Inspector 是 editor-local presentation；runtime、SceneDocument、schema 与 snapshot 的 Transform 真相仍是 float
+Position/Scale 与单位 quaternion Rotation。Inspector 显示 Rotation X/Y/Z degrees，固定按 local `YXZ`
+顺序构造 rotation，随后在 ViewModel/application mutation boundary 转成单位 quaternion `(x,y,z,w)`。
+
+当前单选编辑会话统一保留 Position/Rotation/Scale 九个 source text、九字段 dirty mask、单调
+edit version、每字段 edit version 与一个 pending Transform Apply。pending 记录 edit id、session/scene/object
+scope、base revision、已提交 Transform/Euler/source text、dirty mask 与 edit version；project snapshot event 携带
+该 edit 的成功/失败结果。自己的成功 publication 只有在来源、revision、object scope 与 Transform
+都匹配时才作为 own acknowledgement：Position/Scale 精确匹配 float 值，Rotation 匹配空间姿态。未在
+Apply 发出后再编辑的字段保留已提交 source text；后续输入保留草稿和 dirty，旧 publication 不得覆盖。
+
+外部 mutation、Undo、Redo 或 failure snapshot 只投影 authoritative Transform 中真正变化的 clean 字段，保留
+并重基 dirty 草稿。同值 snapshot、改名、保存和重复 publication 不得无条件用 float `G9` 重新格式化
+Position/Scale 文本；例如 authoritative float 未变时，用户输入的 `"1.2"` 保持为 `"1.2"`。只有真正外部的
+不同 quaternion 姿态才枚举固定 YXZ 的等价分支及 `±360n` 展开，并在重组验证姿态相同后选择最接近
+Euler hint 的表示；奇异区利用 hint 选择连续解，而不是强制某轴为零。
+
+document no-op 仍按逐字段 exact Transform 值相等判定：`q` 与 `-q` 虽然姿态相同，但在 #373 中仍是
+changed authored value，并可进入 history。Inspector 把二者当作同姿态仅用于保持 acknowledgement/Euler 显示稳定，
+不会改写 document 值语义。Euler hint、source text 与 dirty 草稿不进入 runtime scene schema、revision 或 viewport
+ABI；selection、project session、scene 或 selected object 变更时丢弃整个 transient 编辑会话。跨会话 winding
+persistence 仍 deferred。
 
 当前完成范围止于 local TRS 经 `SceneDocumentSnapshot`、`ViewportRenderRequest`、native V7 request、
 scene-rendering extraction 到 draw item 原样传递。以下项目明确 deferred，不能借本合同提前实现：

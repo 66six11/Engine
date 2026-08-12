@@ -89,9 +89,17 @@ public sealed class StudioInspectorPanelHeadlessTests
                 view.FindControl<TextBox>("InspectorRotationDegreesY"));
             var rotationZ = Assert.IsType<TextBox>(
                 view.FindControl<TextBox>("InspectorRotationDegreesZ"));
+            var positionX = Assert.IsType<TextBox>(
+                view.FindControl<TextBox>("InspectorPositionX"));
+            var scaleX = Assert.IsType<TextBox>(
+                view.FindControl<TextBox>("InspectorScaleX"));
+            positionX.Text = "1.2";
             rotationY.Text = "365";
+            scaleX.Text = "1.234567";
             Dispatcher.UIThread.RunJobs();
+            Assert.Equal("1.2", shell.PositionX);
             Assert.Equal("365", shell.RotationDegreesY);
+            Assert.Equal("1.234567", shell.ScaleX);
 
             var apply = Assert.IsType<Button>(view.FindControl<Button>("ApplyTransformButton"));
             Assert.Same(shell.ApplyEntityTransformCommand, apply.Command);
@@ -106,12 +114,18 @@ public sealed class StudioInspectorPanelHeadlessTests
             Assert.InRange(rotation.W, -0.999049F, -0.999047F);
             Assert.Equal(2UL, shell.AppliedProjectSnapshot.Document!.Revision);
             Assert.Equal(requestedTransform.Value, shell.SelectedEntity!.Transform);
+            Assert.Equal(1.2F, requestedTransform.Value.Position.X);
+            Assert.Equal(1.234567F, requestedTransform.Value.Scale.X);
+            Assert.Equal("1.2", positionX.Text);
             Assert.Equal("0", rotationX.Text);
             Assert.Equal("365", rotationY.Text);
             Assert.Equal("0", rotationZ.Text);
+            Assert.Equal("1.234567", scaleX.Text);
+            Assert.Equal("1.2", shell.PositionX);
             Assert.Equal("0", shell.RotationDegreesX);
             Assert.Equal("365", shell.RotationDegreesY);
             Assert.Equal("0", shell.RotationDegreesZ);
+            Assert.Equal("1.234567", shell.ScaleX);
             var message = Assert.IsType<TextBlock>(
                 view.FindControl<TextBlock>("InspectorOperationMessage"));
             Assert.True(message.IsVisible);

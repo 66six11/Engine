@@ -321,6 +321,20 @@ public sealed class SceneDocumentBridgeTests
         Assert.Equal(160, Marshal.SizeOf<SceneNativeDocumentTransformOperationResult>());
         Assert.Equal(96, Marshal.SizeOf<SceneNativeDocumentEntitySnapshot>());
         Assert.Equal(80, Marshal.SizeOf<SceneNativeDocumentSnapshotResult>());
+        Assert.Equal(40, OffsetOf<SceneNativeDocumentSetEntityTransformRequest>(
+            nameof(SceneNativeDocumentSetEntityTransformRequest.Transform)));
+        Assert.Equal(32, OffsetOf<SceneNativeDocumentTransformOperationResult>(
+            nameof(SceneNativeDocumentTransformOperationResult.ObjectId)));
+        Assert.Equal(48, OffsetOf<SceneNativeDocumentTransformOperationResult>(
+            nameof(SceneNativeDocumentTransformOperationResult.BeforeTransform)));
+        Assert.Equal(88, OffsetOf<SceneNativeDocumentTransformOperationResult>(
+            nameof(SceneNativeDocumentTransformOperationResult.AfterTransform)));
+        Assert.Equal(128, OffsetOf<SceneNativeDocumentTransformOperationResult>(
+            nameof(SceneNativeDocumentTransformOperationResult.BeforeRevision)));
+        Assert.Equal(136, OffsetOf<SceneNativeDocumentTransformOperationResult>(
+            nameof(SceneNativeDocumentTransformOperationResult.AfterRevision)));
+        Assert.Equal(32, OffsetOf<SceneNativeDocumentEntitySnapshot>(
+            nameof(SceneNativeDocumentEntitySnapshot.Transform)));
         Assert.Equal(40, OffsetOf<SceneNativeDocumentSnapshotResult>(
             nameof(SceneNativeDocumentSnapshotResult.EntitiesOffset)));
         Assert.Equal(64, OffsetOf<SceneNativeDocumentSnapshotResult>(
@@ -329,8 +343,6 @@ public sealed class SceneDocumentBridgeTests
             nameof(SceneNativeDocumentEntitySnapshot.RuntimeEntityId)));
         Assert.Equal(80, OffsetOf<SceneNativeDocumentEntitySnapshot>(
             nameof(SceneNativeDocumentEntitySnapshot.MeshAssetGuidUtf8)));
-        Assert.Equal(48, OffsetOf<SceneNativeDocumentTransformOperationResult>(
-            nameof(SceneNativeDocumentTransformOperationResult.BeforeTransform)));
         Assert.Equal(144, OffsetOf<SceneNativeDocumentTransformOperationResult>(
             nameof(SceneNativeDocumentTransformOperationResult.MessageUtf8)));
     }

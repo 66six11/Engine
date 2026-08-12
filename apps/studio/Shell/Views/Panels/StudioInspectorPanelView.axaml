@@ -23,9 +23,18 @@
                 <TextBlock Margin="0,8,0,0" FontWeight="SemiBold" Text="Transform" />
                 <TextBlock Foreground="{DynamicResource EditorBrushTextMuted}" Text="Position (X / Y / Z)" />
                 <Grid ColumnDefinitions="*,*,*" ColumnSpacing="4">
-                    <TextBox Grid.Column="0" Text="{Binding Shell.PositionX}" />
-                    <TextBox Grid.Column="1" Text="{Binding Shell.PositionY}" />
-                    <TextBox Grid.Column="2" Text="{Binding Shell.PositionZ}" />
+                    <TextBox x:Name="InspectorPositionX"
+                             Grid.Column="0"
+                             AutomationProperties.Name="Position X"
+                             Text="{Binding Shell.PositionX, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                    <TextBox x:Name="InspectorPositionY"
+                             Grid.Column="1"
+                             AutomationProperties.Name="Position Y"
+                             Text="{Binding Shell.PositionY, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                    <TextBox x:Name="InspectorPositionZ"
+                             Grid.Column="2"
+                             AutomationProperties.Name="Position Z"
+                             Text="{Binding Shell.PositionZ, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                 </Grid>
                 <TextBlock Foreground="{DynamicResource EditorBrushTextMuted}"
                            Text="Rotation degrees (X / Y / Z · YXZ)" />
@@ -45,9 +54,18 @@
                 </Grid>
                 <TextBlock Foreground="{DynamicResource EditorBrushTextMuted}" Text="Scale (X / Y / Z)" />
                 <Grid ColumnDefinitions="*,*,*" ColumnSpacing="4">
-                    <TextBox Grid.Column="0" Text="{Binding Shell.ScaleX}" />
-                    <TextBox Grid.Column="1" Text="{Binding Shell.ScaleY}" />
-                    <TextBox Grid.Column="2" Text="{Binding Shell.ScaleZ}" />
+                    <TextBox x:Name="InspectorScaleX"
+                             Grid.Column="0"
+                             AutomationProperties.Name="Scale X"
+                             Text="{Binding Shell.ScaleX, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                    <TextBox x:Name="InspectorScaleY"
+                             Grid.Column="1"
+                             AutomationProperties.Name="Scale Y"
+                             Text="{Binding Shell.ScaleY, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                    <TextBox x:Name="InspectorScaleZ"
+                             Grid.Column="2"
+                             AutomationProperties.Name="Scale Z"
+                             Text="{Binding Shell.ScaleZ, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                 </Grid>
                 <Button x:Name="ApplyTransformButton"
                         HorizontalAlignment="Left"

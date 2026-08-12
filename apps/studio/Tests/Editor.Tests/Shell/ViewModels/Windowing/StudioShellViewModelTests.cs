@@ -150,6 +150,93 @@ public sealed class StudioShellViewModelTests
     }
 
     [Fact]
+    public async Task Undo_rebases_dirty_position_and_scale_drafts_onto_the_new_revision()
+    {
+        var objectId = Guid.NewGuid();
+        var currentEntity = new SceneEntitySnapshot(
+            objectId,
+            new EntityId(1, 1),
+            "Selected",
+            new TransformValue(
+                new Float3(5.0F, 6.0F, 7.0F),
+                Quaternion.Identity,
+                new Float3(2.0F, 3.0F, 4.0F)));
+        var undoneEntity = new SceneEntitySnapshot(
+            objectId,
+            currentEntity.RuntimeEntityId,
+            currentEntity.Name,
+            TransformValue.Identity);
+        var baseSnapshot = Ready("Sample", "C:\\Projects\\Sample");
+        var current = ProjectSessionSnapshot.Ready(
+            baseSnapshot.Project!,
+            new SceneDocumentSnapshot(
+                baseSnapshot.Document!.SceneId,
+                baseSnapshot.Document.Path,
+                revision: 2,
+                savedRevision: 1,
+                entities: [currentEntity]),
+            new ContentStateId(2),
+            new ContentStateId(1),
+            canUndo: true,
+            canRedo: false,
+            undoLabel: "Transform Selected",
+            redoLabel: null);
+        var undone = ProjectSessionSnapshot.Ready(
+            current.Project!,
+            new SceneDocumentSnapshot(
+                current.Document!.SceneId,
+                current.Document.Path,
+                revision: 3,
+                savedRevision: 1,
+                entities: [undoneEntity]),
+            new ContentStateId(1),
+            new ContentStateId(1),
+            canUndo: false,
+            canRedo: true,
+            undoLabel: null,
+            redoLabel: "Transform Selected");
+        var projectSession = new TestProjectSession();
+        projectSession.Publish(current);
+        projectSession.UndoHandler = _ => ValueTask.FromResult(
+            ProjectSessionOperationResult.Success(undone, "Undid Transform Selected."));
+        using var viewModel = new StudioShellViewModel(
+            projectSession,
+            new TestProjectDialogService());
+        viewModel.MarkReady();
+        viewModel.SelectedEntity = currentEntity;
+        viewModel.PositionX = "1.2";
+        viewModel.ScaleZ = "1.234567";
+
+        viewModel.UndoSceneCommand.Execute(null);
+        await WaitUntilAsync(() => !viewModel.IsProjectOperationRunning);
+
+        Assert.Equal("1.2", viewModel.PositionX);
+        Assert.Equal("0", viewModel.PositionY);
+        Assert.Equal("0", viewModel.PositionZ);
+        Assert.Equal("1", viewModel.ScaleX);
+        Assert.Equal("1", viewModel.ScaleY);
+        Assert.Equal("1.234567", viewModel.ScaleZ);
+
+        ProjectSessionEditContext? retryContext = null;
+        projectSession.SetTransformHandler = (_, transform, context, _) =>
+        {
+            retryContext = context;
+            Assert.Equal(new Float3(1.2F, 0.0F, 0.0F), transform.Position);
+            Assert.Equal(new Float3(1.0F, 1.0F, 1.234567F), transform.Scale);
+            return ValueTask.FromResult(ProjectSessionOperationResult.Success(
+                undone,
+                "Recorded retry.",
+                originatingEditId: context.EditId));
+        };
+
+        viewModel.ApplyEntityTransformCommand.Execute(null);
+        await WaitUntilAsync(() => !viewModel.IsProjectOperationRunning);
+
+        Assert.True(retryContext.HasValue);
+        Assert.Equal(3UL, retryContext.Value.ExpectedRevision);
+    }
+
+    [Fact]
     public async Task Create_command_uses_the_selected_parent_and_projects_ready_state()
     {
         using var viewModel = StudioShellTestFactory.Create(
@@ -303,7 +390,7 @@ public sealed class StudioShellViewModelTests
     }
 
     [Fact]
-    public async Task Apply_transform_command_publishes_complete_local_trs_for_selected_mesh()
+    public async Task Apply_transform_preserves_source_text_across_own_ack_and_projects_only_external_changes()
     {
         var objectId = Guid.NewGuid();
         var runtimeEntityId = new EntityId(7, 3);
@@ -333,16 +420,17 @@ public sealed class StudioShellViewModelTests
             30.0F * MathF.PI / 180.0F,
             -20.0F * MathF.PI / 180.0F);
         var expectedTransform = new TransformValue(
-            new Float3(10.0F, 20.0F, 30.0F),
+            new Float3(1.2F, 1.234567F, -3.0F),
             new Quaternion(
                 expectedNumericsRotation.X,
                 expectedNumericsRotation.Y,
                 expectedNumericsRotation.Z,
                 expectedNumericsRotation.W),
-            new Float3(2.0F, 3.0F, 4.0F));
+            new Float3(2.5F, 1.234567F, 4.0F));
         var projectSession = new TestProjectSession();
         projectSession.Publish(initial);
         var requestObserved = false;
+        ProjectSessionSnapshot? acceptedSnapshot = null;
         projectSession.SetTransformHandler = (
             requestedObjectId,
             transform,
@@ -394,6 +482,7 @@ public sealed class StudioShellViewModelTests
                 updated,
                 editContext.EditId,
                 originatingEditSucceeded: true);
+            acceptedSnapshot = updated;
             return ValueTask.FromResult(
                 ProjectSessionOperationResult.Success(
                     updated,
@@ -405,15 +494,15 @@ public sealed class StudioShellViewModelTests
             new TestProjectDialogService());
         viewModel.MarkReady();
         viewModel.SelectedEntity = initialEntity;
-        viewModel.PositionX = "10";
-        viewModel.PositionY = "20";
-        viewModel.PositionZ = "30";
-        viewModel.RotationDegreesX = "30";
-        viewModel.RotationDegreesY = "40";
-        viewModel.RotationDegreesZ = "-20";
-        viewModel.ScaleX = "2";
-        viewModel.ScaleY = "3";
-        viewModel.ScaleZ = "4";
+        viewModel.PositionX = "1.2";
+        viewModel.PositionY = "1.234567";
+        viewModel.PositionZ = "-3.000";
+        viewModel.RotationDegreesX = "30.000";
+        viewModel.RotationDegreesY = "40.0";
+        viewModel.RotationDegreesZ = "-20.0000";
+        viewModel.ScaleX = "2.5000";
+        viewModel.ScaleY = "1.234567";
+        viewModel.ScaleZ = "4.000";
 
         viewModel.ApplyEntityTransformCommand.Execute(null);
         await WaitUntilAsync(() => !viewModel.IsProjectOperationRunning);
@@ -425,9 +514,67 @@ public sealed class StudioShellViewModelTests
         Assert.Equal(SceneMeshReference.DirectionalWedgeValidation, viewModel.SelectedEntity.Mesh);
         Assert.Equal(expectedTransform.Position, viewModel.SelectedEntity.Transform.Position);
         Assert.Equal(expectedTransform.Scale, viewModel.SelectedEntity.Transform.Scale);
-        Assert.Equal("30", viewModel.RotationDegreesX);
-        Assert.Equal("40", viewModel.RotationDegreesY);
-        Assert.Equal("-20", viewModel.RotationDegreesZ);
+        Assert.Equal("1.2", viewModel.PositionX);
+        Assert.Equal("1.234567", viewModel.PositionY);
+        Assert.Equal("-3.000", viewModel.PositionZ);
+        Assert.Equal("30.000", viewModel.RotationDegreesX);
+        Assert.Equal("40.0", viewModel.RotationDegreesY);
+        Assert.Equal("-20.0000", viewModel.RotationDegreesZ);
+        Assert.Equal("2.5000", viewModel.ScaleX);
+        Assert.Equal("1.234567", viewModel.ScaleY);
+        Assert.Equal("4.000", viewModel.ScaleZ);
+
+        Assert.NotNull(acceptedSnapshot);
+        projectSession.SetNameHandler = (_, _, _) => ValueTask.FromResult(
+            ProjectSessionOperationResult.Success(
+                acceptedSnapshot,
+                "Accepted the same Transform snapshot."));
+        viewModel.ApplyEntityNameCommand.Execute(null);
+        await WaitUntilAsync(() => !viewModel.IsProjectOperationRunning);
+
+        Assert.Equal("1.2", viewModel.PositionX);
+        Assert.Equal("1.234567", viewModel.PositionY);
+        Assert.Equal("-3.000", viewModel.PositionZ);
+        Assert.Equal("2.5000", viewModel.ScaleX);
+        Assert.Equal("1.234567", viewModel.ScaleY);
+        Assert.Equal("4.000", viewModel.ScaleZ);
+
+        var externallyChangedEntity = new SceneEntitySnapshot(
+            objectId,
+            runtimeEntityId,
+            initialEntity.Name,
+            new TransformValue(
+                new Float3(9.0F, expectedTransform.Position.Y, expectedTransform.Position.Z),
+                expectedTransform.Rotation,
+                new Float3(expectedTransform.Scale.X, 7.0F, expectedTransform.Scale.Z)),
+            initialEntity.Mesh);
+        var externallyChanged = ProjectSessionSnapshot.Ready(
+            initial.Project!,
+            new SceneDocumentSnapshot(
+                initial.Document!.SceneId,
+                initial.Document.Path,
+                revision: 3,
+                savedRevision: 1,
+                entities: [externallyChangedEntity]),
+            new ContentStateId(1),
+            new ContentStateId(1),
+            canUndo: false,
+            canRedo: false,
+            undoLabel: null,
+            redoLabel: null);
+        projectSession.SetNameHandler = (_, _, _) => ValueTask.FromResult(
+            ProjectSessionOperationResult.Success(
+                externallyChanged,
+                "Accepted an external Transform snapshot."));
+        viewModel.ApplyEntityNameCommand.Execute(null);
+        await WaitUntilAsync(() => !viewModel.IsProjectOperationRunning);
+
+        Assert.Equal("9", viewModel.PositionX);
+        Assert.Equal("1.234567", viewModel.PositionY);
+        Assert.Equal("-3.000", viewModel.PositionZ);
+        Assert.Equal("2.5000", viewModel.ScaleX);
+        Assert.Equal("7", viewModel.ScaleY);
+        Assert.Equal("4.000", viewModel.ScaleZ);
     }
 
     [Fact]
@@ -598,7 +745,7 @@ public sealed class StudioShellViewModelTests
     }
 
     [Fact]
-    public async Task Own_ack_does_not_overwrite_an_axis_edited_while_apply_is_in_flight()
+    public async Task Own_ack_retains_position_rotation_and_scale_edits_made_while_apply_is_in_flight()
     {
         var objectId = Guid.NewGuid();
         var entity = new SceneEntitySnapshot(
@@ -638,11 +785,15 @@ public sealed class StudioShellViewModelTests
             new TestProjectDialogService());
         viewModel.MarkReady();
         viewModel.SelectedEntity = entity;
+        viewModel.PositionX = "1.2";
         viewModel.RotationDegreesY = "365";
+        viewModel.ScaleZ = "1.234567";
         viewModel.ApplyEntityTransformCommand.Execute(null);
         await WaitUntilAsync(() => viewModel.IsProjectOperationRunning);
 
+        viewModel.PositionX = "2.2";
         viewModel.RotationDegreesY = "725";
+        viewModel.ScaleZ = "3.000";
         var acknowledgedEntity = new SceneEntitySnapshot(
             entity.ObjectId,
             entity.RuntimeEntityId,
@@ -672,11 +823,19 @@ public sealed class StudioShellViewModelTests
             originatingEditId: editContext.EditId));
         await WaitUntilAsync(() => !viewModel.IsProjectOperationRunning);
 
+        Assert.Equal("2.2", viewModel.PositionX);
         Assert.Equal("725", viewModel.RotationDegreesY);
+        Assert.Equal("3.000", viewModel.ScaleZ);
 
         projectSession.SetTransformHandler = (_, transform, context, _) =>
         {
             Assert.Equal(2UL, context.ExpectedRevision);
+            Assert.Equal(2.2F, transform.Position.X);
+            Assert.Equal(3.0F, transform.Scale.Z);
+            Assert.True(StudioEulerRotation.AreEquivalent(
+                transform.Rotation,
+                StudioEulerRotation.QuaternionFromEulerDegreesYxz(
+                    new StudioEulerDegrees(0.0, 725.0, 0.0))));
             var acceptedEntity = new SceneEntitySnapshot(
                 entity.ObjectId,
                 entity.RuntimeEntityId,
@@ -707,7 +866,9 @@ public sealed class StudioShellViewModelTests
         };
         viewModel.ApplyEntityTransformCommand.Execute(null);
         await WaitUntilAsync(() => !viewModel.IsProjectOperationRunning);
+        Assert.Equal("2.2", viewModel.PositionX);
         Assert.Equal("725", viewModel.RotationDegreesY);
+        Assert.Equal("3.000", viewModel.ScaleZ);
 
         var externalEntity = new SceneEntitySnapshot(
             entity.ObjectId,
@@ -739,16 +900,18 @@ public sealed class StudioShellViewModelTests
         viewModel.ApplyEntityNameCommand.Execute(null);
         await WaitUntilAsync(() => !viewModel.IsProjectOperationRunning);
 
+        Assert.Equal("0", viewModel.PositionX);
         Assert.InRange(
             double.Parse(
                 viewModel.RotationDegreesY,
                 System.Globalization.CultureInfo.InvariantCulture),
             729.999,
             730.001);
+        Assert.Equal("1", viewModel.ScaleZ);
     }
 
     [Fact]
-    public async Task Successful_no_op_ack_clears_pending_state_at_the_base_revision()
+    public async Task Successful_no_op_ack_preserves_source_text_and_clears_all_transform_dirty_fields()
     {
         var entity = new SceneEntitySnapshot(
             Guid.NewGuid(),
@@ -788,18 +951,24 @@ public sealed class StudioShellViewModelTests
             new TestProjectDialogService());
         viewModel.MarkReady();
         viewModel.SelectedEntity = entity;
+        viewModel.PositionX = "-0.000";
+        viewModel.RotationDegreesY = "0.0000";
+        viewModel.ScaleX = "1.000";
 
         viewModel.ApplyEntityTransformCommand.Execute(null);
         await WaitUntilAsync(() => !viewModel.IsProjectOperationRunning);
+        Assert.Equal("-0.000", viewModel.PositionX);
+        Assert.Equal("0.0000", viewModel.RotationDegreesY);
+        Assert.Equal("1.000", viewModel.ScaleX);
         var externallyRotated = new SceneEntitySnapshot(
             entity.ObjectId,
             entity.RuntimeEntityId,
             entity.Name,
             new TransformValue(
-                Float3.Zero,
+                new Float3(2.5F, 0.0F, 0.0F),
                 StudioEulerRotation.QuaternionFromEulerDegreesYxz(
                     new StudioEulerDegrees(0.0, 10.0, 0.0)),
-                Float3.One));
+                new Float3(3.5F, 1.0F, 1.0F)));
         var external = ProjectSessionSnapshot.Ready(
             initial.Project!,
             new SceneDocumentSnapshot(
@@ -821,12 +990,14 @@ public sealed class StudioShellViewModelTests
         viewModel.ApplyEntityNameCommand.Execute(null);
         await WaitUntilAsync(() => !viewModel.IsProjectOperationRunning);
 
+        Assert.Equal("2.5", viewModel.PositionX);
         Assert.InRange(
             double.Parse(
                 viewModel.RotationDegreesY,
                 System.Globalization.CultureInfo.InvariantCulture),
             9.999,
             10.001);
+        Assert.Equal("3.5", viewModel.ScaleX);
     }
 
     [Fact]
@@ -853,10 +1024,10 @@ public sealed class StudioShellViewModelTests
             undoLabel: null,
             redoLabel: null);
         var externalTransform = new TransformValue(
-            Float3.Zero,
+            new Float3(9.0F, 8.0F, 0.0F),
             StudioEulerRotation.QuaternionFromEulerDegreesYxz(
                 new StudioEulerDegrees(15.0, 20.0, 30.0)),
-            Float3.One);
+            new Float3(1.0F, 7.0F, 6.0F));
         var conflicted = ProjectSessionSnapshot.Ready(
             initial.Project!,
             new SceneDocumentSnapshot(
@@ -898,6 +1069,10 @@ public sealed class StudioShellViewModelTests
                     context.EditId));
             }
             secondContext = context;
+            Assert.Equal(1.2F, transform.Position.X);
+            Assert.Equal(8.0F, transform.Position.Y);
+            Assert.Equal(7.0F, transform.Scale.Y);
+            Assert.Equal(1.234567F, transform.Scale.Z);
             return ValueTask.FromResult(ProjectSessionOperationResult.Success(
                 conflicted,
                 "Recorded retry.",
@@ -908,13 +1083,19 @@ public sealed class StudioShellViewModelTests
             new TestProjectDialogService());
         viewModel.MarkReady();
         viewModel.SelectedEntity = entity;
+        viewModel.PositionX = "1.2";
         viewModel.RotationDegreesY = "365";
+        viewModel.ScaleZ = "1.234567";
 
         viewModel.ApplyEntityTransformCommand.Execute(null);
         await WaitUntilAsync(() => !viewModel.IsProjectOperationRunning);
+        Assert.Equal("1.2", viewModel.PositionX);
+        Assert.Equal("8", viewModel.PositionY);
         Assert.Equal("365", viewModel.RotationDegreesY);
         Assert.NotEqual("0", viewModel.RotationDegreesX);
         Assert.NotEqual("0", viewModel.RotationDegreesZ);
+        Assert.Equal("7", viewModel.ScaleY);
+        Assert.Equal("1.234567", viewModel.ScaleZ);
 
         viewModel.ApplyEntityTransformCommand.Execute(null);
         await WaitUntilAsync(() => !viewModel.IsProjectOperationRunning);
@@ -1031,7 +1212,7 @@ public sealed class StudioShellViewModelTests
     }
 
     [Fact]
-    public void Changing_selection_discards_the_rotation_editor_session()
+    public void Changing_selection_discards_the_entire_transform_editor_session()
     {
         var first = new SceneEntitySnapshot(
             Guid.NewGuid(),
@@ -1069,11 +1250,14 @@ public sealed class StudioShellViewModelTests
             new TestProjectDialogService());
         viewModel.MarkReady();
         viewModel.SelectedEntity = first;
+        viewModel.PositionX = "1.2";
         viewModel.RotationDegreesY = "365";
+        viewModel.ScaleZ = "1.234567";
 
         viewModel.SelectedEntity = second;
         viewModel.SelectedEntity = first;
 
+        Assert.Equal("0", viewModel.PositionX);
         Assert.InRange(
             double.Parse(
                 viewModel.RotationDegreesY,
@@ -1081,6 +1265,7 @@ public sealed class StudioShellViewModelTests
             4.999,
             5.001);
         Assert.NotEqual("365", viewModel.RotationDegreesY);
+        Assert.Equal("1", viewModel.ScaleZ);
     }
 
     [Fact]

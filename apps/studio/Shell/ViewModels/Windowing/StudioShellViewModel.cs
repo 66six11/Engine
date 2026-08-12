@@ -30,30 +30,50 @@ internal enum StudioShellStage
 }
 
 [Flags]
-internal enum RotationAxisMask
+internal enum TransformFieldMask
 {
     None = 0,
-    X = 1,
-    Y = 2,
-    Z = 4,
+    PositionX = 1 << 0,
+    PositionY = 1 << 1,
+    PositionZ = 1 << 2,
+    RotationX = 1 << 3,
+    RotationY = 1 << 4,
+    RotationZ = 1 << 5,
+    ScaleX = 1 << 6,
+    ScaleY = 1 << 7,
+    ScaleZ = 1 << 8,
 }
 
-internal sealed record PendingRotationApply(
+internal sealed record TransformInspectorText(
+    string PositionX,
+    string PositionY,
+    string PositionZ,
+    string RotationX,
+    string RotationY,
+    string RotationZ,
+    string ScaleX,
+    string ScaleY,
+    string ScaleZ);
+
+internal sealed record PendingTransformApply(
     ProjectEditId EditId,
     ProjectSessionId SessionId,
     Guid SceneId,
     Guid ObjectId,
     ulong BaseRevision,
+    TransformValue SubmittedTransform,
     StudioEulerDegrees SubmittedEuler,
-    string SubmittedTextX,
-    string SubmittedTextY,
-    string SubmittedTextZ,
-    Quaternion SubmittedQuaternion,
-    RotationAxisMask DirtyAxes,
+    TransformInspectorText SubmittedText,
+    TransformFieldMask DirtyFields,
     ulong EditVersion);
 
 internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
 {
+    private const TransformFieldMask RotationFields =
+        TransformFieldMask.RotationX |
+        TransformFieldMask.RotationY |
+        TransformFieldMask.RotationZ;
+
     private readonly IProjectSession projectSession_;
     private readonly IStudioProjectDialogService projectDialogs_;
     private readonly AsyncCommand createProjectCommand_;
@@ -82,14 +102,20 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
     private string rotationDegreesY_ = "0";
     private string rotationDegreesZ_ = "0";
     private StudioEulerDegrees rotationEulerHint_;
-    private Quaternion authoritativeRotation_ = Quaternion.Identity;
-    private RotationAxisMask rotationDirtyAxes_;
-    private ulong rotationEditVersion_;
+    private TransformValue authoritativeTransform_ = TransformValue.Identity;
+    private TransformFieldMask transformDirtyFields_;
+    private ulong transformEditVersion_;
+    private ulong positionXEditVersion_;
+    private ulong positionYEditVersion_;
+    private ulong positionZEditVersion_;
     private ulong rotationXEditVersion_;
     private ulong rotationYEditVersion_;
     private ulong rotationZEditVersion_;
+    private ulong scaleXEditVersion_;
+    private ulong scaleYEditVersion_;
+    private ulong scaleZEditVersion_;
     private ulong transformEditBaseRevision_;
-    private PendingRotationApply? pendingRotationApply_;
+    private PendingTransformApply? pendingTransformApply_;
     private string scaleX_ = "1";
     private string scaleY_ = "1";
     private string scaleZ_ = "1";
@@ -228,29 +254,77 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
         set => SetField(ref inspectorName_, value);
     }
 
-    public string PositionX { get => positionX_; set => SetField(ref positionX_, value); }
-    public string PositionY { get => positionY_; set => SetField(ref positionY_, value); }
-    public string PositionZ { get => positionZ_; set => SetField(ref positionZ_, value); }
+    public string PositionX
+    {
+        get => positionX_;
+        set => SetTransformField(
+            ref positionX_, value, TransformFieldMask.PositionX, ref positionXEditVersion_);
+    }
+
+    public string PositionY
+    {
+        get => positionY_;
+        set => SetTransformField(
+            ref positionY_, value, TransformFieldMask.PositionY, ref positionYEditVersion_);
+    }
+
+    public string PositionZ
+    {
+        get => positionZ_;
+        set => SetTransformField(
+            ref positionZ_, value, TransformFieldMask.PositionZ, ref positionZEditVersion_);
+    }
+
     public string RotationDegreesX
     {
         get => rotationDegreesX_;
-        set => SetRotationField(ref rotationDegreesX_, value, RotationAxisMask.X);
+        set => SetTransformField(
+            ref rotationDegreesX_,
+            value,
+            TransformFieldMask.RotationX,
+            ref rotationXEditVersion_);
     }
 
     public string RotationDegreesY
     {
         get => rotationDegreesY_;
-        set => SetRotationField(ref rotationDegreesY_, value, RotationAxisMask.Y);
+        set => SetTransformField(
+            ref rotationDegreesY_,
+            value,
+            TransformFieldMask.RotationY,
+            ref rotationYEditVersion_);
     }
 
     public string RotationDegreesZ
     {
         get => rotationDegreesZ_;
-        set => SetRotationField(ref rotationDegreesZ_, value, RotationAxisMask.Z);
+        set => SetTransformField(
+            ref rotationDegreesZ_,
+            value,
+            TransformFieldMask.RotationZ,
+            ref rotationZEditVersion_);
     }
-    public string ScaleX { get => scaleX_; set => SetField(ref scaleX_, value); }
-    public string ScaleY { get => scaleY_; set => SetField(ref scaleY_, value); }
-    public string ScaleZ { get => scaleZ_; set => SetField(ref scaleZ_, value); }
+
+    public string ScaleX
+    {
+        get => scaleX_;
+        set => SetTransformField(
+            ref scaleX_, value, TransformFieldMask.ScaleX, ref scaleXEditVersion_);
+    }
+
+    public string ScaleY
+    {
+        get => scaleY_;
+        set => SetTransformField(
+            ref scaleY_, value, TransformFieldMask.ScaleY, ref scaleYEditVersion_);
+    }
+
+    public string ScaleZ
+    {
+        get => scaleZ_;
+        set => SetTransformField(
+            ref scaleZ_, value, TransformFieldMask.ScaleZ, ref scaleZEditVersion_);
+    }
 
     public bool IsProjectOperationRunning
     {
@@ -528,22 +602,20 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
         }
 
         var editId = ProjectEditId.CreateNew();
-        var baseRevision = rotationDirtyAxes_ == RotationAxisMask.None
+        var baseRevision = transformDirtyFields_ == TransformFieldMask.None
             ? document.Revision
             : transformEditBaseRevision_;
-        pendingRotationApply_ = new PendingRotationApply(
+        pendingTransformApply_ = new PendingTransformApply(
             editId,
             project.SessionId,
             document.SceneId,
             selected.ObjectId,
             baseRevision,
+            transform,
             submittedEuler,
-            rotationDegreesX_,
-            rotationDegreesY_,
-            rotationDegreesZ_,
-            transform.Rotation,
-            rotationDirtyAxes_,
-            rotationEditVersion_);
+            CaptureTransformInspectorText(),
+            transformDirtyFields_,
+            transformEditVersion_);
 
         ProjectOperationMessage = string.Empty;
         IsProjectOperationRunning = true;
@@ -558,24 +630,24 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
                 result.Current,
                 result.OriginatingEditId,
                 result.OriginatingEditId is null ? null : result.Succeeded);
-            if (!result.Succeeded && pendingRotationApply_?.EditId == editId)
+            if (!result.Succeeded && pendingTransformApply_?.EditId == editId)
             {
-                pendingRotationApply_ = null;
+                pendingTransformApply_ = null;
             }
             ProjectOperationMessage = result.Message;
         }
         catch (OperationCanceledException) when (lifetimeCancellation_.IsCancellationRequested)
         {
-            if (pendingRotationApply_?.EditId == editId)
+            if (pendingTransformApply_?.EditId == editId)
             {
-                pendingRotationApply_ = null;
+                pendingTransformApply_ = null;
             }
         }
         catch (Exception exception)
         {
-            if (pendingRotationApply_?.EditId == editId)
+            if (pendingTransformApply_?.EditId == editId)
             {
-                pendingRotationApply_ = null;
+                pendingTransformApply_ = null;
             }
             ProjectOperationMessage = string.IsNullOrWhiteSpace(exception.Message)
                 ? "The project operation failed without a diagnostic."
@@ -704,15 +776,21 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
 
     private void LoadInspector(SceneEntitySnapshot? entity)
     {
-        pendingRotationApply_ = null;
-        rotationDirtyAxes_ = RotationAxisMask.None;
-        rotationEditVersion_ = 0;
+        pendingTransformApply_ = null;
+        transformDirtyFields_ = TransformFieldMask.None;
+        transformEditVersion_ = 0;
+        positionXEditVersion_ = 0;
+        positionYEditVersion_ = 0;
+        positionZEditVersion_ = 0;
         rotationXEditVersion_ = 0;
         rotationYEditVersion_ = 0;
         rotationZEditVersion_ = 0;
+        scaleXEditVersion_ = 0;
+        scaleYEditVersion_ = 0;
+        scaleZEditVersion_ = 0;
         transformEditBaseRevision_ = projectSnapshot_.Document?.Revision ?? 0;
         var transform = entity?.Transform ?? TransformValue.Identity;
-        authoritativeRotation_ = transform.Rotation;
+        authoritativeTransform_ = transform;
         inspectorName_ = entity?.Name ?? string.Empty;
         positionX_ = Format(transform.Position.X);
         positionY_ = Format(transform.Position.Y);
@@ -746,17 +824,12 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
         bool? originatingEditSucceeded)
     {
         var transform = entity.Transform;
+        var previousTransform = authoritativeTransform_;
         inspectorName_ = entity.Name;
-        positionX_ = Format(transform.Position.X);
-        positionY_ = Format(transform.Position.Y);
-        positionZ_ = Format(transform.Position.Z);
-        scaleX_ = Format(transform.Scale.X);
-        scaleY_ = Format(transform.Scale.Y);
-        scaleZ_ = Format(transform.Scale.Z);
 
         var document = projectSnapshot_.Document;
         var project = projectSnapshot_.Project;
-        var pending = pendingRotationApply_;
+        var pending = pendingTransformApply_;
         var acceptsPending = pending is not null &&
             originatingEditSucceeded == true &&
             originatingEditId == pending.EditId &&
@@ -765,74 +838,84 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
             entity.ObjectId == pending.ObjectId &&
             (document.Revision == pending.BaseRevision ||
              document.Revision == pending.BaseRevision + 1) &&
-            StudioEulerRotation.AreEquivalent(
-                transform.Rotation,
-                pending.SubmittedQuaternion);
+            TransformMatchesSubmission(transform, pending.SubmittedTransform);
 
         if (acceptsPending)
         {
-            var editedAfterSubmit = RotationAxesEditedAfter(pending!.EditVersion);
-            authoritativeRotation_ = transform.Rotation;
-            if ((editedAfterSubmit & RotationAxisMask.X) == 0)
-            {
-                rotationDegreesX_ = pending.SubmittedTextX;
-            }
-            if ((editedAfterSubmit & RotationAxisMask.Y) == 0)
-            {
-                rotationDegreesY_ = pending.SubmittedTextY;
-            }
-            if ((editedAfterSubmit & RotationAxisMask.Z) == 0)
-            {
-                rotationDegreesZ_ = pending.SubmittedTextZ;
-            }
+            var editedAfterSubmit = TransformFieldsEditedAfter(pending!.EditVersion);
+            RestoreSubmittedTransformText(pending.SubmittedText, editedAfterSubmit);
             rotationEulerHint_ = HintFromCurrentText(
                 pending.SubmittedEuler,
                 editedAfterSubmit);
-            rotationDirtyAxes_ = editedAfterSubmit;
+            transformDirtyFields_ = editedAfterSubmit;
+            ResetAppliedFieldEditVersions(editedAfterSubmit);
             transformEditBaseRevision_ = document!.Revision;
-            pendingRotationApply_ = null;
+            pendingTransformApply_ = null;
         }
         else
         {
-            var rejectsPending = pending is not null &&
-                originatingEditSucceeded == false &&
+            var completesPending = pending is not null &&
                 originatingEditId == pending.EditId;
-            if (rejectsPending)
+            if (completesPending)
             {
-                pendingRotationApply_ = null;
+                transformDirtyFields_ |= pending!.DirtyFields |
+                    TransformFieldsEditedAfter(pending.EditVersion);
+                pendingTransformApply_ = null;
             }
 
+            ProjectAuthoritativeFloat(
+                ref positionX_,
+                previousTransform.Position.X,
+                transform.Position.X,
+                TransformFieldMask.PositionX);
+            ProjectAuthoritativeFloat(
+                ref positionY_,
+                previousTransform.Position.Y,
+                transform.Position.Y,
+                TransformFieldMask.PositionY);
+            ProjectAuthoritativeFloat(
+                ref positionZ_,
+                previousTransform.Position.Z,
+                transform.Position.Z,
+                TransformFieldMask.PositionZ);
+            ProjectAuthoritativeFloat(
+                ref scaleX_,
+                previousTransform.Scale.X,
+                transform.Scale.X,
+                TransformFieldMask.ScaleX);
+            ProjectAuthoritativeFloat(
+                ref scaleY_,
+                previousTransform.Scale.Y,
+                transform.Scale.Y,
+                TransformFieldMask.ScaleY);
+            ProjectAuthoritativeFloat(
+                ref scaleZ_,
+                previousTransform.Scale.Z,
+                transform.Scale.Z,
+                TransformFieldMask.ScaleZ);
+
             var sameOrientation = StudioEulerRotation.AreEquivalent(
-                authoritativeRotation_,
+                previousTransform.Rotation,
                 transform.Rotation);
-            if (rotationDirtyAxes_ != RotationAxisMask.None ||
-                pendingRotationApply_ is not null)
+            var rotationDirtyFields = transformDirtyFields_ & RotationFields;
+            if (!sameOrientation && rotationDirtyFields != TransformFieldMask.None)
             {
-                if (!sameOrientation)
-                {
-                    MergeAuthoritativeRotationIntoDraft(transform.Rotation);
-                }
-                authoritativeRotation_ = transform.Rotation;
-                transformEditBaseRevision_ = document?.Revision ?? 0;
+                MergeAuthoritativeRotationIntoDraft(transform.Rotation);
             }
-            else if (sameOrientation)
-            {
-                // Snapshot replacement, q/-q, name edits and saves must not
-                // rewrite an already stable Editor Euler representation.
-                authoritativeRotation_ = transform.Rotation;
-                transformEditBaseRevision_ = document?.Revision ?? 0;
-            }
-            else if (StudioEulerRotation.TryClosestEquivalentEulerDegreesYxz(
+            else if (!sameOrientation &&
+                     StudioEulerRotation.TryClosestEquivalentEulerDegreesYxz(
                          transform.Rotation,
                          rotationEulerHint_,
                          out var closest))
             {
-                authoritativeRotation_ = transform.Rotation;
                 rotationEulerHint_ = closest;
                 SetRotationTextFromHint();
-                transformEditBaseRevision_ = document?.Revision ?? 0;
             }
+
+            transformEditBaseRevision_ = document?.Revision ?? 0;
         }
+
+        authoritativeTransform_ = transform;
 
         OnPropertyChanged(nameof(InspectorName));
         OnPropertyChanged(nameof(PositionX));
@@ -857,43 +940,121 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
     {
         if (!StudioEulerRotation.TryClosestEquivalentEulerDegreesYxz(
                 rotation,
-                HintFromCurrentText(rotationEulerHint_, rotationDirtyAxes_),
+                HintFromCurrentText(rotationEulerHint_, transformDirtyFields_),
                 out var closest))
         {
             return;
         }
 
-        if ((rotationDirtyAxes_ & RotationAxisMask.X) == 0)
+        if ((transformDirtyFields_ & TransformFieldMask.RotationX) == 0)
         {
             rotationDegreesX_ = Format(closest.X);
         }
-        if ((rotationDirtyAxes_ & RotationAxisMask.Y) == 0)
+        if ((transformDirtyFields_ & TransformFieldMask.RotationY) == 0)
         {
             rotationDegreesY_ = Format(closest.Y);
         }
-        if ((rotationDirtyAxes_ & RotationAxisMask.Z) == 0)
+        if ((transformDirtyFields_ & TransformFieldMask.RotationZ) == 0)
         {
             rotationDegreesZ_ = Format(closest.Z);
         }
-        rotationEulerHint_ = HintFromCurrentText(closest, rotationDirtyAxes_);
+        rotationEulerHint_ = HintFromCurrentText(closest, transformDirtyFields_);
     }
 
     private StudioEulerDegrees HintFromCurrentText(
         StudioEulerDegrees fallback,
-        RotationAxisMask textAxes) =>
+        TransformFieldMask textFields) =>
         new(
-            (textAxes & RotationAxisMask.X) != 0 &&
+            (textFields & TransformFieldMask.RotationX) != 0 &&
                 TryParseDouble(rotationDegreesX_, out var x)
                     ? x
                     : fallback.X,
-            (textAxes & RotationAxisMask.Y) != 0 &&
+            (textFields & TransformFieldMask.RotationY) != 0 &&
                 TryParseDouble(rotationDegreesY_, out var y)
                     ? y
                     : fallback.Y,
-            (textAxes & RotationAxisMask.Z) != 0 &&
+            (textFields & TransformFieldMask.RotationZ) != 0 &&
                 TryParseDouble(rotationDegreesZ_, out var z)
                     ? z
                     : fallback.Z);
+
+    private TransformInspectorText CaptureTransformInspectorText() =>
+        new(
+            positionX_,
+            positionY_,
+            positionZ_,
+            rotationDegreesX_,
+            rotationDegreesY_,
+            rotationDegreesZ_,
+            scaleX_,
+            scaleY_,
+            scaleZ_);
+
+    private void RestoreSubmittedTransformText(
+        TransformInspectorText submitted,
+        TransformFieldMask editedAfterSubmit)
+    {
+        RestoreSubmittedText(
+            ref positionX_, submitted.PositionX, editedAfterSubmit, TransformFieldMask.PositionX);
+        RestoreSubmittedText(
+            ref positionY_, submitted.PositionY, editedAfterSubmit, TransformFieldMask.PositionY);
+        RestoreSubmittedText(
+            ref positionZ_, submitted.PositionZ, editedAfterSubmit, TransformFieldMask.PositionZ);
+        RestoreSubmittedText(
+            ref rotationDegreesX_,
+            submitted.RotationX,
+            editedAfterSubmit,
+            TransformFieldMask.RotationX);
+        RestoreSubmittedText(
+            ref rotationDegreesY_,
+            submitted.RotationY,
+            editedAfterSubmit,
+            TransformFieldMask.RotationY);
+        RestoreSubmittedText(
+            ref rotationDegreesZ_,
+            submitted.RotationZ,
+            editedAfterSubmit,
+            TransformFieldMask.RotationZ);
+        RestoreSubmittedText(
+            ref scaleX_, submitted.ScaleX, editedAfterSubmit, TransformFieldMask.ScaleX);
+        RestoreSubmittedText(
+            ref scaleY_, submitted.ScaleY, editedAfterSubmit, TransformFieldMask.ScaleY);
+        RestoreSubmittedText(
+            ref scaleZ_, submitted.ScaleZ, editedAfterSubmit, TransformFieldMask.ScaleZ);
+    }
+
+    private static void RestoreSubmittedText(
+        ref string current,
+        string submitted,
+        TransformFieldMask editedAfterSubmit,
+        TransformFieldMask field)
+    {
+        if ((editedAfterSubmit & field) == 0)
+        {
+            current = submitted;
+        }
+    }
+
+    private void ProjectAuthoritativeFloat(
+        ref string currentText,
+        float previous,
+        float next,
+        TransformFieldMask field)
+    {
+        if ((transformDirtyFields_ & field) == 0 && previous != next)
+        {
+            currentText = Format(next);
+        }
+    }
+
+    private static bool TransformMatchesSubmission(
+        TransformValue authoritative,
+        TransformValue submitted) =>
+        authoritative.Position == submitted.Position &&
+        authoritative.Scale == submitted.Scale &&
+        StudioEulerRotation.AreEquivalent(
+            authoritative.Rotation,
+            submitted.Rotation);
 
     private bool TryReadTransform(
         out TransformValue transform,
@@ -983,56 +1144,101 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
         OnPropertyChanged(propertyName);
     }
 
-    private void SetRotationField(
+    private void SetTransformField(
         ref string field,
         string value,
-        RotationAxisMask axis,
+        TransformFieldMask transformField,
+        ref ulong fieldEditVersion,
         [CallerMemberName] string? propertyName = null)
     {
         if (string.Equals(field, value, StringComparison.Ordinal))
         {
             return;
         }
-        if (rotationDirtyAxes_ == RotationAxisMask.None)
+        if (transformDirtyFields_ == TransformFieldMask.None)
         {
             transformEditBaseRevision_ = projectSnapshot_.Document?.Revision ?? 0;
         }
         field = value;
-        rotationDirtyAxes_ |= axis;
-        rotationEditVersion_ = checked(rotationEditVersion_ + 1);
-        switch (axis)
-        {
-            case RotationAxisMask.X:
-                rotationXEditVersion_ = rotationEditVersion_;
-                break;
-            case RotationAxisMask.Y:
-                rotationYEditVersion_ = rotationEditVersion_;
-                break;
-            case RotationAxisMask.Z:
-                rotationZEditVersion_ = rotationEditVersion_;
-                break;
-            default:
-                throw new ArgumentOutOfRangeException(nameof(axis));
-        }
+        transformDirtyFields_ |= transformField;
+        transformEditVersion_ = checked(transformEditVersion_ + 1);
+        fieldEditVersion = transformEditVersion_;
         OnPropertyChanged(propertyName);
     }
 
-    private RotationAxisMask RotationAxesEditedAfter(ulong editVersion)
+    private TransformFieldMask TransformFieldsEditedAfter(ulong editVersion)
     {
-        var result = RotationAxisMask.None;
+        var result = TransformFieldMask.None;
+        if (positionXEditVersion_ > editVersion)
+        {
+            result |= TransformFieldMask.PositionX;
+        }
+        if (positionYEditVersion_ > editVersion)
+        {
+            result |= TransformFieldMask.PositionY;
+        }
+        if (positionZEditVersion_ > editVersion)
+        {
+            result |= TransformFieldMask.PositionZ;
+        }
         if (rotationXEditVersion_ > editVersion)
         {
-            result |= RotationAxisMask.X;
+            result |= TransformFieldMask.RotationX;
         }
         if (rotationYEditVersion_ > editVersion)
         {
-            result |= RotationAxisMask.Y;
+            result |= TransformFieldMask.RotationY;
         }
         if (rotationZEditVersion_ > editVersion)
         {
-            result |= RotationAxisMask.Z;
+            result |= TransformFieldMask.RotationZ;
+        }
+        if (scaleXEditVersion_ > editVersion)
+        {
+            result |= TransformFieldMask.ScaleX;
+        }
+        if (scaleYEditVersion_ > editVersion)
+        {
+            result |= TransformFieldMask.ScaleY;
+        }
+        if (scaleZEditVersion_ > editVersion)
+        {
+            result |= TransformFieldMask.ScaleZ;
         }
         return result;
+    }
+
+    private void ResetAppliedFieldEditVersions(TransformFieldMask editedAfterSubmit)
+    {
+        ResetAppliedFieldEditVersion(
+            ref positionXEditVersion_, editedAfterSubmit, TransformFieldMask.PositionX);
+        ResetAppliedFieldEditVersion(
+            ref positionYEditVersion_, editedAfterSubmit, TransformFieldMask.PositionY);
+        ResetAppliedFieldEditVersion(
+            ref positionZEditVersion_, editedAfterSubmit, TransformFieldMask.PositionZ);
+        ResetAppliedFieldEditVersion(
+            ref rotationXEditVersion_, editedAfterSubmit, TransformFieldMask.RotationX);
+        ResetAppliedFieldEditVersion(
+            ref rotationYEditVersion_, editedAfterSubmit, TransformFieldMask.RotationY);
+        ResetAppliedFieldEditVersion(
+            ref rotationZEditVersion_, editedAfterSubmit, TransformFieldMask.RotationZ);
+        ResetAppliedFieldEditVersion(
+            ref scaleXEditVersion_, editedAfterSubmit, TransformFieldMask.ScaleX);
+        ResetAppliedFieldEditVersion(
+            ref scaleYEditVersion_, editedAfterSubmit, TransformFieldMask.ScaleY);
+        ResetAppliedFieldEditVersion(
+            ref scaleZEditVersion_, editedAfterSubmit, TransformFieldMask.ScaleZ);
+    }
+
+    private static void ResetAppliedFieldEditVersion(
+        ref ulong fieldEditVersion,
+        TransformFieldMask editedAfterSubmit,
+        TransformFieldMask field)
+    {
+        if ((editedAfterSubmit & field) == 0)
+        {
+            fieldEditVersion = 0;
+        }
     }
 
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null) =>

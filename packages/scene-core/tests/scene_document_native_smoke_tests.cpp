@@ -21,6 +21,31 @@ namespace {
     constexpr std::string_view kMeshObjectId = "bbbbbbbb-cccc-dddd-eeee-ffffffffffff";
     constexpr std::string_view kMeshAssetGuid = "7c9fe8ac-3c8b-4f66-9665-0af0fd7b693e";
     constexpr std::string_view kName = "Native \xE4\xB8\xBB\xE8\xA7\x92";
+    constexpr AshariaSceneNativeTransform kIdentityTransform{
+        .position = {0.0F, 0.0F, 0.0F},
+        .rotation = {0.0F, 0.0F, 0.0F, 1.0F},
+        .scale = {1.0F, 1.0F, 1.0F},
+    };
+    constexpr AshariaSceneNativeTransform kY45Transform{
+        .position = {0.0F, 0.0F, 0.0F},
+        .rotation = {0.0F, 0.38268343F, 0.0F, 0.92387953F},
+        .scale = {1.0F, 1.0F, 1.0F},
+    };
+    constexpr AshariaSceneNativeTransform kY46Transform{
+        .position = {0.0F, 0.0F, 0.0F},
+        .rotation = {0.0F, 0.39073113F, 0.0F, 0.92050487F},
+        .scale = {1.0F, 1.0F, 1.0F},
+    };
+    constexpr AshariaSceneNativeTransform kYPointOneTransform{
+        .position = {0.0F, 0.0F, 0.0F},
+        .rotation = {0.0F, 0.0008726645F, 0.0F, 0.99999964F},
+        .scale = {1.0F, 1.0F, 1.0F},
+    };
+    constexpr AshariaSceneNativeTransform kNegativeYPointOneTransform{
+        .position = {0.0F, 0.0F, 0.0F},
+        .rotation = {-0.0F, -0.0008726645F, -0.0F, -0.99999964F},
+        .scale = {1.0F, 1.0F, 1.0F},
+    };
 
     class TestDirectory {
     public:
@@ -66,6 +91,15 @@ namespace {
         return condition;
     }
 
+    [[nodiscard]] constexpr bool equal(AshariaSceneNativeTransform left,
+                                       AshariaSceneNativeTransform right) noexcept {
+        return left.position.x == right.position.x && left.position.y == right.position.y &&
+               left.position.z == right.position.z && left.rotation.x == right.rotation.x &&
+               left.rotation.y == right.rotation.y && left.rotation.z == right.rotation.z &&
+               left.rotation.w == right.rotation.w && left.scale.x == right.scale.x &&
+               left.scale.y == right.scale.y && left.scale.z == right.scale.z;
+    }
+
     [[nodiscard]] std::string spanText(const std::vector<std::byte>& buffer,
                                        AshariaSceneNativeTextSpan span) {
         if (span.offset > buffer.size() || span.byteLength > buffer.size() - span.offset) {
@@ -82,7 +116,9 @@ namespace {
     [[nodiscard]] bool snapshotDocument(AshariaSceneNativeDocumentHandle document,
                                         std::uint64_t expectedRevision,
                                         std::uint64_t expectedSavedRevision,
-                                        std::string_view expectedName, bool expectedMesh = false) {
+                                        std::string_view expectedName,
+                                        const AshariaSceneNativeTransform& expectedTransform,
+                                        bool expectedMesh = false) {
         const AshariaSceneNativeDocumentRequest request{
             .header = header(sizeof(AshariaSceneNativeDocumentRequest)),
             .document = document,
@@ -124,8 +160,7 @@ namespace {
         if (!expect(
                 spanText(buffer, entity.objectIdUtf8) == kObjectId &&
                     spanText(buffer, entity.nameUtf8) == expectedName &&
-                    entity.transform.position.x == 4.0F && entity.transform.rotation.w == 1.0F &&
-                    entity.transform.scale.z == 3.0F && entity.runtimeEntity.index != 0U &&
+                    equal(entity.transform, expectedTransform) && entity.runtimeEntity.index != 0U &&
                     entity.runtimeEntity.generation != 0U &&
                     entity.meshAssetGuidUtf8.byteLength == 0U,
                 "Edited entity snapshot did not preserve ID, runtime ID, name, and Transform.")) {
@@ -150,6 +185,13 @@ namespace {
                       "Mesh entity snapshot did not preserve its runtime and asset identities.");
     }
 
+    [[nodiscard]] bool snapshotEmptyDocument(AshariaSceneNativeDocumentHandle document,
+                                             std::uint64_t expectedRevision,
+                                             std::uint64_t expectedSavedRevision) {
+        return snapshotDocument(document, expectedRevision, expectedSavedRevision, {},
+                                kIdentityTransform);
+    }
+
     [[nodiscard]] bool rejectSupersededDocumentAbi(
         const AshariaSceneNativeDocumentOpenDefaultRequest& openRequest) {
         auto previous = openRequest;
@@ -170,9 +212,7 @@ namespace {
             .document = document,
             .expectedRevision = 3U,
             .objectIdUtf8 = view(kObjectId),
-            .transform = {.position = {4.0F, 5.0F, 6.0F},
-                          .rotation = {0.0F, 0.0F, 0.0F, 1.0F},
-                          .scale = {1.0F, 2.0F, 3.0F}},
+            .transform = kY45Transform,
         };
         AshariaSceneNativeDocumentTransformOperationResult transformed{};
         constexpr std::array<std::uint8_t, 16> kObjectIdBytes{
@@ -185,10 +225,63 @@ namespace {
                         transformed.beforeRevision == 3U && transformed.afterRevision == 4U &&
                         std::memcmp(transformed.objectId.bytes, kObjectIdBytes.data(),
                                     kObjectIdBytes.size()) == 0 &&
-                        transformed.beforeTransform.scale.x == 1.0F &&
-                        transformed.afterTransform.position.x == 4.0F &&
-                        snapshotDocument(document, 4U, 1U, kName),
-                    "Native scene Transform edit did not return its authoritative receipt.")) {
+                        equal(transformed.beforeTransform, kIdentityTransform) &&
+                        equal(transformed.afterTransform, request.transform) &&
+                        snapshotDocument(document, 4U, 1U, kName,
+                                         transformed.afterTransform),
+                    "Native identity-to-Y45 Transform edit did not return its authoritative "
+                    "receipt and snapshot.")) {
+            return false;
+        }
+
+        auto y46Request = request;
+        y46Request.expectedRevision = 4U;
+        y46Request.transform = kY46Transform;
+        AshariaSceneNativeDocumentTransformOperationResult y46{};
+        if (!expect(asharia_scene_document_set_entity_transform(
+                        &y46Request, errorBuffer.data(), errorBuffer.size(), &y46) ==
+                            AshariaSceneNativeStatus_Success &&
+                        y46.revision == 5U && y46.changed == 1U &&
+                        y46.beforeRevision == 4U && y46.afterRevision == 5U &&
+                        equal(y46.beforeTransform, request.transform) &&
+                        equal(y46.afterTransform, y46Request.transform) &&
+                        snapshotDocument(document, 5U, 1U, kName, y46.afterTransform),
+                    "Native Y45-to-Y46 rotation edit did not return its authoritative receipt "
+                    "and snapshot.")) {
+            return false;
+        }
+
+        auto pointOneRequest = y46Request;
+        pointOneRequest.expectedRevision = 5U;
+        pointOneRequest.transform = kYPointOneTransform;
+        AshariaSceneNativeDocumentTransformOperationResult pointOne{};
+        if (!expect(asharia_scene_document_set_entity_transform(
+                        &pointOneRequest, errorBuffer.data(), errorBuffer.size(), &pointOne) ==
+                            AshariaSceneNativeStatus_Success &&
+                        pointOne.revision == 6U && pointOne.changed == 1U &&
+                        pointOne.beforeRevision == 5U && pointOne.afterRevision == 6U &&
+                        equal(pointOne.beforeTransform, y46Request.transform) &&
+                        equal(pointOne.afterTransform, pointOneRequest.transform) &&
+                        snapshotDocument(document, 6U, 1U, kName, pointOne.afterTransform),
+                    "Native Y46-to-Y0.1 rotation edit did not return its authoritative receipt "
+                    "and snapshot.")) {
+            return false;
+        }
+
+        auto negativeRequest = pointOneRequest;
+        negativeRequest.expectedRevision = 6U;
+        negativeRequest.transform = kNegativeYPointOneTransform;
+        AshariaSceneNativeDocumentTransformOperationResult negative{};
+        if (!expect(asharia_scene_document_set_entity_transform(
+                        &negativeRequest, errorBuffer.data(), errorBuffer.size(), &negative) ==
+                            AshariaSceneNativeStatus_Success &&
+                        negative.revision == 7U && negative.changed == 1U &&
+                        negative.beforeRevision == 6U && negative.afterRevision == 7U &&
+                        equal(negative.beforeTransform, pointOneRequest.transform) &&
+                        equal(negative.afterTransform, negativeRequest.transform) &&
+                        snapshotDocument(document, 7U, 1U, kName, negative.afterTransform),
+                    "Native q-to-negative-q authored edit did not preserve exact Transform "
+                    "semantics.")) {
             return false;
         }
 
@@ -198,23 +291,25 @@ namespace {
         if (!expect(asharia_scene_document_set_entity_transform(
                         &staleRequest, errorBuffer.data(), errorBuffer.size(), &stale) ==
                             AshariaSceneNativeStatus_RevisionConflict &&
-                        stale.revision == 4U && stale.savedRevision == 1U && stale.changed == 0U &&
+                        stale.revision == 7U && stale.savedRevision == 1U && stale.changed == 0U &&
                         stale.beforeRevision == 0U && stale.afterRevision == 0U &&
                         stale.messageUtf8.byteLength != 0U,
                     "Failed native Transform edit exposed typed receipt state.")) {
             return false;
         }
 
-        auto unchangedRequest = request;
-        unchangedRequest.expectedRevision = 4U;
+        auto unchangedRequest = negativeRequest;
+        unchangedRequest.expectedRevision = 7U;
         AshariaSceneNativeDocumentTransformOperationResult unchanged{};
         return expect(asharia_scene_document_set_entity_transform(
                           &unchangedRequest, errorBuffer.data(), errorBuffer.size(), &unchanged) ==
                           AshariaSceneNativeStatus_Success &&
-                          unchanged.changed == 0U && unchanged.revision == 4U &&
-                          unchanged.beforeRevision == 4U && unchanged.afterRevision == 4U &&
-                          unchanged.beforeTransform.position.x ==
-                              unchanged.afterTransform.position.x,
+                          unchanged.changed == 0U && unchanged.revision == 7U &&
+                          unchanged.beforeRevision == 7U && unchanged.afterRevision == 7U &&
+                          equal(unchanged.beforeTransform, negativeRequest.transform) &&
+                          equal(unchanged.afterTransform, negativeRequest.transform) &&
+                          snapshotDocument(document, 7U, 1U, kName,
+                                           unchanged.afterTransform),
                       "Native no-op Transform receipt did not preserve its revision and values.");
     }
 
@@ -249,7 +344,7 @@ int main() noexcept {
                 asharia_scene_document_open_default(&openRequest, &document, nullptr, 0U,
                                                     &opened) == AshariaSceneNativeStatus_Success &&
                     document.index != 0U && document.generation != 0U && opened.revision == 1U &&
-                    opened.savedRevision == 1U && snapshotDocument(document, 1U, 1U, {}),
+                    opened.savedRevision == 1U && snapshotEmptyDocument(document, 1U, 1U),
                 "Default native scene document did not open cleanly.")) {
             return 1;
         }
@@ -306,7 +401,7 @@ int main() noexcept {
         const AshariaSceneNativeDocumentCreateMeshEntityRequest meshRequest{
             .header = header(sizeof(AshariaSceneNativeDocumentCreateMeshEntityRequest)),
             .document = document,
-            .expectedRevision = 4U,
+            .expectedRevision = 7U,
             .objectIdUtf8 = view(kMeshObjectId),
             .nameUtf8 = view("Mesh Entity"),
             .meshAssetGuidUtf8 = view(kMeshAssetGuid),
@@ -315,20 +410,22 @@ int main() noexcept {
         if (!expect(asharia_scene_document_create_mesh_entity(&meshRequest, errorBuffer.data(),
                                                               errorBuffer.size(), &meshCreated) ==
                             AshariaSceneNativeStatus_Success &&
-                        meshCreated.revision == 5U &&
-                        snapshotDocument(document, 5U, 1U, kName, true),
+                        meshCreated.revision == 8U &&
+                        snapshotDocument(document, 8U, 1U, kName,
+                                         kNegativeYPointOneTransform, true),
                     "Native mesh entity creation did not publish the typed snapshot.")) {
             return 1;
         }
 
         auto invalidMeshRequest = meshRequest;
-        invalidMeshRequest.expectedRevision = 5U;
+        invalidMeshRequest.expectedRevision = 8U;
         invalidMeshRequest.meshAssetGuidUtf8 = view("00000000-0000-0000-0000-000000000000");
         AshariaSceneNativeDocumentOperationResult invalidMesh{};
         if (!expect(asharia_scene_document_create_mesh_entity(
                         &invalidMeshRequest, errorBuffer.data(), errorBuffer.size(),
                         &invalidMesh) == AshariaSceneNativeStatus_InvalidAssetReference &&
-                        snapshotDocument(document, 5U, 1U, kName, true),
+                        snapshotDocument(document, 8U, 1U, kName,
+                                         kNegativeYPointOneTransform, true),
                     "Invalid native mesh reference changed the authoritative revision.")) {
             return 1;
         }
@@ -352,13 +449,13 @@ int main() noexcept {
         const AshariaSceneNativeDocumentSaveRequest saveRequest{
             .header = header(sizeof(AshariaSceneNativeDocumentSaveRequest)),
             .document = document,
-            .expectedRevision = 5U,
+            .expectedRevision = 8U,
         };
         AshariaSceneNativeDocumentOperationResult saved{};
         if (!expect(asharia_scene_document_save(&saveRequest, errorBuffer.data(),
                                                 errorBuffer.size(),
                                                 &saved) == AshariaSceneNativeStatus_Success &&
-                        saved.savedRevision == 5U,
+                        saved.savedRevision == 8U,
                     "Native document save did not advance the savepoint.")) {
             return 1;
         }
@@ -388,7 +485,8 @@ int main() noexcept {
                                                         &reopened) ==
                             AshariaSceneNativeStatus_Success &&
                         document.generation != staleHandle.generation &&
-                        snapshotDocument(document, 1U, 1U, kName, true) &&
+                        snapshotDocument(document, 1U, 1U, kName,
+                                         kNegativeYPointOneTransform, true) &&
                         asharia_scene_document_close(&document) == AshariaSceneNativeStatus_Success,
                     "Saved native scene did not survive close and reopen.")) {
             return 1;
