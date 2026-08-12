@@ -39,10 +39,16 @@ public sealed class SceneDocumentBridgeTests
         Assert.True(created.Succeeded);
         Assert.True(renamed.Succeeded);
         Assert.True(moved.Succeeded);
+        var transformReceipt = Assert.IsType<SceneEntityTransformReceipt>(moved.TransformReceipt);
+        Assert.Equal(objectId, transformReceipt.ObjectId);
+        Assert.True(transformReceipt.Changed);
+        Assert.Equal(TransformValue.Identity, transformReceipt.BeforeTransform);
+        Assert.Equal(transform, transformReceipt.AfterTransform);
+        Assert.Equal(3UL, transformReceipt.BeforeRevision);
+        Assert.Equal(4UL, transformReceipt.AfterRevision);
         Assert.True(saved.Succeeded);
         Assert.Equal("主角", moved.Current.Entities[0].Name);
         Assert.Equal(transform, moved.Current.Entities[0].Transform);
-        Assert.False(saved.Current.IsDirty);
         Assert.Equal(saved.Current.Revision, saved.Current.SavedRevision);
         Assert.Equal(1, api.CloseCalls);
         Assert.NotEqual(callerThread, api.OwnerThreadId);
@@ -82,6 +88,163 @@ public sealed class SceneDocumentBridgeTests
         Assert.Contains("receipt", created.Failure.Message, StringComparison.Ordinal);
         Assert.Equal(2UL, created.Current.Revision);
         Assert.Single(created.Current.Entities);
+    }
+
+    [Fact]
+    public async Task Transform_receipt_must_match_request_previous_state_and_snapshot()
+    {
+        var api = new StubSceneDocumentNativeApi { CorruptTransformReceipt = true };
+        var bridge = new SceneDocumentBridge(api);
+        var opened = await bridge.OpenDefaultAsync("C:\\Projects\\Sample", Guid.NewGuid());
+        var connection = Assert.IsAssignableFrom<ISceneDocumentConnection>(opened.Connection);
+        var objectId = Guid.NewGuid();
+        _ = await connection.CreateEntityAsync(objectId, "Entity", 1);
+        var target = new TransformValue(
+            new Float3(1, 2, 3),
+            Quaternion.Identity,
+            new Float3(2, 2, 2));
+
+        var moved = await connection.SetEntityTransformAsync(objectId, target, 2);
+        await connection.DisposeAsync();
+
+        Assert.False(moved.Succeeded);
+        Assert.Null(moved.TransformReceipt);
+        Assert.Equal(SceneDocumentFailureKind.InternalError, moved.Failure!.Kind);
+        Assert.Contains("receipt", moved.Failure.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(target, Assert.Single(moved.Current.Entities).Transform);
+        Assert.Equal(3UL, moved.Current.Revision);
+    }
+
+    [Fact]
+    public async Task Changed_transform_receipt_must_contain_distinct_values()
+    {
+        var api = new StubSceneDocumentNativeApi { EqualChangedTransformReceipt = true };
+        var bridge = new SceneDocumentBridge(api);
+        var opened = await bridge.OpenDefaultAsync("C:\\Projects\\Sample", Guid.NewGuid());
+        var connection = Assert.IsAssignableFrom<ISceneDocumentConnection>(opened.Connection);
+        var objectId = Guid.NewGuid();
+        _ = await connection.CreateEntityAsync(objectId, "Entity", 1);
+
+        var moved = await connection.SetEntityTransformAsync(
+            objectId,
+            new TransformValue(new Float3(1, 2, 3), Quaternion.Identity, Float3.One),
+            2);
+        await connection.DisposeAsync();
+
+        Assert.False(moved.Succeeded);
+        Assert.Equal(SceneDocumentFailureKind.InternalError, moved.Failure!.Kind);
+        Assert.Contains("receipt", moved.Failure.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Transform_snapshot_failure_reports_an_unknown_authoritative_outcome()
+    {
+        var api = new StubSceneDocumentNativeApi();
+        var bridge = new SceneDocumentBridge(api);
+        var opened = await bridge.OpenDefaultAsync("C:\\Projects\\Sample", Guid.NewGuid());
+        var connection = Assert.IsAssignableFrom<ISceneDocumentConnection>(opened.Connection);
+        var objectId = Guid.NewGuid();
+        _ = await connection.CreateEntityAsync(objectId, "Entity", 1);
+        api.RejectNextSnapshot = true;
+
+        var moved = await connection.SetEntityTransformAsync(
+            objectId,
+            new TransformValue(new Float3(1, 2, 3), Quaternion.Identity, Float3.One),
+            2);
+        var refreshed = await connection.RefreshAsync();
+        await connection.DisposeAsync();
+
+        Assert.False(moved.Succeeded);
+        Assert.Equal(
+            SceneDocumentFailureKind.AuthoritativeStateUnknown,
+            moved.Failure!.Kind);
+        Assert.Equal(2UL, moved.Current.Revision);
+        Assert.True(refreshed.Succeeded);
+        Assert.Equal(3UL, refreshed.Current.Revision);
+        Assert.Equal(
+            new Float3(1, 2, 3),
+            Assert.Single(refreshed.Current.Entities).Transform.Position);
+    }
+
+    [Fact]
+    public async Task No_op_Transform_returns_stable_authoritative_receipt()
+    {
+        var api = new StubSceneDocumentNativeApi();
+        var bridge = new SceneDocumentBridge(api);
+        var opened = await bridge.OpenDefaultAsync("C:\\Projects\\Sample", Guid.NewGuid());
+        var connection = Assert.IsAssignableFrom<ISceneDocumentConnection>(opened.Connection);
+        var objectId = Guid.NewGuid();
+        _ = await connection.CreateEntityAsync(objectId, "Entity", 1);
+
+        var unchanged = await connection.SetEntityTransformAsync(
+            objectId,
+            TransformValue.Identity,
+            2);
+        await connection.DisposeAsync();
+
+        Assert.True(unchanged.Succeeded);
+        var receipt = Assert.IsType<SceneEntityTransformReceipt>(unchanged.TransformReceipt);
+        Assert.False(receipt.Changed);
+        Assert.Equal(TransformValue.Identity, receipt.BeforeTransform);
+        Assert.Equal(receipt.BeforeTransform, receipt.AfterTransform);
+        Assert.Equal(2UL, receipt.BeforeRevision);
+        Assert.Equal(receipt.BeforeRevision, receipt.AfterRevision);
+        Assert.Equal(2UL, unchanged.Current.Revision);
+    }
+
+    [Fact]
+    public async Task Refresh_publishes_an_authoritative_external_snapshot()
+    {
+        var api = new StubSceneDocumentNativeApi();
+        var bridge = new SceneDocumentBridge(api);
+        var opened = await bridge.OpenDefaultAsync("C:\\Projects\\Sample", Guid.NewGuid());
+        var connection = Assert.IsAssignableFrom<ISceneDocumentConnection>(opened.Connection);
+        var objectId = Guid.NewGuid();
+        api.AdvanceExternalSnapshot(objectId, "External");
+
+        var refreshed = await connection.RefreshAsync();
+        await connection.DisposeAsync();
+
+        Assert.True(refreshed.Succeeded);
+        Assert.Null(refreshed.TransformReceipt);
+        Assert.Equal(2UL, refreshed.Current.Revision);
+        var entity = Assert.Single(refreshed.Current.Entities);
+        Assert.Equal(objectId, entity.ObjectId);
+        Assert.Equal("External", entity.Name);
+    }
+
+    [Fact]
+    public async Task Failed_refresh_preserves_the_last_known_snapshot()
+    {
+        var api = new StubSceneDocumentNativeApi();
+        var bridge = new SceneDocumentBridge(api);
+        var opened = await bridge.OpenDefaultAsync("C:\\Projects\\Sample", Guid.NewGuid());
+        var connection = Assert.IsAssignableFrom<ISceneDocumentConnection>(opened.Connection);
+        api.RejectSnapshot = true;
+
+        var refreshed = await connection.RefreshAsync();
+        await connection.DisposeAsync();
+
+        Assert.False(refreshed.Succeeded);
+        Assert.Equal(SceneDocumentFailureKind.InternalError, refreshed.Failure!.Kind);
+        Assert.Equal(opened.Document, refreshed.Current);
+    }
+
+    [Fact]
+    public async Task Malformed_refresh_preserves_the_last_known_snapshot()
+    {
+        var api = new StubSceneDocumentNativeApi();
+        var bridge = new SceneDocumentBridge(api);
+        var opened = await bridge.OpenDefaultAsync("C:\\Projects\\Sample", Guid.NewGuid());
+        var connection = Assert.IsAssignableFrom<ISceneDocumentConnection>(opened.Connection);
+        api.CorruptSnapshotRevision = true;
+
+        var refreshed = await connection.RefreshAsync();
+        await connection.DisposeAsync();
+
+        Assert.False(refreshed.Succeeded);
+        Assert.Equal(SceneDocumentFailureKind.InternalError, refreshed.Failure!.Kind);
+        Assert.Equal(opened.Document, refreshed.Current);
     }
 
     [Fact]
@@ -142,7 +305,7 @@ public sealed class SceneDocumentBridgeTests
     }
 
     [Fact]
-    public void Managed_layout_matches_the_native_document_v2_contract()
+    public void Managed_layout_matches_the_native_document_v3_contract()
     {
         Assert.Equal(8, Marshal.SizeOf<SceneNativeDocumentHandle>());
         Assert.Equal(16, Marshal.SizeOf<SceneNativeTextSpan>());
@@ -154,6 +317,8 @@ public sealed class SceneDocumentBridgeTests
         Assert.Equal(80, Marshal.SizeOf<SceneNativeDocumentSetEntityTransformRequest>());
         Assert.Equal(24, Marshal.SizeOf<SceneNativeDocumentSaveRequest>());
         Assert.Equal(48, Marshal.SizeOf<SceneNativeDocumentOperationResult>());
+        Assert.Equal(16, Marshal.SizeOf<SceneNativeObjectId>());
+        Assert.Equal(160, Marshal.SizeOf<SceneNativeDocumentTransformOperationResult>());
         Assert.Equal(96, Marshal.SizeOf<SceneNativeDocumentEntitySnapshot>());
         Assert.Equal(80, Marshal.SizeOf<SceneNativeDocumentSnapshotResult>());
         Assert.Equal(40, OffsetOf<SceneNativeDocumentSnapshotResult>(
@@ -164,6 +329,10 @@ public sealed class SceneDocumentBridgeTests
             nameof(SceneNativeDocumentEntitySnapshot.RuntimeEntityId)));
         Assert.Equal(80, OffsetOf<SceneNativeDocumentEntitySnapshot>(
             nameof(SceneNativeDocumentEntitySnapshot.MeshAssetGuidUtf8)));
+        Assert.Equal(48, OffsetOf<SceneNativeDocumentTransformOperationResult>(
+            nameof(SceneNativeDocumentTransformOperationResult.BeforeTransform)));
+        Assert.Equal(144, OffsetOf<SceneNativeDocumentTransformOperationResult>(
+            nameof(SceneNativeDocumentTransformOperationResult.MessageUtf8)));
     }
 
     private static int OffsetOf<T>(string propertyName)
@@ -194,7 +363,17 @@ public sealed class SceneDocumentBridgeTests
 
         public bool CorruptOpenReceipt { get; set; }
 
+        public bool CorruptTransformReceipt { get; set; }
+
+        public bool EqualChangedTransformReceipt { get; set; }
+
         public bool RejectMeshCreate { get; set; }
+
+        public bool RejectSnapshot { get; set; }
+
+        public bool RejectNextSnapshot { get; set; }
+
+        public bool CorruptSnapshotRevision { get; set; }
 
         public uint LastCreateMeshAbiVersion { get; private set; }
 
@@ -244,6 +423,21 @@ public sealed class SceneDocumentBridgeTests
             out SceneNativeDocumentSnapshotResult result)
         {
             RecordThread();
+            if (RejectSnapshot || RejectNextSnapshot)
+            {
+                RejectNextSnapshot = false;
+                result = new SceneNativeDocumentSnapshotResult(
+                    SceneNativeStatus.InternalError,
+                    Reserved: 0,
+                    RequiredByteLength: 0,
+                    revision_,
+                    savedRevision_,
+                    EntityCount: 0,
+                    EntitiesOffset: 0,
+                    default,
+                    default);
+                return SceneNativeStatus.InternalError;
+            }
             var sceneIdBytes = Encoding.UTF8.GetBytes(SceneId.ToString("D"));
             var objectIdBytes = objectId_ == Guid.Empty
                 ? []
@@ -299,7 +493,7 @@ public sealed class SceneDocumentBridgeTests
                 SceneNativeStatus.Success,
                 Reserved: 0,
                 (ulong)bytes.Length,
-                revision_,
+                CorruptSnapshotRevision ? 0UL : revision_,
                 savedRevision_,
                 entityCount,
                 EntitiesOffset: 0,
@@ -366,12 +560,31 @@ public sealed class SceneDocumentBridgeTests
             in SceneNativeDocumentSetEntityTransformRequest request,
             nint responseBuffer,
             ulong responseCapacity,
-            out SceneNativeDocumentOperationResult result)
+            out SceneNativeDocumentTransformOperationResult result)
         {
             RecordThread();
+            var before = transform_;
+            var beforeRevision = revision_;
+            var changed = before != request.Transform;
             transform_ = request.Transform;
-            revision_++;
-            result = OperationResult(SceneNativeStatus.Success, revision_, savedRevision_);
+            if (changed)
+            {
+                revision_++;
+            }
+            result = new SceneNativeDocumentTransformOperationResult(
+                SceneNativeStatus.Success,
+                changed ? 1U : 0U,
+                RequiredByteLength: 0,
+                revision_,
+                savedRevision_,
+                EncodeObjectId(objectId_),
+                CorruptTransformReceipt
+                    ? new TransformValue(new Float3(9, 9, 9), Quaternion.Identity, Float3.One)
+                    : EqualChangedTransformReceipt ? request.Transform : before,
+                transform_,
+                beforeRevision,
+                revision_,
+                default);
             return SceneNativeStatus.Success;
         }
 
@@ -397,11 +610,24 @@ public sealed class SceneDocumentBridgeTests
             CallThreadIds.Add(thread);
         }
 
+        public void AdvanceExternalSnapshot(Guid objectId, string name)
+        {
+            objectId_ = objectId;
+            name_ = name;
+            revision_++;
+        }
+
         private static SceneNativeDocumentOperationResult OperationResult(
             SceneNativeStatus status,
             ulong revision,
             ulong savedRevision) =>
             new(status, Reserved: 0, RequiredByteLength: 0, revision, savedRevision, default);
+
+        private static SceneNativeObjectId EncodeObjectId(Guid objectId)
+        {
+            var bytes = Convert.FromHexString(objectId.ToString("N"));
+            return MemoryMarshal.Read<SceneNativeObjectId>(bytes);
+        }
 
         private static SceneNativeTextSpan Append(byte[] target, ref int cursor, byte[] value)
         {

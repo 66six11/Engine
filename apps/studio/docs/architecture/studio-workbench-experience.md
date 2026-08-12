@@ -7,14 +7,17 @@
 > 描述不再是production事实。
 >
 > 2026-08-04：ADR-0009 已建立不依赖旧 Workbench 的最小真实编辑面：单 SceneDocument、Hierarchy、Inspector、
-> Create Entity、Save 与 dirty。Dock、Project/Asset panel、Scene View、Diagnostics panels、undo/redo 和多文档仍是后续范围。
+> Create Entity、Save、dirty 与 Transform Undo/Redo。Dock、Project/Asset panel、Diagnostics panels 和多文档仍是后续范围。
 >
 > 2026-08-10：#363 只恢复 Hierarchy 的生产 UI 与 snapshot projection；它不恢复本文已 supersede 的旧
 > Workbench/provider/tree framework，也不扩展当前 Scene ABI。
+>
+> 2026-08-12：#373 已由 [ADR-0013](../adr/0013-authoritative-document-transform-undo-redo.md) 固化并实现首个
+> Transform Undo/Redo 与逻辑保存点纵切。
 
-更新日期：2026-08-10
+更新日期：2026-08-12
 
-跟踪：GitHub Epic #119；设计 Slice #337；首个实现 Slice #338；Hierarchy 第一纵切 #363
+跟踪：GitHub Epic #119；设计 Slice #337；首个实现 Slice #338；Hierarchy 第一纵切 #363；Transform Undo/Redo #373
 
 ## 1. 目的
 
@@ -63,12 +66,13 @@ find -> inspect -> select -> edit -> preview -> validate -> commit/undo
   替换后重映射 selection；row/control 不是 scene truth；
 - Create Entity、Save、dirty 标记与关闭重开恢复经过 Application/EngineBridge/native Document 真实链；
 - selection 仅由 ViewModel 按 stable ID remap，不成为 engine truth；
-- Project/Asset panel、Scene View、Console/Problems panel、Command Palette、Dock、多文档、undo/redo 和 Play Mode 尚未实现。
+- Project/Asset panel、Console/Problems panel、Command Palette、Dock、多文档、非 Transform mutation Undo 和 Play Mode 尚未实现。
 
 当前缺口：
 
 1. Project package manifest/lock、细分 loading/degraded 状态和 asset workspace 仍待真实 service。
-2. Inspector 只覆盖名称与 local Transform；component reflection、validation rows、undo/redo 与 multi-selection 未实现。
+2. Inspector 只覆盖名称与 local Transform；Transform 已接入 document Undo/Redo，component reflection、validation rows、
+   其他 mutation Undo 与 multi-selection 未实现。
 3. Scene View、render lane、工具栏和 overlay 未实现。
 4. Console/Problems/Status 的诊断呈现仍要从同一 bounded hub 重建。
 5. Dock、多文档、Play 和 viewport tools 只有相应 owner/command 落地后才能启用。

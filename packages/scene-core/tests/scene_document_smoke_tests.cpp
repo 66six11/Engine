@@ -147,6 +147,33 @@ namespace {
                       "Scene validation accepted more than the bounded entity count.");
     }
 
+    [[nodiscard]] bool testTransformReceipts(
+        asharia::scene::SceneDocument& document, asharia::scene::SceneObjectId objectId,
+        const asharia::scene::SceneDocumentSnapshot& renamed,
+        const asharia::TransformComponent& moved) {
+        auto transformed = document.setEntityTransform(objectId, moved, renamed.revision);
+        if (!transformed) {
+            std::cerr << transformed.error().message << '\n';
+            return false;
+        }
+        if (!expect(transformed->objectId == objectId && transformed->changed &&
+                        transformed->before == renamed.data.entities.front().transform &&
+                        transformed->after == moved &&
+                        transformed->beforeRevision == renamed.revision &&
+                        transformed->afterRevision == renamed.revision + 1U,
+                    "Scene Transform edit did not return an authoritative receipt.")) {
+            return false;
+        }
+        const auto edited = document.snapshot();
+        auto unchanged = document.setEntityTransform(objectId, moved, edited.revision);
+        return expect(unchanged && !unchanged->changed && unchanged->before == moved &&
+                          unchanged->after == moved &&
+                          unchanged->beforeRevision == edited.revision &&
+                          unchanged->afterRevision == edited.revision &&
+                          document.snapshot().revision == edited.revision,
+                      "No-op Scene Transform edit did not preserve revision and values.");
+    }
+
 } // namespace
 
 int main() noexcept {
@@ -171,7 +198,7 @@ int main() noexcept {
         const auto initial = opened->snapshot();
         auto initialFile =
             asharia::core::readFileText(opened->path(), {.maxBytes = 64ULL * 1024ULL});
-        if (!expect(initial.revision == 1U && initial.savedRevision == 1U && !initial.dirty() &&
+        if (!expect(initial.revision == 1U && initial.savedRevision == 1U &&
                         initial.data.sceneId == *sceneId && initial.data.entities.empty() &&
                         std::filesystem::is_regular_file(opened->path()) && initialFile &&
                         initialFile->find("\"schemaVersion\": 2") != std::string::npos,
@@ -184,7 +211,7 @@ int main() noexcept {
             return 1;
         }
         const auto created = opened->snapshot();
-        if (!expect(created.revision == 2U && created.savedRevision == 1U && created.dirty() &&
+        if (!expect(created.revision == 2U && created.savedRevision == 1U &&
                         created.data.entities.size() == 1U,
                     "Entity creation did not advance the authoritative revision.")) {
             return 1;
@@ -204,9 +231,7 @@ int main() noexcept {
             .rotation = {},
             .scale = {.x = 2.0F, .y = 2.0F, .z = 2.0F},
         };
-        if (auto transformed = opened->setEntityTransform(*objectId, moved, renamed.revision);
-            !transformed) {
-            std::cerr << transformed.error().message << '\n';
+        if (!testTransformReceipts(*opened, *objectId, renamed, moved)) {
             return 1;
         }
         const auto edited = opened->snapshot();
@@ -216,7 +241,6 @@ int main() noexcept {
                     "Scene name/Transform edits were not reflected by one snapshot.")) {
             return 1;
         }
-
         if (!testMeshEntityCreation(*opened, *meshObjectId, *meshAsset, edited.revision)) {
             return 1;
         }
@@ -227,7 +251,7 @@ int main() noexcept {
             return 1;
         }
         const auto saved = opened->snapshot();
-        if (!expect(!saved.dirty() && saved.savedRevision == saved.revision,
+        if (!expect(saved.savedRevision == saved.revision,
                     "Scene save did not advance the savepoint.")) {
             return 1;
         }
@@ -239,7 +263,7 @@ int main() noexcept {
         }
         const auto restored = reopened->snapshot();
         if (!expect(restored.data == saved.data && restored.revision == 1U &&
-                        restored.savedRevision == 1U && !restored.dirty() &&
+                        restored.savedRevision == 1U &&
                         restored.runtimeEntities.size() == restored.data.entities.size() &&
                         restored.data.entities[1].mesh.has_value(),
                     "Saved scene data did not survive close/reopen.")) {

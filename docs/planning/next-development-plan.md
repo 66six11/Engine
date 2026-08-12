@@ -10,7 +10,7 @@
 
 - 已有 package-first 基线：`rendergraph` 后端无关，`rhi-vulkan` 不依赖 RenderGraph，Vulkan/RG 翻译在 `rhi_vulkan_rendergraph`，`renderer_basic` 不暴露 Vulkan。
 - Vulkan 主路径已覆盖 dynamic rendering、synchronization2 barrier、descriptor/pipeline wrapper、transient image pool、buffer upload、compute dispatch、offscreen RenderView、Frame Debug replay、editor viewport sampled texture，以及真实 RenderView indexed scene-mesh pass。后者使用 Color/Depth + VertexRead/IndexRead、`DrawIndexed` 和 draw packet context，并支持 per-view Solid/Wireframe。
-- native Dear ImGui Editor 已具备 production workbench shell、Scene View camera/grid/debug-line、Live RG View、Frame Debugger、Asset Browser snapshot-backed catalog 和多项 smoke。Avalonia Studio 已完成 R0 硬切；#352 建立真实 ProjectSession，#353 已接通 `SceneDocument -> EditWorld -> Hierarchy/Inspector -> dirty/save/reopen`。#359 建立 UI-neutral `ViewportSession`、EngineBridge typed frame lease；当前 Viewport V7、Document ABI v2 与 Scene schema v2 均为硬切合同。最近项目、模板、asset catalog、多 viewport/input/preview 与 Play Mode 尚未接入。
+- native Dear ImGui Editor 已具备 production workbench shell、Scene View camera/grid/debug-line、Live RG View、Frame Debugger、Asset Browser snapshot-backed catalog 和多项 smoke。Avalonia Studio 已完成 R0 硬切；#352 建立真实 ProjectSession，#353 已接通 `SceneDocument -> EditWorld -> Hierarchy/Inspector -> dirty/save/reopen`。#359 建立 UI-neutral `ViewportSession`、EngineBridge typed frame lease；当前 Viewport V7、Document ABI v3 与 Scene schema v2 均为硬切合同。最近项目、模板、asset catalog、多 viewport/input/preview 与 Play Mode 尚未接入。
 - `asset-core` / `asset-pipeline` / `project-core` / `material-core` / `scene-core` 已是 CPU/headless 数据模型或 baseline package。#367 已闭合 authored typed mesh GUID -> backend-neutral extraction -> validation product binding -> indexed scene raster -> Frame Debug source revision 的受限路径；通用 mesh product/runtime GPU resource、reload/deferred deletion、material authoring 仍未完成。
 - 当前风险不是缺少大系统名词，而是 route 太多：渲染、资产、scene、editor、material、play/session 必须按可验证切片合流。
 
@@ -61,7 +61,7 @@
 | Renderer / RenderView | 已有 Scene/Game/Preview keyed request、world grid、debug line、offscreen sampled target、多 view diagnostics、真实 validation scene-mesh pass、draw packet context 和 per-view Solid/Wireframe | 把 validation product 升级为 asset/runtime resource-backed mesh/material，再扩 lighting/postprocess feature |
 | Asset / Project | 已有 project descriptor、source scan、metadata discovery、product manifest、dry-run/execute asset-processor baseline、texture product upload smoke、runtime resource handle baseline | texture/mesh importer 最小闭环、dependency invalidation、GPU resource owner 收敛 |
 | Material | 已有 CPU-only signature、descriptor contract、pipeline key hash smoke、renderer binding smoke、shader reflection adapter、CPU-only `.ashader` parser/document diagnostics、generated Slang skeleton、generated Slang compile/reflection smoke、generated entry manifest、CPU-only `.amat` minimal IO、#156 deterministic `.amat` product blob 和 #158 deterministic `.ashader` generated Slang product blob | #163 Slang compile/reflection product、material product dependency invalidation、renderer material product 消费和 editor preview |
-| Scene / Editor | 已有 SceneDocument-owned EditWorld、默认场景持久化、Hierarchy/Inspector、dirty/save/reopen、production workbench shell 与 viewport foundation | #361 首个可见 Scene View 收口；随后补 transaction/Undo、selection outline/gizmo |
+| Scene / Editor | 已有 SceneDocument-owned EditWorld、默认场景持久化、Hierarchy/Inspector、逻辑 dirty/savepoint、Transform Undo/Redo、production workbench shell 与 viewport foundation | 继续补 selection outline/gizmo，并把 typed history 扩到后续 mutation |
 | Workflow / Project | Project fields 完整；#20 是 roadmap/docs sync 入口 | 重复 Project item 候选需单独审查，计划变更后同步 #20 |
 
 ## 当前执行优先级（2026-08-10）
@@ -261,8 +261,8 @@ code-only control composition 与 Asharia 的受限 Code-first schema，不把�
 - #367 的当前实现使用新 package `asharia::scene_rendering`（`scene-core` + `asset-core` + `renderer_basic`）：输入 scene
   revision、object id、transient `EntityId`、TRS、optional typed mesh reference 和 explicit product binding；输出拥有
   生命周期的 immutable `BasicDrawListItem` vector 与逐项 contextual diagnostics。row-major model matrix 是 `T * R * S`。
-- Scene schema v2 / Document ABI v2 是硬切：scene 只持久化 authored mesh GUID/type，不写 runtime entity、product hash/
-  generation、Basic resource/material key 或 GPU handle；不保留 schema/ABI v1 compatibility。
+- Scene schema v2 / Document ABI v3 是硬切：scene 只持久化 authored mesh GUID/type，不写 runtime entity、product hash/
+generation、Basic resource/material key 或 GPU handle；不保留旧 schema/ABI compatibility。
 - #366 已把该合同接到真实 `builtin.render-view-scene-mesh`：RenderGraph 显式声明 Color/Depth attachment、
   VertexRead/IndexRead buffer 和 `DrawIndexed`，Vulkan execution event 保留 draw item index 与
   `BasicDrawPacketContext`；Solid/Wireframe 是 per-view policy。

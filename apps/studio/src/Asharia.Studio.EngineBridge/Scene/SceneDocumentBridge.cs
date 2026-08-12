@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
@@ -392,6 +393,52 @@ public sealed class SceneDocumentBridge : ISceneDocumentGateway
         }
     }
 
+    private unsafe NativeTransformOperationOutcome InvokeTransformOperation(
+        NativeTransformOperationCall call)
+    {
+        var response = new byte[InitialResponseCapacity];
+        while (true)
+        {
+            SceneNativeStatus status;
+            SceneNativeDocumentTransformOperationResult result;
+            fixed (byte* responsePointer = response)
+            {
+                status = call(
+                    (nint)responsePointer,
+                    (ulong)response.Length,
+                    out result);
+            }
+            if (status == SceneNativeStatus.BufferTooSmall)
+            {
+                if (!TryGrowResponse(response, result.RequiredByteLength, out response))
+                {
+                    return NativeTransformOperationOutcome.Failed(InvalidNativeResponse(
+                        "The scene adapter returned an invalid Transform response size."));
+                }
+                continue;
+            }
+
+            var validation = ValidateTransformOperation(status, result, response);
+            if (validation is not null)
+            {
+                return NativeTransformOperationOutcome.Failed(
+                    validation,
+                    result.Revision,
+                    result.SavedRevision);
+            }
+            var message = Decode(response, result.MessageUtf8, result.RequiredByteLength);
+            return status == SceneNativeStatus.Success
+                ? NativeTransformOperationOutcome.Success(
+                    result.Revision,
+                    result.SavedRevision,
+                    result)
+                : NativeTransformOperationOutcome.Failed(
+                    Failure(status, message),
+                    result.Revision,
+                    result.SavedRevision);
+        }
+    }
+
     private static SceneDocumentFailure? ValidateOperation(
         SceneNativeStatus status,
         SceneNativeDocumentOperationResult result,
@@ -428,6 +475,81 @@ public sealed class SceneDocumentBridge : ISceneDocumentGateway
                 $"The scene adapter returned an invalid operation message: {exception.Message}");
         }
         return null;
+    }
+
+    private static SceneDocumentFailure? ValidateTransformOperation(
+        SceneNativeStatus status,
+        SceneNativeDocumentTransformOperationResult result,
+        byte[] response)
+    {
+        if (!Enum.IsDefined(status) || result.OperationStatus != status ||
+            result.RequiredByteLength > (ulong)response.Length)
+        {
+            return InvalidNativeResponse(
+                "The scene adapter returned inconsistent Transform operation metadata.");
+        }
+        if (status == SceneNativeStatus.Success)
+        {
+            if (result.Changed > 1 || result.Revision == 0 || result.SavedRevision == 0 ||
+                result.SavedRevision > result.Revision || result.MessageUtf8.ByteLength != 0 ||
+                result.BeforeRevision == 0 || result.AfterRevision != result.Revision ||
+                (result.Changed == 0
+                    ? result.AfterRevision != result.BeforeRevision ||
+                      result.BeforeTransform != result.AfterTransform
+                    : result.BeforeRevision == ulong.MaxValue ||
+                      result.AfterRevision != result.BeforeRevision + 1 ||
+                      result.BeforeTransform == result.AfterTransform))
+            {
+                return InvalidNativeResponse(
+                    "The scene adapter returned an invalid authoritative Transform receipt.");
+            }
+            try
+            {
+                ValidateTransform(result.BeforeTransform);
+                ValidateTransform(result.AfterTransform);
+                _ = DecodeNativeObjectId(result.ObjectId);
+            }
+            catch (ArgumentException exception)
+            {
+                return InvalidNativeResponse(
+                    $"The scene adapter returned an invalid Transform receipt: {exception.Message}");
+            }
+        }
+        else if ((result.Revision == 0) != (result.SavedRevision == 0) ||
+                 result.SavedRevision > result.Revision || result.Changed != 0 ||
+                 result.BeforeRevision != 0 || result.AfterRevision != 0 ||
+                 result.ObjectId != default || result.BeforeTransform != default ||
+                 result.AfterTransform != default)
+        {
+            return InvalidNativeResponse(
+                "The scene adapter returned typed Transform receipt data for a failed operation.");
+        }
+        try
+        {
+            _ = Decode(response, result.MessageUtf8, result.RequiredByteLength);
+        }
+        catch (Exception exception) when (
+            exception is ArgumentOutOfRangeException or DecoderFallbackException)
+        {
+            return InvalidNativeResponse(
+                $"The scene adapter returned an invalid Transform message: {exception.Message}");
+        }
+        return null;
+    }
+
+    private static Guid DecodeNativeObjectId(SceneNativeObjectId value)
+    {
+        Span<byte> bytes = stackalloc byte[16];
+        MemoryMarshal.Write(bytes, in value);
+        var text = Convert.ToHexString(bytes);
+        if (!Guid.TryParseExact(
+                $"{text[..8]}-{text[8..12]}-{text[12..16]}-{text[16..20]}-{text[20..32]}",
+                "D",
+                out var objectId) || objectId == Guid.Empty)
+        {
+            throw new ArgumentException("Scene object id is an empty UUID.");
+        }
+        return objectId;
     }
 
     private static string Decode(
@@ -481,6 +603,7 @@ public sealed class SceneDocumentBridge : ISceneDocumentGateway
         SceneNativeStatus.InvalidTransform => SceneDocumentFailureKind.InvalidTransform,
         SceneNativeStatus.InvalidAssetReference =>
             SceneDocumentFailureKind.InvalidAssetReference,
+        SceneNativeStatus.RevisionExhausted => SceneDocumentFailureKind.RevisionExhausted,
         SceneNativeStatus.IoFailure => SceneDocumentFailureKind.IoFailure,
         SceneNativeStatus.UnsupportedAbi => SceneDocumentFailureKind.NativeUnavailable,
         _ => SceneDocumentFailureKind.InternalError,
@@ -506,6 +629,11 @@ public sealed class SceneDocumentBridge : ISceneDocumentGateway
         nint responseBuffer,
         ulong responseCapacity,
         out SceneNativeDocumentOperationResult result);
+
+    private delegate SceneNativeStatus NativeTransformOperationCall(
+        nint responseBuffer,
+        ulong responseCapacity,
+        out SceneNativeDocumentTransformOperationResult result);
 
     private sealed record NativeOpenOutcome(
         SceneNativeDocumentHandle Handle,
@@ -553,6 +681,27 @@ public sealed class SceneDocumentBridge : ISceneDocumentGateway
             new(revision, savedRevision, failure);
     }
 
+    private sealed record NativeTransformOperationOutcome(
+        ulong Revision,
+        ulong SavedRevision,
+        SceneNativeDocumentTransformOperationResult Receipt,
+        SceneDocumentFailure? Failure)
+    {
+        public bool Succeeded => Failure is null;
+
+        public static NativeTransformOperationOutcome Success(
+            ulong revision,
+            ulong savedRevision,
+            SceneNativeDocumentTransformOperationResult receipt) =>
+            new(revision, savedRevision, receipt, Failure: null);
+
+        public static NativeTransformOperationOutcome Failed(
+            SceneDocumentFailure failure,
+            ulong revision = 0,
+            ulong savedRevision = 0) =>
+            new(revision, savedRevision, default, failure);
+    }
+
     private sealed class SceneDocumentConnection : ISceneDocumentConnection
     {
         private readonly SceneDocumentBridge bridge_;
@@ -588,6 +737,14 @@ public sealed class SceneDocumentBridge : ISceneDocumentGateway
             ThrowIfDisposed();
             return new ValueTask<SceneDocumentOperationResult>(lane_.InvokeAsync(
                 () => CreateEntityCore(objectId, name, expectedRevision)));
+        }
+
+        public ValueTask<SceneDocumentOperationResult> RefreshAsync(
+            CancellationToken cancellationToken = default)
+        {
+            ThrowIfDisposed();
+            cancellationToken.ThrowIfCancellationRequested();
+            return new ValueTask<SceneDocumentOperationResult>(lane_.InvokeAsync(RefreshCore));
         }
 
         public ValueTask<SceneDocumentOperationResult> CreateMeshEntityAsync(
@@ -713,6 +870,24 @@ public sealed class SceneDocumentBridge : ISceneDocumentGateway
             }
         }
 
+        private SceneDocumentOperationResult RefreshCore()
+        {
+            try
+            {
+                var snapshot = bridge_.SnapshotNative(handle_, projectRoot_);
+                if (!snapshot.Succeeded)
+                {
+                    return SceneDocumentOperationResult.Failed(current_, snapshot.Failure!);
+                }
+                current_ = snapshot.Document!;
+                return SceneDocumentOperationResult.Success(current_);
+            }
+            catch (Exception exception) when (IsNativeBindingFailure(exception))
+            {
+                return NativeUnavailableCurrent(exception);
+            }
+        }
+
         private unsafe SceneDocumentOperationResult CreateMeshEntityCore(
             Guid objectId,
             string name,
@@ -819,14 +994,18 @@ public sealed class SceneDocumentBridge : ISceneDocumentGateway
                         expectedRevision,
                         new SceneNativeStringView((nint)id, (ulong)objectIdBytes.Length),
                         transform);
-                    return FinishEdit(bridge_.InvokeOperation(
-                        (nint response, ulong capacity,
-                         out SceneNativeDocumentOperationResult result) =>
-                            bridge_.nativeApi_.SetEntityTransform(
-                                in request,
-                                response,
-                                capacity,
-                                out result)));
+                    return FinishTransformEdit(
+                        bridge_.InvokeTransformOperation(
+                            (nint response, ulong capacity,
+                             out SceneNativeDocumentTransformOperationResult result) =>
+                                bridge_.nativeApi_.SetEntityTransform(
+                                    in request,
+                                    response,
+                                    capacity,
+                                    out result)),
+                        objectId,
+                        transform,
+                        expectedRevision);
                 }
             }
             catch (Exception exception) when (IsNativeBindingFailure(exception))
@@ -856,6 +1035,73 @@ public sealed class SceneDocumentBridge : ISceneDocumentGateway
             }
         }
 
+        private SceneDocumentOperationResult FinishTransformEdit(
+            NativeTransformOperationOutcome operation,
+            Guid requestedObjectId,
+            TransformValue requestedTransform,
+            ulong expectedRevision)
+        {
+            var previous = current_;
+            NativeSnapshotOutcome snapshot;
+            try
+            {
+                snapshot = bridge_.SnapshotNative(handle_, projectRoot_);
+            }
+            catch (Exception exception) when (IsNativeBindingFailure(exception))
+            {
+                return UnknownOperationOutcome(
+                    $"The Transform operation completed, but its authoritative snapshot " +
+                    $"could not be read: {exception.Message}");
+            }
+            if (!snapshot.Succeeded)
+            {
+                return UnknownOperationOutcome(
+                    "The Transform operation completed, but its authoritative snapshot " +
+                    $"could not be read: {snapshot.Failure!.Message}");
+            }
+            current_ = snapshot.Document!;
+            if (operation.Revision != 0 &&
+                (operation.Revision != current_.Revision ||
+                 operation.SavedRevision != current_.SavedRevision))
+            {
+                return SceneDocumentOperationResult.Failed(
+                    current_,
+                    InvalidNativeResponse(
+                        "The scene Transform receipt does not match the authoritative snapshot."));
+            }
+            if (!operation.Succeeded)
+            {
+                return SceneDocumentOperationResult.Failed(current_, operation.Failure!);
+            }
+
+            var receipt = operation.Receipt;
+            var objectId = DecodeNativeObjectId(receipt.ObjectId);
+            var previousEntity = previous.Entities.FirstOrDefault(
+                candidate => candidate.ObjectId == objectId);
+            var entity = current_.Entities.FirstOrDefault(candidate => candidate.ObjectId == objectId);
+            if (objectId != requestedObjectId || receipt.BeforeRevision != expectedRevision ||
+                previous.Revision != receipt.BeforeRevision ||
+                receipt.AfterRevision != current_.Revision ||
+                receipt.AfterTransform != requestedTransform ||
+                previousEntity is null || previousEntity.Transform != receipt.BeforeTransform ||
+                entity is null || entity.Transform != receipt.AfterTransform)
+            {
+                return SceneDocumentOperationResult.Failed(
+                    current_,
+                    InvalidNativeResponse(
+                        "The authoritative Transform receipt does not match its scene entity."));
+            }
+            return SceneDocumentOperationResult.Success(
+                current_,
+                new SceneEntityTransformReceipt(
+                    objectId,
+                    receipt.Changed != 0,
+                    receipt.BeforeTransform,
+                    receipt.AfterTransform,
+                    receipt.BeforeRevision,
+                    receipt.AfterRevision));
+        }
+
         private SceneDocumentOperationResult FinishEdit(NativeOperationOutcome operation)
         {
             NativeSnapshotOutcome snapshot;
@@ -865,11 +1111,15 @@ public sealed class SceneDocumentBridge : ISceneDocumentGateway
             }
             catch (Exception exception) when (IsNativeBindingFailure(exception))
             {
-                return NativeUnavailableCurrent(exception);
+                return UnknownOperationOutcome(
+                    $"The scene operation completed, but its authoritative snapshot " +
+                    $"could not be read: {exception.Message}");
             }
             if (!snapshot.Succeeded)
             {
-                return SceneDocumentOperationResult.Failed(current_, snapshot.Failure!);
+                return UnknownOperationOutcome(
+                    "The scene operation completed, but its authoritative snapshot " +
+                    $"could not be read: {snapshot.Failure!.Message}");
             }
             current_ = snapshot.Document!;
             if (operation.Revision != 0 &&
@@ -897,6 +1147,9 @@ public sealed class SceneDocumentBridge : ISceneDocumentGateway
             FailedCurrent(
                 SceneDocumentFailureKind.NativeUnavailable,
                 $"The canonical scene adapter is unavailable: {exception.Message}");
+
+        private SceneDocumentOperationResult UnknownOperationOutcome(string message) =>
+            FailedCurrent(SceneDocumentFailureKind.AuthoritativeStateUnknown, message);
 
         private void ThrowIfDisposed() =>
             ObjectDisposedException.ThrowIf(Volatile.Read(ref disposeStarted_) != 0, this);

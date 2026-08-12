@@ -4,7 +4,7 @@
 
 #include "asharia/scene/world_native_api.h"
 
-#define ASHARIA_SCENE_DOCUMENT_NATIVE_ABI_VERSION 2U
+#define ASHARIA_SCENE_DOCUMENT_NATIVE_ABI_VERSION 3U
 #define ASHARIA_SCENE_NATIVE_MAX_PROJECT_PATH_UTF8_BYTES 32768U
 
 #if defined(__cplusplus)
@@ -26,6 +26,11 @@ typedef struct AshariaSceneNativeTextSpan {
     uint64_t offset;
     uint64_t byteLength;
 } AshariaSceneNativeTextSpan;
+
+/* Canonical UUID bytes in display order; this is not a platform Guid layout. */
+typedef struct AshariaSceneNativeObjectId {
+    uint8_t bytes[16];
+} AshariaSceneNativeObjectId;
 
 typedef struct AshariaSceneNativeDocumentOpenDefaultRequest {
     AshariaSceneNativeAbiHeader header;
@@ -91,6 +96,28 @@ typedef struct AshariaSceneNativeDocumentOperationResult {
     AshariaSceneNativeTextSpan messageUtf8;
 } AshariaSceneNativeDocumentOperationResult;
 
+/*
+ * Successful Transform edits return an authoritative immutable receipt. The
+ * objectId contains canonical UUID bytes in display order. A no-op
+ * has changed == 0, identical before/after values, and identical revisions.
+ * A changed edit has afterRevision == beforeRevision + 1. Typed receipt fields
+ * are zero on failure; revision/savedRevision still report authoritative
+ * current document state when the document handle can be resolved.
+ */
+typedef struct AshariaSceneNativeDocumentTransformOperationResult {
+    AshariaSceneNativeStatus operationStatus;
+    uint32_t changed;
+    uint64_t requiredBufferSize;
+    uint64_t revision;
+    uint64_t savedRevision;
+    AshariaSceneNativeObjectId objectId;
+    AshariaSceneNativeTransform beforeTransform;
+    AshariaSceneNativeTransform afterTransform;
+    uint64_t beforeRevision;
+    uint64_t afterRevision;
+    AshariaSceneNativeTextSpan messageUtf8;
+} AshariaSceneNativeDocumentTransformOperationResult;
+
 typedef struct AshariaSceneNativeDocumentEntitySnapshot {
     AshariaSceneNativeTextSpan objectIdUtf8;
     AshariaSceneNativeTextSpan nameUtf8;
@@ -150,7 +177,7 @@ ASHARIA_SCENE_NATIVE_API AshariaSceneNativeStatus ASHARIA_SCENE_NATIVE_CALL
 asharia_scene_document_set_entity_transform(
     const AshariaSceneNativeDocumentSetEntityTransformRequest* request, void* responseBuffer,
     uint64_t responseCapacity,
-    AshariaSceneNativeDocumentOperationResult* result) ASHARIA_SCENE_NATIVE_NOEXCEPT;
+    AshariaSceneNativeDocumentTransformOperationResult* result) ASHARIA_SCENE_NATIVE_NOEXCEPT;
 
 ASHARIA_SCENE_NATIVE_API AshariaSceneNativeStatus ASHARIA_SCENE_NATIVE_CALL
 asharia_scene_document_save(const AshariaSceneNativeDocumentSaveRequest* request,

@@ -5,7 +5,7 @@ namespace Asharia.Studio.EngineBridge.Scene.Abi;
 
 internal static class SceneDocumentNativeAbi
 {
-    public const uint Version = 2;
+    public const uint Version = 3;
 }
 
 [StructLayout(LayoutKind.Explicit, Size = 8)]
@@ -20,6 +20,11 @@ internal readonly record struct SceneNativeDocumentHandle(
 internal readonly record struct SceneNativeTextSpan(
     [field: FieldOffset(0)] ulong ByteOffset,
     [field: FieldOffset(8)] ulong ByteLength);
+
+[StructLayout(LayoutKind.Explicit, Size = 16)]
+internal readonly record struct SceneNativeObjectId(
+    [field: FieldOffset(0)] ulong FirstEightBytes,
+    [field: FieldOffset(8)] ulong LastEightBytes);
 
 [StructLayout(LayoutKind.Explicit, Size = 40)]
 internal readonly record struct SceneNativeDocumentOpenDefaultRequest(
@@ -113,6 +118,20 @@ internal readonly record struct SceneNativeDocumentOperationResult(
     [field: FieldOffset(16)] ulong Revision,
     [field: FieldOffset(24)] ulong SavedRevision,
     [field: FieldOffset(32)] SceneNativeTextSpan MessageUtf8);
+
+[StructLayout(LayoutKind.Explicit, Size = 160)]
+internal readonly record struct SceneNativeDocumentTransformOperationResult(
+    [field: FieldOffset(0)] SceneNativeStatus OperationStatus,
+    [field: FieldOffset(4)] uint Changed,
+    [field: FieldOffset(8)] ulong RequiredByteLength,
+    [field: FieldOffset(16)] ulong Revision,
+    [field: FieldOffset(24)] ulong SavedRevision,
+    [field: FieldOffset(32)] SceneNativeObjectId ObjectId,
+    [field: FieldOffset(48)] TransformValue BeforeTransform,
+    [field: FieldOffset(88)] TransformValue AfterTransform,
+    [field: FieldOffset(128)] ulong BeforeRevision,
+    [field: FieldOffset(136)] ulong AfterRevision,
+    [field: FieldOffset(144)] SceneNativeTextSpan MessageUtf8);
 
 [StructLayout(LayoutKind.Explicit, Size = 96)]
 internal readonly record struct SceneNativeDocumentEntitySnapshot(

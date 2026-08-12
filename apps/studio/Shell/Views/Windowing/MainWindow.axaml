@@ -127,7 +127,7 @@
                         Background="{DynamicResource EditorBrushBase01}"
                         BorderBrush="{DynamicResource EditorBrushDivider}"
                         BorderThickness="0,0,0,1">
-                    <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,*,Auto" ColumnSpacing="6">
+                    <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,*,Auto" ColumnSpacing="6">
                         <Button x:Name="CreateEntityButton"
                                 AutomationProperties.Name="Create entity"
                                 Command="{Binding CreateEntityCommand}"
@@ -142,21 +142,33 @@
                                 AutomationProperties.Name="Save scene"
                                 Command="{Binding SaveSceneCommand}"
                                 Content="Save" />
-                        <Button Grid.Column="3"
+                        <Button x:Name="UndoSceneButton"
+                                Grid.Column="3"
+                                AutomationProperties.Name="{Binding UndoSceneLabel}"
+                                Command="{Binding UndoSceneCommand}"
+                                Content="{Binding UndoSceneLabel}"
+                                ToolTip.Tip="Ctrl/Cmd+Z" />
+                        <Button x:Name="RedoSceneButton"
+                                Grid.Column="4"
+                                AutomationProperties.Name="{Binding RedoSceneLabel}"
+                                Command="{Binding RedoSceneCommand}"
+                                Content="{Binding RedoSceneLabel}"
+                                ToolTip.Tip="Ctrl/Cmd+Y · Ctrl/Cmd+Shift+Z" />
+                        <Button Grid.Column="5"
                                 AutomationProperties.Name="Open another project"
                                 Command="{Binding OpenProjectCommand}"
                                 Content="Open" />
-                        <Button Grid.Column="4"
+                        <Button Grid.Column="6"
                                 AutomationProperties.Name="Close project"
                                 Command="{Binding CloseProjectCommand}"
                                 Content="Close" />
-                        <TextBlock Grid.Column="5"
+                        <TextBlock Grid.Column="7"
                                    Margin="10,0"
                                    VerticalAlignment="Center"
                                    FontWeight="SemiBold"
                                    Text="{Binding ProjectStateText}" />
                         <TextBlock x:Name="DocumentStateText"
-                                   Grid.Column="6"
+                                   Grid.Column="8"
                                    AutomationProperties.AutomationId="StudioDocumentState"
                                    AutomationProperties.Name="{Binding DocumentStateText}"
                                    AutomationProperties.ControlTypeOverride="StatusBar"

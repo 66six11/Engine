@@ -24,6 +24,12 @@ public sealed class MainWindowXamlTests
         Assert.Contains("Command=\"{Binding CreateMeshEntityCommand}\"", xaml);
         Assert.Contains("Content=\"+ Mesh\"", xaml);
         Assert.Contains("Command=\"{Binding SaveSceneCommand}\"", xaml);
+        Assert.Contains("x:Name=\"UndoSceneButton\"", xaml);
+        Assert.Contains("Command=\"{Binding UndoSceneCommand}\"", xaml);
+        Assert.Contains("Content=\"{Binding UndoSceneLabel}\"", xaml);
+        Assert.Contains("x:Name=\"RedoSceneButton\"", xaml);
+        Assert.Contains("Command=\"{Binding RedoSceneCommand}\"", xaml);
+        Assert.Contains("Content=\"{Binding RedoSceneLabel}\"", xaml);
         Assert.Contains("Text=\"{Binding DocumentStateText}\"", xaml);
         Assert.Contains("DataContext=\"{Binding DockWorkspace}\"", xaml);
         Assert.Contains("EditorDockWorkspaceView", xaml, StringComparison.Ordinal);

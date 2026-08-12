@@ -63,6 +63,14 @@ internal sealed class TestProjectSession : IProjectSession
         SaveHandler
     { get; set; }
 
+    public Func<CancellationToken, ValueTask<ProjectSessionOperationResult>>?
+        UndoHandler
+    { get; set; }
+
+    public Func<CancellationToken, ValueTask<ProjectSessionOperationResult>>?
+        RedoHandler
+    { get; set; }
+
     public int DisposeCount { get; private set; }
 
     public ValueTask<ProjectSessionOperationResult> CreateProjectAsync(
@@ -115,6 +123,16 @@ internal sealed class TestProjectSession : IProjectSession
         CancellationToken cancellationToken = default) =>
         SaveHandler?.Invoke(cancellationToken)
         ?? throw new InvalidOperationException("No save-scene result was configured.");
+
+    public ValueTask<ProjectSessionOperationResult> UndoAsync(
+        CancellationToken cancellationToken = default) =>
+        UndoHandler?.Invoke(cancellationToken)
+        ?? throw new InvalidOperationException("No Undo result was configured.");
+
+    public ValueTask<ProjectSessionOperationResult> RedoAsync(
+        CancellationToken cancellationToken = default) =>
+        RedoHandler?.Invoke(cancellationToken)
+        ?? throw new InvalidOperationException("No Redo result was configured.");
 
     public ValueTask DisposeAsync()
     {

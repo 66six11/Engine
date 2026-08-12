@@ -51,7 +51,13 @@ public sealed class StudioInspectorPanelHeadlessTests
                     initial.Document!.Path,
                     revision: 2,
                     savedRevision: 1,
-                    entities: [transformedEntity]));
+                    entities: [transformedEntity]),
+            new ContentStateId(1),
+            new ContentStateId(1),
+            canUndo: false,
+            canRedo: false,
+            undoLabel: null,
+            redoLabel: null);
             projectSession.Publish(
                 updated,
                 editContext.EditId,
@@ -186,7 +192,13 @@ public sealed class StudioInspectorPanelHeadlessTests
                 "C:\\Projects\\Sample\\Assets\\Scenes\\Default.asharia.scene.json",
                 revision,
                 savedRevision: 1,
-                entities));
+                entities),
+            new ContentStateId(1),
+            new ContentStateId(1),
+            canUndo: false,
+            canRedo: false,
+            undoLabel: null,
+            redoLabel: null);
 
     private static async Task WaitUntilAsync(Func<bool> condition)
     {

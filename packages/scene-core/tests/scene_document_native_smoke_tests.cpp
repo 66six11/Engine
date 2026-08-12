@@ -1,4 +1,5 @@
-﻿#include <chrono>
+﻿#include <array>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -149,6 +150,74 @@ namespace {
                       "Mesh entity snapshot did not preserve its runtime and asset identities.");
     }
 
+    [[nodiscard]] bool rejectSupersededDocumentAbi(
+        const AshariaSceneNativeDocumentOpenDefaultRequest& openRequest) {
+        auto previous = openRequest;
+        previous.header.abiVersion = ASHARIA_SCENE_DOCUMENT_NATIVE_ABI_VERSION - 1U;
+        AshariaSceneNativeDocumentHandle document{};
+        AshariaSceneNativeDocumentOperationResult result{};
+        return expect(asharia_scene_document_open_default(&previous, &document, nullptr, 0U,
+                                                          &result) ==
+                              AshariaSceneNativeStatus_UnsupportedAbi &&
+                          document.index == 0U && document.generation == 0U,
+                      "Document ABI v3 accepted the superseded Document ABI v2 request.");
+    }
+
+    [[nodiscard]] bool testTransformReceipts(
+        AshariaSceneNativeDocumentHandle document, std::vector<std::byte>& errorBuffer) {
+        const AshariaSceneNativeDocumentSetEntityTransformRequest request{
+            .header = header(sizeof(AshariaSceneNativeDocumentSetEntityTransformRequest)),
+            .document = document,
+            .expectedRevision = 3U,
+            .objectIdUtf8 = view(kObjectId),
+            .transform = {.position = {4.0F, 5.0F, 6.0F},
+                          .rotation = {0.0F, 0.0F, 0.0F, 1.0F},
+                          .scale = {1.0F, 2.0F, 3.0F}},
+        };
+        AshariaSceneNativeDocumentTransformOperationResult transformed{};
+        constexpr std::array<std::uint8_t, 16> kObjectIdBytes{
+            0xaaU, 0xaaU, 0xaaU, 0xaaU, 0xbbU, 0xbbU, 0xccU, 0xccU,
+            0xddU, 0xddU, 0xeeU, 0xeeU, 0xeeU, 0xeeU, 0xeeU, 0xeeU};
+        if (!expect(asharia_scene_document_set_entity_transform(
+                        &request, errorBuffer.data(), errorBuffer.size(), &transformed) ==
+                            AshariaSceneNativeStatus_Success &&
+                        transformed.revision == 4U && transformed.changed == 1U &&
+                        transformed.beforeRevision == 3U && transformed.afterRevision == 4U &&
+                        std::memcmp(transformed.objectId.bytes, kObjectIdBytes.data(),
+                                    kObjectIdBytes.size()) == 0 &&
+                        transformed.beforeTransform.scale.x == 1.0F &&
+                        transformed.afterTransform.position.x == 4.0F &&
+                        snapshotDocument(document, 4U, 1U, kName),
+                    "Native scene Transform edit did not return its authoritative receipt.")) {
+            return false;
+        }
+
+        auto staleRequest = request;
+        staleRequest.expectedRevision = 3U;
+        AshariaSceneNativeDocumentTransformOperationResult stale{};
+        if (!expect(asharia_scene_document_set_entity_transform(
+                        &staleRequest, errorBuffer.data(), errorBuffer.size(), &stale) ==
+                            AshariaSceneNativeStatus_RevisionConflict &&
+                        stale.revision == 4U && stale.savedRevision == 1U && stale.changed == 0U &&
+                        stale.beforeRevision == 0U && stale.afterRevision == 0U &&
+                        stale.messageUtf8.byteLength != 0U,
+                    "Failed native Transform edit exposed typed receipt state.")) {
+            return false;
+        }
+
+        auto unchangedRequest = request;
+        unchangedRequest.expectedRevision = 4U;
+        AshariaSceneNativeDocumentTransformOperationResult unchanged{};
+        return expect(asharia_scene_document_set_entity_transform(
+                          &unchangedRequest, errorBuffer.data(), errorBuffer.size(), &unchanged) ==
+                          AshariaSceneNativeStatus_Success &&
+                          unchanged.changed == 0U && unchanged.revision == 4U &&
+                          unchanged.beforeRevision == 4U && unchanged.afterRevision == 4U &&
+                          unchanged.beforeTransform.position.x ==
+                              unchanged.afterTransform.position.x,
+                      "Native no-op Transform receipt did not preserve its revision and values.");
+    }
+
 } // namespace
 
 int main() noexcept {
@@ -168,7 +237,10 @@ int main() noexcept {
                                                         nullptr, 0U, &legacyAbiResult) ==
                             AshariaSceneNativeStatus_UnsupportedAbi &&
                         legacyAbiDocument.index == 0U && legacyAbiDocument.generation == 0U,
-                    "Document ABI v2 accepted a World ABI v1 request.")) {
+                    "Document ABI v3 accepted a World ABI v1 request.")) {
+            return 1;
+        }
+        if (!rejectSupersededDocumentAbi(openRequest)) {
             return 1;
         }
         AshariaSceneNativeDocumentHandle document{};
@@ -227,21 +299,7 @@ int main() noexcept {
             return 1;
         }
 
-        const AshariaSceneNativeDocumentSetEntityTransformRequest transformRequest{
-            .header = header(sizeof(AshariaSceneNativeDocumentSetEntityTransformRequest)),
-            .document = document,
-            .expectedRevision = 3U,
-            .objectIdUtf8 = view(kObjectId),
-            .transform = {.position = {4.0F, 5.0F, 6.0F},
-                          .rotation = {0.0F, 0.0F, 0.0F, 1.0F},
-                          .scale = {1.0F, 2.0F, 3.0F}},
-        };
-        AshariaSceneNativeDocumentOperationResult transformed{};
-        if (!expect(asharia_scene_document_set_entity_transform(
-                        &transformRequest, errorBuffer.data(), errorBuffer.size(), &transformed) ==
-                            AshariaSceneNativeStatus_Success &&
-                        transformed.revision == 4U && snapshotDocument(document, 4U, 1U, kName),
-                    "Native scene Transform edit was not reflected by snapshot.")) {
+        if (!testTransformReceipts(document, errorBuffer)) {
             return 1;
         }
 

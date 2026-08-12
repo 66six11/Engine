@@ -161,6 +161,8 @@ namespace {
             return AshariaSceneNativeStatus_InvalidTransform;
         case SceneDocumentErrorCode::InvalidAssetReference:
             return AshariaSceneNativeStatus_InvalidAssetReference;
+        case SceneDocumentErrorCode::RevisionExhausted:
+            return AshariaSceneNativeStatus_RevisionExhausted;
         }
         return AshariaSceneNativeStatus_InternalError;
     }
@@ -182,6 +184,37 @@ namespace {
         result.savedRevision = revisionState.savedRevision;
         result.messageUtf8 = {.offset = 0U,
                               .byteLength = static_cast<std::uint64_t>(message.size())};
+        if (responseCapacity < result.requiredBufferSize ||
+            (result.requiredBufferSize != 0U && responseBuffer == nullptr)) {
+            return AshariaSceneNativeStatus_BufferTooSmall;
+        }
+        if (!message.empty()) {
+            std::memcpy(responseBuffer, message.data(), message.size());
+        }
+        return operationStatus;
+    }
+
+    [[nodiscard]] AshariaSceneNativeStatus finishTransformOperation(
+        AshariaSceneNativeStatus operationStatus, std::string_view message,
+        DocumentRevisionState revisionState,
+        const asharia::scene::SceneEntityTransformReceipt* receipt, void* responseBuffer,
+        std::uint64_t responseCapacity,
+        AshariaSceneNativeDocumentTransformOperationResult& result) {
+        result.operationStatus = operationStatus;
+        result.requiredBufferSize = static_cast<std::uint64_t>(message.size());
+        result.revision = revisionState.revision;
+        result.savedRevision = revisionState.savedRevision;
+        result.messageUtf8 = {.offset = 0U,
+                              .byteLength = static_cast<std::uint64_t>(message.size())};
+        if (receipt != nullptr) {
+            result.changed = receipt->changed ? 1U : 0U;
+            std::memcpy(result.objectId.bytes, receipt->objectId.bytes.data(),
+                        receipt->objectId.bytes.size());
+            result.beforeTransform = fromTransform(receipt->before);
+            result.afterTransform = fromTransform(receipt->after);
+            result.beforeRevision = receipt->beforeRevision;
+            result.afterRevision = receipt->afterRevision;
+        }
         if (responseCapacity < result.requiredBufferSize ||
             (result.requiredBufferSize != 0U && responseBuffer == nullptr)) {
             return AshariaSceneNativeStatus_BufferTooSmall;
@@ -381,6 +414,17 @@ namespace {
     static_assert(sizeof(AshariaSceneNativeDocumentSetEntityTransformRequest) == 80U);
     static_assert(sizeof(AshariaSceneNativeDocumentSaveRequest) == 24U);
     static_assert(sizeof(AshariaSceneNativeDocumentOperationResult) == 48U);
+    static_assert(sizeof(AshariaSceneNativeObjectId) == 16U);
+    static_assert(sizeof(AshariaSceneNativeDocumentTransformOperationResult) == 160U);
+    static_assert(offsetof(AshariaSceneNativeDocumentTransformOperationResult, objectId) == 32U);
+    static_assert(offsetof(AshariaSceneNativeDocumentTransformOperationResult, beforeTransform) ==
+                  48U);
+    static_assert(offsetof(AshariaSceneNativeDocumentTransformOperationResult, afterTransform) ==
+                  88U);
+    static_assert(offsetof(AshariaSceneNativeDocumentTransformOperationResult, beforeRevision) ==
+                  128U);
+    static_assert(offsetof(AshariaSceneNativeDocumentTransformOperationResult, messageUtf8) ==
+                  144U);
     static_assert(sizeof(AshariaSceneNativeDocumentEntitySnapshot) == 96U);
     static_assert(sizeof(AshariaSceneNativeDocumentSnapshotResult) == 80U);
 
@@ -696,7 +740,8 @@ AshariaSceneNativeStatus ASHARIA_SCENE_NATIVE_CALL asharia_scene_document_set_en
 
 AshariaSceneNativeStatus ASHARIA_SCENE_NATIVE_CALL asharia_scene_document_set_entity_transform(
     const AshariaSceneNativeDocumentSetEntityTransformRequest* request, void* responseBuffer,
-    std::uint64_t responseCapacity, AshariaSceneNativeDocumentOperationResult* result) noexcept {
+    std::uint64_t responseCapacity,
+    AshariaSceneNativeDocumentTransformOperationResult* result) noexcept {
     if (result == nullptr) {
         return AshariaSceneNativeStatus_InvalidArgument;
     }
@@ -720,29 +765,34 @@ AshariaSceneNativeStatus ASHARIA_SCENE_NATIVE_CALL asharia_scene_document_set_en
     try {
         auto objectId = asharia::scene::parseSceneObjectId(objectIdText);
         if (!objectId) {
-            return finishOperation(AshariaSceneNativeStatus_InvalidObject, objectId.error().message,
-                                   kEmptyRevisionState, responseBuffer, responseCapacity, *result);
+            return finishTransformOperation(AshariaSceneNativeStatus_InvalidObject,
+                                            objectId.error().message, kEmptyRevisionState, nullptr,
+                                            responseBuffer, responseCapacity, *result);
         }
         std::scoped_lock lock{documentRegistry().mutex};
         AshariaSceneNativeStatus status = AshariaSceneNativeStatus_Success;
         DocumentSlot* slot = findDocumentSlot(request->document, status);
         if (slot == nullptr) {
-            return finishOperation(status, "Scene document handle is invalid for this call.",
-                                   kEmptyRevisionState, responseBuffer, responseCapacity, *result);
+            return finishTransformOperation(
+                status, "Scene document handle is invalid for this call.", kEmptyRevisionState,
+                nullptr, responseBuffer, responseCapacity, *result);
         }
         auto changed = slot->document->setEntityTransform(
             *objectId, toTransform(request->transform), request->expectedRevision);
         const auto snapshot = slot->document->snapshot();
         const DocumentRevisionState revisionState{.revision = snapshot.revision,
                                                   .savedRevision = snapshot.savedRevision};
-        return changed ? finishOperation(AshariaSceneNativeStatus_Success, {}, revisionState,
-                                         responseBuffer, responseCapacity, *result)
-                       : finishOperation(statusFromError(changed.error()), changed.error().message,
-                                         revisionState, responseBuffer, responseCapacity, *result);
+        return changed ? finishTransformOperation(AshariaSceneNativeStatus_Success, {},
+                                                  revisionState, &*changed, responseBuffer,
+                                                  responseCapacity, *result)
+                       : finishTransformOperation(statusFromError(changed.error()),
+                                                  changed.error().message, revisionState, nullptr,
+                                                  responseBuffer, responseCapacity, *result);
     } catch (...) {
-        return finishOperation(AshariaSceneNativeStatus_InternalError,
-                               "Native scene Transform edit failed unexpectedly.",
-                               kEmptyRevisionState, responseBuffer, responseCapacity, *result);
+        return finishTransformOperation(
+            AshariaSceneNativeStatus_InternalError,
+            "Native scene Transform edit failed unexpectedly.", kEmptyRevisionState, nullptr,
+            responseBuffer, responseCapacity, *result);
     }
 }
 

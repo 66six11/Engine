@@ -98,7 +98,13 @@ public sealed class StudioShellUiObservationProjectionTests
                     "C:\\Projects\\Sample\\Assets\\Scenes\\Default.asharia.scene.json",
                     revision: 2,
                     savedRevision: 1,
-                    entities: [])));
+                    entities: []),
+            new ContentStateId(2),
+            new ContentStateId(1),
+            canUndo: false,
+            canRedo: false,
+            undoLabel: null,
+            redoLabel: null));
             Dispatcher.UIThread.RunJobs();
             var dirtyTree = await projection.ReadTreeAsync(Request(), CancellationToken.None);
             Assert.True(dirtyTree.Succeeded);

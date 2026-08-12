@@ -62,6 +62,8 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
     private readonly AsyncCommand createEntityCommand_;
     private readonly AsyncCommand createMeshEntityCommand_;
     private readonly AsyncCommand saveSceneCommand_;
+    private readonly AsyncCommand undoSceneCommand_;
+    private readonly AsyncCommand redoSceneCommand_;
     private readonly AsyncCommand applyEntityNameCommand_;
     private readonly AsyncCommand applyEntityTransformCommand_;
     private readonly EditorDockWorkspaceViewModel dockWorkspace_;
@@ -112,6 +114,8 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
             CreateMeshEntityAsync,
             CanEditDocument);
         saveSceneCommand_ = new AsyncCommand(SaveSceneAsync, CanSaveDocument);
+        undoSceneCommand_ = new AsyncCommand(UndoSceneAsync, CanUndoDocument);
+        redoSceneCommand_ = new AsyncCommand(RedoSceneAsync, CanRedoDocument);
         applyEntityNameCommand_ = new AsyncCommand(ApplyEntityNameAsync, CanEditSelection);
         applyEntityTransformCommand_ = new AsyncCommand(
             ApplyEntityTransformAsync,
@@ -139,7 +143,7 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
             {
                 return $"No Document - {project} - Asharia Studio";
             }
-            var dirty = document.IsDirty ? "*" : string.Empty;
+            var dirty = projectSnapshot_.IsDirty ? "*" : string.Empty;
             return $"{dirty}{Path.GetFileName(document.Path)} - {project} - Asharia Studio";
         }
     }
@@ -156,7 +160,15 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
 
     public bool HasNoDocument => projectSnapshot_.Document is null;
 
-    public bool IsDocumentDirty => projectSnapshot_.Document?.IsDirty == true;
+    public bool IsDocumentDirty => projectSnapshot_.IsDirty;
+
+    public string UndoSceneLabel => projectSnapshot_.UndoLabel is { } label
+        ? $"Undo {label}"
+        : "Undo";
+
+    public string RedoSceneLabel => projectSnapshot_.RedoLabel is { } label
+        ? $"Redo {label}"
+        : "Redo";
 
     public bool HasSelection => SelectedEntity is not null;
 
@@ -170,7 +182,7 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
 
     public string DocumentStateText => projectSnapshot_.Document is { } document
         ? $"{Path.GetFileName(document.Path)} · revision {document.Revision} · " +
-          (document.IsDirty ? "Unsaved" : "Saved")
+          (projectSnapshot_.IsDirty ? "Unsaved" : "Saved")
         : "No Document";
 
     public string DocumentPathText => projectSnapshot_.Document?.Path ?? string.Empty;
@@ -283,6 +295,8 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
     public ICommand CreateEntityCommand => createEntityCommand_;
     public ICommand CreateMeshEntityCommand => createMeshEntityCommand_;
     public ICommand SaveSceneCommand => saveSceneCommand_;
+    public ICommand UndoSceneCommand => undoSceneCommand_;
+    public ICommand RedoSceneCommand => redoSceneCommand_;
     public ICommand ApplyEntityNameCommand => applyEntityNameCommand_;
     public ICommand ApplyEntityTransformCommand => applyEntityTransformCommand_;
     public EditorDockWorkspaceViewModel DockWorkspace => dockWorkspace_;
@@ -393,6 +407,12 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
 
     private bool CanSaveDocument() => CanEditDocument() && IsDocumentDirty;
 
+    private bool CanUndoDocument() =>
+        CanEditDocument() && projectSnapshot_.CanUndo;
+
+    private bool CanRedoDocument() =>
+        CanEditDocument() && projectSnapshot_.CanRedo;
+
     private bool CanEditSelection() => CanEditDocument() && HasSelection;
 
     private async Task CreateProjectAsync()
@@ -464,6 +484,14 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
     private Task SaveSceneAsync() =>
         RunProjectOperationAsync(async token =>
             await projectSession_.SaveSceneAsync(token));
+
+    private Task UndoSceneAsync() =>
+        RunProjectOperationAsync(async token =>
+            await projectSession_.UndoAsync(token));
+
+    private Task RedoSceneAsync() =>
+        RunProjectOperationAsync(async token =>
+            await projectSession_.RedoAsync(token));
 
     private Task ApplyEntityNameAsync()
     {
@@ -664,6 +692,8 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
         OnPropertyChanged(nameof(HasDocument));
         OnPropertyChanged(nameof(HasNoDocument));
         OnPropertyChanged(nameof(IsDocumentDirty));
+        OnPropertyChanged(nameof(UndoSceneLabel));
+        OnPropertyChanged(nameof(RedoSceneLabel));
         OnPropertyChanged(nameof(ProjectStateText));
         OnPropertyChanged(nameof(ProjectPathText));
         OnPropertyChanged(nameof(DocumentStateText));
@@ -932,6 +962,8 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
         createEntityCommand_.RaiseCanExecuteChanged();
         createMeshEntityCommand_.RaiseCanExecuteChanged();
         saveSceneCommand_.RaiseCanExecuteChanged();
+        undoSceneCommand_.RaiseCanExecuteChanged();
+        redoSceneCommand_.RaiseCanExecuteChanged();
         applyEntityNameCommand_.RaiseCanExecuteChanged();
         applyEntityTransformCommand_.RaiseCanExecuteChanged();
     }

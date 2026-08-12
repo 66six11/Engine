@@ -12,9 +12,16 @@ public sealed class MainWindowSourceTests
         var source = LoadSource("Shell", "Views", "Windowing", "MainWindow.axaml.cs");
 
         Assert.Contains("InitializeComponent();", source, StringComparison.Ordinal);
+        Assert.Contains("OnUnhandledKeyDown", source, StringComparison.Ordinal);
+        Assert.Contains("FocusManager?.GetFocusedElement() is TextBox", source, StringComparison.Ordinal);
+        Assert.Contains("KeyModifiers.Control | KeyModifiers.Meta", source, StringComparison.Ordinal);
+        Assert.Contains("viewModel.UndoSceneCommand", source, StringComparison.Ordinal);
+        Assert.Contains("viewModel.RedoSceneCommand", source, StringComparison.Ordinal);
         Assert.DoesNotContain("DispatcherTimer", source, StringComparison.Ordinal);
         Assert.DoesNotContain("P/Invoke", source, StringComparison.Ordinal);
         Assert.DoesNotContain("Native", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("OperatingSystem.", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("Win32", source, StringComparison.Ordinal);
         Assert.DoesNotContain("MainWindowViewModel", source, StringComparison.Ordinal);
     }
 

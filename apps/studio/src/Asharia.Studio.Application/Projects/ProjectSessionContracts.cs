@@ -20,6 +20,11 @@ public readonly record struct ProjectEditId(Guid Value)
     public static ProjectEditId CreateNew() => new(Guid.NewGuid());
 }
 
+public readonly record struct ContentStateId(ulong Value)
+{
+    public bool IsValid => Value != 0;
+}
+
 public readonly record struct ProjectSessionEditContext(
     ProjectEditId EditId,
     ulong ExpectedRevision);
@@ -83,7 +88,13 @@ public sealed record ProjectSessionSnapshot
     private ProjectSessionSnapshot(
         ProjectSessionState state,
         ActiveProjectSnapshot? project,
-        SceneDocumentSnapshot? document)
+        SceneDocumentSnapshot? document,
+        ContentStateId currentContentStateId,
+        ContentStateId savedContentStateId,
+        bool canUndo,
+        bool canRedo,
+        string? undoLabel,
+        string? redoLabel)
     {
         if (state == ProjectSessionState.Ready &&
             (project is null || document is null))
@@ -99,14 +110,56 @@ public sealed record ProjectSessionSnapshot
                 "A project-free session must not contain a scene document.",
                 nameof(document));
         }
+        if (state == ProjectSessionState.Ready &&
+            (!currentContentStateId.IsValid || !savedContentStateId.IsValid))
+        {
+            throw new ArgumentException(
+                "A ready project session requires valid current and saved content state ids.",
+                nameof(currentContentStateId));
+        }
+        if (state == ProjectSessionState.NoProject &&
+            (currentContentStateId.IsValid || savedContentStateId.IsValid ||
+             canUndo || canRedo || undoLabel is not null || redoLabel is not null))
+        {
+            throw new ArgumentException(
+                "A project-free session cannot contain document history state.",
+                nameof(currentContentStateId));
+        }
+        if (canUndo != !string.IsNullOrWhiteSpace(undoLabel))
+        {
+            throw new ArgumentException(
+                "An Undo label is required exactly when Undo is available.",
+                nameof(undoLabel));
+        }
+        if (canRedo != !string.IsNullOrWhiteSpace(redoLabel))
+        {
+            throw new ArgumentException(
+                "A Redo label is required exactly when Redo is available.",
+                nameof(redoLabel));
+        }
 
         State = state;
         Project = project;
         Document = document;
+        CurrentContentStateId = currentContentStateId;
+        SavedContentStateId = savedContentStateId;
+        CanUndo = canUndo;
+        CanRedo = canRedo;
+        UndoLabel = undoLabel;
+        RedoLabel = redoLabel;
     }
 
     public static ProjectSessionSnapshot NoProject { get; } =
-        new(ProjectSessionState.NoProject, project: null, document: null);
+        new(
+            ProjectSessionState.NoProject,
+            project: null,
+            document: null,
+            currentContentStateId: default,
+            savedContentStateId: default,
+            canUndo: false,
+            canRedo: false,
+            undoLabel: null,
+            redoLabel: null);
 
     public ProjectSessionState State { get; }
 
@@ -116,13 +169,43 @@ public sealed record ProjectSessionSnapshot
 
     public bool IsReady => State == ProjectSessionState.Ready;
 
+    public ContentStateId CurrentContentStateId { get; }
+
+    public ContentStateId SavedContentStateId { get; }
+
+    public bool IsDirty =>
+        IsReady && CurrentContentStateId != SavedContentStateId;
+
+    public bool CanUndo { get; }
+
+    public bool CanRedo { get; }
+
+    public string? UndoLabel { get; }
+
+    public string? RedoLabel { get; }
+
     public static ProjectSessionSnapshot Ready(
         ActiveProjectSnapshot project,
-        SceneDocumentSnapshot document)
+        SceneDocumentSnapshot document,
+        ContentStateId currentContentStateId,
+        ContentStateId savedContentStateId,
+        bool canUndo,
+        bool canRedo,
+        string? undoLabel,
+        string? redoLabel)
     {
         ArgumentNullException.ThrowIfNull(project);
         ArgumentNullException.ThrowIfNull(document);
-        return new ProjectSessionSnapshot(ProjectSessionState.Ready, project, document);
+        return new ProjectSessionSnapshot(
+            ProjectSessionState.Ready,
+            project,
+            document,
+            currentContentStateId,
+            savedContentStateId,
+            canUndo,
+            canRedo,
+            undoLabel,
+            redoLabel);
     }
 }
 
@@ -302,6 +385,12 @@ public interface IProjectSession : IAsyncDisposable
         Guid objectId,
         TransformValue transform,
         ProjectSessionEditContext context,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<ProjectSessionOperationResult> UndoAsync(
+        CancellationToken cancellationToken = default);
+
+    ValueTask<ProjectSessionOperationResult> RedoAsync(
         CancellationToken cancellationToken = default);
 
     ValueTask<ProjectSessionOperationResult> SaveSceneAsync(

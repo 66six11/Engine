@@ -144,7 +144,7 @@ packet 可以拥有 `std::string`、`std::vector` 和纯值字段；不得保留
 RenderThread 内部可以从 owning packet 临时构造借用 view，但该 view 不得越过当前 dispatch。
 
 V7 packet 带 view-local FOV axis、immutable scene `sourceRevision` 和 backend-neutral `scene-rendering` 的抽取结果；它不携带 scene/runtime
-指针、asset importer state、resource registry reference 或 GPU key。Document ABI v2 与 V7 是硬切边界：旧 v1
+指针、asset importer state、resource registry reference 或 GPU key。Document ABI v3 与 V7 是硬切边界：旧 v1/v2
 document 及 v1--v6 viewport packet 不被转换或降级消费。mesh binding missing/wrong-kind/stale 是逐 item 的 fail-closed
 no-draw diagnostics；packet 本身 malformed 则拒绝整帧，scheduler 不录制部分内容。
 

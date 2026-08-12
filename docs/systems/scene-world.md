@@ -409,25 +409,27 @@ deterministic result ordering（需要时显式 sort）和 Renderer/Physics acce
 
 ## Editor Transaction
 
-所有 editor 修改都走 transaction：
+Studio 第一个 authoritative document history 的 governing contract 见
+[`ADR-0013`](../../apps/studio/docs/adr/0013-authoritative-document-transform-undo-redo.md)。本节描述 Scene/World
+未来扩展 transaction 时必须保持的边界，不表示下列通用 command 类型当前已经实现。
+
+所有 persistent editor 修改最终都应走 typed transaction intent：
 
 ```mermaid
 sequenceDiagram
     participant UI as Inspector/Gizmo/Hierarchy
-    participant Cmd as EditorCommand
-    participant Tx as TransactionStack
+    participant Session as ProjectSession
+    participant History as Document History
     participant World as World
-    participant Journal as ChangeJournal
 
-    UI->>Cmd: create SetField / Reparent / AddComponent
-    Cmd->>Tx: begin transaction
-    Tx->>World: validate + apply
-    World->>Journal: record changes
-    Tx->>Tx: store undo payload
-    Tx-->>UI: result or diagnostic
+    UI->>Session: typed intent + stable IDs + expected revision
+    Session->>World: validate + apply typed mutation
+    World-->>Session: authoritative receipt + snapshot
+    Session->>History: commit immutable before/after after success
+    Session-->>UI: snapshot + history/savepoint state or diagnostic
 ```
 
-Command 类型：
+目标 Command 类型包括：
 
 - `CreateEntityCommand`
 - `DestroyEntityCommand`
@@ -441,8 +443,15 @@ Command 类型：
 
 - Command validate 不应部分修改世界。
 - Apply 失败要返回诊断，不留下半修改状态。
-- Undo payload 可保存 serialized before value。
-- Drag 操作可合并 transaction，例如 gizmo 连续拖动 transform。
+- Undo payload 使用 stable document/object identity 和 immutable before/after value，不保存 UI closure、Control/ViewModel、
+  mutable object reference 或 runtime entity handle。
+- engine revision 在 Apply/Undo/Redo 后保持单调；document dirty 比较逻辑 `ContentStateId` 与
+  `SavedContentStateId`，不能通过回退 revision 实现 Undo-to-savepoint。
+- per-document history 使用 `List + cursor`，只有 authoritative mutation 成功后移动 cursor；no-op、failure、cancel、
+  revision conflict 与未知 outcome 都不移动。
+- history 必须同时有 entry-count 和 byte budget。Studio 首个 Transform Slice 固定为 256 entries 与 16 MiB。
+- Drag 操作可合并 transaction，但 gizmo 必须提供明确 begin/update/commit/cancel interaction identity；不得用时间窗口
+  猜测同一 transaction。
 - Runtime update 不一定走 editor transaction，但需要自己的 scheduled mutation 和 diagnostic。
 
 ## Selection
