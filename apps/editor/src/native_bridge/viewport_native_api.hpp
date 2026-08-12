@@ -150,6 +150,14 @@ struct EditorViewportNativeAuthoredMeshSnapshotV7 {
 };
 
 static_assert(sizeof(EditorViewportNativeAuthoredMeshSnapshotV7) == 88U);
+static_assert(offsetof(EditorViewportNativeAuthoredMeshSnapshotV7, objectId) == 0U);
+static_assert(offsetof(EditorViewportNativeAuthoredMeshSnapshotV7, runtimeEntityIndex) == 16U);
+static_assert(offsetof(EditorViewportNativeAuthoredMeshSnapshotV7, runtimeEntityGeneration) == 20U);
+static_assert(offsetof(EditorViewportNativeAuthoredMeshSnapshotV7, assetId) == 24U);
+static_assert(offsetof(EditorViewportNativeAuthoredMeshSnapshotV7, expectedMeshType) == 40U);
+static_assert(offsetof(EditorViewportNativeAuthoredMeshSnapshotV7, position) == 48U);
+static_assert(offsetof(EditorViewportNativeAuthoredMeshSnapshotV7, rotation) == 60U);
+static_assert(offsetof(EditorViewportNativeAuthoredMeshSnapshotV7, scale) == 76U);
 
 struct EditorViewportNativeStreamHandleV7 {
     EditorViewportNativeAbiHeader header;

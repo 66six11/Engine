@@ -69,7 +69,12 @@ public sealed class StudioSceneEditingAcceptanceTests
                 var renamed = await Await(session.SetEntityNameAsync(objectId, "主角"))
                     .ConfigureAwait(false);
                 Assert.True(renamed.Succeeded, renamed.Message);
-                var moved = await Await(session.SetEntityTransformAsync(objectId, transform))
+                var moved = await Await(session.SetEntityTransformAsync(
+                        objectId,
+                        transform,
+                        new ProjectSessionEditContext(
+                            ProjectEditId.CreateNew(),
+                            renamed.Current.Document!.Revision)))
                     .ConfigureAwait(false);
                 Assert.True(moved.Succeeded, moved.Message);
                 Assert.True(moved.Current.Document!.IsDirty);

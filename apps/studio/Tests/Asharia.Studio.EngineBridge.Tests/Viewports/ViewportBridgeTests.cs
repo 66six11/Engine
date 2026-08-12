@@ -261,6 +261,31 @@ public sealed class ViewportBridgeTests
             (nint)48,
             Marshal.OffsetOf<ViewportNativeCamera>("<FarPlane>k__BackingField"));
         Assert.Equal(24, Marshal.SizeOf<ViewportNativeStreamHandleV7>());
+        Assert.Equal(88, Marshal.SizeOf<ViewportNativeAuthoredMeshSnapshotV7>());
+        Assert.Equal(
+            (nint)0,
+            Marshal.OffsetOf<ViewportNativeAuthoredMeshSnapshotV7>(
+                "<ObjectId>k__BackingField"));
+        Assert.Equal(
+            (nint)16,
+            Marshal.OffsetOf<ViewportNativeAuthoredMeshSnapshotV7>(
+                "<RuntimeEntityIndex>k__BackingField"));
+        Assert.Equal(
+            (nint)20,
+            Marshal.OffsetOf<ViewportNativeAuthoredMeshSnapshotV7>(
+                "<RuntimeEntityGeneration>k__BackingField"));
+        Assert.Equal(
+            (nint)24,
+            Marshal.OffsetOf<ViewportNativeAuthoredMeshSnapshotV7>(
+                "<AssetId>k__BackingField"));
+        Assert.Equal(
+            (nint)40,
+            Marshal.OffsetOf<ViewportNativeAuthoredMeshSnapshotV7>(
+                "<ExpectedMeshType>k__BackingField"));
+        Assert.Equal(
+            (nint)48,
+            Marshal.OffsetOf<ViewportNativeAuthoredMeshSnapshotV7>(
+                "<Transform>k__BackingField"));
         Assert.Equal(168, Marshal.SizeOf<ViewportNativePresentRequestV7>());
         Assert.Equal(248, Marshal.SizeOf<ViewportNativeReadyFrameV7>());
         Assert.Equal(64, Marshal.SizeOf<ViewportNativeStreamPollV7>());
@@ -305,6 +330,10 @@ public sealed class ViewportBridgeTests
     public void V7_submit_marshals_authored_meshes_without_renderer_keys()
     {
         var objectId = Guid.NewGuid();
+        var transform = new TransformValue(
+            new Float3(1, 2, 3),
+            new Quaternion(0, MathF.Sqrt(0.5f), 0, MathF.Sqrt(0.5f)),
+            new Float3(2, 3, 4));
         var document = new SceneDocumentSnapshot(
             Guid.NewGuid(),
             "C:\\Projects\\Sample\\Assets\\Scenes\\Default.asharia.scene.json",
@@ -315,7 +344,7 @@ public sealed class ViewportBridgeTests
                     objectId,
                     new EntityId(8, 3),
                     "Validation mesh",
-                    new TransformValue(new Float3(1, 2, 3), Quaternion.Identity, Float3.One),
+                    transform,
                     SceneMeshReference.DirectionalWedgeValidation),
             ]);
         var session = new ViewportSession(
@@ -337,6 +366,7 @@ public sealed class ViewportBridgeTests
         Assert.Equal(3U, mesh.RuntimeEntityGeneration);
         Assert.Equal(SceneMeshReference.DirectionalWedgeValidation.AssetId, mesh.AssetId.ToGuid());
         Assert.Equal(ViewportAuthoredMeshSnapshot.ExpectedMeshType, mesh.ExpectedMeshType);
+        Assert.Equal(transform, mesh.Transform);
     }
 
     private static ViewportRenderRequest PublishRequest(ViewportRenderKind kind, ulong revision)

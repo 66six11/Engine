@@ -26,6 +26,7 @@ flowchart TD
     Reflection["packages/reflection"]
     Serialization["packages/serialization"]
     SceneCore["packages/scene-core"]
+    SceneRendering["packages/scene-rendering<br/>revisioned mesh extraction"]
     SceneCoreIo["packages/scene-core<br/>asharia::scene_core_io"]
     SceneNative["packages/scene-core<br/>asharia::scene_native C ABI adapter"]
     ProjectCore["packages/project-core"]
@@ -67,6 +68,9 @@ flowchart TD
     Serialization --> Core
     Serialization --> Reflection
     SceneCore --> Core
+    SceneRendering --> AssetCore
+    SceneRendering --> SceneCore
+    SceneRendering --> Renderer
     SceneCoreIo --> SceneCore
     SceneCoreIo --> Archive
     SceneNative --> SceneCore
@@ -115,6 +119,7 @@ flowchart TD
     App --> Window
     App --> RG
     App -->|asset product/upload smoke| AssetPipeline
+    App -->|authored local TRS GPU smoke| SceneRendering
     App -->|current MVP/smoke wiring| RhiVk
     App -->|smoke validation only| RhiVkRG
     App -->|CPU-only benchmark schemas| Renderer
@@ -129,6 +134,7 @@ flowchart TD
     EditorApp -->|.ameta text IO| AssetCoreIo
     EditorApp -->|snapshot planning only| AssetPipeline
     EditorApp -->|selection EntityId values| SceneCore
+    EditorApp -->|authored scene mesh extraction| SceneRendering
     EditorApp --> Window
     EditorApp --> RhiVk
     EditorApp --> RendererVk

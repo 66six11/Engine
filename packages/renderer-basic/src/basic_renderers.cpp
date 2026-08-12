@@ -46,6 +46,12 @@ namespace asharia {
             std::array<float, 4> mvpRow3{};
         };
 
+        static_assert(sizeof(BasicMesh3DPushConstants) == 64U);
+        static_assert(offsetof(BasicMesh3DPushConstants, mvpRow0) == 0U);
+        static_assert(offsetof(BasicMesh3DPushConstants, mvpRow1) == 16U);
+        static_assert(offsetof(BasicMesh3DPushConstants, mvpRow2) == 32U);
+        static_assert(offsetof(BasicMesh3DPushConstants, mvpRow3) == 48U);
+
         struct BasicRenderViewWorldGridPushConstants {
             std::array<float, 4> inverseViewProjectionRow0{};
             std::array<float, 4> inverseViewProjectionRow1{};

@@ -6,6 +6,8 @@ using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Asharia.Runtime;
+using Asharia.Studio.Application.Viewports;
 using Editor.Shell.Composition;
 using Xunit;
 
@@ -673,10 +675,10 @@ public sealed class StudioProcessAcceptanceTests
         var emptyRevision = empty.GetProperty("targetRevision").GetUInt64();
         var supersededRevision = root.GetProperty("supersededRevision").GetUInt64();
         var transformedRevision = transformed.GetProperty("targetRevision").GetUInt64();
-        Assert.True(initialRevision < meshRevision);
-        Assert.True(meshRevision < emptyRevision);
-        Assert.True(emptyRevision < supersededRevision);
-        Assert.True(supersededRevision < transformedRevision);
+        Assert.Equal(initialRevision + 1U, meshRevision);
+        Assert.Equal(meshRevision + 1U, emptyRevision);
+        Assert.Equal(emptyRevision + 1U, supersededRevision);
+        Assert.Equal(supersededRevision + 1U, transformedRevision);
         Assert.True(
             initial.GetProperty("requestSequence").GetUInt64() <
             mesh.GetProperty("requestSequence").GetUInt64());
@@ -690,6 +692,9 @@ public sealed class StudioProcessAcceptanceTests
             root.GetProperty("supersededRequestSequence").GetUInt64() <
             transformed.GetProperty("requestSequence").GetUInt64());
         Assert.True(root.GetProperty("supersededFrameIndex").GetUInt64() > 0);
+        Assert.Equal(
+            root.GetProperty("supersededRequestSequence").GetUInt64() + 1U,
+            transformed.GetProperty("minimumPresentableSequence").GetUInt64());
         Assert.Equal(
             1UL,
             root.GetProperty("presentedFramesAcrossSupersede").GetUInt64());
@@ -719,10 +724,59 @@ public sealed class StudioProcessAcceptanceTests
         var emptyReceipt = empty.GetProperty("receipt");
         var transformedReceipt = transformed.GetProperty("receipt");
         var supersededReceipt = root.GetProperty("supersededReceipt");
+        var sessionId = initial.GetProperty("sessionId").GetGuid();
+        var targetId = initial.GetProperty("targetId").GetGuid();
+        Assert.NotEqual(Guid.Empty, sessionId);
+        Assert.NotEqual(Guid.Empty, targetId);
+        Assert.Equal(sessionId, mesh.GetProperty("sessionId").GetGuid());
+        Assert.Equal(sessionId, empty.GetProperty("sessionId").GetGuid());
+        Assert.Equal(sessionId, transformed.GetProperty("sessionId").GetGuid());
+        Assert.Equal(targetId, mesh.GetProperty("targetId").GetGuid());
+        Assert.Equal(targetId, empty.GetProperty("targetId").GetGuid());
+        Assert.Equal(targetId, transformed.GetProperty("targetId").GetGuid());
+        Assert.Equal(JsonValueKind.Null, initial.GetProperty("authoredMesh").ValueKind);
+
+        var meshRequest = mesh.GetProperty("authoredMesh");
+        var emptyRequest = empty.GetProperty("authoredMesh");
+        var transformedRequest = transformed.GetProperty("authoredMesh");
+        AssertAuthoredMesh(meshRequest, meshObjectId, assetId, TransformValue.Identity);
+        AssertAuthoredMesh(emptyRequest, meshObjectId, assetId, TransformValue.Identity);
+        AssertAuthoredMesh(
+            transformedRequest,
+            meshObjectId,
+            assetId,
+            StudioSceneMeshSmoke.ValidationLocalTransform);
+        Assert.Equal(
+            meshRequest.GetProperty("runtimeEntityId").GetProperty("index").GetUInt32(),
+            transformedRequest.GetProperty("runtimeEntityId").GetProperty("index").GetUInt32());
+        Assert.Equal(
+            meshRequest.GetProperty("runtimeEntityId").GetProperty("generation").GetUInt32(),
+            transformedRequest.GetProperty("runtimeEntityId").GetProperty("generation").GetUInt32());
+
+        var transformedRotation = transformedRequest.GetProperty("transform")
+            .GetProperty("rotation");
+        var rotationLengthSquared =
+            MathF.Pow(transformedRotation.GetProperty("x").GetSingle(), 2.0F) +
+            MathF.Pow(transformedRotation.GetProperty("y").GetSingle(), 2.0F) +
+            MathF.Pow(transformedRotation.GetProperty("z").GetSingle(), 2.0F) +
+            MathF.Pow(transformedRotation.GetProperty("w").GetSingle(), 2.0F);
+        Assert.InRange(rotationLengthSquared, 0.999999F, 1.000001F);
+        Assert.NotEqual(0.0F, transformedRotation.GetProperty("y").GetSingle());
+        var transformedScale = transformedRequest.GetProperty("transform").GetProperty("scale");
+        Assert.NotEqual(
+            transformedScale.GetProperty("x").GetSingle(),
+            transformedScale.GetProperty("y").GetSingle());
+        Assert.NotEqual(
+            transformedScale.GetProperty("y").GetSingle(),
+            transformedScale.GetProperty("z").GetSingle());
+
         AssertMeshReceipt(meshReceipt, meshObjectId, assetId);
         AssertMeshReceipt(emptyReceipt, meshObjectId, assetId);
         AssertMeshReceipt(transformedReceipt, meshObjectId, assetId);
         AssertMeshReceipt(supersededReceipt, meshObjectId, assetId);
+        AssertRequestMatchesReceipt(meshRequest, meshReceipt);
+        AssertRequestMatchesReceipt(emptyRequest, emptyReceipt);
+        AssertRequestMatchesReceipt(transformedRequest, transformedReceipt);
         Assert.True(supersededReceipt.GetProperty("evidenceAvailable").GetBoolean());
         Assert.Equal(
             "wireframe",
@@ -771,6 +825,9 @@ public sealed class StudioProcessAcceptanceTests
                 expectedEntityCount,
                 stage.GetProperty("documentEntityCount").GetInt32());
             Assert.True(stage.GetProperty("requestSequence").GetUInt64() > 0);
+            Assert.Equal(
+                stage.GetProperty("requestSequence").GetUInt64(),
+                stage.GetProperty("minimumPresentableSequence").GetUInt64());
             Assert.True(stage.GetProperty("frameIndex").GetUInt64() > 0);
             Assert.True(stage.GetProperty("currentSurfaceIsExact").GetBoolean());
             Assert.True(stage.GetProperty("lastPresentationIsExact").GetBoolean());
@@ -782,6 +839,41 @@ public sealed class StudioProcessAcceptanceTests
             Assert.True(receipt.GetProperty("evidenceAvailable").GetBoolean());
             Assert.Equal("wireframe", receipt.GetProperty("rasterMode").GetString());
             Assert.Equal(revision, receipt.GetProperty("sceneRevision").GetUInt64());
+        }
+
+        static void AssertAuthoredMesh(
+            JsonElement authoredMesh,
+            Guid expectedObjectId,
+            Guid expectedAssetId,
+            TransformValue expectedTransform)
+        {
+            Assert.Equal(expectedObjectId, authoredMesh.GetProperty("objectId").GetGuid());
+            var runtimeEntityId = authoredMesh.GetProperty("runtimeEntityId");
+            Assert.True(runtimeEntityId.GetProperty("index").GetUInt32() > 0);
+            Assert.True(runtimeEntityId.GetProperty("generation").GetUInt32() > 0);
+            Assert.Equal(expectedAssetId, authoredMesh.GetProperty("assetId").GetGuid());
+            Assert.Equal(
+                ViewportAuthoredMeshSnapshot.ExpectedMeshType,
+                authoredMesh.GetProperty("expectedType").GetUInt64());
+            AssertTransform(authoredMesh.GetProperty("transform"), expectedTransform);
+        }
+
+        static void AssertTransform(JsonElement transform, TransformValue expected)
+        {
+            AssertFloat3(transform.GetProperty("position"), expected.Position);
+            var rotation = transform.GetProperty("rotation");
+            Assert.Equal(expected.Rotation.X, rotation.GetProperty("x").GetSingle());
+            Assert.Equal(expected.Rotation.Y, rotation.GetProperty("y").GetSingle());
+            Assert.Equal(expected.Rotation.Z, rotation.GetProperty("z").GetSingle());
+            Assert.Equal(expected.Rotation.W, rotation.GetProperty("w").GetSingle());
+            AssertFloat3(transform.GetProperty("scale"), expected.Scale);
+        }
+
+        static void AssertFloat3(JsonElement value, Float3 expected)
+        {
+            Assert.Equal(expected.X, value.GetProperty("x").GetSingle());
+            Assert.Equal(expected.Y, value.GetProperty("y").GetSingle());
+            Assert.Equal(expected.Z, value.GetProperty("z").GetSingle());
         }
 
         static void AssertMeshReceipt(
@@ -811,6 +903,26 @@ public sealed class StudioProcessAcceptanceTests
             Assert.Equal(
                 StudioSceneMeshSmoke.ValidationProductHash,
                 receipt.GetProperty("productHash").GetUInt64());
+        }
+
+        static void AssertRequestMatchesReceipt(
+            JsonElement authoredMesh,
+            JsonElement receipt)
+        {
+            Assert.Equal(
+                authoredMesh.GetProperty("objectId").GetGuid(),
+                receipt.GetProperty("representativeObjectId").GetGuid());
+            Assert.Equal(
+                authoredMesh.GetProperty("assetId").GetGuid(),
+                receipt.GetProperty("representativeAssetId").GetGuid());
+            var requestRuntimeEntityId = authoredMesh.GetProperty("runtimeEntityId");
+            var receiptRuntimeEntityId = receipt.GetProperty("representativeSourceEntityId");
+            Assert.Equal(
+                requestRuntimeEntityId.GetProperty("index").GetUInt32(),
+                receiptRuntimeEntityId.GetProperty("index").GetUInt32());
+            Assert.Equal(
+                requestRuntimeEntityId.GetProperty("generation").GetUInt32(),
+                receiptRuntimeEntityId.GetProperty("generation").GetUInt32());
         }
     }
 

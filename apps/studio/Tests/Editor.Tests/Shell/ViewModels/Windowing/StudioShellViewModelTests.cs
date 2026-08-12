@@ -271,7 +271,10 @@ public sealed class StudioShellViewModelTests
                     revision: 2,
                     savedRevision: 1,
                     entities: [transformedEntity]));
-            projectSession.Publish(updated, editContext.EditId);
+            projectSession.Publish(
+                updated,
+                editContext.EditId,
+                originatingEditSucceeded: true);
             return ValueTask.FromResult(
                 ProjectSessionOperationResult.Success(
                     updated,
@@ -349,7 +352,10 @@ public sealed class StudioShellViewModelTests
                     revision: 2,
                     savedRevision: 1,
                     entities: [updatedEntity]));
-            projectSession.Publish(updated, context.EditId);
+            projectSession.Publish(
+                updated,
+                context.EditId,
+                originatingEditSucceeded: true);
             return ValueTask.FromResult(ProjectSessionOperationResult.Success(
                 updated,
                 "Updated entity Transform.",
@@ -419,7 +425,10 @@ public sealed class StudioShellViewModelTests
                     revision: 2,
                     savedRevision: 1,
                     entities: [updatedEntity]));
-            projectSession.Publish(updated, context.EditId);
+            projectSession.Publish(
+                updated,
+                context.EditId,
+                originatingEditSucceeded: true);
             return ValueTask.FromResult(ProjectSessionOperationResult.Success(
                 updated,
                 "Updated entity Transform.",
@@ -443,6 +452,284 @@ public sealed class StudioShellViewModelTests
         Assert.Equal("0", viewModel.RotationDegreesX);
         Assert.Equal("365", viewModel.RotationDegreesY);
         Assert.Equal("0", viewModel.RotationDegreesZ);
+    }
+
+    [Fact]
+    public async Task Own_ack_does_not_overwrite_an_axis_edited_while_apply_is_in_flight()
+    {
+        var objectId = Guid.NewGuid();
+        var entity = new SceneEntitySnapshot(
+            objectId,
+            new EntityId(1, 1),
+            "Rotated",
+            TransformValue.Identity);
+        var initialBase = Ready("Sample", "C:\\Projects\\Sample");
+        var initial = ProjectSessionSnapshot.Ready(
+            initialBase.Project!,
+            new SceneDocumentSnapshot(
+                initialBase.Document!.SceneId,
+                initialBase.Document.Path,
+                revision: 1,
+                savedRevision: 1,
+                entities: [entity]));
+        var projectSession = new TestProjectSession();
+        projectSession.Publish(initial);
+        var completion = new TaskCompletionSource<ProjectSessionOperationResult>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        ProjectSessionEditContext editContext = default;
+        TransformValue submittedTransform = default;
+        projectSession.SetTransformHandler = (_, transform, context, _) =>
+        {
+            submittedTransform = transform;
+            editContext = context;
+            return new ValueTask<ProjectSessionOperationResult>(completion.Task);
+        };
+        using var viewModel = new StudioShellViewModel(
+            projectSession,
+            new TestProjectDialogService());
+        viewModel.MarkReady();
+        viewModel.SelectedEntity = entity;
+        viewModel.RotationDegreesY = "365";
+        viewModel.ApplyEntityTransformCommand.Execute(null);
+        await WaitUntilAsync(() => viewModel.IsProjectOperationRunning);
+
+        viewModel.RotationDegreesY = "725";
+        var acknowledgedEntity = new SceneEntitySnapshot(
+            entity.ObjectId,
+            entity.RuntimeEntityId,
+            entity.Name,
+            submittedTransform);
+        var acknowledged = ProjectSessionSnapshot.Ready(
+            initial.Project!,
+            new SceneDocumentSnapshot(
+                initial.Document!.SceneId,
+                initial.Document.Path,
+                revision: 2,
+                savedRevision: 1,
+                entities: [acknowledgedEntity]));
+        projectSession.Publish(
+            acknowledged,
+            editContext.EditId,
+            originatingEditSucceeded: true);
+        completion.SetResult(ProjectSessionOperationResult.Success(
+            acknowledged,
+            "Updated entity Transform.",
+            originatingEditId: editContext.EditId));
+        await WaitUntilAsync(() => !viewModel.IsProjectOperationRunning);
+
+        Assert.Equal("725", viewModel.RotationDegreesY);
+
+        projectSession.SetTransformHandler = (_, transform, context, _) =>
+        {
+            Assert.Equal(2UL, context.ExpectedRevision);
+            var acceptedEntity = new SceneEntitySnapshot(
+                entity.ObjectId,
+                entity.RuntimeEntityId,
+                entity.Name,
+                transform);
+            var accepted = ProjectSessionSnapshot.Ready(
+                initial.Project!,
+                new SceneDocumentSnapshot(
+                    initial.Document!.SceneId,
+                    initial.Document.Path,
+                    revision: 3,
+                    savedRevision: 1,
+                    entities: [acceptedEntity]));
+            projectSession.Publish(
+                accepted,
+                context.EditId,
+                originatingEditSucceeded: true);
+            return ValueTask.FromResult(ProjectSessionOperationResult.Success(
+                accepted,
+                "Updated entity Transform.",
+                originatingEditId: context.EditId));
+        };
+        viewModel.ApplyEntityTransformCommand.Execute(null);
+        await WaitUntilAsync(() => !viewModel.IsProjectOperationRunning);
+        Assert.Equal("725", viewModel.RotationDegreesY);
+
+        var externalEntity = new SceneEntitySnapshot(
+            entity.ObjectId,
+            entity.RuntimeEntityId,
+            entity.Name,
+            new TransformValue(
+                Float3.Zero,
+                StudioEulerRotation.QuaternionFromEulerDegreesYxz(
+                    new StudioEulerDegrees(0.0, 10.0, 0.0)),
+                Float3.One));
+        var external = ProjectSessionSnapshot.Ready(
+            initial.Project!,
+            new SceneDocumentSnapshot(
+                initial.Document!.SceneId,
+                initial.Document.Path,
+                revision: 4,
+                savedRevision: 1,
+                entities: [externalEntity]));
+        projectSession.SetNameHandler = (_, _, _) => ValueTask.FromResult(
+            ProjectSessionOperationResult.Success(
+                external,
+                "Accepted an external snapshot."));
+        viewModel.ApplyEntityNameCommand.Execute(null);
+        await WaitUntilAsync(() => !viewModel.IsProjectOperationRunning);
+
+        Assert.InRange(
+            double.Parse(
+                viewModel.RotationDegreesY,
+                System.Globalization.CultureInfo.InvariantCulture),
+            729.999,
+            730.001);
+    }
+
+    [Fact]
+    public async Task Successful_no_op_ack_clears_pending_state_at_the_base_revision()
+    {
+        var entity = new SceneEntitySnapshot(
+            Guid.NewGuid(),
+            new EntityId(1, 1),
+            "Rotated",
+            TransformValue.Identity);
+        var initialBase = Ready("Sample", "C:\\Projects\\Sample");
+        var initial = ProjectSessionSnapshot.Ready(
+            initialBase.Project!,
+            new SceneDocumentSnapshot(
+                initialBase.Document!.SceneId,
+                initialBase.Document.Path,
+                revision: 1,
+                savedRevision: 1,
+                entities: [entity]));
+        var projectSession = new TestProjectSession();
+        projectSession.Publish(initial);
+        projectSession.SetTransformHandler = (_, _, context, _) =>
+        {
+            projectSession.Publish(
+                initial,
+                context.EditId,
+                originatingEditSucceeded: true);
+            return ValueTask.FromResult(ProjectSessionOperationResult.Success(
+                initial,
+                "Transform already matched.",
+                originatingEditId: context.EditId));
+        };
+        using var viewModel = new StudioShellViewModel(
+            projectSession,
+            new TestProjectDialogService());
+        viewModel.MarkReady();
+        viewModel.SelectedEntity = entity;
+
+        viewModel.ApplyEntityTransformCommand.Execute(null);
+        await WaitUntilAsync(() => !viewModel.IsProjectOperationRunning);
+        var externallyRotated = new SceneEntitySnapshot(
+            entity.ObjectId,
+            entity.RuntimeEntityId,
+            entity.Name,
+            new TransformValue(
+                Float3.Zero,
+                StudioEulerRotation.QuaternionFromEulerDegreesYxz(
+                    new StudioEulerDegrees(0.0, 10.0, 0.0)),
+                Float3.One));
+        var external = ProjectSessionSnapshot.Ready(
+            initial.Project!,
+            new SceneDocumentSnapshot(
+                initial.Document!.SceneId,
+                initial.Document.Path,
+                revision: 2,
+                savedRevision: 1,
+                entities: [externallyRotated]));
+        projectSession.SetNameHandler = (_, _, _) => ValueTask.FromResult(
+            ProjectSessionOperationResult.Success(
+                external,
+                "Accepted an external snapshot."));
+        viewModel.ApplyEntityNameCommand.Execute(null);
+        await WaitUntilAsync(() => !viewModel.IsProjectOperationRunning);
+
+        Assert.InRange(
+            double.Parse(
+                viewModel.RotationDegreesY,
+                System.Globalization.CultureInfo.InvariantCulture),
+            9.999,
+            10.001);
+    }
+
+    [Fact]
+    public async Task Failed_own_receipt_rebases_the_draft_without_accepting_it()
+    {
+        var entity = new SceneEntitySnapshot(
+            Guid.NewGuid(),
+            new EntityId(1, 1),
+            "Rotated",
+            TransformValue.Identity);
+        var initialBase = Ready("Sample", "C:\\Projects\\Sample");
+        var initial = ProjectSessionSnapshot.Ready(
+            initialBase.Project!,
+            new SceneDocumentSnapshot(
+                initialBase.Document!.SceneId,
+                initialBase.Document.Path,
+                revision: 1,
+                savedRevision: 1,
+                entities: [entity]));
+        var externalTransform = new TransformValue(
+            Float3.Zero,
+            StudioEulerRotation.QuaternionFromEulerDegreesYxz(
+                new StudioEulerDegrees(15.0, 20.0, 30.0)),
+            Float3.One);
+        var conflicted = ProjectSessionSnapshot.Ready(
+            initial.Project!,
+            new SceneDocumentSnapshot(
+                initial.Document!.SceneId,
+                initial.Document.Path,
+                revision: 2,
+                savedRevision: 1,
+                entities:
+                [
+                    new SceneEntitySnapshot(
+                        entity.ObjectId,
+                        entity.RuntimeEntityId,
+                        entity.Name,
+                        externalTransform),
+                ]));
+        var projectSession = new TestProjectSession();
+        projectSession.Publish(initial);
+        ProjectSessionEditContext? secondContext = null;
+        var invocation = 0;
+        projectSession.SetTransformHandler = (_, transform, context, _) =>
+        {
+            invocation++;
+            if (invocation == 1)
+            {
+                projectSession.Publish(
+                    conflicted,
+                    context.EditId,
+                    originatingEditSucceeded: false);
+                return ValueTask.FromResult(ProjectSessionOperationResult.Failed(
+                    conflicted,
+                    ProjectSessionFailureKind.RevisionConflict,
+                    "Revision conflict.",
+                    context.EditId));
+            }
+            secondContext = context;
+            return ValueTask.FromResult(ProjectSessionOperationResult.Success(
+                conflicted,
+                "Recorded retry.",
+                originatingEditId: context.EditId));
+        };
+        using var viewModel = new StudioShellViewModel(
+            projectSession,
+            new TestProjectDialogService());
+        viewModel.MarkReady();
+        viewModel.SelectedEntity = entity;
+        viewModel.RotationDegreesY = "365";
+
+        viewModel.ApplyEntityTransformCommand.Execute(null);
+        await WaitUntilAsync(() => !viewModel.IsProjectOperationRunning);
+        Assert.Equal("365", viewModel.RotationDegreesY);
+        Assert.NotEqual("0", viewModel.RotationDegreesX);
+        Assert.NotEqual("0", viewModel.RotationDegreesZ);
+
+        viewModel.ApplyEntityTransformCommand.Execute(null);
+        await WaitUntilAsync(() => !viewModel.IsProjectOperationRunning);
+
+        Assert.True(secondContext.HasValue);
+        Assert.Equal(2UL, secondContext.Value.ExpectedRevision);
     }
 
     [Fact]
@@ -480,7 +767,10 @@ public sealed class StudioShellViewModelTests
                     revision: 2,
                     savedRevision: 1,
                     entities: [acknowledgedEntity]));
-            projectSession.Publish(acknowledged, context.EditId);
+            projectSession.Publish(
+                acknowledged,
+                context.EditId,
+                originatingEditSucceeded: true);
             return ValueTask.FromResult(ProjectSessionOperationResult.Success(
                 acknowledged,
                 "Updated entity Transform.",

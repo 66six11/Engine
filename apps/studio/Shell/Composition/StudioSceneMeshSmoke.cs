@@ -28,6 +28,10 @@ internal static class StudioSceneMeshSmoke
     internal const ulong ValidationMeshResourceKey = 0x0EB29D6DE539D278UL;
     internal const ulong DefaultUnlitMaterialResourceKey = 0x4153484D41544C01UL;
     internal const ulong ValidationProductHash = 0x0EB29D6DE539D278UL;
+    internal static TransformValue ValidationLocalTransform { get; } = new(
+        new Float3(0.75F, 0.5F, 0.0F),
+        new Quaternion(0.0F, 0.38268343F, 0.0F, 0.9238795F),
+        new Float3(1.25F, 0.8F, 1.5F));
 
     private static readonly TimeSpan kOperationTimeout = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan kPresentationTimeout = TimeSpan.FromSeconds(20);
@@ -185,9 +189,10 @@ internal static class StudioSceneMeshSmoke
                 EnableSceneMeshEvidence = true,
                 LeaseAcquired = lease =>
                 {
-                    observer.Observe(lease);
-                    supersedeGate.BlockIfArmed(lease);
+                    var frame = observer.Observe(lease);
+                    supersedeGate.BlockIfArmed(frame);
                 },
+                RequestPublished = request => observer.Observe(request, session.Current),
             });
         var initialFrameCount = control.PresentationMetrics.TotalPresentedFrames;
         host.Show(desktop, control, "Studio Scene Mesh Smoke", width: 960, height: 640);
@@ -262,7 +267,12 @@ internal static class StudioSceneMeshSmoke
             Quaternion.Identity,
             Float3.One);
         var supersededResult = await AwaitOperationAsync(
-            projectSession.SetEntityTransformAsync(meshObjectId, supersededTransform));
+            projectSession.SetEntityTransformAsync(
+                meshObjectId,
+                supersededTransform,
+                new ProjectSessionEditContext(
+                    ProjectEditId.CreateNew(),
+                    emptyDocument.Revision)));
         var supersededDocument = RequireSucceeded(
             supersededResult,
             "stage superseded mesh Transform");
@@ -277,12 +287,14 @@ internal static class StudioSceneMeshSmoke
             supersededMesh.RuntimeEntityId == meshEntity.RuntimeEntityId,
             "The superseded Transform changed the mesh entity's transient runtime identity.");
 
-        var transform = new TransformValue(
-            new Float3(0.75F, 0.5F, 0.0F),
-            Quaternion.Identity,
-            new Float3(1.25F, 0.8F, 1.0F));
+        var transform = ValidationLocalTransform;
         var transformResult = await AwaitOperationAsync(
-            projectSession.SetEntityTransformAsync(meshObjectId, transform));
+            projectSession.SetEntityTransformAsync(
+                meshObjectId,
+                transform,
+                new ProjectSessionEditContext(
+                    ProjectEditId.CreateNew(),
+                    supersededDocument.Revision)));
         var transformedDocument = RequireSucceeded(transformResult, "update mesh Transform");
         Require(
             transformedDocument.Entities.Count == 2,
@@ -313,6 +325,15 @@ internal static class StudioSceneMeshSmoke
         session.SynchronizeDocument(supersededDocument);
         var supersededFrame = await advanceFence.WaitAsync(kPresentationTimeout);
         ValidateAcquiredFrame(supersededFrame, supersededDocument, supersededMesh);
+        var finalSessionSnapshot = session.Current;
+        Require(
+            finalSessionSnapshot.TargetId == transformedDocument.SceneId &&
+            finalSessionSnapshot.TargetRevision == transformedDocument.Revision,
+            "The final presentation fence did not target the transformed authoritative snapshot.");
+        Require(
+            finalSessionSnapshot.MinimumPresentableSequence ==
+                checked(supersededFrame.RequestSequence + 1U),
+            "The final presentation fence did not advance exactly past the superseded request.");
         Require(
             supersededFrame.RequestSequence < session.Current.MinimumPresentableSequence,
             "The superseded Transform lease remained inside the final presentation fence.");
@@ -339,6 +360,8 @@ internal static class StudioSceneMeshSmoke
         var stalePresentationExcluded =
             presentedFramesAcrossSupersede == 1 &&
             IsPresentedRevision(control.StatusMessage, transformedDocument.Revision) &&
+            transformFrame.RequestSequence ==
+                transformFrame.RequestSession.MinimumPresentableSequence &&
             session.CanPresentPublishedFrame(
                 transformFrame.RequestSequence,
                 transformFrame.TargetRevision);
@@ -350,11 +373,11 @@ internal static class StudioSceneMeshSmoke
             "The latest mesh revision was not retained on an exact composition surface.");
 
         var revisionOrderStrict =
-            initialDocument.Revision < meshDocument.Revision &&
-            meshDocument.Revision < emptyDocument.Revision &&
-            emptyDocument.Revision < supersededDocument.Revision &&
-            supersededDocument.Revision < transformedDocument.Revision;
-        Require(revisionOrderStrict, "Scene document revisions did not advance monotonically.");
+            meshDocument.Revision == checked(initialDocument.Revision + 1U) &&
+            emptyDocument.Revision == checked(meshDocument.Revision + 1U) &&
+            supersededDocument.Revision == checked(emptyDocument.Revision + 1U) &&
+            transformedDocument.Revision == checked(supersededDocument.Revision + 1U);
+        Require(revisionOrderStrict, "Scene document revisions did not advance exactly once per mutation.");
 
         return new StudioSceneMeshSmokeEvidence(
             "scene-mesh-closure",
@@ -421,14 +444,15 @@ internal static class StudioSceneMeshSmoke
         SceneDocumentSnapshot document,
         SceneEntitySnapshot? expectedMeshEntity)
     {
+        ValidateAuthoredRequest(frame, document, expectedMeshEntity);
         Require(frame.Kind == ViewportRenderKind.Scene, "The frame was not rendered by Scene View.");
         Require(frame.TargetId == document.SceneId, "The frame targeted a different scene document.");
         Require(
             frame.TargetRevision == document.Revision,
             "The presented frame did not target the authoritative scene revision.");
         Require(
-            frame.RequestSequence >= session.Current.MinimumPresentableSequence,
-            "The presented frame preceded the current session presentation fence.");
+            frame.RequestSequence == session.Current.MinimumPresentableSequence,
+            "The presented frame did not match the current session presentation fence exactly.");
         ValidateReceipt(frame.Receipt, document.Revision, expectedMeshEntity);
     }
 
@@ -437,12 +461,67 @@ internal static class StudioSceneMeshSmoke
         SceneDocumentSnapshot document,
         SceneEntitySnapshot expectedMeshEntity)
     {
+        ValidateAuthoredRequest(frame, document, expectedMeshEntity);
         Require(frame.Kind == ViewportRenderKind.Scene, "The acquired frame was not Scene View.");
         Require(frame.TargetId == document.SceneId, "The acquired frame targeted another scene.");
         Require(
             frame.TargetRevision == document.Revision,
             "The acquired frame did not target the superseded scene revision.");
         ValidateReceipt(frame.Receipt, document.Revision, expectedMeshEntity);
+    }
+
+    private static void ValidateAuthoredRequest(
+        ObservedSceneMeshFrame frame,
+        SceneDocumentSnapshot document,
+        SceneEntitySnapshot? expectedMeshEntity)
+    {
+        var request = frame.Request;
+        var requestSession = frame.RequestSession;
+        Require(
+            request.SessionId == requestSession.SessionId &&
+            request.Kind == ViewportRenderKind.Scene &&
+            request.Kind == requestSession.Kind &&
+            request.TargetKind == ViewportTargetKind.DocumentScene &&
+            request.TargetKind == requestSession.TargetKind,
+            "The Scene mesh request did not retain its published session identity.");
+        Require(
+            request.Sequence == frame.RequestSequence &&
+            request.Sequence == requestSession.LastSequence &&
+            request.Sequence == requestSession.MinimumPresentableSequence,
+            "The Scene mesh request did not match its exact publish-time presentation fence.");
+        Require(
+            request.TargetId == document.SceneId &&
+            request.TargetId == requestSession.TargetId &&
+            request.TargetId == frame.TargetId &&
+            request.TargetRevision == document.Revision &&
+            request.TargetRevision == requestSession.TargetRevision &&
+            request.TargetRevision == frame.TargetRevision,
+            "The Scene mesh request did not retain the authoritative snapshot identity and revision.");
+        Require(
+            request.SceneRasterMode == ViewportSceneRasterMode.Wireframe,
+            "The Scene mesh request did not retain the authored wireframe view policy.");
+
+        if (expectedMeshEntity is null)
+        {
+            Require(
+                request.AuthoredMeshes.Count == 0,
+                "The empty authoritative snapshot published an authored mesh request.");
+            return;
+        }
+
+        var expectedMesh = expectedMeshEntity.Mesh ?? throw new InvalidOperationException(
+            "The expected request entity has no mesh reference.");
+        Require(
+            request.AuthoredMeshes.Count == 1,
+            "The authoritative snapshot did not publish exactly one authored mesh request.");
+        var authoredMesh = request.AuthoredMeshes[0];
+        Require(
+            authoredMesh.ObjectId == expectedMeshEntity.ObjectId &&
+            authoredMesh.RuntimeEntityId == expectedMeshEntity.RuntimeEntityId &&
+            authoredMesh.AssetId == expectedMesh.AssetId &&
+            authoredMesh.ExpectedType == ViewportAuthoredMeshSnapshot.ExpectedMeshType &&
+            authoredMesh.Transform == expectedMeshEntity.Transform,
+            "The authored mesh request changed snapshot identity, type, or local Transform.");
     }
 
     private static StudioSceneMeshStageEvidence CaptureStageEvidence(
@@ -455,8 +534,12 @@ internal static class StudioSceneMeshSmoke
         return new StudioSceneMeshStageEvidence(
             stage,
             document.Entities.Count,
+            frame.Request.SessionId.Value,
+            frame.Request.TargetId,
             frame.TargetRevision,
             frame.RequestSequence,
+            frame.RequestSession.MinimumPresentableSequence,
+            frame.Request.AuthoredMeshes.SingleOrDefault(),
             frame.FrameIndex,
             frame.Receipt,
             control.StatusMessage,
@@ -533,20 +616,42 @@ internal static class StudioSceneMeshSmoke
     {
         private readonly object gate_ = new();
         private readonly List<ObservedSceneMeshFrame> frames_ = [];
+        private readonly List<ObservedSceneMeshRequest> requests_ = [];
 
-        public void Observe(ViewportFrameLease lease)
+        public void Observe(
+            ViewportRenderRequest request,
+            ViewportSessionSnapshot sessionSnapshot)
         {
-            ArgumentNullException.ThrowIfNull(lease);
-            var frame = new ObservedSceneMeshFrame(
-                lease.TargetId,
-                lease.TargetRevision,
-                lease.RequestSequence,
-                lease.FrameIndex,
-                lease.Kind,
-                lease.SceneMeshReceipt);
+            ArgumentNullException.ThrowIfNull(request);
             lock (gate_)
             {
+                requests_.Add(new ObservedSceneMeshRequest(request, sessionSnapshot));
+            }
+        }
+
+        public ObservedSceneMeshFrame Observe(ViewportFrameLease lease)
+        {
+            ArgumentNullException.ThrowIfNull(lease);
+            lock (gate_)
+            {
+                var request = requests_.SingleOrDefault(
+                    candidate => candidate.Request.Sequence == lease.RequestSequence);
+                if (request.Request is null)
+                {
+                    throw new InvalidOperationException(
+                        $"Scene mesh lease {lease.RequestSequence} has no published request.");
+                }
+                var frame = new ObservedSceneMeshFrame(
+                    lease.TargetId,
+                    lease.TargetRevision,
+                    lease.RequestSequence,
+                    lease.FrameIndex,
+                    lease.Kind,
+                    lease.SceneMeshReceipt,
+                    request.Request,
+                    request.SessionSnapshot);
                 frames_.Add(frame);
+                return frame;
             }
         }
 
@@ -606,15 +711,14 @@ internal static class StudioSceneMeshSmoke
             }
         }
 
-        public void BlockIfArmed(ViewportFrameLease lease)
+        public void BlockIfArmed(ObservedSceneMeshFrame frame)
         {
-            ArgumentNullException.ThrowIfNull(lease);
             TaskCompletionSource<ObservedSceneMeshFrame>? acquired;
             Task release;
             lock (gate_)
             {
                 if (acquired_ is null || release_ is null || triggered_ ||
-                    lease.TargetRevision != expectedRevision_)
+                    frame.TargetRevision != expectedRevision_)
                 {
                     return;
                 }
@@ -622,14 +726,7 @@ internal static class StudioSceneMeshSmoke
                 acquired = acquired_;
                 release = release_.Task;
             }
-
-            acquired.TrySetResult(new ObservedSceneMeshFrame(
-                lease.TargetId,
-                lease.TargetRevision,
-                lease.RequestSequence,
-                lease.FrameIndex,
-                lease.Kind,
-                lease.SceneMeshReceipt));
+            acquired.TrySetResult(frame);
             // This deliberate smoke seam holds the old lease before composition submission
             // while a background continuation advances the session revision fence.
             if (!release.Wait(kPresentationTimeout))
@@ -648,20 +745,30 @@ internal static class StudioSceneMeshSmoke
         }
     }
 
+    private readonly record struct ObservedSceneMeshRequest(
+        ViewportRenderRequest Request,
+        ViewportSessionSnapshot SessionSnapshot);
+
     private readonly record struct ObservedSceneMeshFrame(
         Guid TargetId,
         ulong TargetRevision,
         ulong RequestSequence,
         ulong FrameIndex,
         ViewportRenderKind Kind,
-        ViewportSceneMeshReceipt Receipt);
+        ViewportSceneMeshReceipt Receipt,
+        ViewportRenderRequest Request,
+        ViewportSessionSnapshot RequestSession);
 }
 
 internal sealed record StudioSceneMeshStageEvidence(
     string Stage,
     int DocumentEntityCount,
+    Guid SessionId,
+    Guid TargetId,
     ulong TargetRevision,
     ulong RequestSequence,
+    ulong MinimumPresentableSequence,
+    ViewportAuthoredMeshSnapshot? AuthoredMesh,
     ulong FrameIndex,
     ViewportSceneMeshReceipt Receipt,
     string PresentationStatus,

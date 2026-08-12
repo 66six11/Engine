@@ -27,7 +27,7 @@ public sealed class ProjectSession : IProjectSession
         sceneGateway_ = sceneGateway;
     }
 
-    public event EventHandler? SnapshotChanged;
+    public event EventHandler<ProjectSessionSnapshotChangedEventArgs>? SnapshotChanged;
 
     public ProjectSessionSnapshot Current
     {
@@ -171,20 +171,28 @@ public sealed class ProjectSession : IProjectSession
     public ValueTask<ProjectSessionOperationResult> SetEntityTransformAsync(
         Guid objectId,
         TransformValue transform,
+        ProjectSessionEditContext context,
         CancellationToken cancellationToken = default)
     {
         if (objectId == Guid.Empty)
         {
             throw new ArgumentException("Scene object id must not be empty.", nameof(objectId));
         }
+        if (!context.EditId.IsValid)
+        {
+            throw new ArgumentException(
+                "Project edit id must be valid.",
+                nameof(context));
+        }
         return EditSceneAsync(
-            (document, snapshot) => document.SetEntityTransformAsync(
+            (document, _) => document.SetEntityTransformAsync(
                 objectId,
                 transform,
-                snapshot.Revision,
+                context.ExpectedRevision,
                 CancellationToken.None),
             "Updated the scene entity Transform.",
-            cancellationToken);
+            cancellationToken,
+            originatingEditId: context.EditId);
     }
 
     public ValueTask<ProjectSessionOperationResult> SaveSceneAsync(
@@ -345,7 +353,8 @@ public sealed class ProjectSession : IProjectSession
         string successMessage,
         CancellationToken cancellationToken,
         Guid? createdObjectId = null,
-        SceneMeshReference? expectedMesh = null)
+        SceneMeshReference? expectedMesh = null,
+        ProjectEditId? originatingEditId = null)
     {
         ThrowIfDisposed();
         using var linkedCancellation = CreateLinkedCancellation(cancellationToken);
@@ -361,7 +370,8 @@ public sealed class ProjectSession : IProjectSession
                 return ProjectSessionOperationResult.Failed(
                     before,
                     ProjectSessionFailureKind.NoProject,
-                    "No editable scene document is open.");
+                    "No editable scene document is open.",
+                    originatingEditId);
             }
 
             SceneDocumentOperationResult result;
@@ -375,18 +385,23 @@ public sealed class ProjectSession : IProjectSession
                 return ProjectSessionOperationResult.Failed(
                     Current,
                     ProjectSessionFailureKind.InternalError,
-                    DiagnosticMessage(exception, "The scene edit failed without a diagnostic."));
+                    DiagnosticMessage(exception, "The scene edit failed without a diagnostic."),
+                    originatingEditId);
             }
 
             var next = ProjectSessionSnapshot.Ready(before.Project, result.Current);
-            Publish(next);
+            Publish(
+                next,
+                originatingEditId,
+                originatingEditId is null ? null : result.Succeeded);
             if (!result.Succeeded)
             {
                 var failure = result.Failure!;
                 return ProjectSessionOperationResult.Failed(
                     next,
                     MapSceneFailure(failure.Kind),
-                    failure.Message);
+                    failure.Message,
+                    originatingEditId);
             }
             if (createdObjectId is Guid createdId &&
                 !ContainsCreatedObject(result.Current, createdId, expectedMesh))
@@ -395,12 +410,14 @@ public sealed class ProjectSession : IProjectSession
                     next,
                     ProjectSessionFailureKind.InternalError,
                     "The successful scene create receipt is absent from the " +
-                    "authoritative snapshot.");
+                    "authoritative snapshot.",
+                    originatingEditId);
             }
             return ProjectSessionOperationResult.Success(
                 next,
                 successMessage,
-                createdObjectId);
+                createdObjectId,
+                originatingEditId);
         }
         finally
         {
@@ -408,13 +425,21 @@ public sealed class ProjectSession : IProjectSession
         }
     }
 
-    private void Publish(ProjectSessionSnapshot snapshot)
+    private void Publish(
+        ProjectSessionSnapshot snapshot,
+        ProjectEditId? originatingEditId = null,
+        bool? originatingEditSucceeded = null)
     {
         lock (snapshotGate_)
         {
             current_ = snapshot;
         }
-        SnapshotChanged?.Invoke(this, EventArgs.Empty);
+        SnapshotChanged?.Invoke(
+            this,
+            new ProjectSessionSnapshotChangedEventArgs(
+                snapshot,
+                originatingEditId,
+                originatingEditSucceeded));
     }
 
     private CancellationTokenSource CreateLinkedCancellation(CancellationToken cancellationToken) =>

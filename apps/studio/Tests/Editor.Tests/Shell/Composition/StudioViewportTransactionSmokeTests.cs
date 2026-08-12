@@ -629,6 +629,18 @@ public sealed class StudioViewportTransactionSmokeTests
         var emptyObjectId = Guid.NewGuid();
         var assetId = SceneMeshReference.DirectionalWedgeValidation.AssetId;
         var runtimeEntityId = new EntityId(8, 2);
+        var sessionId = Guid.NewGuid();
+        var targetId = Guid.NewGuid();
+        var identityAuthoredMesh = new ViewportAuthoredMeshSnapshot(
+            meshObjectId,
+            runtimeEntityId,
+            assetId,
+            TransformValue.Identity);
+        var transformedAuthoredMesh = new ViewportAuthoredMeshSnapshot(
+            meshObjectId,
+            runtimeEntityId,
+            assetId,
+            Editor.Shell.Composition.StudioSceneMeshSmoke.ValidationLocalTransform);
         var initialReceipt = new ViewportSceneMeshReceipt(
             0,
             0,
@@ -666,10 +678,20 @@ public sealed class StudioViewportTransactionSmokeTests
             meshObjectId,
             emptyObjectId,
             assetId,
-            Stage("initial-empty", 0, 1, initialReceipt),
-            Stage("mesh-created", 1, 2, meshReceipt),
-            Stage("empty-entity-created", 2, 3, meshReceipt with { SceneRevision = 3 }),
-            Stage("transform-updated", 2, 5, meshReceipt with { SceneRevision = 5 }),
+            Stage("initial-empty", 0, 1, initialReceipt, authoredMesh: null),
+            Stage("mesh-created", 1, 2, meshReceipt, identityAuthoredMesh),
+            Stage(
+                "empty-entity-created",
+                2,
+                3,
+                meshReceipt with { SceneRevision = 3 },
+                identityAuthoredMesh),
+            Stage(
+                "transform-updated",
+                2,
+                5,
+                meshReceipt with { SceneRevision = 5 },
+                transformedAuthoredMesh),
             RevisionOrderStrict: true,
             FinalExactSurface: true,
             StalePresentationExcluded: true,
@@ -683,16 +705,21 @@ public sealed class StudioViewportTransactionSmokeTests
 
         StudioProcessAcceptanceTests.AssertStructuredSceneMeshEvidence(output);
 
-        static Editor.Shell.Composition.StudioSceneMeshStageEvidence Stage(
+        Editor.Shell.Composition.StudioSceneMeshStageEvidence Stage(
             string stage,
             int entityCount,
             ulong revision,
-            ViewportSceneMeshReceipt receipt) =>
+            ViewportSceneMeshReceipt receipt,
+            ViewportAuthoredMeshSnapshot? authoredMesh) =>
             new(
                 stage,
                 entityCount,
+                sessionId,
+                targetId,
                 revision,
                 revision,
+                revision,
+                authoredMesh,
                 revision,
                 receipt,
                 $"Presented scene revision {revision}.",

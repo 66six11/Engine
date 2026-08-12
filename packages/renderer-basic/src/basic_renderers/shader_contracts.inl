@@ -299,6 +299,41 @@
                 return std::unexpected{std::move(color.error())};
             }
 
+            for (const ShaderReflection* reflection : {&*vertexReflection, &*fragmentReflection}) {
+                auto descriptorCount =
+                    expectUint(reflection->descriptorBindingCount, 1,
+                               "Mesh3D push constant descriptor signature");
+                if (!descriptorCount) {
+                    return std::unexpected{std::move(descriptorCount.error())};
+                }
+                auto pushConstantCount =
+                    expectUint(reflection->pushConstantCount, 1,
+                               "Mesh3D push constant reflection signature");
+                if (!pushConstantCount) {
+                    return std::unexpected{std::move(pushConstantCount.error())};
+                }
+                const ShaderDescriptorBindingReflection& descriptor =
+                    reflection->descriptorBindings.front();
+                auto descriptorName = expectString(descriptor.name, "gMesh3D",
+                                                   "Mesh3D push constant descriptor name");
+                if (!descriptorName) {
+                    return std::unexpected{std::move(descriptorName.error())};
+                }
+                auto descriptorCategory =
+                    expectString(descriptor.category, "pushConstantBuffer",
+                                 "Mesh3D push constant descriptor category");
+                if (!descriptorCategory) {
+                    return std::unexpected{std::move(descriptorCategory.error())};
+                }
+                const ShaderPushConstantReflection& pushConstant =
+                    reflection->pushConstants.front();
+                auto pushConstantName = expectString(pushConstant.name, "gMesh3D",
+                                                     "Mesh3D push constant name");
+                if (!pushConstantName) {
+                    return std::unexpected{std::move(pushConstantName.error())};
+                }
+            }
+
             return {};
         }
 

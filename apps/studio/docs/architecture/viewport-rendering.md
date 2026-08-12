@@ -29,6 +29,22 @@ Studio Scene View 渲染深灰背景、analytic XZ world grid、原点 XYZ 轴�
 `BasicRenderViewSceneDesc::drawItems` 记录真实 indexed Scene draw。当前唯一 Ready product binding 是 #366 的 directional-wedge
 validation mesh；未知或未就绪 asset 逐项 no-draw，不能替换成默认几何，也不代表通用 mesh importer/runtime resolver 已完成。
 
+authored mesh request 原样复制 local `TransformValue`：position、单位 quaternion `(x,y,z,w)` 与逐轴 scale；Studio
+不在 request path 做 normalize、Euler conversion 或 scale fallback。Inspector 在该 request path 之前以 X/Y/Z degree
+编辑 local rotation，固定 YXZ 顺序，并在 project mutation boundary 转成 authoritative quaternion。`--smoke-studio-scene-mesh` 使用 normalized
+non-identity quaternion 与 non-uniform scale，并把发布时 request 与 acquired lease 按 sequence 精确关联，验证
+`SceneId`、document revision、stable object id、runtime `EntityId`、asset id、完整 Transform 和
+`MinimumPresentableSequence` 均来自同一个 authoritative snapshot。superseded request 必须严格落在新 fence 之前，
+最终 request 必须精确等于该 fence。该 smoke 的 `PixelEvidenceAvailable=false` 仍是事实：它证明真实 Vulkan
+indexed-draw/receipt 与 composition presentation closure，不冒充 WGC pixel、DWM refresh 或 physical scanout 证据。
+
+Inspector 不直接暴露 quaternion XYZW；它显示三个 degree 字段，并在当前选择会话保留 Euler hint、按轴 dirty 状态与
+来源及成功/失败均可识别的 project edit。自身成功回执和同姿态 snapshot 不重新分解或改写文本；no-op 成功允许保持
+base revision，失败回执清理 pending 并将草稿重基，Apply 期间继续修改的轴由 per-axis edit version 防止旧回执覆盖。真正外部的不同 quaternion 才在
+重组验证姿态等价后选择最接近 hint 的 YXZ 表示，`q` / `-q` 视为同一姿态，奇异区也由 hint 选择连续解。该
+presentation 不增加 runtime scene 字段、viewport ABI 字段或第二个 rotation truth；hint 的跨会话持久化、gizmo、snapping、
+multi-selection、连续多圈 animation history 与可配置 Euler order 仍 deferred。
+
 ## 模块职责
 
 | 模块 | 责任 | 禁止 |

@@ -52,7 +52,10 @@ public sealed class StudioInspectorPanelHeadlessTests
                     revision: 2,
                     savedRevision: 1,
                     entities: [transformedEntity]));
-            projectSession.Publish(updated, editContext.EditId);
+            projectSession.Publish(
+                updated,
+                editContext.EditId,
+                originatingEditSucceeded: true);
             return ValueTask.FromResult(
                 ProjectSessionOperationResult.Success(
                     updated,

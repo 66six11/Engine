@@ -450,9 +450,9 @@ namespace asharia::editor {
                     .assetId = {0x7cU, 0x9fU, 0xe8U, 0xacU, 0x3cU, 0x8bU, 0x4fU, 0x66U, 0x96U,
                                 0x65U, 0x0aU, 0xf0U, 0xfdU, 0x7bU, 0x69U, 0x3eU},
                     .expectedMeshType = 0x900405520f80e8e6ULL,
-                    .position = {0.0F, 0.0F, 2.0F},
-                    .rotation = {0.0F, 0.0F, 0.0F, 1.0F},
-                    .scale = {1.0F, 1.0F, 1.0F},
+                    .position = {0.75F, 0.5F, 2.0F},
+                    .rotation = {0.0F, std::sqrt(0.5F), 0.0F, std::sqrt(0.5F)},
+                    .scale = {2.0F, 0.75F, 1.5F},
                 },
             };
             firstRequest.authoredMeshes = authoredMeshes.data();
