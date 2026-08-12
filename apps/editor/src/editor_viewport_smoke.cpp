@@ -4,6 +4,7 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <numbers>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -25,6 +26,14 @@ namespace asharia::editor {
 
         bool closeFloat(float lhs, float rhs) {
             return std::fabs(lhs - rhs) < 0.0001F;
+        }
+
+        [[nodiscard]] std::array<float, 2>
+        projectedUnitPixelScale(const EditorViewportCamera& camera, EditorExtent2D extent) {
+            return std::array<float, 2>{
+                std::fabs(camera.projection[0]) * static_cast<float>(extent.width) * 0.5F,
+                std::fabs(camera.projection[5]) * static_cast<float>(extent.height) * 0.5F,
+            };
         }
 
         float editorVec3Distance(std::array<float, 3> lhs, std::array<float, 3> rhs) {
@@ -221,6 +230,12 @@ namespace asharia::editor {
         [[nodiscard]] bool validateEditorViewportCameraSmoke() {
             const EditorExtent2D extent{.width = 320, .height = 240};
             const EditorViewportCamera camera = defaultEditorSceneViewCamera(extent);
+            if (camera.fieldOfViewAxis != EditorViewportFieldOfViewAxis::MaintainHorizontal ||
+                !closeFloat(camera.fieldOfViewRadians, std::numbers::pi_v<float> * 0.5F)) {
+                asharia::logError(
+                    "Editor viewport smoke did not use the Scene View horizontal FOV contract.");
+                return false;
+            }
             const std::optional<EditorViewportWorldRay> ray = unprojectEditorViewportPoint(
                 camera, extent, EditorViewportPoint{.x = 160.0F, .y = 120.0F});
             if (!ray || !closeFloat(ray->origin[0], ray->nearPoint[0]) ||
@@ -267,16 +282,63 @@ namespace asharia::editor {
             EditorViewportCamera invalidCamera = camera;
             invalidCamera.viewProjection = {};
             if (!closeFloat(rayLength, 1.0F) || !closeFloat(resizedCamera.aspectRatio, 2.0F) ||
-                !closeFloat(resizedCamera.position[0], camera.position[0]) ||
-                !closeFloat(resizedCamera.position[1], camera.position[1]) ||
-                !closeFloat(resizedCamera.position[2], camera.position[2]) ||
-                resizedCamera.projection[0] >= resizedCamera.projection[5] || !resizedTopLeftRay ||
-                std::fabs(resizedTopLeftRay->direction[0]) <= std::fabs(topLeftRay->direction[0]) ||
+                resizedCamera.position != camera.position ||
+                resizedCamera.target != camera.target || resizedCamera.up != camera.up ||
+                !closeFloat(resizedCamera.fieldOfViewRadians, camera.fieldOfViewRadians) ||
+                resizedCamera.fieldOfViewAxis != camera.fieldOfViewAxis || !resizedTopLeftRay ||
                 unprojectEditorViewportPoint(camera, EditorExtent2D{.width = 0, .height = 240},
                                              EditorViewportPoint{}) != std::nullopt ||
                 unprojectEditorViewportPoint(invalidCamera, extent, EditorViewportPoint{}) !=
                     std::nullopt) {
                 asharia::logError("Editor viewport smoke found invalid camera extent handling.");
+                return false;
+            }
+
+            constexpr EditorExtent2D kShortExtent{.width = 960U, .height = 540U};
+            constexpr EditorExtent2D kTallExtent{.width = 960U, .height = 720U};
+            const EditorViewportCamera horizontalShortCamera =
+                editorViewportCameraForExtent(camera, kShortExtent);
+            const EditorViewportCamera horizontalTallCamera =
+                editorViewportCameraForExtent(camera, kTallExtent);
+            const std::array<float, 2> horizontalShortPixelScale =
+                projectedUnitPixelScale(horizontalShortCamera, kShortExtent);
+            const std::array<float, 2> horizontalTallPixelScale =
+                projectedUnitPixelScale(horizontalTallCamera, kTallExtent);
+            constexpr float kMaximumResizePixelScaleDelta = 1.0F;
+            if (std::fabs(horizontalShortPixelScale[0] - horizontalTallPixelScale[0]) >
+                    kMaximumResizePixelScaleDelta ||
+                std::fabs(horizontalShortPixelScale[1] - horizontalTallPixelScale[1]) >
+                    kMaximumResizePixelScaleDelta ||
+                horizontalTallCamera.position != camera.position ||
+                horizontalTallCamera.target != camera.target ||
+                horizontalTallCamera.up != camera.up ||
+                !closeFloat(horizontalTallCamera.fieldOfViewRadians, camera.fieldOfViewRadians) ||
+                horizontalTallCamera.fieldOfViewAxis != camera.fieldOfViewAxis) {
+                asharia::logError(
+                    "Editor viewport smoke changed Scene View framing during height resize.");
+                return false;
+            }
+
+            EditorViewportCamera verticalCamera = camera;
+            verticalCamera.fieldOfViewRadians = std::numbers::pi_v<float> / 3.0F;
+            verticalCamera.fieldOfViewAxis = EditorViewportFieldOfViewAxis::MaintainVertical;
+            const EditorViewportCamera verticalShortCamera =
+                editorViewportCameraForExtent(verticalCamera, kShortExtent);
+            const EditorViewportCamera verticalTallCamera =
+                editorViewportCameraForExtent(verticalCamera, kTallExtent);
+            if (!closeFloat(verticalShortCamera.projection[5], verticalTallCamera.projection[5]) ||
+                !closeFloat(verticalShortCamera.projection[0],
+                            verticalShortCamera.projection[5] / verticalShortCamera.aspectRatio) ||
+                !closeFloat(verticalTallCamera.projection[0],
+                            verticalTallCamera.projection[5] / verticalTallCamera.aspectRatio) ||
+                verticalTallCamera.position != verticalCamera.position ||
+                verticalTallCamera.target != verticalCamera.target ||
+                verticalTallCamera.up != verticalCamera.up ||
+                !closeFloat(verticalTallCamera.fieldOfViewRadians,
+                            verticalCamera.fieldOfViewRadians) ||
+                verticalTallCamera.fieldOfViewAxis != verticalCamera.fieldOfViewAxis) {
+                asharia::logError(
+                    "Editor viewport smoke changed the maintained vertical FOV contract.");
                 return false;
             }
 
@@ -487,8 +549,7 @@ namespace asharia::editor {
 
     } // namespace
 
-    bool validateSwapchainRetirementAfterRecreate(
-        const VulkanSwapchainRetirementStats& stats) {
+    bool validateSwapchainRetirementAfterRecreate(const VulkanSwapchainRetirementStats& stats) {
         if (stats.pending != 0 || stats.retired != stats.destroyed) {
             asharia::logError("Editor resize left swapchain resources pending retirement.");
             return false;

@@ -30,6 +30,7 @@
 #include "asharia/rhi_vulkan/vulkan_error.hpp"
 #include "asharia/rhi_vulkan/vulkan_frame_loop.hpp"
 #include "asharia/rhi_vulkan/vulkan_image.hpp"
+#include "asharia/scene_rendering/scene_mesh_extraction.hpp"
 #include "asharia/window_glfw/glfw_window.hpp"
 
 namespace asharia::sample_viewer {
@@ -42,22 +43,26 @@ namespace asharia::sample_viewer {
         constexpr VkFormat kReadbackFormat = VK_FORMAT_B8G8R8A8_SRGB;
         constexpr VkDeviceSize kBytesPerPixel = 4;
         constexpr std::uint32_t kChangedPixelThreshold = 12;
-        constexpr std::size_t kProbeCount = 8;
+        constexpr std::size_t kProbeCount = 10;
         constexpr std::size_t kRetainedFormatProbeCount = 3;
         constexpr std::uint64_t kMinimumSolidPixels = 2'500;
         constexpr std::uint64_t kMinimumSolidPixelsPerHalf = 1'200;
         constexpr std::uint64_t kMinimumWirePixels = 750;
         constexpr std::uint64_t kMinimumSolidInteriorPixels = 1'600;
         constexpr std::uint64_t kMinimumMovedRightDifference = 300'000;
+        constexpr std::uint64_t kMinimumAuthoredTransformRightDifference = 150'000;
         constexpr std::uint64_t kMaximumStationaryLeftDifference = 0;
         constexpr std::uint64_t kMaximumOrderDifference = 0;
         constexpr std::uint64_t kMaximumSameFrameDifference = 0;
+        constexpr std::uint32_t kMinimumTransformBoundsDelta = 12;
 
         enum class ProbeKind : std::uint8_t {
             Empty,
             Solid,
             Wireframe,
             Moved,
+            Rotated,
+            NonuniformScaled,
             DepthNearThenFar,
             DepthFarThenNear,
             SameFrameSceneWireframe,
@@ -82,6 +87,16 @@ namespace asharia::sample_viewer {
             std::uint64_t clearedSolidInteriorPixels{};
             std::uint64_t movedLeftDifference{};
             std::uint64_t movedRightDifference{};
+            std::uint64_t rotatedLeftDifference{};
+            std::uint64_t rotatedRightDifference{};
+            std::uint64_t scaledLeftDifference{};
+            std::uint64_t scaledRightDifference{};
+            std::uint32_t baseRightWidth{};
+            std::uint32_t baseRightHeight{};
+            std::uint32_t rotatedRightWidth{};
+            std::uint32_t rotatedRightHeight{};
+            std::uint32_t scaledRightWidth{};
+            std::uint32_t scaledRightHeight{};
             std::uint64_t depthOrderDifference{};
             std::uint64_t sameFrameWireDifference{};
             std::uint64_t sameFrameSolidDifference{};
@@ -100,10 +115,30 @@ namespace asharia::sample_viewer {
             float farPlane{32.0F};
         };
 
-        struct SceneMeshModelDesc {
-            float scale{1.0F};
-            float rotationY{};
-            SmokeVec3 translation{};
+        struct PixelBounds {
+            std::uint32_t minimumColumn{};
+            std::uint32_t minimumRow{};
+            std::uint32_t maximumColumn{};
+            std::uint32_t maximumRow{};
+
+            [[nodiscard]] constexpr std::uint32_t width() const noexcept {
+                return maximumColumn - minimumColumn + 1U;
+            }
+
+            [[nodiscard]] constexpr std::uint32_t height() const noexcept {
+                return maximumRow - minimumRow + 1U;
+            }
+        };
+
+        using SceneMeshDrawList = std::array<BasicDrawListItem, 2>;
+
+        struct SceneMeshDrawLists {
+            SceneMeshDrawList base;
+            SceneMeshDrawList moved;
+            SceneMeshDrawList rotated;
+            SceneMeshDrawList nonuniformScaled;
+            SceneMeshDrawList depthNearThenFar;
+            SceneMeshDrawList depthFarThenNear;
         };
 
         struct UnknownResourceCheckState {
@@ -241,84 +276,133 @@ namespace asharia::sample_viewer {
             };
         }
 
-        [[nodiscard]] BasicTransformMatrix3D sceneMeshModel(const SceneMeshModelDesc& desc) {
-            const float cosine = std::cos(desc.rotationY);
-            const float sine = std::sin(desc.rotationY);
-            return BasicTransformMatrix3D{
-                desc.scale * cosine,
-                0.0F,
-                desc.scale * sine,
-                desc.translation[0],
-                0.0F,
-                desc.scale,
-                0.0F,
-                desc.translation[1],
-                -desc.scale * sine,
-                0.0F,
-                desc.scale * cosine,
-                desc.translation[2],
-                0.0F,
-                0.0F,
-                0.0F,
-                1.0F,
-            };
+        [[nodiscard]] scene::SceneObjectId
+        validationSceneObjectId(std::uint32_t sourceIndex) noexcept {
+            scene::SceneObjectId objectId{};
+            objectId.bytes[0] = static_cast<std::uint8_t>(sourceIndex & 0xFFU);
+            objectId.bytes[1] = static_cast<std::uint8_t>((sourceIndex >> 8U) & 0xFFU);
+            return objectId;
         }
 
-        [[nodiscard]] BasicDrawListItem sceneMeshItem(std::uint32_t sourceIndex,
-                                                      BasicTransformMatrix3D model) {
-            return BasicDrawListItem{
+        [[nodiscard]] Result<BasicDrawListItem>
+        extractValidationMeshItem(std::uint32_t sourceIndex, const TransformComponent& transform) {
+            constexpr asset::AssetGuid kValidationMeshAsset{
+                .bytes = {0x7CU, 0x9FU, 0xE8U, 0xACU, 0x3CU, 0x8BU, 0x4FU, 0x66U, 0x96U, 0x65U,
+                          0x0AU, 0xF0U, 0xFDU, 0x7BU, 0x69U, 0x3EU},
+            };
+            constexpr std::uint64_t kValidationProductGeneration = 1U;
+            const asset::AssetReference mesh =
+                asset::makeAssetReference(kValidationMeshAsset, scene::kSceneMeshAssetType);
+            const scene_rendering::SceneMeshInstance instance{
+                .objectId = validationSceneObjectId(sourceIndex),
+                .entity = {.index = sourceIndex, .generation = 7U},
+                .transform = transform,
+                .mesh = mesh,
+            };
+            const scene_rendering::SceneMeshProductBinding binding{
+                .asset = mesh,
+                .state = scene_rendering::SceneMeshProductState::Ready,
+                .productHash = kBasicValidationMeshResourceKey.value,
+                .productGeneration = kValidationProductGeneration,
+                .meshResource = kBasicValidationMeshResourceKey,
+                .materialResource = kBasicDefaultUnlitMaterialResourceKey,
                 .drawItem = basicValidationMeshDrawItem(),
-                .modelMatrix = model,
-                .context =
-                    BasicDrawPacketContext{
-                        .sourceObject = BasicDrawSourceId{.index = sourceIndex, .generation = 7U},
-                        .meshResource = kBasicValidationMeshResourceKey,
-                        .materialResource = kBasicDefaultUnlitMaterialResourceKey,
-                    },
             };
-        }
-
-        [[nodiscard]] std::array<BasicDrawListItem, 2> baseSceneItems() {
-            return std::array{
-                sceneMeshItem(101U, sceneMeshModel(SceneMeshModelDesc{
-                                        .scale = 0.75F,
-                                        .translation = {-1.55F, 0.0F, 3.0F},
-                                    })),
-                sceneMeshItem(102U, sceneMeshModel(SceneMeshModelDesc{
-                                        .scale = 0.75F,
-                                        .translation = {1.55F, 0.0F, 3.0F},
-                                    })),
-            };
-        }
-
-        [[nodiscard]] std::array<BasicDrawListItem, 2> movedSceneItems() {
-            return std::array{
-                sceneMeshItem(101U, sceneMeshModel(SceneMeshModelDesc{
-                                        .scale = 0.75F,
-                                        .translation = {-1.55F, 0.0F, 3.0F},
-                                    })),
-                sceneMeshItem(102U, sceneMeshModel(SceneMeshModelDesc{
-                                        .scale = 0.75F,
-                                        .translation = {2.30F, 0.0F, 3.0F},
-                                    })),
-            };
-        }
-
-        [[nodiscard]] std::array<BasicDrawListItem, 2> depthSceneItems(bool reverseOrder) {
-            BasicDrawListItem nearItem = sceneMeshItem(301U, sceneMeshModel(SceneMeshModelDesc{
-                                                                 .scale = 0.90F,
-                                                                 .translation = {0.0F, 0.65F, 3.0F},
-                                                             }));
-            BasicDrawListItem farItem =
-                sceneMeshItem(302U, sceneMeshModel(SceneMeshModelDesc{
-                                        .scale = 0.90F,
-                                        .rotationY = std::numbers::pi_v<float>,
-                                        .translation = {0.0F, -0.65F, 3.0F},
-                                    }));
-            if (reverseOrder) {
-                return std::array{farItem, nearItem};
+            const scene_rendering::SceneMeshExtraction extraction =
+                scene_rendering::extractSceneMeshDrawList({
+                    .revision = 1U,
+                    .instances = {&instance, 1U},
+                    .productBindings = {&binding, 1U},
+                });
+            if (!extraction.diagnostics().empty() || extraction.drawItems().size() != 1U) {
+                std::string message =
+                    "Production Scene mesh extraction rejected the validation wedge transform";
+                if (!extraction.diagnostics().empty()) {
+                    message += ": " + extraction.diagnostics().front().message;
+                }
+                return std::unexpected{sceneMeshSmokeError(std::move(message))};
             }
-            return std::array{nearItem, farItem};
+            return extraction.drawItems().front();
+        }
+
+        [[nodiscard]] Result<SceneMeshDrawList>
+        extractValidationMeshPair(std::uint32_t leftSource, const TransformComponent& left,
+                                  std::uint32_t rightSource, const TransformComponent& right) {
+            auto leftItem = extractValidationMeshItem(leftSource, left);
+            if (!leftItem) {
+                return std::unexpected{std::move(leftItem.error())};
+            }
+            auto rightItem = extractValidationMeshItem(rightSource, right);
+            if (!rightItem) {
+                return std::unexpected{std::move(rightItem.error())};
+            }
+            return SceneMeshDrawList{*leftItem, *rightItem};
+        }
+
+        [[nodiscard]] constexpr TransformComponent
+        validationTransform(Vec3 position, Vec3 scale, Quat rotation = Quat{.w = 1.0F}) noexcept {
+            return TransformComponent{
+                .position = position,
+                .rotation = rotation,
+                .scale = scale,
+            };
+        }
+
+        [[nodiscard]] Result<SceneMeshDrawLists> createSceneMeshDrawLists() {
+            constexpr Vec3 kBaseScale{.x = 0.75F, .y = 0.75F, .z = 0.75F};
+            constexpr TransformComponent kLeft =
+                validationTransform({.x = -1.55F, .y = 0.0F, .z = 3.0F}, kBaseScale);
+            constexpr TransformComponent kRight =
+                validationTransform({.x = 1.55F, .y = 0.0F, .z = 3.0F}, kBaseScale);
+            constexpr float kQuarterTurnComponent = 0.7071067811865475F;
+
+            auto base = extractValidationMeshPair(101U, kLeft, 102U, kRight);
+            auto moved = extractValidationMeshPair(
+                101U, kLeft, 102U,
+                validationTransform({.x = 2.30F, .y = 0.0F, .z = 3.0F}, kBaseScale));
+            auto rotated = extractValidationMeshPair(
+                101U, kLeft, 102U,
+                validationTransform({.x = 1.55F, .y = 0.0F, .z = 3.0F}, kBaseScale,
+                                    {.x = 0.0F,
+                                     .y = kQuarterTurnComponent,
+                                     .z = 0.0F,
+                                     .w = kQuarterTurnComponent}));
+            auto scaled = extractValidationMeshPair(
+                101U, kLeft, 102U,
+                validationTransform({.x = 1.55F, .y = 0.0F, .z = 3.0F},
+                                    {.x = 1.05F, .y = 0.75F, .z = 0.40F}));
+            auto depthNearFar = extractValidationMeshPair(
+                301U,
+                validationTransform({.x = 0.0F, .y = 0.65F, .z = 3.0F},
+                                    {.x = 0.90F, .y = 0.90F, .z = 0.90F}),
+                302U,
+                validationTransform({.x = 0.0F, .y = -0.65F, .z = 3.0F},
+                                    {.x = 0.90F, .y = 0.90F, .z = 0.90F},
+                                    {.x = 0.0F, .y = 1.0F, .z = 0.0F, .w = 0.0F}));
+            if (!base) {
+                return std::unexpected{std::move(base.error())};
+            }
+            if (!moved) {
+                return std::unexpected{std::move(moved.error())};
+            }
+            if (!rotated) {
+                return std::unexpected{std::move(rotated.error())};
+            }
+            if (!scaled) {
+                return std::unexpected{std::move(scaled.error())};
+            }
+            if (!depthNearFar) {
+                return std::unexpected{std::move(depthNearFar.error())};
+            }
+            SceneMeshDrawList depthFarNear{depthNearFar->at(1), depthNearFar->at(0)};
+            return SceneMeshDrawLists{
+                .base = *base,
+                .moved = *moved,
+                .rotated = *rotated,
+                .nonuniformScaled = *scaled,
+                .depthNearThenFar = *depthNearFar,
+                .depthFarThenNear = depthFarNear,
+            };
         }
 
         [[nodiscard]] Result<SceneMeshProbe> createProbe(const VulkanContext& context) {
@@ -501,18 +585,14 @@ namespace asharia::sample_viewer {
                    error.message.find(resourceContext) != std::string::npos;
         }
 
-        [[nodiscard]] Result<VulkanFrameRecordResult>
-        recordUnknownResourceChecks(const VulkanFrameRecordContext& frame,
-                                    BasicFullscreenTextureRenderer& renderer,
-                                    UnknownResourceCheckState& state) {
+        [[nodiscard]] Result<VulkanFrameRecordResult> recordUnknownResourceChecks(
+            const VulkanFrameRecordContext& frame, BasicFullscreenTextureRenderer& renderer,
+            UnknownResourceCheckState& state, const BasicDrawListItem& templateItem) {
             constexpr BasicDrawResourceKey kUnknownMesh{.value = 0xBAD0000000000001ULL};
             constexpr BasicDrawResourceKey kUnknownMaterial{.value = 0xBAD0000000000002ULL};
 
-            BasicDrawListItem unknownMesh =
-                sceneMeshItem(901U, sceneMeshModel(SceneMeshModelDesc{
-                                        .scale = 0.75F,
-                                        .translation = {0.0F, 0.0F, 3.0F},
-                                    }));
+            BasicDrawListItem unknownMesh = templateItem;
+            unknownMesh.context.sourceObject = {.index = 901U, .generation = 7U};
             unknownMesh.context.meshResource = kUnknownMesh;
             const std::array unknownMeshItems{unknownMesh};
             auto meshResult = renderer.recordViewFrame(
@@ -539,11 +619,8 @@ namespace asharia::sample_viewer {
                                         meshResult.error().message)};
             }
 
-            BasicDrawListItem unknownMaterial =
-                sceneMeshItem(902U, sceneMeshModel(SceneMeshModelDesc{
-                                        .scale = 0.75F,
-                                        .translation = {0.0F, 0.0F, 3.0F},
-                                    }));
+            BasicDrawListItem unknownMaterial = templateItem;
+            unknownMaterial.context.sourceObject = {.index = 902U, .generation = 7U};
             unknownMaterial.context.materialResource = kUnknownMaterial;
             const std::array unknownMaterialItems{unknownMaterial};
             auto materialResult = renderer.recordViewFrame(
@@ -576,8 +653,8 @@ namespace asharia::sample_viewer {
 
         [[nodiscard]] Result<VulkanFrameRecordResult> recordUnsupportedWireframeCheck(
             const VulkanFrameRecordContext& frame, BasicFullscreenTextureRenderer& renderer,
-            BasicRenderViewDiagnostics& diagnostics, bool& unavailableReported) {
-            const auto items = baseSceneItems();
+            BasicRenderViewDiagnostics& diagnostics, bool& unavailableReported,
+            std::span<const BasicDrawListItem> items) {
             auto rejected = renderer.recordViewFrame(
                 frame, BasicRenderViewDesc{
                            .target = swapchainViewTarget(frame),
@@ -926,6 +1003,35 @@ namespace asharia::sample_viewer {
             return count;
         }
 
+        [[nodiscard]] std::optional<PixelBounds> maskBounds(std::span<const std::uint8_t> mask,
+                                                            HorizontalRegion region) {
+            std::optional<PixelBounds> bounds;
+            for (std::uint32_t row = 0; row < kReadbackExtent.height; ++row) {
+                for (std::uint32_t column = region.firstCoordinate;
+                     column < region.pastLastCoordinate; ++column) {
+                    const std::size_t index =
+                        (static_cast<std::size_t>(row) * kReadbackExtent.width) + column;
+                    if (mask[index] == 0U) {
+                        continue;
+                    }
+                    if (!bounds) {
+                        bounds = PixelBounds{
+                            .minimumColumn = column,
+                            .minimumRow = row,
+                            .maximumColumn = column,
+                            .maximumRow = row,
+                        };
+                        continue;
+                    }
+                    bounds->minimumColumn = std::min(bounds->minimumColumn, column);
+                    bounds->minimumRow = std::min(bounds->minimumRow, row);
+                    bounds->maximumColumn = std::max(bounds->maximumColumn, column);
+                    bounds->maximumRow = std::max(bounds->maximumRow, row);
+                }
+            }
+            return bounds;
+        }
+
         [[nodiscard]] std::uint64_t imageDifference(std::span<const std::byte> lhs,
                                                     std::span<const std::byte> rhs,
                                                     HorizontalRegion region) {
@@ -1016,6 +1122,8 @@ namespace asharia::sample_viewer {
             const auto& empty = probes[probeIndex(ProbeKind::Empty)].pixels;
             const auto& solid = probes[probeIndex(ProbeKind::Solid)].pixels;
             const auto& moved = probes[probeIndex(ProbeKind::Moved)].pixels;
+            const auto& rotated = probes[probeIndex(ProbeKind::Rotated)].pixels;
+            const auto& scaled = probes[probeIndex(ProbeKind::NonuniformScaled)].pixels;
             const auto& depthA = probes[probeIndex(ProbeKind::DepthNearThenFar)].pixels;
             const auto& depthB = probes[probeIndex(ProbeKind::DepthFarThenNear)].pixels;
             if (maximumUniformDelta(empty) != 0U) {
@@ -1039,6 +1147,55 @@ namespace asharia::sample_viewer {
             if (metrics.movedLeftDifference > kMaximumStationaryLeftDifference ||
                 metrics.movedRightDifference < kMinimumMovedRightDifference) {
                 logError("Scene mesh transform probe did not isolate the moved right draw item");
+                return false;
+            }
+
+            metrics.rotatedLeftDifference = imageDifference(solid, rotated, kLeftRegion);
+            metrics.rotatedRightDifference = imageDifference(solid, rotated, kRightRegion);
+            metrics.scaledLeftDifference = imageDifference(solid, scaled, kLeftRegion);
+            metrics.scaledRightDifference = imageDifference(solid, scaled, kRightRegion);
+            if (metrics.rotatedLeftDifference > kMaximumStationaryLeftDifference ||
+                metrics.rotatedRightDifference < kMinimumAuthoredTransformRightDifference) {
+                logError("Scene mesh authored rotation probe did not isolate a visible right draw "
+                         "item change");
+                return false;
+            }
+            if (metrics.scaledLeftDifference > kMaximumStationaryLeftDifference ||
+                metrics.scaledRightDifference < kMinimumAuthoredTransformRightDifference) {
+                logError("Scene mesh authored nonuniform scale probe did not isolate a visible "
+                         "right draw item change");
+                return false;
+            }
+
+            const std::vector rotatedMask = changedMask(rotated, empty);
+            const std::vector scaledMask = changedMask(scaled, empty);
+            const std::optional<PixelBounds> baseRightBounds = maskBounds(solidMask, kRightRegion);
+            const std::optional<PixelBounds> rotatedRightBounds =
+                maskBounds(rotatedMask, kRightRegion);
+            const std::optional<PixelBounds> scaledRightBounds =
+                maskBounds(scaledMask, kRightRegion);
+            if (!baseRightBounds || !rotatedRightBounds || !scaledRightBounds) {
+                logError("Scene mesh authored transform probe lost the right draw item bounds");
+                return false;
+            }
+            metrics.baseRightWidth = baseRightBounds->width();
+            metrics.baseRightHeight = baseRightBounds->height();
+            metrics.rotatedRightWidth = rotatedRightBounds->width();
+            metrics.rotatedRightHeight = rotatedRightBounds->height();
+            metrics.scaledRightWidth = scaledRightBounds->width();
+            metrics.scaledRightHeight = scaledRightBounds->height();
+            if (metrics.baseRightWidth < metrics.rotatedRightWidth + kMinimumTransformBoundsDelta ||
+                metrics.rotatedRightHeight <
+                    metrics.baseRightHeight + kMinimumTransformBoundsDelta) {
+                logError("Scene mesh authored quarter-turn did not swap the asymmetric wedge "
+                         "screen-space bounds");
+                return false;
+            }
+            if (metrics.scaledRightWidth < metrics.baseRightWidth + kMinimumTransformBoundsDelta ||
+                metrics.baseRightHeight <
+                    metrics.scaledRightHeight + kMinimumTransformBoundsDelta) {
+                logError("Scene mesh authored nonuniform scale did not widen and flatten the "
+                         "asymmetric wedge bounds");
                 return false;
             }
 
@@ -1100,7 +1257,7 @@ namespace asharia::sample_viewer {
         [[nodiscard]] bool validateSceneMeshPipelineStats(BasicPipelineCacheStats stats,
                                                           bool wireframeAvailable) {
             const std::uint64_t expectedCreated = wireframeAvailable ? 2U : 1U;
-            const std::uint64_t expectedReused = wireframeAvailable ? 5U : 3U;
+            const std::uint64_t expectedReused = wireframeAvailable ? 7U : 5U;
             if (stats.created != expectedCreated || stats.reused != expectedReused) {
                 logError("Scene mesh smoke did not independently create and reuse Solid/Wireframe "
                          "pipelines");
@@ -1115,6 +1272,7 @@ namespace asharia::sample_viewer {
             std::reference_wrapper<VulkanFrameLoop> frameLoop;
             std::reference_wrapper<BasicFullscreenTextureRenderer> renderer;
             std::reference_wrapper<std::array<SceneMeshProbe, kProbeCount>> probes;
+            std::reference_wrapper<const SceneMeshDrawLists> drawLists;
             std::uint64_t frameIndex{1U};
             bool wireframeAvailable{};
             bool wireframeUnavailableReported{};
@@ -1162,33 +1320,43 @@ namespace asharia::sample_viewer {
 
         [[nodiscard]] bool recordRequiredSceneMeshProbes(SceneMeshSmokeRunState& state) {
             constexpr std::array<BasicDrawListItem, 0> kEmptyItems{};
-            const std::array<BasicDrawListItem, 2> baseItems = baseSceneItems();
-            const std::array<BasicDrawListItem, 2> movedItems = movedSceneItems();
-            const std::array<BasicDrawListItem, 2> depthNearFar = depthSceneItems(false);
-            const std::array<BasicDrawListItem, 2> depthFarNear = depthSceneItems(true);
+            const SceneMeshDrawLists& drawLists = state.drawLists.get();
 
             if (!submitSceneMeshProbe(state, ProbeKind::Empty, kEmptyItems,
                                       BasicSceneRasterMode::Solid, BasicRenderViewKind::Scene,
                                       "RenderViewSceneMeshEmpty")) {
                 return false;
             }
-            if (!submitSceneMeshProbe(state, ProbeKind::Solid, baseItems,
+            if (!submitSceneMeshProbe(state, ProbeKind::Solid, drawLists.base,
                                       BasicSceneRasterMode::Solid, BasicRenderViewKind::Scene,
                                       "RenderViewSceneMeshSolid")) {
                 return false;
             }
-            if (!submitSceneMeshProbe(state, ProbeKind::Moved, movedItems,
+            if (!submitSceneMeshProbe(state, ProbeKind::Moved, drawLists.moved,
                                       BasicSceneRasterMode::Solid, BasicRenderViewKind::Scene,
                                       "RenderViewSceneMeshMoved")) {
                 return false;
             }
-            if (!submitSceneMeshProbe(state, ProbeKind::DepthNearThenFar, depthNearFar,
+            if (!submitSceneMeshProbe(state, ProbeKind::Rotated, drawLists.rotated,
                                       BasicSceneRasterMode::Solid, BasicRenderViewKind::Scene,
+                                      "RenderViewSceneMeshRotated")) {
+                return false;
+            }
+            if (!submitSceneMeshProbe(state, ProbeKind::NonuniformScaled,
+                                      drawLists.nonuniformScaled, BasicSceneRasterMode::Solid,
+                                      BasicRenderViewKind::Scene,
+                                      "RenderViewSceneMeshNonuniformScaled")) {
+                return false;
+            }
+            if (!submitSceneMeshProbe(state, ProbeKind::DepthNearThenFar,
+                                      drawLists.depthNearThenFar, BasicSceneRasterMode::Solid,
+                                      BasicRenderViewKind::Scene,
                                       "RenderViewSceneMeshDepthNearFar")) {
                 return false;
             }
-            return submitSceneMeshProbe(state, ProbeKind::DepthFarThenNear, depthFarNear,
-                                        BasicSceneRasterMode::Solid, BasicRenderViewKind::Scene,
+            return submitSceneMeshProbe(state, ProbeKind::DepthFarThenNear,
+                                        drawLists.depthFarThenNear, BasicSceneRasterMode::Solid,
+                                        BasicRenderViewKind::Scene,
                                         "RenderViewSceneMeshDepthFarNear");
         }
 
@@ -1223,19 +1391,19 @@ namespace asharia::sample_viewer {
         }
 
         [[nodiscard]] bool recordWireframeSceneMeshProbes(SceneMeshSmokeRunState& state) {
+            const SceneMeshDrawList& baseItems = state.drawLists.get().base;
             if (!state.wireframeAvailable) {
                 BasicRenderViewDiagnostics diagnostics;
                 return submitSmokeFrame(
                     state.frameLoop.get(), state.window.get(),
-                    [&state, &diagnostics](const VulkanFrameRecordContext& frame) {
-                        return recordUnsupportedWireframeCheck(frame, state.renderer.get(),
-                                                               diagnostics,
-                                                               state.wireframeUnavailableReported);
+                    [&state, &diagnostics, &baseItems](const VulkanFrameRecordContext& frame) {
+                        return recordUnsupportedWireframeCheck(
+                            frame, state.renderer.get(), diagnostics,
+                            state.wireframeUnavailableReported, baseItems);
                     },
                     "RenderView unavailable wireframe capability");
             }
 
-            const std::array<BasicDrawListItem, 2> baseItems = baseSceneItems();
             if (!submitSceneMeshProbe(state, ProbeKind::Wireframe, baseItems,
                                       BasicSceneRasterMode::Wireframe, BasicRenderViewKind::Scene,
                                       "RenderViewSceneMeshWireframe")) {
@@ -1263,12 +1431,14 @@ namespace asharia::sample_viewer {
                 unavailableRenderer.sceneMeshPipelineCacheStats();
             BasicRenderViewDiagnostics diagnostics;
             bool unavailableReported{};
+            const SceneMeshDrawList& baseItems = state.drawLists.get().base;
             if (!submitSmokeFrame(
                     state.frameLoop.get(), state.window.get(),
-                    [&unavailableRenderer, &diagnostics,
+                    [&unavailableRenderer, &diagnostics, &baseItems,
                      &unavailableReported](const VulkanFrameRecordContext& frame) {
                         return recordUnsupportedWireframeCheck(frame, unavailableRenderer,
-                                                               diagnostics, unavailableReported);
+                                                               diagnostics, unavailableReported,
+                                                               baseItems);
                     },
                     "RenderView deterministic unavailable wireframe capability")) {
                 return false;
@@ -1400,7 +1570,7 @@ namespace asharia::sample_viewer {
             }
             formatProbes.at(1).targetFormat = VK_FORMAT_B8G8R8A8_UNORM;
 
-            const std::array<BasicDrawListItem, 2> items = baseSceneItems();
+            const SceneMeshDrawList& items = state.drawLists.get().base;
             const std::uint64_t frameIndex = state.frameIndex++;
             if (!submitSmokeFrame(
                     state.frameLoop.get(), state.window.get(),
@@ -1448,7 +1618,8 @@ namespace asharia::sample_viewer {
                 state.frameLoop.get(), state.window.get(),
                 [&state](const VulkanFrameRecordContext& frame) {
                     return recordUnknownResourceChecks(frame, state.renderer.get(),
-                                                       state.unknownResources);
+                                                       state.unknownResources,
+                                                       state.drawLists.get().base.front());
                 },
                 "RenderView unresolved resource checks");
         }
@@ -1481,33 +1652,42 @@ namespace asharia::sample_viewer {
 
         [[nodiscard]] bool
         validateRequiredSceneMeshDiagnostics(const SceneMeshSmokeRunState& state) {
-            const std::array<BasicDrawListItem, 2> baseItems = baseSceneItems();
-            const std::array<BasicDrawListItem, 2> movedItems = movedSceneItems();
-            const std::array<BasicDrawListItem, 2> depthNearFar = depthSceneItems(false);
-            const std::array<BasicDrawListItem, 2> depthFarNear = depthSceneItems(true);
+            const SceneMeshDrawLists& drawLists = state.drawLists.get();
 
             if (!validateEmptyDiagnostics(state.probes.get().at(probeIndex(ProbeKind::Empty)))) {
                 return false;
             }
             if (!validateSceneDiagnostics(state.probes.get().at(probeIndex(ProbeKind::Solid)),
-                                          baseItems, BasicSceneRasterMode::Solid,
+                                          drawLists.base, BasicSceneRasterMode::Solid,
                                           BasicRenderViewKind::Scene, "Scene mesh Solid probe")) {
                 return false;
             }
             if (!validateSceneDiagnostics(state.probes.get().at(probeIndex(ProbeKind::Moved)),
-                                          movedItems, BasicSceneRasterMode::Solid,
+                                          drawLists.moved, BasicSceneRasterMode::Solid,
                                           BasicRenderViewKind::Scene, "Scene mesh moved probe")) {
                 return false;
             }
+            if (!validateSceneDiagnostics(state.probes.get().at(probeIndex(ProbeKind::Rotated)),
+                                          drawLists.rotated, BasicSceneRasterMode::Solid,
+                                          BasicRenderViewKind::Scene,
+                                          "Scene mesh authored rotation probe")) {
+                return false;
+            }
             if (!validateSceneDiagnostics(
-                    state.probes.get().at(probeIndex(ProbeKind::DepthNearThenFar)), depthNearFar,
-                    BasicSceneRasterMode::Solid, BasicRenderViewKind::Scene,
-                    "Scene mesh near/far depth probe")) {
+                    state.probes.get().at(probeIndex(ProbeKind::NonuniformScaled)),
+                    drawLists.nonuniformScaled, BasicSceneRasterMode::Solid,
+                    BasicRenderViewKind::Scene, "Scene mesh authored nonuniform scale probe")) {
+                return false;
+            }
+            if (!validateSceneDiagnostics(
+                    state.probes.get().at(probeIndex(ProbeKind::DepthNearThenFar)),
+                    drawLists.depthNearThenFar, BasicSceneRasterMode::Solid,
+                    BasicRenderViewKind::Scene, "Scene mesh near/far depth probe")) {
                 return false;
             }
             return validateSceneDiagnostics(
-                state.probes.get().at(probeIndex(ProbeKind::DepthFarThenNear)), depthFarNear,
-                BasicSceneRasterMode::Solid, BasicRenderViewKind::Scene,
+                state.probes.get().at(probeIndex(ProbeKind::DepthFarThenNear)),
+                drawLists.depthFarThenNear, BasicSceneRasterMode::Solid, BasicRenderViewKind::Scene,
                 "Scene mesh reversed depth probe");
         }
 
@@ -1516,7 +1696,7 @@ namespace asharia::sample_viewer {
             if (!state.wireframeAvailable) {
                 return true;
             }
-            const std::array<BasicDrawListItem, 2> baseItems = baseSceneItems();
+            const SceneMeshDrawList& baseItems = state.drawLists.get().base;
             if (!validateSceneDiagnostics(state.probes.get().at(probeIndex(ProbeKind::Wireframe)),
                                           baseItems, BasicSceneRasterMode::Wireframe,
                                           BasicRenderViewKind::Scene,
@@ -1587,6 +1767,13 @@ namespace asharia::sample_viewer {
                       << " (left " << metrics.solidLeftPixels << ", right "
                       << metrics.solidRightPixels << "), moved diff L/R "
                       << metrics.movedLeftDifference << '/' << metrics.movedRightDifference
+                      << ", rotation diff L/R " << metrics.rotatedLeftDifference << '/'
+                      << metrics.rotatedRightDifference << " bounds " << metrics.baseRightWidth
+                      << 'x' << metrics.baseRightHeight << "->" << metrics.rotatedRightWidth << 'x'
+                      << metrics.rotatedRightHeight << ", nonuniform-scale diff L/R "
+                      << metrics.scaledLeftDifference << '/' << metrics.scaledRightDifference
+                      << " bounds " << metrics.baseRightWidth << 'x' << metrics.baseRightHeight
+                      << "->" << metrics.scaledRightWidth << 'x' << metrics.scaledRightHeight
                       << ", depth-order diff " << metrics.depthOrderDifference;
             if (state.wireframeAvailable) {
                 std::cout << ", wire pixels " << metrics.wirePixels << ", cleared interior "
@@ -1614,6 +1801,11 @@ namespace asharia::sample_viewer {
     } // namespace
 
     int runSmokeRenderViewSceneMesh() {
+        auto drawLists = createSceneMeshDrawLists();
+        if (!drawLists) {
+            logError(drawLists.error().message);
+            return EXIT_FAILURE;
+        }
         auto glfw = GlfwInstance::create();
         if (!glfw) {
             logError(glfw.error().message);
@@ -1683,6 +1875,7 @@ namespace asharia::sample_viewer {
             .frameLoop = *frameLoop,
             .renderer = *renderer,
             .probes = probes,
+            .drawLists = *drawLists,
             .frameIndex = 1U,
             .wireframeAvailable = context->capabilities().fillModeNonSolid,
             .wireframeUnavailableReported = false,

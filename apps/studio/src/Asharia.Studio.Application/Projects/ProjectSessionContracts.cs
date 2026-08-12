@@ -13,6 +13,17 @@ public readonly record struct ProjectSessionId(Guid Value)
     public static ProjectSessionId CreateNew() => new(Guid.NewGuid());
 }
 
+public readonly record struct ProjectEditId(Guid Value)
+{
+    public bool IsValid => Value != Guid.Empty;
+
+    public static ProjectEditId CreateNew() => new(Guid.NewGuid());
+}
+
+public readonly record struct ProjectSessionEditContext(
+    ProjectEditId EditId,
+    ulong ExpectedRevision);
+
 public enum ProjectSessionState
 {
     NoProject,
@@ -139,7 +150,8 @@ public sealed record ProjectSessionOperationResult
         ProjectSessionSnapshot current,
         string message,
         ProjectSessionFailureKind? failureKind,
-        Guid? createdObjectId)
+        Guid? createdObjectId,
+        ProjectEditId? originatingEditId)
     {
         if (string.IsNullOrWhiteSpace(message))
         {
@@ -165,12 +177,19 @@ public sealed record ProjectSessionOperationResult
                 "A created object id must not be empty.",
                 nameof(createdObjectId));
         }
+        if (originatingEditId is ProjectEditId editId && !editId.IsValid)
+        {
+            throw new ArgumentException(
+                "An originating project edit id must be valid.",
+                nameof(originatingEditId));
+        }
 
         Succeeded = succeeded;
         Current = current;
         Message = message;
         FailureKind = failureKind;
         CreatedObjectId = createdObjectId;
+        OriginatingEditId = originatingEditId;
     }
 
     public bool Succeeded { get; }
@@ -183,29 +202,73 @@ public sealed record ProjectSessionOperationResult
 
     public Guid? CreatedObjectId { get; }
 
+    public ProjectEditId? OriginatingEditId { get; }
+
     public static ProjectSessionOperationResult Success(
         ProjectSessionSnapshot current,
         string message,
-        Guid? createdObjectId = null) =>
-        new(succeeded: true, current, message, failureKind: null, createdObjectId);
+        Guid? createdObjectId = null,
+        ProjectEditId? originatingEditId = null) =>
+        new(
+            succeeded: true,
+            current,
+            message,
+            failureKind: null,
+            createdObjectId,
+            originatingEditId);
 
     public static ProjectSessionOperationResult Failed(
         ProjectSessionSnapshot current,
         ProjectSessionFailureKind failureKind,
-        string message)
+        string message,
+        ProjectEditId? originatingEditId = null)
     {
         return new ProjectSessionOperationResult(
             succeeded: false,
             current,
             message,
             failureKind,
-            createdObjectId: null);
+            createdObjectId: null,
+            originatingEditId);
     }
+}
+
+public sealed class ProjectSessionSnapshotChangedEventArgs : EventArgs
+{
+    public ProjectSessionSnapshotChangedEventArgs(
+        ProjectSessionSnapshot snapshot,
+        ProjectEditId? originatingEditId,
+        bool? originatingEditSucceeded = null)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        if (originatingEditId is ProjectEditId editId && !editId.IsValid)
+        {
+            throw new ArgumentException(
+                "An originating project edit id must be valid.",
+                nameof(originatingEditId));
+        }
+        if ((originatingEditId is null) != (originatingEditSucceeded is null))
+        {
+            throw new ArgumentException(
+                "An originating edit outcome requires an originating edit id.",
+                nameof(originatingEditSucceeded));
+        }
+
+        Snapshot = snapshot;
+        OriginatingEditId = originatingEditId;
+        OriginatingEditSucceeded = originatingEditSucceeded;
+    }
+
+    public ProjectSessionSnapshot Snapshot { get; }
+
+    public ProjectEditId? OriginatingEditId { get; }
+
+    public bool? OriginatingEditSucceeded { get; }
 }
 
 public interface IProjectSession : IAsyncDisposable
 {
-    event EventHandler? SnapshotChanged;
+    event EventHandler<ProjectSessionSnapshotChangedEventArgs>? SnapshotChanged;
 
     ProjectSessionSnapshot Current { get; }
 
@@ -238,6 +301,7 @@ public interface IProjectSession : IAsyncDisposable
     ValueTask<ProjectSessionOperationResult> SetEntityTransformAsync(
         Guid objectId,
         TransformValue transform,
+        ProjectSessionEditContext context,
         CancellationToken cancellationToken = default);
 
     ValueTask<ProjectSessionOperationResult> SaveSceneAsync(

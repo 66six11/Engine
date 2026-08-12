@@ -26,7 +26,7 @@ internal static class StudioShellTestFactory
 
 internal sealed class TestProjectSession : IProjectSession
 {
-    public event EventHandler? SnapshotChanged;
+    public event EventHandler<ProjectSessionSnapshotChangedEventArgs>? SnapshotChanged;
 
     public ProjectSessionSnapshot Current { get; private set; } =
         ProjectSessionSnapshot.NoProject;
@@ -55,7 +55,7 @@ internal sealed class TestProjectSession : IProjectSession
         SetNameHandler
     { get; set; }
 
-    public Func<Guid, TransformValue, CancellationToken,
+    public Func<Guid, TransformValue, ProjectSessionEditContext, CancellationToken,
         ValueTask<ProjectSessionOperationResult>>? SetTransformHandler
     { get; set; }
 
@@ -106,8 +106,9 @@ internal sealed class TestProjectSession : IProjectSession
     public ValueTask<ProjectSessionOperationResult> SetEntityTransformAsync(
         Guid objectId,
         TransformValue transform,
+        ProjectSessionEditContext context,
         CancellationToken cancellationToken = default) =>
-        SetTransformHandler?.Invoke(objectId, transform, cancellationToken)
+        SetTransformHandler?.Invoke(objectId, transform, context, cancellationToken)
         ?? throw new InvalidOperationException("No set-Transform result was configured.");
 
     public ValueTask<ProjectSessionOperationResult> SaveSceneAsync(
@@ -121,11 +122,25 @@ internal sealed class TestProjectSession : IProjectSession
         return ValueTask.CompletedTask;
     }
 
-    public void Publish(ProjectSessionSnapshot snapshot)
+    public void Publish(
+        ProjectSessionSnapshot snapshot,
+        ProjectEditId? originatingEditId = null,
+        bool? originatingEditSucceeded = null)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
+        if (originatingEditId is not null && originatingEditSucceeded is null)
+        {
+            throw new ArgumentException(
+                "A test edit publication must state whether the edit succeeded.",
+                nameof(originatingEditSucceeded));
+        }
         Current = snapshot;
-        SnapshotChanged?.Invoke(this, EventArgs.Empty);
+        SnapshotChanged?.Invoke(
+            this,
+            new ProjectSessionSnapshotChangedEventArgs(
+                snapshot,
+                originatingEditId,
+                originatingEditSucceeded));
     }
 }
 

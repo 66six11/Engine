@@ -85,23 +85,101 @@ public sealed class ProjectSessionTests
         var created = await session.CreateEntityAsync("Entity");
         var objectId = created.Current.Document!.Entities.Single().ObjectId;
         var renamed = await session.SetEntityNameAsync(objectId, "主角");
+        var editId = ProjectEditId.CreateNew();
         var moved = await session.SetEntityTransformAsync(
             objectId,
             new TransformValue(
                 new Float3(1, 2, 3),
                 Quaternion.Identity,
-                new Float3(2, 2, 2)));
+                new Float3(2, 2, 2)),
+            new ProjectSessionEditContext(
+                editId,
+                renamed.Current.Document!.Revision));
         var saved = await session.SaveSceneAsync();
 
         Assert.True(created.Succeeded);
         Assert.Equal(objectId, created.CreatedObjectId!.Value);
         Assert.True(renamed.Succeeded);
         Assert.True(moved.Succeeded);
+        Assert.Equal(editId, moved.OriginatingEditId);
+        Assert.Equal(
+            renamed.Current.Document!.Revision,
+            sceneGateway.Connection.LastSetTransformExpectedRevision);
         Assert.True(created.Current.Document.IsDirty);
         Assert.Equal("主角", moved.Current.Document!.Entities.Single().Name);
         Assert.Equal(new Float3(1, 2, 3), moved.Current.Document.Entities.Single().Transform.Position);
         Assert.False(saved.Current.Document!.IsDirty);
         Assert.Equal(saved.Current.Document.Revision, saved.Current.Document.SavedRevision);
+    }
+
+    [Fact]
+    public async Task Transform_edit_publishes_and_returns_its_originating_edit_id()
+    {
+        var projectGateway = new ControlledProjectGateway
+        {
+            OpenResult = ProjectDescriptorOperationResult.Success(
+                new ProjectDescriptorSnapshot(
+                    "C:\\Projects\\Sample",
+                    "Sample",
+                    Guid.NewGuid())),
+        };
+        var sceneGateway = new ControlledSceneGateway();
+        await using var session = new ProjectSession(projectGateway, sceneGateway);
+        await session.OpenProjectAsync("C:\\Projects\\Sample");
+        var created = await session.CreateEntityAsync("Entity");
+        var objectId = created.Current.Document!.Entities.Single().ObjectId;
+        var editId = ProjectEditId.CreateNew();
+        ProjectSessionSnapshotChangedEventArgs? published = null;
+        session.SnapshotChanged += (_, args) => published = args;
+
+        var result = await session.SetEntityTransformAsync(
+            objectId,
+            new TransformValue(
+                new Float3(1, 2, 3),
+                Quaternion.Identity,
+                Float3.One),
+            new ProjectSessionEditContext(editId, created.Current.Document.Revision));
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(editId, result.OriginatingEditId);
+        Assert.NotNull(published);
+        Assert.Same(result.Current, published!.Snapshot);
+        Assert.Equal(editId, published.OriginatingEditId);
+        Assert.True(published.OriginatingEditSucceeded);
+    }
+
+    [Fact]
+    public async Task Transform_revision_conflict_preserves_edit_origin_for_reconciliation()
+    {
+        var projectGateway = new ControlledProjectGateway
+        {
+            OpenResult = ProjectDescriptorOperationResult.Success(
+                new ProjectDescriptorSnapshot(
+                    "C:\\Projects\\Sample",
+                    "Sample",
+                    Guid.NewGuid())),
+        };
+        var sceneGateway = new ControlledSceneGateway();
+        await using var session = new ProjectSession(projectGateway, sceneGateway);
+        await session.OpenProjectAsync("C:\\Projects\\Sample");
+        var created = await session.CreateEntityAsync("Entity");
+        var objectId = created.Current.Document!.Entities.Single().ObjectId;
+        var editId = ProjectEditId.CreateNew();
+        ProjectSessionSnapshotChangedEventArgs? published = null;
+        session.SnapshotChanged += (_, args) => published = args;
+
+        var result = await session.SetEntityTransformAsync(
+            objectId,
+            TransformValue.Identity,
+            new ProjectSessionEditContext(editId, ExpectedRevision: 1));
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(ProjectSessionFailureKind.RevisionConflict, result.FailureKind);
+        Assert.Equal(editId, result.OriginatingEditId);
+        Assert.NotNull(published);
+        Assert.Equal(editId, published!.OriginatingEditId);
+        Assert.False(published.OriginatingEditSucceeded);
+        Assert.Same(result.Current, published.Snapshot);
     }
 
     [Fact]
@@ -269,6 +347,8 @@ public sealed class ProjectSessionTests
 
         public bool RejectMeshCreate { get; set; }
 
+        public ulong? LastSetTransformExpectedRevision { get; private set; }
+
         public ValueTask<SceneDocumentOperationResult> CreateEntityAsync(
             Guid objectId,
             string name,
@@ -332,6 +412,15 @@ public sealed class ProjectSessionTests
             ulong expectedRevision,
             CancellationToken cancellationToken = default)
         {
+            LastSetTransformExpectedRevision = expectedRevision;
+            if (expectedRevision != Current.Revision)
+            {
+                return ValueTask.FromResult(SceneDocumentOperationResult.Failed(
+                    Current,
+                    new SceneDocumentFailure(
+                        SceneDocumentFailureKind.RevisionConflict,
+                        "The expected scene revision is stale.")));
+            }
             var entity = entities_.Single(value => value.ObjectId == objectId);
             entities_[entities_.IndexOf(entity)] = new SceneEntitySnapshot(
                 entity.ObjectId,

@@ -94,9 +94,11 @@ internal sealed class StudioScenePanelViewModel :
         session_ = null;
     }
 
-    private void OnProjectSnapshotChanged(object? sender, EventArgs e)
+    private void OnProjectSnapshotChanged(
+        object? sender,
+        ProjectSessionSnapshotChangedEventArgs e)
     {
-        var snapshot = projectSession_.Current;
+        var snapshot = e.Snapshot;
         if (Dispatcher.UIThread.CheckAccess())
         {
             ApplyProjectSnapshot(snapshot);

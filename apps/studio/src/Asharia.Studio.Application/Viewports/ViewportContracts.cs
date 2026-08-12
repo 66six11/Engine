@@ -43,6 +43,12 @@ public enum ViewportSceneRasterMode : uint
     Wireframe = 1,
 }
 
+public enum ViewportFieldOfViewAxis : uint
+{
+    MaintainHorizontal = 0,
+    MaintainVertical = 1,
+}
+
 [Flags]
 public enum ViewportInvalidationReason : uint
 {
@@ -109,14 +115,16 @@ public sealed record ViewportCameraSnapshot
         Float3 position,
         Float3 target,
         Float3 up,
-        float verticalFovRadians,
+        float fieldOfViewRadians,
+        ViewportFieldOfViewAxis fieldOfViewAxis,
         float nearPlane,
         float farPlane)
     {
         if (!IsFinite(position) || !IsFinite(target) || !IsFinite(up) ||
-            !float.IsFinite(verticalFovRadians) || !float.IsFinite(nearPlane) ||
-            !float.IsFinite(farPlane) || verticalFovRadians <= 0 ||
-            verticalFovRadians >= MathF.PI || nearPlane <= 0 || farPlane <= nearPlane ||
+            !float.IsFinite(fieldOfViewRadians) || !float.IsFinite(nearPlane) ||
+            !float.IsFinite(farPlane) || fieldOfViewRadians <= 0 ||
+            fieldOfViewRadians >= MathF.PI || !Enum.IsDefined(fieldOfViewAxis) ||
+            nearPlane <= 0 || farPlane <= nearPlane ||
             LengthSquared(position, target) <= 1.0e-8f ||
             LengthSquared(up, Float3.Zero) <= 1.0e-8f)
         {
@@ -126,7 +134,8 @@ public sealed record ViewportCameraSnapshot
         Position = position;
         Target = target;
         Up = up;
-        VerticalFovRadians = verticalFovRadians;
+        FieldOfViewRadians = fieldOfViewRadians;
+        FieldOfViewAxis = fieldOfViewAxis;
         NearPlane = nearPlane;
         FarPlane = farPlane;
     }
@@ -137,7 +146,9 @@ public sealed record ViewportCameraSnapshot
 
     public Float3 Up { get; }
 
-    public float VerticalFovRadians { get; }
+    public float FieldOfViewRadians { get; }
+
+    public ViewportFieldOfViewAxis FieldOfViewAxis { get; }
 
     public float NearPlane { get; }
 
@@ -147,9 +158,36 @@ public sealed record ViewportCameraSnapshot
         new Float3(0, 2, -6),
         Float3.Zero,
         new Float3(0, 1, 0),
-        MathF.PI / 3,
+        MathF.PI / 2,
+        ViewportFieldOfViewAxis.MaintainHorizontal,
         0.1f,
         1000.0f);
+
+    public static ViewportCameraSnapshot DefaultGame { get; } = new(
+        new Float3(0, 2, -6),
+        Float3.Zero,
+        new Float3(0, 1, 0),
+        MathF.PI / 3,
+        ViewportFieldOfViewAxis.MaintainVertical,
+        0.1f,
+        1000.0f);
+
+    public static ViewportCameraSnapshot DefaultPreview { get; } = new(
+        new Float3(0, 2, -6),
+        Float3.Zero,
+        new Float3(0, 1, 0),
+        MathF.PI / 3,
+        ViewportFieldOfViewAxis.MaintainVertical,
+        0.1f,
+        1000.0f);
+
+    public static ViewportCameraSnapshot DefaultFor(ViewportRenderKind kind) => kind switch
+    {
+        ViewportRenderKind.Scene => DefaultScene,
+        ViewportRenderKind.Game => DefaultGame,
+        ViewportRenderKind.Preview => DefaultPreview,
+        _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null),
+    };
 
     private static bool IsFinite(Float3 value) =>
         float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);

@@ -73,6 +73,8 @@ internal sealed class ViewportCompositionControlTestHooks
 
     public Action<ViewportFrameLease>? LeaseAcquired { get; init; }
 
+    public Action<ViewportRenderRequest>? RequestPublished { get; init; }
+
     public ValueTask BeforeStageAsyncCore(
         ViewportCompositionControlTestPoint point,
         CancellationToken cancellationToken) =>
@@ -95,6 +97,12 @@ internal sealed class ViewportCompositionControlTestHooks
         ArgumentNullException.ThrowIfNull(lease);
         LeaseAcquired?.Invoke(lease);
     }
+
+    public void ObserveRequest(ViewportRenderRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        RequestPublished?.Invoke(request);
+    }
 }
 
 internal readonly record struct ViewportPresentationTestSnapshot(
@@ -116,6 +124,7 @@ internal readonly record struct ViewportPresentationTestSnapshot(
     ulong GeometryGeneration,
     ulong SurfaceGeneration,
     bool HasExactSurface,
+    ulong LastPresentedSequence,
     long CandidateSurfaceCreateAttempts,
     long CandidateSurfacesCreated,
     long CandidateStreamOpenAttempts,

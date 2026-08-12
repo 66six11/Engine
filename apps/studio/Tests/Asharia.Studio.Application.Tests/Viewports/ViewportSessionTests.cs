@@ -10,6 +10,37 @@ namespace Asharia.Studio.Application.Tests.Viewports;
 public sealed class ViewportSessionTests
 {
     [Fact]
+    public void Default_camera_policy_is_explicit_for_each_viewport_kind()
+    {
+        Assert.Same(
+            ViewportCameraSnapshot.DefaultScene,
+            ViewportCameraSnapshot.DefaultFor(ViewportRenderKind.Scene));
+        Assert.Equal(
+            ViewportFieldOfViewAxis.MaintainHorizontal,
+            ViewportCameraSnapshot.DefaultScene.FieldOfViewAxis);
+        Assert.Equal(MathF.PI / 2, ViewportCameraSnapshot.DefaultScene.FieldOfViewRadians);
+
+        Assert.Same(
+            ViewportCameraSnapshot.DefaultGame,
+            ViewportCameraSnapshot.DefaultFor(ViewportRenderKind.Game));
+        Assert.Equal(
+            ViewportFieldOfViewAxis.MaintainVertical,
+            ViewportCameraSnapshot.DefaultGame.FieldOfViewAxis);
+        Assert.Equal(MathF.PI / 3, ViewportCameraSnapshot.DefaultGame.FieldOfViewRadians);
+
+        Assert.Same(
+            ViewportCameraSnapshot.DefaultPreview,
+            ViewportCameraSnapshot.DefaultFor(ViewportRenderKind.Preview));
+        Assert.Equal(
+            ViewportFieldOfViewAxis.MaintainVertical,
+            ViewportCameraSnapshot.DefaultPreview.FieldOfViewAxis);
+        Assert.Equal(MathF.PI / 3, ViewportCameraSnapshot.DefaultPreview.FieldOfViewRadians);
+
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            ViewportCameraSnapshot.DefaultFor((ViewportRenderKind)42));
+    }
+
+    [Fact]
     public void First_request_captures_document_camera_and_bounded_debug_proxies()
     {
         var document = Document(revision: 7, entityCount: ViewportRenderRequest.MaximumDebugProxyCount + 2);
@@ -34,6 +65,8 @@ public sealed class ViewportSessionTests
         Assert.Equal(renderSize.LogicalExtent, request.LogicalExtent);
         Assert.Equal(renderSize.AllocationExtent, request.AllocationExtent);
         Assert.Equal(ViewportCameraSnapshot.DefaultScene, request.Camera);
+        Assert.Equal(ViewportFieldOfViewAxis.MaintainHorizontal, request.Camera.FieldOfViewAxis);
+        Assert.Equal(MathF.PI / 2, request.Camera.FieldOfViewRadians);
         Assert.True(request.Reasons.HasFlag(ViewportInvalidationReason.InitialFrame));
         Assert.True(request.Reasons.HasFlag(ViewportInvalidationReason.ExtentChanged));
         Assert.Equal(ViewportRenderRequest.MaximumDebugProxyCount, request.DebugProxies.Count);
@@ -44,7 +77,7 @@ public sealed class ViewportSessionTests
     }
 
     [Fact]
-    public void Exact_extent_change_invalidates_projection()
+    public void Vertical_extent_change_invalidates_projection_without_rewriting_camera_policy()
     {
         var session = new ViewportSession(
             ViewportSessionId.Create(),
@@ -52,7 +85,7 @@ public sealed class ViewportSessionTests
             Document(revision: 1, entityCount: 0),
             ViewportCameraSnapshot.DefaultScene);
         var firstExtent = new ViewportExtent(641, 481);
-        var secondExtent = new ViewportExtent(642, 481);
+        var secondExtent = new ViewportExtent(641, 719);
         var firstSize = new ViewportRenderSize(
             firstExtent,
             firstExtent);
@@ -66,6 +99,9 @@ public sealed class ViewportSessionTests
 
         Assert.Equal(2UL, second.Sequence);
         Assert.Equal(secondSize, second.RenderSize);
+        Assert.Same(first.Camera, second.Camera);
+        Assert.Equal(ViewportFieldOfViewAxis.MaintainHorizontal, second.Camera.FieldOfViewAxis);
+        Assert.Equal(MathF.PI / 2, second.Camera.FieldOfViewRadians);
         Assert.True(second.Reasons.HasFlag(ViewportInvalidationReason.ExtentChanged));
     }
 
@@ -196,7 +232,7 @@ public sealed class ViewportSessionTests
             ViewportSessionId.Create(),
             ViewportRenderKind.Game,
             document,
-            ViewportCameraSnapshot.DefaultScene);
+            ViewportCameraSnapshot.DefaultGame);
 
         Assert.True(firstSession.TryBeginRender(new ViewportExtent(800, 450), out var first));
         Assert.False(firstSession.TryBeginRender(new ViewportExtent(800, 450), out _));
@@ -206,6 +242,7 @@ public sealed class ViewportSessionTests
         Assert.Equal(1UL, first.Sequence);
         Assert.Equal(1UL, second.Sequence);
         Assert.Equal(ViewportRenderKind.Game, second.Kind);
+        Assert.Equal(ViewportFieldOfViewAxis.MaintainVertical, second.Camera.FieldOfViewAxis);
         Assert.True(firstSession.CompleteRender(first.Sequence, first.TargetRevision, succeeded: true));
         Assert.True(secondSession.CompleteRender(second.Sequence, second.TargetRevision, succeeded: true));
 
@@ -219,7 +256,8 @@ public sealed class ViewportSessionTests
             new Float3(4, 3, -8),
             Float3.Zero,
             new Float3(0, 1, 0),
-            MathF.PI / 3,
+            MathF.PI / 2,
+            ViewportFieldOfViewAxis.MaintainHorizontal,
             0.1f,
             1000.0f);
         firstSession.SynchronizeDocument(updated);
@@ -241,7 +279,7 @@ public sealed class ViewportSessionTests
             ViewportSessionId.Create(),
             ViewportRenderKind.Preview,
             Document(revision: 1, entityCount: 0),
-            ViewportCameraSnapshot.DefaultScene);
+            ViewportCameraSnapshot.DefaultPreview);
         Assert.True(session.TryBeginRender(new ViewportExtent(400, 300), out var first));
         Assert.True(session.CompleteRender(first.Sequence, first.TargetRevision, succeeded: true));
         Assert.False(session.TryBeginRender(new ViewportExtent(400, 300), out _));
@@ -251,6 +289,7 @@ public sealed class ViewportSessionTests
             Float3.Zero,
             new Float3(0, 1, 0),
             MathF.PI / 3,
+            ViewportFieldOfViewAxis.MaintainVertical,
             0.1f,
             1000.0f);
         session.SetCamera(changedCamera);
@@ -359,7 +398,7 @@ public sealed class ViewportSessionTests
     }
 
     [Fact]
-    public void V6_publish_does_not_wait_for_an_older_frame_completion()
+    public void V7_publish_does_not_wait_for_an_older_frame_completion()
     {
         var session = new ViewportSession(
             ViewportSessionId.Create(),
@@ -380,7 +419,7 @@ public sealed class ViewportSessionTests
     }
 
     [Fact]
-    public void V6_rejected_publish_restores_its_invalidation_reasons()
+    public void V7_rejected_publish_restores_its_invalidation_reasons()
     {
         var session = new ViewportSession(
             ViewportSessionId.Create(),
@@ -421,6 +460,23 @@ public sealed class ViewportSessionTests
             Float3.Zero,
             new Float3(0, 1, 0),
             MathF.PI / 3,
+            ViewportFieldOfViewAxis.MaintainHorizontal,
+            0.1f,
+            1000.0f));
+        Assert.Throws<ArgumentException>(() => new ViewportCameraSnapshot(
+            new Float3(0, 2, -6),
+            Float3.Zero,
+            new Float3(0, 1, 0),
+            0,
+            ViewportFieldOfViewAxis.MaintainHorizontal,
+            0.1f,
+            1000.0f));
+        Assert.Throws<ArgumentException>(() => new ViewportCameraSnapshot(
+            new Float3(0, 2, -6),
+            Float3.Zero,
+            new Float3(0, 1, 0),
+            MathF.PI / 3,
+            (ViewportFieldOfViewAxis)42,
             0.1f,
             1000.0f));
     }
@@ -501,7 +557,8 @@ public sealed class ViewportSessionTests
         new Float3(x, 3, -7),
         Float3.Zero,
         new Float3(0, 1, 0),
-        MathF.PI / 3,
+        MathF.PI / 2,
+        ViewportFieldOfViewAxis.MaintainHorizontal,
         0.1f,
         1000.0f);
 }

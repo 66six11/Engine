@@ -10,7 +10,7 @@
 
 - 已有 package-first 基线：`rendergraph` 后端无关，`rhi-vulkan` 不依赖 RenderGraph，Vulkan/RG 翻译在 `rhi_vulkan_rendergraph`，`renderer_basic` 不暴露 Vulkan。
 - Vulkan 主路径已覆盖 dynamic rendering、synchronization2 barrier、descriptor/pipeline wrapper、transient image pool、buffer upload、compute dispatch、offscreen RenderView、Frame Debug replay、editor viewport sampled texture，以及真实 RenderView indexed scene-mesh pass。后者使用 Color/Depth + VertexRead/IndexRead、`DrawIndexed` 和 draw packet context，并支持 per-view Solid/Wireframe。
-- native Dear ImGui Editor 已具备 production workbench shell、Scene View camera/grid/debug-line、Live RG View、Frame Debugger、Asset Browser snapshot-backed catalog 和多项 smoke。Avalonia Studio 已完成 R0 硬切；#352 建立真实 ProjectSession，#353 已接通 `SceneDocument -> EditWorld -> Hierarchy/Inspector -> dirty/save/reopen`。#359 建立 UI-neutral `ViewportSession`、EngineBridge typed frame lease；当前 Viewport V6、Document ABI v2 与 Scene schema v2 均为硬切合同。最近项目、模板、asset catalog、多 viewport/input/preview 与 Play Mode 尚未接入。
+- native Dear ImGui Editor 已具备 production workbench shell、Scene View camera/grid/debug-line、Live RG View、Frame Debugger、Asset Browser snapshot-backed catalog 和多项 smoke。Avalonia Studio 已完成 R0 硬切；#352 建立真实 ProjectSession，#353 已接通 `SceneDocument -> EditWorld -> Hierarchy/Inspector -> dirty/save/reopen`。#359 建立 UI-neutral `ViewportSession`、EngineBridge typed frame lease；当前 Viewport V7、Document ABI v2 与 Scene schema v2 均为硬切合同。最近项目、模板、asset catalog、多 viewport/input/preview 与 Play Mode 尚未接入。
 - `asset-core` / `asset-pipeline` / `project-core` / `material-core` / `scene-core` 已是 CPU/headless 数据模型或 baseline package。#367 已闭合 authored typed mesh GUID -> backend-neutral extraction -> validation product binding -> indexed scene raster -> Frame Debug source revision 的受限路径；通用 mesh product/runtime GPU resource、reload/deferred deletion、material authoring 仍未完成。
 - 当前风险不是缺少大系统名词，而是 route 太多：渲染、资产、scene、editor、material、play/session 必须按可验证切片合流。
 
@@ -266,7 +266,7 @@ code-only control composition 与 Asharia 的受限 Code-first schema，不把�
 - #366 已把该合同接到真实 `builtin.render-view-scene-mesh`：RenderGraph 显式声明 Color/Depth attachment、
   VertexRead/IndexRead buffer 和 `DrawIndexed`，Vulkan execution event 保留 draw item index 与
   `BasicDrawPacketContext`；Solid/Wireframe 是 per-view policy。
-- Wireframe 只在 logical device 已启用 optional `fillModeNonSolid` 时使用 `VK_POLYGON_MODE_LINE`；不可用时 V6
+- Wireframe 只在 logical device 已启用 optional `fillModeNonSolid` 时使用 `VK_POLYGON_MODE_LINE`；不可用时 V7
   submit 在复制/入队前返回 typed `FeatureUnavailable`，stream 保持 Open 且可由后续 Solid request 恢复；不让
   capability 成为 context 启动硬要求，不重试稳定失败，不回退 Solid，也不启用 `wideLines`。
 - 当前 directional-wedge OBJ -> deterministic generated product 只属于 repository fixture/tool，用于证明真实
@@ -287,7 +287,7 @@ code-only control composition 与 Asharia 的受限 Code-first schema，不把�
 - `asharia-scene-rendering-smoke-tests` 覆盖空输入、ready、missing/wrong-kind/stale/invalid binding、revision replacement 和
   matrix/diagnostics；`--smoke-render-view-scene-mesh` 验证真实 RenderGraph scene-mesh pass、indexed execution event 与 Vulkan draw。
 - missing/wrong-kind/stale/invalid binding 逐 item no-draw，并保留 scene object/asset/revision context；空 scene 不生成
-  scene-mesh pass。malformed V6 packet 必须拒绝整帧，不提交部分 draw。
+  scene-mesh pass。malformed V7 packet 必须拒绝整帧，不提交部分 draw。
 - 下一 Slice 仍需定义 asset-backed mesh product/handle、runtime GPU resource owner、reload/deferred deletion 与 material
   compatibility；不能把 validation generator 当作 importer 来绕过该缺口。
 

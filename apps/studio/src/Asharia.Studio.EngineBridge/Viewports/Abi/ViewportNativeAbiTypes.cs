@@ -41,8 +41,14 @@ internal enum ViewportNativeSceneRasterMode : uint
     Wireframe = 1,
 }
 
+internal enum ViewportNativeFieldOfViewAxis : uint
+{
+    MaintainHorizontal = 0,
+    MaintainVertical = 1,
+}
+
 [Flags]
-internal enum ViewportNativeStreamCapabilitiesV6 : uint
+internal enum ViewportNativeStreamCapabilitiesV7 : uint
 {
     None = 0,
     Wireframe = 1U << 0,
@@ -63,7 +69,7 @@ internal enum ViewportNativeStreamLifecycle : uint
 }
 
 [Flags]
-internal enum ViewportNativePresentRequestV6Flags : uint
+internal enum ViewportNativePresentRequestV7Flags : uint
 {
     None = 0,
     HasLogicalExtent = 1U << 0,
@@ -136,17 +142,30 @@ internal readonly record struct ViewportNativeCamera(
     Float3 Position,
     Float3 Target,
     Float3 Up,
-    float VerticalFovRadians,
+    float FieldOfViewRadians,
+    uint FieldOfViewAxis,
     float NearPlane,
     float FarPlane)
 {
-    public static ViewportNativeCamera FromSnapshot(ViewportCameraSnapshot camera) => new(
-        camera.Position,
-        camera.Target,
-        camera.Up,
-        camera.VerticalFovRadians,
-        camera.NearPlane,
-        camera.FarPlane);
+    public static ViewportNativeCamera FromSnapshot(ViewportCameraSnapshot camera)
+    {
+        var nativeAxis = camera.FieldOfViewAxis switch
+        {
+            ViewportFieldOfViewAxis.MaintainHorizontal =>
+                ViewportNativeFieldOfViewAxis.MaintainHorizontal,
+            ViewportFieldOfViewAxis.MaintainVertical =>
+                ViewportNativeFieldOfViewAxis.MaintainVertical,
+            _ => throw new ArgumentOutOfRangeException(nameof(camera), camera, null),
+        };
+        return new ViewportNativeCamera(
+            camera.Position,
+            camera.Target,
+            camera.Up,
+            camera.FieldOfViewRadians,
+            (uint)nativeAxis,
+            camera.NearPlane,
+            camera.FarPlane);
+    }
 }
 
 [StructLayout(LayoutKind.Sequential)]
@@ -179,7 +198,7 @@ internal readonly record struct ViewportNativeCanonicalUuid(ulong FirstBytes, ul
 }
 
 [StructLayout(LayoutKind.Sequential)]
-internal readonly record struct ViewportNativeAuthoredMeshSnapshotV6(
+internal readonly record struct ViewportNativeAuthoredMeshSnapshotV7(
     ViewportNativeCanonicalUuid ObjectId,
     uint RuntimeEntityIndex,
     uint RuntimeEntityGeneration,
@@ -188,7 +207,7 @@ internal readonly record struct ViewportNativeAuthoredMeshSnapshotV6(
     TransformValue Transform);
 
 [StructLayout(LayoutKind.Sequential)]
-internal readonly record struct ViewportNativeSceneMeshReceiptV6(
+internal readonly record struct ViewportNativeSceneMeshReceiptV7(
     uint InputCount,
     uint ResolvedCount,
     uint RejectedCount,
@@ -205,14 +224,14 @@ internal readonly record struct ViewportNativeSceneMeshReceiptV6(
     ulong SceneRevision);
 
 [StructLayout(LayoutKind.Sequential)]
-internal readonly record struct ViewportNativeStreamHandleV6(
+internal readonly record struct ViewportNativeStreamHandleV7(
     ViewportNativeAbiHeader Header,
     uint Status,
     uint Capabilities,
     ulong StreamId);
 
 [StructLayout(LayoutKind.Sequential)]
-internal readonly record struct ViewportNativePresentRequestV6(
+internal readonly record struct ViewportNativePresentRequestV7(
     ViewportNativeAbiHeader Header,
     ViewportNativeId SessionId,
     ViewportNativeId TargetId,
@@ -233,7 +252,7 @@ internal readonly record struct ViewportNativePresentRequestV6(
     uint SceneRasterMode);
 
 [StructLayout(LayoutKind.Sequential)]
-internal readonly record struct ViewportNativeReadyFrameV6(
+internal readonly record struct ViewportNativeReadyFrameV7(
     ViewportNativeAbiHeader Header,
     uint Status,
     uint HasFrame,
@@ -256,10 +275,10 @@ internal readonly record struct ViewportNativeReadyFrameV6(
     uint TargetKind,
     uint LogicalWidthPixels,
     uint LogicalHeightPixels,
-    ViewportNativeSceneMeshReceiptV6 SceneMeshReceipt);
+    ViewportNativeSceneMeshReceiptV7 SceneMeshReceipt);
 
 [StructLayout(LayoutKind.Sequential)]
-internal readonly record struct ViewportNativeStreamPollV6(
+internal readonly record struct ViewportNativeStreamPollV7(
     ViewportNativeAbiHeader Header,
     uint Status,
     uint Lifecycle,

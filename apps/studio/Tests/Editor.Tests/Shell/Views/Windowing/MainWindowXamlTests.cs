@@ -45,6 +45,12 @@ public sealed class MainWindowXamlTests
         Assert.Contains("Text=\"{Binding Shell.InspectorName}\"", inspectorXaml);
         Assert.Contains("Command=\"{Binding Shell.ApplyEntityNameCommand}\"", inspectorXaml);
         Assert.Contains("Command=\"{Binding Shell.ApplyEntityTransformCommand}\"", inspectorXaml);
+        Assert.Contains("Shell.RotationDegreesX", inspectorXaml, StringComparison.Ordinal);
+        Assert.Contains("Shell.RotationDegreesY", inspectorXaml, StringComparison.Ordinal);
+        Assert.Contains("Shell.RotationDegreesZ", inspectorXaml, StringComparison.Ordinal);
+        Assert.Contains("Rotation degrees (X / Y / Z · YXZ)", inspectorXaml, StringComparison.Ordinal);
+        Assert.Contains("InspectorOperationMessage", inspectorXaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("Shell.RotationW", inspectorXaml, StringComparison.Ordinal);
 
         var scenePanelXaml = LoadPanelXaml("StudioScenePanelView.axaml");
         Assert.Contains(

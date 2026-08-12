@@ -1,5 +1,6 @@
 ﻿#include <cmath>
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <iostream>
 #include <string_view>
@@ -13,6 +14,30 @@ namespace {
             std::cerr << message << '\n';
         }
         return condition;
+    }
+
+    [[nodiscard]] bool matricesNear(const asharia::BasicTransformMatrix3D& lhs,
+                                    const asharia::BasicTransformMatrix3D& rhs,
+                                    float tolerance = 1.0e-4F) {
+        for (std::size_t index = 0; index < lhs.size(); ++index) {
+            if (std::fabs(lhs.at(index) - rhs.at(index)) > tolerance) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    [[nodiscard]] std::array<float, 3>
+    transformPoint(const asharia::BasicTransformMatrix3D& matrix,
+                   std::array<float, 3> point) {
+        return {
+            (matrix[0] * point[0]) + (matrix[1] * point[1]) +
+                (matrix[2] * point[2]) + matrix[3],
+            (matrix[4] * point[0]) + (matrix[5] * point[1]) +
+                (matrix[6] * point[2]) + matrix[7],
+            (matrix[8] * point[0]) + (matrix[9] * point[1]) +
+                (matrix[10] * point[2]) + matrix[11],
+        };
     }
 
     [[nodiscard]] asharia::scene::SceneObjectId sceneObjectId() {
@@ -60,6 +85,57 @@ namespace {
                           diagnostics.front().objectId == sceneObjectId() &&
                           diagnostics.front().asset == assetGuid(),
                       "Extraction diagnostic did not preserve context.");
+    }
+
+    [[nodiscard]] bool expectModelMatrixContracts() {
+        const asharia::TransformComponent transformed{
+            .position = {.x = 10.0F, .y = 20.0F, .z = 30.0F},
+            .rotation = {.x = 0.0F, .y = std::sqrt(0.5F), .z = 0.0F, .w = std::sqrt(0.5F)},
+            .scale = {.x = 2.0F, .y = 3.0F, .z = 4.0F},
+        };
+        const asharia::BasicTransformMatrix3D expectedMatrix{
+            0.0F, 0.0F, 4.0F, 10.0F, 0.0F, 3.0F, 0.0F, 20.0F,
+            -2.0F, 0.0F, 0.0F, 30.0F, 0.0F, 0.0F, 0.0F, 1.0F,
+        };
+        const auto matrix = asharia::scene_rendering::makeSceneMeshModelMatrix(transformed);
+        const auto transformedPoint = transformPoint(matrix, {1.0F, 2.0F, 3.0F});
+        if (!expect(matricesNear(matrix, expectedMatrix) &&
+                        std::fabs(transformedPoint[0] - 22.0F) < 1.0e-4F &&
+                        std::fabs(transformedPoint[1] - 26.0F) < 1.0e-4F &&
+                        std::fabs(transformedPoint[2] - 28.0F) < 1.0e-4F,
+                    "T*R*S matrix did not preserve row-major composite point semantics.")) {
+            return false;
+        }
+
+        asharia::TransformComponent negatedQuaternion = transformed;
+        negatedQuaternion.rotation.x = -negatedQuaternion.rotation.x;
+        negatedQuaternion.rotation.y = -negatedQuaternion.rotation.y;
+        negatedQuaternion.rotation.z = -negatedQuaternion.rotation.z;
+        negatedQuaternion.rotation.w = -negatedQuaternion.rotation.w;
+        if (!expect(matricesNear(
+                        asharia::scene_rendering::makeSceneMeshModelMatrix(negatedQuaternion),
+                        matrix),
+                    "Equivalent q and -q rotations produced different model matrices.")) {
+            return false;
+        }
+
+        const asharia::TransformComponent reflectedAndCollapsed{
+            .position = {},
+            .rotation = {.w = 1.0F},
+            .scale = {.x = -2.0F, .y = 0.0F, .z = 4.0F},
+        };
+        const auto reflectedMatrix =
+            asharia::scene_rendering::makeSceneMeshModelMatrix(reflectedAndCollapsed);
+        bool reflectedMatrixIsFinite = true;
+        for (const float element : reflectedMatrix) {
+            reflectedMatrixIsFinite = reflectedMatrixIsFinite && std::isfinite(element);
+        }
+        const auto reflectedPoint = transformPoint(reflectedMatrix, {1.0F, 2.0F, 3.0F});
+        return expect(reflectedMatrixIsFinite &&
+                          std::fabs(reflectedPoint[0] + 2.0F) < 1.0e-4F &&
+                          std::fabs(reflectedPoint[1]) < 1.0e-4F &&
+                          std::fabs(reflectedPoint[2] - 12.0F) < 1.0e-4F,
+                      "Finite negative and zero scales did not remain explicit in the model matrix.");
     }
 
 } // namespace
@@ -209,15 +285,7 @@ int main() noexcept {
             return 1;
         }
 
-        const asharia::TransformComponent rotated{
-            .position = {},
-            .rotation = {.x = 0.0F, .y = std::sqrt(0.5F), .z = 0.0F, .w = std::sqrt(0.5F)},
-            .scale = {.x = 2.0F, .y = 3.0F, .z = 4.0F},
-        };
-        const auto matrix = asharia::scene_rendering::makeSceneMeshModelMatrix(rotated);
-        if (!expect(std::fabs(matrix[0]) < 1.0e-4F && std::fabs(matrix[2] - 4.0F) < 1.0e-4F &&
-                        std::fabs(matrix[8] + 2.0F) < 1.0e-4F && matrix[5] == 3.0F,
-                    "T*R*S matrix did not use row-major rotation and per-axis scale.")) {
+        if (!expectModelMatrixContracts()) {
             return 1;
         }
 

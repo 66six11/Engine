@@ -254,7 +254,7 @@ public sealed class ViewportFrameLease : IDisposable, IAsyncDisposable
 
     internal ViewportFrameLease(
         ViewportRenderStream stream,
-        ViewportNativeReadyFrameV6 frame,
+        ViewportNativeReadyFrameV7 frame,
         ViewportFrameFormat format)
     {
         stream_ = stream;
@@ -345,7 +345,7 @@ public sealed class ViewportFrameLease : IDisposable, IAsyncDisposable
     public void Quarantine() => Interlocked.Exchange(ref completionState_, int.MinValue);
 
     private static ViewportSceneMeshReceipt CreateSceneMeshReceipt(
-        ViewportNativeSceneMeshReceiptV6 receipt)
+        ViewportNativeSceneMeshReceiptV7 receipt)
     {
         var hasResolved = receipt.ResolvedCount != 0;
         return new ViewportSceneMeshReceipt(

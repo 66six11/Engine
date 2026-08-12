@@ -48,6 +48,11 @@
   和 material resource key。该 context 进入 diagnostics、invalid-input error 和每个 `DrawIndexed` execution
   event，使 Frame Debug 能关联 pass、command、draw item 和 source/resource identity；它不把 `World*`、
   `Entity*`、editor pointer、source asset path、importer state 或 Vulkan handle 传进 renderer API。
+- `scene-rendering` 把 authoritative local `position/quaternion/scale` 转成 row-major、column-vector 语义的
+  `modelMatrix = T * R * S`；quaternion 顺序为 `(x,y,z,w)`，非均匀 scale 缩放 rotation matrix 的列。
+  extraction 不静默 normalize 非单位 quaternion，也不把 finite negative/zero scale 改写为正值或 identity。
+  当前 unlit validation vertex 没有 normal/tangent，因此本 slice 不新增 normal matrix、mirrored winding/culling
+  policy，也不以 hierarchy/world transform 名义分解或重组该 local matrix。
 - RenderGraph 对 vertex/index buffer 使用独立的 `VertexRead` / `IndexRead` state 和
   `BufferVertexRead` / `BufferIndexRead` slot access，不以 `ShaderRead` 冒充。它们不携带 shader stage；
   `rhi_vulkan_rendergraph` 分别映射为
@@ -89,6 +94,12 @@
   owner 方向：renderer-owned packet/context 承接 simulation snapshot，RenderGraph pass 再消费资源与 draw intent；
   不让 scene/editor object 直接进入 backend callback。拒绝此阶段引入 O3DE 式全局 Feature Processor：当前可复用需求
   只需要 `scene-rendering` 的 CPU extraction 和 caller-owned explicit bindings，不需要通用 registry/service。
+- local TRS 数学采用 Unreal [`TTransformSRT3`](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/GeometryCore/TTransformSRT3)
+  明示的 Scale→Rotate→Translate，并由 Godot [`Basis`](https://docs.godotengine.org/en/stable/classes/class_basis.html)、
+  O3DE [`Transform.inl`](https://github.com/o3de/o3de/blob/development/Code/Framework/AzCore/AzCore/Math/Transform.inl)
+  与 Unity [`Matrix4x4.TRS`](https://docs.unity3d.com/ScriptReference/Matrix4x4.TRS.html) 交叉确认。Asharia 采用
+  确定的 `T * R * S` 结果，不复制 Unreal `FTransform` 与 quaternion 相反的 operator 组合顺序，不采用
+  O3DE core Transform 的 uniform-scale 限制，也不为测试维护第二套 matrix builder。
 - 拒绝用 debug line、AABB/bounds、selection outline 或 editor proxy 冒充“真实 mesh 已渲染”。这些仍是显式
   overlay/debug pass；scene-mesh 验收必须观察 Color/Depth、VertexRead/IndexRead、`DrawIndexed` execution event
   和像素结果。
@@ -151,7 +162,7 @@
 - validation product native resolver 只是在 smoke/fixture 中把一个已知 asset identity 映射到显式 product binding；它不是
   importer、asset database 或 runtime resource registry。binding 缺失、type 不符、stale 或自身无效时，`scene-rendering`
   只为该 object 产生 contextual no-draw diagnostic，不能偷换为 fixture 或 fallback mesh。
-- `BasicRenderViewSceneDesc::sourceRevision` 从 V6 scene packet 流入 renderer diagnostics，Frame Debug 在 capture 时冻结该值，
+- `BasicRenderViewSceneDesc::sourceRevision` 从 V7 scene packet 流入 renderer diagnostics，Frame Debug 在 capture 时冻结该值，
   JSON 与 panel 都回显同一 revision；它是 capture 溯源证据，不是 renderer 反向读取 SceneDocument 的通道。
 
 ## 下一步收敛

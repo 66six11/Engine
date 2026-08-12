@@ -6,10 +6,10 @@ using Asharia.Studio.EngineBridge.Viewports.Abi;
 
 namespace Asharia.Studio.EngineBridge.Viewports;
 
-    public sealed class ViewportBridge
+public sealed class ViewportBridge
 {
-    private const ViewportNativeStreamCapabilitiesV6 KnownStreamCapabilities =
-        ViewportNativeStreamCapabilitiesV6.Wireframe;
+    private const ViewportNativeStreamCapabilitiesV7 KnownStreamCapabilities =
+        ViewportNativeStreamCapabilitiesV7.Wireframe;
     private readonly IViewportNativeApi nativeApi_;
 
     public ViewportBridge()
@@ -27,11 +27,11 @@ namespace Asharia.Studio.EngineBridge.Viewports;
     {
         ArgumentNullException.ThrowIfNull(compatibility);
         ViewportNativeStatus status;
-        ViewportNativeStreamHandleV6 nativeStream;
+        ViewportNativeStreamHandleV7 nativeStream;
         try
         {
             var nativeCompatibility = CreateCompatibilityRequest(compatibility);
-            status = nativeApi_.OpenStreamV6(in nativeCompatibility, out nativeStream);
+            status = nativeApi_.OpenStreamV7(in nativeCompatibility, out nativeStream);
         }
         catch (Exception exception) when (IsNativeBindingFailure(exception))
         {
@@ -48,7 +48,7 @@ namespace Asharia.Studio.EngineBridge.Viewports;
 
         if (status != ViewportNativeStatus.Success ||
             nativeStream.Header.AbiVersion != ViewportNativeAbiHeader.CurrentAbiVersion ||
-            nativeStream.Header.StructSize < Marshal.SizeOf<ViewportNativeStreamHandleV6>() ||
+            nativeStream.Header.StructSize < Marshal.SizeOf<ViewportNativeStreamHandleV7>() ||
             nativeStream.Status != (uint)ViewportNativeStatus.Success ||
             (nativeStream.Capabilities & ~(uint)KnownStreamCapabilities) != 0 ||
             nativeStream.StreamId == 0)
@@ -67,7 +67,7 @@ namespace Asharia.Studio.EngineBridge.Viewports;
                 this,
                 nativeStream.StreamId,
                 (nativeStream.Capabilities &
-                 (uint)ViewportNativeStreamCapabilitiesV6.Wireframe) != 0),
+                 (uint)ViewportNativeStreamCapabilitiesV7.Wireframe) != 0),
             null);
     }
 
@@ -82,7 +82,7 @@ namespace Asharia.Studio.EngineBridge.Viewports;
                 proxy.Transform))
             .ToArray();
         var meshes = request.AuthoredMeshes
-            .Select(mesh => new ViewportNativeAuthoredMeshSnapshotV6(
+            .Select(mesh => new ViewportNativeAuthoredMeshSnapshotV7(
                 ViewportNativeCanonicalUuid.FromGuid(mesh.ObjectId),
                 mesh.RuntimeEntityId.Index,
                 mesh.RuntimeEntityId.Generation,
@@ -91,19 +91,19 @@ namespace Asharia.Studio.EngineBridge.Viewports;
                 mesh.Transform))
             .ToArray();
         fixed (ViewportNativeDebugProxy* proxyPointer = proxies)
-        fixed (ViewportNativeAuthoredMeshSnapshotV6* meshPointer = meshes)
+        fixed (ViewportNativeAuthoredMeshSnapshotV7* meshPointer = meshes)
         {
-            var nativeFlags = ViewportNativePresentRequestV6Flags.HasLogicalExtent;
+            var nativeFlags = ViewportNativePresentRequestV7Flags.HasLogicalExtent;
             if ((diagnosticOverlay & ViewportRenderDiagnosticOverlay.FlashSentinelCorners) != 0)
             {
-                nativeFlags |= ViewportNativePresentRequestV6Flags.FlashSentinelCorners;
+                nativeFlags |= ViewportNativePresentRequestV7Flags.FlashSentinelCorners;
             }
             if ((diagnosticOverlay & ViewportRenderDiagnosticOverlay.CaptureSceneMeshEvidence) != 0)
             {
-                nativeFlags |= ViewportNativePresentRequestV6Flags.CaptureSceneMeshEvidence;
+                nativeFlags |= ViewportNativePresentRequestV7Flags.CaptureSceneMeshEvidence;
             }
-            var nativeRequest = new ViewportNativePresentRequestV6(
-                ViewportNativeAbiHeader.Current<ViewportNativePresentRequestV6>(),
+            var nativeRequest = new ViewportNativePresentRequestV7(
+                ViewportNativeAbiHeader.Current<ViewportNativePresentRequestV7>(),
                 ViewportNativeId.FromGuid(request.SessionId.Value),
                 ViewportNativeId.FromGuid(request.TargetId),
                 request.TargetRevision,
@@ -128,7 +128,7 @@ namespace Asharia.Studio.EngineBridge.Viewports;
                 });
             try
             {
-                var status = nativeApi_.SubmitLatestV6(streamId, in nativeRequest);
+                var status = nativeApi_.SubmitLatestV7(streamId, in nativeRequest);
                 return status == ViewportNativeStatus.Success
                     ? ViewportSubmitResult.Success
                     : new ViewportSubmitResult(new ViewportFrameFailure(
@@ -153,10 +153,10 @@ namespace Asharia.Studio.EngineBridge.Viewports;
     internal ViewportFrameTakeResult TryTakeReady(ViewportRenderStream stream)
     {
         ViewportNativeStatus status;
-        ViewportNativeReadyFrameV6 frame;
+        ViewportNativeReadyFrameV7 frame;
         try
         {
-            status = nativeApi_.TryTakeReadyV6(stream.StreamId, out frame);
+            status = nativeApi_.TryTakeReadyV7(stream.StreamId, out frame);
         }
         catch (Exception exception) when (IsNativeBindingFailure(exception))
         {
@@ -178,13 +178,13 @@ namespace Asharia.Studio.EngineBridge.Viewports;
                 $"Native viewport ready-frame query failed with {status}.");
         }
         if (frame.Header.AbiVersion != ViewportNativeAbiHeader.CurrentAbiVersion ||
-            frame.Header.StructSize < Marshal.SizeOf<ViewportNativeReadyFrameV6>() ||
+            frame.Header.StructSize < Marshal.SizeOf<ViewportNativeReadyFrameV7>() ||
             frame.Status != (uint)ViewportNativeStatus.Success || frame.Reserved != 0 ||
             frame.StreamId is not 0 && frame.StreamId != stream.StreamId || frame.HasFrame > 1)
         {
             return FailedTake(
                 ViewportFrameFailureKind.InternalError,
-                "Native viewport returned an invalid V6 ready-frame header.");
+                "Native viewport returned an invalid V7 ready-frame header.");
         }
         if (frame.HasFrame == 0)
         {
@@ -213,14 +213,14 @@ namespace Asharia.Studio.EngineBridge.Viewports;
         {
             if (frame.NativeSlot != 0)
             {
-                nativeApi_.CompleteFrameV6(
+                nativeApi_.CompleteFrameV7(
                     stream.StreamId,
                     frame.NativeSlot,
                     ViewportNativePresentCompletionKind.NotSubmittedToConsumer);
             }
             return FailedTake(
                 ViewportFrameFailureKind.InternalError,
-                "Native viewport returned an invalid V6 ready frame.");
+                "Native viewport returned an invalid V7 ready frame.");
         }
 
         return new ViewportFrameTakeResult(
@@ -232,23 +232,23 @@ namespace Asharia.Studio.EngineBridge.Viewports;
         ViewportRenderStream stream,
         nint nativeSlot,
         ViewportFrameCompletionKind completionKind) =>
-        nativeApi_.CompleteFrameV6(
+        nativeApi_.CompleteFrameV7(
             stream.StreamId,
             nativeSlot,
             ToNativeCompletionKind(completionKind));
 
     internal void ReleaseSlotImport(ViewportRenderStream stream, nint nativeSlot) =>
-        nativeApi_.ReleaseSlotImportV6(stream.StreamId, nativeSlot);
+        nativeApi_.ReleaseSlotImportV7(stream.StreamId, nativeSlot);
 
     internal void RequestClose(ViewportRenderStream stream) =>
-        nativeApi_.CloseStreamV6(stream.StreamId);
+        nativeApi_.CloseStreamV7(stream.StreamId);
 
     internal ViewportRenderStreamSnapshot Poll(ViewportRenderStream stream)
     {
-        var status = nativeApi_.PollStreamV6(stream.StreamId, out var poll);
+        var status = nativeApi_.PollStreamV7(stream.StreamId, out var poll);
         if (status != ViewportNativeStatus.Success ||
             poll.Header.AbiVersion != ViewportNativeAbiHeader.CurrentAbiVersion ||
-            poll.Header.StructSize < Marshal.SizeOf<ViewportNativeStreamPollV6>() ||
+            poll.Header.StructSize < Marshal.SizeOf<ViewportNativeStreamPollV7>() ||
             poll.Status != (uint)ViewportNativeStatus.Success || poll.Reserved != 0 ||
             poll.HasPendingLatest > 1 || poll.HasReadyFrame > 1 ||
             poll.RenderExecuting > 1 ||
@@ -270,7 +270,7 @@ namespace Asharia.Studio.EngineBridge.Viewports;
     }
 
     internal void DestroyClosed(ViewportRenderStream stream) =>
-        nativeApi_.DestroyStreamV6(stream.StreamId);
+        nativeApi_.DestroyStreamV7(stream.StreamId);
 
     private static ViewportNativeCompatibilityRequest CreateCompatibilityRequest(
         ViewportDeviceCompatibility compatibility) => new(
@@ -286,14 +286,14 @@ namespace Asharia.Studio.EngineBridge.Viewports;
 
     private static ViewportNativePresentCompletionKind ToNativeCompletionKind(
         ViewportFrameCompletionKind completionKind) => completionKind switch
-    {
-        ViewportFrameCompletionKind.NotSubmittedToConsumer =>
-            ViewportNativePresentCompletionKind.NotSubmittedToConsumer,
-        ViewportFrameCompletionKind.ConsumerAccessed =>
-            ViewportNativePresentCompletionKind.ConsumerAccessed,
-        _ => throw new ArgumentOutOfRangeException(
-            nameof(completionKind), completionKind, null),
-    };
+        {
+            ViewportFrameCompletionKind.NotSubmittedToConsumer =>
+                ViewportNativePresentCompletionKind.NotSubmittedToConsumer,
+            ViewportFrameCompletionKind.ConsumerAccessed =>
+                ViewportNativePresentCompletionKind.ConsumerAccessed,
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(completionKind), completionKind, null),
+        };
 
     private static bool IsNativeBindingFailure(Exception exception) =>
         exception is DllNotFoundException or EntryPointNotFoundException or BadImageFormatException;
@@ -314,7 +314,7 @@ namespace Asharia.Studio.EngineBridge.Viewports;
     };
 
     private static bool ValidSceneMeshReceipt(
-        ViewportNativeSceneMeshReceiptV6 receipt,
+        ViewportNativeSceneMeshReceiptV7 receipt,
         ulong targetRevision) =>
         receipt.EvidenceAvailable <= 1 &&
         receipt.ResolvedCount <= receipt.InputCount &&

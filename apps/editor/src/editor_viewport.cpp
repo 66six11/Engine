@@ -19,7 +19,9 @@ namespace asharia::editor {
         };
 
         struct EditorViewportPerspectiveDesc {
-            float verticalFovRadians{};
+            float fieldOfViewRadians{};
+            EditorViewportFieldOfViewAxis fieldOfViewAxis{
+                EditorViewportFieldOfViewAxis::MaintainHorizontal};
             float aspectRatio{1.0F};
             float nearPlane{0.1F};
             float farPlane{1000.0F};
@@ -134,14 +136,28 @@ namespace asharia::editor {
 
         [[nodiscard]] EditorViewportMatrix4x4
         editorViewportPerspectiveMatrix(const EditorViewportPerspectiveDesc& desc) {
-            const float focalLength = 1.0F / std::tan(desc.verticalFovRadians * 0.5F);
+            const float focalLength = 1.0F / std::tan(desc.fieldOfViewRadians * 0.5F);
+            float horizontalScale{};
+            float verticalScale{};
+            switch (desc.fieldOfViewAxis) {
+            case EditorViewportFieldOfViewAxis::MaintainHorizontal:
+                horizontalScale = focalLength;
+                verticalScale = focalLength * desc.aspectRatio;
+                break;
+            case EditorViewportFieldOfViewAxis::MaintainVertical:
+                horizontalScale = focalLength / desc.aspectRatio;
+                verticalScale = focalLength;
+                break;
+            default:
+                return {};
+            }
             return EditorViewportMatrix4x4{
-                focalLength / desc.aspectRatio,
+                horizontalScale,
                 0.0F,
                 0.0F,
                 0.0F,
                 0.0F,
-                focalLength,
+                verticalScale,
                 0.0F,
                 0.0F,
                 0.0F,
@@ -170,7 +186,8 @@ namespace asharia::editor {
             .position = {0.0F, 2.0F, -6.0F},
             .target = {0.0F, 0.0F, 0.0F},
             .up = {0.0F, 1.0F, 0.0F},
-            .verticalFovRadians = 60.0F * kDegreesToRadians,
+            .fieldOfViewRadians = 90.0F * kDegreesToRadians,
+            .fieldOfViewAxis = EditorViewportFieldOfViewAxis::MaintainHorizontal,
             .aspectRatio = 1.0F,
             .nearPlane = 0.1F,
             .farPlane = 1000.0F,
@@ -190,7 +207,8 @@ namespace asharia::editor {
             .cameraUpHint = updated.up,
         });
         updated.projection = editorViewportPerspectiveMatrix(EditorViewportPerspectiveDesc{
-            .verticalFovRadians = updated.verticalFovRadians,
+            .fieldOfViewRadians = updated.fieldOfViewRadians,
+            .fieldOfViewAxis = updated.fieldOfViewAxis,
             .aspectRatio = updated.aspectRatio,
             .nearPlane = updated.nearPlane,
             .farPlane = updated.farPlane,
@@ -306,9 +324,9 @@ namespace asharia::editor {
         float currentPitch = std::asin(direction[1]);
         currentYaw -= deltaYaw;
         currentPitch = std::clamp(currentPitch + deltaPitch, -1.5F, 1.5F);
-        const float distance = std::sqrt(dotEditorVec3(
-            subtractEditorVec3(camera.position, camera.target),
-            subtractEditorVec3(camera.position, camera.target)));
+        const float distance =
+            std::sqrt(dotEditorVec3(subtractEditorVec3(camera.position, camera.target),
+                                    subtractEditorVec3(camera.position, camera.target)));
         const float newX =
             camera.target[0] + (distance * std::cos(currentPitch) * std::sin(currentYaw));
         const float newY = camera.target[1] + (distance * std::sin(currentPitch));
@@ -321,13 +339,11 @@ namespace asharia::editor {
                                  [[maybe_unused]] EditorExtent2D extent) {
         const EditorVec3 forward =
             normalizeEditorVec3(subtractEditorVec3(camera.target, camera.position));
-        const EditorVec3 right =
-            normalizeEditorVec3(crossEditorVec3(forward, camera.up));
-        const EditorVec3 viewUp =
-            normalizeEditorVec3(crossEditorVec3(right, forward));
-        const float distanceToTarget = std::sqrt(dotEditorVec3(
-            subtractEditorVec3(camera.target, camera.position),
-            subtractEditorVec3(camera.target, camera.position)));
+        const EditorVec3 right = normalizeEditorVec3(crossEditorVec3(forward, camera.up));
+        const EditorVec3 viewUp = normalizeEditorVec3(crossEditorVec3(right, forward));
+        const float distanceToTarget =
+            std::sqrt(dotEditorVec3(subtractEditorVec3(camera.target, camera.position),
+                                    subtractEditorVec3(camera.target, camera.position)));
         const float panScale = distanceToTarget * 0.0025F;
         const float panX = deltaX * panScale;
         const float panY = deltaY * panScale;
@@ -349,9 +365,9 @@ namespace asharia::editor {
     }
 
     void dollyEditorViewportCamera(EditorViewportCamera& camera, float delta) {
-        const float distance = std::sqrt(dotEditorVec3(
-            subtractEditorVec3(camera.position, camera.target),
-            subtractEditorVec3(camera.position, camera.target)));
+        const float distance =
+            std::sqrt(dotEditorVec3(subtractEditorVec3(camera.position, camera.target),
+                                    subtractEditorVec3(camera.position, camera.target)));
         const float newDistance = std::max(0.1F, distance - (delta * 0.5F));
         const float ratio = newDistance / std::max(distance, 0.001F);
         camera.position = EditorVec3{

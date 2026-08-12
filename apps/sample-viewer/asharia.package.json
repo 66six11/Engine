@@ -19,6 +19,7 @@
     "com.asharia.rendergraph",
     "com.asharia.rhi-vulkan",
     "com.asharia.scene-core",
+    "com.asharia.scene-rendering",
     "com.asharia.serialization",
     "com.asharia.renderer-basic"
   ],
@@ -36,6 +37,7 @@
       "asharia-rhi-vulkan",
       "asharia-rhi-vulkan-rendergraph",
       "asharia-scene-core",
+      "asharia-scene-rendering",
       "asharia-serialization",
       "asharia-window-glfw",
       "asharia-renderer-basic",

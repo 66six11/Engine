@@ -46,8 +46,15 @@ Play Mode 的边界。它不是完整 ECS 实现说明，而是约束后续 `sce
 | Flecs entities/components: https://www.flecs.dev/flecs/md_docs_2EntitiesComponents.html | Flecs 的 C API 使用固定宽度 entity ID，保留零为 invalid，并在 ID 中携带 liveliness/version 信息。 | C ABI 使用 fixed-width index/generation，零值作为 invalid/failed output，不引入跨边界 C++ handle。 |
 | Unreal `USceneComponent`: https://dev.epicgames.com/documentation/unreal-engine/API/Runtime/Engine/USceneComponent | UE 明确区分 relative transform（相对 parent）与 component/world transform。 | 当前 `TransformComponent` 与 native ABI 明确命名为 local；没有 hierarchy 时不虚构 world-transform 语义。 |
 | Unreal `TQuat`: https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/Core/TQuat | UE quaternion API 提供 `ContainsNaN` / `IsNormalized`，多项旋转运算要求 normalized quaternion。 | ABI set-local-transform 拒绝非有限值与非单位 rotation，不静默归一化不可信边界输入。 |
+| Unreal `TTransformSRT3`: https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/GeometryCore/TTransformSRT3 | UE 明确写出 Scale→Rotate→Translate，即传统 matrix-vector 记法的 `(T * R * S) * v`；`TQuat` 的 `(X,Y,Z,W)` 乘法则是右侧 rotation 先应用。 | local model matrix 固定为 `T * R * S`，quaternion 固定为 `(x,y,z,w)`；拒绝复制顺序相反的 `FTransform A * B` operator 语义。 |
 | O3DE `TransformInterface`: https://docs.o3de.org/docs/api/frameworks/azcore/class_a_z_1_1_transform_interface.html | O3DE 分别提供 `Get/SetLocalTM` 与 world-transform 操作，local 不含 parent transform。 | local 与 world operation 必须是独立合同；当前 Slice 只发布 local get/set。 |
+| O3DE `Transform.inl`: https://github.com/o3de/o3de/blob/development/Code/Framework/AzCore/AzCore/Math/Transform.inl | O3DE 的 `TransformPoint` 实现为 `Rotate(scale * point) + translation`，但核心 `Transform` 只带 uniform scale。 | 采用 S→R→T 的点变换顺序；拒绝把 Asharia 已有的逐轴 scale 降级成 uniform-only contract。 |
 | Godot `Transform3D`: https://docs.godotengine.org/en/latest/classes/class_transform3d.html | Godot 提供逐 component 的 `is_finite()`，并为依赖正交/归一化的 transform math 写明前置条件。 | public mutation boundary 必须先拒绝 NaN/Inf，避免非法 float 进入未来 hierarchy/snapshot/renderer。 |
+| Godot `Basis`: https://docs.godotengine.org/en/stable/classes/class_basis.html | `Basis` 的三个 axis 是矩阵列，局部逐轴 scale 对应缩放这些列；它也明确区分 determinant 为零的不可逆和负 determinant 的镜像。 | row-major 存储不改变 column-vector 数学语义；local `R * S` 必须缩放 rotation 的列，有限 zero/negative scale 保持显式。 |
+| Unity `Matrix4x4.TRS`: https://docs.unity3d.com/ScriptReference/Matrix4x4.TRS.html | Unity 以 position、quaternion、scale 构造单个 TRS matrix，其 quaternion `lhs * rhs` 同样先应用右侧 rotation。 | 交叉确认 authored quaternion + 非均匀 scale 应成为一个确定的 local model matrix，不增加 smoke-only matrix builder。 |
+| Unreal Vector / Rotator Controls: https://dev.epicgames.com/documentation/en-us/unreal-engine/vector-/-rotator-controls | Unreal Details 把 rotation 呈现为按轴的 degree 数值控件，而不是要求用户直接编辑 quaternion。 | Studio Inspector 使用 X/Y/Z degree 字段；runtime/document 仍只保存单位 quaternion。 |
+| Unity Rotation and Orientation / `TransformRotationGUI`: https://docs.unity3d.com/Manual/QuaternionAndEulerRotationsInUnity.html / https://github.com/Unity-Technologies/UnityCsReference/blob/master/Editor/Mono/Inspector/TransformRotationGUI.cs | Unity 把 Inspector Euler angles 与内部 quaternion 分开；Inspector 还保留按轴输入状态，只替换本次实际修改的轴。 | 采用“人类可编辑的 Euler presentation → authoritative quaternion”，并让 Studio 识别自己的 edit receipt；不把 Euler 写入 runtime scene schema。 |
+| Godot `Node3D`: https://docs.godotengine.org/en/stable/classes/class_node3d.html | Godot Inspector 以 degrees 编辑 rotation，并以显式 `rotation_order` 决定 Euler 构造顺序；默认是 YXZ。 | Asharia 首个 Inspector 合同固定 local YXZ，避免未标注顺序；暂不增加 per-entity rotation-order 字段或编辑模式。 |
 | Unreal object name / Actor label: https://dev.epicgames.com/documentation/unreal-engine/API/Runtime/CoreUObject/UObjectBaseUtility/GetName 、https://dev.epicgames.com/documentation/en-us/unreal-engine/BlueprintAPI/EditorScripting/ActorEditing/SetActorLabel | UE 区分实际 object name 与 development-only Editor friendly label。 | 当前 World name 只承诺可变 display/debug text，不冒充稳定 identity、path 或未来 Editor label policy。 |
 | O3DE `AZ::Entity`: https://docs.o3de.org/docs/api/frameworks/azcore/class_a_z_1_1_entity.html 、https://www.docs.o3de.org/docs/api/frameworks/azcore/class_a_z_1_1_component_application_requests.html | O3DE entity 提供 mutable GetName/SetName，并明确 entity names 非唯一且用于诊断。 | name 不唯一、不提供 find-by-name；generation-safe ID 仍是唯一运行时寻址合同。 |
 | Godot `Node.name`: https://docs.godotengine.org/en/4.5/classes/class_node.html | Godot Node name 参与 sibling uniqueness 与 hierarchy path。 | 当前没有 hierarchy，不能提前导入 sibling uniqueness、路径字符过滤或自动重命名语义。 |
@@ -59,6 +66,39 @@ Play Mode 的边界。它不是完整 ECS 实现说明，而是约束后续 `sce
 | Unity Job System: https://docs.unity3d.com/Manual/JobSystemOverview.html | Unity Job System 强调可并行数据和 safety 规则。 | Asharia Engine worker job 应处理 plain data；mutable World 访问必须通过主线程或明确同步模型。 |
 | Unity SRP / RenderGraph: https://docs.unity3d.com/Manual/urp/render-graph-introduction.html | Editor 可有 Game View、Scene View、preview 等多个渲染视图。 | RenderGraph 和 profiling 不应假设一帧只有一个 view graph。 |
 | Vulkan threading guide: https://docs.vulkan.org/guide/latest/threading.html | Vulkan 对 command pool、descriptor pool 等对象有外部同步要求。 | Scene/renderer 多线程设计不能让多个线程共享录制资源；未来多线程录制要 per-thread pool。 |
+
+## Local TRS 合同
+
+`TransformComponent`、scene schema 与 managed `TransformValue` 的 source of truth 都是 local
+`position + rotation + scale`。矩阵数组使用 row-major 存储，但数学采用 column vector：
+
+```text
+localPoint' = Mlocal * localPoint
+Mlocal = T(position) * R(unit quaternion x,y,z,w) * S(scale)
+```
+
+因此 scale 先作用于 local axis，rotation 再改变方向，translation 最后作用；`R * S` 的实现必须缩放
+rotation matrix 的三列，translation 位于 4×4 row-major 数组的 `[3, 7, 11]`。`q` 与 `-q` 表示同一
+rotation。authoritative mutation boundary 接受单位 quaternion，不静默 normalize、替换为 identity 或调整
+scale；有限 non-uniform、negative 与 zero scale 都保持为显式 local 值并进入前向 model matrix。
+
+Studio Inspector 是 editor-local presentation：显示 X/Y/Z degrees，固定按 local `YXZ` 顺序构造 rotation，随后在
+ViewModel/application mutation boundary 转成单位 quaternion `(x,y,z,w)`。当前选择会话保留 Euler hint、原始文本、
+dirty-axis mask、edit id 与 base revision；project snapshot event 还携带该 edit 的成功/失败结果。自己的成功 receipt
+只有在来源、revision、object scope 与 quaternion 姿态全部匹配时才保留提交文本而不重新分解；无变化的成功操作允许
+留在 base revision，失败 receipt 只用于清理 pending 并将草稿重基到返回的 authoritative revision。Apply 进行中继续编辑的
+轴由 per-axis edit version 保护，旧 receipt 不能覆盖新输入。同姿态 snapshot（包括 `q` / `-q`、改名与保存）也不得重写字段。真正外部的不同
+quaternion 才枚举固定 YXZ 的等价分支及 `±360n` 展开，并在重组验证姿态相同后选择最接近 hint 的表示；奇异区利用 hint
+选择连续解，而不是强制某轴为零。hint 与未提交输入不进入 runtime scene schema、revision 或 viewport ABI；本切片切换
+选择或关闭 Studio 后允许丢弃 hint，跨会话 winding persistence 仍 deferred。
+
+当前完成范围止于 local TRS 经 `SceneDocumentSnapshot`、`ViewportRenderRequest`、native V7 request、
+scene-rendering extraction 到 draw item 原样传递。以下项目明确 deferred，不能借本合同提前实现：
+
+- hierarchy、parent/world transform、dirty propagation、reparent、shear 或 world-matrix cache；
+- normal/inverse-transpose matrix、lighting/tangent space、negative-determinant winding/culling policy；
+- rotation gizmo、snapping、multi-selection、per-entity Euler order 或连续多圈 Euler history。当前只完成固定 YXZ 的
+  单实体 local-degree Inspector presentation；这些后继功能不得改变 authoritative quaternion/schema 合同。
 
 ## Package 边界
 
