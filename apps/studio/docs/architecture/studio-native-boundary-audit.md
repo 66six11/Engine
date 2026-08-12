@@ -1,6 +1,6 @@
 # Studio native boundary 审查
 
-状态：Current audit（SceneDocument ABI v2 consumer 与 V7 async viewport stream 已建立；device epoch/recovery 仍开放）
+状态：Current audit（SceneDocument ABI v3 consumer 与 V7 async viewport stream 已建立；device epoch/recovery 仍开放）
 
 更新日期：2026-08-12
 
@@ -366,7 +366,7 @@ ErrorInfo {
 
 ## 7. 实施顺序与门禁
 
-1. **Managed Project Shell（已建立）**：Project/Scene 使用 package-owned dedicated ABI v2；Viewport 使用 V7 async
+1. **Managed Project Shell（已建立）**：Project 使用 dedicated ABI v2，Scene 使用 package-owned Document ABI v3；Viewport 使用 V7 async
    stream，不保留旧 frame compatibility path。
 2. **ABI foundation**：真正 C header、session/handle/error；C include、双端 size/offset、catch-all、
    bad-alloc/fault injection、duplicate/stale handle smoke。

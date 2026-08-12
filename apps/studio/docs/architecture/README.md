@@ -67,6 +67,7 @@ Studio 文档分为三类，不能混用：
 - [ADR-0007：Studio 前端采用 Document-first 硬切重构](../adr/0007-studio-frontend-hard-cut.md)
 - [ADR-0011：Studio shared viewport 由 native 进程级 RenderThread 拥有](../adr/0011-native-shared-viewport-render-thread.md)
 - [ADR-0012：Viewport 显式保持水平或垂直 FOV](../adr/0012-viewport-field-of-view-axis.md)
+- [ADR-0013：Studio 采用 authoritative document Transform Undo/Redo 与逻辑保存点](../adr/0013-authoritative-document-transform-undo-redo.md)
 
 ## Current guides
 

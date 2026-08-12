@@ -112,8 +112,6 @@ public sealed record SceneDocumentSnapshot
     public ulong SavedRevision { get; }
 
     public IReadOnlyList<SceneEntitySnapshot> Entities { get; }
-
-    public bool IsDirty => Revision != SavedRevision;
 }
 
 public enum SceneDocumentFailureKind
@@ -124,8 +122,10 @@ public enum SceneDocumentFailureKind
     InvalidObject,
     InvalidTransform,
     InvalidAssetReference,
+    RevisionExhausted,
     IoFailure,
     NativeUnavailable,
+    AuthoritativeStateUnknown,
     InternalError,
 }
 
@@ -151,32 +151,97 @@ public sealed record SceneDocumentFailure
     public string Message { get; }
 }
 
+public sealed record SceneEntityTransformReceipt
+{
+    public SceneEntityTransformReceipt(
+        Guid objectId,
+        bool changed,
+        TransformValue beforeTransform,
+        TransformValue afterTransform,
+        ulong beforeRevision,
+        ulong afterRevision)
+    {
+        if (objectId == Guid.Empty)
+        {
+            throw new ArgumentException("Scene object id must not be empty.", nameof(objectId));
+        }
+        if (beforeRevision == 0 || afterRevision == 0 ||
+            (changed
+                ? beforeRevision == ulong.MaxValue || afterRevision != beforeRevision + 1 ||
+                  beforeTransform == afterTransform
+                : afterRevision != beforeRevision || beforeTransform != afterTransform))
+        {
+            throw new ArgumentException("Scene Transform receipt revision or no-op state is invalid.");
+        }
+
+        ObjectId = objectId;
+        Changed = changed;
+        BeforeTransform = beforeTransform;
+        AfterTransform = afterTransform;
+        BeforeRevision = beforeRevision;
+        AfterRevision = afterRevision;
+    }
+
+    public Guid ObjectId { get; }
+
+    public bool Changed { get; }
+
+    public TransformValue BeforeTransform { get; }
+
+    public TransformValue AfterTransform { get; }
+
+    public ulong BeforeRevision { get; }
+
+    public ulong AfterRevision { get; }
+}
+
 public sealed record SceneDocumentOperationResult
 {
     private SceneDocumentOperationResult(
         SceneDocumentSnapshot current,
-        SceneDocumentFailure? failure)
+        SceneDocumentFailure? failure,
+        SceneEntityTransformReceipt? transformReceipt)
     {
         ArgumentNullException.ThrowIfNull(current);
         Current = current;
         Failure = failure;
+        TransformReceipt = transformReceipt;
     }
 
     public SceneDocumentSnapshot Current { get; }
 
     public SceneDocumentFailure? Failure { get; }
 
+    public SceneEntityTransformReceipt? TransformReceipt { get; }
+
     public bool Succeeded => Failure is null;
 
     public static SceneDocumentOperationResult Success(SceneDocumentSnapshot current) =>
-        new(current, failure: null);
+        new(current, failure: null, transformReceipt: null);
+
+    public static SceneDocumentOperationResult Success(
+        SceneDocumentSnapshot current,
+        SceneEntityTransformReceipt transformReceipt)
+    {
+        ArgumentNullException.ThrowIfNull(transformReceipt);
+        var entity = current.Entities.FirstOrDefault(
+            candidate => candidate.ObjectId == transformReceipt.ObjectId);
+        if (current.Revision != transformReceipt.AfterRevision ||
+            entity is null || entity.Transform != transformReceipt.AfterTransform)
+        {
+            throw new ArgumentException(
+                "Scene Transform receipt must match the authoritative snapshot.",
+                nameof(transformReceipt));
+        }
+        return new SceneDocumentOperationResult(current, failure: null, transformReceipt);
+    }
 
     public static SceneDocumentOperationResult Failed(
         SceneDocumentSnapshot current,
         SceneDocumentFailure failure)
     {
         ArgumentNullException.ThrowIfNull(failure);
-        return new SceneDocumentOperationResult(current, failure);
+        return new SceneDocumentOperationResult(current, failure, transformReceipt: null);
     }
 }
 
@@ -225,6 +290,9 @@ public sealed record SceneDocumentOpenResult
 
 public interface ISceneDocumentConnection : IAsyncDisposable
 {
+    ValueTask<SceneDocumentOperationResult> RefreshAsync(
+        CancellationToken cancellationToken = default);
+
     ValueTask<SceneDocumentOperationResult> CreateEntityAsync(
         Guid objectId,
         string name,

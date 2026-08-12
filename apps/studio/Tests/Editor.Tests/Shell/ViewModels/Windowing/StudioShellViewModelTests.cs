@@ -55,6 +55,101 @@ public sealed class StudioShellViewModelTests
     }
 
     [Fact]
+    public async Task Undo_and_redo_commands_project_history_labels_dirty_and_selection()
+    {
+        var objectId = Guid.NewGuid();
+        var entityA = new SceneEntitySnapshot(
+            objectId,
+            new EntityId(1, 1),
+            "Selected",
+            TransformValue.Identity);
+        var baseSnapshot = Ready("Sample", "C:\\Projects\\Sample");
+        var edited = ProjectSessionSnapshot.Ready(
+            baseSnapshot.Project!,
+            new SceneDocumentSnapshot(
+                baseSnapshot.Document!.SceneId,
+                baseSnapshot.Document.Path,
+                revision: 2,
+                savedRevision: 1,
+                entities: [entityA]),
+            new ContentStateId(2),
+            new ContentStateId(1),
+            canUndo: true,
+            canRedo: false,
+            undoLabel: "Transform Selected",
+            redoLabel: null);
+        var entityB = new SceneEntitySnapshot(
+            objectId,
+            new EntityId(1, 1),
+            "Selected",
+            new TransformValue(
+                new Float3(2, 0, 0),
+                Quaternion.Identity,
+                Float3.One));
+        var undone = ProjectSessionSnapshot.Ready(
+            edited.Project!,
+            new SceneDocumentSnapshot(
+                edited.Document!.SceneId,
+                edited.Document.Path,
+                revision: 3,
+                savedRevision: 1,
+                entities: [entityA]),
+            new ContentStateId(1),
+            new ContentStateId(1),
+            canUndo: false,
+            canRedo: true,
+            undoLabel: null,
+            redoLabel: "Transform Selected");
+        var redone = ProjectSessionSnapshot.Ready(
+            edited.Project!,
+            new SceneDocumentSnapshot(
+                edited.Document!.SceneId,
+                edited.Document.Path,
+                revision: 4,
+                savedRevision: 1,
+                entities: [entityB]),
+            new ContentStateId(2),
+            new ContentStateId(1),
+            canUndo: true,
+            canRedo: false,
+            undoLabel: "Transform Selected",
+            redoLabel: null);
+        var projectSession = new TestProjectSession();
+        projectSession.Publish(edited);
+        projectSession.UndoHandler = _ => ValueTask.FromResult(
+            ProjectSessionOperationResult.Success(undone, "Undid Transform Selected."));
+        projectSession.RedoHandler = _ => ValueTask.FromResult(
+            ProjectSessionOperationResult.Success(redone, "Redid Transform Selected."));
+        using var viewModel = new StudioShellViewModel(
+            projectSession,
+            new TestProjectDialogService());
+        viewModel.MarkReady();
+        viewModel.SelectedEntity = entityA;
+
+        Assert.True(viewModel.IsDocumentDirty);
+        Assert.Equal("Undo Transform Selected", viewModel.UndoSceneLabel);
+        Assert.True(viewModel.UndoSceneCommand.CanExecute(null));
+        Assert.False(viewModel.RedoSceneCommand.CanExecute(null));
+
+        viewModel.UndoSceneCommand.Execute(null);
+        await WaitUntilAsync(() => !viewModel.IsProjectOperationRunning);
+
+        Assert.False(viewModel.IsDocumentDirty);
+        Assert.Equal("Undo", viewModel.UndoSceneLabel);
+        Assert.Equal("Redo Transform Selected", viewModel.RedoSceneLabel);
+        Assert.False(viewModel.UndoSceneCommand.CanExecute(null));
+        Assert.True(viewModel.RedoSceneCommand.CanExecute(null));
+        Assert.Equal(objectId, viewModel.SelectedEntity?.ObjectId);
+
+        viewModel.RedoSceneCommand.Execute(null);
+        await WaitUntilAsync(() => !viewModel.IsProjectOperationRunning);
+
+        Assert.True(viewModel.IsDocumentDirty);
+        Assert.Equal("2", viewModel.PositionX);
+        Assert.Equal(objectId, viewModel.SelectedEntity?.ObjectId);
+    }
+
+    [Fact]
     public async Task Create_command_uses_the_selected_parent_and_projects_ready_state()
     {
         using var viewModel = StudioShellTestFactory.Create(
@@ -137,7 +232,13 @@ public sealed class StudioShellViewModelTests
                 initial.Document.Path,
                 revision: 2,
                 savedRevision: 1,
-                entities: [createdEntity, trailingEntity]));
+                entities: [createdEntity, trailingEntity]),
+            new ContentStateId(1),
+            new ContentStateId(1),
+            canUndo: false,
+            canRedo: false,
+            undoLabel: null,
+            redoLabel: null);
         projectSession.CreateMeshEntityHandler = (name, mesh, _) =>
         {
             Assert.Equal("Directional Wedge", name);
@@ -173,7 +274,13 @@ public sealed class StudioShellViewModelTests
                 initialBase.Document.Path,
                 revision: 1,
                 savedRevision: 1,
-                entities: [selected]));
+                entities: [selected]),
+            new ContentStateId(1),
+            new ContentStateId(1),
+            canUndo: false,
+            canRedo: false,
+            undoLabel: null,
+            redoLabel: null);
         var projectSession = new TestProjectSession();
         projectSession.Publish(initial);
         using var viewModel = new StudioShellViewModel(
@@ -214,7 +321,13 @@ public sealed class StudioShellViewModelTests
                 initialBase.Document.Path,
                 revision: 1,
                 savedRevision: 1,
-                entities: [initialEntity]));
+                entities: [initialEntity]),
+            new ContentStateId(1),
+            new ContentStateId(1),
+            canUndo: false,
+            canRedo: false,
+            undoLabel: null,
+            redoLabel: null);
         var expectedNumericsRotation = System.Numerics.Quaternion.CreateFromYawPitchRoll(
             40.0F * MathF.PI / 180.0F,
             30.0F * MathF.PI / 180.0F,
@@ -270,7 +383,13 @@ public sealed class StudioShellViewModelTests
                     initial.Document.Path,
                     revision: 2,
                     savedRevision: 1,
-                    entities: [transformedEntity]));
+                    entities: [transformedEntity]),
+            new ContentStateId(1),
+            new ContentStateId(1),
+            canUndo: false,
+            canRedo: false,
+            undoLabel: null,
+            redoLabel: null);
             projectSession.Publish(
                 updated,
                 editContext.EditId,
@@ -332,7 +451,13 @@ public sealed class StudioShellViewModelTests
                 initialBase.Document.Path,
                 revision: 1,
                 savedRevision: 1,
-                entities: [entity]));
+                entities: [entity]),
+            new ContentStateId(1),
+            new ContentStateId(1),
+            canUndo: false,
+            canRedo: false,
+            undoLabel: null,
+            redoLabel: null);
         var projectSession = new TestProjectSession();
         projectSession.Publish(initial);
         projectSession.SetTransformHandler = (requestedObjectId, transform, context, _) =>
@@ -351,7 +476,13 @@ public sealed class StudioShellViewModelTests
                     initial.Document.Path,
                     revision: 2,
                     savedRevision: 1,
-                    entities: [updatedEntity]));
+                    entities: [updatedEntity]),
+            new ContentStateId(1),
+            new ContentStateId(1),
+            canUndo: false,
+            canRedo: false,
+            undoLabel: null,
+            redoLabel: null);
             projectSession.Publish(
                 updated,
                 context.EditId,
@@ -395,7 +526,13 @@ public sealed class StudioShellViewModelTests
                 initialBase.Document.Path,
                 revision: 1,
                 savedRevision: 1,
-                entities: [entity]));
+                entities: [entity]),
+            new ContentStateId(1),
+            new ContentStateId(1),
+            canUndo: false,
+            canRedo: false,
+            undoLabel: null,
+            redoLabel: null);
         var projectSession = new TestProjectSession();
         projectSession.Publish(initial);
         Quaternion? requestedRotation = null;
@@ -424,7 +561,13 @@ public sealed class StudioShellViewModelTests
                     initial.Document.Path,
                     revision: 2,
                     savedRevision: 1,
-                    entities: [updatedEntity]));
+                    entities: [updatedEntity]),
+            new ContentStateId(1),
+            new ContentStateId(1),
+            canUndo: false,
+            canRedo: false,
+            undoLabel: null,
+            redoLabel: null);
             projectSession.Publish(
                 updated,
                 context.EditId,
@@ -471,7 +614,13 @@ public sealed class StudioShellViewModelTests
                 initialBase.Document.Path,
                 revision: 1,
                 savedRevision: 1,
-                entities: [entity]));
+                entities: [entity]),
+            new ContentStateId(1),
+            new ContentStateId(1),
+            canUndo: false,
+            canRedo: false,
+            undoLabel: null,
+            redoLabel: null);
         var projectSession = new TestProjectSession();
         projectSession.Publish(initial);
         var completion = new TaskCompletionSource<ProjectSessionOperationResult>(
@@ -506,7 +655,13 @@ public sealed class StudioShellViewModelTests
                 initial.Document.Path,
                 revision: 2,
                 savedRevision: 1,
-                entities: [acknowledgedEntity]));
+                entities: [acknowledgedEntity]),
+            new ContentStateId(1),
+            new ContentStateId(1),
+            canUndo: false,
+            canRedo: false,
+            undoLabel: null,
+            redoLabel: null);
         projectSession.Publish(
             acknowledged,
             editContext.EditId,
@@ -534,7 +689,13 @@ public sealed class StudioShellViewModelTests
                     initial.Document.Path,
                     revision: 3,
                     savedRevision: 1,
-                    entities: [acceptedEntity]));
+                    entities: [acceptedEntity]),
+            new ContentStateId(1),
+            new ContentStateId(1),
+            canUndo: false,
+            canRedo: false,
+            undoLabel: null,
+            redoLabel: null);
             projectSession.Publish(
                 accepted,
                 context.EditId,
@@ -564,7 +725,13 @@ public sealed class StudioShellViewModelTests
                 initial.Document.Path,
                 revision: 4,
                 savedRevision: 1,
-                entities: [externalEntity]));
+                entities: [externalEntity]),
+            new ContentStateId(1),
+            new ContentStateId(1),
+            canUndo: false,
+            canRedo: false,
+            undoLabel: null,
+            redoLabel: null);
         projectSession.SetNameHandler = (_, _, _) => ValueTask.FromResult(
             ProjectSessionOperationResult.Success(
                 external,
@@ -596,7 +763,13 @@ public sealed class StudioShellViewModelTests
                 initialBase.Document.Path,
                 revision: 1,
                 savedRevision: 1,
-                entities: [entity]));
+                entities: [entity]),
+            new ContentStateId(1),
+            new ContentStateId(1),
+            canUndo: false,
+            canRedo: false,
+            undoLabel: null,
+            redoLabel: null);
         var projectSession = new TestProjectSession();
         projectSession.Publish(initial);
         projectSession.SetTransformHandler = (_, _, context, _) =>
@@ -634,7 +807,13 @@ public sealed class StudioShellViewModelTests
                 initial.Document.Path,
                 revision: 2,
                 savedRevision: 1,
-                entities: [externallyRotated]));
+                entities: [externallyRotated]),
+            new ContentStateId(1),
+            new ContentStateId(1),
+            canUndo: false,
+            canRedo: false,
+            undoLabel: null,
+            redoLabel: null);
         projectSession.SetNameHandler = (_, _, _) => ValueTask.FromResult(
             ProjectSessionOperationResult.Success(
                 external,
@@ -666,7 +845,13 @@ public sealed class StudioShellViewModelTests
                 initialBase.Document.Path,
                 revision: 1,
                 savedRevision: 1,
-                entities: [entity]));
+                entities: [entity]),
+            new ContentStateId(1),
+            new ContentStateId(1),
+            canUndo: false,
+            canRedo: false,
+            undoLabel: null,
+            redoLabel: null);
         var externalTransform = new TransformValue(
             Float3.Zero,
             StudioEulerRotation.QuaternionFromEulerDegreesYxz(
@@ -686,7 +871,13 @@ public sealed class StudioShellViewModelTests
                         entity.RuntimeEntityId,
                         entity.Name,
                         externalTransform),
-                ]));
+                ]),
+            new ContentStateId(1),
+            new ContentStateId(1),
+            canUndo: false,
+            canRedo: false,
+            undoLabel: null,
+            redoLabel: null);
         var projectSession = new TestProjectSession();
         projectSession.Publish(initial);
         ProjectSessionEditContext? secondContext = null;
@@ -749,7 +940,13 @@ public sealed class StudioShellViewModelTests
                 initialBase.Document.Path,
                 revision: 1,
                 savedRevision: 1,
-                entities: [entity]));
+                entities: [entity]),
+            new ContentStateId(1),
+            new ContentStateId(1),
+            canUndo: false,
+            canRedo: false,
+            undoLabel: null,
+            redoLabel: null);
         var projectSession = new TestProjectSession();
         projectSession.Publish(initial);
         projectSession.SetTransformHandler = (_, transform, context, _) =>
@@ -766,7 +963,13 @@ public sealed class StudioShellViewModelTests
                     initial.Document.Path,
                     revision: 2,
                     savedRevision: 1,
-                    entities: [acknowledgedEntity]));
+                    entities: [acknowledgedEntity]),
+            new ContentStateId(1),
+            new ContentStateId(1),
+            canUndo: false,
+            canRedo: false,
+            undoLabel: null,
+            redoLabel: null);
             projectSession.Publish(
                 acknowledged,
                 context.EditId,
@@ -802,7 +1005,13 @@ public sealed class StudioShellViewModelTests
                 initial.Document.Path,
                 revision: 3,
                 savedRevision: 1,
-                entities: [externalEntity]));
+                entities: [externalEntity]),
+            new ContentStateId(1),
+            new ContentStateId(1),
+            canUndo: false,
+            canRedo: false,
+            undoLabel: null,
+            redoLabel: null);
         projectSession.SetNameHandler = (_, _, _) => ValueTask.FromResult(
             ProjectSessionOperationResult.Success(
                 external,
@@ -846,7 +1055,13 @@ public sealed class StudioShellViewModelTests
                 initialBase.Document.Path,
                 revision: 1,
                 savedRevision: 1,
-                entities: [first, second]));
+                entities: [first, second]),
+            new ContentStateId(1),
+            new ContentStateId(1),
+            canUndo: false,
+            canRedo: false,
+            undoLabel: null,
+            redoLabel: null);
         var projectSession = new TestProjectSession();
         projectSession.Publish(initial);
         using var viewModel = new StudioShellViewModel(
@@ -896,7 +1111,13 @@ public sealed class StudioShellViewModelTests
                 initialBase.Document.Path,
                 revision: 1,
                 savedRevision: 1,
-                entities: [positive, negative]));
+                entities: [positive, negative]),
+            new ContentStateId(1),
+            new ContentStateId(1),
+            canUndo: false,
+            canRedo: false,
+            undoLabel: null,
+            redoLabel: null);
         var projectSession = new TestProjectSession();
         projectSession.Publish(initial);
         using var viewModel = new StudioShellViewModel(
@@ -955,7 +1176,13 @@ public sealed class StudioShellViewModelTests
                 initialBase.Document.Path,
                 revision: 1,
                 savedRevision: 1,
-                entities: [entity]));
+                entities: [entity]),
+            new ContentStateId(1),
+            new ContentStateId(1),
+            canUndo: false,
+            canRedo: false,
+            undoLabel: null,
+            redoLabel: null);
         var projectSession = new TestProjectSession();
         projectSession.Publish(initial);
         using var viewModel = new StudioShellViewModel(
@@ -1009,7 +1236,13 @@ public sealed class StudioShellViewModelTests
                 initialBase.Document.Path,
                 revision: 1,
                 savedRevision: 1,
-                entities: [entity]));
+                entities: [entity]),
+            new ContentStateId(1),
+            new ContentStateId(1),
+            canUndo: false,
+            canRedo: false,
+            undoLabel: null,
+            redoLabel: null);
         var projectSession = new TestProjectSession();
         projectSession.Publish(initial);
         using var viewModel = new StudioShellViewModel(
@@ -1050,7 +1283,13 @@ public sealed class StudioShellViewModelTests
                 initialBase.Document.Path,
                 revision: 1,
                 savedRevision: 1,
-                entities: [entity]));
+                entities: [entity]),
+            new ContentStateId(1),
+            new ContentStateId(1),
+            canUndo: false,
+            canRedo: false,
+            undoLabel: null,
+            redoLabel: null);
         var projectSession = new TestProjectSession();
         projectSession.Publish(initial);
         var requested = false;
@@ -1085,7 +1324,13 @@ public sealed class StudioShellViewModelTests
                 $"{root}\\Assets\\Scenes\\Default.asharia.scene.json",
                 revision: 1,
                 savedRevision: 1,
-                entities: []));
+                entities: []),
+            new ContentStateId(1),
+            new ContentStateId(1),
+            canUndo: false,
+            canRedo: false,
+            undoLabel: null,
+            redoLabel: null);
 
     private static async Task WaitUntilAsync(Func<bool> condition)
     {

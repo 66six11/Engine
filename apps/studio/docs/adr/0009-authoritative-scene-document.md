@@ -4,7 +4,7 @@
 
 日期：2026-08-04
 
-最近修订：2026-08-11（Scene schema / Document ABI v2 硬切与 typed mesh entity）
+最近修订：2026-08-12（#373 将 native Document ABI 从历史 v2 硬切为带 typed Transform receipt 的 v3；Scene schema 保持 v2）
 
 关联：GitHub Epic #351、Slice #353、#367；延续 [ADR-0008](0008-authoritative-project-session.md) 的活动项目边界。
 
@@ -28,10 +28,11 @@ automation 都通过编辑器拥有的实体/组件操作修改场景。Asharia 
    `mesh { assetGuid, assetType: "com.asharia.asset.Mesh" }`；它是 authored reference，不是 source path、product hash 或 GPU handle。
    文档读取验证 UTF-8、closed fields、GUID、asset type、有限 Transform、单位四元数、重复 object ID、64 MiB 文件上限与
    10,000 实体上限；写入使用 sibling staging 和 replace，不把 JSON 真相复制到 managed 层。开发期硬切不读取 v1，也不做迁移。
-3. 每个 mutation 携带 expected revision。成功后 revision 单调推进并由 authoritative snapshot 决定 dirty；失败或
-   revision conflict 不发布猜测状态。Save 只在同一文档 revision 上推进 saved revision。本 Slice 不伪造 undo/redo；
-   后续 history 必须继续通过相同 mutation boundary。
-4. `asharia_scene_native.dll` 的 SceneDocument ABI 原位硬切为 version 2。snapshot entry 同时返回 stable object ID、
+3. 每个 mutation 携带 expected revision。成功后 revision 单调推进；失败或 revision conflict 不发布猜测状态。Save 只在同一
+   文档 revision 上推进 saved revision。本 ADR 当时不伪造 undo/redo；#373 已让 history 继续通过相同 mutation boundary，
+   并由 `ProjectSession` 的逻辑 content state 决定 Studio dirty。
+4. 本 ADR 当时将 `asharia_scene_native.dll` 的 SceneDocument ABI 原位硬切为 version 2；#373 随后以
+   [ADR-0013](0013-authoritative-document-transform-undo-redo.md) 硬切为 version 3。snapshot entry 同时返回 stable object ID、
    transient runtime `EntityId`、Transform 与 optional mesh GUID；`create_mesh_entity` 以单次 revision mutation 原子创建 entity 和
    authored mesh reference。registry 使用 generation-safe opaque token，所有文档操作
    强制在创建线程执行，响应采用 caller-owned bounded buffer，snapshot 用固定布局 entry 与 UTF-8 span 表达；raw
@@ -57,8 +58,8 @@ automation 都通过编辑器拥有的实体/组件操作修改场景。Asharia 
 - 不返回 native-owned字符串或可长期借用的 snapshot；caller-owned response 明确了跨语言生命周期。
 - 不在 SceneDocument 中存 product hash、renderer resource key、wireframe mode 或 selection；这些分别属于 asset/runtime
   product binding、per-view rendering policy 与 editor state。
-- 不在本 Slice 建立完整 transaction/undo/redo、hierarchy parenting、组件反射、通用 mesh importer/asset resolver 或 Play
-  Mode。它们需要后续独立垂直切片与恢复策略。
+- 本 ADR 当时未建立 transaction/undo/redo、hierarchy parenting、组件反射、通用 mesh importer/asset resolver 或 Play Mode；
+  #373 仅补齐 whole Transform Undo/Redo，其余能力仍需要独立垂直切片与恢复策略。
 
 ## 后果
 
@@ -69,7 +70,8 @@ automation 都通过编辑器拥有的实体/组件操作修改场景。Asharia 
   ```
 
 - `ProjectSessionSnapshot.Ready` 现在同时要求活动项目和活动文档；No Project 与 document-open failure 不会冒充 Ready。
-- SceneDocument 当前只有 revision/savepoint dirty 模型；Undo/Redo 仍是明确缺口，不能由 ViewModel compensation 替代。
+- #373 已以 typed Transform receipt、单调 revision 和 ProjectSession logical savepoint 补齐首个 Undo/Redo 纵切；
+  `SceneDocument` 仍不拥有 editor history，ViewModel compensation 仍被禁止。
 - P1 紧随其后接入 project package manifest/lock，并扩充 Opening、ResolvingPackages、LoadingDocument、Degraded/
   SafeMode 等加载状态；当前 typed failure 先保留可诊断的 document/native/IO 分类。
 

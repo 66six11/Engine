@@ -75,7 +75,7 @@ internal sealed class SceneDocumentNativeLibraryApi : ISceneDocumentNativeApi
         in SceneNativeDocumentSetEntityTransformRequest request,
         nint responseBuffer,
         ulong responseCapacity,
-        out SceneNativeDocumentOperationResult result) =>
+        out SceneNativeDocumentTransformOperationResult result) =>
         (SceneNativeStatus)SceneDocumentNativeEntryPoints.SetEntityTransform(
             in request,
             responseBuffer,
@@ -149,7 +149,7 @@ internal static partial class SceneDocumentNativeEntryPoints
         in SceneNativeDocumentSetEntityTransformRequest request,
         nint responseBuffer,
         ulong responseCapacity,
-        out SceneNativeDocumentOperationResult result);
+        out SceneNativeDocumentTransformOperationResult result);
 
     [LibraryImport(LibraryName, EntryPoint = "asharia_scene_document_save")]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]

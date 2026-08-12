@@ -56,8 +56,8 @@ Asharia Engine 当前目标仍是先做一个小而完整的 Vulkan renderer，�
   以及拥有 World、stable scene/object ID、revision/savepoint 的 `SceneDocument`。Scene schema v2 的 mesh 字段是可选、
   typed `asset::AssetReference`：持久化的只有 authored asset GUID/type，绝不持久化 `EntityId`、product generation/hash、
   Basic resource key 或 GPU handle。scene IO 通过 `archive` strict JSON facade 读写固定 schema，并以 sibling staging 保存；
-  `asharia::scene_native` 发布 Document ABI v2：generation-safe opaque token、owner-thread 操作、expected revision、bulk snapshot、
-  create/name/Transform/mesh/save 与 caller-owned UTF-8 buffer。schema v1 与 Document ABI v1 均不再兼容或导出。
+  `asharia::scene_native` 发布 Document ABI v3：generation-safe opaque token、owner-thread 操作、expected revision、bulk snapshot、
+  create/name/mesh/save、typed Transform receipt 与 caller-owned UTF-8 buffer。schema v1 与 Document ABI v1/v2 均不再兼容或导出。
 - `packages/scene-rendering`：`asharia::scene_rendering` 依赖 `scene-core`、`asset-core` 与 `renderer_basic`，在 CPU 上把 revision、
   object id/transient `EntityId`/TRS、typed mesh reference 和显式 product binding 提取为拥有生命周期的 immutable
   `BasicDrawListItem` 列表及 contextual diagnostics。它不拥有 importer、asset/resource registry、GPU resource 或 backend；

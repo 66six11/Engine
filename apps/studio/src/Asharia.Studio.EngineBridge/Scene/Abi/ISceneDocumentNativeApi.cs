@@ -39,7 +39,7 @@ internal interface ISceneDocumentNativeApi
         in SceneNativeDocumentSetEntityTransformRequest request,
         nint responseBuffer,
         ulong responseCapacity,
-        out SceneNativeDocumentOperationResult result);
+        out SceneNativeDocumentTransformOperationResult result);
 
     SceneNativeStatus Save(
         in SceneNativeDocumentSaveRequest request,

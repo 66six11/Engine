@@ -19,4 +19,5 @@ public enum SceneNativeStatus : uint
     InvalidObject = 14,
     DuplicateObject = 15,
     InvalidAssetReference = 16,
+    RevisionExhausted = 17,
 }

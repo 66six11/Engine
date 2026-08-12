@@ -356,7 +356,7 @@ python -m unittest tools.tests.test_validation_mesh_product
 GPU buffer 的门禁链路。它们不是通用 OBJ importer 或稳定 runtime mesh product schema；review 不得据此宣称
 asset-backed mesh resource pipeline 已完成。
 
-涉及 Scene schema v2、Document ABI v2、`SceneMeshComponent` 或 `packages/scene-rendering` extraction 时，必须同时在
+涉及 Scene schema v2、Document ABI v3、`SceneMeshComponent` 或 `packages/scene-rendering` extraction 时，必须同时在
 两个 test preset 构建并运行 CPU smoke。审查要确认 typed mesh reference 仅持久化 authored GUID/type、runtime `EntityId`
 与 product/GPU key 不进入 scene，`T * R * S` matrix、empty zero-draw、ready binding、missing/wrong-kind/stale/invalid
 逐 item no-draw diagnostics、revision replacement 不共享旧 draw vector 均未漂移：
@@ -452,7 +452,20 @@ Studio R0 删除的旧 `editor_project_*` bridge 仍不得恢复。当前真实 
 数据一致”。Release distribution closure 必须精确包含 `bin/asharia_scene_native.dll` 并验证全部 SceneDocument exports；
 缺失、错名、嵌套或同 stem 副产物都必须失败。
 
-对 v2 schema/Document ABI 改动，验收还必须确认 hard cut：不导出或接受 schema/ABI v1 fallback，mesh authored GUID/type
+涉及 document Undo/Redo、history、Transform mutation receipt 或 dirty/savepoint 时，还必须按
+[`ADR-0013`](../../apps/studio/docs/adr/0013-authoritative-document-transform-undo-redo.md) 审查并验证：
+
+- Apply/Undo/Redo 的 native revision 严格单调，dirty 只由 `ContentStateId != SavedContentStateId` 决定；
+- changed/no-op/failure receipt 与 authoritative snapshot 一致；failure、cancel、revision conflict、target missing 和
+  malformed receipt 均不移动 history cursor；
+- history 为 per-document `List + cursor`，新 edit 截断 redo，unsupported persistent mutation 清 history；
+- 256 entries 与 16 MiB 两个预算都被测试，淘汰完整最老 entry 后 cursor/byte count 一致；
+- focused text input 可优先处理自己的 Undo/Redo，document shortcut 不抢占 draft；toolbar 与 shortcut 消费同一
+  Application enablement/label；
+- 真实 native acceptance 覆盖 `A clean -> B/save clean -> C dirty -> Undo(B clean) -> Redo(C dirty) -> save/reopen`，
+  并确认 stable `ObjectId` target 不依赖当前 selection、Inspector quaternion/Euler projection 不抖动。
+
+对 schema v2 / Document ABI v3 改动，验收还必须确认 hard cut：不导出或接受旧 schema/ABI fallback，mesh authored GUID/type
 round-trip 后不出现 runtime EntityId、product generation/hash、Basic resource/material key 或 GPU handle。若同时改动 V7
 viewport producer/native ABI，必须证明 malformed V7 packet 被整帧拒绝；item-level asset binding failure 不能被提升为
 packet-level partial submit。

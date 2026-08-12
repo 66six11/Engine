@@ -6,7 +6,7 @@
 #include "asharia/scene/world_native_api.h"
 
 int main(void) {
-    _Static_assert(ASHARIA_SCENE_DOCUMENT_NATIVE_ABI_VERSION == 2U,
+    _Static_assert(ASHARIA_SCENE_DOCUMENT_NATIVE_ABI_VERSION == 3U,
                    "SceneDocument ABI must hard-cut independently from World ABI.");
     _Static_assert(sizeof(AshariaSceneNativeDocumentCreateMeshEntityRequest) == 72U,
                    "Unexpected C mesh entity request layout.");

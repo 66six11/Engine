@@ -35,6 +35,7 @@ namespace asharia::scene {
         InvalidObjectId = 5,
         InvalidTransform = 6,
         InvalidAssetReference = 7,
+        RevisionExhausted = 8,
     };
 
     struct SceneId {
@@ -82,10 +83,18 @@ namespace asharia::scene {
         std::vector<RuntimeEntityBinding> runtimeEntities;
         std::uint64_t revision{};
         std::uint64_t savedRevision{};
+    };
 
-        [[nodiscard]] bool dirty() const noexcept {
-            return revision != savedRevision;
-        }
+    struct SceneEntityTransformReceipt {
+        SceneObjectId objectId{};
+        bool changed{};
+        TransformComponent before{};
+        TransformComponent after{};
+        std::uint64_t beforeRevision{};
+        std::uint64_t afterRevision{};
+
+        [[nodiscard]] friend bool operator==(const SceneEntityTransformReceipt&,
+                                             const SceneEntityTransformReceipt&) = default;
     };
 
     [[nodiscard]] Result<SceneId> parseSceneId(std::string_view text);
@@ -109,9 +118,9 @@ namespace asharia::scene {
                                                   std::uint64_t expectedRevision);
         [[nodiscard]] VoidResult setEntityName(SceneObjectId objectId, std::string_view name,
                                                std::uint64_t expectedRevision);
-        [[nodiscard]] VoidResult setEntityTransform(SceneObjectId objectId,
-                                                    const TransformComponent& transform,
-                                                    std::uint64_t expectedRevision);
+        [[nodiscard]] Result<SceneEntityTransformReceipt>
+        setEntityTransform(SceneObjectId objectId, const TransformComponent& transform,
+                           std::uint64_t expectedRevision);
         [[nodiscard]] VoidResult save(std::uint64_t expectedRevision);
 
     private:

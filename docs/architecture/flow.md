@@ -614,8 +614,28 @@ flowchart LR
   ProjectSession。测试组合显式注入 doubles，不读取用户偏好或创建生产 service。
 - `ActiveProjectSnapshot` 与 `SceneDocumentSnapshot` 只表达已验证的 identity/value，不持有 Avalonia 对象、原生指针或
   runtime 对象。关闭顺序先关闭 document connection/owner lane，再清除 active project。
-- 当前没有 recent store、自动恢复、多模板、Project extension scope、asset catalog、EngineHost、undo/redo 或 Play；
+- 当前没有 recent store、自动恢复、多模板、Project extension scope、asset catalog、EngineHost、非 Transform mutation Undo 或 Play；
   Bootstrap `Ready` 与活动项目/文档 `Ready` 仍是不同状态。
+
+### #373 Transform Undo/Redo 当前流程
+
+[`ADR-0013`](../../apps/studio/docs/adr/0013-authoritative-document-transform-undo-redo.md) 决定第一条 document history
+纵切仍由 Application `ProjectSession` 拥有；native SceneDocument 只负责 typed validate/apply 与 authoritative receipt，
+EngineBridge 只负责 owner lane/ABI 验证，Avalonia 只提交 intent 和投影 snapshot。当前写流为：
+
+```text
+Inspector Apply / document Undo / document Redo
+  -> ProjectSession serial document queue
+  -> native Transform mutation(expected revision, stable ObjectId)
+  -> authoritative changed/no-op/failure receipt + snapshot
+  -> success only: commit List+cursor and logical ContentStateId
+  -> publish ProjectSessionSnapshot(CanUndo, CanRedo, labels, dirty)
+```
+
+`DocumentRevision` 在 changed Apply/Undo/Redo 后严格单调；dirty 比较 `ContentStateId` 与
+`SavedContentStateId`，因此 Undo 回到保存内容可以恢复 clean 而不回退 revision。history 按 document 隔离，同时限制为
+256 entries 与 16 MiB；failure/no-op 不移动 cursor，首个 Slice 不支持的 changed persistent mutation 作为安全 barrier 清空
+history。上述类型与行为已由 #373 的真实 ProjectSession/SceneDocument native acceptance 验证。
 
 ## 当前 Studio Viewport 与 native RenderThread 流程
 
@@ -625,7 +645,8 @@ stream，并由同进程 `editor_native.dll` 内唯一 shared viewport RenderThr
 
 ### Scene mesh revision 到 Frame Debug 证据
 
-`SceneDocument` schema v2 与 native Document ABI v2 都是硬切合同；不存在 v1 reader/fallback。每个可渲染对象可带一个
+`SceneDocument` schema v2 与 native Document ABI v3 都是硬切合同；不存在旧 schema reader 或旧 Document ABI fallback。
+每个可渲染对象可带一个
 optional typed mesh `AssetReference`，持久化的是 authored GUID/type；`EntityId` 只在本次 runtime snapshot 中存在，product
 hash/generation、Basic resource/material key 和所有 GPU handle 都不进入 scene 文件。CPU-only
 `asharia::scene_rendering` 收到 immutable scene revision、mesh instances 和 caller 显式提供的 product bindings，输出拥有自身
@@ -633,7 +654,7 @@ hash/generation、Basic resource/material key 和所有 GPU handle 都不进入 
 `SceneDocument`/World 指针或建立 generic importer/resource service。
 
 ```text
-Scene schema v2 / Document ABI v2 snapshot
+Scene schema v2 / Document ABI v3 snapshot
   -> scene-rendering extraction(revision, typed mesh reference, explicit binding)
   -> immutable draw list + item diagnostics
   -> V7 owning frame packet(source revision + FOV axis)

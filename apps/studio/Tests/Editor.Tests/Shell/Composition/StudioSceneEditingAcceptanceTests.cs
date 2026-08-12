@@ -18,7 +18,7 @@ public sealed class StudioSceneEditingAcceptanceTests
         "xUnit",
         "xUnit1031",
         Justification = "The native owner-lane acceptance flow must run outside xUnit's synchronization context.")]
-    public void Create_edit_save_close_and_reopen_preserves_the_default_scene()
+    public void Transform_apply_undo_redo_save_and_reopen_preserves_the_authoritative_scene()
     {
         if (!OperatingSystem.IsWindows())
         {
@@ -41,10 +41,15 @@ public sealed class StudioSceneEditingAcceptanceTests
         try
         {
             Guid objectId;
-            var transform = new TransformValue(
+            var savedTransform = new TransformValue(
                 new Float3(1, 2, 3),
                 Quaternion.Identity,
                 new Float3(2, 2, 2));
+            var halfRootTwo = MathF.Sqrt(0.5F);
+            var editedTransform = new TransformValue(
+                new Float3(-4, 5.5F, 6),
+                new Quaternion(0, halfRootTwo, 0, halfRootTwo),
+                new Float3(0.5F, 1.5F, 3));
             var session = CreateSession();
             try
             {
@@ -69,19 +74,107 @@ public sealed class StudioSceneEditingAcceptanceTests
                 var renamed = await Await(session.SetEntityNameAsync(objectId, "主角"))
                     .ConfigureAwait(false);
                 Assert.True(renamed.Succeeded, renamed.Message);
-                var moved = await Await(session.SetEntityTransformAsync(
+                var movedToSavedState = await Await(session.SetEntityTransformAsync(
                         objectId,
-                        transform,
+                        savedTransform,
                         new ProjectSessionEditContext(
                             ProjectEditId.CreateNew(),
                             renamed.Current.Document!.Revision)))
                     .ConfigureAwait(false);
-                Assert.True(moved.Succeeded, moved.Message);
-                Assert.True(moved.Current.Document!.IsDirty);
+                Assert.True(movedToSavedState.Succeeded, movedToSavedState.Message);
+                Assert.Equal(
+                    renamed.Current.Document.Revision + 1,
+                    movedToSavedState.Current.Document!.Revision);
+                Assert.Equal(
+                    savedTransform,
+                    Assert.Single(movedToSavedState.Current.Document.Entities).Transform);
+                Assert.True(movedToSavedState.Current.IsDirty);
+                Assert.True(movedToSavedState.Current.CanUndo);
+                Assert.False(movedToSavedState.Current.CanRedo);
 
-                var saved = await Await(session.SaveSceneAsync()).ConfigureAwait(false);
-                Assert.True(saved.Succeeded, saved.Message);
-                Assert.False(saved.Current.Document!.IsDirty);
+                var savedState = await Await(session.SaveSceneAsync()).ConfigureAwait(false);
+                Assert.True(savedState.Succeeded, savedState.Message);
+                Assert.Equal(
+                    movedToSavedState.Current.Document.Revision,
+                    savedState.Current.Document!.Revision);
+                Assert.Equal(
+                    savedState.Current.Document.Revision,
+                    savedState.Current.Document.SavedRevision);
+                Assert.Equal(
+                    savedState.Current.CurrentContentStateId,
+                    savedState.Current.SavedContentStateId);
+                Assert.False(savedState.Current.IsDirty);
+                Assert.True(savedState.Current.CanUndo);
+
+                var movedToEditedState = await Await(session.SetEntityTransformAsync(
+                        objectId,
+                        editedTransform,
+                        new ProjectSessionEditContext(
+                            ProjectEditId.CreateNew(),
+                            savedState.Current.Document.Revision)))
+                    .ConfigureAwait(false);
+                Assert.True(movedToEditedState.Succeeded, movedToEditedState.Message);
+                Assert.Equal(
+                    savedState.Current.Document.Revision + 1,
+                    movedToEditedState.Current.Document!.Revision);
+                Assert.Equal(
+                    savedState.Current.Document.Revision,
+                    movedToEditedState.Current.Document.SavedRevision);
+                Assert.Equal(
+                    editedTransform,
+                    Assert.Single(movedToEditedState.Current.Document.Entities).Transform);
+                Assert.NotEqual(
+                    movedToEditedState.Current.CurrentContentStateId,
+                    movedToEditedState.Current.SavedContentStateId);
+                Assert.True(movedToEditedState.Current.IsDirty);
+                Assert.True(movedToEditedState.Current.CanUndo);
+                Assert.False(movedToEditedState.Current.CanRedo);
+
+                var undone = await Await(session.UndoAsync()).ConfigureAwait(false);
+                Assert.True(undone.Succeeded, undone.Message);
+                Assert.Equal(
+                    movedToEditedState.Current.Document.Revision + 1,
+                    undone.Current.Document!.Revision);
+                Assert.Equal(
+                    savedTransform,
+                    Assert.Single(undone.Current.Document.Entities).Transform);
+                Assert.NotEqual(
+                    undone.Current.Document.Revision,
+                    undone.Current.Document.SavedRevision);
+                Assert.Equal(
+                    undone.Current.CurrentContentStateId,
+                    undone.Current.SavedContentStateId);
+                Assert.False(undone.Current.IsDirty);
+                Assert.True(undone.Current.CanUndo);
+                Assert.True(undone.Current.CanRedo);
+
+                var redone = await Await(session.RedoAsync()).ConfigureAwait(false);
+                Assert.True(redone.Succeeded, redone.Message);
+                Assert.Equal(
+                    undone.Current.Document.Revision + 1,
+                    redone.Current.Document!.Revision);
+                Assert.Equal(
+                    editedTransform,
+                    Assert.Single(redone.Current.Document.Entities).Transform);
+                Assert.NotEqual(
+                    redone.Current.CurrentContentStateId,
+                    redone.Current.SavedContentStateId);
+                Assert.True(redone.Current.IsDirty);
+                Assert.True(redone.Current.CanUndo);
+                Assert.False(redone.Current.CanRedo);
+
+                var savedEditedState = await Await(session.SaveSceneAsync()).ConfigureAwait(false);
+                Assert.True(savedEditedState.Succeeded, savedEditedState.Message);
+                Assert.Equal(
+                    redone.Current.Document.Revision,
+                    savedEditedState.Current.Document!.Revision);
+                Assert.Equal(
+                    savedEditedState.Current.Document.Revision,
+                    savedEditedState.Current.Document.SavedRevision);
+                Assert.Equal(
+                    savedEditedState.Current.CurrentContentStateId,
+                    savedEditedState.Current.SavedContentStateId);
+                Assert.False(savedEditedState.Current.IsDirty);
             }
             finally
             {
@@ -99,9 +192,14 @@ public sealed class StudioSceneEditingAcceptanceTests
                 var entity = Assert.Single(reopened.Current.Document!.Entities);
                 Assert.Equal(objectId, entity.ObjectId);
                 Assert.Equal("主角", entity.Name);
-                Assert.Equal(transform, entity.Transform);
+                Assert.Equal(editedTransform, entity.Transform);
                 Assert.Equal(SceneMeshReference.DirectionalWedgeValidation, entity.Mesh);
-                Assert.False(reopened.Current.Document.IsDirty);
+                Assert.False(reopened.Current.IsDirty);
+                Assert.Equal(
+                    reopened.Current.Document.Revision,
+                    reopened.Current.Document.SavedRevision);
+                Assert.False(reopened.Current.CanUndo);
+                Assert.False(reopened.Current.CanRedo);
             }
             finally
             {

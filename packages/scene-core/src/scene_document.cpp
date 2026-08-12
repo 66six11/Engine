@@ -442,11 +442,11 @@ namespace asharia::scene {
         return {};
     }
 
-    VoidResult SceneDocument::setEntityTransform(SceneObjectId objectId,
-                                                 const TransformComponent& transform,
-                                                 std::uint64_t expectedRevision) {
+    Result<SceneEntityTransformReceipt>
+    SceneDocument::setEntityTransform(SceneObjectId objectId, const TransformComponent& transform,
+                                      std::uint64_t expectedRevision) {
         if (auto revision = requireRevision(expectedRevision); !revision) {
-            return revision;
+            return std::unexpected{revision.error()};
         }
         if (!validTransform(transform)) {
             return std::unexpected{sceneDocumentError(
@@ -461,15 +461,36 @@ namespace asharia::scene {
         if (persisted == data_.entities.end()) {
             return std::unexpected{invalidObjectError(objectId, "setEntityTransform")};
         }
+        const TransformComponent before = persisted->transform;
         if (persisted->transform == transform) {
-            return {};
+            return SceneEntityTransformReceipt{
+                .objectId = objectId,
+                .changed = false,
+                .before = before,
+                .after = before,
+                .beforeRevision = revision_,
+                .afterRevision = revision_,
+            };
+        }
+        if (revision_ == std::numeric_limits<std::uint64_t>::max()) {
+            return std::unexpected{sceneDocumentError(
+                SceneDocumentErrorCode::RevisionExhausted,
+                "Scene document revision space is exhausted; Transform was not changed.")};
         }
         if (auto changed = world_.setTransform(runtime->entity, transform); !changed) {
-            return changed;
+            return std::unexpected{changed.error()};
         }
+        const std::uint64_t beforeRevision = revision_;
         persisted->transform = transform;
         advanceRevision();
-        return {};
+        return SceneEntityTransformReceipt{
+            .objectId = objectId,
+            .changed = true,
+            .before = before,
+            .after = persisted->transform,
+            .beforeRevision = beforeRevision,
+            .afterRevision = revision_,
+        };
     }
 
     VoidResult SceneDocument::save(std::uint64_t expectedRevision) {

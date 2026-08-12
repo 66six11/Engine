@@ -210,5 +210,11 @@ public sealed class StudioHierarchyPanelViewModelTests
                 "C:\\Projects\\Sample\\Assets\\Scenes\\Default.asharia.scene.json",
                 revision,
                 savedRevision: 1,
-                entities));
+                entities),
+            new ContentStateId(1),
+            new ContentStateId(1),
+            canUndo: false,
+            canRedo: false,
+            undoLabel: null,
+            redoLabel: null);
 }
