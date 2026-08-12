@@ -133,7 +133,7 @@ public sealed record StudioCursorWindow<T>(
     bool Truncated,
     ImmutableArray<T> Items);
 
-public interface IStudioDiagnosticHub
+public interface IStudioDiagnosticSource
 {
     StudioProcessIdentity ProcessIdentity { get; }
 
@@ -142,10 +142,6 @@ public interface IStudioDiagnosticHub
     int LogCapacity { get; }
 
     long SubscriberFailureCount { get; }
-
-    StudioDiagnosticRecord PublishDiagnostic(StudioDiagnosticWrite write);
-
-    StudioLogRecord PublishLog(StudioLogWrite write);
 
     StudioCursorWindow<StudioDiagnosticRecord> ReadDiagnostics(
         long afterSequence = 0,
@@ -159,6 +155,13 @@ public interface IStudioDiagnosticHub
     StudioDiagnosticRecord? GetLatestDiagnostic();
 
     IDisposable Subscribe(Action invalidated);
+}
+
+public interface IStudioDiagnosticHub : IStudioDiagnosticSource
+{
+    StudioDiagnosticRecord PublishDiagnostic(StudioDiagnosticWrite write);
+
+    StudioLogRecord PublishLog(StudioLogWrite write);
 }
 
 public interface IStudioDiagnosticHubProvider

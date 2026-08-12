@@ -7,17 +7,21 @@
 > 描述不再是production事实。
 >
 > 2026-08-04：ADR-0009 已建立不依赖旧 Workbench 的最小真实编辑面：单 SceneDocument、Hierarchy、Inspector、
-> Create Entity、Save、dirty 与 Transform Undo/Redo。Dock、Project/Asset panel、Diagnostics panels 和多文档仍是后续范围。
+> Create Entity、Save、dirty 与 Transform Undo/Redo。当时Dock、Project/Asset panel、Diagnostics panels和多文档仍是后续范围；
+> 后续Dock与#381 Diagnostics current事实以下方更新为准。
 >
 > 2026-08-10：#363 只恢复 Hierarchy 的生产 UI 与 snapshot projection；它不恢复本文已 supersede 的旧
 > Workbench/provider/tree framework，也不扩展当前 Scene ABI。
 >
 > 2026-08-12：#373 已由 [ADR-0013](../adr/0013-authoritative-document-transform-undo-redo.md) 固化并实现首个
 > Transform Undo/Redo 与逻辑保存点纵切。
+>
+> 2026-08-13：#381在当前生产Dock上建立一个Diagnostics面板，内部Console读取时序日志、Problems读取可行动
+> 结构化诊断；两者共享唯一App-owned bounded hub的一次订阅，不恢复本文已删除的旧Workbench/Feature框架。
 
-更新日期：2026-08-12
+更新日期：2026-08-13
 
-跟踪：GitHub Epic #119；设计 Slice #337；首个实现 Slice #338；Hierarchy 第一纵切 #363；Transform Undo/Redo #373
+跟踪：GitHub Epic #119；设计 Slice #337；首个实现 Slice #338；Hierarchy 第一纵切 #363；Transform Undo/Redo #373；Diagnostics #381
 
 ## 1. 目的
 
@@ -57,16 +61,17 @@ find -> inspect -> select -> edit -> preview -> validate -> commit/undo
 
 ## 3. 当前实现事实与缺口
 
-2026-08-10 的 production 源码与运行态事实：
+2026-08-13 的 production 源码与运行态事实：
 
 - `Editor.csproj` 使用 Avalonia、compiled binding 与 CommunityToolkit.Mvvm；
-- Shell 只有项目 ingress 和单 SceneDocument 三列编辑面，没有恢复旧 Dock/Workbench；
+- Shell拥有当前自研Dock与单SceneDocument编辑面；它没有恢复旧Workbench/Feature框架；
 - Hierarchy 投影 authoritative entity snapshot；Inspector 编辑所选 stable object ID 的名称与 local Transform；
 - #363 的 Hierarchy UI 继续消费同一 authoritative snapshot，并以 `SceneEntitySnapshot.ObjectId` 在 snapshot
   替换后重映射 selection；row/control 不是 scene truth；
 - Create Entity、Save、dirty 标记与关闭重开恢复经过 Application/EngineBridge/native Document 真实链；
 - selection 仅由 ViewModel 按 stable ID remap，不成为 engine truth；
-- Project/Asset panel、Console/Problems panel、Command Palette、Dock、多文档、非 Transform mutation Undo 和 Play Mode 尚未实现。
+- Dock已恢复当前production实现；#381在一个Diagnostics tool panel中提供Console/Problems两个tab，读取同一
+  bounded hub。Project/Asset数据、Command Palette、多文档、非Transform mutation Undo和Play Mode尚未实现。
 
 当前缺口：
 
@@ -74,8 +79,8 @@ find -> inspect -> select -> edit -> preview -> validate -> commit/undo
 2. Inspector 只覆盖名称与 local Transform；Transform 已接入 document Undo/Redo，component reflection、validation rows、
    其他 mutation Undo 与 multi-selection 未实现。
 3. Scene View、render lane、工具栏和 overlay 未实现。
-4. Console/Problems/Status 的诊断呈现仍要从同一 bounded hub 重建。
-5. Dock、多文档、Play 和 viewport tools 只有相应 owner/command 落地后才能启用。
+4. Diagnostics已接入有界projection；持久Editor log、problem report/crash artifact、typed source/target导航仍需各自owner。
+5. 多文档、Play 和viewport tools只有相应owner/command落地后才能启用。
 6. 当前 `SceneEntitySnapshot` 只有 `ObjectId`、`Name` 与 `Transform`；Scene ABI 尚无 `ParentId`、entity kind、
    visibility、lock 或 authoring command，因此 Hierarchy 不能宣称真实嵌套关系或这些 mutation 能力。
 
@@ -114,7 +119,7 @@ find -> inspect -> select -> edit -> preview -> validate -> commit/undo
 | Project launch surface | content-driven，最大 180 px | Shell-owned；有界滚动，不进入 Dock/layout persistence |
 | 左列 | 260 px | Hierarchy 与 Project 垂直分割；均可成为 tab |
 | 右列 | 320 px | Inspector；优先保留可读宽度 |
-| 底部抽屉 | 打开时约 180–220 px | 默认折叠，warning/error/running task 可提示但不强制展开 |
+| 底部 Diagnostics | 打开时约 180–220 px | 当前默认布局包含一个面板；内部Console/Problems切换，warning/error不强制抢焦点 |
 | Status Bar | 22–26 px | 只显示摘要、计数和可点击目标 |
 
 Scene View 是唯一默认中心 document。compiled Avalonia UI Style、设置和其他已注册诊断工具由 Window 菜单或
@@ -301,6 +306,11 @@ Scene View 不直接执行 engine mutation。picking 产生 selection intent；g
 规则：
 
 - diagnostic identity、severity、source 和 recovery action 由共享 snapshot 提供；
+- Console按sequence/time投影时序日志；Problems只投影`Problem` channel的可行动结构化diagnostic。两个tab位于
+  同一个Diagnostics panel并共享一次hub subscription，但不合并record语义；
+- Clear是当前tab的sequence barrier，只隐藏较早投影；它不删除hub记录、不重置sequence，也不影响另一个tab或进程外observer；
+- collapse/search/severity/channel属于panel-local view state。折叠只改变projection，并显示repeat count；
+- cursor expired、drop、分页/窗口截断和字段截断必须在当前tab可见，不能用“0 items”掩盖证据缺口；
 - Status Bar 不滚动长日志，不显示多行堆栈；
 - warning/error 不自动抢焦点或展开底部抽屉；
 - repeated diagnostic 以计数/最后时间更新，不新增视觉副本；
@@ -323,7 +333,7 @@ Scene View 不直接执行 engine mutation。picking 产生 selection intent；g
 | 层 | 拥有 | 不拥有 |
 | --- | --- | --- |
 | Shell | Main Menu、Workbench Bar、Dock、Status、overlay host、layout preset | scene/asset truth、engine mutation |
-| Features | Hierarchy、Project、Scene View、Inspector、Problems/Console 的 ViewModel 与 View | 全局 service locator、Dock 直接编排 |
+| Features | Hierarchy、Project、Scene View、Inspector及Diagnostics内部Console/Problems的ViewModel与View | 全局 service locator、Dock 直接编排、diagnostic truth |
 | UI | token、共享小型 primitive、icon、可访问状态样式 | 业务命令、engine/session state |
 | Application/Core | selection、command、transaction、dirty、diagnostic、task、session snapshot | Avalonia controls |
 | EngineBridge | typed native/session adapters 与 revisioned data handoff | UI state、panel lifetime、file picker |
@@ -359,6 +369,8 @@ lifecycle 合同见 [Studio 前端硬切架构](studio-frontend-hard-cut.md)。
 | Godot Editor / Inspector Dock | Scene、FileSystem、Inspector 协作；底部面板可折叠；Inspector 有搜索、历史和恢复入口 | Adopt 可折叠诊断与明确 Inspector 状态；历史/收藏延后 |
 | O3DE Editor / Entity Outliner source | Outliner + Asset Browser + Viewport + Inspector 的生产布局；widget、list model 与 sort/filter proxy 分工，selection/expansion 以 entity id 恢复 | Adopt snapshot/model/filter owner 边界与过滤期间 selection 保留；visibility、lock、拖放和批量能力延后 |
 | Unity `SceneHierarchy` reference source | `TreeViewController` 消费稳定 entity id，`TreeViewState` 保存窗口局部 expansion/selection，`GetRows()` 暴露当前 visible rows | Adopt stable-id selection、panel-local tree state 与 flat visible-row projection；不把 Unity layout persistence 或 API 搬入 Scene 文档 |
+| Unreal Output Log / Message Log | Output Log是category/verbosity时序记录，Message Log listing是可筛选、可执行token的结构化消息 | 作为Diagnostics主先例，采用“Console时间序列 / Problems可行动诊断”分工；合并到一个Dock panel以控制默认surface数量，不复制Slate/module/token API |
+| Unity Console、Godot Output / Debugger Errors、O3DE Console/error guidance | 过滤、折叠、清除属于查看层；常规输出与问题surface可分；O3DE还把命令/CVar纳入Console | 交叉采用有界filter/collapse和被动呈现；拒绝让Clear删除truth、让warning抢焦点，或在本Slice加入命令/CVar |
 | Blender HIG | 区分 scene selection、UI selection、drag 与 undo；空间上下文明确 | Adopt selection/focus/undo 边界 |
 | Marking Menu 实证研究 | 可见菜单可帮助 novice 逐步形成 expert gesture | Deferred：command catalog 和快捷键冲突模型稳定后再评估 |
 | Toolglass / Magic Lenses | 空间 overlay 能减少反复切换 mode 的成本 | Adapt：只用于 viewport 的非阻塞 overlay；拒绝全局浮动工具层 |
@@ -421,7 +433,7 @@ launch Studio
    Project 面板恢复为 active-project asset workspace 占位；
 2. 接入正式 project selection/report provider；每个动作只有在对应 application service 与 command route 存在后才渲染为控件；
 3. 完成正式 ProjectSession/ProjectReady 后，Project 面板接入真实 asset/product snapshot 与 readiness；
-4. 为 Problems 增加可按稳定 source 替换的诊断投影，再同步 project-open diagnostics；
+4. #381已用同一Diagnostics面板接入Console时序日志与Problems结构化诊断；按稳定typed source替换和导航仍待source/target合同；
 5. Inspector 明确 empty/read-only/dirty/invalid，并接入第一个 transaction-backed writable field；
 6. Scene View toolbar/overlay 与 diagnostic deduplication；
 7. Scene picking、gizmo transaction 和 Scene Authoring MVP；

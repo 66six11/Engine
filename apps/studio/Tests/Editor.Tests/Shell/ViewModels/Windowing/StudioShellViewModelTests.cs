@@ -27,7 +27,7 @@ public sealed class StudioShellViewModelTests
     {
         using var viewModel = StudioShellTestFactory.Create();
 
-        Assert.Equal(14, viewModel.ActionCatalog.Length);
+        Assert.Equal(15, viewModel.ActionCatalog.Length);
         Assert.Equal(
             viewModel.CreateProjectCommand,
             viewModel.GetActionCommand(Editor.Shell.Actions.StudioShellActionIds.CreateProject));
@@ -38,6 +38,10 @@ public sealed class StudioShellViewModelTests
             viewModel.OpenHierarchyPanelCommand,
             viewModel.GetActionCommand(
                 Editor.Shell.Actions.StudioShellActionIds.OpenHierarchyPanel));
+        Assert.Equal(
+            viewModel.OpenDiagnosticsPanelCommand,
+            viewModel.GetActionCommand(
+                Editor.Shell.Actions.StudioShellActionIds.OpenDiagnosticsPanel));
         Assert.All(
             viewModel.ActionCatalog,
             entry => Assert.NotEmpty(entry.Placements));
@@ -66,6 +70,39 @@ public sealed class StudioShellViewModelTests
         Assert.All(
             menuPlacements,
             placement => Assert.InRange(placement.Order, 10000, 49999));
+    }
+
+    [Fact]
+    public async Task Diagnostics_action_remains_enabled_and_opens_while_a_project_operation_is_running()
+    {
+        using var viewModel = StudioShellTestFactory.Create(
+            out var projectSession,
+            out var dialogs);
+        viewModel.MarkReady();
+        viewModel.NewProjectName = "Sample";
+        dialogs.ParentDirectory = "C:\\Projects";
+        var completion = new TaskCompletionSource<ProjectSessionOperationResult>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        projectSession.CreateHandler = (_, _, _, _) =>
+            new ValueTask<ProjectSessionOperationResult>(completion.Task);
+        Assert.True(viewModel.DockWorkspace.ClosePanel("diagnostics"));
+
+        viewModel.CreateProjectCommand.Execute(null);
+        await WaitUntilAsync(() => viewModel.IsProjectOperationRunning);
+
+        try
+        {
+            Assert.True(viewModel.OpenDiagnosticsPanelCommand.CanExecute(null));
+            viewModel.OpenDiagnosticsPanelCommand.Execute(null);
+            await WaitUntilAsync(() => viewModel.DockWorkspace.ContainsPanel("diagnostics"));
+        }
+        finally
+        {
+            completion.TrySetResult(ProjectSessionOperationResult.Success(
+                ProjectSessionSnapshot.NoProject,
+                "Project operation completed."));
+            await WaitUntilAsync(() => !viewModel.IsProjectOperationRunning);
+        }
     }
 
     [Fact]

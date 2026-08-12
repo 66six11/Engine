@@ -4,6 +4,7 @@
              xmlns:dockViews="using:Editor.Shell.Views.Docking"
              xmlns:panelVm="using:Editor.Shell.ViewModels.Panels"
              xmlns:panelViews="using:Editor.Shell.Views.Panels"
+             xmlns:diagnosticsVm="using:Editor.Shell.Diagnostics"
              x:Class="Editor.App"
              RequestedThemeVariant="Dark">
     <Application.DataTemplates>
@@ -24,6 +25,9 @@
         </DataTemplate>
         <DataTemplate DataType="{x:Type panelVm:StudioProjectPanelViewModel}">
             <panelViews:StudioProjectPanelView />
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type diagnosticsVm:StudioDiagnosticsPanelViewModel}">
+            <panelViews:StudioDiagnosticsPanelView />
         </DataTemplate>
     </Application.DataTemplates>
     <Application.Resources>

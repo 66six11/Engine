@@ -1,8 +1,8 @@
 # Studio 开发态可观测性与诊断访问架构
 
-状态：Current R0.5 Baseline + R2/R4 structured ingress（protocol、shared-ring投影、Debug-only Host、current-user产品endpoint/discovery、typed CLI、壳 UI Probe及标准stdio只读 MCP adapter 的 Slice 1→8 与实现纠错格已关闭；#378已把真实Project/Shell/viewport failure接入同一hub）
+状态：Current R0.5 Baseline + R2/R4 structured ingress / UI projection（protocol、shared-ring投影、Debug-only Host、current-user产品endpoint/discovery、typed CLI、壳 UI Probe及标准stdio只读 MCP adapter 的 Slice 1→8 与实现纠错格已关闭；#378把真实Project/Shell/viewport failure接入同一hub；#381建立同一hub上的Diagnostics面板）
 
-更新日期：2026-08-12
+更新日期：2026-08-13
 
 本文定义 Asharia Studio 在开发构建中向开发者、CI 和 AI 工具暴露运行状态与诊断证据的目标合同。
 它服从 [Studio 前端硬切架构](studio-frontend-hard-cut.md) 的 Document-first、单 owner、异步生命周期和
@@ -31,10 +31,10 @@ Studio 需要一个 **Asharia 自有、开发态、本机、默认只读** 的�
 
 ## 2. Current 与 Planned
 
-| 领域 | Current（2026-08-12） | Planned |
+| 领域 | Current（2026-08-13） | Planned |
 | --- | --- | --- |
 | UI diagnostics | [`App.axaml.cs`](../../App.axaml.cs) 创建process hub并安装自有[`StudioAvaloniaLogSink`](../../Shell/Diagnostics/StudioAvaloniaLogSink.cs)；adapter使用`Framework`/`avalonia`，最多单次投影16个BCL标量，未知对象只保留bounded type marker；`Program.cs`不调用`LogToTrace()` | 不依赖Plus，不保留framework object；新增值类型只有出现真实日志需求并证明producer-safe后才加入精确allowlist |
-| Studio diagnostics | [`StudioDiagnosticHub`](../../src/Asharia.Studio.Application/Diagnostics/StudioDiagnosticHub.cs) 拥有2048 diagnostic / 8192 log固定ring、sequence/cursor/drop、64个subscription slots；Avalonia任意值已安全投影；#378又让Project/Shell typed operation failure/exception、viewport required-edge Deferred/Rejected及presentation degraded/recovered episode进入同一hub | Console/Problems仍已删除；首个真实UI consumer前把invalidation收敛为有界合并调度，并单独定义bounded dedup projection；不得建立第二truth |
+| Studio diagnostics | [`StudioDiagnosticHub`](../../src/Asharia.Studio.Application/Diagnostics/StudioDiagnosticHub.cs) 拥有2048 diagnostic / 8192 log固定ring、sequence/cursor/drop、64个subscription slots；Avalonia任意值已安全投影；#378让Project/Shell typed operation failure/exception、viewport required-edge Deferred/Rejected及presentation degraded/recovered episode进入同一hub；#381的一个Diagnostics Dock面板以一次subscription和可重建的bounded projection呈现Console/Problems两个tab | 后续producer仍只接入同一hub；新增过滤、折叠与详情只改变projection，不建立第二truth |
 | Operation provenance | [`StudioOperationDiagnosticWriter`](../../src/Asharia.Studio.Application/Diagnostics/StudioOperationDiagnosticWriter.cs)保留stable code/category/component、scope、operation/correlation/parent与ProjectEditId attribute；viewport projector保留session/epoch/transaction/generation/participant/outcome/failure | 扩充producer只能在真实operation boundary逐项接入；普通成功状态不写Problem，UI transient message不替代hub record |
 | Native log/error | [`error.hpp`](../../../../engine/core/include/asharia/core/error.hpp) 只有 domain/code/message；[`log.cpp`](../../../../engine/core/src/log.cpp) 在 mutex 下写 stdout/stderr | 保留 bootstrap fallback；增加 structured router 和 typed sinks，不解析文本建立状态 |
 | Native/renderer facts | viewport 已能复制 stats；[`render_view.hpp`](../../../../packages/renderer-basic/include/asharia/renderer_basic_vulkan/render_view.hpp) 有 RenderGraph snapshot/execution event | 复用 value-copy 和 renderer-owned event ID；不暴露 singleton、pointer、`Vk*` handle |
@@ -42,9 +42,10 @@ Studio 需要一个 **Asharia 自有、开发态、本机、默认只读** 的�
 | Session/tool access | typed protocol、显式grant产品endpoint与`asharia-studio-observe list/describe/diagnostics/logs/ui-list-windows/ui-read-tree`已成立；真实`MainWindow`只读semantic projection经Host→Pipe→typed client/CLI闭环，且仅在provider存在时广告两项UI capability；同一可执行文件的精确`mcp`模式以Codex当前实际协商的标准stdio MCP `2025-06-18`只注册六个等价只读tools | R0.5当前面不再扩大；`state/readElement/find`、Capture/Mutate与任意method必须等待各自真实owner和新Slice |
 | Foundation | 文档计划 bounded router、counter/trace 与 local crash evidence | 尚未实现；F3 落地后 Studio 消费同一 process truth，不保留第二套路由器 |
 
-明确延期：本次只完成structured ingress，不实现Console/Problems panel、persistent log file、problem-report bundle、
-crash collector或完整Task supervisor。Unity把Console的可过滤视图与Editor log file视为不同产品面；Asharia同样
-保持“bounded process truth / UI projection / persistent artifact”三个owner分开，不能把打开Console等同于开始持久采集。
+明确延期：#381只增加同一Diagnostics面板内的Console/Problems只读投影，不实现persistent log file、problem-report
+bundle、crash collector、完整Task supervisor、命令输入/CVar，或在缺少typed target/source合同前猜测导航。Asharia保持
+“bounded process truth / UI projection / persistent artifact”三个owner分开；打开、关闭或清空Diagnostics视图都不开始、
+停止或删除持久采集。
 
 ### 2.1 R0.5 Slice 1 protocol/golden card（closed evidence）
 
@@ -225,7 +226,7 @@ crash collector或完整Task supervisor。Unity把Console的可过滤视图与Ed
 | 字段 | 当前合同与证据 |
 | --- | --- |
 | Current evidence | 2.11关闭后的独立验证又确定性复现两个同一合同缺口：容量2的ring在seq1已commit而seq2/3只reserve时，会把reservation误当published watermark，导致seq1在尚未覆盖前被报告expired且`drop=0`；客户端请求future cursor 100而当前只到1时，server与typed client均允许`NextCursor`回退到1。修正不改变wire schema或能力集合，只恢复bounded truth与cursor连续性。 |
-| I0 → I6 gate | I0仍由App唯一hub owner服务Host与只读adapter，Console/Problems只是未来consumer；I1既有`CursorWindow`合同不变；I2用真实固定ring交错和typed client负例冻结失败；I3只修正Application ring的完成窗口；I4让typed client拒绝server回退；I5保持容量、页长和单次扫描上限；I6 MCP继续复用同一client且不增加tool。没有提前接入R1 capability。 |
+| I0 → I6 gate | 此修正格当时由App唯一hub owner服务Host与只读adapter，Console/Problems尚是未来consumer；#381后来直接复用该owner。I1既有`CursorWindow`合同不变；I2用真实固定ring交错和typed client负例冻结失败；I3只修正Application ring的完成窗口；I4让typed client拒绝server回退；I5保持容量、页长和单次扫描上限；I6 MCP继续复用同一client且不增加tool。没有提前接入R1 capability。 |
 | Engine/tool precedent adopted | Unreal官方[`FOutputDeviceRedirector::Serialize`](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/Core/Misc/FOutputDeviceRedirector/Serialize)保留单一输出redirector边界；Unity官方[`Application.logMessageReceivedThreaded`](https://docs.unity3d.com/ScriptReference/Application-logMessageReceivedThreaded.html)明确callback可从不同thread并行进入；Godot官方[`Logger`/`CompositeLogger` source](https://github.com/godotengine/godot/blob/master/core/io/logger.h)保持统一logger接口并让具体sink负责有界文件轮换。Asharia采用任意线程进入同一process truth、固定retention和只读adapter复用，不复制第二日志源。 |
 | Rejected / Asharia rationale | 拒绝以全局lock串行化producer、以unbounded pending map/queue补reservation洞、把reserved sequence当可见publication、让future cursor向后移动，或由CLI/MCP自行修补server窗口。Asharia用`highestCompletedSequence`定义最近固定容量的逻辑窗口；publisher只做固定slot CAS与完成水位CAS，精确drop计算放在有界reader扫描。高sequence完成可淘汰旧逻辑位置，但必须留下drop/expired证据。 |
 | Owner / lifetime / thread / data | `StudioDiagnosticHub`仍唯一拥有两个独立编号ring。每个publish先取ring-local sequence，再以record或failure tombstone提交固定slot，最后单调推进completed watermark并发布版本；reservation本身不移动可读窗口。reader快照completed与reserved，最多扫描capacity，在pending洞前停止并保持cursor；`NextCursor >= requestedAfterSequence`始终成立。latest只观察completed窗口。typed client再次校验item严格晚于请求cursor及response cursor不回退。 |
@@ -299,8 +300,11 @@ crash collector或完整Task supervisor。Unity把Console的可过滤视图与Ed
 
 | 参考行为 | 采用 | 拒绝 / Asharia 调整 |
 | --- | --- | --- |
+| Unreal Output Log / Message Log | 以Output Log的category/verbosity时间序列作为Console主先例；以Message Log listing的filtered rich/tokenized messages作为Problems主先例；允许同一事实由明确policy镜像，但两个视图语义不同 | 不复制`FOutputDevice`、Slate、全局module或token API；Asharia用一个App-owned hub、一个Diagnostics panel和两个只读projection表达边界 |
 | Unity PlayerConnection：message ID、byte payload、Editor/Player connection | 显式 attach、capability handshake、断线 | transport 不等于协议；拒绝 singleton/临时 ID/raw bytes，绑定 PID + process start + session/generation + token |
-| Unity Console 与 threaded log callback | 线程安全、有序、有界、过滤、重复聚合 | producer 不直接通知 UI/tool；cursor window 明示 wrap/drop |
+| Unity Console 与 threaded log callback | 线程安全、有序、有界、过滤、重复聚合；Clear只改变当前查看面 | producer 不直接通知 UI/tool；cursor window 明示 wrap/drop；不把UI Clear升级为hub erase |
+| Godot Output / Debugger Errors | 在同一底部工作区区分常规输出与运行问题；两类surface均保留筛选和清理 | 不复制自动弹出、运行会话设置或Godot node/error对象；Asharia暂不因warning/error抢焦点 |
+| O3DE Console / Trace与错误消息规范 | 时间序列保留system/category，Problem文案包含affected system、问题与恢复建议 | 拒绝把命令输入/CVar与日志读取绑在同一Slice，也不让passive Console替代可行动Problems |
 | Unity `ProfilerRecorder`/modules | descriptor catalog、Capacity/Wrapped、独立启停 | 多 client 复用 owner 采样；不默认录制所有高成本数据 |
 | Unity Memory Profiler snapshot | 重型数据是 job + artifact，可离线比较 | 不在 UI thread 聚合 managed/native/GPU；各 section 独立 time/status，可 partial |
 | Unity Frame Debugger | frame capture 是显式、intrusive 操作 | v1 只读 summary；后续按 View/Frame/Epoch 捕获，renderer event ID authoritative |
@@ -311,10 +315,15 @@ crash collector或完整Task supervisor。Unity把Console的可过滤视图与Ed
 
 Unity 文档没有把开发连接描述为强认证边界；因此“可 attach”不等于“调用方可信”是本文的安全推论。
 
-Unity Console官方合同还明确区分三个职责：Console Window负责查看、筛选、折叠与清除当前条目；Editor log file
-是独立的持久文本证据；`Application.logMessageReceivedThreaded`可能从不同线程回调。Asharia只采用这种职责分离，
-不复制Unity内部store/API：producer先写唯一bounded hub，未来Console/Problems只做只读有界投影，persistent log与
-problem-report/crash artifact必须各自拥有写入、flush、quota、redaction和shutdown合同。
+Unreal是#381的主参考：Output Log用于按category/verbosity阅读有序执行记录；Message Log listing则保存可筛选、
+可执行token的结构化消息。Asharia采用“时间序列日志 / 可行动问题”语义分离，但把两个tab合并进一个Diagnostics
+Dock面板以减少默认面板数量，并共享一次hub subscription与同一projection lifetime；这不会合并两类record合同。
+
+Unity、Godot与O3DE用于交叉检查。Unity Console官方合同区分查看、筛选、折叠、清除与独立Editor log file；Godot把
+Output和Debugger Errors放在不同底部surface；O3DE同时证明Console命令/CVar是更宽的可变能力，而其错误写作规范强调
+affected system与remediation。Asharia因此只采用有界过滤/折叠、被动错误呈现和可操作信息，不复制Unity内部store/API，
+不在#381加入命令输入/CVar，也不解析文本制造Problem。persistent log、problem-report和crash artifact仍必须各自拥有
+写入、flush、quota、redaction和shutdown合同。
 
 ## 4. 目标组件与依赖
 
@@ -491,8 +500,9 @@ CursorWindow<T>
 ```
 
 diagnostic 是可行动事实；log 是高容量时间序列。客户端传 `after/max/wait`；落后于 ring 时必须看见 expired/drop。
-当前每条diagnostic由stable code、scope、component与截断后的有序attributes生成fingerprint，但不做聚合，
-`RepeatCount`恒为1；dedup只有在真实Console/Problems等consumer出现后才允许作为bounded projection重新评审。
+每条diagnostic由stable code、scope、component与截断后的有序attributes生成fingerprint；hub中的canonical
+`RepeatCount`仍恒为1。#381只在可重建的bounded UI projection里按稳定collapse key聚合重复项；关闭collapse、切换filter或
+重新读取window不会改写record。Console按sequence/time显示log；Problems只显示`Problem` channel的可行动diagnostic。
 
 Current mapping：
 
@@ -508,8 +518,19 @@ Current mapping：
 - Avalonia `ILogSink` 在 Presentation adapter 中映射为 `Framework` + package `avalonia`，Application contract 不引用 Avalonia；
 - 子进程输出合同使用 `Subprocess` + `stdout`/`stderr` channel，并携 operation/correlation/sensitivity；当前待删除的
   ProjectCode control plane 不为证明该合同而重新接入 production；
-- Console/Problems当前已删除；未来真实panel只能读取同一hub，不能拥有私有store或第二event bus。persistent log、
-  problem report和crash artifact不属于本次ingress，不能用hub snapshot冒充其耐久性。
+- #381的Diagnostics panel在一个实例中呈现Console与Problems两个tab，只持有一次hub subscription。通知只作为
+  invalidation；consumer在dispatcher上合并刷新并重新读取bounded cursor window。投影可丢弃并从hub重建，不是私有store
+  或第二event bus；panel采用`KeepAlive`，close/detach与floating host关闭不退订，隐藏期间仍有界推进cursor，reopen不重复
+  subscribe；terminal workspace/Shell dispose才释放subscription，并让pending dispatcher refresh失效；
+- 两个tab分别维护view-only clear sequence barrier。Clear隐藏barrier之前的当前view记录，不删除hub记录、不重置全局
+  sequence，也不影响readonly observation/另一个tab。UI必须把cursor expired、dropped count、pagination/窗口截断和字段
+  `WasTruncated`呈现为证据，不能将缺口伪装成空列表；
+- Console的Pause冻结当前bounded可见窗口，筛选与collapse仍只重投影该冻结窗口；同时独立读取cursor继续推进并累计
+  可观察到的unseen count，Resume再从暂停点读取hub当前保留窗口。`TotalDropped`只表示source ring覆盖累计，只有
+  `CursorExpired`表示当前投影确实错过了所需sequence区间，两者不得合并成一个伪history gap；
+- Console/Problems行列表必须有界且虚拟化；search/severity/channel/collapse属于panel-local state。persistent log、problem
+  report和crash artifact不属于#381，不能用hub snapshot冒充其耐久性。source/asset/object导航必须等待typed target/source
+  identity和显式Action route；不得从message或attribute文本猜路径、对象或命令。
 
 ### 7.3 Metrics、jobs、artifacts、UI
 
@@ -563,7 +584,7 @@ atomic rename 后才发布。每个 session 默认 quota 2 GiB；memory/full dum
 | --- | --- | --- | --- | --- |
 | `session.*` | Process/App | describe/health/capabilities/scopes | R0.5 Core v1 | connection 不是 session identity |
 | `state.*` | Application | lifecycle/project；R1 才有 document，R3 才有 selection | R0.5 Core v1 | per-section immutable snapshot |
-| `diagnostics.*` | R0 唯一 diagnostic router | filter/cursor/drop；dedup deferred | R0.5 Core v1 | 复用 R0 ring，不建第二 truth |
+| `diagnostics.*` | R0 唯一 diagnostic router | filter/cursor/drop；#381 UI projection可bounded collapse | R0.5 Core v1 | 复用 R0 ring，projection可重建，不建第二 truth |
 | `logs.*` | log router | filter/tail/window | R0.5 Core v1 | 不解析 text 为 truth |
 | `ui.*` | UI dispatcher | R0.5只实现壳 windows/tree；R1 关联 Document revision 后再逐Slice评审detail/find | R0.5 shell / R1 document | semantic tree，no object/write/input |
 | `metrics.*` | owners + sampler | list/read bounded samples | F3；viewport 指标不早于 R4 | shared sampler、bounded cardinality |
@@ -720,7 +741,7 @@ Avalonia Headless 与最小 accessibility semantics；R1 才让 UI Probe
   Pipe/CLI/MCP；UI snapshot 无 object；native snapshot 无 pointer/handle。
 - Protocol/security：golden/version/unknown additive values；invalid length/UTF-8/JSON/depth/size；wrong user/token、stale
   PID/start/session/generation；client/in-flight/rate limit；path/method/property/native attacks；secret redaction。
-- Concurrency/lifetime：multi-thread ingress、wrap/drop；真实dedup projection落地时再补其证据；subscriber/provider fault isolation；UI/engine timeout + late result；
+- Concurrency/lifetime：multi-thread ingress、wrap/drop；Diagnostics一次subscription、dispatcher coalescing、bounded collapse与dispose后零刷新；subscriber/provider fault isolation；UI/engine timeout + late result；
   Project/Window/device lost generations；1000 attach/detach；shutdown ordering、zero leaks、NativeSafeBarrier。
 - Capability：cursor/truncation；multiple clients 不重复采样；per-section partial/freshness；Headless UI tree/IDs/limits；
   Windows automation/DPI/multi-window；native fault/device lost/frame exact release。
@@ -739,6 +760,7 @@ Avalonia Headless 与最小 accessibility semantics；R1 才让 UI Probe
 - attached Studio 内 forced crash、任意测试、无预算 memory/frame capture；
 - MCP 比 host/CLI policy 权限更高，或 token 进入 prompt；
 - 为未出现的 remote/mobile 需求提前加 TCP/TLS/broker/cloud backend。
+- 用Console文本解析出Problem、source或target；让view-only Clear删除hub或影响另一个observer；把命令输入/CVar混入#381只读面板。
 
 ## 15. 官方资料
 
@@ -750,6 +772,12 @@ Unity：
 - [Memory snapshot](https://docs.unity3d.com/Packages/com.unity.memoryprofiler@1.1/manual/snapshot-capture.html)、[Frame Debugger](https://docs.unity3d.com/6000.0/Documentation/Manual/FrameDebugger-debug.html)、[TestRunner API](https://docs.unity3d.com/Packages/com.unity.test-framework@1.6/api/UnityEditor.TestTools.TestRunner.Api.TestRunnerApi.html)
 - [Crash folder](https://docs.unity3d.com/6000.0/Documentation/ScriptReference/Windows.CrashReporting-crashReportFolder.html)、[`ForceCrash`](https://docs.unity3d.com/6000.0/Documentation/ScriptReference/Diagnostics.Utils.ForceCrash.html)
 - [UI Toolkit Debugger](https://docs.unity3d.com/6000.0/Documentation/Manual/UIE-ui-debugger.html)、[Event Debugger](https://docs.unity3d.com/6000.0/Documentation/Manual/ui-systems/event-debugger.html)、[`SerializedObject`](https://docs.unity3d.com/6000.0/Documentation/ScriptReference/SerializedObject.html)
+
+Unreal / Godot / O3DE：
+
+- Unreal [Logging](https://dev.epicgames.com/documentation/en-us/unreal-engine/logging-in-unreal-engine)、[`FMessageLog`](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/Core/FMessageLog)、[`IMessageLogListing`](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Developer/MessageLog/IMessageLogListing)
+- Godot [Output panel](https://docs.godotengine.org/en/stable/tutorials/scripting/debug/output_panel.html)
+- O3DE [Console](https://www.docs.o3de.org/docs/user-guide/editor/console/)、[Console log error messages](https://docs.o3de.org/docs/tools-ui/ux-patterns/error/components/console-log/)、[log files](https://www.docs.o3de.org/docs/user-guide/appendix/log-files/)
 
 Avalonia / Windows：
 

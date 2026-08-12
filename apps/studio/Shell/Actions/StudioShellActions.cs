@@ -32,6 +32,8 @@ internal static class StudioShellActionIds
         new("studio.window.open-scene-view-panel");
     public static StudioActionId OpenInspectorPanel { get; } =
         new("studio.window.open-inspector-panel");
+    public static StudioActionId OpenDiagnosticsPanel { get; } =
+        new("studio.window.open-diagnostics-panel");
 }
 
 internal static class StudioShellPresentationIds

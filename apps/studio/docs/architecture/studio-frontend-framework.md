@@ -10,10 +10,12 @@
 > production reachability为0删除；以下相关段落只保存历史设计。
 > 2026-08-12，#377/#378/#379在真实ProjectSession、selection、Dock与viewport consumer上重建了窄
 > Application Action/dirty transition/diagnostic ingress合同；这不恢复旧Workbench/public SDK或兼容路径。
+> 2026-08-13，#381在当前production Dock中增加一个Diagnostics tool panel；内部Console/Problems以一次
+> subscription投影同一App-owned bounded hub，不恢复动态Feature/extension注册路径。
 
-更新日期：2026-08-12
+更新日期：2026-08-13
 
-跟踪：GitHub Epic #119；设计 Slice #337；首个实现 Slice #338；当前 slices #377/#378/#379
+跟踪：GitHub Epic #119；设计 Slice #337；首个实现 Slice #338；当前 slices #377/#378/#379/#381
 
 ## 1. 目的
 
@@ -214,8 +216,9 @@ UI 不直接“同步写模型再等待系统追认”。新 revision 是 mutati
 - `ProjectDocumentTransitionCoordinator`统一guard create/open/close/application exit；dirty时使用Save/Discard/Cancel，
   save失败不继续transition；prompt后同一document的content identity变化会重新决策，session/project/scene scope变化则以typed `Stale` fail closed；
 - diagnostics/log由唯一App-owned bounded hub拥有；Avalonia、Project/Shell operation failure与viewport required-edge
-  rejection均写入同一truth；Console/Problems与持久日志仍未实现；
-- `Asharia.Studio.Application.Actions`为当前14个真实Shell action拥有definition、placement、shortcut、冻结context、
+  rejection均写入同一truth；#381的Diagnostics panel以一个instance/一次subscription派生Console与Problems两个
+  bounded projection；持久日志仍未实现；
+- `Asharia.Studio.Application.Actions`为当前15个真实Shell action拥有definition、placement、shortcut、冻结context、
   state query与typed execute；File/Edit/Scene/Window菜单、现有命令按钮、Hierarchy context menu和main/floating shortcut共享该路由；
 - legacy Workbench、Code-first、Feature、dynamic extension/provider registry与task framework仍保持删除；当前Dock、
   Project/Document/Scene/Viewport/selection/transaction是后续真实consumer Slice的重建实现，不是旧API兼容恢复；
@@ -327,6 +330,12 @@ Panel kind 首版继续只区分：
 出现真实多实例 asset editor 后，再增加显式 instance key/multiplicity contract；当前不预先扩 enum。
 
 `RecreateOnOpen` 与 `KeepAlive` 只描述 content instance cache，不代表 module/generation lifetime。关闭 panel 必须先完成 deactivate/detach，再按 policy dispose 或保留。
+
+#381的Diagnostics是一个`Tool` panel与一个stable panel id；Console/Problems只是该panel内部tab，不分别注册Dock item。
+Shell通过`Window > Panels > Diagnostics`打开或聚焦同一`KeepAlive`实例。关闭/隐藏tab或关闭floating host只detach
+presentation；同一bounded projection和唯一hub subscription继续随Dock workspace lifetime推进cursor，重开/再次float复用
+原content与view-local filter，不重复subscribe。只有terminal workspace/Shell dispose结束subscription，并让pending dispatcher
+refresh检查disposed后失效；任何阶段都不得把projection提升为process truth。
 
 ## 8. Action 与 placement
 
@@ -618,6 +627,11 @@ cancellation/supersession generation
 diagnostic，不覆盖新会话。Dispatcher update 使用 latest-wins/coalescing；callback 期间不得重入同一 mutable
 owner。这个局部 invalidation 模型已覆盖当前需求，因此不增加通用全局 event bus 或 Redux-like store。
 
+Diagnostics把该规则具体化为：panel instance只订阅hub一次，任意producer thread上的callback只置invalidation并合并到
+UI dispatcher；刷新时分别读取bounded log/diagnostic cursor window，再原子替换可见projection。projection可随时丢弃并
+从hub重建；Console的sequence/time顺序与Problems的structured diagnostic语义不因filter/collapse变化。Clear只推进当前
+tab的view-only sequence barrier；cursor expired、drop、分页/窗口截断与字段截断是必须显示的snapshot metadata。
+
 ## 13. Inspector 与 property handle
 
 可写 Inspector 不直接把反射对象交给 UI。目标 `EditorPropertyHandle` 表达：
@@ -655,6 +669,9 @@ begin/edit/commit/cancel command route
 - 同一 diagnostic id 可被多个 surface 引用，但只有一个 primary feedback。
 
 这使前端框架不拥有文件 IO；它只发出用户 intent 并显示 Application service 的结果。
+
+Diagnostics v1不提供命令输入、CVar、report/export、crash收集或持久file sink。source/asset/object导航需要typed
+target/source identity和已注册Action route；在合同出现前，View不得从message、attribute或路径样式文本猜测导航。
 
 ### 14.1 Settings 与恢复
 
@@ -743,6 +760,10 @@ Code-first 当前把 `OnCreate/OnEnable/OnShown/OnActivated/OnGui/OnLayoutChange
 - project open/create/restore 可取消、single-flight，并且慢请求不会覆盖较新的成功会话；
 - layout 缺失 panel、schema migration、损坏文件 quarantine 和 atomic-save failure；
 - task cancellation 真实传递到 operation，terminal retention 有界；
+- Diagnostics只有一次hub subscription；producer burst每个dispatcher turn合并刷新；Console sequence/time与Problems
+  channel过滤正确；collapse只改projection，Clear只推进当前tab barrier；cursor expired/drop/pagination/field truncation可见；
+- Diagnostics close/floating close/reopen复用同一KeepAlive content且始终只有一次subscription；terminal workspace dispose
+  归零subscription且不执行late dispatcher update；大window使用虚拟化，realized control数量不随hub capacity线性增长；
 - Project close/reload 后 registry、task、subscription、Control 和 generation lease 归零。
 
 使用 Avalonia Headless 覆盖真实 control tree，而不是只做 XAML source-string 断言：
@@ -845,6 +866,13 @@ capability，不伪造 asset 数据。
 - `Asharia.Editor.Avalonia` registration 与 content lease；
 - built-in sample + Package fixture；
 - scoped resource、compiled binding、restart-required policy 和 teardown smoke。
+
+### Diagnostics projection（#381，已实现）
+
+- 一个Shell-internal `Diagnostics` tool panel通过`Window > Panels > Diagnostics`打开或聚焦，内部只有Console与Problems两个tab；
+- Console读取有序log window；Problems读取`Problem` channel的structured diagnostics；两者共享一个panel lifetime和一次hub subscription；
+- invalidation在dispatcher合并，row window与collapse projection有界且可重建；view-only Clear不修改hub；
+- drop/cursor expired、window/field truncation显式呈现；持久日志、report/crash、命令/CVar和无typed target时的导航保持延后。
 
 每个阶段独立 Issue/PR。任何阶段都不得以“以后会用”为由同时实现下一个阶段的空框架。
 

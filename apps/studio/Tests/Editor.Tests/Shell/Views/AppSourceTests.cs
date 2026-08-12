@@ -63,6 +63,8 @@ public sealed class AppSourceTests
         Assert.Contains("EditorDockWindowNodeViewModel", appXaml, StringComparison.Ordinal);
         Assert.Contains("StudioHierarchyPanelViewModel", appXaml, StringComparison.Ordinal);
         Assert.Contains("StudioInspectorPanelViewModel", appXaml, StringComparison.Ordinal);
+        Assert.Contains("StudioDiagnosticsPanelViewModel", appXaml, StringComparison.Ordinal);
+        Assert.Contains("StudioDiagnosticsPanelView", appXaml, StringComparison.Ordinal);
         Assert.Contains("RequestedThemeVariant=\"Dark\"", appXaml, StringComparison.Ordinal);
         Assert.Contains("<FluentTheme DensityStyle=\"Compact\" />", appXaml, StringComparison.Ordinal);
         Assert.Contains("ResourceInclude", appXaml, StringComparison.Ordinal);

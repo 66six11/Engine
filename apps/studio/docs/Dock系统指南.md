@@ -3,6 +3,10 @@
 状态：Superseded（历史实现记录）
 
 > R0已删除无真实Document/panel consumer的Dock、Workbench、Dialog与built-in Feature surface。本文只保存历史行为，不陈述当前production能力；当前合同见[Studio前端硬切架构](architecture/studio-frontend-hard-cut.md)。
+>
+> 2026-08-13 current addendum：production Dock已由后续Slice重建；#381注册一个stable `diagnostics` tool panel，
+> 内部Console/Problems是两个view tab，不是两个Dock panel。权威diagnostic ownership与数据流见
+> [Studio开发态可观测性](architecture/studio-development-observability.md#72-diagnosticslogs-与-cursor)。
 
 本文记录 Studio 当前自研 Dock 的边界、组件层级和后续高级 Dock 路线。目标不是给几个固定面板换皮，而是实现一个可完全控制窗口层级、组合结构、拖拽反馈和浮动窗口层级的 Dock 布局系统。
 
@@ -120,7 +124,7 @@ Window 内插入命中来自可见 guide spokes 的固定几何热点，不使�
 27. floating window placement 的 invalid bounds 修正和 DPI-aware working area clamp
 28. `KeepAlive` / `RecreateOnOpen` 内容创建策略，restore 只按 snapshot 中出现的 panel 懒创建
 29. `Window/Panels/*` 菜单从 `WorkbenchActionDescriptor` 生成，panel action 执行时先通过 `WorkbenchActionExecutor` 激活已有 panel，再按默认区域重开
-30. Scene View、Hierarchy、Inspector、Console、Problems 已迁入 `Features/*`，以空面板壳进入 Dock 容器；Feature 数据接入前不定义内部布局样式
+30. Historical：Scene View、Hierarchy、Inspector、Console、Problems曾迁入`Features/*`空面板壳；该路径已删除，不能作为当前注册依据
 31. Command Palette follow-up 继续复用 `WorkbenchActionDescriptor` 和 `WorkbenchCommandRouter`，支持 category 分组、in-memory recent commands 和 local command result feedback；当前仍只执行已注册的 workbench actions，不引入插件命令 API、完整快捷键编辑器、真实 provider 数据源或 native ABI
 32. `WorkbenchCommandRouter` 是当前 command-id execution route，返回 `WorkbenchCommandExecutionResult` typed result；`WorkbenchActionExecutor` 仍是 descriptor-level dispatcher，`OpenPanel` action 通过 `PanelCommandService.OpenOrFocusPanel` 执行
 33. Command Palette 可通过 catalog-backed `Tools > Command Palette` 或 `Ctrl+Shift+P` 打开；内建快捷键已由 `WorkbenchShortcutRouter` 解析 `WorkbenchActionDescriptor.DefaultShortcut` 并路由到 `WorkbenchCommandRouter`
@@ -134,14 +138,14 @@ Window 内插入命中来自可见 guide spokes 的固定几何热点，不使�
 41. Background activity v0从未拥有真实work/CTS/cancel/join或App producer；public task DTO/service、Application无界状态字典与self-tests现已整体删除。未来首个真实operation必须由owner持有actual task、bounded terminal evidence与shutdown join后重新进入I0/I1。
 42. Transaction service v0没有Document/native mutation producer，string descriptor与closure Apply/Revert也无法表达revision、atomic commit或uncertain outcome；public Editing/Transactions、Application service与self-tests现已整体删除。未来只从typed intent、authoritative receipt/inverse、journal cursor与savepoint重新进入I0/I1。
 43. Lifecycle events v0从未获得App/MainWindow/Dock producer或reader；public kind/snapshot/service、Application 100项recent-event实现及self-tests现已整体删除。当前唯一process lifecycle owner是`StudioProcessSession`，未来事件面必须随真实owner transition与对称subscription重新进入I0/I1。
-44. Status/debug message v0 consumes `WorkbenchCommandExecutionResult` as the first producer, maps it to UI-neutral `EditorStatusMessageSnapshot`, and publishes latest status text through Shell status chrome; Console-targeted messages can open/focus Console, while command-result messages remain passive unless a target is explicitly provided. This intentionally does not add shell command input, toast history, combined Problems/Console panels, native logs, plugin APIs, or modal failure dialogs.
+44. Historical status/debug message v0 consumed `WorkbenchCommandExecutionResult`; it did not add shell command input, toast history, native logs, plugin APIs or modal failure dialogs. #381 later chose one current Diagnostics panel with internal Console/Problems tabs, not the historical two-panel Feature model.
 45. Current-facts: the test-owned Editor extension host/registry/activation graph was deleted in the R0 hard cut; the current `StudioCompositionSession` owns only `StudioShellViewModel` and declares no extension capability.
 46. The orphan root-App `EditorExtensionId` was subsequently deleted because no production registry, contribution, lease or host consumed it. Future extension identity must be introduced by a real registered module owner together with activation and symmetric teardown; this historical guide is not a compatibility source.
 47. Panel instance manager v0及built-in panel content/Dock workspace已随legacy UI删除；剩余public panel declaration SCC随后也已删除，当前没有KeepAlive/RecreateOnOpen产品合同。
 48. Panel lifecycle callbacks v0没有真实PanelInstanceManager、Dock window/workspace或content consumer；public sink/context与self-tests现已整体删除。未来callbacks必须与实际instance owner和对称detach/dispose一起重立。
 49. Panel frame update scheduler v0没有Presentation timer、Window/Dock producer或render owner；public frame contracts、Application scheduler与self-tests现已整体删除，不保留manual/visible/active FPS planner。
 50. The provider contribution v0 claim is retired: App/composition never registered or queried an active-scene provider, the documented compatibility adapter did not exist, and the Core declarations plus tests-only Application/public/in-memory provider SCC are now deleted. Provider reload, native bridge connection, script VM, external plugins and writable scene editing remain deferred.
-51. Process diagnostics/log ingress v1 uses the one App-owned `IStudioDiagnosticHub`: fixed-capacity diagnostic/log rings, bounded subscribers, cursor/drop/truncation evidence and explicit managed/native/framework/subprocess mapping. Console and Problems are read-only projections of that truth. The subprocess contract is not production-wired because Studio owns no subprocess; the completed disposable-child gate remains external test infrastructure and does not publish a product capability. Shell command input, external plugins, persistence, arbitrary RPC and remote control remain deferred.
+51. Process diagnostics/log ingress v1 uses the one App-owned `IStudioDiagnosticHub`: fixed-capacity diagnostic/log rings, bounded subscribers, cursor/drop/truncation evidence and explicit managed/native/framework/subprocess mapping. #381 opens/focuses one `Diagnostics` panel through `Window/Panels/Diagnostics`; its Console and Problems tabs share one subscription and only own bounded, rebuildable view projections. The panel is `KeepAlive`: close/float/reopen reuses the same content and subscription, while terminal workspace/Shell dispose unsubscribes. The subprocess contract is not production-wired because Studio owns no subprocess; shell command input/CVar, external plugins, persistence, report/crash, arbitrary RPC and remote control remain deferred.
 ```
 
 当前未实现：
@@ -151,7 +155,7 @@ Window 内插入命中来自可见 guide spokes 的固定几何热点，不使�
 2. n-ary split group 组件和更完整的比例编辑体验
 3. floating window 窗口层级、跨屏手工验证和高级生命周期策略
 4. 用户可编辑快捷键策略、快捷键冲突 UI、更多 action kind 和命令结果弹出/日志反馈
-5. Hierarchy / Inspector 真实数据 provider、Project/Console 数据源接入
+5. Hierarchy / Inspector真实数据provider、Project asset数据源，以及Diagnostics后续typed target导航
 ```
 
 ## 组件定制边界
@@ -282,7 +286,7 @@ Dock.Avalonia 类型只允许出现在 Shell/Docking 或后续 Infrastructure �
 4. Command palette follow-up：更多 action kind、命令结果弹出/日志反馈、用户可编辑快捷键策略和快捷键冲突 UI；暂不做插件命令 API。
 5. Hierarchy read follow-up：从真实Project/Document open与EditWorld authoritative revision建立第一条只读scene projection；不得恢复fixture-backed provider。
 6. Inspector read follow-up：复用同一Document/World revision的真实scene object / asset只读来源；selection边界和写回分别重新过I0/I1。
-7. Project/Console 数据接入：接入真实 asset index / diagnostics source，但仍保持各自 Feature 边界。
+7. Project数据接入：接入真实asset index；Diagnostics已读取真实hub，后续只在出现typed source/target与Action route后增加导航。
 
 ## 性能约束
 
