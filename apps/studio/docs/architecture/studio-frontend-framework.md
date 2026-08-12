@@ -1,16 +1,19 @@
 # Studio 前端框架
 
-状态：Superseded by [ADR-0007](../adr/0007-studio-frontend-hard-cut.md)
+状态：Historical design evidence；current implementation facts见
+[Studio 前端硬切架构 4.40](studio-frontend-hard-cut.md#440-r2r3-dirty-transitiondiagnostic-ingress-与-action-vertical-slice-cardcurrent)
 
 > 本文保留 2026-07-31 代码审查证据和早期前端合同，不能再作为 production 迁移目标。
 > 当前权威目标是 [Studio 前端硬切架构](studio-frontend-hard-cut.md)：Document-first、单一 Avalonia
 > 路径、无 compatibility/Code-first/dynamic extension 前置。
 > 其中描述的ProjectOpenSession parser/source、public snapshots与project-launch presentation也已在R0因
 > production reachability为0删除；以下相关段落只保存历史设计。
+> 2026-08-12，#377/#378/#379在真实ProjectSession、selection、Dock与viewport consumer上重建了窄
+> Application Action/dirty transition/diagnostic ingress合同；这不恢复旧Workbench/public SDK或兼容路径。
 
-更新日期：2026-07-31
+更新日期：2026-08-12
 
-跟踪：GitHub Epic #119；设计 Slice #337；首个实现 Slice #338
+跟踪：GitHub Epic #119；设计 Slice #337；首个实现 Slice #338；当前 slices #377/#378/#379
 
 ## 1. 目的
 
@@ -206,11 +209,16 @@ UI 不直接“同步写模型再等待系统追认”。新 revision 是 mutati
 
 ### 5.1 当前已有
 
-- production `App -> StudioProcessSession -> StudioCompositionSession -> StudioShellViewModel`只提供
-  Starting/No Project/No Document最小Shell与真实process teardown；
-- diagnostics/log由唯一App-owned bounded hub拥有，Avalonia/native/managed映射进入同一truth；
-- legacy Workbench、Dock、Code-first、Feature、Project/Document/Scene/Viewport、selection、transaction、task、lifecycle、
-  provider与panel runtime均已删除；
+- production `App -> StudioProcessSession -> StudioCompositionSession -> StudioShellViewModel -> ProjectSession`
+  提供真实SceneDocument、selection、Inspector、Dock/viewport及process teardown；
+- `ProjectDocumentTransitionCoordinator`统一guard create/open/close/application exit；dirty时使用Save/Discard/Cancel，
+  save失败不继续transition；prompt后同一document的content identity变化会重新决策，session/project/scene scope变化则以typed `Stale` fail closed；
+- diagnostics/log由唯一App-owned bounded hub拥有；Avalonia、Project/Shell operation failure与viewport required-edge
+  rejection均写入同一truth；Console/Problems与持久日志仍未实现；
+- `Asharia.Studio.Application.Actions`为当前14个真实Shell action拥有definition、placement、shortcut、冻结context、
+  state query与typed execute；File/Edit/Scene/Window菜单、现有命令按钮、Hierarchy context menu和main/floating shortcut共享该路由；
+- legacy Workbench、Code-first、Feature、dynamic extension/provider registry与task framework仍保持删除；当前Dock、
+  Project/Document/Scene/Viewport/selection/transaction是后续真实consumer Slice的重建实现，不是旧API兼容恢复；
 - 最后public Extensions/Contributions/Panel declaration SCC、空`Asharia.Editor` project/test/solution edge与
   distribution identity/deps/image合同也已删除，不存在public extension SDK或空DLL；
 - 独立C++ editor/runtime与managed EngineBridge tests是各自边界证据，不是Studio composition capability。
@@ -267,8 +275,8 @@ retained composition viewport 的方向可行；以下问题在关闭前，前�
 
 | Registry | Identity | 内容 | 当前状态 |
 | --- | --- | --- | --- |
-| Panel | future typed identity | kind、dock preference、cache、backend、factory | Deferred；无真实consumer/registry |
-| Action | future stable action id | metadata、context、state query、execute route | Deferred；legacy已删除 |
+| Panel | internal stable panel id | kind、dock preference、runtime/view factory | Current internal Shell/Dock consumer；public contribution Deferred |
+| Action | `StudioActionId` | definition、placement、shortcut、context、state query、execute route | Current internal Application/Shell vertical slice；legacy/public SDK仍删除 |
 | UI Backend | future typed backend id | generation-scoped factory resolver | Deferred；Code-first已删除 |
 | Diagnostic source | App-owned source/operation id | bounded immutable records | Current；不是contribution registry |
 
@@ -297,9 +305,13 @@ declare
 
 失败时旧 generation/last-known-good 保持可用。UI 不观察半注册菜单、孤立快捷键或没有 backend factory 的 panel。
 
+上述generation流程仍是future public contribution目标；当前built-in Action registry没有module generation或hot reload，
+只保证每次registration对action/placement/shortcut index原子fail closed，并在Shell composition结束后不再修改。
+
 ## 7. Panel 合同
 
-当前不存在`EditorPanelDescriptor`。未来真实consumer重新通过I0/I1时，目标descriptor仍应保持小而稳定，且以下信息不塞入：
+当前存在Shell-internal `PanelDescriptor`消费真实Dock，但仍不存在public `EditorPanelDescriptor`。未来外部consumer
+重新通过I0/I1时，目标public descriptor仍应保持小而稳定，且以下信息不塞入：
 
 - Menu/Toolbar placement：由 Action placement 声明；
 - layout split ratio、floating bounds：由 Host layout store 拥有；
@@ -318,16 +330,14 @@ Panel kind 首版继续只区分：
 
 ## 8. Action 与 placement
 
-目标 `EditorActionDescriptor` 是 UI-neutral data：
+当前Application-owned Action合同是UI-neutral data；它不是public `EditorActionDescriptor`或extension SDK：
 
 ```text
-action id
-owner scope
-title / description / category / icon key
-action context id
-optional mode ids
-execution route
-state invalidation keys
+StudioActionId
+StudioActionDefinition(title / description / category)
+StudioActionPlacement(Menu / Toolbar / ContextMenu / Shortcut + scope)
+StudioActionContextSnapshot
+StudioActionStateEvaluator + StudioActionHandler
 ```
 
 运行态 state 是 snapshot，不写入 descriptor：
@@ -345,11 +355,13 @@ Action 与 placement 分离：
 Action
   -> Main Menu placement
   -> Workbench Bar placement
-  -> panel toolbar placement
   -> context menu placement
-  -> Command Palette category
   -> default shortcut
 ```
+
+当前只投影真实存在的MainWindow menu/命令按钮、Hierarchy context menu与main/floating shortcut；command palette、
+dynamic module contribution、mode与panel-local toolbar placement仍未实现。命名`ICommand`属性只是同一registry action的
+Avalonia binding adapter，不拥有第二套CanExecute/Execute事实。
 
 规则：
 
@@ -358,23 +370,22 @@ Action
 3. Menu 可以隐藏与当前 context 完全无关的 action；如果用户有明确恢复路径，则保留 disabled 有助于发现。
 4. checked state 投影 underlying setting/tool state，不能把按钮自身当 truth。
 5. action state 由 selection/document/mode/task 等事件触发 updater，不由 UI 每帧轮询所有 action。
-6. context menu 先按当前 selection/focus 计算 snapshot，再显示；菜单打开后不因后台小变化持续重排。
+6. context menu按点击row的stable ID冻结显式target；菜单打开后不因selection变化改写target，执行前仍重新验证session/scene/revision与对象存活。
 7. shortcut 在 focused action context 中解析，文本输入和 modal/tool capture 具有明确优先级。
 
-每次执行都接收一个不可变、调用时冻结的 `EditorContextSnapshot`：
+每次执行都接收一个不可变、调用时冻结的 `StudioActionContextSnapshot`：
 
 ```text
-window/workspace id
+invocation source + top-level/focused panel id
 project session id
-active document id + revision
-focused view/panel id
-selection ids + primary/top-level selection
-session/editor/tool mode
-viewport/runtime session id
-cancellation token
+active scene id + document revision
+selection ids
+explicit stable target
+operation/correlation/parent correlation id
 ```
 
-context 和 shortcut 仲裁顺序固定为：
+当前shortcut router已先让TextBox/IME消费，再按focused top-level解析UI-neutral chord；主窗口与floating window
+共享同一router。完整目标仲裁顺序仍固定为：
 
 ```text
 modal
@@ -780,11 +791,14 @@ open project
   两者都不伪造 project/asset IO；
 - 未新增 public registry，也未把 layout/open state 放进 panel descriptor。
 
-### F2：Action public contract
+### F2：Application Action contract（#379，已实现）
 
-- 把 legacy `WorkbenchActionDescriptor` 收敛为 UI-neutral action + placement；
-- menu、toolbar、palette、shortcut 共享执行和 state；
-- event-driven updater 和 focus context smoke。
+- 在`Asharia.Studio.Application.Actions`建立全新的UI-neutral definition/placement/context/state/result合同；
+  它不收敛或兼容legacy `WorkbenchActionDescriptor`，也不承诺public extension SDK；
+- 当前File/Edit/Scene/Window menu、现有命令按钮、Hierarchy context menu、main/floating shortcut与named `ICommand`
+  projection共享同一registry/executor；command palette未实现；
+- execution前重新求值state并校验ProjectSession/scene/revision/explicit target；shortcut先保留TextBox/IME输入；
+- duplicate action/placement/shortcut registration、disabled/stale/conflict/cancel/failure与handler exception均typed fail closed。
 
 Project-open session contract（#341）已作为 F1 与后续真实 Project UI 之间的独立前置 Slice 完成：
 Presentation 只消费 Application 提供的 snapshot，不读取报告文件、不运行 bootstrap，也不自行归约状态。
@@ -808,10 +822,11 @@ capability，不伪造 asset 数据。
 
 ### F3：Scene Document session + scoped transaction baseline
 
-- 建立 Application-owned `SceneDocumentSession` identity、revision/saved revision、dirty、load/access/fault state；
-- document view/tab 与 document session 分离，覆盖 restore、save/discard/cancel close；
-- transaction history 显式归属 DocumentId，并先修复 apply/revert 失败原子性；
-- Hierarchy、Inspector、Scene View 与 title 投影同一 document/session snapshot。
+- Application-owned SceneDocument identity、revision/content state、dirty、load/access/fault state与scoped undo已落地；
+- #377以`ProjectDocumentTransitionCoordinator`覆盖create/open/close/application exit的Save/Discard/Cancel guard；
+  single-flight、prompt snapshot revalidation、save failure与save期间新编辑均有明确结果；
+- Hierarchy、Inspector、Scene View、title与Action context投影同一ProjectSession snapshot；
+- restore/recovery与完整Document Host多view合同仍需独立Slice。
 
 ### F4：第一个 writable property
 

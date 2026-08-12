@@ -4,7 +4,7 @@
 R0.5 只读开发态观测面已由[对应 Slice 1→8](studio-development-observability.md#210-r05-slice-8-modern-read-only-stdio-mcp-adapter-cardclosed-evidence)关闭；后续 R1 仍受
 [ADR-0007](../adr/0007-studio-frontend-hard-cut.md)约束）
 
-更新日期：2026-08-05
+更新日期：2026-08-12
 
 > 2026-08-04 进展：R1 首个 writable vertical Slice 已由
 > [ADR-0009](../adr/0009-authoritative-scene-document.md) 关闭。下文 R0 审计表保留当时证据；凡写“SceneDocument
@@ -12,6 +12,11 @@ R0.5 只读开发态观测面已由[对应 Slice 1→8](studio-development-obser
 > SceneDocument consumer 重新建立 `ViewportSession -> EngineBridge -> editor_native -> Avalonia composition` 最小闭环；
 > 下文关于“无可见 viewport / 无 native deployment”的 R0 删除卡同样只保留历史证据，当前状态以
 > [Viewport 渲染架构](viewport-rendering.md) 与 [ADR-0002](../adr/0002-cross-platform-viewport-presentation.md) 为准。
+>
+> 2026-08-12，#377、#378、#379 又以当前真实 `ProjectSession`、SceneDocument/selection、Dock panel 与
+> viewport presentation consumer 完成 dirty transition guard、structured failure ingress 及最小 Action/menu/context/shortcut
+> 纵向闭环。4.8 仍只记录旧 Workbench runtime 被删除的历史事实；新 `Asharia.Studio.Application.Actions`
+> 不兼容旧 Workbench contract、adapter 或 public SDK。
 
 ## 1. 结论与范围
 
@@ -870,6 +875,21 @@ timeout 是 typed fault/quarantine，不授权越过 native barrier。UI thread 
 | Non-goals | R1 Document/World、Capture/Mutate、任意RPC/远程控制、native viewport接回Studio、profiler/crash framework、metrics/trace/artifact store、extension/plugin/Dock恢复或旧版兼容。 |
 | Exit evidence | Conan lockfile bootstrap四个profile通过；configured target truth为76/76 targets、149/149 edges、0 missing。ClangCL与MSVC全仓Debug build通过；全仓clang-tidy 199/199及最终变化单TU刷新均exit 0。sample-viewer 30项×2编译器=60/60、editor 6项×2编译器=12/12通过，图形smoke隐藏窗口Win32探针71次visible/foreground均0；validation layer只用进程级现有`VULKAN_SDK/Bin`路径，不改production。tooling Python 525/525（6个条件skip）、package topology/contracts、pre-PR cheap gates通过。Studio Release build 0 warning/error、canonical 5 test projects 121/121、distribution fresh real publish 62/62通过。encoding 915 clean、doc-sync、diff-check通过；相关process与`TestResults`残留均为0。 |
 
+### 4.40 R2/R3 dirty transition、diagnostic ingress 与 Action vertical slice card（current）
+
+| 字段 | 当前合同与证据 |
+| --- | --- |
+| Current evidence | #377 的 `ProjectDocumentTransitionCoordinator` 已统一 guard create/open/close/application exit；dirty 文档先显示 Save/Discard/Cancel，coordinator产出的完整scope/content expectation在`ProjectSession`同一个operation gate内验证，save 必须发布同一文档的clean authoritative content state，失败或并发新编辑不得继续transition；exit success还在该gate内封住后续mutation。#378 的 `StudioOperationDiagnosticWriter` 将ProjectSession typed failure/意外异常写入唯一App-owned hub；viewport transaction coordinator把required edge的Deferred/Rejected投影为structured Problem，每个viewport control又将一次degraded episode与一次Ready recovery以相同correlation写入该hub。#379 的Application Action registry/executor与Shell adapter已驱动当前File/Edit/Scene/Window菜单、现有命令按钮、Hierarchy context menu、主窗口与floating window shortcut。 |
+| I0 → I6 gate | I0 是按钮、菜单、右键和快捷键各自直接调用导致 context/disabled/stale 语义漂移，以及关闭时绕过dirty事实、失败只留临时文字。I1由UI-neutral action/placement/context/state/result与transition contracts建立；I2由真实Shell、Hierarchy、floating window、ProjectSession和viewport coordinator接入；I3由执行前重新求值、stable identity/revision revalidation、single-flight transition、typed failure与同一bounded hub闭合。I4-I6的外部写命令、profile和第二外部consumer仍未进入。 |
+| Engine precedent adopted | Unreal公开[`FUICommandList`](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/Slate/Framework/Commands/FUICommandList)采用command mapping、can-execute与input binding分离；[ToolMenus](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Developer/ToolMenus)把菜单投影与业务command分开。O3DE [Action Manager](https://www.docs.o3de.org/docs/user-guide/action-manager/)区分action、context、menu/toolbar placement与hotkey。Unity公开[`MenuItem`](https://docs.unity3d.com/6000.0/Documentation/ScriptReference/MenuItem.html)、[`ShortcutManager`](https://docs.unity3d.com/6000.0/Documentation/ScriptReference/ShortcutManagement.ShortcutManager.html)与[`CommandEvent`](https://docs.unity3d.com/6000.0/Documentation/ScriptReference/CommandEvent.html)也证明菜单、快捷键和targeted command是同一意图的不同入口。Asharia采用共享执行路由和冻结context，不复制全局singleton或string command bus。 |
+| Rejected / Asharia rationale | 4.8 删除的旧 Workbench action runtime仍保持删除；本Slice不恢复legacy namespace、adapter、command palette、dynamic contribution/public SDK或兼容constructor。新`Asharia.Studio.Application.Actions`只因真实ProjectSession、selection、Dock panel、Hierarchy row与floating-window consumer存在而建立；MainWindow/Menu/ContextMenu/ICommand只是同一registry/executor的Avalonia投影。Console/Problems、持久日志、problem report、crash evidence与完整Task supervisor明确后置。 |
+| Owner / lifetime | `App`仍唯一拥有process hub与process session；Application registry在composition期原子注册action definition/placement/shortcut index，executor每次接收不可变context。Shell只注册当前14个内建action并提供ICommand投影；context menu冻结stable row target，执行前按当前session/scene/revision重新验证。`ProjectDocumentTransitionCoordinator`独占一个create/open/close/exit decision，`App`只在exit guard允许后启动既有process teardown。 |
+| Thread / data / error | context携source、top-level/focused panel、ProjectSessionId、scene/revision、selection、显式target及operation/correlation/parent；结果区分Succeeded/Unknown/Disabled/Stale/Conflict/Cancelled/Failed。文本输入/IME先消费快捷键，再由UI-neutral chord解析；重复action/placement/shortcut registration fail closed。Project/Shell failure与viewport required-edge rejection保留stable code、scope/generation、operation/correlation和bounded attributes；UI文字不是第二diagnostics truth。 |
+| Success / failure / cancel / shutdown | Save保存被提示的content state后才继续；Discard只授权当前匹配的dirty snapshot；expectation在ProjectSession operation gate内与session/project/scene/revision/current+saved content state逐项比较，消除最终检查到destructive commit之间的竞态。Cancel、save failure、transition failure与并发新编辑都保持窗口/文档可继续使用。application close首次被取消并single-flight等待同一guard；允许后在gate内进入exit-prepared seal，Cancel允许下一次close重新提示。action state在执行前重新求值，stale target/revision和冲突typed reject；handler exception经diagnostic boundary转为Failed。viewport required edge非Applied时先发一次structured Problem再fail fast；重复degraded不刷屏且Ready只恢复一次。 |
+| Bounds / complexity | action/placement/shortcut集合只在composition期注册，随后Shell不再修改，lookup为O(1)；context与selection为调用时bounded immutable copy，不持有Control、row ViewModel或native handle。transition同时最多1个；dirty snapshot比较为O(1)。diagnostic仍写入既有2048 ring，未新增store、queue、subscriber或retention policy。 |
+| Earliest / latest gate | 此纵向Slice晚于真实SceneDocument write/undo/selection/Dock/viewport consumer，因而满足4.8规定的“真实use case后重建”；它只关闭到command/menu/context/shortcut。下一格若建设Console/Problems，必须只读同一hub并先定义bounded invalidation/dedup projection；持久日志、problem report与crash collector各需独立owner Slice。 |
+| Non-goals | legacy Workbench/API兼容、dynamic action contribution、command palette、remote/MCP Mutate、Console/Problems panel、persistent logs、problem report bundle、crash collector、generic task framework、全局service locator。 |
+
 ## 5. Document 是中心聚合
 
 ### 5.1 Identity 与状态
@@ -933,7 +953,7 @@ save/discard/cancel，save 失败保持 Document 与 dirty state。
 | Document | `Dictionary<DocumentId, DocumentRecord>` + ordered `List<DocumentId>` | immutable snapshot array | lookup 与确定顺序兼得 |
 | Hierarchy | flat preorder row array + `Dictionary<SceneObjectId,int>` | `ImmutableArray<HierarchyRow>` | 连续迭代、virtualization、无每节点订阅 |
 | Selection | ordered `List<SelectionKey>` + membership `HashSet<SelectionKey>` | immutable array + explicit primary | 保序、去重、top-level selection |
-| Action | build-time mutable dictionary，composition 后 `FrozenDictionary<ActionId,ActionRegistration>` | immutable placements/state snapshot | v1 静态注册、快速读、无隐式 mutation |
+| Action（Current） | composition-time `StudioActionRegistry`，每次registration原子加入definition/placement/shortcut index | immutable catalog/context/state/result | 当前14个Shell action静态注册、O(1) lookup、无运行期隐式 mutation |
 | Undo | `List<UndoEntry>` + cursor | counts/labels/capability snapshot | history 不需两个提前 pop 的 stack |
 | Mutation | per-document bounded `Queue<MutationEnvelope>`，最多一个 in-flight | typed request/result records | 串行 native authority、可背压 |
 | Task | active dictionary + owner index + bounded terminal ring | immutable task window | scoped cancel/await，避免无界历史 |
@@ -971,16 +991,23 @@ filter 隐藏只修改 view-local visible mask，不清 content selection；Worl
 
 ### 6.4 Action
 
-Action 分为：
+当前 `Asharia.Studio.Application.Actions` 的最小合同分为：
 
-- `ActionDefinition`：ID、标题、类别、描述；
-- `ActionPlacement`：Menu/Toolbar/Palette/Context、排序、默认 shortcut；
+- `StudioActionDefinition`：stable ID、标题、类别、描述；
+- `StudioActionPlacement`：Menu/Toolbar/ContextMenu/Shortcut、排序、scope；
 - `ActionStateSnapshot`：visible/enabled/checked/reason；
-- `ActionHandler`：接收调用时冻结的 `EditorContextSnapshot`，异步返回 typed result。
+- `StudioActionHandler`：接收调用时冻结的 `StudioActionContextSnapshot`，异步返回 typed result。
+
+当前只注册Shell真实使用的project create/open/close/save、undo/redo、entity create/mesh、Inspector name/transform
+apply及四个Window panel reopen action。Menu、现有命令按钮、Hierarchy context menu、主窗口/floating window shortcut与命名
+`ICommand`属性都投影同一个registry/executor；面板按钮在attach时从真实TopLevel与承载Dock tab捕获context，拖入floating
+window后不沿用main-window attribution；command palette与dynamic contribution没有实现。Hierarchy context menu
+冻结stable scene/object target，handler执行前仍以当前ProjectSession/scene/revision重新验证，不能把row object当长期target。
 
 shortcut index 使用 UI-neutral
-`Dictionary<ShortcutChord, ImmutableArray<ActionId>>`；Avalonia `KeyGesture` 只在 Presentation edge
-转换。重复注册产生诊断，不能依赖“第一个获胜”。解析顺序固定为：
+shortcut index 使用UI-neutral chord；Avalonia key/modifier只在Presentation edge转换。重复action、placement或shortcut
+registration原子fail closed，不能依赖“第一个获胜”。当前已实现的解析顺序为文本输入/IME优先，再由focused top-level
+解析action；modal与interactive tool capture仍待真实owner Slice。目标完整顺序仍为：
 
 ```text
 modal -> text/IME -> interactive tool -> focused view -> document -> workspace -> global
@@ -1301,21 +1328,18 @@ canonical managed tests与fresh distribution closure全绿。
 
 ### R2：最小 authoritative 写闭环
 
-- typed Rename/Transform；
-- expected-revision native mutation；
-- receipt/change set；
-- Undo/Redo journal；
-- savepoint、save、reload、close；
-- native failure injection 覆盖每个阶段。
+- typed Rename/Transform、expected-revision native mutation、receipt/change set与Undo/Redo journal已落地；
+- savepoint/save与create/open/close/exit的dirty Save/Discard/Cancel guard已由#377闭合；save失败与并发新编辑不允许继续transition；
+- reload/recovery与更完整的native failure injection仍需独立Slice。
 
 门禁：失败不改变 state/history；Undo 回 savepoint 时 dirty=false；uncertain commit 进入 recovery。
 
 ### R3：Selection、Action 与 Inspector
 
-- Document/World scoped selection；
--统一 action definition/state/placement/shortcut；
-- first writable Inspector；
-- keyboard、focus-visible、IME arbitration 和 accessibility。
+- Document/World scoped selection与first writable Inspector已落地；
+- #379已建立统一action definition/state/placement/shortcut，并让当前menu、toolbar、Hierarchy context menu、
+  main/floating shortcut共享同一executor；
+- 文本输入/IME优先级已接入；完整modal/tool capture、focus-visible与UIA矩阵仍需后续Slice。
 
 ### R4：Viewport
 
@@ -1327,7 +1351,8 @@ canonical managed tests与fresh distribution closure全绿。
 ### R5：可靠性
 
 - settings migration/quarantine/atomic save；
-- Task supervisor、Console/Problems 与完整 retention policy；
+- #378已把真实Project/Shell operation failure与viewport required-edge rejection接入唯一bounded hub；
+- Task supervisor、Console/Problems、完整retention/dedup policy、持久日志、problem report与crash evidence仍未实现；
 - layout missing panel placeholder；
 - 扩展 Headless/Windows UIA/视觉回归矩阵、native integration smoke、压力与 memory/handle leak canary。
 

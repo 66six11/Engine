@@ -7,16 +7,39 @@ namespace Editor.Tests.Shell.Views.Windowing;
 public sealed class MainWindowSourceTests
 {
     [Fact]
-    public void Hard_cut_window_is_only_a_retained_view()
+    public void Windows_delegate_shortcuts_to_the_shared_action_router()
     {
         var source = LoadSource("Shell", "Views", "Windowing", "MainWindow.axaml.cs");
+        var floatingSource = LoadSource(
+            "Shell",
+            "Views",
+            "Docking",
+            "EditorDockFloatingWindow.axaml.cs");
+        var routerSource = LoadSource(
+            "Shell",
+            "Commands",
+            "StudioActionShortcutRouter.cs");
 
         Assert.Contains("InitializeComponent();", source, StringComparison.Ordinal);
         Assert.Contains("OnUnhandledKeyDown", source, StringComparison.Ordinal);
-        Assert.Contains("FocusManager?.GetFocusedElement() is TextBox", source, StringComparison.Ordinal);
-        Assert.Contains("KeyModifiers.Control | KeyModifiers.Meta", source, StringComparison.Ordinal);
-        Assert.Contains("viewModel.UndoSceneCommand", source, StringComparison.Ordinal);
-        Assert.Contains("viewModel.RedoSceneCommand", source, StringComparison.Ordinal);
+        Assert.Contains("StudioActionShortcutRouter.TryRoute(", source, StringComparison.Ordinal);
+        Assert.Contains("StudioShellPresentationIds.MainWindow", source, StringComparison.Ordinal);
+        Assert.Contains("StudioActionShortcutRouter.TryRoute(", floatingSource, StringComparison.Ordinal);
+        Assert.Contains("ActionTopLevelId", floatingSource, StringComparison.Ordinal);
+        Assert.Contains("ActivePanelId(viewModel.DockWorkspace)", floatingSource,
+            StringComparison.Ordinal);
+        Assert.Contains("ActionStateChanged += OnActionStateChanged", source,
+            StringComparison.Ordinal);
+        Assert.Contains("ActionStateChanged -= OnActionStateChanged", source,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("ActiveWindow?.Id", floatingSource, StringComparison.Ordinal);
+        Assert.Contains("shell.TryExecuteShortcut(", routerSource, StringComparison.Ordinal);
+        Assert.Contains("IsTextInputOwner(focusedElement)", routerSource, StringComparison.Ordinal);
+        Assert.Contains("OfType<TextBox>()", routerSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("UndoSceneCommand", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("RedoSceneCommand", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("UndoSceneCommand", floatingSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("RedoSceneCommand", floatingSource, StringComparison.Ordinal);
         Assert.DoesNotContain("DispatcherTimer", source, StringComparison.Ordinal);
         Assert.DoesNotContain("P/Invoke", source, StringComparison.Ordinal);
         Assert.DoesNotContain("Native", source, StringComparison.Ordinal);

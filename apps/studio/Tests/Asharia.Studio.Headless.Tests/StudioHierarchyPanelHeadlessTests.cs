@@ -12,6 +12,7 @@ using Avalonia.VisualTree;
 using Asharia.Runtime;
 using Asharia.Studio.Application.Projects;
 using Asharia.Studio.Application.Scenes;
+using Asharia.Studio.Application.Actions;
 using Asharia.Studio.TestSupport;
 using Editor.Shell.ViewModels.Panels;
 using Editor.Shell.ViewModels.Windowing;
@@ -23,6 +24,71 @@ namespace Asharia.Studio.Headless.Tests;
 public sealed class StudioHierarchyPanelHeadlessTests
 {
     private static int nextRuntimeEntityIndex_;
+
+    [AvaloniaFact]
+    public void Context_menu_freezes_the_hit_row_in_its_command_parameter()
+    {
+        using var shell = StudioShellTestFactory.Create(out var projectSession, out _);
+        var sceneId = Guid.NewGuid();
+        var camera = Entity("Camera");
+        var light = Entity("Light");
+        projectSession.Publish(Ready(sceneId, revision: 2, camera, light));
+        shell.SelectedEntity = light;
+        using var viewModel = new StudioHierarchyPanelViewModel(shell);
+        var view = new StudioHierarchyPanelView { DataContext = viewModel };
+        var cameraRow = viewModel.VisibleRows.Single(
+            row => row.StableId == camera.ObjectId);
+
+        var menu = Assert.IsType<ContextMenu>(view.CreateActionContextMenu(
+            cameraRow,
+            new StudioPresentationId("floating-hierarchy-test"),
+            new StudioPresentationId("hierarchy")));
+        var projectedContext = Assert.IsType<StudioHierarchyActionMenuContext>(
+            menu.DataContext);
+        shell.SelectedEntity = null;
+
+        Assert.Equal(StudioActionInvocationSource.ContextMenu,
+            projectedContext.Snapshot.Source);
+        Assert.Equal("floating-hierarchy-test",
+            projectedContext.Snapshot.TopLevelId?.Value);
+        Assert.Equal("hierarchy",
+            projectedContext.Snapshot.FocusedPanelId?.Value);
+        Assert.Equal(StudioActionTargetKind.SceneObject,
+            projectedContext.Snapshot.Target.Kind);
+        Assert.Equal(camera.ObjectId, projectedContext.Snapshot.Target.ObjectId);
+        Assert.Equal(light.ObjectId,
+            Assert.Single(projectedContext.Snapshot.Selection.ObjectIds));
+        Assert.All(
+            menu.Items.OfType<MenuItem>(),
+            item => Assert.Same(projectedContext.Snapshot, item.CommandParameter));
+    }
+
+    [AvaloniaFact]
+    public void Context_command_revalidates_the_frozen_row_before_execution()
+    {
+        using var shell = StudioShellTestFactory.Create(out var projectSession, out _);
+        var sessionId = ProjectSessionId.CreateNew();
+        var sceneId = Guid.NewGuid();
+        var camera = Entity("Camera");
+        projectSession.Publish(Ready(sessionId, sceneId, revision: 2, camera));
+        using var viewModel = new StudioHierarchyPanelViewModel(shell);
+        var view = new StudioHierarchyPanelView { DataContext = viewModel };
+        var cameraRow = viewModel.VisibleRows.Single(
+            row => row.StableId == camera.ObjectId);
+        var menu = Assert.IsType<ContextMenu>(view.CreateActionContextMenu(
+            cameraRow,
+            new StudioPresentationId("hierarchy-test")));
+        var action = menu.Items.OfType<MenuItem>().First();
+
+        projectSession.Publish(Ready(
+            sessionId,
+            sceneId,
+            revision: 3,
+            Entity("Replacement")));
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.False(action.Command!.CanExecute(action.CommandParameter));
+    }
 
     [AvaloniaFact]
     public void Snapshot_replacement_remaps_selection_to_the_new_entity_instance()

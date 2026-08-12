@@ -5,6 +5,7 @@ using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
 using Avalonia.Layout;
 using Avalonia.Threading;
+using Asharia.Studio.Application.Diagnostics;
 using Asharia.Studio.Presentation.Avalonia.Windowing;
 using Editor.Shell.Views.Docking;
 using Xunit;
@@ -91,6 +92,16 @@ public sealed class EditorDockPresentationLayoutHostTests
 
         Assert.NotNull(
             workspace.FindControl<EditorDockPresentationLayoutHost>("PresentationLayoutHost"));
+    }
+
+    [AvaloniaFact]
+    public void Production_layout_host_resolves_the_application_owned_diagnostic_hub()
+    {
+        var provider = Assert.IsAssignableFrom<IStudioDiagnosticHubProvider>(
+            Avalonia.Application.Current);
+        var host = new EditorDockPresentationLayoutHost();
+
+        Assert.Same(provider.Diagnostics, host.DiagnosticHub);
     }
 
     [Theory]

@@ -1,6 +1,8 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Editor.Shell.ViewModels.Panels"
+             xmlns:commands="using:Editor.Shell.Commands"
+             xmlns:actions="using:Editor.Shell.Actions"
              x:Class="Editor.Shell.Views.Panels.StudioInspectorPanelView"
              x:DataType="vm:StudioInspectorPanelViewModel"
              AutomationProperties.AutomationId="StudioInspectorPanel"
@@ -18,7 +20,7 @@
                 <TextBlock Foreground="{DynamicResource EditorBrushTextMuted}" Text="Name" />
                 <TextBox Text="{Binding Shell.InspectorName}" />
                 <Button HorizontalAlignment="Left"
-                        Command="{Binding Shell.ApplyEntityNameCommand}"
+                        commands:StudioActionButton.ActionId="{x:Static actions:StudioShellActionIds.ApplyEntityName}"
                         Content="Apply Name" />
                 <TextBlock Margin="0,8,0,0" FontWeight="SemiBold" Text="Transform" />
                 <TextBlock Foreground="{DynamicResource EditorBrushTextMuted}" Text="Position (X / Y / Z)" />
@@ -69,7 +71,7 @@
                 </Grid>
                 <Button x:Name="ApplyTransformButton"
                         HorizontalAlignment="Left"
-                        Command="{Binding Shell.ApplyEntityTransformCommand}"
+                        commands:StudioActionButton.ActionId="{x:Static actions:StudioShellActionIds.ApplyEntityTransform}"
                         Content="Apply Transform" />
                 <TextBlock x:Name="InspectorOperationMessage"
                            AutomationProperties.LiveSetting="Polite"

@@ -4,7 +4,9 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Asharia.Studio.Application.Diagnostics;
 using Asharia.Studio.Application.Viewports;
+using Asharia.Studio.Presentation.Avalonia.Diagnostics;
 using Asharia.Studio.Presentation.Avalonia.Viewports;
 using Asharia.Studio.Presentation.Avalonia.Windowing;
 using Avalonia;
@@ -36,6 +38,7 @@ internal readonly record struct EditorDockPresentationLayoutHostMetrics(
 public sealed class EditorDockPresentationLayoutHost : Decorator,
     IInteractiveTopLevelResizeSink
 {
+    private readonly IStudioDiagnosticHub diagnostics_;
     private readonly ViewportPresentationTransactionTelemetry transactionTelemetry_ = new();
     private readonly ViewportPresentationTransactionCoordinator presentationTransactions_;
     private TaskCompletionSource idleCompletion_ = CreateCompletedIdleCompletion();
@@ -60,14 +63,24 @@ public sealed class EditorDockPresentationLayoutHost : Decorator,
     private Size? applyingCommittedSize_;
 
     public EditorDockPresentationLayoutHost()
+        : this(StudioAvaloniaDiagnosticHubResolver.RequireCurrent())
     {
+    }
+
+    internal EditorDockPresentationLayoutHost(IStudioDiagnosticHub diagnostics)
+    {
+        ArgumentNullException.ThrowIfNull(diagnostics);
+        diagnostics_ = diagnostics;
         ClipToBounds = true;
         presentationTransactions_ = new ViewportPresentationTransactionCoordinator(
+            diagnostics,
             transactionTelemetry_);
     }
 
     internal ViewportPresentationTransactionTelemetry PresentationTransactionTelemetry =>
         transactionTelemetry_;
+
+    internal IStudioDiagnosticHub DiagnosticHub => diagnostics_;
 
     internal Task<ViewportPresentationTransactionReport>? LatestRetirementCompletion =>
         latestRetirementCompletion_;

@@ -1,7 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Asharia.Runtime;
+using Asharia.Studio.Application.Diagnostics;
 using Asharia.Studio.Application.Projects;
 using Asharia.Studio.Application.Scenes;
 using Editor.Shell.Services.Projects;
@@ -20,7 +22,53 @@ internal static class StudioShellTestFactory
     {
         projectSession = new TestProjectSession();
         projectDialogs = new TestProjectDialogService();
-        return new StudioShellViewModel(projectSession, projectDialogs);
+        return new StudioShellViewModel(
+            projectSession,
+            projectDialogs,
+            CreateDocumentTransitions(projectSession),
+            CreateDiagnosticWriter());
+    }
+
+    public static ProjectDocumentTransitionCoordinator CreateDocumentTransitions(
+        IProjectSession projectSession) =>
+        new(projectSession, new TestProjectDocumentTransitionPrompt());
+
+    public static StudioOperationDiagnosticWriter CreateDiagnosticWriter() =>
+        CreateDiagnosticWriter(out _);
+
+    public static StudioOperationDiagnosticWriter CreateDiagnosticWriter(
+        out StudioDiagnosticHub hub)
+    {
+        hub = new StudioDiagnosticHub(diagnosticCapacity: 64, logCapacity: 16);
+        return new StudioOperationDiagnosticWriter(hub);
+    }
+}
+
+internal sealed class TestProjectDocumentTransitionPrompt :
+    IProjectDocumentTransitionPrompt
+{
+    private readonly List<ProjectDocumentTransitionPrompt> requests_ = [];
+
+    public ProjectDocumentTransitionDecision Decision { get; set; } =
+        ProjectDocumentTransitionDecision.Discard;
+
+    public Func<ProjectDocumentTransitionPrompt, CancellationToken,
+        ValueTask<ProjectDocumentTransitionDecision>>? Handler
+    { get; set; }
+
+    public IReadOnlyList<ProjectDocumentTransitionPrompt> Requests => requests_;
+
+    public int RequestCount => requests_.Count;
+
+    public ValueTask<ProjectDocumentTransitionDecision> ChooseAsync(
+        ProjectDocumentTransitionPrompt prompt,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(prompt);
+        cancellationToken.ThrowIfCancellationRequested();
+        requests_.Add(prompt);
+        return Handler?.Invoke(prompt, cancellationToken)
+            ?? ValueTask.FromResult(Decision);
     }
 }
 
@@ -31,16 +79,20 @@ internal sealed class TestProjectSession : IProjectSession
     public ProjectSessionSnapshot Current { get; private set; } =
         ProjectSessionSnapshot.NoProject;
 
-    public Func<string, string, CancellationToken, ValueTask<ProjectSessionOperationResult>>?
-        CreateHandler
+    public Func<string, string, ProjectDocumentTransitionExpectation, CancellationToken,
+        ValueTask<ProjectSessionOperationResult>>? CreateHandler
     { get; set; }
 
-    public Func<string, CancellationToken, ValueTask<ProjectSessionOperationResult>>?
-        OpenHandler
+    public Func<string, ProjectDocumentTransitionExpectation, CancellationToken,
+        ValueTask<ProjectSessionOperationResult>>? OpenHandler
     { get; set; }
 
-    public Func<CancellationToken, ValueTask<ProjectSessionOperationResult>>?
-        CloseHandler
+    public Func<ProjectDocumentTransitionExpectation, CancellationToken,
+        ValueTask<ProjectSessionOperationResult>>? CloseHandler
+    { get; set; }
+
+    public Func<ProjectDocumentTransitionExpectation, CancellationToken,
+        ValueTask<ProjectSessionOperationResult>>? PrepareExitHandler
     { get; set; }
 
     public Func<string, CancellationToken, ValueTask<ProjectSessionOperationResult>>?
@@ -76,20 +128,29 @@ internal sealed class TestProjectSession : IProjectSession
     public ValueTask<ProjectSessionOperationResult> CreateProjectAsync(
         string parentDirectory,
         string projectName,
+        ProjectDocumentTransitionExpectation expectation,
         CancellationToken cancellationToken = default) =>
-        CreateHandler?.Invoke(parentDirectory, projectName, cancellationToken)
+        CreateHandler?.Invoke(parentDirectory, projectName, expectation, cancellationToken)
         ?? throw new InvalidOperationException("No create-project result was configured.");
 
     public ValueTask<ProjectSessionOperationResult> OpenProjectAsync(
         string projectPath,
+        ProjectDocumentTransitionExpectation expectation,
         CancellationToken cancellationToken = default) =>
-        OpenHandler?.Invoke(projectPath, cancellationToken)
+        OpenHandler?.Invoke(projectPath, expectation, cancellationToken)
         ?? throw new InvalidOperationException("No open-project result was configured.");
 
     public ValueTask<ProjectSessionOperationResult> CloseProjectAsync(
+        ProjectDocumentTransitionExpectation expectation,
         CancellationToken cancellationToken = default) =>
-        CloseHandler?.Invoke(cancellationToken)
+        CloseHandler?.Invoke(expectation, cancellationToken)
         ?? throw new InvalidOperationException("No close-project result was configured.");
+
+    public ValueTask<ProjectSessionOperationResult> PrepareExitAsync(
+        ProjectDocumentTransitionExpectation expectation,
+        CancellationToken cancellationToken = default) =>
+        PrepareExitHandler?.Invoke(expectation, cancellationToken)
+        ?? throw new InvalidOperationException("No prepare-exit result was configured.");
 
     public ValueTask<ProjectSessionOperationResult> CreateEntityAsync(
         string name,
@@ -116,7 +177,11 @@ internal sealed class TestProjectSession : IProjectSession
         TransformValue transform,
         ProjectSessionEditContext context,
         CancellationToken cancellationToken = default) =>
-        SetTransformHandler?.Invoke(objectId, transform, context, cancellationToken)
+        SetTransformHandler?.Invoke(
+            objectId,
+            transform,
+            context,
+            cancellationToken)
         ?? throw new InvalidOperationException("No set-Transform result was configured.");
 
     public ValueTask<ProjectSessionOperationResult> SaveSceneAsync(
@@ -160,6 +225,7 @@ internal sealed class TestProjectSession : IProjectSession
                 originatingEditId,
                 originatingEditSucceeded));
     }
+
 }
 
 internal sealed class TestProjectDialogService : IStudioProjectDialogService

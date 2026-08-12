@@ -637,6 +637,47 @@ Inspector Apply / document Undo / document Redo
 256 entries 与 16 MiB；failure/no-op 不移动 cursor，首个 Slice 不支持的 changed persistent mutation 作为安全 barrier 清空
 history。上述类型与行为已由 #373 的真实 ProjectSession/SceneDocument native acceptance 验证。
 
+### #377–#379 Studio document transition、diagnostic 与 action 当前流程
+
+Studio 的持久操作不再由菜单、工具栏、上下文菜单和快捷键分别维护 handler。Application-owned action registry 保存
+稳定 Action ID、placement、shortcut、state evaluator 与 handler；Presentation 在调用边缘冻结 TopLevel、focused panel、
+session、scene、revision、selection/target 和 operation/correlation identity。执行器在进入 handler 前重新求值并 fail closed，
+因此 stale Hierarchy target、冲突快捷键或 disposed scope 都不会变成另一条隐式执行路径。
+
+```mermaid
+flowchart LR
+    Surface["Menu / toolbar / Hierarchy context / shortcut"]
+    Context["Immutable StudioActionContextSnapshot"]
+    Actions["Application action registry + executor"]
+    Guard["Document transition coordinator"]
+    Prompt["Owner-aware Save / Discard / Cancel prompt"]
+    SessionGate["ProjectSession operation gate<br/>expectation compare + mutation"]
+    Result["Typed action / transition / project result"]
+    Diagnostics["Single bounded StudioDiagnosticHub"]
+    Observe["Debug readonly observation / MCP"]
+
+    Surface --> Context --> Actions
+    Actions -->|"create / open / close"| Guard
+    Guard -->|"dirty only"| Prompt
+    Guard -->|"captured expectation"| SessionGate
+    Actions -->|"other document actions"| SessionGate
+    SessionGate --> Result
+    Guard --> Result
+    Result --> Actions
+    Result -->|"canonical failure only"| Diagnostics --> Observe
+```
+
+- dirty 的唯一事实仍是 `CurrentContentStateId != SavedContentStateId`。Save 成功、Discard 授权或 clean 状态只生成一次
+  `ProjectDocumentTransitionExpectation`；`ProjectSession` 在持有自身 operation gate 时比较 expectation 并执行替换/关闭，消除
+  “检查后又被编辑”的窗口。Exit preparation 同样在该 gate 内封印后续 mutation，Cancel/失败则保留当前文档并允许重试。
+- `File / Edit / Scene / Window` 菜单、主工具栏、浮动 panel 按钮、Hierarchy context menu 与主/浮动窗口快捷键投影同一
+  action catalog。TextBox/IME 优先；shortcut 只接受 exactly-one Control/Meta 和可选 Shift，Alt 或冲突注册 fail closed。
+  `Window > Panels` 由 Dock action 重新打开已关闭 panel。Exit 属于 App lifetime，不伪装成 document action。
+- typed result 仍是调用方事实；只有 canonical producer 将 ProjectSession/transition unexpected failure、escaped Shell exception、
+  viewport required-edge failure，以及 viewport degraded→ready episode 投影到同一个 bounded diagnostic hub。消息使用稳定安全文本，
+  原始异常、绝对路径和 secret 不进入 readonly observation。当前 Slice 不建立 Console/Problems UI、持久 Editor log、问题报告
+  bundle 或 crash uploader。
+
 ## 当前 Studio Viewport 与 native RenderThread 流程
 
 #359 建立 render-session/native 边界，#361 接入首个 Avalonia Scene View；#367 将其硬切为 V6 异步

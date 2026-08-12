@@ -1,7 +1,10 @@
 using System;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Asharia.Runtime;
+using Asharia.Studio.Application.Actions;
+using Asharia.Studio.Application.Diagnostics;
 using Asharia.Studio.Application.Projects;
 using Asharia.Studio.Application.Scenes;
 using Asharia.Studio.TestSupport;
@@ -12,6 +15,309 @@ namespace Editor.Tests.Shell.ViewModels.Windowing;
 
 public sealed class StudioShellViewModelTests
 {
+    public enum DirtyProjectTransitionCommand
+    {
+        Create,
+        Open,
+        Close,
+    }
+
+    [Fact]
+    public void Registered_actions_are_the_single_source_for_named_command_projections()
+    {
+        using var viewModel = StudioShellTestFactory.Create();
+
+        Assert.Equal(14, viewModel.ActionCatalog.Length);
+        Assert.Equal(
+            viewModel.CreateProjectCommand,
+            viewModel.GetActionCommand(Editor.Shell.Actions.StudioShellActionIds.CreateProject));
+        Assert.Equal(
+            viewModel.UndoSceneCommand,
+            viewModel.GetActionCommand(Editor.Shell.Actions.StudioShellActionIds.UndoScene));
+        Assert.Equal(
+            viewModel.OpenHierarchyPanelCommand,
+            viewModel.GetActionCommand(
+                Editor.Shell.Actions.StudioShellActionIds.OpenHierarchyPanel));
+        Assert.All(
+            viewModel.ActionCatalog,
+            entry => Assert.NotEmpty(entry.Placements));
+        Assert.Single(
+            viewModel.ActionCatalog.Where(entry =>
+                entry.Definition.Id ==
+                Editor.Shell.Actions.StudioShellActionIds.CreateEntity));
+    }
+
+    [Fact]
+    public void Menu_placement_order_is_the_single_source_for_top_level_order()
+    {
+        using var viewModel = StudioShellTestFactory.Create();
+
+        var menuPlacements = viewModel.ActionCatalog
+            .SelectMany(entry => entry.Placements)
+            .Where(placement => placement.Kind == StudioActionPlacementKind.Menu)
+            .ToArray();
+        var topLevelOrder = menuPlacements
+            .GroupBy(placement => placement.Path!.Split('/')[0])
+            .OrderBy(group => group.Min(placement => placement.Order))
+            .Select(group => group.Key)
+            .ToArray();
+
+        Assert.Equal(new[] { "File", "Edit", "Scene", "Window" }, topLevelOrder);
+        Assert.All(
+            menuPlacements,
+            placement => Assert.InRange(placement.Order, 10000, 49999));
+    }
+
+    [Fact]
+    public async Task Frozen_context_rejects_execution_after_document_revision_changes()
+    {
+        var initial = Ready("Sample", "C:\\Projects\\Sample");
+        var session = new TestProjectSession();
+        session.Publish(initial);
+        using var viewModel = new StudioShellViewModel(
+            session,
+            new TestProjectDialogService(),
+            StudioShellTestFactory.CreateDocumentTransitions(session),
+            StudioShellTestFactory.CreateDiagnosticWriter());
+        viewModel.MarkReady();
+        var context = viewModel.CaptureActionContext(
+            StudioActionInvocationSource.ContextMenu,
+            Editor.Shell.Actions.StudioShellPresentationIds.MainWindow,
+            StudioActionTarget.Scene(
+                initial.Project!.SessionId,
+                initial.Document!.SceneId));
+        var newer = ProjectSessionSnapshot.Ready(
+            initial.Project,
+            new SceneDocumentSnapshot(
+                initial.Document.SceneId,
+                initial.Document.Path,
+                revision: 2,
+                savedRevision: 1,
+                entities: []),
+            new ContentStateId(2),
+            new ContentStateId(1),
+            canUndo: true,
+            canRedo: false,
+            undoLabel: "External Edit",
+            redoLabel: null);
+        session.Publish(newer);
+
+        var result = await viewModel.ExecuteActionAsync(
+            Editor.Shell.Actions.StudioShellActionIds.CreateEntity,
+            context);
+
+        Assert.True(
+            result.Status == StudioActionResultStatus.Stale,
+            $"Expected stale action result, got {result.Status}: {result.Message}");
+    }
+
+    [Fact]
+    public async Task Shortcut_and_menu_resolve_to_the_same_action_handler()
+    {
+        var initial = DirtyReady("Sample", "C:\\Projects\\Sample");
+        var session = new TestProjectSession();
+        session.Publish(initial);
+        var calls = 0;
+        session.UndoHandler = _ =>
+        {
+            calls++;
+            return ValueTask.FromResult(
+                ProjectSessionOperationResult.Success(initial, "Undid scene edit."));
+        };
+        var withUndo = ProjectSessionSnapshot.Ready(
+            initial.Project!,
+            initial.Document!,
+            initial.CurrentContentStateId,
+            initial.SavedContentStateId,
+            canUndo: true,
+            canRedo: false,
+            undoLabel: "Scene Edit",
+            redoLabel: null);
+        session.Publish(withUndo);
+        using var viewModel = new StudioShellViewModel(
+            session,
+            new TestProjectDialogService(),
+            StudioShellTestFactory.CreateDocumentTransitions(session),
+            StudioShellTestFactory.CreateDiagnosticWriter());
+        viewModel.MarkReady();
+
+        var resolved = viewModel.TryExecuteShortcut(
+            new StudioShortcutChord("Z", StudioShortcutModifiers.Control),
+            Editor.Shell.Actions.StudioShellPresentationIds.MainWindow);
+        await WaitUntilAsync(() => calls == 1 && !viewModel.IsProjectOperationRunning);
+
+        Assert.True(resolved);
+        Assert.Same(
+            viewModel.UndoSceneCommand,
+            viewModel.GetActionCommand(Editor.Shell.Actions.StudioShellActionIds.UndoScene));
+    }
+
+    [Fact]
+    public async Task Failed_action_publishes_one_diagnostic_with_action_correlation()
+    {
+        var initial = DirtyReady("Sample", "C:\\Projects\\Sample");
+        var session = new TestProjectSession();
+        session.Publish(initial);
+        session.SaveHandler = _ => ValueTask.FromResult(
+            ProjectSessionOperationResult.Failed(
+                initial,
+                ProjectSessionFailureKind.IoFailure,
+                "The scene could not be written."));
+        var diagnostics = StudioShellTestFactory.CreateDiagnosticWriter(out var hub);
+        using var viewModel = new StudioShellViewModel(
+            session,
+            new TestProjectDialogService(),
+            StudioShellTestFactory.CreateDocumentTransitions(session),
+            diagnostics);
+        viewModel.MarkReady();
+        var context = viewModel.CaptureActionContext(
+            StudioActionInvocationSource.Menu,
+            Editor.Shell.Actions.StudioShellPresentationIds.MainWindow);
+
+        var result = await viewModel.ExecuteActionAsync(
+            Editor.Shell.Actions.StudioShellActionIds.SaveScene,
+            context);
+        var record = Assert.Single(hub.ReadDiagnostics().Items);
+
+        Assert.Equal(StudioActionResultStatus.Failed, result.Status);
+        Assert.Equal(record.SequenceId, result.DiagnosticSequence);
+        Assert.Equal(context.OperationId, record.Context.OperationId);
+        Assert.Equal(context.CorrelationId, record.Context.CorrelationId);
+        Assert.Contains(
+            record.Attributes,
+            attribute => attribute.Name == "failureKind" &&
+                attribute.Value == "IoFailure");
+    }
+
+    [Fact]
+    public async Task Unexpected_action_exception_is_published_once()
+    {
+        var initial = Ready("Sample", "C:\\Projects\\Sample");
+        var session = new TestProjectSession();
+        session.Publish(initial);
+        session.UndoHandler = _ => throw new InvalidOperationException("Undo adapter failed.");
+        var withUndo = ProjectSessionSnapshot.Ready(
+            initial.Project!,
+            initial.Document!,
+            initial.CurrentContentStateId,
+            initial.SavedContentStateId,
+            canUndo: true,
+            canRedo: false,
+            undoLabel: "Scene Edit",
+            redoLabel: null);
+        session.Publish(withUndo);
+        var diagnostics = StudioShellTestFactory.CreateDiagnosticWriter(out var hub);
+        using var viewModel = new StudioShellViewModel(
+            session,
+            new TestProjectDialogService(),
+            StudioShellTestFactory.CreateDocumentTransitions(session),
+            diagnostics);
+        viewModel.MarkReady();
+        var context = viewModel.CaptureActionContext(
+            StudioActionInvocationSource.Menu,
+            Editor.Shell.Actions.StudioShellPresentationIds.MainWindow);
+
+        var result = await viewModel.ExecuteActionAsync(
+            Editor.Shell.Actions.StudioShellActionIds.UndoScene,
+            context);
+        var record = Assert.Single(hub.ReadDiagnostics().Items);
+
+        Assert.Equal(StudioActionResultStatus.Failed, result.Status);
+        Assert.Equal(record.SequenceId, result.DiagnosticSequence);
+        Assert.Equal(context.OperationId, record.Context.OperationId);
+        Assert.Equal(context.CorrelationId, record.Context.CorrelationId);
+        Assert.Equal("The project operation failed unexpectedly.", record.Message);
+        Assert.DoesNotContain("Undo adapter failed", record.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Menu_command_captures_menu_source_at_execution_time()
+    {
+        using var viewModel = StudioShellTestFactory.Create();
+        viewModel.MarkReady();
+        var menuCommand = viewModel.GetActionCommand(
+            Editor.Shell.Actions.StudioShellActionIds.OpenProject,
+            StudioActionInvocationSource.Menu,
+            Editor.Shell.Actions.StudioShellPresentationIds.MainWindow);
+
+        Assert.True(menuCommand.CanExecute(null));
+        Assert.NotSame(viewModel.OpenProjectCommand, menuCommand);
+    }
+
+    [Fact]
+    public void History_actions_project_dynamic_labels_and_raise_state_changes()
+    {
+        var initial = DirtyReady("Sample", "C:\\Projects\\Sample");
+        var session = new TestProjectSession();
+        session.Publish(ProjectSessionSnapshot.Ready(
+            initial.Project!,
+            initial.Document!,
+            initial.CurrentContentStateId,
+            initial.SavedContentStateId,
+            canUndo: true,
+            canRedo: false,
+            undoLabel: "Rename Entity",
+            redoLabel: null));
+        using var viewModel = new StudioShellViewModel(
+            session,
+            new TestProjectDialogService(),
+            StudioShellTestFactory.CreateDocumentTransitions(session),
+            StudioShellTestFactory.CreateDiagnosticWriter());
+        var stateChangeCount = 0;
+        viewModel.ActionStateChanged += (_, _) => stateChangeCount++;
+        viewModel.MarkReady();
+        var context = viewModel.CaptureActionContext(
+            StudioActionInvocationSource.Menu,
+            Editor.Shell.Actions.StudioShellPresentationIds.MainWindow);
+
+        var undo = viewModel.EvaluateAction(
+            Editor.Shell.Actions.StudioShellActionIds.UndoScene,
+            context);
+        var redo = viewModel.EvaluateAction(
+            Editor.Shell.Actions.StudioShellActionIds.RedoScene,
+            context);
+
+        Assert.Equal("Undo Rename Entity", undo.State!.PresentationLabel);
+        Assert.Equal("Redo", redo.State!.PresentationLabel);
+        Assert.True(stateChangeCount > 0);
+    }
+
+    [Fact]
+    public async Task Executor_escape_failure_gets_one_canonical_fallback_diagnostic()
+    {
+        var session = new TestProjectSession();
+        var diagnostics = StudioShellTestFactory.CreateDiagnosticWriter(out var hub);
+        using var viewModel = new StudioShellViewModel(
+            session,
+            new ThrowingProjectDialogService(),
+            StudioShellTestFactory.CreateDocumentTransitions(session),
+            diagnostics);
+        viewModel.MarkReady();
+        var context = viewModel.CaptureActionContext(
+            StudioActionInvocationSource.Menu,
+            Editor.Shell.Actions.StudioShellPresentationIds.MainWindow);
+
+        var result = await viewModel.ExecuteActionAsync(
+            Editor.Shell.Actions.StudioShellActionIds.OpenProject,
+            context);
+        var record = Assert.Single(hub.ReadDiagnostics().Items);
+
+        Assert.Equal(StudioActionResultStatus.Failed, result.Status);
+        Assert.Equal(record.SequenceId, result.DiagnosticSequence);
+        Assert.Equal("The Studio action failed unexpectedly.", viewModel.ProjectOperationMessage);
+        Assert.Equal("The Studio action failed unexpectedly.", record.Message);
+        Assert.DoesNotContain("private dialog detail", record.Message, StringComparison.Ordinal);
+        Assert.Equal(context.OperationId, record.Context.OperationId);
+        Assert.Equal(context.CorrelationId, record.Context.CorrelationId);
+        Assert.Equal(
+            diagnostics.ProcessIdentity.ToString(),
+            record.Context.Scope.Identity);
+        Assert.Contains(
+            record.Attributes,
+            attribute => attribute.Name == "actionId" &&
+                attribute.Value == Editor.Shell.Actions.StudioShellActionIds.OpenProject.Value);
+    }
+
     [Fact]
     public void Starting_transitions_once_to_real_empty_workspace()
     {
@@ -122,7 +428,9 @@ public sealed class StudioShellViewModelTests
             ProjectSessionOperationResult.Success(redone, "Redid Transform Selected."));
         using var viewModel = new StudioShellViewModel(
             projectSession,
-            new TestProjectDialogService());
+            new TestProjectDialogService(),
+            StudioShellTestFactory.CreateDocumentTransitions(projectSession),
+            StudioShellTestFactory.CreateDiagnosticWriter());
         viewModel.MarkReady();
         viewModel.SelectedEntity = entityA;
 
@@ -201,7 +509,9 @@ public sealed class StudioShellViewModelTests
             ProjectSessionOperationResult.Success(undone, "Undid Transform Selected."));
         using var viewModel = new StudioShellViewModel(
             projectSession,
-            new TestProjectDialogService());
+            new TestProjectDialogService(),
+            StudioShellTestFactory.CreateDocumentTransitions(projectSession),
+            StudioShellTestFactory.CreateDiagnosticWriter());
         viewModel.MarkReady();
         viewModel.SelectedEntity = currentEntity;
         viewModel.PositionX = "1.2";
@@ -246,7 +556,7 @@ public sealed class StudioShellViewModelTests
         viewModel.NewProjectName = "Sample";
         dialogs.ParentDirectory = "C:\\Projects";
         var ready = Ready("Sample", "C:\\Projects\\Sample");
-        projectSession.CreateHandler = (parent, name, _) =>
+        projectSession.CreateHandler = (parent, name, _, _) =>
         {
             Assert.Equal("C:\\Projects", parent);
             Assert.Equal("Sample", name);
@@ -266,6 +576,138 @@ public sealed class StudioShellViewModelTests
         Assert.Contains("Sample", viewModel.WindowTitle, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData(
+        DirtyProjectTransitionCommand.Create,
+        ProjectDocumentTransitionDecision.Save)]
+    [InlineData(
+        DirtyProjectTransitionCommand.Create,
+        ProjectDocumentTransitionDecision.Discard)]
+    [InlineData(
+        DirtyProjectTransitionCommand.Create,
+        ProjectDocumentTransitionDecision.Cancel)]
+    [InlineData(
+        DirtyProjectTransitionCommand.Open,
+        ProjectDocumentTransitionDecision.Save)]
+    [InlineData(
+        DirtyProjectTransitionCommand.Open,
+        ProjectDocumentTransitionDecision.Discard)]
+    [InlineData(
+        DirtyProjectTransitionCommand.Open,
+        ProjectDocumentTransitionDecision.Cancel)]
+    [InlineData(
+        DirtyProjectTransitionCommand.Close,
+        ProjectDocumentTransitionDecision.Save)]
+    [InlineData(
+        DirtyProjectTransitionCommand.Close,
+        ProjectDocumentTransitionDecision.Discard)]
+    [InlineData(
+        DirtyProjectTransitionCommand.Close,
+        ProjectDocumentTransitionDecision.Cancel)]
+    public async Task Dirty_project_commands_honor_save_discard_and_cancel(
+        DirtyProjectTransitionCommand command,
+        ProjectDocumentTransitionDecision decision)
+    {
+        var dirty = DirtyReady("Current", "C:\\Projects\\Current");
+        var saved = ProjectSessionSnapshot.Ready(
+            dirty.Project!,
+            new SceneDocumentSnapshot(
+                dirty.Document!.SceneId,
+                dirty.Document.Path,
+                revision: 3,
+                savedRevision: 3,
+                entities: []),
+            new ContentStateId(2),
+            new ContentStateId(2),
+            canUndo: true,
+            canRedo: false,
+            undoLabel: "Create Entity",
+            redoLabel: null);
+        var replacement = command == DirtyProjectTransitionCommand.Close
+            ? ProjectSessionSnapshot.NoProject
+            : Ready("Replacement", "C:\\Projects\\Replacement");
+        var session = new TestProjectSession();
+        session.Publish(dirty);
+        var dialogs = new TestProjectDialogService
+        {
+            ParentDirectory = "C:\\Projects",
+            ProjectDescriptor = "C:\\Projects\\Replacement\\Replacement.asharia.json",
+        };
+        var prompt = new TestProjectDocumentTransitionPrompt
+        {
+            Decision = decision,
+        };
+        var saveCount = 0;
+        var transitionCount = 0;
+        session.SaveHandler = _ =>
+        {
+            saveCount++;
+            session.Publish(saved);
+            return ValueTask.FromResult(
+                ProjectSessionOperationResult.Success(saved, "Saved current scene."));
+        };
+        session.CreateHandler = (_, _, _, _) => CompleteTransition();
+        session.OpenHandler = (_, _, _) => CompleteTransition();
+        session.CloseHandler = (_, _) => CompleteTransition();
+        using var viewModel = new StudioShellViewModel(
+            session,
+            dialogs,
+            new ProjectDocumentTransitionCoordinator(session, prompt),
+            StudioShellTestFactory.CreateDiagnosticWriter());
+        viewModel.MarkReady();
+        viewModel.NewProjectName = "Replacement";
+
+        switch (command)
+        {
+            case DirtyProjectTransitionCommand.Create:
+                viewModel.CreateProjectCommand.Execute(null);
+                break;
+            case DirtyProjectTransitionCommand.Open:
+                viewModel.OpenProjectCommand.Execute(null);
+                break;
+            case DirtyProjectTransitionCommand.Close:
+                viewModel.CloseProjectCommand.Execute(null);
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(command), command, null);
+        }
+        await WaitUntilAsync(() => !viewModel.IsProjectOperationRunning);
+
+        var request = Assert.Single(prompt.Requests);
+        Assert.Equal(ToTransitionKind(command), request.Kind);
+        Assert.Equal(dirty.Project!.SessionId, request.SessionId);
+        Assert.Equal(dirty.Document!.SceneId, request.SceneId);
+        if (decision == ProjectDocumentTransitionDecision.Cancel)
+        {
+            Assert.Equal(0, transitionCount);
+            Assert.Equal(0, saveCount);
+            Assert.Same(dirty, session.Current);
+            Assert.True(viewModel.IsDocumentDirty);
+            Assert.Equal(string.Empty, viewModel.ProjectOperationMessage);
+        }
+        else
+        {
+            Assert.Equal(1, transitionCount);
+            Assert.Equal(
+                decision == ProjectDocumentTransitionDecision.Save ? 1 : 0,
+                saveCount);
+            Assert.Same(replacement, session.Current);
+            Assert.Equal(
+                command != DirtyProjectTransitionCommand.Close,
+                viewModel.HasProject);
+        }
+
+        ValueTask<ProjectSessionOperationResult> CompleteTransition()
+        {
+            transitionCount++;
+            session.Publish(replacement);
+            return ValueTask.FromResult(
+                ProjectSessionOperationResult.Success(
+                    replacement,
+                    $"Completed {command}."));
+        }
+    }
+
     [Fact]
     public async Task Canceled_open_dialog_does_not_call_the_project_session()
     {
@@ -275,7 +717,7 @@ public sealed class StudioShellViewModelTests
         viewModel.MarkReady();
         dialogs.ProjectDescriptor = null;
         var called = false;
-        projectSession.OpenHandler = (_, _) =>
+        projectSession.OpenHandler = (_, _, _) =>
         {
             called = true;
             throw new InvalidOperationException("Open must not be called.");
@@ -297,7 +739,9 @@ public sealed class StudioShellViewModelTests
         projectSession.Publish(initial);
         using var viewModel = new StudioShellViewModel(
             projectSession,
-            new TestProjectDialogService());
+            new TestProjectDialogService(),
+            StudioShellTestFactory.CreateDocumentTransitions(projectSession),
+            StudioShellTestFactory.CreateDiagnosticWriter());
         viewModel.MarkReady();
         var createdObjectId = Guid.NewGuid();
         var trailingObjectId = Guid.NewGuid();
@@ -372,7 +816,9 @@ public sealed class StudioShellViewModelTests
         projectSession.Publish(initial);
         using var viewModel = new StudioShellViewModel(
             projectSession,
-            new TestProjectDialogService());
+            new TestProjectDialogService(),
+            StudioShellTestFactory.CreateDocumentTransitions(projectSession),
+            StudioShellTestFactory.CreateDiagnosticWriter());
         viewModel.MarkReady();
         viewModel.SelectedEntity = selected;
         projectSession.CreateMeshEntityHandler = (_, _, _) =>
@@ -491,7 +937,9 @@ public sealed class StudioShellViewModelTests
         };
         using var viewModel = new StudioShellViewModel(
             projectSession,
-            new TestProjectDialogService());
+            new TestProjectDialogService(),
+            StudioShellTestFactory.CreateDocumentTransitions(projectSession),
+            StudioShellTestFactory.CreateDiagnosticWriter());
         viewModel.MarkReady();
         viewModel.SelectedEntity = initialEntity;
         viewModel.PositionX = "1.2";
@@ -641,7 +1089,9 @@ public sealed class StudioShellViewModelTests
         };
         using var viewModel = new StudioShellViewModel(
             projectSession,
-            new TestProjectDialogService());
+            new TestProjectDialogService(),
+            StudioShellTestFactory.CreateDocumentTransitions(projectSession),
+            StudioShellTestFactory.CreateDiagnosticWriter());
         viewModel.MarkReady();
         viewModel.SelectedEntity = entity;
         var originalX = viewModel.RotationDegreesX;
@@ -726,7 +1176,9 @@ public sealed class StudioShellViewModelTests
         };
         using var viewModel = new StudioShellViewModel(
             projectSession,
-            new TestProjectDialogService());
+            new TestProjectDialogService(),
+            StudioShellTestFactory.CreateDocumentTransitions(projectSession),
+            StudioShellTestFactory.CreateDiagnosticWriter());
         viewModel.MarkReady();
         viewModel.SelectedEntity = entity;
         viewModel.RotationDegreesY = "365";
@@ -782,7 +1234,9 @@ public sealed class StudioShellViewModelTests
         };
         using var viewModel = new StudioShellViewModel(
             projectSession,
-            new TestProjectDialogService());
+            new TestProjectDialogService(),
+            StudioShellTestFactory.CreateDocumentTransitions(projectSession),
+            StudioShellTestFactory.CreateDiagnosticWriter());
         viewModel.MarkReady();
         viewModel.SelectedEntity = entity;
         viewModel.PositionX = "1.2";
@@ -948,7 +1402,9 @@ public sealed class StudioShellViewModelTests
         };
         using var viewModel = new StudioShellViewModel(
             projectSession,
-            new TestProjectDialogService());
+            new TestProjectDialogService(),
+            StudioShellTestFactory.CreateDocumentTransitions(projectSession),
+            StudioShellTestFactory.CreateDiagnosticWriter());
         viewModel.MarkReady();
         viewModel.SelectedEntity = entity;
         viewModel.PositionX = "-0.000";
@@ -1080,7 +1536,9 @@ public sealed class StudioShellViewModelTests
         };
         using var viewModel = new StudioShellViewModel(
             projectSession,
-            new TestProjectDialogService());
+            new TestProjectDialogService(),
+            StudioShellTestFactory.CreateDocumentTransitions(projectSession),
+            StudioShellTestFactory.CreateDiagnosticWriter());
         viewModel.MarkReady();
         viewModel.SelectedEntity = entity;
         viewModel.PositionX = "1.2";
@@ -1162,7 +1620,9 @@ public sealed class StudioShellViewModelTests
         };
         using var viewModel = new StudioShellViewModel(
             projectSession,
-            new TestProjectDialogService());
+            new TestProjectDialogService(),
+            StudioShellTestFactory.CreateDocumentTransitions(projectSession),
+            StudioShellTestFactory.CreateDiagnosticWriter());
         viewModel.MarkReady();
         viewModel.SelectedEntity = entity;
         viewModel.RotationDegreesY = "365";
@@ -1247,7 +1707,9 @@ public sealed class StudioShellViewModelTests
         projectSession.Publish(initial);
         using var viewModel = new StudioShellViewModel(
             projectSession,
-            new TestProjectDialogService());
+            new TestProjectDialogService(),
+            StudioShellTestFactory.CreateDocumentTransitions(projectSession),
+            StudioShellTestFactory.CreateDiagnosticWriter());
         viewModel.MarkReady();
         viewModel.SelectedEntity = first;
         viewModel.PositionX = "1.2";
@@ -1307,7 +1769,9 @@ public sealed class StudioShellViewModelTests
         projectSession.Publish(initial);
         using var viewModel = new StudioShellViewModel(
             projectSession,
-            new TestProjectDialogService());
+            new TestProjectDialogService(),
+            StudioShellTestFactory.CreateDocumentTransitions(projectSession),
+            StudioShellTestFactory.CreateDiagnosticWriter());
         viewModel.MarkReady();
 
         viewModel.SelectedEntity = positive;
@@ -1372,7 +1836,9 @@ public sealed class StudioShellViewModelTests
         projectSession.Publish(initial);
         using var viewModel = new StudioShellViewModel(
             projectSession,
-            new TestProjectDialogService());
+            new TestProjectDialogService(),
+            StudioShellTestFactory.CreateDocumentTransitions(projectSession),
+            StudioShellTestFactory.CreateDiagnosticWriter());
         viewModel.MarkReady();
 
         viewModel.SelectedEntity = entity;
@@ -1432,7 +1898,9 @@ public sealed class StudioShellViewModelTests
         projectSession.Publish(initial);
         using var viewModel = new StudioShellViewModel(
             projectSession,
-            new TestProjectDialogService());
+            new TestProjectDialogService(),
+            StudioShellTestFactory.CreateDocumentTransitions(projectSession),
+            StudioShellTestFactory.CreateDiagnosticWriter());
         viewModel.MarkReady();
 
         viewModel.SelectedEntity = entity;
@@ -1485,7 +1953,9 @@ public sealed class StudioShellViewModelTests
         };
         using var viewModel = new StudioShellViewModel(
             projectSession,
-            new TestProjectDialogService());
+            new TestProjectDialogService(),
+            StudioShellTestFactory.CreateDocumentTransitions(projectSession),
+            StudioShellTestFactory.CreateDiagnosticWriter());
         viewModel.MarkReady();
         viewModel.SelectedEntity = entity;
         viewModel.RotationDegreesY = "NaN";
@@ -1516,6 +1986,50 @@ public sealed class StudioShellViewModelTests
             canRedo: false,
             undoLabel: null,
             redoLabel: null);
+
+    private static ProjectSessionSnapshot DirtyReady(string name, string root)
+    {
+        var clean = Ready(name, root);
+        return ProjectSessionSnapshot.Ready(
+            clean.Project!,
+            new SceneDocumentSnapshot(
+                clean.Document!.SceneId,
+                clean.Document.Path,
+                revision: 2,
+                savedRevision: 1,
+                entities: []),
+            new ContentStateId(2),
+            new ContentStateId(1),
+            canUndo: true,
+            canRedo: false,
+            undoLabel: "Create Entity",
+            redoLabel: null);
+    }
+
+    private static ProjectDocumentTransitionKind ToTransitionKind(
+        DirtyProjectTransitionCommand command) =>
+        command switch
+        {
+            DirtyProjectTransitionCommand.Create =>
+                ProjectDocumentTransitionKind.CreateProject,
+            DirtyProjectTransitionCommand.Open =>
+                ProjectDocumentTransitionKind.OpenProject,
+            DirtyProjectTransitionCommand.Close =>
+                ProjectDocumentTransitionKind.CloseProject,
+            _ => throw new ArgumentOutOfRangeException(nameof(command), command, null),
+        };
+
+    private sealed class ThrowingProjectDialogService :
+        Editor.Shell.Services.Projects.IStudioProjectDialogService
+    {
+        public ValueTask<string?> SelectProjectParentDirectoryAsync(
+            CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("private dialog detail");
+
+        public ValueTask<string?> SelectProjectDescriptorAsync(
+            CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("private dialog detail");
+    }
 
     private static async Task WaitUntilAsync(Func<bool> condition)
     {

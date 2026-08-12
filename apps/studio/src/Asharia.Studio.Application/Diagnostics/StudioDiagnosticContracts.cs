@@ -160,3 +160,8 @@ public interface IStudioDiagnosticHub
 
     IDisposable Subscribe(Action invalidated);
 }
+
+public interface IStudioDiagnosticHubProvider
+{
+    IStudioDiagnosticHub Diagnostics { get; }
+}

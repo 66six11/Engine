@@ -170,7 +170,10 @@ internal static class StudioSceneMeshSmoke
         await using var host = new StudioViewportSmokeHost();
 
         var createdProject = await AwaitOperationAsync(
-            projectSession.CreateProjectAsync(temporaryParent, "SceneMeshSmoke"));
+            projectSession.CreateProjectAsync(
+                temporaryParent,
+                "SceneMeshSmoke",
+                ProjectDocumentTransitionExpectation.Capture(projectSession.Current)));
         var initialDocument = RequireSucceeded(createdProject, "create project");
         Require(initialDocument.Entities.Count == 0, "The new project scene was not empty.");
         var schemaVersion = await ReadSchemaVersionAsync(initialDocument.Path);

@@ -1,8 +1,13 @@
 using System;
+using Asharia.Studio.Application.Actions;
 using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.Interactivity;
+using Editor.Shell.Commands;
 using Editor.Shell.Docking.Lifecycle;
 using Editor.Shell.Lifecycle;
 using Editor.Shell.ViewModels.Docking;
+using Editor.Shell.ViewModels.Windowing;
 using Editor.Shell.Views.Windowing;
 
 namespace Editor.Shell.Views.Docking;
@@ -10,6 +15,8 @@ namespace Editor.Shell.Views.Docking;
 public partial class EditorDockFloatingWindow : Window
 {
     private const string FloatingWindowLifecycleSource = "floating-window";
+    private readonly StudioPresentationId actionTopLevelId_ = new(
+        $"floating-window:{Guid.NewGuid():N}");
     private bool isDockHostFocused_ = true;
 
     public EditorDockFloatingWindow()
@@ -18,7 +25,14 @@ public partial class EditorDockFloatingWindow : Window
         Activated += OnWindowActivated;
         Deactivated += OnWindowDeactivated;
         DataContextChanged += OnFloatingWindowDataContextChanged;
+        AddHandler(
+            KeyDownEvent,
+            OnUnhandledKeyDown,
+            RoutingStrategies.Bubble,
+            handledEventsToo: false);
     }
+
+    internal StudioPresentationId ActionTopLevelId => actionTopLevelId_;
 
     protected override void OnOpened(EventArgs e)
     {
@@ -57,6 +71,39 @@ public partial class EditorDockFloatingWindow : Window
             isDockHostFocused_ = IsActive;
             viewModel.DockWorkspace.SetHostFocusState(isDockHostFocused_);
         }
+    }
+
+    private void OnUnhandledKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (TryResolveShell(out var shell) &&
+            StudioActionShortcutRouter.TryRoute(
+                shell,
+                ActionTopLevelId,
+                DataContext is EditorDockFloatingWindowViewModel viewModel
+                    ? StudioShellViewModel.ActivePanelId(viewModel.DockWorkspace)
+                    : null,
+                FocusManager?.GetFocusedElement(),
+                e))
+        {
+            e.Handled = true;
+        }
+    }
+
+    private bool TryResolveShell(out StudioShellViewModel shell)
+    {
+        WindowBase? candidate = this;
+        while (candidate is not null)
+        {
+            if (candidate is MainWindow { DataContext: StudioShellViewModel resolved })
+            {
+                shell = resolved;
+                return true;
+            }
+            candidate = candidate.Owner;
+        }
+
+        shell = null!;
+        return false;
     }
 
     private void OnWindowActivated(object? sender, EventArgs e)

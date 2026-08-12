@@ -1,8 +1,8 @@
 # Studio 开发态可观测性与诊断访问架构
 
-状态：Current R0.5 Baseline（protocol、shared-ring投影、Debug-only Host、current-user产品endpoint/discovery、typed CLI、壳 UI Probe 及标准stdio只读 MCP adapter 的 Slice 1→8 与实现纠错格已关闭；2.16 的 Codex fresh-thread host-load、精确tool catalog与真实只读调用证据已关闭）
+状态：Current R0.5 Baseline + R2/R4 structured ingress（protocol、shared-ring投影、Debug-only Host、current-user产品endpoint/discovery、typed CLI、壳 UI Probe及标准stdio只读 MCP adapter 的 Slice 1→8 与实现纠错格已关闭；#378已把真实Project/Shell/viewport failure接入同一hub）
 
-更新日期：2026-08-03
+更新日期：2026-08-12
 
 本文定义 Asharia Studio 在开发构建中向开发者、CI 和 AI 工具暴露运行状态与诊断证据的目标合同。
 它服从 [Studio 前端硬切架构](studio-frontend-hard-cut.md) 的 Document-first、单 owner、异步生命周期和
@@ -31,15 +31,20 @@ Studio 需要一个 **Asharia 自有、开发态、本机、默认只读** 的�
 
 ## 2. Current 与 Planned
 
-| 领域 | Current（2026-08-02） | Planned |
+| 领域 | Current（2026-08-12） | Planned |
 | --- | --- | --- |
 | UI diagnostics | [`App.axaml.cs`](../../App.axaml.cs) 创建process hub并安装自有[`StudioAvaloniaLogSink`](../../Shell/Diagnostics/StudioAvaloniaLogSink.cs)；adapter使用`Framework`/`avalonia`，最多单次投影16个BCL标量，未知对象只保留bounded type marker；`Program.cs`不调用`LogToTrace()` | 不依赖Plus，不保留framework object；新增值类型只有出现真实日志需求并证明producer-safe后才加入精确allowlist |
-| Studio diagnostics | [`StudioDiagnosticHub`](../../src/Asharia.Studio.Application/Diagnostics/StudioDiagnosticHub.cs) 拥有 2048 diagnostic / 8192 log 固定 ring、sequence/cursor/drop、64 个 subscription slots；Avalonia任意值已安全投影；Console/Problems已删除，diagnostic subscriber仍为同步回调 | 首个真实UI consumer前把diagnostic invalidation收敛为有界合并调度；R0.5只暴露同一truth |
+| Studio diagnostics | [`StudioDiagnosticHub`](../../src/Asharia.Studio.Application/Diagnostics/StudioDiagnosticHub.cs) 拥有2048 diagnostic / 8192 log固定ring、sequence/cursor/drop、64个subscription slots；Avalonia任意值已安全投影；#378又让Project/Shell typed operation failure/exception、viewport required-edge Deferred/Rejected及presentation degraded/recovered episode进入同一hub | Console/Problems仍已删除；首个真实UI consumer前把invalidation收敛为有界合并调度，并单独定义bounded dedup projection；不得建立第二truth |
+| Operation provenance | [`StudioOperationDiagnosticWriter`](../../src/Asharia.Studio.Application/Diagnostics/StudioOperationDiagnosticWriter.cs)保留stable code/category/component、scope、operation/correlation/parent与ProjectEditId attribute；viewport projector保留session/epoch/transaction/generation/participant/outcome/failure | 扩充producer只能在真实operation boundary逐项接入；普通成功状态不写Problem，UI transient message不替代hub record |
 | Native log/error | [`error.hpp`](../../../../engine/core/include/asharia/core/error.hpp) 只有 domain/code/message；[`log.cpp`](../../../../engine/core/src/log.cpp) 在 mutex 下写 stdout/stderr | 保留 bootstrap fallback；增加 structured router 和 typed sinks，不解析文本建立状态 |
 | Native/renderer facts | viewport 已能复制 stats；[`render_view.hpp`](../../../../packages/renderer-basic/include/asharia/renderer_basic_vulkan/render_view.hpp) 有 RenderGraph snapshot/execution event | 复用 value-copy 和 renderer-owned event ID；不暴露 singleton、pointer、`Vk*` handle |
 | Process acceptance | `Editor.Tests`作为目标外owner启动真实`Editor.exe`，覆盖clean exit、forced fatal、owner timeout、observer cancel与bounded reap | 这是R0门禁证据，不是`tests.*`产品capability；不接入Application hub、协议、artifact store或crash collector |
 | Session/tool access | typed protocol、显式grant产品endpoint与`asharia-studio-observe list/describe/diagnostics/logs/ui-list-windows/ui-read-tree`已成立；真实`MainWindow`只读semantic projection经Host→Pipe→typed client/CLI闭环，且仅在provider存在时广告两项UI capability；同一可执行文件的精确`mcp`模式以Codex当前实际协商的标准stdio MCP `2025-06-18`只注册六个等价只读tools | R0.5当前面不再扩大；`state/readElement/find`、Capture/Mutate与任意method必须等待各自真实owner和新Slice |
 | Foundation | 文档计划 bounded router、counter/trace 与 local crash evidence | 尚未实现；F3 落地后 Studio 消费同一 process truth，不保留第二套路由器 |
+
+明确延期：本次只完成structured ingress，不实现Console/Problems panel、persistent log file、problem-report bundle、
+crash collector或完整Task supervisor。Unity把Console的可过滤视图与Editor log file视为不同产品面；Asharia同样
+保持“bounded process truth / UI projection / persistent artifact”三个owner分开，不能把打开Console等同于开始持久采集。
 
 ### 2.1 R0.5 Slice 1 protocol/golden card（closed evidence）
 
@@ -306,6 +311,11 @@ Studio 需要一个 **Asharia 自有、开发态、本机、默认只读** 的�
 
 Unity 文档没有把开发连接描述为强认证边界；因此“可 attach”不等于“调用方可信”是本文的安全推论。
 
+Unity Console官方合同还明确区分三个职责：Console Window负责查看、筛选、折叠与清除当前条目；Editor log file
+是独立的持久文本证据；`Application.logMessageReceivedThreaded`可能从不同线程回调。Asharia只采用这种职责分离，
+不复制Unity内部store/API：producer先写唯一bounded hub，未来Console/Problems只做只读有界投影，persistent log与
+problem-report/crash artifact必须各自拥有写入、flush、quota、redaction和shutdown合同。
+
 ## 4. 目标组件与依赖
 
 ```mermaid
@@ -484,15 +494,22 @@ diagnostic 是可行动事实；log 是高容量时间序列。客户端传 `aft
 当前每条diagnostic由stable code、scope、component与截断后的有序attributes生成fingerprint，但不做聚合，
 `RepeatCount`恒为1；dedup只有在真实Console/Problems等consumer出现后才允许作为bounded projection重新评审。
 
-R0 current mapping：
+Current mapping：
 
-- managed lifecycle/command 使用 `Managed`；teardown failure 使用 stable code；普通 command status 是 log，不冒充 Problem；
-- native viewport typed result未来必须使用 `Native` 和stable code；当前没有接入Studio hub的production producer，不用
-  synthetic mapping test宣称能力；
+- managed lifecycle/command使用`Managed`；teardown failure使用stable code；普通command success/status不冒充Problem；
+- ProjectSession失败由`StudioOperationDiagnosticWriter`映射：IO/native/internal为Error，其余typed rejection为Warning；
+  scope、operation/correlation/parent与可用的ProjectEditId保留；canonical record只使用按typed failure生成的安全message，
+  escaped exception只记录exception type，不复制adapter exception message；
+- viewport presentation required edge的Deferred/Rejected由真实transaction coordinator投影为Error Problem；记录
+  endpoint/session/epoch/transaction/generation/participant/phase/outcome/failure，并对同一edge/endpoint/participant只发布一次；
+- 每个真实viewport control只保留一个active degraded episode：首次degraded发布Error，重复state不刷屏；首次Ready以同一
+  operation/correlation发布Info recovery并清episode，WaitingForDocument/Draining/Detached只放弃旧episode；
+- 更底层native/GPU typed result仍需在各自真实owner边界逐项接入；不得解析stdout/stderr建立业务状态；
 - Avalonia `ILogSink` 在 Presentation adapter 中映射为 `Framework` + package `avalonia`，Application contract 不引用 Avalonia；
 - 子进程输出合同使用 `Subprocess` + `stdout`/`stderr` channel，并携 operation/correlation/sensitivity；当前待删除的
   ProjectCode control plane 不为证明该合同而重新接入 production；
-- Console/Problems当前已删除；未来真实panel只能读取同一hub，不能拥有私有store或第二event bus。
+- Console/Problems当前已删除；未来真实panel只能读取同一hub，不能拥有私有store或第二event bus。persistent log、
+  problem report和crash artifact不属于本次ingress，不能用hub snapshot冒充其耐久性。
 
 ### 7.3 Metrics、jobs、artifacts、UI
 

@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Asharia.Studio.Application.Diagnostics;
 using Asharia.Studio.Application.Viewports;
 using Avalonia.Threading;
 
@@ -69,18 +70,23 @@ public sealed class ViewportPresentationTransactionCoordinator
 {
     private Task publishBarrier_ = Task.CompletedTask;
     private readonly SemaphoreSlim publishTurn_ = new(1, 1);
-    private readonly ViewportPresentationTransactionTelemetry? telemetry_;
+    private readonly IStudioDiagnosticHub diagnostics_;
+    private readonly ViewportPresentationTransactionTelemetry telemetry_;
     private readonly ViewportPresentationTransactionTestHooks? testHooks_;
 
-    public ViewportPresentationTransactionCoordinator()
+    public ViewportPresentationTransactionCoordinator(IStudioDiagnosticHub diagnostics)
+        : this(diagnostics, new ViewportPresentationTransactionTelemetry())
     {
     }
 
     internal ViewportPresentationTransactionCoordinator(
+        IStudioDiagnosticHub diagnostics,
         ViewportPresentationTransactionTelemetry telemetry,
         ViewportPresentationTransactionTestHooks? testHooks = null)
     {
+        ArgumentNullException.ThrowIfNull(diagnostics);
         ArgumentNullException.ThrowIfNull(telemetry);
+        diagnostics_ = diagnostics;
         telemetry_ = telemetry;
         testHooks_ = testHooks;
     }
@@ -98,6 +104,10 @@ public sealed class ViewportPresentationTransactionCoordinator
 
         ValidateRequest(request);
         var runtime = CreateRuntimeState(request);
+        var transactionId = new ViewportPresentationTransactionId(request.TransactionId);
+        var diagnosticSession = new ViewportPresentationTransitionDiagnosticSession(
+            diagnostics_,
+            transactionId);
         var prepared = new List<PreparedParticipant>(request.Participants.Count);
         var proposed = new List<ProposedParticipant>(request.Participants.Count);
         var receipts = new List<PublishedParticipant>(request.Participants.Count);
@@ -116,14 +126,16 @@ public sealed class ViewportPresentationTransactionCoordinator
                 cancellationToken.ThrowIfCancellationRequested();
                 var participant = request.Participants[index];
                 var participantId = ParticipantId(index);
-                RequireApplied(runtime.BeginPreparing(participantId));
-                var transactionId = new ViewportPresentationTransactionId(
-                    request.TransactionId);
                 var proposedIdentity = participant.Endpoint.CreatePresentationTelemetryIdentity(
                     transactionId,
                     participant.Endpoint.NextPresentationGeometryGeneration,
                     participant.TargetExtent);
                 proposed.Add(new ProposedParticipant(participant, participantId, proposedIdentity));
+                diagnosticSession.RequireApplied(
+                    ViewportPresentationTransitionEdge.BeginPreparing,
+                    runtime.BeginPreparing(participantId),
+                    proposedIdentity,
+                    participantId);
                 var hookContext = new ViewportPresentationTransactionHookContext(
                     request.TransactionId,
                     index,
@@ -174,7 +186,11 @@ public sealed class ViewportPresentationTransactionCoordinator
                     participantPreparedAt,
                     preparedIdentity,
                     amount: checked((long)handle.CandidateRenderedFrames));
-                RequireApplied(runtime.MarkPrepared(participantId));
+                diagnosticSession.RequireApplied(
+                    ViewportPresentationTransitionEdge.MarkPrepared,
+                    runtime.MarkPrepared(participantId),
+                    preparedIdentity,
+                    participantId);
                 if (testHooks_ is not null)
                 {
                     await testHooks_.BeforeParticipantStageAsync(
@@ -222,7 +238,11 @@ public sealed class ViewportPresentationTransactionCoordinator
                             participant.Participant.ParticipantId);
                     }
 
-                    RequireApplied(runtime.Validate(participant.StateId));
+                    diagnosticSession.RequireApplied(
+                        ViewportPresentationTransitionEdge.Validate,
+                        runtime.Validate(participant.StateId),
+                        participant.Identity,
+                        participant.StateId);
                 }
 
                 foreach (var participant in prepared)
@@ -248,7 +268,10 @@ public sealed class ViewportPresentationTransactionCoordinator
                 }
 
                 publishBarrier_ = rendered;
-                RequireApplied(runtime.Publish());
+                diagnosticSession.RequireApplied(
+                    ViewportPresentationTransitionEdge.Publish,
+                    runtime.Publish(),
+                    prepared[0].Identity);
                 groupPublished = true;
                 publishedAt = Stopwatch.GetTimestamp();
                 foreach (var participant in receipts)
@@ -293,6 +316,7 @@ public sealed class ViewportPresentationTransactionCoordinator
                     receipts,
                     retirements,
                     rendered,
+                    diagnosticSession,
                     preparedAt,
                     publishedAt,
                     retirementCompletion);
@@ -468,17 +492,6 @@ public sealed class ViewportPresentationTransactionCoordinator
 
     private static ViewportPresentationParticipantId ParticipantId(int index) =>
         new(checked((ulong)index + 1));
-
-    private static void RequireApplied(ViewportPresentationTransitionResult transition)
-    {
-        if (transition.Disposition is not (
-            ViewportPresentationTransitionDisposition.Applied or
-            ViewportPresentationTransitionDisposition.AlreadyApplied))
-        {
-            throw new InvalidOperationException(
-                $"Invalid viewport presentation transition at phase {transition.Phase}.");
-        }
-    }
 
     private ViewportPresentationTransactionExecution CompletePrePublishFailure(
         ViewportPresentationTransactionRequest request,
@@ -656,6 +669,7 @@ public sealed class ViewportPresentationTransactionCoordinator
             IReadOnlyList<PublishedParticipant> published,
             IReadOnlyList<Task> retirements,
             Task rendered,
+            ViewportPresentationTransitionDiagnosticSession diagnosticSession,
             long preparedAt,
             long publishedAt,
             TaskCompletionSource<ViewportPresentationTransactionReport> retirementCompletion)
@@ -677,10 +691,17 @@ public sealed class ViewportPresentationTransactionCoordinator
 
             foreach (var participant in prepared)
             {
-                RequireApplied(runtime.MarkRendered(participant.StateId));
+                diagnosticSession.RequireApplied(
+                    ViewportPresentationTransitionEdge.MarkRendered,
+                    runtime.MarkRendered(participant.StateId),
+                    participant.Identity,
+                    participant.StateId);
             }
 
-            RequireApplied(runtime.BeginRetiring());
+            diagnosticSession.RequireApplied(
+                ViewportPresentationTransitionEdge.BeginRetiring,
+                runtime.BeginRetiring(),
+                prepared[0].Identity);
             var renderedReport = Report(
                 request,
                 ViewportPresentationTransactionResult.Committed,
@@ -695,6 +716,7 @@ public sealed class ViewportPresentationTransactionCoordinator
                 prepared,
                 published,
                 retirements,
+                diagnosticSession,
                 preparedAt,
                 publishedAt,
                 renderedAt,
@@ -751,6 +773,7 @@ public sealed class ViewportPresentationTransactionCoordinator
         IReadOnlyList<PreparedParticipant> prepared,
         IReadOnlyList<PublishedParticipant> published,
         IReadOnlyList<Task> retirements,
+        ViewportPresentationTransitionDiagnosticSession diagnosticSession,
         long preparedAt,
         long publishedAt,
         long renderedAt,
@@ -761,7 +784,11 @@ public sealed class ViewportPresentationTransactionCoordinator
             await Task.WhenAll(retirements);
             foreach (var participant in prepared)
             {
-                RequireApplied(runtime.MarkCompleted(participant.StateId));
+                diagnosticSession.RequireApplied(
+                    ViewportPresentationTransitionEdge.MarkCompleted,
+                    runtime.MarkCompleted(participant.StateId),
+                    participant.Identity,
+                    participant.StateId);
             }
             completion.TrySetResult(Report(
                 request,
@@ -909,11 +936,6 @@ public sealed class ViewportPresentationTransactionCoordinator
         ViewportPresentationTelemetryIdentity identity,
         long amount = 0)
     {
-        if (telemetry_ is null)
-        {
-            return;
-        }
-
         var result = telemetry_.TryRecord(new ViewportPresentationTelemetryEvent(
             kind,
             timestamp,

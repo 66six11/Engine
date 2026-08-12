@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Immutable;
 using System.Threading.Tasks;
+using Asharia.Studio.Application.Actions;
 using Asharia.Studio.Application.Diagnostics;
 using Asharia.Studio.Application.Projects;
 using Asharia.Studio.EngineBridge.Project;
@@ -21,16 +22,20 @@ namespace Editor;
 
 // ReSharper disable once PartialTypeWithSinglePart
 public partial class App : Application,
-    IInteractiveTopLevelResizeAdapterProvider
+    IInteractiveTopLevelResizeAdapterProvider,
+    IStudioDiagnosticHubProvider
 {
     private readonly IStudioDiagnosticHub diagnostics_;
+    private readonly StudioOperationDiagnosticWriter operationDiagnostics_;
     private readonly bool enableReadOnlyDevelopmentObservation_;
     private readonly IInteractiveTopLevelResizeAdapterFactory?
         interactiveTopLevelResizeAdapterFactory_;
     private StudioProcessSession? processSession_;
+    private ProjectDocumentTransitionCoordinator? documentTransitions_;
     private MainWindow? mainWindow_;
     private Task? startupTask_;
     private Task? shutdownTask_;
+    private Task? userExitResolutionTask_;
     private int requestedExitCode_;
     private bool finalShutdown_;
 
@@ -67,6 +72,7 @@ public partial class App : Application,
     {
         ArgumentNullException.ThrowIfNull(diagnostics);
         diagnostics_ = diagnostics;
+        operationDiagnostics_ = new StudioOperationDiagnosticWriter(diagnostics_);
         enableReadOnlyDevelopmentObservation_ =
             enableReadOnlyDevelopmentObservation;
         interactiveTopLevelResizeAdapterFactory_ = interactiveTopLevelResizeAdapterFactory;
@@ -76,6 +82,8 @@ public partial class App : Application,
     IInteractiveTopLevelResizeAdapterFactory?
         IInteractiveTopLevelResizeAdapterProvider.InteractiveTopLevelResizeAdapterFactory =>
             interactiveTopLevelResizeAdapterFactory_;
+
+    IStudioDiagnosticHub IStudioDiagnosticHubProvider.Diagnostics => diagnostics_;
 
     public override void Initialize()
     {
@@ -114,25 +122,53 @@ public partial class App : Application,
             new ProjectDescriptorBridge(),
             new SceneDocumentBridge());
         var projectDialogs = new MainWindowProjectDialogService();
-        var shellViewModel = new StudioShellViewModel(projectSession, projectDialogs);
+        var documentPrompt = new MainWindowDocumentTransitionPrompt();
+        var documentTransitions = new ProjectDocumentTransitionCoordinator(
+            projectSession,
+            documentPrompt);
+        StudioShellViewModel? shellViewModel = null;
         MainWindow mainWindow;
         try
         {
+            shellViewModel = new StudioShellViewModel(
+                projectSession,
+                projectDialogs,
+                documentTransitions,
+                operationDiagnostics_);
             mainWindow = new MainWindow
             {
                 DataContext = shellViewModel,
             };
             projectDialogs.Attach(mainWindow);
+            documentPrompt.Attach(mainWindow);
         }
         catch (Exception exception)
         {
-            shellViewModel.Dispose();
+            shellViewModel?.Dispose();
             await projectSession.DisposeAsync();
-            PublishFailure(
-                "studio.lifecycle.window-create.failed",
-                "lifecycle",
-                "Studio shell window failed to initialize.",
-                exception);
+            if (exception is StudioActionRegistrationException registrationFailure)
+            {
+                operationDiagnostics_.PublishActionRegistrationFailure(
+                    registrationFailure,
+                    new StudioUnexpectedOperationContext(
+                        "studio.action.registration.failed",
+                        "action",
+                        "shell",
+                        StudioDiagnosticScope.Process(diagnostics_.ProcessIdentity),
+                        Guid.NewGuid(),
+                        Guid.NewGuid(),
+                        remediation: "Correct the built-in action registration conflict " +
+                            "before restarting Studio.",
+                        sensitivity: StudioDataSensitivity.Public));
+            }
+            else
+            {
+                PublishFailure(
+                    "studio.lifecycle.window-create.failed",
+                    "lifecycle",
+                    "Studio shell window failed to initialize.",
+                    exception);
+            }
             BeginFinalShutdown(desktop, exitCode: 1);
             return;
         }
@@ -150,6 +186,7 @@ public partial class App : Application,
             },
             diagnostics_.ProcessIdentity);
         processSession_ = processSession;
+        documentTransitions_ = documentTransitions;
         mainWindow.Closing += OnMainWindowClosing;
         mainWindow_ = mainWindow;
         desktop.MainWindow = mainWindow;
@@ -192,7 +229,7 @@ public partial class App : Application,
         }
 
         e.Cancel = true;
-        BeginShutdown();
+        RequestUserShutdown();
     }
 
     private void OnMainWindowClosing(object? sender, WindowClosingEventArgs e)
@@ -203,7 +240,66 @@ public partial class App : Application,
         }
 
         e.Cancel = true;
-        BeginShutdown();
+        RequestUserShutdown();
+    }
+
+    private void RequestUserShutdown()
+    {
+        if (shutdownTask_ is not null || userExitResolutionTask_ is not null)
+        {
+            return;
+        }
+
+        var completion = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        userExitResolutionTask_ = completion.Task;
+        _ = ResolveUserShutdownAsync(completion);
+    }
+
+    private async Task ResolveUserShutdownAsync(TaskCompletionSource completion)
+    {
+        try
+        {
+            var transitions = documentTransitions_;
+            if (transitions is null)
+            {
+                BeginShutdown();
+                return;
+            }
+
+            var result = await transitions.PrepareExitAsync();
+            operationDiagnostics_.PublishDocumentTransitionFailure(
+                result,
+                new StudioUnexpectedOperationContext(
+                    "studio.document-transition.exit.failed",
+                    "document-transition",
+                    "application-lifecycle",
+                    StudioDiagnosticScope.Process(diagnostics_.ProcessIdentity),
+                    Guid.NewGuid(),
+                    Guid.NewGuid(),
+                    remediation: "Resolve the save failure, then request Exit again."));
+            if (result.MayProceed)
+            {
+                BeginShutdown();
+                return;
+            }
+
+            if (result.Status is ProjectDocumentTransitionStatus.SaveFailed or
+                ProjectDocumentTransitionStatus.TransitionFailed or
+                ProjectDocumentTransitionStatus.Stale or
+                ProjectDocumentTransitionStatus.Busy)
+            {
+                if (mainWindow_?.DataContext is StudioShellViewModel shell)
+                {
+                    shell.PresentProjectOperationMessage(result.Message);
+                }
+            }
+        }
+        finally
+        {
+            userExitResolutionTask_ = null;
+            completion.TrySetResult();
+        }
     }
 
     private void BeginShutdown(int exitCode = 0)
@@ -341,4 +437,5 @@ public partial class App : Application,
                     "exceptionType",
                     exception.GetType().FullName ?? exception.GetType().Name))));
     }
+
 }

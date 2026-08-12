@@ -2,6 +2,8 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:presentation="using:Asharia.Studio.Presentation.Avalonia.Viewports"
              xmlns:vm="using:Editor.Shell.ViewModels.Panels"
+             xmlns:commands="using:Editor.Shell.Commands"
+             xmlns:actions="using:Editor.Shell.Actions"
              x:Class="Editor.Shell.Views.Panels.StudioScenePanelView"
              x:DataType="vm:StudioScenePanelViewModel"
              AutomationProperties.AutomationId="StudioSceneDocumentPanel"
@@ -52,13 +54,13 @@
                               Content="Wireframe"
                               IsChecked="{Binding IsWireframe, Mode=TwoWay}" />
                 <Button AutomationProperties.Name="Create entity"
-                        Command="{Binding Shell.CreateEntityCommand}"
+                        commands:StudioActionButton.ActionId="{x:Static actions:StudioShellActionIds.CreateEntity}"
                         Content="+ Entity" />
                 <Button AutomationProperties.Name="Create validation mesh entity"
-                        Command="{Binding Shell.CreateMeshEntityCommand}"
+                        commands:StudioActionButton.ActionId="{x:Static actions:StudioShellActionIds.CreateMeshEntity}"
                         Content="+ Mesh" />
                 <Button AutomationProperties.Name="Save scene"
-                        Command="{Binding Shell.SaveSceneCommand}"
+                        commands:StudioActionButton.ActionId="{x:Static actions:StudioShellActionIds.SaveScene}"
                         Content="Save" />
                 <TextBlock VerticalAlignment="Center"
                            Foreground="{DynamicResource EditorBrushTextMuted}"

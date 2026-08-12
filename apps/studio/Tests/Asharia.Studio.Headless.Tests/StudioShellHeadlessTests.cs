@@ -1,3 +1,4 @@
+using System.Linq;
 using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Automation.Peers;
@@ -9,9 +10,16 @@ using Avalonia.Threading;
 using Asharia.Runtime;
 using Asharia.Studio.Application.Projects;
 using Asharia.Studio.Application.Scenes;
+using Asharia.Studio.Application.Actions;
 using Asharia.Studio.TestSupport;
+using Editor.Shell.Docking.Layout;
+using Editor.Shell.Docking.Panels;
+using Editor.Shell.Commands;
+using Editor.Shell.ViewModels.Docking;
+using Editor.Shell.ViewModels.Panels;
 using Editor;
 using Editor.Shell.ViewModels.Windowing;
+using Editor.Shell.Views.Docking;
 using Editor.Shell.Views.Windowing;
 using Xunit;
 
@@ -113,7 +121,7 @@ public sealed class StudioShellHeadlessTests
             canRedo: false,
             undoLabel: null,
             redoLabel: null);
-        projectSession.CreateHandler = (_, _, _) =>
+        projectSession.CreateHandler = (_, _, _, _) =>
         {
             projectSession.Publish(ready);
             return System.Threading.Tasks.ValueTask.FromResult(
@@ -240,6 +248,184 @@ public sealed class StudioShellHeadlessTests
     }
 
     [AvaloniaFact]
+    public void Main_menu_projects_registered_actions_and_reopens_all_panels()
+    {
+        using var viewModel = StudioShellTestFactory.Create();
+        var window = new MainWindow { DataContext = viewModel };
+
+        try
+        {
+            window.Show();
+            viewModel.MarkReady();
+            Dispatcher.UIThread.RunJobs();
+            var menu = Assert.IsType<Menu>(window.FindControl<Menu>("StudioMainMenu"));
+            var topLevel = menu.Items.OfType<MenuItem>().ToArray();
+            Assert.Equal(["File", "Edit", "Scene", "Window"],
+                topLevel.Select(item => item.Header?.ToString() ?? string.Empty).ToArray());
+
+            var windowMenu = topLevel.Single(item =>
+                string.Equals(item.Header?.ToString(), "Window",
+                    System.StringComparison.Ordinal));
+            var panelsMenu = Assert.Single(windowMenu.Items.OfType<MenuItem>());
+            Assert.Equal("Panels", panelsMenu.Header?.ToString());
+            var panelItems = panelsMenu.Items.OfType<MenuItem>().ToArray();
+            Assert.Equal(4, panelItems.Length);
+            foreach (var panelId in new[] { "hierarchy", "project", "scene-view", "inspector" })
+            {
+                Assert.True(viewModel.DockWorkspace.ClosePanel(panelId));
+                Assert.False(viewModel.DockWorkspace.ContainsPanel(panelId));
+                var expectedAction = panelId switch
+                {
+                    "hierarchy" => "studio.window.open-hierarchy-panel",
+                    "project" => "studio.window.open-project-panel",
+                    "scene-view" => "studio.window.open-scene-view-panel",
+                    "inspector" => "studio.window.open-inspector-panel",
+                    _ => throw new System.ArgumentOutOfRangeException(nameof(panelId)),
+                };
+                var item = panelItems.Single(candidate =>
+                    string.Equals(candidate.Tag?.ToString(), expectedAction,
+                        System.StringComparison.Ordinal));
+                Assert.True(item.Command!.CanExecute(item.CommandParameter));
+                item.Command.Execute(item.CommandParameter);
+                Dispatcher.UIThread.RunJobs();
+                Assert.True(viewModel.DockWorkspace.ContainsPanel(panelId));
+            }
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
+    [AvaloniaFact]
+    public void Floating_window_action_identity_is_lifetime_stable_and_unique()
+    {
+        var first = new EditorDockFloatingWindow();
+        var second = new EditorDockFloatingWindow();
+
+        Assert.True(first.ActionTopLevelId.IsValid);
+        Assert.Equal(first.ActionTopLevelId, first.ActionTopLevelId);
+        Assert.NotEqual(first.ActionTopLevelId, second.ActionTopLevelId);
+    }
+
+    [AvaloniaFact]
+    public void Floating_panel_button_projects_its_actual_top_level_and_panel()
+    {
+        using var shell = StudioShellTestFactory.Create();
+        var snapshot = new EditorDockFloatingWindowSnapshot
+        {
+            ActiveWindowId = "floating-inspector-window",
+            Root = new EditorDockLayoutNodeSnapshot
+            {
+                Kind = "Window",
+                Id = "floating-inspector-node",
+                WindowId = "floating-inspector-window",
+                WindowTitle = "Inspector",
+                WindowArea = EditorDockArea.Right,
+                WindowRole = "Selection context",
+                TabIds = ["inspector"],
+                ActiveTabId = "inspector",
+            },
+        };
+        Assert.True(shell.DockWorkspace.TryCreateFloatingWorkspace(
+            snapshot,
+            out var floatingWorkspace));
+        var floatingViewModel = new EditorDockFloatingWindowViewModel(floatingWorkspace);
+        var floatingWindow = new EditorDockFloatingWindow { DataContext = floatingViewModel };
+        var inspector = Assert.IsType<StudioInspectorPanelViewModel>(
+            floatingWorkspace.ActiveWindow!.ActiveTab!.Content);
+        var button = new Button { DataContext = inspector };
+        var host = new EditorDockPanelContentHost
+        {
+            Panel = floatingWorkspace.ActiveWindow.ActiveTab,
+            Content = button,
+        };
+        floatingWindow.Content = host;
+
+        try
+        {
+            floatingWindow.Show();
+            Dispatcher.UIThread.RunJobs();
+
+            Assert.True(StudioActionButton.TryResolvePresentation(
+                button,
+                shell,
+                out var topLevelId,
+                out var focusedPanelId));
+            Assert.Equal(floatingWindow.ActionTopLevelId, topLevelId);
+            Assert.Equal(new StudioPresentationId("inspector"), focusedPanelId);
+            Assert.NotEqual(
+                StudioShellViewModel.ActivePanelId(shell.DockWorkspace),
+                focusedPanelId);
+        }
+        finally
+        {
+            floatingWindow.Close();
+        }
+    }
+
+    [AvaloniaFact]
+    public async System.Threading.Tasks.Task Floating_window_uses_the_same_shortcut_registry()
+    {
+        using var viewModel = StudioShellTestFactory.Create(
+            out var projectSession,
+            out _);
+        var mainWindow = new MainWindow { DataContext = viewModel };
+        var floatingWindow = new EditorDockFloatingWindow();
+        var nestedFloatingWindow = new EditorDockFloatingWindow();
+        var project = new ActiveProjectSnapshot(
+            ProjectSessionId.CreateNew(),
+            System.Guid.NewGuid(),
+            "Sample",
+            "C:\\Projects\\Sample");
+        var document = new SceneDocumentSnapshot(
+            System.Guid.NewGuid(),
+            "C:\\Projects\\Sample\\Assets\\Scenes\\Default.asharia.scene.json",
+            revision: 2,
+            savedRevision: 1,
+            entities: []);
+        var canUndo = ProjectSessionSnapshot.Ready(
+            project,
+            document,
+            new ContentStateId(2),
+            new ContentStateId(1),
+            canUndo: true,
+            canRedo: false,
+            undoLabel: "Transform",
+            redoLabel: null);
+        projectSession.Publish(canUndo);
+        var undoCount = 0;
+        projectSession.UndoHandler = _ =>
+        {
+            undoCount++;
+            return System.Threading.Tasks.ValueTask.FromResult(
+                ProjectSessionOperationResult.Success(canUndo, "Undid Transform."));
+        };
+
+        try
+        {
+            mainWindow.Show();
+            viewModel.MarkReady();
+            floatingWindow.Show(mainWindow);
+            nestedFloatingWindow.Show(floatingWindow);
+            Dispatcher.UIThread.RunJobs();
+
+            Press(floatingWindow, Key.Z, RawInputModifiers.Control);
+            await WaitForOperationAsync(viewModel);
+            Press(nestedFloatingWindow, Key.Z, RawInputModifiers.Control);
+            await WaitForOperationAsync(viewModel);
+
+            Assert.Equal(2, undoCount);
+        }
+        finally
+        {
+            nestedFloatingWindow.Close();
+            floatingWindow.Close();
+            mainWindow.Close();
+        }
+    }
+
+    [AvaloniaFact]
     public async System.Threading.Tasks.Task Document_shortcuts_route_after_focus_and_preserve_text_draft_undo()
     {
         using var viewModel = StudioShellTestFactory.Create(
@@ -269,34 +455,43 @@ public sealed class StudioShellHeadlessTests
             canRedo: false,
             undoLabel: "Transform Selected",
             redoLabel: null);
-        var canRedo = ProjectSessionSnapshot.Ready(
-            project,
-            new SceneDocumentSnapshot(
-                document.SceneId,
-                document.Path,
-                revision: 3,
-                savedRevision: 1,
-                entities: []),
-            new ContentStateId(1),
-            new ContentStateId(1),
-            canUndo: false,
-            canRedo: true,
-            undoLabel: null,
-            redoLabel: "Transform Selected");
         projectSession.Publish(canUndo);
+        ulong nextRevision = 2;
+        ProjectSessionSnapshot HistorySnapshot(bool hasUndo)
+        {
+            nextRevision++;
+            return ProjectSessionSnapshot.Ready(
+                project,
+                new SceneDocumentSnapshot(
+                    document.SceneId,
+                    document.Path,
+                    nextRevision,
+                    savedRevision: 1,
+                    entities: []),
+                hasUndo ? new ContentStateId(2) : new ContentStateId(1),
+                new ContentStateId(1),
+                canUndo: hasUndo,
+                canRedo: !hasUndo,
+                undoLabel: hasUndo ? "Transform Selected" : null,
+                redoLabel: hasUndo ? null : "Transform Selected");
+        }
         var undoCount = 0;
         var redoCount = 0;
         projectSession.UndoHandler = _ =>
         {
             undoCount++;
             return System.Threading.Tasks.ValueTask.FromResult(
-                ProjectSessionOperationResult.Success(canRedo, "Undid Transform Selected."));
+                ProjectSessionOperationResult.Success(
+                    HistorySnapshot(hasUndo: false),
+                    "Undid Transform Selected."));
         };
         projectSession.RedoHandler = _ =>
         {
             redoCount++;
             return System.Threading.Tasks.ValueTask.FromResult(
-                ProjectSessionOperationResult.Success(canUndo, "Redid Transform Selected."));
+                ProjectSessionOperationResult.Success(
+                    HistorySnapshot(hasUndo: true),
+                    "Redid Transform Selected."));
         };
 
         try
@@ -313,6 +508,9 @@ public sealed class StudioShellHeadlessTests
             Assert.False(redoButton.Command!.CanExecute(redoButton.CommandParameter));
             Assert.Equal("Undo Transform Selected", undoButton.Content);
             Assert.Equal("Redo", redoButton.Content);
+            Assert.Equal(
+                "Undo Transform Selected",
+                FindMenuItem(window, "Edit", "studio.edit.undo-scene").Header);
 
             var textBox = new TextBox
             {
@@ -348,6 +546,9 @@ public sealed class StudioShellHeadlessTests
             Assert.True(redoButton.Command!.CanExecute(redoButton.CommandParameter));
             Assert.Equal("Undo", undoButton.Content);
             Assert.Equal("Redo Transform Selected", redoButton.Content);
+            Assert.Equal(
+                "Redo Transform Selected",
+                FindMenuItem(window, "Edit", "studio.edit.redo-scene").Header);
 
             Press(window, Key.Y, RawInputModifiers.Control);
             await WaitForOperationAsync(viewModel);
@@ -392,6 +593,7 @@ public sealed class StudioShellHeadlessTests
     {
         using var timeout = new System.Threading.CancellationTokenSource(
             System.TimeSpan.FromSeconds(2));
+        await System.Threading.Tasks.Task.Yield();
         do
         {
             Dispatcher.UIThread.RunJobs();
@@ -399,6 +601,20 @@ public sealed class StudioShellHeadlessTests
         }
         while (viewModel.IsProjectOperationRunning);
         Dispatcher.UIThread.RunJobs();
+    }
+
+    private static MenuItem FindMenuItem(
+        MainWindow window,
+        string topLevelHeader,
+        string actionId)
+    {
+        var menu = Assert.IsType<Menu>(window.FindControl<Menu>("StudioMainMenu"));
+        var topLevel = menu.Items.OfType<MenuItem>().Single(item =>
+            string.Equals(item.Header?.ToString(), topLevelHeader,
+                System.StringComparison.Ordinal));
+        return topLevel.Items.OfType<MenuItem>().Single(item =>
+            string.Equals(item.Tag?.ToString(), actionId,
+                System.StringComparison.Ordinal));
     }
 
     private static void Press(

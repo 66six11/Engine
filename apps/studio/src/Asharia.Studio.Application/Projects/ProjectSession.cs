@@ -18,6 +18,7 @@ public sealed class ProjectSession : IProjectSession
     private ISceneDocumentConnection? activeDocument_;
     private ulong nextContentStateValue_;
     private int disposeStarted_;
+    private bool exitPrepared_;
 
     public ProjectSession(
         IProjectDescriptorGateway projectGateway,
@@ -45,10 +46,12 @@ public sealed class ProjectSession : IProjectSession
     public ValueTask<ProjectSessionOperationResult> CreateProjectAsync(
         string parentDirectory,
         string projectName,
+        ProjectDocumentTransitionExpectation expectation,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(parentDirectory);
         ArgumentException.ThrowIfNullOrWhiteSpace(projectName);
+        ArgumentNullException.ThrowIfNull(expectation);
         return OpenProjectCoreAsync(
             token => projectGateway_.CreateMinimalProjectAsync(
                 parentDirectory,
@@ -56,23 +59,29 @@ public sealed class ProjectSession : IProjectSession
                 Guid.NewGuid(),
                 token),
             descriptor => $"Created project '{descriptor.ProjectName}' and opened its default scene.",
+            expectation,
             cancellationToken);
     }
 
     public ValueTask<ProjectSessionOperationResult> OpenProjectAsync(
         string projectPath,
+        ProjectDocumentTransitionExpectation expectation,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(projectPath);
+        ArgumentNullException.ThrowIfNull(expectation);
         return OpenProjectCoreAsync(
             token => projectGateway_.OpenProjectAsync(projectPath, token),
             descriptor => $"Opened project '{descriptor.ProjectName}' and its default scene.",
+            expectation,
             cancellationToken);
     }
 
     public async ValueTask<ProjectSessionOperationResult> CloseProjectAsync(
+        ProjectDocumentTransitionExpectation expectation,
         CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(expectation);
         ThrowIfDisposed();
         using var linkedCancellation = CreateLinkedCancellation(cancellationToken);
         await operationGate_.WaitAsync(linkedCancellation.Token).ConfigureAwait(false);
@@ -80,6 +89,11 @@ public sealed class ProjectSession : IProjectSession
         {
             ThrowIfDisposed();
             linkedCancellation.Token.ThrowIfCancellationRequested();
+            var transitionFailure = ValidateDocumentTransition(expectation);
+            if (transitionFailure is not null)
+            {
+                return transitionFailure;
+            }
             var document = activeDocument_;
             if (document is null)
             {
@@ -102,6 +116,35 @@ public sealed class ProjectSession : IProjectSession
                 Current,
                 ProjectSessionFailureKind.InternalError,
                 DiagnosticMessage(exception, "The active scene document could not be closed."));
+        }
+        finally
+        {
+            operationGate_.Release();
+        }
+    }
+
+    public async ValueTask<ProjectSessionOperationResult> PrepareExitAsync(
+        ProjectDocumentTransitionExpectation expectation,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(expectation);
+        ThrowIfDisposed();
+        using var linkedCancellation = CreateLinkedCancellation(cancellationToken);
+        await operationGate_.WaitAsync(linkedCancellation.Token).ConfigureAwait(false);
+        try
+        {
+            ThrowIfDisposed();
+            linkedCancellation.Token.ThrowIfCancellationRequested();
+            var transitionFailure = ValidateDocumentTransition(expectation);
+            if (transitionFailure is not null)
+            {
+                return transitionFailure;
+            }
+
+            exitPrepared_ = true;
+            return ProjectSessionOperationResult.Success(
+                Current,
+                "Prepared the active project session for Studio shutdown.");
         }
         finally
         {
@@ -249,6 +292,7 @@ public sealed class ProjectSession : IProjectSession
     private async ValueTask<ProjectSessionOperationResult> OpenProjectCoreAsync(
         Func<CancellationToken, ValueTask<ProjectDescriptorOperationResult>> projectOperation,
         Func<ProjectDescriptorSnapshot, string> successMessage,
+        ProjectDocumentTransitionExpectation expectation,
         CancellationToken cancellationToken)
     {
         ThrowIfDisposed();
@@ -257,6 +301,11 @@ public sealed class ProjectSession : IProjectSession
         try
         {
             ThrowIfDisposed();
+            var transitionFailure = ValidateDocumentTransition(expectation);
+            if (transitionFailure is not null)
+            {
+                return transitionFailure;
+            }
             ProjectDescriptorOperationResult projectResult;
             try
             {
@@ -385,6 +434,10 @@ public sealed class ProjectSession : IProjectSession
         {
             ThrowIfDisposed();
             linkedCancellation.Token.ThrowIfCancellationRequested();
+            if (exitPrepared_)
+            {
+                return ExitPreparedFailure(originatingEditId);
+            }
             var before = Current;
             var document = activeDocument_;
             if (document is null || before.Project is null || before.Document is null)
@@ -507,6 +560,10 @@ public sealed class ProjectSession : IProjectSession
         {
             ThrowIfDisposed();
             linkedCancellation.Token.ThrowIfCancellationRequested();
+            if (exitPrepared_)
+            {
+                return ExitPreparedFailure(context.EditId);
+            }
             var before = Current;
             var document = activeDocument_;
             if (document is null || before.Project is null || before.Document is null)
@@ -618,6 +675,10 @@ public sealed class ProjectSession : IProjectSession
         {
             ThrowIfDisposed();
             linkedCancellation.Token.ThrowIfCancellationRequested();
+            if (exitPrepared_)
+            {
+                return ExitPreparedFailure();
+            }
             var before = Current;
             var document = activeDocument_;
             if (document is null || before.Project is null || before.Document is null)
@@ -768,6 +829,39 @@ public sealed class ProjectSession : IProjectSession
             failure.Message,
             editId);
     }
+
+    private ProjectSessionOperationResult? ValidateDocumentTransition(
+        ProjectDocumentTransitionExpectation expectation)
+    {
+        var current = Current;
+        if (exitPrepared_)
+        {
+            return ExitPreparedFailure();
+        }
+        if (!expectation.Matches(current))
+        {
+            return ProjectSessionOperationResult.Failed(
+                current,
+                ProjectSessionFailureKind.StaleDocumentTransition,
+                "The active document changed before the requested transition could commit.");
+        }
+        if (current.IsDirty && !expectation.AllowsUnsavedDiscard)
+        {
+            return ProjectSessionOperationResult.Failed(
+                current,
+                ProjectSessionFailureKind.StaleDocumentTransition,
+                "The requested document transition did not authorize discarding unsaved content.");
+        }
+        return null;
+    }
+
+    private ProjectSessionOperationResult ExitPreparedFailure(
+        ProjectEditId? originatingEditId = null) =>
+        ProjectSessionOperationResult.Failed(
+            Current,
+            ProjectSessionFailureKind.Busy,
+            "Studio shutdown has already committed; project mutations are no longer accepted.",
+            originatingEditId);
 
     private async ValueTask<ProjectSessionOperationResult> FinishUncertainTransformResultAsync(
         ISceneDocumentConnection document,

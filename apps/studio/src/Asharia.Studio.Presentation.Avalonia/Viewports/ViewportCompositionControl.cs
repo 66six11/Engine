@@ -6,8 +6,10 @@ using System.Linq;
 using System.Runtime.ExceptionServices;
 using System.Threading;
 using System.Threading.Tasks;
+using Asharia.Studio.Application.Diagnostics;
 using Asharia.Studio.Application.Viewports;
 using Asharia.Studio.EngineBridge.Viewports;
+using Asharia.Studio.Presentation.Avalonia.Diagnostics;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Platform;
@@ -378,6 +380,7 @@ public sealed class ViewportCompositionControl : Control
     private readonly List<Visual> visibilitySources_ = new();
     private readonly ViewportPresentationEndpointId endpointId_ = new(
         $"viewport-{Guid.NewGuid():N}");
+    private ViewportPresentationStateDiagnosticTracker? stateDiagnostics_;
     private CompositionSurfaceVisual? compositionVisual_;
     private CompositionDrawingSurface? surface_;
     private ICompositionGpuInterop? interop_;
@@ -3268,6 +3271,11 @@ public sealed class ViewportCompositionControl : Control
         State = state;
         StatusMessage = message;
         IsDegraded = false;
+        StateDiagnostics.ObserveStatus(
+            state,
+            CurrentSessionId,
+            generation_,
+            RevisionToken);
     }
 
     private void SetDegraded(ViewportPresentationState state, string message)
@@ -3275,7 +3283,20 @@ public sealed class ViewportCompositionControl : Control
         State = state;
         StatusMessage = message;
         IsDegraded = true;
+        StateDiagnostics.ObserveDegraded(
+            state,
+            CurrentSessionId,
+            generation_,
+            RevisionToken);
     }
+
+    private ViewportPresentationStateDiagnosticTracker StateDiagnostics =>
+        stateDiagnostics_ ??= new ViewportPresentationStateDiagnosticTracker(
+            StudioAvaloniaDiagnosticHubResolver.RequireCurrent(),
+            endpointId_);
+
+    private ViewportSessionId CurrentSessionId =>
+        Session?.Current.SessionId ?? default;
 
     private static ViewportDeviceCompatibility CreateCompatibility(ICompositionGpuInterop interop)
     {
@@ -3300,21 +3321,21 @@ public sealed class ViewportCompositionControl : Control
 
     private static PlatformGraphicsExternalImageProperties CreateImageProperties(
         ViewportFrameLease lease) => new()
-    {
-        Width = checked((int)lease.AllocationExtent.Width),
-        Height = checked((int)lease.AllocationExtent.Height),
-        Format = lease.Format switch
         {
-            ViewportFrameFormat.Rgba8Unorm =>
-                PlatformGraphicsExternalImageFormat.R8G8B8A8UNorm,
-            ViewportFrameFormat.Bgra8Unorm =>
-                PlatformGraphicsExternalImageFormat.B8G8R8A8UNorm,
-            _ => throw new ArgumentOutOfRangeException(nameof(lease)),
-        },
-        MemoryOffset = 0,
-        MemorySize = lease.MemorySizeBytes,
-        TopLeftOrigin = true,
-    };
+            Width = checked((int)lease.AllocationExtent.Width),
+            Height = checked((int)lease.AllocationExtent.Height),
+            Format = lease.Format switch
+            {
+                ViewportFrameFormat.Rgba8Unorm =>
+                    PlatformGraphicsExternalImageFormat.R8G8B8A8UNorm,
+                ViewportFrameFormat.Bgra8Unorm =>
+                    PlatformGraphicsExternalImageFormat.B8G8R8A8UNorm,
+                _ => throw new ArgumentOutOfRangeException(nameof(lease)),
+            },
+            MemoryOffset = 0,
+            MemorySize = lease.MemorySizeBytes,
+            TopLeftOrigin = true,
+        };
 
     private static IEnumerable<StreamPresentationState> DistinctStreams(
         StreamPresentationState? first,
