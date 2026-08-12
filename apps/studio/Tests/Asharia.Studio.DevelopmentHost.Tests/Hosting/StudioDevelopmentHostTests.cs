@@ -360,6 +360,18 @@ public sealed class StudioDevelopmentHostTests
 
         public long SubscriberFailureCount => inner_.SubscriberFailureCount;
 
+        public StudioDiagnosticBufferState DiagnosticBufferState =>
+            inner_.DiagnosticBufferState;
+
+        public StudioDiagnosticBufferState LogBufferState =>
+            inner_.LogBufferState;
+
+        public long DiagnosticSubscriberFailureCount =>
+            inner_.DiagnosticSubscriberFailureCount;
+
+        public long LogSubscriberFailureCount =>
+            inner_.LogSubscriberFailureCount;
+
         public StudioDiagnosticRecord PublishDiagnostic(StudioDiagnosticWrite write) =>
             inner_.PublishDiagnostic(write);
 
@@ -388,8 +400,14 @@ public sealed class StudioDevelopmentHostTests
         public StudioDiagnosticRecord? GetLatestDiagnostic() =>
             inner_.GetLatestDiagnostic();
 
-        public IDisposable Subscribe(Action invalidated) =>
-            inner_.Subscribe(invalidated);
+        public StudioActiveProblemSnapshot ReadActiveProblems() =>
+            inner_.ReadActiveProblems();
+
+        public IDisposable SubscribeDiagnostics(Action invalidated) =>
+            inner_.SubscribeDiagnostics(invalidated);
+
+        public IDisposable SubscribeLogs(Action invalidated) =>
+            inner_.SubscribeLogs(invalidated);
 
         public void Dispose()
         {
@@ -408,6 +426,14 @@ public sealed class StudioDevelopmentHostTests
         public int LogCapacity => 2;
 
         public long SubscriberFailureCount => 0;
+
+        public StudioDiagnosticBufferState DiagnosticBufferState => default;
+
+        public StudioDiagnosticBufferState LogBufferState => default;
+
+        public long DiagnosticSubscriberFailureCount => 0;
+
+        public long LogSubscriberFailureCount => 0;
 
         public StudioDiagnosticRecord PublishDiagnostic(StudioDiagnosticWrite write) =>
             throw new NotSupportedException();
@@ -428,7 +454,13 @@ public sealed class StudioDevelopmentHostTests
 
         public StudioDiagnosticRecord? GetLatestDiagnostic() => null;
 
-        public IDisposable Subscribe(Action invalidated) =>
+        public StudioActiveProblemSnapshot ReadActiveProblems() =>
+            throw new InvalidOperationException("private-provider-text");
+
+        public IDisposable SubscribeDiagnostics(Action invalidated) =>
+            throw new NotSupportedException();
+
+        public IDisposable SubscribeLogs(Action invalidated) =>
             throw new NotSupportedException();
     }
 

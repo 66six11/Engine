@@ -10,6 +10,12 @@ using Editor.Shell.ViewModels;
 
 namespace Editor.Shell.Diagnostics;
 
+internal enum StudioProblemsViewMode
+{
+    Active,
+    History,
+}
+
 internal sealed class StudioDiagnosticsCommand(Action execute) : ICommand
 {
     public event EventHandler? CanExecuteChanged
@@ -31,13 +37,14 @@ internal sealed class StudioConsoleProjectionViewModel : ViewModelBase
         Enum.GetValues<StudioLogLevel>();
 
     private readonly Action rebuild_;
+    private readonly Action requestSearchRebuild_;
     private IReadOnlyList<StudioConsoleRowViewModel> rows_ = [];
     private StudioConsoleRowViewModel? selectedRow_;
     private string searchText_ = string.Empty;
     private StudioLogLevel minimumLevel_ = StudioLogLevel.Verbose;
     private string sourceFilter_ = AllSources;
     private IReadOnlyList<string> sourceOptions_ = [AllSources];
-    private bool collapseRepeated_ = true;
+    private bool collapseRepeated_;
     private bool followTail_ = true;
     private bool isPaused_;
     private int unseenCount_;
@@ -48,9 +55,11 @@ internal sealed class StudioConsoleProjectionViewModel : ViewModelBase
     public StudioConsoleProjectionViewModel(
         Action clear,
         Action togglePause,
-        Action rebuild)
+        Action rebuild,
+        Action? requestSearchRebuild = null)
     {
         rebuild_ = rebuild;
+        requestSearchRebuild_ = requestSearchRebuild ?? rebuild;
         ClearCommand = new StudioDiagnosticsCommand(clear);
         PauseCommand = new StudioDiagnosticsCommand(togglePause);
     }
@@ -82,7 +91,7 @@ internal sealed class StudioConsoleProjectionViewModel : ViewModelBase
         {
             if (SetProperty(ref searchText_, value ?? string.Empty))
             {
-                rebuild_();
+                requestSearchRebuild_();
             }
         }
     }
@@ -256,7 +265,6 @@ internal sealed class StudioConsoleProjectionViewModel : ViewModelBase
         }
 
         var selectedSequence = SelectedRow?.SequenceId;
-        var selectedCollapseKey = SelectedRow?.CollapseKey;
         var filtered = records.Where(record =>
             record.SequenceId > viewFloor
             && record.Level >= MinimumLevel
@@ -275,10 +283,9 @@ internal sealed class StudioConsoleProjectionViewModel : ViewModelBase
         SelectedRow = selectedSequence is null
             ? null
             : Rows.FirstOrDefault(row => row.SequenceId == selectedSequence)
-                ?? Rows.FirstOrDefault(row => string.Equals(
-                    row.CollapseKey,
-                    selectedCollapseKey,
-                    StringComparison.Ordinal));
+                ?? Rows.FirstOrDefault(row =>
+                    row.SequenceId <= selectedSequence
+                    && row.LastSequenceId >= selectedSequence);
         OnPropertyChanged(nameof(HasTruncatedRecords));
         OnPropertyChanged(nameof(HealthSummary));
         OnPropertyChanged(nameof(HasHealthNotice));
@@ -288,12 +295,15 @@ internal sealed class StudioConsoleProjectionViewModel : ViewModelBase
         IEnumerable<StudioLogRecord> records)
     {
         var groups = new List<ConsoleCollapseGroup>();
-        var indices = new Dictionary<string, int>(StringComparer.Ordinal);
         foreach (var record in records)
         {
-            var key = StudioDiagnosticsProjectionText.CreateLogCollapseKey(record);
-            if (indices.TryGetValue(key, out var index))
+            if (groups.Count > 0
+                && groups[^1].Last.SequenceId + 1 == record.SequenceId
+                && StudioDiagnosticsProjectionText.HaveSameLogIdentity(
+                    groups[^1].First,
+                    record))
             {
+                var index = groups.Count - 1;
                 var group = groups[index];
                 groups[index] = group with
                 {
@@ -304,7 +314,6 @@ internal sealed class StudioConsoleProjectionViewModel : ViewModelBase
                 continue;
             }
 
-            indices.Add(key, groups.Count);
             groups.Add(new ConsoleCollapseGroup(record, record, 1, record.WasTruncated));
         }
 
@@ -330,6 +339,7 @@ internal sealed class StudioProblemsProjectionViewModel : ViewModelBase
         Enum.GetValues<StudioDiagnosticSeverity>();
 
     private readonly Action rebuild_;
+    private readonly Action requestSearchRebuild_;
     private IReadOnlyList<StudioProblemRowViewModel> rows_ = [];
     private StudioProblemRowViewModel? selectedRow_;
     private string searchText_ = string.Empty;
@@ -337,13 +347,20 @@ internal sealed class StudioProblemsProjectionViewModel : ViewModelBase
     private string sourceFilter_ = AllSources;
     private IReadOnlyList<string> sourceOptions_ = [AllSources];
     private bool collapseRepeated_ = true;
+    private StudioProblemsViewMode viewMode_;
     private long totalDropped_;
     private bool cursorExpired_;
     private bool readTruncated_;
+    private long activeTotalDropped_;
+    private bool activeIncomplete_;
 
-    public StudioProblemsProjectionViewModel(Action clear, Action rebuild)
+    public StudioProblemsProjectionViewModel(
+        Action clear,
+        Action rebuild,
+        Action? requestSearchRebuild = null)
     {
         rebuild_ = rebuild;
+        requestSearchRebuild_ = requestSearchRebuild ?? rebuild;
         ClearCommand = new StudioDiagnosticsCommand(clear);
     }
 
@@ -374,7 +391,7 @@ internal sealed class StudioProblemsProjectionViewModel : ViewModelBase
         {
             if (SetProperty(ref searchText_, value ?? string.Empty))
             {
-                rebuild_();
+                requestSearchRebuild_();
             }
         }
     }
@@ -424,13 +441,60 @@ internal sealed class StudioProblemsProjectionViewModel : ViewModelBase
         }
     }
 
+    public StudioProblemsViewMode ViewMode
+    {
+        get => viewMode_;
+        set
+        {
+            if (SetProperty(ref viewMode_, value))
+            {
+                OnPropertyChanged(nameof(IsActiveView));
+                OnPropertyChanged(nameof(IsHistoryView));
+                OnPropertyChanged(nameof(ShowHistoryControls));
+                OnPropertyChanged(nameof(TotalDropped));
+                OnPropertyChanged(nameof(HasHistoryGap));
+                OnPropertyChanged(nameof(IsCatchingUp));
+                OnPropertyChanged(nameof(HasDataLoss));
+                OnPropertyChanged(nameof(HealthSummary));
+                OnPropertyChanged(nameof(HasHealthNotice));
+                rebuild_();
+            }
+        }
+    }
+
+    public bool IsActiveView
+    {
+        get => ViewMode == StudioProblemsViewMode.Active;
+        set
+        {
+            if (value)
+            {
+                ViewMode = StudioProblemsViewMode.Active;
+            }
+        }
+    }
+
+    public bool IsHistoryView
+    {
+        get => ViewMode == StudioProblemsViewMode.History;
+        set
+        {
+            if (value)
+            {
+                ViewMode = StudioProblemsViewMode.History;
+            }
+        }
+    }
+
+    public bool ShowHistoryControls => IsHistoryView;
+
     public ICommand ClearCommand { get; }
 
-    public long TotalDropped => totalDropped_;
+    public long TotalDropped => IsActiveView ? activeTotalDropped_ : totalDropped_;
 
-    public bool HasHistoryGap => cursorExpired_;
+    public bool HasHistoryGap => IsActiveView ? activeIncomplete_ : cursorExpired_;
 
-    public bool IsCatchingUp => readTruncated_;
+    public bool IsCatchingUp => IsHistoryView && readTruncated_;
 
     public bool HasDataLoss => HasHistoryGap;
 
@@ -439,11 +503,35 @@ internal sealed class StudioProblemsProjectionViewModel : ViewModelBase
     public bool HasHealthNotice =>
         HasHistoryGap || TotalDropped > 0 || IsCatchingUp || HasTruncatedRecords;
 
-    public string HealthSummary => StudioDiagnosticsProjectionText.HealthSummary(
-        totalDropped_,
-        cursorExpired_,
-        readTruncated_,
-        HasTruncatedRecords);
+    public string HealthSummary => IsActiveView
+        ? StudioDiagnosticsProjectionText.ActiveProblemsHealthSummary(
+            activeTotalDropped_,
+            activeIncomplete_,
+            HasTruncatedRecords)
+        : StudioDiagnosticsProjectionText.HealthSummary(
+            totalDropped_,
+            cursorExpired_,
+            readTruncated_,
+            HasTruncatedRecords);
+
+    internal void UpdateActiveHubState(long totalDropped, bool isIncomplete)
+    {
+        if (activeTotalDropped_ == totalDropped && activeIncomplete_ == isIncomplete)
+        {
+            return;
+        }
+
+        activeTotalDropped_ = totalDropped;
+        activeIncomplete_ = isIncomplete;
+        if (IsActiveView)
+        {
+            OnPropertyChanged(nameof(TotalDropped));
+            OnPropertyChanged(nameof(HasHistoryGap));
+            OnPropertyChanged(nameof(HasDataLoss));
+            OnPropertyChanged(nameof(HealthSummary));
+            OnPropertyChanged(nameof(HasHealthNotice));
+        }
+    }
 
     internal void ResetHubState()
     {
@@ -505,7 +593,7 @@ internal sealed class StudioProblemsProjectionViewModel : ViewModelBase
                 record.Message,
                 record.Remediation));
 
-        Rows = CollapseRepeated
+        Rows = CollapseRepeated && IsHistoryView
             ? Collapse(filtered)
             : filtered.Select(static record => new StudioProblemRowViewModel(record, 1))
                 .ToArray();
@@ -563,8 +651,10 @@ internal sealed class StudioProblemsProjectionViewModel : ViewModelBase
         bool WasTruncated);
 }
 
-internal sealed record StudioConsoleRowViewModel
+internal sealed class StudioConsoleRowViewModel
 {
+    private readonly Lazy<string> detailsText_;
+
     public StudioConsoleRowViewModel(StudioLogRecord record, int repeatCount)
         : this(record, record, repeatCount)
     {
@@ -586,10 +676,11 @@ internal sealed record StudioConsoleRowViewModel
         RepeatCount = repeatCount;
         WasTruncated = wasTruncated ?? (first.WasTruncated || last.WasTruncated);
         CollapseKey = StudioDiagnosticsProjectionText.CreateLogCollapseKey(first);
-        DetailsText = StudioDiagnosticsProjectionText.FormatLogDetails(
-            first,
-            last,
-            repeatCount);
+        detailsText_ = new Lazy<string>(() =>
+            StudioDiagnosticsProjectionText.FormatLogDetails(
+                first,
+                last,
+                repeatCount));
     }
 
     public long SequenceId { get; }
@@ -614,16 +705,23 @@ internal sealed record StudioConsoleRowViewModel
 
     public string RepeatText => RepeatCount > 1 ? $"x{RepeatCount}" : string.Empty;
 
+    public string AccessibleText =>
+        $"{TimestampText}, {LevelText}, {Source}, {Channel}, {Message}, {RepeatText}";
+
     public bool WasTruncated { get; }
 
-    public string DetailsText { get; }
+    public string DetailsText => detailsText_.Value;
+
+    internal bool IsDetailsMaterialized => detailsText_.IsValueCreated;
 
     internal string CollapseKey { get; }
 
 }
 
-internal sealed record StudioProblemRowViewModel
+internal sealed class StudioProblemRowViewModel
 {
+    private readonly Lazy<string> detailsText_;
+
     public StudioProblemRowViewModel(StudioDiagnosticRecord record, int repeatCount)
         : this(record, record, repeatCount)
     {
@@ -644,13 +742,15 @@ internal sealed record StudioProblemRowViewModel
         Source = first.Source;
         Message = first.Message;
         Remediation = first.Remediation ?? string.Empty;
+        StateText = first.ProblemTransition?.ToString() ?? "Incident";
         RepeatCount = repeatCount;
         WasTruncated = wasTruncated ?? (first.WasTruncated || last.WasTruncated);
         CollapseKey = StudioDiagnosticsProjectionText.CreateProblemCollapseKey(first);
-        DetailsText = StudioDiagnosticsProjectionText.FormatProblemDetails(
-            first,
-            last,
-            repeatCount);
+        detailsText_ = new Lazy<string>(() =>
+            StudioDiagnosticsProjectionText.FormatProblemDetails(
+                first,
+                last,
+                repeatCount));
     }
 
     public long SequenceId { get; }
@@ -675,13 +775,20 @@ internal sealed record StudioProblemRowViewModel
 
     public string Remediation { get; }
 
+    public string StateText { get; }
+
     public int RepeatCount { get; }
 
     public string RepeatText => RepeatCount > 1 ? $"x{RepeatCount}" : string.Empty;
 
+    public string AccessibleText =>
+        $"{TimestampText}, {SeverityText}, {StateText}, {Code}, {Source}, {Message}, {RepeatText}";
+
     public bool WasTruncated { get; }
 
-    public string DetailsText { get; }
+    public string DetailsText => detailsText_.Value;
+
+    internal bool IsDetailsMaterialized => detailsText_.IsValueCreated;
 
     internal string CollapseKey { get; }
 }
@@ -734,6 +841,24 @@ internal static class StudioDiagnosticsProjectionText
         return key.ToString();
     }
 
+    public static bool HaveSameLogIdentity(
+        StudioLogRecord first,
+        StudioLogRecord second) =>
+        first.Level == second.Level
+        && string.Equals(first.Channel, second.Channel, StringComparison.Ordinal)
+        && first.Context == second.Context
+        && first.ManagedThreadId == second.ManagedThreadId
+        && string.Equals(
+            first.MessageTemplate,
+            second.MessageTemplate,
+            StringComparison.Ordinal)
+        && string.Equals(
+            first.RenderedMessage,
+            second.RenderedMessage,
+            StringComparison.Ordinal)
+        && first.WasTruncated == second.WasTruncated
+        && first.Attributes.SequenceEqual(second.Attributes);
+
     public static string CreateProblemCollapseKey(StudioDiagnosticRecord record)
     {
         var key = new StringBuilder();
@@ -746,6 +871,8 @@ internal static class StudioDiagnosticsProjectionText
         AppendCollapsePart(key, record.Message);
         AppendCollapsePart(key, record.Remediation);
         AppendCollapsePart(key, record.Fingerprint);
+        AppendCollapsePart(key, record.ProblemId?.Value);
+        AppendCollapsePart(key, record.ProblemTransition?.ToString());
         AppendCollapsePart(
             key,
             ((int)record.Context.Origin).ToString(CultureInfo.InvariantCulture));
@@ -787,6 +914,27 @@ internal static class StudioDiagnosticsProjectionText
         if (totalDropped > 0)
         {
             parts.Add($"The source ring overwrote {totalDropped} record(s) outside the current retained window.");
+        }
+
+        if (recordTruncated)
+        {
+            parts.Add("One or more records were truncated at ingress.");
+        }
+
+        return string.Join(' ', parts);
+    }
+
+    public static string ActiveProblemsHealthSummary(
+        long rejectedCount,
+        bool isIncomplete,
+        bool recordTruncated)
+    {
+        var parts = new List<string>(2);
+        if (isIncomplete)
+        {
+            parts.Add(rejectedCount > 0
+                ? $"Active problems capacity was exceeded; {rejectedCount} activation(s) could not be retained. The active list is incomplete."
+                : "The active problems list is incomplete.");
         }
 
         if (recordTruncated)

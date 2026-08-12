@@ -16,21 +16,24 @@ internal static class ViewportPresentationStateDiagnosticProjector
         ulong generation,
         ulong revision,
         Guid operationId,
-        Guid correlationId) =>
+        Guid correlationId,
+        StudioProblemId problemId) =>
         Project(
             diagnostics,
             endpointId,
             state,
             sessionId,
             generation,
+            generation,
             revision,
             operationId,
             correlationId,
             StudioDiagnosticSeverity.Error,
-            StudioDiagnosticChannel.Problem,
             "studio.viewport.presentation.failed",
             "Viewport presentation entered a degraded state.",
-            "Inspect the endpoint state and compositor/native compatibility before retrying.");
+            "Inspect the endpoint state and compositor/native compatibility before retrying.",
+            problemId,
+            StudioProblemTransition.Active);
 
     public static StudioDiagnosticWrite ProjectRecovery(
         IStudioDiagnosticHub diagnostics,
@@ -39,36 +42,72 @@ internal static class ViewportPresentationStateDiagnosticProjector
         ulong generation,
         ulong revision,
         Guid operationId,
-        Guid correlationId) =>
+        Guid correlationId,
+        StudioProblemId problemId) =>
         Project(
             diagnostics,
             endpointId,
             ViewportPresentationState.Ready,
             sessionId,
             generation,
+            generation,
             revision,
             operationId,
             correlationId,
             StudioDiagnosticSeverity.Info,
-            StudioDiagnosticChannel.Debug,
             "studio.viewport.presentation.recovered",
             "Viewport presentation recovered and is ready.",
-            "No action is required unless this viewport degrades again.");
+            "No action is required unless this viewport degrades again.",
+            problemId,
+            StudioProblemTransition.Resolved);
+
+    public static StudioDiagnosticWrite ProjectStale(
+        IStudioDiagnosticHub diagnostics,
+        ViewportPresentationEndpointId endpointId,
+        ViewportPresentationState observedState,
+        ViewportSessionId ownerSessionId,
+        ulong ownerGeneration,
+        ulong observedGeneration,
+        ulong observedRevision,
+        Guid operationId,
+        Guid correlationId,
+        StudioProblemId problemId,
+        string closureReason) =>
+        Project(
+            diagnostics,
+            endpointId,
+            observedState,
+            ownerSessionId,
+            ownerGeneration,
+            observedGeneration,
+            observedRevision,
+            operationId,
+            correlationId,
+            StudioDiagnosticSeverity.Info,
+            "studio.viewport.presentation.stale",
+            "Viewport presentation problem no longer applies to the active viewport scope.",
+            "No action is required unless the current viewport scope reports another failure.",
+            problemId,
+            StudioProblemTransition.Stale,
+            closureReason);
 
     private static StudioDiagnosticWrite Project(
         IStudioDiagnosticHub diagnostics,
         ViewportPresentationEndpointId endpointId,
         ViewportPresentationState state,
-        ViewportSessionId sessionId,
-        ulong generation,
+        ViewportSessionId scopeSessionId,
+        ulong scopeGeneration,
+        ulong observedGeneration,
         ulong revision,
         Guid operationId,
         Guid correlationId,
         StudioDiagnosticSeverity severity,
-        StudioDiagnosticChannel channel,
         string code,
         string message,
-        string remediation)
+        string remediation,
+        StudioProblemId problemId,
+        StudioProblemTransition problemTransition,
+        string? closureReason = null)
     {
         ArgumentNullException.ThrowIfNull(diagnostics);
         if (!endpointId.IsValid)
@@ -81,10 +120,10 @@ internal static class ViewportPresentationStateDiagnosticProjector
         {
             throw new ArgumentOutOfRangeException(nameof(state));
         }
-        if (generation > long.MaxValue)
+        if (scopeGeneration > long.MaxValue)
         {
             throw new ArgumentOutOfRangeException(
-                nameof(generation),
+                nameof(scopeGeneration),
                 "Viewport presentation generation must fit the diagnostic scope generation.");
         }
         if (operationId == Guid.Empty)
@@ -97,16 +136,45 @@ internal static class ViewportPresentationStateDiagnosticProjector
                 "Correlation id must not be empty.",
                 nameof(correlationId));
         }
+        if (string.IsNullOrWhiteSpace(problemId.Value))
+        {
+            throw new ArgumentException("Problem id must be valid.", nameof(problemId));
+        }
+        if (!Enum.IsDefined(problemTransition))
+        {
+            throw new ArgumentOutOfRangeException(nameof(problemTransition));
+        }
+        if (closureReason is not null && string.IsNullOrWhiteSpace(closureReason))
+        {
+            throw new ArgumentException(
+                "Closure reason must be valid when supplied.",
+                nameof(closureReason));
+        }
 
-        var scope = sessionId.IsValid
+        var scope = scopeSessionId.IsValid
             ? new StudioDiagnosticScope(
                 "viewport-session",
-                sessionId.Value.ToString("D"),
-                checked((long)generation))
+                scopeSessionId.Value.ToString("D"),
+                checked((long)scopeGeneration))
             : StudioDiagnosticScope.Process(diagnostics.ProcessIdentity);
+        var attributes = ImmutableArray.Create(
+            new StudioDiagnosticAttribute("endpointId", endpointId.Value),
+            new StudioDiagnosticAttribute(
+                "generation",
+                observedGeneration.ToString(CultureInfo.InvariantCulture)),
+            new StudioDiagnosticAttribute("state", state.ToString()),
+            new StudioDiagnosticAttribute(
+                "revision",
+                revision.ToString(CultureInfo.InvariantCulture)));
+        if (closureReason is not null)
+        {
+            attributes = attributes.Add(
+                new StudioDiagnosticAttribute("closureReason", closureReason));
+        }
+
         return new StudioDiagnosticWrite(
             severity,
-            channel,
+            StudioDiagnosticChannel.Problem,
             code,
             "viewport-presentation",
             new StudioDiagnosticContext(
@@ -118,20 +186,18 @@ internal static class ViewportPresentationStateDiagnosticProjector
                 correlationId),
             message,
             remediation,
-            ImmutableArray.Create(
-                new StudioDiagnosticAttribute("endpointId", endpointId.Value),
-                new StudioDiagnosticAttribute(
-                    "generation",
-                    generation.ToString(CultureInfo.InvariantCulture)),
-                new StudioDiagnosticAttribute("state", state.ToString()),
-                new StudioDiagnosticAttribute(
-                    "revision",
-                    revision.ToString(CultureInfo.InvariantCulture))));
+            attributes,
+            problemId,
+            problemTransition);
     }
 }
 
 internal sealed class ViewportPresentationStateDiagnosticTracker
 {
+    private const string ProblemIdPrefix = "viewport-presentation:";
+    private const string SessionReplacedClosureReason = "session-replaced";
+    private const string StateBoundaryClosureReason = "state-boundary";
+
     private readonly IStudioDiagnosticHub diagnostics_;
     private readonly ViewportPresentationEndpointId endpointId_;
     private Episode? episode_;
@@ -165,13 +231,37 @@ internal sealed class ViewportPresentationStateDiagnosticTracker
                 state,
                 "Only degraded viewport presentation states can begin an episode.");
         }
-        if (episode_ is { } activeEpisode &&
+        var activeEpisode = episode_;
+        if (activeEpisode is not null &&
             IsSameSessionScope(activeEpisode.SessionId, sessionId))
         {
             return;
         }
 
-        var episode = new Episode(Guid.NewGuid(), Guid.NewGuid(), sessionId);
+        if (activeEpisode is not null)
+        {
+            diagnostics_.PublishDiagnostic(
+                ViewportPresentationStateDiagnosticProjector.ProjectStale(
+                    diagnostics_,
+                    endpointId_,
+                    state,
+                    activeEpisode.SessionId,
+                    activeEpisode.Generation,
+                    generation,
+                    revision,
+                    activeEpisode.OperationId,
+                    activeEpisode.CorrelationId,
+                    activeEpisode.ProblemId,
+                    SessionReplacedClosureReason));
+            episode_ = null;
+        }
+
+        var episode = new Episode(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            new StudioProblemId(ProblemIdPrefix + Guid.NewGuid().ToString("N")),
+            sessionId,
+            generation);
         diagnostics_.PublishDiagnostic(
             ViewportPresentationStateDiagnosticProjector.ProjectFailure(
                 diagnostics_,
@@ -181,7 +271,8 @@ internal sealed class ViewportPresentationStateDiagnosticTracker
                 generation,
                 revision,
                 episode.OperationId,
-                episode.CorrelationId));
+                episode.CorrelationId,
+                episode.ProblemId));
         episode_ = episode;
     }
 
@@ -199,11 +290,12 @@ internal sealed class ViewportPresentationStateDiagnosticTracker
                 "A normal viewport presentation status cannot be degraded.");
         }
 
-        if (episode_ is null)
+        var episode = episode_;
+        if (episode is null)
         {
             return;
         }
-        if (!IsSameSessionScope(episode_.SessionId, sessionId))
+        if (!IsSameSessionScope(episode.SessionId, sessionId))
         {
             // A late state edge from a replaced session cannot close or recover the
             // active session's failure episode.
@@ -215,7 +307,6 @@ internal sealed class ViewportPresentationStateDiagnosticTracker
         }
         if (state == ViewportPresentationState.Ready)
         {
-            var episode = episode_;
             diagnostics_.PublishDiagnostic(
                 ViewportPresentationStateDiagnosticProjector.ProjectRecovery(
                     diagnostics_,
@@ -224,7 +315,24 @@ internal sealed class ViewportPresentationStateDiagnosticTracker
                     generation,
                     revision,
                     episode.OperationId,
-                    episode.CorrelationId));
+                    episode.CorrelationId,
+                    episode.ProblemId));
+        }
+        else
+        {
+            diagnostics_.PublishDiagnostic(
+                ViewportPresentationStateDiagnosticProjector.ProjectStale(
+                    diagnostics_,
+                    endpointId_,
+                    state,
+                    episode.SessionId,
+                    episode.Generation,
+                    generation,
+                    revision,
+                    episode.OperationId,
+                    episode.CorrelationId,
+                    episode.ProblemId,
+                    StateBoundaryClosureReason));
         }
 
         episode_ = null;
@@ -244,5 +352,7 @@ internal sealed class ViewportPresentationStateDiagnosticTracker
     private sealed record Episode(
         Guid OperationId,
         Guid CorrelationId,
-        ViewportSessionId SessionId);
+        StudioProblemId ProblemId,
+        ViewportSessionId SessionId,
+        ulong Generation);
 }

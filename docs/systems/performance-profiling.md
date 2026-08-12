@@ -14,6 +14,20 @@
 性能工作不是第二套 RenderGraph 路线图。当前实现事实以 `docs/architecture/flow.md` 为准，
 功能顺序以 `docs/planning/next-development-plan.md` 和 GitHub Project 为准。
 
+Studio当前已有Diagnostics面板，但它不是Profiler。Console保留稀疏、可读的chronological log热窗口；Problems保存可行动
+diagnostic的Active/History投影。完整Unity式Profiler需要CPU/GPU timeline、memory/counters、target选择、capture控制和artifact
+lifetime，仍是独立产品能力。
+
+当前尚无production gameplay Runtime。Runtime建立后采用以下默认策略：
+
+- structured log route在开发构建可用，但默认只发milestone、状态迁移、失败/重试和阈值越界摘要；
+- frame、pass、draw、job、allocation或resource逐项事件不进入默认Console；
+- 低成本Profiler marker/descriptor可以编译并注册，但完整recording默认关闭；
+- 用户显式Capture时必须指定target/category，并受duration、event count与payload byte预算约束；完成后由Profiler owner产出artifact；
+- Console只记录Capture开始、完成、失败及`CaptureId`，两者共享clock/identity/correlation但不共享ring或retention。
+
+这样正常运行仍保留足够的溯源里程碑，而长期每帧采样不会挤掉Console证据或让Studio UI/GC承担Profiler成本。
+
 稳定依赖顺序：
 
 1. compiler/renderer/RHI 先提供结构化 diagnostics 和稳定 identity。
@@ -213,7 +227,7 @@ P4 接入 caches 时，同步增加 counters，避免优化无法量化：
 
 ## 编辑器性能面板技术细节
 
-编辑器尚未纳入当前开发计划，因此这里只定义未来接入条件。
+Studio Diagnostics已进入当前实现，但性能面板尚未进入当前开发计划，因此这里只定义未来接入条件。
 
 接入前置条件：
 
@@ -227,7 +241,8 @@ P4 接入 caches 时，同步增加 counters，避免优化无法量化：
 - 默认只分析 Game/Play target。
 - Scene/Preview 只能作为额外 target 选择。
 - EditorHost CPU、dock/layout、asset import、inspector 等编辑器自身性能不放入 Game Performance panel。
-- 未来如需要分析编辑器整体性能，单独做 Editor Diagnostics 面板。
+- 分析编辑器自身CPU/GPU性能时，在未来Profiler中选择`EditorHost` target；当前Diagnostics面板只显示稀疏日志和问题，
+  不能承载高频profile samples。
 
 第一版面板只消费已有数据：
 

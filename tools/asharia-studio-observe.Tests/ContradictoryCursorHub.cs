@@ -17,6 +17,16 @@ internal sealed class ContradictoryCursorHub : IStudioDiagnosticHub
 
     public long SubscriberFailureCount => inner_.SubscriberFailureCount;
 
+    public StudioDiagnosticBufferState DiagnosticBufferState =>
+        inner_.DiagnosticBufferState;
+
+    public StudioDiagnosticBufferState LogBufferState => inner_.LogBufferState;
+
+    public long DiagnosticSubscriberFailureCount =>
+        inner_.DiagnosticSubscriberFailureCount;
+
+    public long LogSubscriberFailureCount => inner_.LogSubscriberFailureCount;
+
     public StudioDiagnosticRecord PublishDiagnostic(StudioDiagnosticWrite write) =>
         inner_.PublishDiagnostic(write);
 
@@ -37,8 +47,14 @@ internal sealed class ContradictoryCursorHub : IStudioDiagnosticHub
     public StudioDiagnosticRecord? GetLatestDiagnostic() =>
         inner_.GetLatestDiagnostic();
 
-    public IDisposable Subscribe(Action invalidated) =>
-        inner_.Subscribe(invalidated);
+    public StudioActiveProblemSnapshot ReadActiveProblems() =>
+        inner_.ReadActiveProblems();
+
+    public IDisposable SubscribeDiagnostics(Action invalidated) =>
+        inner_.SubscribeDiagnostics(invalidated);
+
+    public IDisposable SubscribeLogs(Action invalidated) =>
+        inner_.SubscribeLogs(invalidated);
 
     private static StudioCursorWindow<T> Contradictory<T>()
         where T : class =>

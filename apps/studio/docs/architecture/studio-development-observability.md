@@ -1,6 +1,6 @@
 # Studio 开发态可观测性与诊断访问架构
 
-状态：Current R0.5 Baseline + R2/R4 structured ingress / UI projection（protocol、shared-ring投影、Debug-only Host、current-user产品endpoint/discovery、typed CLI、壳 UI Probe及标准stdio只读 MCP adapter 的 Slice 1→8 与实现纠错格已关闭；#378把真实Project/Shell/viewport failure接入同一hub；#381建立同一hub上的Diagnostics面板）
+状态：Current R0.5 Baseline + R2/R4 structured ingress / UI projection（protocol、shared-ring投影、Debug-only Host、current-user产品endpoint/discovery、typed CLI、壳 UI Probe及标准stdio只读 MCP adapter 的 Slice 1→8 与实现纠错格已关闭；#378把真实Project/Shell/viewport failure接入同一hub；#381建立同一hub上的Diagnostics面板；#383补齐双预算、stream-specific invalidation与active problem lifecycle）
 
 更新日期：2026-08-13
 
@@ -34,7 +34,7 @@ Studio 需要一个 **Asharia 自有、开发态、本机、默认只读** 的�
 | 领域 | Current（2026-08-13） | Planned |
 | --- | --- | --- |
 | UI diagnostics | [`App.axaml.cs`](../../App.axaml.cs) 创建process hub并安装自有[`StudioAvaloniaLogSink`](../../Shell/Diagnostics/StudioAvaloniaLogSink.cs)；adapter使用`Framework`/`avalonia`，最多单次投影16个BCL标量，未知对象只保留bounded type marker；`Program.cs`不调用`LogToTrace()` | 不依赖Plus，不保留framework object；新增值类型只有出现真实日志需求并证明producer-safe后才加入精确allowlist |
-| Studio diagnostics | [`StudioDiagnosticHub`](../../src/Asharia.Studio.Application/Diagnostics/StudioDiagnosticHub.cs) 拥有2048 diagnostic / 8192 log固定ring、sequence/cursor/drop、64个subscription slots；Avalonia任意值已安全投影；#378让Project/Shell typed operation failure/exception、viewport required-edge Deferred/Rejected及presentation degraded/recovered episode进入同一hub；#381的一个Diagnostics Dock面板以一次subscription和可重建的bounded projection呈现Console/Problems两个tab | 后续producer仍只接入同一hub；新增过滤、折叠与详情只改变projection，不建立第二truth |
+| Studio diagnostics | [`StudioDiagnosticHub`](../../src/Asharia.Studio.Application/Diagnostics/StudioDiagnosticHub.cs) 拥有diagnostic `2048 + 8 MiB`、log `8192 + 32 MiB`双预算ring，以及`1024 + 4 MiB`active problem index；sequence/cursor/drop和active incomplete均显式。#378接入真实Project/Shell/viewport producer，#381建立一个Diagnostics Dock，#383将Console/Problems硬切为同一hub上的stream-specific invalidation和active/history投影 | 后续producer仍只接入同一hub；过滤、折叠与详情只改变projection。persistent log、Profiler capture与problem report各自拥有独立生命周期，不建立第二业务truth |
 | Operation provenance | [`StudioOperationDiagnosticWriter`](../../src/Asharia.Studio.Application/Diagnostics/StudioOperationDiagnosticWriter.cs)保留stable code/category/component、scope、operation/correlation/parent与ProjectEditId attribute；viewport projector保留session/epoch/transaction/generation/participant/outcome/failure | 扩充producer只能在真实operation boundary逐项接入；普通成功状态不写Problem，UI transient message不替代hub record |
 | Native log/error | [`error.hpp`](../../../../engine/core/include/asharia/core/error.hpp) 只有 domain/code/message；[`log.cpp`](../../../../engine/core/src/log.cpp) 在 mutex 下写 stdout/stderr | 保留 bootstrap fallback；增加 structured router 和 typed sinks，不解析文本建立状态 |
 | Native/renderer facts | viewport 已能复制 stats；[`render_view.hpp`](../../../../packages/renderer-basic/include/asharia/renderer_basic_vulkan/render_view.hpp) 有 RenderGraph snapshot/execution event | 复用 value-copy 和 renderer-owned event ID；不暴露 singleton、pointer、`Vk*` handle |
@@ -228,10 +228,10 @@ bundle、crash collector、完整Task supervisor、命令输入/CVar，或在缺
 | Current evidence | 2.11关闭后的独立验证又确定性复现两个同一合同缺口：容量2的ring在seq1已commit而seq2/3只reserve时，会把reservation误当published watermark，导致seq1在尚未覆盖前被报告expired且`drop=0`；客户端请求future cursor 100而当前只到1时，server与typed client均允许`NextCursor`回退到1。修正不改变wire schema或能力集合，只恢复bounded truth与cursor连续性。 |
 | I0 → I6 gate | 此修正格当时由App唯一hub owner服务Host与只读adapter，Console/Problems尚是未来consumer；#381后来直接复用该owner。I1既有`CursorWindow`合同不变；I2用真实固定ring交错和typed client负例冻结失败；I3只修正Application ring的完成窗口；I4让typed client拒绝server回退；I5保持容量、页长和单次扫描上限；I6 MCP继续复用同一client且不增加tool。没有提前接入R1 capability。 |
 | Engine/tool precedent adopted | Unreal官方[`FOutputDeviceRedirector::Serialize`](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/Core/Misc/FOutputDeviceRedirector/Serialize)保留单一输出redirector边界；Unity官方[`Application.logMessageReceivedThreaded`](https://docs.unity3d.com/ScriptReference/Application-logMessageReceivedThreaded.html)明确callback可从不同thread并行进入；Godot官方[`Logger`/`CompositeLogger` source](https://github.com/godotengine/godot/blob/master/core/io/logger.h)保持统一logger接口并让具体sink负责有界文件轮换。Asharia采用任意线程进入同一process truth、固定retention和只读adapter复用，不复制第二日志源。 |
-| Rejected / Asharia rationale | 拒绝以全局lock串行化producer、以unbounded pending map/queue补reservation洞、把reserved sequence当可见publication、让future cursor向后移动，或由CLI/MCP自行修补server窗口。Asharia用`highestCompletedSequence`定义最近固定容量的逻辑窗口；publisher只做固定slot CAS与完成水位CAS，精确drop计算放在有界reader扫描。高sequence完成可淘汰旧逻辑位置，但必须留下drop/expired证据。 |
-| Owner / lifetime / thread / data | `StudioDiagnosticHub`仍唯一拥有两个独立编号ring。每个publish先取ring-local sequence，再以record或failure tombstone提交固定slot，最后单调推进completed watermark并发布版本；reservation本身不移动可读窗口。reader快照completed与reserved，最多扫描capacity，在pending洞前停止并保持cursor；`NextCursor >= requestedAfterSequence`始终成立。latest只观察completed窗口。typed client再次校验item严格晚于请求cursor及response cursor不回退。 |
+| Rejected / Asharia rationale | 当时拒绝为只按count固定slot的ring引入全局lock、unbounded pending map/queue、把reserved sequence当可见publication、让future cursor向后移动，或由CLI/MCP自行修补server窗口。#383增加payload budget后，当前实现改为每stream一个短临界区；本格的lock-free细节只保留为历史设计证据，owner/cursor/failure合同不变。 |
+| Owner / lifetime / thread / data | `StudioDiagnosticHub`仍唯一拥有两个独立编号ring。当前每个publish先在临界区外规范化并创建record，再在对应ring的短临界区提交record或failure tombstone、推进completed watermark并执行count/byte淘汰；reservation本身不移动可读窗口。reader在同一stream gate内取得一致窗口，在pending洞前停止并保持cursor；`NextCursor >= requestedAfterSequence`始终成立。latest只观察completed窗口。typed client再次校验item严格晚于请求cursor及response cursor不回退。 |
 | Success / failure / timeout / cancel / shutdown | 新确定性tests覆盖seq1已commit而seq2/3阻塞时seq1仍可读且drop=0、释放后只保留seq2/3并drop=1；seq1/2阻塞而seq3先完成时只淘汰固定recent window之外的位置；factory failure tombstone继续计drop；future cursor 100在本地read保持100，真实Host→Pipe→typed client/CLI遇到回退response则以`observation.client.invalid-cursor`失败。timeout/cancel/shutdown路径不变且继续由既有Host/Pipe门禁覆盖。 |
-| Bounds / complexity | ingress没有lock、等待、queue或按publisher数量增长的状态；每次publish为一个sequence increment、一个固定slot CAS和一个completed CAS-max，空间O(capacity)。read/latest/drop最多检查固定capacity且page仍受1000上限；future cursor分支不执行递增循环，避免`Int64.MaxValue`溢出。 |
+| Bounds / complexity | #383后的ingress没有IO、subscriber wait、queue或按publisher数量增长的状态；每个stream只有固定slot数组、byte-count数组与短commit/read gate，空间O(capacity)。byte eviction与read/latest/drop最多检查固定capacity，page仍受1000上限；future cursor分支不执行递增循环，避免`Int64.MaxValue`溢出。 |
 | Earliest / latest gate | 这是2.11之后、任何R1 read capability之前的纠错格；只有该格的success/failure/cursor证据成立后，才能继续审查MCP cancellation，不改变`typed Host/CLI → MCP`的最迟接入顺序。 |
 | Non-goals | 第二diagnostic/log truth、blocking ingress、watch/tail、server push、任意查询、Capture/Mutate、remote transport、metrics/trace/profiler/crash/artifact framework。 |
 | Exit evidence | focused ring/log tests 5/5、Application diagnostics 16/16、Application 21/21、Host 26/26及真实typed CLI cursor回退负例1/1通过；完整Debug/Release、distribution与仓库门禁由下一纠错格统一复验。 |
@@ -317,7 +317,7 @@ Unity 文档没有把开发连接描述为强认证边界；因此“可 attach�
 
 Unreal是#381的主参考：Output Log用于按category/verbosity阅读有序执行记录；Message Log listing则保存可筛选、
 可执行token的结构化消息。Asharia采用“时间序列日志 / 可行动问题”语义分离，但把两个tab合并进一个Diagnostics
-Dock面板以减少默认面板数量，并共享一次hub subscription与同一projection lifetime；这不会合并两类record合同。
+Dock面板以减少默认面板数量，并共享同一projection lifetime；panel分别持有log/diagnostic invalidation subscriptions，这不会合并两类record合同。
 
 Unity、Godot与O3DE用于交叉检查。Unity Console官方合同区分查看、筛选、折叠、清除与独立Editor log file；Godot把
 Output和Debugger Errors放在不同底部surface；O3DE同时证明Console命令/CVar是更宽的可变能力，而其错误写作规范强调
@@ -411,7 +411,7 @@ remove manifest; stop accept/new capture
 | --- | --- | --- |
 | Pipe async IO | frame/decode/handshake/limit/enqueue/encode | 调 Application/native/UI，遍历 tree，等 capture |
 | Application loop | 校验 scope/revision，读 immutable sections | IO、P/Invoke、等待 UI/engine |
-| log ingress | 任意线程向 bounded MPSC ingress 写小 data event | 通知 UI/tool、阻塞、格式化大对象 |
+| log ingress | 任意线程在规范化后进入有count + payload预算的per-stream短临界区 | 直接通知 UI/tool、持锁格式化大对象、把高频Profiler marker灌入Console |
 | engine dispatcher | safe point 复制 value snapshot、批准 capture | 返回 handle/pointer；Pipe thread 直接 native |
 | UI dispatcher | 复制 tree/focus/allowlisted detail | 返回 Control/ViewModel/DataContext；property mutation |
 | artifact worker | temp/flush/hash/atomic publish/quota | 修改 Application、访问任意 path |
@@ -490,6 +490,7 @@ DiagnosticEvent
   Sequence/time/severity/stable code/category/package/component
   scope + owner/provider generation; operation/correlation/parent correlation
   message/remediation/typed attributes/fingerprint/repeat/source?/sensitivity
+  optional ProblemId + Active/Resolved/Stale transition
 
 LogEvent
   Sequence/time/thread/level/channel/package/component/scope
@@ -497,12 +498,16 @@ LogEvent
 
 CursorWindow<T>
   OldestAvailable/Next/DroppedBeforeOldest/CursorExpired/Items
+
+BufferState
+  CountCapacity/PayloadByteCapacity/ResidentCount/EstimatedResidentPayloadBytes/TotalDropped
 ```
 
 diagnostic 是可行动事实；log 是高容量时间序列。客户端传 `after/max/wait`；落后于 ring 时必须看见 expired/drop。
 每条diagnostic由stable code、scope、component与截断后的有序attributes生成fingerprint；hub中的canonical
-`RepeatCount`仍恒为1。#381只在可重建的bounded UI projection里按稳定collapse key聚合重复项；关闭collapse、切换filter或
-重新读取window不会改写record。Console按sequence/time显示log；Problems只显示`Problem` channel的可行动diagnostic。
+`RepeatCount`仍恒为1。Console默认不折叠；启用Collapse时只合并时间流中相邻且完整语义key相同的run，不能把
+`A1 → B2 → A3`重排成`A × 2 → B`。Problems的History可按稳定key聚合，Active则直接读取hub内同owner维护的
+current-problem index。关闭collapse、切换filter或重新读取window都不会改写canonical record。
 
 Current mapping：
 
@@ -512,25 +517,36 @@ Current mapping：
   escaped exception只记录exception type，不复制adapter exception message；
 - viewport presentation required edge的Deferred/Rejected由真实transaction coordinator投影为Error Problem；记录
   endpoint/session/epoch/transaction/generation/participant/phase/outcome/failure，并对同一edge/endpoint/participant只发布一次；
-- 每个真实viewport control只保留一个active degraded episode：首次degraded发布Error，重复state不刷屏；首次Ready以同一
-  operation/correlation发布Info recovery并清episode，WaitingForDocument/Draining/Detached只放弃旧episode；
+- 每个真实viewport control只保留一个active degraded episode：首次degraded以稳定`ProblemId`发布`Active`，重复state不刷屏；
+  首次Ready以相同Problem/operation/correlation发布`Resolved`，WaitingForDocument/Draining/Detached发布`Stale`；session替换
+  先关闭旧scope再激活新Problem，旧session迟到Ready不能关闭当前Problem；
 - 更底层native/GPU typed result仍需在各自真实owner边界逐项接入；不得解析stdout/stderr建立业务状态；
 - Avalonia `ILogSink` 在 Presentation adapter 中映射为 `Framework` + package `avalonia`，Application contract 不引用 Avalonia；
 - 子进程输出合同使用 `Subprocess` + `stdout`/`stderr` channel，并携 operation/correlation/sensitivity；当前待删除的
   ProjectCode control plane 不为证明该合同而重新接入 production；
-- #381的Diagnostics panel在一个实例中呈现Console与Problems两个tab，只持有一次hub subscription。通知只作为
-  invalidation；consumer在dispatcher上合并刷新并重新读取bounded cursor window。投影可丢弃并从hub重建，不是私有store
+- #381/#383的Diagnostics panel在一个实例中呈现Console与Problems两个tab，只读取同一个hub；diagnostic/log分别使用
+  stream-specific subscription，互不唤醒无关读取。通知只作为invalidation；diagnostic即时post到dispatcher，log按75 ms窗口
+  合并刷新，search使用150 ms debounce。投影可丢弃并从hub重建，不是私有store
   或第二event bus；panel采用`KeepAlive`，close/detach与floating host关闭不退订，隐藏期间仍有界推进cursor，reopen不重复
-  subscribe；terminal workspace/Shell dispose才释放subscription，并让pending dispatcher refresh失效；
+  subscribe；terminal workspace/Shell dispose才释放两条subscription，并让pending dispatcher refresh失效；
 - 两个tab分别维护view-only clear sequence barrier。Clear隐藏barrier之前的当前view记录，不删除hub记录、不重置全局
   sequence，也不影响readonly observation/另一个tab。UI必须把cursor expired、dropped count、pagination/窗口截断和字段
   `WasTruncated`呈现为证据，不能将缺口伪装成空列表；
 - Console的Pause冻结当前bounded可见窗口，筛选与collapse仍只重投影该冻结窗口；同时独立读取cursor继续推进并累计
   可观察到的unseen count，Resume再从暂停点读取hub当前保留窗口。`TotalDropped`只表示source ring覆盖累计，只有
   `CursorExpired`表示当前投影确实错过了所需sequence区间，两者不得合并成一个伪history gap；
+- history ring同时受record count与规范化retained string UTF-8 payload预算约束；该byte数是精确的payload合计，不冒充CLR
+  object graph或allocator resident bytes。active index饱和时保留既有active truth、累计loss并标记`IsIncomplete`，不能静默
+  驱逐仍未Resolved/Stale的问题；
 - Console/Problems行列表必须有界且虚拟化；search/severity/channel/collapse属于panel-local state。persistent log、problem
   report和crash artifact不属于#381，不能用hub snapshot冒充其耐久性。source/asset/object导航必须等待typed target/source
   identity和显式Action route；不得从message或attribute文本猜路径、对象或命令。
+
+Runtime尚无production gameplay owner。未来Runtime默认接入的Console日志只允许稀疏milestone、状态迁移、失败/重试和阈值越界
+摘要；frame/pass/job/resource逐项事件不得默认灌入此ring。完整Unity式Profiler是独立的有界Capture能力：开发构建可保留低成本
+marker/descriptor，但recording默认关闭，由用户按target、category、duration、event/byte预算显式启动并生成可离线读取的artifact。
+Console只记录capture started/completed/failed摘要与`CaptureId`；两者共享process/session identity、monotonic clock与correlation，
+不共享store、retention或UI projection。
 
 ### 7.3 Metrics、jobs、artifacts、UI
 
@@ -563,9 +579,9 @@ type、坐标不是 stable identity。大树按 window/subtree/page，并带 nod
 | --- | --- | --- | --- |
 | capabilities | fixed slots；必要时 composition-time frozen map | immutable descriptors | 无动态 Service Locator |
 | scopes | ID dictionary + generation | immutable summaries | O(1) stale check，children-first revoke |
-| diagnostics（Current） | fixed concurrent ring + per-record fingerprint；`RepeatCount=1` | cursor window | 固定容量，默认 2048 |
+| diagnostics（Current） | per-stream short-gate ring + per-record fingerprint；`RepeatCount=1` | cursor window | `2048 + 8 MiB`双预算；active index另为`1024 + 4 MiB` |
 | diagnostic dedup projection（Deferred） | 只在真实consumer出现后定义bounded index | consumer-owned immutable view | 不改写source-truth sequence/cursor/drop |
-| logs | bounded MPSC ingress + single-owner ring | cursor window | producer 不阻塞，默认 8192 |
+| logs | per-stream short-gate ring；record normalize在gate外 | cursor window | `8192 + 32 MiB`双预算；完整提交后异步合并notification |
 | metrics | frozen descriptor map + per-series ring | metric window | 默认每 series 1024；明确 wrap/drop |
 | state | owner-held latest immutable section | requested sections | 不积历史、不跨 owner 锁 |
 | jobs | active dictionary + owner index + terminal ring | immutable page | 默认 128 terminal records |
@@ -741,7 +757,7 @@ Avalonia Headless 与最小 accessibility semantics；R1 才让 UI Probe
   Pipe/CLI/MCP；UI snapshot 无 object；native snapshot 无 pointer/handle。
 - Protocol/security：golden/version/unknown additive values；invalid length/UTF-8/JSON/depth/size；wrong user/token、stale
   PID/start/session/generation；client/in-flight/rate limit；path/method/property/native attacks；secret redaction。
-- Concurrency/lifetime：multi-thread ingress、wrap/drop；Diagnostics一次subscription、dispatcher coalescing、bounded collapse与dispose后零刷新；subscriber/provider fault isolation；UI/engine timeout + late result；
+- Concurrency/lifetime：multi-thread ingress、wrap/drop；Diagnostics两条stream-specific subscriptions、dispatcher coalescing、bounded collapse与dispose后零刷新；subscriber/provider fault isolation；UI/engine timeout + late result；
   Project/Window/device lost generations；1000 attach/detach；shutdown ordering、zero leaks、NativeSafeBarrier。
 - Capability：cursor/truncation；multiple clients 不重复采样；per-section partial/freshness；Headless UI tree/IDs/limits；
   Windows automation/DPI/multi-window；native fault/device lost/frame exact release。

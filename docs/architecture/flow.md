@@ -678,18 +678,18 @@ flowchart LR
   原始异常、绝对路径和 secret 不进入 readonly observation。#381在该truth上增加一个Diagnostics panel；持久Editor log、问题报告
   bundle或crash uploader仍不在该流程内。
 
-### #381 Studio Diagnostics 当前流程
+### #381/#383 Studio Diagnostics 当前流程
 
 Diagnostics是一个stable Dock tool panel，内部Console读取时序log、Problems读取`Problem` channel的可行动structured
-diagnostic。它们共享`StudioDiagnosticsPanelViewModel`的一次hub subscription；不会把两个record模型合并，也不会建立
-panel-local truth。
+diagnostic。它们共享一个`StudioDiagnosticsPanelViewModel`和同一hub，并以diagnostic/log两条stream-specific subscriptions
+避免无关刷新；不会把两个record模型合并，也不会建立panel-local truth。
 
 ```mermaid
 flowchart LR
     Producers["Managed / native adapter / Avalonia producers"]
-    Hub["App-owned IStudioDiagnosticHub<br/>bounded log + diagnostic rings"]
-    Subscription["One panel subscription<br/>invalidation only"]
-    Dispatcher["Coalesced UI-dispatcher refresh"]
+    Hub["App-owned IStudioDiagnosticHub<br/>count + payload bounded rings<br/>active problem index"]
+    Subscription["Diagnostic + log subscriptions<br/>invalidation only"]
+    Dispatcher["Immediate problems / 75 ms log refresh"]
     Windows["Bounded cursor windows<br/>drop / expired / truncation evidence"]
     Console["Console tab<br/>sequence/time log projection"]
     Problems["Problems tab<br/>actionable Problem projection"]
@@ -702,16 +702,21 @@ flowchart LR
     Hub --> Observe
 ```
 
-- filter、search、selected row、collapse与两个tab各自的clear barrier都是panel-local view state。Collapse只在bounded
-  projection中计算repeat；Clear只推进当前tab读取位置并清除当前rows，不删除hub record、重置global sequence或影响另一个observer。
+- history ring默认上限为diagnostic `2048 + 8 MiB`、log `8192 + 32 MiB`；active problem index为`1024 + 4 MiB`。
+  payload预算统计规范化retained string的UTF-8合计，不代表CLR object graph。Active溢出保留既有truth并显式标记incomplete；
+- filter、search、selected row、collapse与两个tab各自的clear barrier都是panel-local view state。Console默认不collapse；启用时
+  只合并相邻同key run以保持chronology。Clear只推进当前tab读取位置并清除当前rows，不删除hub record、重置global sequence
+  或影响另一个observer；Active Problems只有producer的Resolved/Stale transition才能关闭；
 - Console Pause冻结当前bounded可见窗口，pause期间的filter/collapse仍只重投影该窗口；独立cursor继续摄入Hub evidence并
   累计可见的unseen，Resume从暂停点切回当前retained window。`TotalDropped`是source overwrite累计，`CursorExpired`才是
   当前projection需要的sequence已经不可恢复；UI分别呈现，不能把普通overwrite伪装成view gap。
-- hub callback可来自任意producer thread；callback只合并一次dispatcher refresh，UI线程再读取immutable windows。panel为
+- Hub在record/history与active index完整提交后，经ThreadPool按stream异步合并subscriber callback；Problems立即post、logs以75 ms窗口合并到UI dispatcher，再由UI线程读取immutable windows。panel为
   `KeepAlive`：close/detach与floating host关闭不退订，隐藏期间继续有界推进cursor，reopen复用同一content；terminal
-  workspace/Shell dispose才释放subscription，已排队refresh必须检查disposed generation后返回。
+  workspace/Shell dispose才释放两条subscriptions，已排队refresh必须检查disposed generation后返回。
 - cursor expired、total dropped、窗口仍有下一页及record字段截断必须成为可见状态；大列表由虚拟化控件承载，不按hub
   capacity创建control。持久文件日志、problem report/crash、命令输入/CVar及缺少typed target时的导航继续延后。
+- 当前没有production gameplay Runtime log producer。未来Runtime默认只发稀疏milestone/transition/failure/threshold摘要；
+  frame/pass/job/resource级完整时序属于单独Profiler Capture，默认不record，并以独立duration/event/byte预算和artifact owner收口。
 
 ## 当前 Studio Viewport 与 native RenderThread 流程
 
