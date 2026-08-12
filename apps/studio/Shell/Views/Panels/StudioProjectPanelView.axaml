@@ -1,6 +1,8 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Editor.Shell.ViewModels.Panels"
+             xmlns:commands="using:Editor.Shell.Commands"
+             xmlns:actions="using:Editor.Shell.Actions"
              x:Class="Editor.Shell.Views.Panels.StudioProjectPanelView"
              x:DataType="vm:StudioProjectPanelViewModel"
              AutomationProperties.AutomationId="StudioProjectPanel"
@@ -18,8 +20,10 @@
                        TextWrapping="Wrap"
                        Text="Asset browsing will attach here after the document editing closure." />
             <StackPanel Orientation="Horizontal" Spacing="8">
-                <Button Command="{Binding Shell.OpenProjectCommand}" Content="Open" />
-                <Button Command="{Binding Shell.CloseProjectCommand}" Content="Close" />
+                <Button commands:StudioActionButton.ActionId="{x:Static actions:StudioShellActionIds.OpenProject}"
+                        Content="Open" />
+                <Button commands:StudioActionButton.ActionId="{x:Static actions:StudioShellActionIds.CloseProject}"
+                        Content="Close" />
             </StackPanel>
         </StackPanel>
     </ScrollViewer>

@@ -215,14 +215,24 @@ public sealed class ProjectReferenceGraphTests
     }
 
     [Fact]
-    public void Legacy_workbench_commands_stay_deleted_while_shell_owns_one_async_command()
+    public void Legacy_workbench_commands_stay_deleted_while_shell_projects_application_actions()
     {
         var studioRoot = FindStudioRoot();
-        Assert.True(File.Exists(Path.Combine(
+        Assert.False(File.Exists(Path.Combine(
             studioRoot,
             "Shell",
             "Commands",
             "AsyncCommand.cs")));
+        Assert.True(File.Exists(Path.Combine(
+            studioRoot,
+            "Shell",
+            "Commands",
+            "StudioActionCommand.cs")));
+        Assert.True(Directory.Exists(Path.Combine(
+            studioRoot,
+            "src",
+            "Asharia.Studio.Application",
+            "Actions")));
         Assert.False(Directory.Exists(Path.Combine(
             studioRoot,
             "src",
@@ -428,7 +438,7 @@ public sealed class ProjectReferenceGraphTests
         var studioRoot = FindStudioRoot();
         var appSource = File.ReadAllText(Path.Combine(studioRoot, "App.axaml.cs"));
         Assert.Contains(
-            "new StudioShellViewModel(projectSession, projectDialogs)",
+            "new ProjectDocumentTransitionCoordinator(",
             appSource,
             StringComparison.Ordinal);
         Assert.Contains("new ProjectSession(", appSource);
@@ -489,7 +499,14 @@ public sealed class ProjectReferenceGraphTests
         Assert.Contains("SelectedItem=\"{Binding SelectedRow", hierarchyXaml, StringComparison.Ordinal);
         Assert.DoesNotContain("Shell.SceneEntities", hierarchyXaml, StringComparison.Ordinal);
         Assert.DoesNotContain("Shell.SelectedEntity", hierarchyXaml, StringComparison.Ordinal);
-        Assert.Contains("Shell.ApplyEntityTransformCommand", inspectorXaml, StringComparison.Ordinal);
+        Assert.Contains(
+            "StudioShellActionIds.ApplyEntityTransform",
+            inspectorXaml,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "Shell.ApplyEntityTransformCommand",
+            inspectorXaml,
+            StringComparison.Ordinal);
 
         var headlessProject = XDocument.Load(Path.Combine(
             studioRoot,

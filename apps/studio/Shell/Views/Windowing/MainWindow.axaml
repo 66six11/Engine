@@ -1,6 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:Editor.Shell.ViewModels.Windowing"
+        xmlns:actions="using:Editor.Shell.Actions"
         xmlns:dockViews="using:Editor.Shell.Views.Docking"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
@@ -19,7 +20,12 @@
         MinHeight="560"
         Background="{DynamicResource EditorBrushBase00}"
         Foreground="{DynamicResource EditorBrushTextPrimary}">
-    <Grid>
+    <Grid RowDefinitions="Auto,*">
+        <!-- Items are projected from StudioShellViewModel.ActionCatalog. -->
+        <Menu x:Name="StudioMainMenu"
+              Grid.Row="0" />
+
+        <Grid Grid.Row="1">
         <Border x:Name="StartingState"
                 AutomationProperties.AutomationId="StudioShellStartingState"
                 AutomationProperties.Name="Studio startup state"
@@ -77,10 +83,12 @@
                             <Button x:Name="CreateProjectButton"
                                     AutomationProperties.Name="Create project"
                                     Command="{Binding CreateProjectCommand}"
+                                    Tag="{x:Static actions:StudioShellActionIds.CreateProject}"
                                     Content="Create Project" />
                             <Button x:Name="OpenProjectButton"
                                     AutomationProperties.Name="Open project"
                                     Command="{Binding OpenProjectCommand}"
+                                    Tag="{x:Static actions:StudioShellActionIds.OpenProject}"
                                     Content="Open Project" />
                         </StackPanel>
                         <TextBlock AutomationProperties.LiveSetting="Polite"
@@ -131,36 +139,43 @@
                         <Button x:Name="CreateEntityButton"
                                 AutomationProperties.Name="Create entity"
                                 Command="{Binding CreateEntityCommand}"
+                                Tag="{x:Static actions:StudioShellActionIds.CreateEntity}"
                                 Content="+ Entity" />
                         <Button x:Name="CreateMeshEntityButton"
                                 Grid.Column="1"
                                 AutomationProperties.Name="Create validation mesh entity"
                                 Command="{Binding CreateMeshEntityCommand}"
+                                Tag="{x:Static actions:StudioShellActionIds.CreateMeshEntity}"
                                 Content="+ Mesh" />
                         <Button x:Name="SaveSceneButton"
                                 Grid.Column="2"
                                 AutomationProperties.Name="Save scene"
                                 Command="{Binding SaveSceneCommand}"
+                                Tag="{x:Static actions:StudioShellActionIds.SaveScene}"
                                 Content="Save" />
                         <Button x:Name="UndoSceneButton"
                                 Grid.Column="3"
                                 AutomationProperties.Name="{Binding UndoSceneLabel}"
                                 Command="{Binding UndoSceneCommand}"
                                 Content="{Binding UndoSceneLabel}"
+                                Tag="{x:Static actions:StudioShellActionIds.UndoScene}"
                                 ToolTip.Tip="Ctrl/Cmd+Z" />
                         <Button x:Name="RedoSceneButton"
                                 Grid.Column="4"
                                 AutomationProperties.Name="{Binding RedoSceneLabel}"
                                 Command="{Binding RedoSceneCommand}"
                                 Content="{Binding RedoSceneLabel}"
+                                Tag="{x:Static actions:StudioShellActionIds.RedoScene}"
                                 ToolTip.Tip="Ctrl/Cmd+Y · Ctrl/Cmd+Shift+Z" />
                         <Button Grid.Column="5"
                                 AutomationProperties.Name="Open another project"
                                 Command="{Binding OpenProjectCommand}"
+                                Tag="{x:Static actions:StudioShellActionIds.OpenProject}"
                                 Content="Open" />
                         <Button Grid.Column="6"
                                 AutomationProperties.Name="Close project"
                                 Command="{Binding CloseProjectCommand}"
+                                Tag="{x:Static actions:StudioShellActionIds.CloseProject}"
                                 Content="Close" />
                         <TextBlock Grid.Column="7"
                                    Margin="10,0"
@@ -181,6 +196,7 @@
                 <dockViews:EditorDockWorkspaceView Grid.Row="1"
                                                    DataContext="{Binding DockWorkspace}" />
             </Grid>
+        </Grid>
         </Grid>
     </Grid>
 </Window>

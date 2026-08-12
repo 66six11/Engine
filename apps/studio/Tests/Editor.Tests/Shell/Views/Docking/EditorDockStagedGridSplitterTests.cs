@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Asharia.Studio.Application.Diagnostics;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Editor.Shell.Docking.Panels;
@@ -19,7 +20,8 @@ public sealed class EditorDockStagedGridSplitterTests
         var splitter = EditorDockSplitNodeView.CreateSplitter(
             split,
             GridResizeDirection.Columns,
-            "vertical");
+            "vertical",
+            new StudioDiagnosticHub());
 
         var staged = Assert.IsType<EditorDockStagedGridSplitter>(splitter);
         Assert.True(staged.ShowsPreview);

@@ -12,6 +12,10 @@ namespace Asharia.Studio.Application.Tests.Projects;
 
 public sealed class ProjectSessionTests
 {
+    private static ProjectDocumentTransitionExpectation Transition(
+        IProjectSession session) =>
+        ProjectDocumentTransitionExpectation.Capture(session.Current);
+
     [Fact]
     public async Task Create_publishes_ready_only_after_default_scene_is_open()
     {
@@ -26,7 +30,8 @@ public sealed class ProjectSessionTests
         var changed = 0;
         session.SnapshotChanged += (_, _) => changed++;
 
-        var result = await session.CreateProjectAsync("C:\\Projects", "Sample");
+        var result = await session.CreateProjectAsync(
+            "C:\\Projects", "Sample", Transition(session));
 
         Assert.True(result.Succeeded);
         Assert.True(result.Current.IsReady);
@@ -52,12 +57,12 @@ public sealed class ProjectSessionTests
         };
         var sceneGateway = new ControlledSceneGateway();
         await using var session = new ProjectSession(projectGateway, sceneGateway);
-        var opened = await session.OpenProjectAsync(first.RootPath);
+        var opened = await session.OpenProjectAsync(first.RootPath, Transition(session));
         sceneGateway.OpenFailure = new SceneDocumentFailure(
             SceneDocumentFailureKind.InvalidScene,
             "The default scene is invalid.");
 
-        var failed = await session.OpenProjectAsync("C:\\Broken");
+        var failed = await session.OpenProjectAsync("C:\\Broken", Transition(session));
 
         Assert.False(failed.Succeeded);
         Assert.Equal(ProjectSessionFailureKind.InvalidScene, failed.FailureKind);
@@ -79,7 +84,7 @@ public sealed class ProjectSessionTests
         };
         var sceneGateway = new ControlledSceneGateway();
         await using var session = new ProjectSession(projectGateway, sceneGateway);
-        await session.OpenProjectAsync("C:\\Projects\\Sample");
+        await session.OpenProjectAsync("C:\\Projects\\Sample", Transition(session));
 
         var created = await session.CreateEntityAsync("Entity");
         var objectId = created.Current.Document!.Entities.Single().ObjectId;
@@ -124,7 +129,7 @@ public sealed class ProjectSessionTests
         };
         var sceneGateway = new ControlledSceneGateway();
         await using var session = new ProjectSession(projectGateway, sceneGateway);
-        await session.OpenProjectAsync("C:\\Projects\\Sample");
+        await session.OpenProjectAsync("C:\\Projects\\Sample", Transition(session));
         var created = await session.CreateEntityAsync("Entity");
         var objectId = created.Current.Document!.Entities.Single().ObjectId;
         var editId = ProjectEditId.CreateNew();
@@ -160,7 +165,7 @@ public sealed class ProjectSessionTests
         };
         var sceneGateway = new ControlledSceneGateway();
         await using var session = new ProjectSession(projectGateway, sceneGateway);
-        await session.OpenProjectAsync("C:\\Projects\\Sample");
+        await session.OpenProjectAsync("C:\\Projects\\Sample", Transition(session));
         var created = await session.CreateEntityAsync("Entity");
         var objectId = created.Current.Document!.Entities.Single().ObjectId;
         var editId = ProjectEditId.CreateNew();
@@ -187,7 +192,7 @@ public sealed class ProjectSessionTests
         var projectGateway = OpenableProjectGateway();
         var sceneGateway = new ControlledSceneGateway();
         await using var session = new ProjectSession(projectGateway, sceneGateway);
-        await session.OpenProjectAsync("C:\\Projects\\Sample");
+        await session.OpenProjectAsync("C:\\Projects\\Sample", Transition(session));
         var created = await session.CreateEntityAsync("Entity");
         var objectId = created.Current.Document!.Entities.Single().ObjectId;
         var transformB = new TransformValue(
@@ -226,7 +231,7 @@ public sealed class ProjectSessionTests
         var projectGateway = OpenableProjectGateway();
         var sceneGateway = new ControlledSceneGateway();
         await using var session = new ProjectSession(projectGateway, sceneGateway);
-        await session.OpenProjectAsync("C:\\Projects\\Sample");
+        await session.OpenProjectAsync("C:\\Projects\\Sample", Transition(session));
         var created = await session.CreateEntityAsync("Entity");
         var objectId = created.Current.Document!.Entities.Single().ObjectId;
 
@@ -253,7 +258,7 @@ public sealed class ProjectSessionTests
         var projectGateway = OpenableProjectGateway();
         var sceneGateway = new ControlledSceneGateway();
         await using var session = new ProjectSession(projectGateway, sceneGateway);
-        await session.OpenProjectAsync("C:\\Projects\\Sample");
+        await session.OpenProjectAsync("C:\\Projects\\Sample", Transition(session));
         var created = await session.CreateEntityAsync("Entity");
         var objectId = created.Current.Document!.Entities.Single().ObjectId;
         await EditTransformAsync(
@@ -277,7 +282,7 @@ public sealed class ProjectSessionTests
         var projectGateway = OpenableProjectGateway();
         var sceneGateway = new ControlledSceneGateway();
         await using var session = new ProjectSession(projectGateway, sceneGateway);
-        await session.OpenProjectAsync("C:\\Projects\\Sample");
+        await session.OpenProjectAsync("C:\\Projects\\Sample", Transition(session));
         var created = await session.CreateEntityAsync("Entity");
         var objectId = created.Current.Document!.Entities.Single().ObjectId;
         var transform = new TransformValue(
@@ -315,7 +320,7 @@ public sealed class ProjectSessionTests
         var projectGateway = OpenableProjectGateway();
         var sceneGateway = new ControlledSceneGateway();
         await using var session = new ProjectSession(projectGateway, sceneGateway);
-        await session.OpenProjectAsync("C:\\Projects\\Sample");
+        await session.OpenProjectAsync("C:\\Projects\\Sample", Transition(session));
         var created = await session.CreateEntityAsync("Entity");
         await EditTransformAsync(
             session,
@@ -323,8 +328,10 @@ public sealed class ProjectSessionTests
             new TransformValue(new Float3(1, 0, 0), Quaternion.Identity, Float3.One));
         Assert.True(session.Current.CanUndo);
 
-        await session.CloseProjectAsync();
-        var reopened = await session.OpenProjectAsync("C:\\Projects\\Sample");
+        await session.SaveSceneAsync();
+        await session.CloseProjectAsync(Transition(session));
+        var reopened = await session.OpenProjectAsync(
+            "C:\\Projects\\Sample", Transition(session));
 
         Assert.True(reopened.Succeeded);
         Assert.False(reopened.Current.CanUndo);
@@ -338,7 +345,7 @@ public sealed class ProjectSessionTests
         var projectGateway = OpenableProjectGateway();
         var sceneGateway = new ControlledSceneGateway();
         await using var session = new ProjectSession(projectGateway, sceneGateway);
-        await session.OpenProjectAsync("C:\\Projects\\Sample");
+        await session.OpenProjectAsync("C:\\Projects\\Sample", Transition(session));
         var created = await session.CreateEntityAsync("Entity");
         var objectId = created.Current.Document!.Entities.Single().ObjectId;
         var transformed = await EditTransformAsync(
@@ -363,7 +370,7 @@ public sealed class ProjectSessionTests
         var projectGateway = OpenableProjectGateway();
         var sceneGateway = new ControlledSceneGateway();
         await using var session = new ProjectSession(projectGateway, sceneGateway);
-        await session.OpenProjectAsync("C:\\Projects\\Sample");
+        await session.OpenProjectAsync("C:\\Projects\\Sample", Transition(session));
         var created = await session.CreateEntityAsync("Entity");
         var objectId = created.Current.Document!.Entities.Single().ObjectId;
         sceneGateway.Connection.OmitTransformReceipt = true;
@@ -385,7 +392,7 @@ public sealed class ProjectSessionTests
         var projectGateway = OpenableProjectGateway();
         var sceneGateway = new ControlledSceneGateway();
         await using var session = new ProjectSession(projectGateway, sceneGateway);
-        await session.OpenProjectAsync("C:\\Projects\\Sample");
+        await session.OpenProjectAsync("C:\\Projects\\Sample", Transition(session));
         var created = await session.CreateEntityAsync("Entity");
         var objectId = created.Current.Document!.Entities.Single().ObjectId;
         await EditTransformAsync(
@@ -419,7 +426,7 @@ public sealed class ProjectSessionTests
         var projectGateway = OpenableProjectGateway();
         var sceneGateway = new ControlledSceneGateway();
         await using var session = new ProjectSession(projectGateway, sceneGateway);
-        await session.OpenProjectAsync("C:\\Projects\\Sample");
+        await session.OpenProjectAsync("C:\\Projects\\Sample", Transition(session));
         var created = await session.CreateEntityAsync("Entity");
         var objectId = created.Current.Document!.Entities.Single().ObjectId;
         sceneGateway.Connection.ThrowAfterNextTransformMutation = true;
@@ -442,7 +449,7 @@ public sealed class ProjectSessionTests
         var projectGateway = OpenableProjectGateway();
         var sceneGateway = new ControlledSceneGateway();
         await using var session = new ProjectSession(projectGateway, sceneGateway);
-        await session.OpenProjectAsync("C:\\Projects\\Sample");
+        await session.OpenProjectAsync("C:\\Projects\\Sample", Transition(session));
         var created = await session.CreateEntityAsync("Entity");
         var objectId = created.Current.Document!.Entities.Single().ObjectId;
         await EditTransformAsync(
@@ -546,7 +553,7 @@ public sealed class ProjectSessionTests
         };
         var sceneGateway = new ControlledSceneGateway();
         await using var session = new ProjectSession(projectGateway, sceneGateway);
-        await session.OpenProjectAsync("C:\\Projects\\Sample");
+        await session.OpenProjectAsync("C:\\Projects\\Sample", Transition(session));
         var mesh = SceneMeshReference.DirectionalWedgeValidation;
 
         var created = await session.CreateMeshEntityAsync("Mesh", mesh);
@@ -573,7 +580,7 @@ public sealed class ProjectSessionTests
         var sceneGateway = new ControlledSceneGateway();
         sceneGateway.Connection.RejectMeshCreate = true;
         await using var session = new ProjectSession(projectGateway, sceneGateway);
-        await session.OpenProjectAsync("C:\\Projects\\Sample");
+        await session.OpenProjectAsync("C:\\Projects\\Sample", Transition(session));
 
         var created = await session.CreateMeshEntityAsync(
             "Mesh",
@@ -599,13 +606,52 @@ public sealed class ProjectSessionTests
         };
         var sceneGateway = new ControlledSceneGateway();
         await using var session = new ProjectSession(projectGateway, sceneGateway);
-        await session.OpenProjectAsync("C:\\Projects\\Sample");
+        await session.OpenProjectAsync("C:\\Projects\\Sample", Transition(session));
 
-        var closed = await session.CloseProjectAsync();
+        var closed = await session.CloseProjectAsync(Transition(session));
 
         Assert.True(closed.Succeeded);
         Assert.Equal(ProjectSessionState.NoProject, closed.Current.State);
         Assert.Equal(1, sceneGateway.Connection.DisposeCount);
+    }
+
+    [Fact]
+    public async Task Stale_transition_expectation_cannot_discard_a_new_edit()
+    {
+        var projectGateway = OpenableProjectGateway();
+        var sceneGateway = new ControlledSceneGateway();
+        await using var session = new ProjectSession(projectGateway, sceneGateway);
+        await session.OpenProjectAsync("C:\\Projects\\Sample", Transition(session));
+        var expectedCleanState = Transition(session);
+
+        var edited = await session.CreateEntityAsync("New dirty entity");
+        var close = await session.CloseProjectAsync(expectedCleanState);
+
+        Assert.True(edited.Succeeded);
+        Assert.False(close.Succeeded);
+        Assert.Equal(
+            ProjectSessionFailureKind.StaleDocumentTransition,
+            close.FailureKind);
+        Assert.True(session.Current.IsDirty);
+        Assert.Single(session.Current.Document!.Entities);
+        Assert.Equal(0, sceneGateway.Connection.DisposeCount);
+    }
+
+    [Fact]
+    public async Task Exit_preparation_atomically_rejects_later_project_mutations()
+    {
+        var projectGateway = OpenableProjectGateway();
+        var sceneGateway = new ControlledSceneGateway();
+        await using var session = new ProjectSession(projectGateway, sceneGateway);
+        await session.OpenProjectAsync("C:\\Projects\\Sample", Transition(session));
+
+        var prepared = await session.PrepareExitAsync(Transition(session));
+        var edit = await session.CreateEntityAsync("Too late");
+
+        Assert.True(prepared.Succeeded);
+        Assert.False(edit.Succeeded);
+        Assert.Equal(ProjectSessionFailureKind.Busy, edit.FailureKind);
+        Assert.Empty(session.Current.Document!.Entities);
     }
 
     [Fact]
@@ -623,14 +669,16 @@ public sealed class ProjectSessionTests
             },
         };
         var session = new ProjectSession(projectGateway, new ControlledSceneGateway());
-        var operation = session.OpenProjectAsync("C:\\Projects\\Sample").AsTask();
+        var operation = session.OpenProjectAsync(
+            "C:\\Projects\\Sample", Transition(session)).AsTask();
         await entered.Task;
 
         await session.DisposeAsync();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await operation);
         await Assert.ThrowsAsync<ObjectDisposedException>(async () =>
-            await session.OpenProjectAsync("C:\\Projects\\Late"));
+            await session.OpenProjectAsync(
+                "C:\\Projects\\Late", Transition(session)));
     }
 
     private static ControlledProjectGateway OpenableProjectGateway() =>

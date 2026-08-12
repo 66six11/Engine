@@ -36,6 +36,16 @@ public sealed class MainWindowXamlTests
         Assert.DoesNotContain("ProjectLaunch", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("MainWindowViewModel", xaml, StringComparison.Ordinal);
         Assert.Contains("DynamicResource EditorBrushBase00", xaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"StudioMainMenu\"", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "AutomationProperties.AutomationId=\"StudioMainMenu\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains("Items are projected from StudioShellViewModel.ActionCatalog", xaml);
+        Assert.DoesNotContain("Header=\"_File\"", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("Header=\"_Edit\"", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("Header=\"_Scene\"", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("Header=\"_Window\"", xaml, StringComparison.Ordinal);
 
         var hierarchyXaml = LoadPanelXaml("StudioHierarchyPanelView.axaml");
         Assert.Contains("x:DataType=\"vm:StudioHierarchyPanelViewModel\"", hierarchyXaml);
@@ -45,12 +55,19 @@ public sealed class MainWindowXamlTests
         Assert.Contains("VirtualizingStackPanel", hierarchyXaml);
         Assert.DoesNotContain("Shell.SceneEntities", hierarchyXaml);
         Assert.DoesNotContain("Shell.SelectedEntity", hierarchyXaml);
+        Assert.Contains(
+            "ContextRequested=\"OnHierarchyContextRequested\"",
+            hierarchyXaml);
 
         var inspectorXaml = LoadPanelXaml("StudioInspectorPanelView.axaml");
         Assert.Contains("x:DataType=\"vm:StudioInspectorPanelViewModel\"", inspectorXaml);
         Assert.Contains("Text=\"{Binding Shell.InspectorName}\"", inspectorXaml);
-        Assert.Contains("Command=\"{Binding Shell.ApplyEntityNameCommand}\"", inspectorXaml);
-        Assert.Contains("Command=\"{Binding Shell.ApplyEntityTransformCommand}\"", inspectorXaml);
+        Assert.Contains(
+            "commands:StudioActionButton.ActionId=\"{x:Static actions:StudioShellActionIds.ApplyEntityName}\"",
+            inspectorXaml);
+        Assert.Contains(
+            "commands:StudioActionButton.ActionId=\"{x:Static actions:StudioShellActionIds.ApplyEntityTransform}\"",
+            inspectorXaml);
         Assert.Contains("Shell.RotationDegreesX", inspectorXaml, StringComparison.Ordinal);
         Assert.Contains("Shell.RotationDegreesY", inspectorXaml, StringComparison.Ordinal);
         Assert.Contains("Shell.RotationDegreesZ", inspectorXaml, StringComparison.Ordinal);
@@ -60,7 +77,7 @@ public sealed class MainWindowXamlTests
 
         var scenePanelXaml = LoadPanelXaml("StudioScenePanelView.axaml");
         Assert.Contains(
-            "Command=\"{Binding Shell.CreateMeshEntityCommand}\"",
+            "commands:StudioActionButton.ActionId=\"{x:Static actions:StudioShellActionIds.CreateMeshEntity}\"",
             scenePanelXaml);
         Assert.Contains("IsChecked=\"{Binding IsWireframe, Mode=TwoWay}\"", scenePanelXaml);
     }

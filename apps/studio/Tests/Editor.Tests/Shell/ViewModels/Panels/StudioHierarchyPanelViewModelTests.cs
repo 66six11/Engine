@@ -175,7 +175,11 @@ public sealed class StudioHierarchyPanelViewModelTests
     {
         projectSession = new TestProjectSession();
         projectSession.Publish(initialSnapshot);
-        return new StudioShellViewModel(projectSession, new TestProjectDialogService());
+        return new StudioShellViewModel(
+            projectSession,
+            new TestProjectDialogService(),
+            StudioShellTestFactory.CreateDocumentTransitions(projectSession),
+            StudioShellTestFactory.CreateDiagnosticWriter());
     }
 
     private static SceneEntitySnapshot Entity(string name) =>

@@ -21,7 +21,9 @@ public sealed class StudioScenePanelViewModelTests
         projectSession.Publish(Ready(sceneId, revision: 1));
         using var shell = new StudioShellViewModel(
             projectSession,
-            new TestProjectDialogService());
+            new TestProjectDialogService(),
+            StudioShellTestFactory.CreateDocumentTransitions(projectSession),
+            StudioShellTestFactory.CreateDiagnosticWriter());
         using var panel = new StudioScenePanelViewModel(shell);
 
         var session = Assert.IsType<
@@ -62,7 +64,9 @@ public sealed class StudioScenePanelViewModelTests
         projectSession.Publish(Ready(Guid.NewGuid(), revision: 1));
         using var shell = new StudioShellViewModel(
             projectSession,
-            new TestProjectDialogService());
+            new TestProjectDialogService(),
+            StudioShellTestFactory.CreateDocumentTransitions(projectSession),
+            StudioShellTestFactory.CreateDiagnosticWriter());
         using var panel = new StudioScenePanelViewModel(shell);
         var session = panel.Session!;
 

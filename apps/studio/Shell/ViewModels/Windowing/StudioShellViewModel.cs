@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.ComponentModel;
 using System.Globalization;
 using System.IO;
@@ -9,10 +10,13 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using Asharia.Runtime;
+using Asharia.Studio.Application.Actions;
+using Asharia.Studio.Application.Diagnostics;
 using Asharia.Studio.Application.Projects;
 using Asharia.Studio.Application.Scenes;
 using Asharia.Studio.Presentation.Avalonia.Viewports;
 using Avalonia.Threading;
+using Editor.Shell.Actions;
 using Editor.Shell.Commands;
 using Editor.Shell.Docking.Panels;
 using Editor.Shell.Services.Projects;
@@ -67,8 +71,20 @@ internal sealed record PendingTransformApply(
     TransformFieldMask DirtyFields,
     ulong EditVersion);
 
+internal sealed record ProjectActionExecution(
+    ProjectSessionOperationResult? Result,
+    StudioActionCompletion Completion);
+
+internal readonly record struct StudioActionCommandProjectionKey(
+    StudioActionId ActionId,
+    StudioActionInvocationSource Source,
+    StudioPresentationId TopLevelId,
+    StudioPresentationId? FocusedPanelId);
+
 internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
 {
+    private const string UnclassifiedActionFailureMessage =
+        "The Studio action failed unexpectedly.";
     private const TransformFieldMask RotationFields =
         TransformFieldMask.RotationX |
         TransformFieldMask.RotationY |
@@ -76,21 +92,21 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
 
     private readonly IProjectSession projectSession_;
     private readonly IStudioProjectDialogService projectDialogs_;
-    private readonly AsyncCommand createProjectCommand_;
-    private readonly AsyncCommand openProjectCommand_;
-    private readonly AsyncCommand closeProjectCommand_;
-    private readonly AsyncCommand createEntityCommand_;
-    private readonly AsyncCommand createMeshEntityCommand_;
-    private readonly AsyncCommand saveSceneCommand_;
-    private readonly AsyncCommand undoSceneCommand_;
-    private readonly AsyncCommand redoSceneCommand_;
-    private readonly AsyncCommand applyEntityNameCommand_;
-    private readonly AsyncCommand applyEntityTransformCommand_;
+    private readonly ProjectDocumentTransitionCoordinator documentTransitions_;
+    private readonly StudioOperationDiagnosticWriter diagnostics_;
+    private readonly StudioActionRegistry actionRegistry_ = new();
+    private readonly StudioActionExecutor actionExecutor_;
+    private readonly Dictionary<StudioActionId, StudioActionCommand> actionCommands_ = [];
+    private readonly Dictionary<StudioActionCommandProjectionKey, StudioActionCommand>
+        projectedActionCommands_ = [];
+    private readonly HashSet<StudioActionId> shortcutActionsInFlight_ = [];
     private readonly EditorDockWorkspaceViewModel dockWorkspace_;
     private readonly ViewportPresentationLifetime viewportPresentationLifetime_;
     private readonly CancellationTokenSource lifetimeCancellation_ = new();
     private StudioShellStage stage_ = StudioShellStage.Starting;
     private ProjectSessionSnapshot projectSnapshot_;
+    private ProjectSessionSnapshot? lastOperationResultSnapshot_;
+    private ProjectSessionSnapshot? sessionSnapshotAtLastOperationResult_;
     private SceneEntitySnapshot? selectedEntity_;
     private string newProjectName_ = "MyProject";
     private string projectOperationMessage_ = string.Empty;
@@ -124,33 +140,31 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
 
     public StudioShellViewModel(
         IProjectSession projectSession,
-        IStudioProjectDialogService projectDialogs)
+        IStudioProjectDialogService projectDialogs,
+        ProjectDocumentTransitionCoordinator documentTransitions,
+        StudioOperationDiagnosticWriter diagnostics)
     {
         ArgumentNullException.ThrowIfNull(projectSession);
         ArgumentNullException.ThrowIfNull(projectDialogs);
+        ArgumentNullException.ThrowIfNull(documentTransitions);
+        ArgumentNullException.ThrowIfNull(diagnostics);
         projectSession_ = projectSession;
         projectDialogs_ = projectDialogs;
+        documentTransitions_ = documentTransitions;
+        diagnostics_ = diagnostics;
+        actionExecutor_ = new StudioActionExecutor(actionRegistry_);
         viewportPresentationLifetime_ = new ViewportPresentationLifetime();
         projectSnapshot_ = projectSession.Current;
-        createProjectCommand_ = new AsyncCommand(CreateProjectAsync, CanCreateProject);
-        openProjectCommand_ = new AsyncCommand(OpenProjectAsync, CanRunProjectOperation);
-        closeProjectCommand_ = new AsyncCommand(CloseProjectAsync, CanEditDocument);
-        createEntityCommand_ = new AsyncCommand(CreateEntityAsync, CanEditDocument);
-        createMeshEntityCommand_ = new AsyncCommand(
-            CreateMeshEntityAsync,
-            CanEditDocument);
-        saveSceneCommand_ = new AsyncCommand(SaveSceneAsync, CanSaveDocument);
-        undoSceneCommand_ = new AsyncCommand(UndoSceneAsync, CanUndoDocument);
-        redoSceneCommand_ = new AsyncCommand(RedoSceneAsync, CanRedoDocument);
-        applyEntityNameCommand_ = new AsyncCommand(ApplyEntityNameAsync, CanEditSelection);
-        applyEntityTransformCommand_ = new AsyncCommand(
-            ApplyEntityTransformAsync,
-            CanEditSelection);
         dockWorkspace_ = CreateDockWorkspace();
+        RegisterActions();
+        CreateActionCommands();
+        dockWorkspace_.DockContentChanged += OnDockContentChanged;
         projectSession_.SnapshotChanged += OnProjectSnapshotChanged;
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
+
+    public event EventHandler? ActionStateChanged;
 
     public StudioShellStage Stage => stage_;
 
@@ -244,7 +258,7 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
             }
             newProjectName_ = value;
             OnPropertyChanged();
-            createProjectCommand_.RaiseCanExecuteChanged();
+            RaiseActionStateChanged(StudioShellActionIds.CreateProject);
         }
     }
 
@@ -363,16 +377,35 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
     public bool HasProjectOperationMessage =>
         !string.IsNullOrWhiteSpace(ProjectOperationMessage);
 
-    public ICommand CreateProjectCommand => createProjectCommand_;
-    public ICommand OpenProjectCommand => openProjectCommand_;
-    public ICommand CloseProjectCommand => closeProjectCommand_;
-    public ICommand CreateEntityCommand => createEntityCommand_;
-    public ICommand CreateMeshEntityCommand => createMeshEntityCommand_;
-    public ICommand SaveSceneCommand => saveSceneCommand_;
-    public ICommand UndoSceneCommand => undoSceneCommand_;
-    public ICommand RedoSceneCommand => redoSceneCommand_;
-    public ICommand ApplyEntityNameCommand => applyEntityNameCommand_;
-    public ICommand ApplyEntityTransformCommand => applyEntityTransformCommand_;
+    internal void PresentProjectOperationMessage(string message)
+    {
+        ThrowIfDisposed();
+        ProjectOperationMessage = message ?? string.Empty;
+    }
+
+    public ICommand CreateProjectCommand => GetActionCommand(StudioShellActionIds.CreateProject);
+    public ICommand OpenProjectCommand => GetActionCommand(StudioShellActionIds.OpenProject);
+    public ICommand CloseProjectCommand => GetActionCommand(StudioShellActionIds.CloseProject);
+    public ICommand CreateEntityCommand => GetActionCommand(StudioShellActionIds.CreateEntity);
+    public ICommand CreateMeshEntityCommand =>
+        GetActionCommand(StudioShellActionIds.CreateMeshEntity);
+    public ICommand SaveSceneCommand => GetActionCommand(StudioShellActionIds.SaveScene);
+    public ICommand UndoSceneCommand => GetActionCommand(StudioShellActionIds.UndoScene);
+    public ICommand RedoSceneCommand => GetActionCommand(StudioShellActionIds.RedoScene);
+    public ICommand ApplyEntityNameCommand =>
+        GetActionCommand(StudioShellActionIds.ApplyEntityName);
+    public ICommand ApplyEntityTransformCommand =>
+        GetActionCommand(StudioShellActionIds.ApplyEntityTransform);
+    public ICommand OpenHierarchyPanelCommand =>
+        GetActionCommand(StudioShellActionIds.OpenHierarchyPanel);
+    public ICommand OpenProjectPanelCommand =>
+        GetActionCommand(StudioShellActionIds.OpenProjectPanel);
+    public ICommand OpenSceneViewPanelCommand =>
+        GetActionCommand(StudioShellActionIds.OpenSceneViewPanel);
+    public ICommand OpenInspectorPanelCommand =>
+        GetActionCommand(StudioShellActionIds.OpenInspectorPanel);
+    public ImmutableArray<StudioActionCatalogEntry> ActionCatalog =>
+        actionRegistry_.GetActions();
     public EditorDockWorkspaceViewModel DockWorkspace => dockWorkspace_;
 
     internal IProjectSession ProjectSession => projectSession_;
@@ -381,6 +414,209 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
 
     internal ViewportPresentationLifetime ViewportPresentationLifetime =>
         viewportPresentationLifetime_;
+
+    public ICommand GetActionCommand(StudioActionId actionId)
+    {
+        if (!actionId.IsValid)
+        {
+            throw new ArgumentException("Action id must be valid.", nameof(actionId));
+        }
+
+        return actionCommands_.TryGetValue(actionId, out var command)
+            ? command
+            : throw new KeyNotFoundException(
+                $"Studio action '{actionId}' is not registered.");
+    }
+
+    public ICommand GetActionCommand(
+        StudioActionId actionId,
+        StudioActionInvocationSource source,
+        StudioPresentationId topLevelId,
+        StudioPresentationId? focusedPanelId = null)
+    {
+        if (!actionId.IsValid)
+        {
+            throw new ArgumentException("Action id must be valid.", nameof(actionId));
+        }
+        if (!topLevelId.IsValid)
+        {
+            throw new ArgumentException("Top-level id must be valid.", nameof(topLevelId));
+        }
+
+        if (focusedPanelId is StudioPresentationId panelId && !panelId.IsValid)
+        {
+            throw new ArgumentException("Focused panel id must be valid.", nameof(focusedPanelId));
+        }
+
+        var key = new StudioActionCommandProjectionKey(
+            actionId,
+            source,
+            topLevelId,
+            focusedPanelId);
+        if (!projectedActionCommands_.TryGetValue(key, out var command))
+        {
+            command = new StudioActionCommand(
+                actionId,
+                source,
+                topLevelId,
+                (id, invocationSource, presentationId) => CaptureContextForAction(
+                    id,
+                    invocationSource,
+                    presentationId,
+                    focusedPanelId),
+                EvaluateAction,
+                (id, context) => ExecuteActionAsync(id, context),
+                () => !isDisposed_);
+            projectedActionCommands_.Add(key, command);
+        }
+        return command;
+    }
+
+    public StudioActionContextSnapshot CaptureActionContext(
+        StudioActionInvocationSource source,
+        StudioPresentationId? topLevelId,
+        StudioActionTarget? target = null,
+        StudioPresentationId? focusedPanelId = null)
+    {
+        ThrowIfDisposed();
+        var project = projectSnapshot_.Project;
+        var document = projectSnapshot_.Document;
+        var selection = selectedEntity_ is { } selected
+            ? new StudioActionSelectionSnapshot([selected.ObjectId], selected.ObjectId)
+            : StudioActionSelectionSnapshot.Empty;
+        var frozenTarget = target ?? (document is not null && project is not null
+            ? StudioActionTarget.Scene(project.SessionId, document.SceneId)
+            : project is not null
+                ? StudioActionTarget.Project(project.SessionId)
+                : StudioActionTarget.None);
+        if (focusedPanelId is StudioPresentationId panelId && !panelId.IsValid)
+        {
+            throw new ArgumentException("Focused panel id must be valid.", nameof(focusedPanelId));
+        }
+        var capturedFocusedPanelId = focusedPanelId ?? ActivePanelId(dockWorkspace_);
+        return new StudioActionContextSnapshot(
+            source,
+            topLevelId,
+            capturedFocusedPanelId,
+            project?.SessionId,
+            document?.SceneId,
+            document?.Revision,
+            selection,
+            frozenTarget,
+            Guid.NewGuid(),
+            Guid.NewGuid());
+    }
+
+    public StudioActionStateEvaluation EvaluateAction(
+        StudioActionId actionId,
+        StudioActionContextSnapshot context) =>
+        actionExecutor_.EvaluateState(actionId, context);
+
+    public async ValueTask<StudioActionResult> ExecuteActionAsync(
+        StudioActionId actionId,
+        StudioActionContextSnapshot context,
+        CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        StudioActionResult result;
+        if (!cancellationToken.CanBeCanceled)
+        {
+            result = await actionExecutor_.ExecuteAsync(
+                actionId,
+                context,
+                lifetimeCancellation_.Token);
+        }
+        else
+        {
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(
+                cancellationToken,
+                lifetimeCancellation_.Token);
+            result = await actionExecutor_.ExecuteAsync(actionId, context, linked.Token);
+        }
+
+        if (result.Status == StudioActionResultStatus.Failed &&
+            result.DiagnosticSequence is null)
+        {
+            ProjectOperationMessage = UnclassifiedActionFailureMessage;
+            var diagnostic = diagnostics_.PublishUnclassifiedActionFailure(
+                actionId,
+                UnclassifiedActionFailureMessage,
+                DiagnosticContext(actionId, context));
+            return result.WithDiagnosticSequence(diagnostic.SequenceId);
+        }
+        return result;
+    }
+
+    public ValueTask<StudioActionResult> ExecuteActionAsync(
+        StudioActionId actionId,
+        StudioActionInvocationSource source,
+        StudioPresentationId? topLevelId,
+        StudioActionTarget? target = null,
+        StudioPresentationId? focusedPanelId = null,
+        CancellationToken cancellationToken = default) =>
+        ExecuteActionAsync(
+            actionId,
+            CaptureActionContext(source, topLevelId, target, focusedPanelId),
+            cancellationToken);
+
+    public bool TryExecuteShortcut(
+        StudioShortcutChord chord,
+        StudioPresentationId topLevelId,
+        StudioPresentationId? focusedPanelId = null)
+    {
+        ArgumentNullException.ThrowIfNull(chord);
+        if (!topLevelId.IsValid ||
+            !actionRegistry_.TryResolveShortcut(chord, out var actionId))
+        {
+            return false;
+        }
+
+        var context = CaptureContextForAction(
+            actionId,
+            StudioActionInvocationSource.Shortcut,
+            topLevelId,
+            focusedPanelId);
+        var evaluation = EvaluateAction(actionId, context);
+        if (evaluation.Status != StudioActionStateEvaluationStatus.Evaluated ||
+            evaluation.State is not { IsVisible: true, IsEnabled: true, IsRunning: false })
+        {
+            return false;
+        }
+
+        if (!shortcutActionsInFlight_.Add(actionId))
+        {
+            return false;
+        }
+        RaiseActionStateChanged(actionId);
+        var execution = ExecuteShortcutAsync(actionId, context);
+        if (!execution.IsCompleted)
+        {
+            IsProjectOperationRunning = true;
+        }
+        return true;
+    }
+
+    private async Task ExecuteShortcutAsync(
+        StudioActionId actionId,
+        StudioActionContextSnapshot context)
+    {
+        try
+        {
+            await ExecuteActionAsync(actionId, context);
+        }
+        catch (ObjectDisposedException) when (isDisposed_)
+        {
+        }
+        finally
+        {
+            shortcutActionsInFlight_.Remove(actionId);
+            if (!isDisposed_)
+            {
+                IsProjectOperationRunning = false;
+            }
+            RaiseActionStateChanged(actionId);
+        }
+    }
 
     public void MarkReady()
     {
@@ -412,6 +648,7 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
         }
         isDisposed_ = true;
         projectSession_.SnapshotChanged -= OnProjectSnapshotChanged;
+        dockWorkspace_.DockContentChanged -= OnDockContentChanged;
         dockWorkspace_.Dispose();
         lifetimeCancellation_.Cancel();
         RaiseProjectCommandStateChanged();
@@ -471,6 +708,859 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
         return new EditorDockWorkspaceViewModel(panels);
     }
 
+    private void RegisterActions()
+    {
+        RegisterAction(
+            StudioShellActionIds.CreateProject,
+            "Create Project",
+            "Create a project and replace the active document after dirty-state resolution.",
+            "File",
+            EvaluateCreateProject,
+            HandleCreateProjectAsync,
+            Menu(StudioShellActionIds.CreateProject, "File/Create Project", "create", 10010),
+            Toolbar(StudioShellActionIds.CreateProject, "Main/Create Project", "project", 10),
+            Shortcut(
+                StudioShellActionIds.CreateProject,
+                "N",
+                StudioShortcutModifiers.Control,
+                10));
+        RegisterAction(
+            StudioShellActionIds.OpenProject,
+            "Open Project",
+            "Open a project after dirty-state resolution.",
+            "File",
+            EvaluateRunProjectOperation,
+            HandleOpenProjectAsync,
+            Menu(StudioShellActionIds.OpenProject, "File/Open Project", "open", 10020),
+            Toolbar(StudioShellActionIds.OpenProject, "Main/Open Project", "project", 20),
+            Shortcut(
+                StudioShellActionIds.OpenProject,
+                "O",
+                StudioShortcutModifiers.Control,
+                20));
+        RegisterAction(
+            StudioShellActionIds.CloseProject,
+            "Close Project",
+            "Close the active project after dirty-state resolution.",
+            "File",
+            context => EvaluateDocumentAction(context, CanEditDocument),
+            HandleCloseProjectAsync,
+            Menu(StudioShellActionIds.CloseProject, "File/Close Project", "close", 10030),
+            Toolbar(StudioShellActionIds.CloseProject, "Main/Close Project", "project", 30),
+            Shortcut(
+                StudioShellActionIds.CloseProject,
+                "W",
+                StudioShortcutModifiers.Control,
+                30));
+        RegisterAction(
+            StudioShellActionIds.SaveScene,
+            "Save Scene",
+            "Save the active scene document.",
+            "File",
+            context => EvaluateDocumentAction(context, CanSaveDocument),
+            (context, token) => ExecuteProjectActionAsync(
+                StudioShellActionIds.SaveScene,
+                context,
+                token,
+                projectSession_.SaveSceneAsync),
+            Menu(StudioShellActionIds.SaveScene, "File/Save Scene", "save", 10040),
+            Toolbar(StudioShellActionIds.SaveScene, "Main/Save Scene", "project", 40),
+            Shortcut(
+                StudioShellActionIds.SaveScene,
+                "S",
+                StudioShortcutModifiers.Control,
+                40));
+        RegisterAction(
+            StudioShellActionIds.UndoScene,
+            "Undo",
+            "Undo the latest persistent scene edit.",
+            "Edit",
+            context => EvaluateHistoryAction(context, CanUndoDocument, UndoSceneLabel),
+            (context, token) => ExecuteProjectActionAsync(
+                StudioShellActionIds.UndoScene,
+                context,
+                token,
+                projectSession_.UndoAsync),
+            Menu(StudioShellActionIds.UndoScene, "Edit/Undo", "history", 20010),
+            Toolbar(StudioShellActionIds.UndoScene, "Main/Undo", "history", 10),
+            Shortcut(
+                StudioShellActionIds.UndoScene,
+                "Z",
+                StudioShortcutModifiers.Control,
+                10));
+        RegisterAction(
+            StudioShellActionIds.RedoScene,
+            "Redo",
+            "Redo the next persistent scene edit.",
+            "Edit",
+            context => EvaluateHistoryAction(context, CanRedoDocument, RedoSceneLabel),
+            (context, token) => ExecuteProjectActionAsync(
+                StudioShellActionIds.RedoScene,
+                context,
+                token,
+                projectSession_.RedoAsync),
+            Menu(StudioShellActionIds.RedoScene, "Edit/Redo", "history", 20020),
+            Toolbar(StudioShellActionIds.RedoScene, "Main/Redo", "history", 20),
+            Shortcut(
+                StudioShellActionIds.RedoScene,
+                "Y",
+                StudioShortcutModifiers.Control,
+                20),
+            Shortcut(
+                StudioShellActionIds.RedoScene,
+                "Z",
+                StudioShortcutModifiers.Control | StudioShortcutModifiers.Shift,
+                21,
+                "alternate"));
+        RegisterAction(
+            StudioShellActionIds.CreateEntity,
+            "Create Entity",
+            "Create an entity in the active scene.",
+            "Scene",
+            EvaluateSceneCreation,
+            HandleCreateEntityAsync,
+            Menu(StudioShellActionIds.CreateEntity, "Scene/Create Entity", "create", 30010),
+            Toolbar(StudioShellActionIds.CreateEntity, "Main/Create Entity", "create", 10),
+            ContextMenu(
+                StudioShellActionIds.CreateEntity,
+                "Hierarchy/Create Entity",
+                "create",
+                10));
+        RegisterAction(
+            StudioShellActionIds.CreateMeshEntity,
+            "Create Mesh Entity",
+            "Create the validation mesh entity in the active scene.",
+            "Scene",
+            EvaluateSceneCreation,
+            HandleCreateMeshEntityAsync,
+            Menu(
+                StudioShellActionIds.CreateMeshEntity,
+                "Scene/Create Mesh Entity",
+                "create",
+                30020),
+            Toolbar(
+                StudioShellActionIds.CreateMeshEntity,
+                "Main/Create Mesh Entity",
+                "create",
+                20),
+            ContextMenu(
+                StudioShellActionIds.CreateMeshEntity,
+                "Hierarchy/Create Mesh Entity",
+                "create",
+                20));
+        RegisterAction(
+            StudioShellActionIds.ApplyEntityName,
+            "Apply Entity Name",
+            "Apply the inspector name to the frozen selected entity.",
+            "Scene",
+            EvaluateSelectionAction,
+            HandleApplyEntityNameAsync,
+            Menu(
+                StudioShellActionIds.ApplyEntityName,
+                "Scene/Apply Entity Name",
+                "apply",
+                30030),
+            Toolbar(
+                StudioShellActionIds.ApplyEntityName,
+                "Inspector/Apply Name",
+                "apply",
+                30));
+        RegisterAction(
+            StudioShellActionIds.ApplyEntityTransform,
+            "Apply Entity Transform",
+            "Apply the inspector transform to the frozen selected entity.",
+            "Scene",
+            EvaluateSelectionAction,
+            HandleApplyEntityTransformAsync,
+            Menu(
+                StudioShellActionIds.ApplyEntityTransform,
+                "Scene/Apply Entity Transform",
+                "apply",
+                30040),
+            Toolbar(
+                StudioShellActionIds.ApplyEntityTransform,
+                "Inspector/Apply Transform",
+                "apply",
+                40));
+
+        RegisterPanelAction(
+            StudioShellActionIds.OpenHierarchyPanel,
+            "Hierarchy",
+            "hierarchy",
+            order: 40010);
+        RegisterPanelAction(
+            StudioShellActionIds.OpenProjectPanel,
+            "Project",
+            "project",
+            order: 40020);
+        RegisterPanelAction(
+            StudioShellActionIds.OpenSceneViewPanel,
+            "Scene Document",
+            "scene-view",
+            order: 40030);
+        RegisterPanelAction(
+            StudioShellActionIds.OpenInspectorPanel,
+            "Inspector",
+            "inspector",
+            order: 40040);
+    }
+
+    private void RegisterPanelAction(
+        StudioActionId actionId,
+        string label,
+        string panelId,
+        int order)
+    {
+        var stablePanelId = new StudioPresentationId(panelId);
+        RegisterAction(
+            actionId,
+            $"Open {label}",
+            $"Open or activate the {label} panel.",
+            "Window",
+            context => EvaluatePanelAction(context, stablePanelId),
+            (context, _) => HandleOpenPanelAsync(actionId, stablePanelId, context),
+            Menu(actionId, $"Window/Panels/{label}", "panels", order));
+    }
+
+    private void RegisterAction(
+        StudioActionId actionId,
+        string label,
+        string description,
+        string category,
+        StudioActionStateEvaluator stateEvaluator,
+        StudioActionHandler handler,
+        params StudioActionPlacement[] placements) =>
+        actionRegistry_.Register(
+            new StudioActionDefinition(actionId, label, description, category),
+            placements,
+            stateEvaluator,
+            handler);
+
+    private void CreateActionCommands()
+    {
+        foreach (var entry in actionRegistry_.GetActions())
+        {
+            var actionId = entry.Definition.Id;
+            actionCommands_.Add(
+                actionId,
+                new StudioActionCommand(
+                    actionId,
+                    id => CaptureContextForAction(
+                        id,
+                        StudioActionInvocationSource.Toolbar,
+                        StudioShellPresentationIds.MainWindow),
+                    EvaluateAction,
+                    (id, context) => ExecuteActionAsync(id, context),
+                    () => !isDisposed_));
+        }
+    }
+
+    private StudioActionContextSnapshot CaptureContextForAction(
+        StudioActionId actionId,
+        StudioActionInvocationSource source,
+        StudioPresentationId topLevelId,
+        StudioPresentationId? focusedPanelId = null)
+    {
+        var target = actionId == StudioShellActionIds.ApplyEntityName ||
+            actionId == StudioShellActionIds.ApplyEntityTransform
+                ? CurrentSelectionTarget()
+                : IsPanelAction(actionId)
+                    ? PanelTarget(actionId)
+                    : null;
+        return CaptureActionContext(source, topLevelId, target, focusedPanelId);
+    }
+
+    internal static StudioPresentationId? ActivePanelId(
+        EditorDockWorkspaceViewModel workspace)
+    {
+        ArgumentNullException.ThrowIfNull(workspace);
+        var activePanelId = workspace.ActiveWindow?.ActiveTab?.Id;
+        return activePanelId is null
+            ? null
+            : new StudioPresentationId(activePanelId);
+    }
+
+    private StudioActionTarget? CurrentSelectionTarget()
+    {
+        var project = projectSnapshot_.Project;
+        var document = projectSnapshot_.Document;
+        var selected = selectedEntity_;
+        return project is null || document is null || selected is null
+            ? null
+            : StudioActionTarget.SceneObject(
+                project.SessionId,
+                document.SceneId,
+                selected.ObjectId);
+    }
+
+    private static bool IsPanelAction(StudioActionId actionId) =>
+        actionId == StudioShellActionIds.OpenHierarchyPanel ||
+        actionId == StudioShellActionIds.OpenProjectPanel ||
+        actionId == StudioShellActionIds.OpenSceneViewPanel ||
+        actionId == StudioShellActionIds.OpenInspectorPanel;
+
+    private static StudioActionTarget PanelTarget(StudioActionId actionId) =>
+        StudioActionTarget.Panel(new StudioPresentationId(actionId switch
+        {
+            var id when id == StudioShellActionIds.OpenHierarchyPanel => "hierarchy",
+            var id when id == StudioShellActionIds.OpenProjectPanel => "project",
+            var id when id == StudioShellActionIds.OpenSceneViewPanel => "scene-view",
+            var id when id == StudioShellActionIds.OpenInspectorPanel => "inspector",
+            _ => throw new ArgumentOutOfRangeException(nameof(actionId)),
+        }));
+
+    private StudioActionState EvaluateCreateProject(StudioActionContextSnapshot context) =>
+        EvaluateWorkspaceAction(
+            context,
+            CanCreateProject,
+            "Enter a project name before creating a project.");
+
+    private StudioActionState EvaluateRunProjectOperation(
+        StudioActionContextSnapshot context) =>
+        EvaluateWorkspaceAction(
+            context,
+            CanRunProjectOperation,
+            "The Studio workspace is not ready for project operations.");
+
+    private StudioActionState EvaluateDocumentAction(
+        StudioActionContextSnapshot context,
+        Func<bool> canExecute)
+    {
+        if (!ScopeMatchesCurrentDocument(context))
+        {
+            return StudioActionState.Blocked(
+                StudioActionBlockKind.Stale,
+                "The action was captured for an older project or scene revision.");
+        }
+
+        return EvaluateWorkspaceAction(
+            context,
+            canExecute,
+            "The active scene is not available for this action.");
+    }
+
+    private StudioActionState EvaluateHistoryAction(
+        StudioActionContextSnapshot context,
+        Func<bool> canExecute,
+        string presentationLabel)
+    {
+        var state = EvaluateDocumentAction(context, canExecute);
+        return new StudioActionState(
+            state.IsVisible,
+            state.BlockKind,
+            state.CheckState,
+            state.IsRunning,
+            state.DisabledReason,
+            presentationLabel);
+    }
+
+    private StudioActionState EvaluateSceneCreation(StudioActionContextSnapshot context)
+    {
+        var documentState = EvaluateDocumentAction(context, CanEditDocument);
+        if (!documentState.IsEnabled)
+        {
+            return documentState;
+        }
+        if (context.Target.Kind is not StudioActionTargetKind.Scene and
+            not StudioActionTargetKind.SceneObject)
+        {
+            return StudioActionState.Blocked(
+                StudioActionBlockKind.Disabled,
+                "Scene creation requires an explicit scene target.");
+        }
+        if (context.Target.Kind == StudioActionTargetKind.SceneObject &&
+            (context.Target.ObjectId is not Guid targetObjectId ||
+             !projectSnapshot_.Document!.Entities.Any(
+                 entity => entity.ObjectId == targetObjectId)))
+        {
+            return StudioActionState.Blocked(
+                StudioActionBlockKind.Stale,
+                "The target entity changed after the action context was captured.");
+        }
+
+        return StudioActionState.Available(isRunning: IsProjectOperationRunning);
+    }
+
+    private StudioActionState EvaluateSelectionAction(StudioActionContextSnapshot context)
+    {
+        var documentState = EvaluateDocumentAction(context, CanEditSelection);
+        if (!documentState.IsEnabled)
+        {
+            return documentState;
+        }
+        var targetObjectId = context.Target.ObjectId;
+        if (context.Target.Kind != StudioActionTargetKind.SceneObject ||
+            targetObjectId is null || selectedEntity_?.ObjectId != targetObjectId)
+        {
+            return StudioActionState.Blocked(
+                StudioActionBlockKind.Stale,
+                "The selected entity changed after the action context was captured.");
+        }
+
+        return StudioActionState.Available(isRunning: IsProjectOperationRunning);
+    }
+
+    private StudioActionState EvaluatePanelAction(
+        StudioActionContextSnapshot context,
+        StudioPresentationId panelId)
+    {
+        if (!CanRunProjectOperation() ||
+            context.Target.PanelId != panelId ||
+            !dockWorkspace_.CanOpenPanel(panelId.Value))
+        {
+            return StudioActionState.Blocked(
+                StudioActionBlockKind.Disabled,
+                $"Panel '{panelId}' cannot be opened in the current workspace.");
+        }
+
+        return StudioActionState.Available();
+    }
+
+    private StudioActionState EvaluateWorkspaceAction(
+        StudioActionContextSnapshot context,
+        Func<bool> canExecute,
+        string disabledReason)
+    {
+        if (isDisposed_ || stage_ != StudioShellStage.Ready)
+        {
+            return StudioActionState.Blocked(
+                StudioActionBlockKind.Disabled,
+                "The Studio workspace is not ready.");
+        }
+        var current = CurrentActionSnapshot();
+        if (context.ProjectSessionId != current.Project?.SessionId)
+        {
+            return StudioActionState.Blocked(
+                StudioActionBlockKind.Stale,
+                "The active project changed after the action context was captured.");
+        }
+        if (!canExecute())
+        {
+            return StudioActionState.Blocked(
+                StudioActionBlockKind.Disabled,
+                disabledReason,
+                isRunning: IsProjectOperationRunning);
+        }
+
+        return StudioActionState.Available(isRunning: IsProjectOperationRunning);
+    }
+
+    private bool ScopeMatchesCurrentDocument(StudioActionContextSnapshot context) =>
+        context.ProjectSessionId == CurrentActionSnapshot().Project?.SessionId &&
+        context.SceneId == CurrentActionSnapshot().Document?.SceneId &&
+        context.DocumentRevision == CurrentActionSnapshot().Document?.Revision;
+
+    private ProjectSessionSnapshot CurrentActionSnapshot()
+    {
+        var sessionSnapshot = projectSession_.Current;
+        return lastOperationResultSnapshot_ == projectSnapshot_ &&
+            sessionSnapshotAtLastOperationResult_ == sessionSnapshot
+                ? lastOperationResultSnapshot_
+                : sessionSnapshot;
+    }
+
+    private void RememberOperationResult(ProjectSessionSnapshot resultSnapshot)
+    {
+        lastOperationResultSnapshot_ = resultSnapshot;
+        sessionSnapshotAtLastOperationResult_ = projectSession_.Current;
+    }
+
+    private async ValueTask<StudioActionCompletion> HandleCreateProjectAsync(
+        StudioActionContextSnapshot context,
+        CancellationToken cancellationToken)
+    {
+        var parent = await projectDialogs_.SelectProjectParentDirectoryAsync(
+            cancellationToken);
+        if (parent is null)
+        {
+            return StudioActionCompletion.Cancelled("Project creation was cancelled.");
+        }
+
+        return await ExecuteDocumentTransitionActionAsync(
+            StudioShellActionIds.CreateProject,
+            context,
+            cancellationToken,
+            ProjectDocumentTransitionKind.CreateProject,
+            (expectation, token) => ExecuteWithPresentationDrainAsync(
+                () => projectSession_.CreateProjectAsync(
+                    parent,
+                    NewProjectName,
+                    expectation,
+                    token)));
+    }
+
+    private async ValueTask<StudioActionCompletion> HandleOpenProjectAsync(
+        StudioActionContextSnapshot context,
+        CancellationToken cancellationToken)
+    {
+        var descriptor = await projectDialogs_.SelectProjectDescriptorAsync(
+            cancellationToken);
+        if (descriptor is null)
+        {
+            return StudioActionCompletion.Cancelled("Project opening was cancelled.");
+        }
+
+        return await ExecuteDocumentTransitionActionAsync(
+            StudioShellActionIds.OpenProject,
+            context,
+            cancellationToken,
+            ProjectDocumentTransitionKind.OpenProject,
+            (expectation, token) => ExecuteWithPresentationDrainAsync(
+                () => projectSession_.OpenProjectAsync(
+                    descriptor,
+                    expectation,
+                    token)));
+    }
+
+    private ValueTask<StudioActionCompletion> HandleCloseProjectAsync(
+        StudioActionContextSnapshot context,
+        CancellationToken cancellationToken) =>
+        ExecuteDocumentTransitionActionAsync(
+            StudioShellActionIds.CloseProject,
+            context,
+            cancellationToken,
+            ProjectDocumentTransitionKind.CloseProject,
+            (expectation, token) => ExecuteWithPresentationDrainAsync(
+                () => projectSession_.CloseProjectAsync(expectation, token)));
+
+    private async ValueTask<StudioActionCompletion> ExecuteDocumentTransitionActionAsync(
+        StudioActionId actionId,
+        StudioActionContextSnapshot context,
+        CancellationToken cancellationToken,
+        ProjectDocumentTransitionKind transitionKind,
+        Func<ProjectDocumentTransitionExpectation, CancellationToken,
+            ValueTask<ProjectSessionOperationResult>> transition)
+    {
+        ProjectOperationMessage = string.Empty;
+        IsProjectOperationRunning = true;
+        try
+        {
+            var result = await documentTransitions_.ExecuteAsync(
+                transitionKind,
+                transition,
+                cancellationToken);
+            if (result.ProjectOperation is { } operation)
+            {
+                ApplyProjectSnapshot(operation.Current);
+                RememberOperationResult(operation.Current);
+            }
+            ProjectOperationMessage = result.Status ==
+                ProjectDocumentTransitionStatus.Cancelled
+                    ? string.Empty
+                    : result.Message;
+            var diagnostic = diagnostics_.PublishDocumentTransitionFailure(
+                result,
+                DiagnosticContext(actionId, context));
+            return result.Status switch
+            {
+                ProjectDocumentTransitionStatus.Completed =>
+                    StudioActionCompletion.Succeeded(result.Message),
+                ProjectDocumentTransitionStatus.Cancelled =>
+                    StudioActionCompletion.Cancelled(result.Message),
+                ProjectDocumentTransitionStatus.Busy =>
+                    StudioActionCompletion.Conflict(result.Message),
+                ProjectDocumentTransitionStatus.Stale =>
+                    StudioActionCompletion.Stale(
+                        result.Message,
+                        diagnostic?.SequenceId),
+                _ => StudioActionCompletion.Failed(
+                    result.Message,
+                    diagnostic?.SequenceId),
+            };
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return StudioActionCompletion.Cancelled("The project transition was cancelled.");
+        }
+        catch (Exception exception)
+        {
+            const string message = "The document transition failed unexpectedly.";
+            ProjectOperationMessage = message;
+            var diagnostic = diagnostics_.PublishUnexpectedException(
+                DiagnosticContext(actionId, context),
+                message,
+                exception);
+            return StudioActionCompletion.Failed(message, diagnostic.SequenceId);
+        }
+        finally
+        {
+            IsProjectOperationRunning = false;
+        }
+    }
+
+    private async ValueTask<StudioActionCompletion> HandleCreateEntityAsync(
+        StudioActionContextSnapshot context,
+        CancellationToken cancellationToken)
+    {
+        var execution = await ExecuteProjectActionCoreAsync(
+            StudioShellActionIds.CreateEntity,
+            context,
+            cancellationToken,
+            token => projectSession_.CreateEntityAsync("Entity", token));
+        SelectCreatedEntity(execution.Result);
+        return execution.Completion;
+    }
+
+    private async ValueTask<StudioActionCompletion> HandleCreateMeshEntityAsync(
+        StudioActionContextSnapshot context,
+        CancellationToken cancellationToken)
+    {
+        var execution = await ExecuteProjectActionCoreAsync(
+            StudioShellActionIds.CreateMeshEntity,
+            context,
+            cancellationToken,
+            token => projectSession_.CreateMeshEntityAsync(
+                "Directional Wedge",
+                SceneMeshReference.DirectionalWedgeValidation,
+                token));
+        SelectCreatedEntity(execution.Result);
+        return execution.Completion;
+    }
+
+    private ValueTask<StudioActionCompletion> HandleApplyEntityNameAsync(
+        StudioActionContextSnapshot context,
+        CancellationToken cancellationToken)
+    {
+        var objectId = context.Target.ObjectId!.Value;
+        return ExecuteProjectActionAsync(
+            StudioShellActionIds.ApplyEntityName,
+            context,
+            cancellationToken,
+            token => projectSession_.SetEntityNameAsync(
+                objectId,
+                InspectorName,
+                token));
+    }
+
+    private async ValueTask<StudioActionCompletion> HandleApplyEntityTransformAsync(
+        StudioActionContextSnapshot context,
+        CancellationToken cancellationToken)
+    {
+        var selected = SelectedEntity!;
+        if (!TryReadTransform(out var transform, out var submittedEuler))
+        {
+            ProjectOperationMessage =
+                "Transform fields must be finite invariant-culture numbers; rotation is expressed in degrees.";
+            return StudioActionCompletion.Disabled(ProjectOperationMessage);
+        }
+        rotationEulerHint_ = submittedEuler;
+        var project = projectSnapshot_.Project!;
+        var document = projectSnapshot_.Document!;
+        var editId = ProjectEditId.CreateNew();
+        var baseRevision = transformDirtyFields_ == TransformFieldMask.None
+            ? document.Revision
+            : transformEditBaseRevision_;
+        pendingTransformApply_ = new PendingTransformApply(
+            editId,
+            project.SessionId,
+            document.SceneId,
+            selected.ObjectId,
+            baseRevision,
+            transform,
+            submittedEuler,
+            CaptureTransformInspectorText(),
+            transformDirtyFields_,
+            transformEditVersion_);
+
+        var execution = await ExecuteProjectActionCoreAsync(
+            StudioShellActionIds.ApplyEntityTransform,
+            context,
+            cancellationToken,
+            token => projectSession_.SetEntityTransformAsync(
+                selected.ObjectId,
+                transform,
+                new ProjectSessionEditContext(editId, baseRevision),
+                token),
+            (result) => ApplyProjectSnapshot(
+                result.Current,
+                result.OriginatingEditId,
+                result.OriginatingEditId is null ? null : result.Succeeded));
+        if (execution.Result is not { Succeeded: true } &&
+            pendingTransformApply_?.EditId == editId)
+        {
+            pendingTransformApply_ = null;
+        }
+        return execution.Completion;
+    }
+
+    private async ValueTask<StudioActionCompletion> ExecuteProjectActionAsync(
+        StudioActionId actionId,
+        StudioActionContextSnapshot context,
+        CancellationToken cancellationToken,
+        Func<CancellationToken, ValueTask<ProjectSessionOperationResult>> operation) =>
+        (await ExecuteProjectActionCoreAsync(
+            actionId,
+            context,
+            cancellationToken,
+            operation)).Completion;
+
+    private async ValueTask<ProjectActionExecution> ExecuteProjectActionCoreAsync(
+        StudioActionId actionId,
+        StudioActionContextSnapshot context,
+        CancellationToken cancellationToken,
+        Func<CancellationToken, ValueTask<ProjectSessionOperationResult>> operation,
+        Action<ProjectSessionOperationResult>? apply = null)
+    {
+        ProjectOperationMessage = string.Empty;
+        IsProjectOperationRunning = true;
+        try
+        {
+            var result = await operation(cancellationToken);
+            (apply ?? (result => ApplyProjectSnapshot(result.Current)))(result);
+            RememberOperationResult(result.Current);
+            ProjectOperationMessage = result.Message;
+            var diagnostic = diagnostics_.PublishProjectSessionFailure(
+                result,
+                DiagnosticContext(actionId, context));
+            var completion = result.Succeeded
+                ? StudioActionCompletion.Succeeded(
+                    result.Message,
+                    projectEditId: result.OriginatingEditId)
+                : CompletionForFailure(result, diagnostic?.SequenceId);
+            return new ProjectActionExecution(result, completion);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return new ProjectActionExecution(
+                null,
+                StudioActionCompletion.Cancelled("The project operation was cancelled."));
+        }
+        catch (Exception exception)
+        {
+            const string message = "The project operation failed unexpectedly.";
+            ProjectOperationMessage = message;
+            var diagnostic = diagnostics_.PublishUnexpectedException(
+                DiagnosticContext(actionId, context),
+                message,
+                exception);
+            return new ProjectActionExecution(
+                null,
+                StudioActionCompletion.Failed(message, diagnostic.SequenceId));
+        }
+        finally
+        {
+            IsProjectOperationRunning = false;
+        }
+    }
+
+
+    private static StudioActionCompletion CompletionForFailure(
+        ProjectSessionOperationResult result,
+        long? diagnosticSequence) => result.FailureKind switch
+        {
+            ProjectSessionFailureKind.RevisionConflict =>
+                StudioActionCompletion.Conflict(result.Message, diagnosticSequence),
+            ProjectSessionFailureKind.Busy =>
+                StudioActionCompletion.Conflict(result.Message, diagnosticSequence),
+            ProjectSessionFailureKind.StaleDocumentTransition =>
+                StudioActionCompletion.Stale(result.Message, diagnosticSequence),
+            _ => StudioActionCompletion.Failed(result.Message, diagnosticSequence),
+        };
+
+    private ValueTask<StudioActionCompletion> HandleOpenPanelAsync(
+        StudioActionId actionId,
+        StudioPresentationId panelId,
+        StudioActionContextSnapshot context)
+    {
+        try
+        {
+            return ValueTask.FromResult(dockWorkspace_.OpenPanel(panelId.Value)
+                ? StudioActionCompletion.Succeeded($"Opened {panelId} panel.")
+                : StudioActionCompletion.Disabled(
+                    $"Panel '{panelId}' could not be opened."));
+        }
+        catch (Exception exception)
+        {
+            var message = $"Panel '{panelId}' failed to open unexpectedly.";
+            var diagnostic = diagnostics_.PublishUnexpectedException(
+                DiagnosticContext(actionId, context),
+                message,
+                exception);
+            return ValueTask.FromResult(
+                StudioActionCompletion.Failed(message, diagnostic.SequenceId));
+        }
+    }
+
+    private static StudioActionPlacement Menu(
+        StudioActionId actionId,
+        string path,
+        string section,
+        int order) =>
+        Placement(actionId, "menu", StudioActionPlacementKind.Menu, path, section, order);
+
+    private static StudioActionPlacement Toolbar(
+        StudioActionId actionId,
+        string path,
+        string section,
+        int order) =>
+        Placement(actionId, "toolbar", StudioActionPlacementKind.Toolbar, path, section, order);
+
+    private static StudioActionPlacement ContextMenu(
+        StudioActionId actionId,
+        string path,
+        string section,
+        int order) =>
+        Placement(
+            actionId,
+            "context",
+            StudioActionPlacementKind.ContextMenu,
+            path,
+            section,
+            order,
+            StudioActionScope.FocusedPanel);
+
+    private static StudioActionPlacement Shortcut(
+        StudioActionId actionId,
+        string key,
+        StudioShortcutModifiers modifiers,
+        int order,
+        string suffix = "primary") =>
+        new(
+            new StudioActionPlacementId($"{actionId.Value}.shortcut.{suffix}"),
+            StudioActionPlacementKind.Shortcut,
+            path: null,
+            "shortcut",
+            order,
+            StudioActionScope.Document,
+            new StudioShortcutChord(key, modifiers));
+
+    private static StudioActionPlacement Placement(
+        StudioActionId actionId,
+        string kindSuffix,
+        StudioActionPlacementKind kind,
+        string path,
+        string section,
+        int order,
+        StudioActionScope scope = StudioActionScope.Workspace) =>
+        new(
+            new StudioActionPlacementId($"{actionId.Value}.{kindSuffix}"),
+            kind,
+            path,
+            section,
+            order,
+            scope);
+
+    private StudioUnexpectedOperationContext DiagnosticContext(
+        StudioActionId actionId,
+        StudioActionContextSnapshot context) =>
+        new(
+            $"{actionId.Value}.failed",
+            "studio-action",
+            "studio-shell",
+            context.ProjectSessionId is ProjectSessionId projectSessionId
+                ? new StudioDiagnosticScope(
+                    "studio-action",
+                    projectSessionId.Value.ToString("D"),
+                    checked((long)(context.DocumentRevision ?? 0)))
+                : StudioDiagnosticScope.Process(diagnostics_.ProcessIdentity),
+            context.OperationId,
+            context.CorrelationId,
+            context.ParentCorrelationId,
+            "Review the action message and retry after resolving the reported project state.");
+
+    private void OnDockContentChanged(object? sender, EventArgs e) =>
+        RaiseProjectCommandStateChanged();
+
     private bool CanCreateProject() =>
         CanRunProjectOperation() && !string.IsNullOrWhiteSpace(NewProjectName);
 
@@ -489,54 +1579,6 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
 
     private bool CanEditSelection() => CanEditDocument() && HasSelection;
 
-    private async Task CreateProjectAsync()
-    {
-        await RunProjectOperationAsync(async token =>
-        {
-            var parent = await projectDialogs_.SelectProjectParentDirectoryAsync(token);
-            return parent is null
-                ? null
-                : await ExecuteWithPresentationDrainAsync(
-                    () => projectSession_.CreateProjectAsync(parent, NewProjectName, token));
-        });
-    }
-
-    private async Task OpenProjectAsync()
-    {
-        await RunProjectOperationAsync(async token =>
-        {
-            var descriptor = await projectDialogs_.SelectProjectDescriptorAsync(token);
-            return descriptor is null
-                ? null
-                : await ExecuteWithPresentationDrainAsync(
-                    () => projectSession_.OpenProjectAsync(descriptor, token));
-        });
-    }
-
-    private Task CloseProjectAsync() =>
-        RunProjectOperationAsync(async token =>
-            await ExecuteWithPresentationDrainAsync(
-                () => projectSession_.CloseProjectAsync(token)));
-
-    private async Task CreateEntityAsync()
-    {
-        ProjectSessionOperationResult? result = null;
-        await RunProjectOperationAsync(async token =>
-            result = await projectSession_.CreateEntityAsync("Entity", token));
-        SelectCreatedEntity(result);
-    }
-
-    private async Task CreateMeshEntityAsync()
-    {
-        ProjectSessionOperationResult? result = null;
-        await RunProjectOperationAsync(async token =>
-            result = await projectSession_.CreateMeshEntityAsync(
-                "Directional Wedge",
-                SceneMeshReference.DirectionalWedgeValidation,
-                token));
-        SelectCreatedEntity(result);
-    }
-
     private void SelectCreatedEntity(ProjectSessionOperationResult? result)
     {
         if (result is not { Succeeded: true, CreatedObjectId: { } objectId })
@@ -553,140 +1595,6 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
         }
 
         SelectedEntity = created;
-    }
-
-    private Task SaveSceneAsync() =>
-        RunProjectOperationAsync(async token =>
-            await projectSession_.SaveSceneAsync(token));
-
-    private Task UndoSceneAsync() =>
-        RunProjectOperationAsync(async token =>
-            await projectSession_.UndoAsync(token));
-
-    private Task RedoSceneAsync() =>
-        RunProjectOperationAsync(async token =>
-            await projectSession_.RedoAsync(token));
-
-    private Task ApplyEntityNameAsync()
-    {
-        var selected = SelectedEntity;
-        return selected is null
-            ? Task.CompletedTask
-            : RunProjectOperationAsync(async token =>
-                await projectSession_.SetEntityNameAsync(
-                    selected.ObjectId,
-                    InspectorName,
-                    token));
-    }
-
-    private async Task ApplyEntityTransformAsync()
-    {
-        var selected = SelectedEntity;
-        if (selected is null)
-        {
-            return;
-        }
-        if (!TryReadTransform(out var transform, out var submittedEuler))
-        {
-            ProjectOperationMessage =
-                "Transform fields must be finite invariant-culture numbers; rotation is expressed in degrees.";
-            return;
-        }
-        rotationEulerHint_ = submittedEuler;
-
-        var project = projectSnapshot_.Project;
-        var document = projectSnapshot_.Document;
-        if (project is null || document is null)
-        {
-            return;
-        }
-
-        var editId = ProjectEditId.CreateNew();
-        var baseRevision = transformDirtyFields_ == TransformFieldMask.None
-            ? document.Revision
-            : transformEditBaseRevision_;
-        pendingTransformApply_ = new PendingTransformApply(
-            editId,
-            project.SessionId,
-            document.SceneId,
-            selected.ObjectId,
-            baseRevision,
-            transform,
-            submittedEuler,
-            CaptureTransformInspectorText(),
-            transformDirtyFields_,
-            transformEditVersion_);
-
-        ProjectOperationMessage = string.Empty;
-        IsProjectOperationRunning = true;
-        try
-        {
-            var result = await projectSession_.SetEntityTransformAsync(
-                selected.ObjectId,
-                transform,
-                new ProjectSessionEditContext(editId, baseRevision),
-                lifetimeCancellation_.Token);
-            ApplyProjectSnapshot(
-                result.Current,
-                result.OriginatingEditId,
-                result.OriginatingEditId is null ? null : result.Succeeded);
-            if (!result.Succeeded && pendingTransformApply_?.EditId == editId)
-            {
-                pendingTransformApply_ = null;
-            }
-            ProjectOperationMessage = result.Message;
-        }
-        catch (OperationCanceledException) when (lifetimeCancellation_.IsCancellationRequested)
-        {
-            if (pendingTransformApply_?.EditId == editId)
-            {
-                pendingTransformApply_ = null;
-            }
-        }
-        catch (Exception exception)
-        {
-            if (pendingTransformApply_?.EditId == editId)
-            {
-                pendingTransformApply_ = null;
-            }
-            ProjectOperationMessage = string.IsNullOrWhiteSpace(exception.Message)
-                ? "The project operation failed without a diagnostic."
-                : exception.Message;
-        }
-        finally
-        {
-            IsProjectOperationRunning = false;
-        }
-    }
-
-    private async Task RunProjectOperationAsync(
-        Func<CancellationToken, ValueTask<ProjectSessionOperationResult?>> operation)
-    {
-        ProjectOperationMessage = string.Empty;
-        IsProjectOperationRunning = true;
-        try
-        {
-            var result = await operation(lifetimeCancellation_.Token);
-            if (result is null)
-            {
-                return;
-            }
-            ApplyProjectSnapshot(result.Current);
-            ProjectOperationMessage = result.Message;
-        }
-        catch (OperationCanceledException) when (lifetimeCancellation_.IsCancellationRequested)
-        {
-        }
-        catch (Exception exception)
-        {
-            ProjectOperationMessage = string.IsNullOrWhiteSpace(exception.Message)
-                ? "The project operation failed without a diagnostic."
-                : exception.Message;
-        }
-        finally
-        {
-            IsProjectOperationRunning = false;
-        }
     }
 
     private async ValueTask<ProjectSessionOperationResult>
@@ -1117,16 +2025,37 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
 
     private void RaiseProjectCommandStateChanged()
     {
-        createProjectCommand_.RaiseCanExecuteChanged();
-        openProjectCommand_.RaiseCanExecuteChanged();
-        closeProjectCommand_.RaiseCanExecuteChanged();
-        createEntityCommand_.RaiseCanExecuteChanged();
-        createMeshEntityCommand_.RaiseCanExecuteChanged();
-        saveSceneCommand_.RaiseCanExecuteChanged();
-        undoSceneCommand_.RaiseCanExecuteChanged();
-        redoSceneCommand_.RaiseCanExecuteChanged();
-        applyEntityNameCommand_.RaiseCanExecuteChanged();
-        applyEntityTransformCommand_.RaiseCanExecuteChanged();
+        foreach (var command in actionCommands_.Values)
+        {
+            command.RaiseCanExecuteChanged();
+        }
+        foreach (var command in projectedActionCommands_.Values)
+        {
+            command.RaiseCanExecuteChanged();
+        }
+        if (!isDisposed_)
+        {
+            ActionStateChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    private void RaiseActionStateChanged(StudioActionId actionId)
+    {
+        if (actionCommands_.TryGetValue(actionId, out var command))
+        {
+            command.RaiseCanExecuteChanged();
+        }
+        foreach (var pair in projectedActionCommands_)
+        {
+            if (pair.Key.ActionId == actionId)
+            {
+                pair.Value.RaiseCanExecuteChanged();
+            }
+        }
+        if (!isDisposed_)
+        {
+            ActionStateChanged?.Invoke(this, EventArgs.Empty);
+        }
     }
 
     private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(isDisposed_, this);

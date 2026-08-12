@@ -21,7 +21,20 @@ public sealed class AppSourceTests
         Assert.Contains("new ProjectSession(", source, StringComparison.Ordinal);
         Assert.Contains("new ProjectDescriptorBridge()", source, StringComparison.Ordinal);
         Assert.Contains("new SceneDocumentBridge()", source, StringComparison.Ordinal);
-        Assert.Contains("new StudioShellViewModel(projectSession, projectDialogs)", source, StringComparison.Ordinal);
+        Assert.Contains("new ProjectDocumentTransitionCoordinator(", source, StringComparison.Ordinal);
+        Assert.Contains("new StudioShellViewModel(", source, StringComparison.Ordinal);
+        Assert.Contains("documentTransitions", source, StringComparison.Ordinal);
+        Assert.Matches(
+            @"try\s*\{[\s\S]*?shellViewModel = new StudioShellViewModel\([\s\S]*?mainWindow = new MainWindow",
+            source);
+        Assert.Contains(
+            "PublishActionRegistrationFailure(",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "studio.action.registration.failed",
+            source,
+            StringComparison.Ordinal);
         Assert.Contains("projectDialogs.Attach(mainWindow)", source, StringComparison.Ordinal);
         Assert.Contains("StudioCompositionSession.CreateAsync", source, StringComparison.Ordinal);
         Assert.Matches(
@@ -61,6 +74,42 @@ public sealed class AppSourceTests
         Assert.Contains(
             "avares://Editor/UI/Styles/Tokens/EditorMetrics.axaml",
             appXaml,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void App_routes_window_and_lifetime_exit_through_one_dirty_document_guard()
+    {
+        var source = LoadSource("App.axaml.cs");
+
+        Assert.Matches(
+            @"OnShutdownRequested[\s\S]*?e\.Cancel = true;[\s\S]*?RequestUserShutdown\(\);",
+            source);
+        Assert.Matches(
+            @"OnMainWindowClosing[\s\S]*?e\.Cancel = true;[\s\S]*?RequestUserShutdown\(\);",
+            source);
+        Assert.Contains(
+            "shutdownTask_ is not null || userExitResolutionTask_ is not null",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "userExitResolutionTask_ = completion.Task",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "_ = ResolveUserShutdownAsync(completion)",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "await transitions.PrepareExitAsync()",
+            source,
+            StringComparison.Ordinal);
+        Assert.Matches(
+            @"if \(result\.MayProceed\)[\s\S]*?BeginShutdown\(\);",
+            source);
+        Assert.Contains(
+            "userExitResolutionTask_ = null",
+            source,
             StringComparison.Ordinal);
     }
 

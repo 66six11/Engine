@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Asharia.Studio.Application.Diagnostics;
 using Asharia.Studio.Application.Viewports;
 using Asharia.Studio.Presentation.Avalonia.Viewports;
 using Avalonia;
@@ -21,6 +22,7 @@ namespace Editor.Shell.Views.Docking;
 internal sealed class EditorDockStagedGridSplitter : GridSplitter
 {
     private EditorDockSplitResizeCoordinator resizeCoordinator_;
+    private readonly IStudioDiagnosticHub diagnostics_;
     private readonly ViewportPresentationTransactionTelemetry transactionTelemetry_ = new();
     private ViewportPresentationTransactionCoordinator presentationTransactions_;
     private DragState? dragState_;
@@ -29,9 +31,12 @@ internal sealed class EditorDockStagedGridSplitter : GridSplitter
     private ulong nextTransactionId_;
     private ulong nextPresentationTransactionId_;
 
-    public EditorDockStagedGridSplitter()
+    public EditorDockStagedGridSplitter(IStudioDiagnosticHub diagnostics)
     {
+        ArgumentNullException.ThrowIfNull(diagnostics);
+        diagnostics_ = diagnostics;
         presentationTransactions_ = new ViewportPresentationTransactionCoordinator(
+            diagnostics_,
             transactionTelemetry_);
         ShowsPreview = true;
         ResizeBehavior = GridResizeBehavior.PreviousAndNext;
@@ -83,6 +88,7 @@ internal sealed class EditorDockStagedGridSplitter : GridSplitter
                 "Viewport transaction hooks must be configured before resize begins.");
         }
         presentationTransactions_ = new ViewportPresentationTransactionCoordinator(
+            diagnostics_,
             transactionTelemetry_,
             testHooks);
     }

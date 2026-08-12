@@ -29,6 +29,113 @@ public readonly record struct ProjectSessionEditContext(
     ProjectEditId EditId,
     ulong ExpectedRevision);
 
+public sealed record ProjectDocumentTransitionExpectation
+{
+    private ProjectDocumentTransitionExpectation(
+        ProjectSessionState state,
+        ProjectSessionId sessionId,
+        Guid projectId,
+        Guid sceneId,
+        ulong documentRevision,
+        ContentStateId currentContentStateId,
+        ContentStateId savedContentStateId,
+        bool allowsUnsavedDiscard)
+    {
+        State = state;
+        SessionId = sessionId;
+        ProjectId = projectId;
+        SceneId = sceneId;
+        DocumentRevision = documentRevision;
+        CurrentContentStateId = currentContentStateId;
+        SavedContentStateId = savedContentStateId;
+        AllowsUnsavedDiscard = allowsUnsavedDiscard;
+    }
+
+    public ProjectSessionState State { get; }
+
+    public ProjectSessionId SessionId { get; }
+
+    public Guid ProjectId { get; }
+
+    public Guid SceneId { get; }
+
+    public ulong DocumentRevision { get; }
+
+    public ContentStateId CurrentContentStateId { get; }
+
+    public ContentStateId SavedContentStateId { get; }
+
+    internal bool AllowsUnsavedDiscard { get; }
+
+    public static ProjectDocumentTransitionExpectation Capture(
+        ProjectSessionSnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        if (snapshot.IsDirty)
+        {
+            throw new ArgumentException(
+                "A dirty document transition expectation requires an explicit " +
+                "Save or Discard decision from the transition coordinator.",
+                nameof(snapshot));
+        }
+        return CaptureCore(snapshot, allowsUnsavedDiscard: false);
+    }
+
+    internal static ProjectDocumentTransitionExpectation CaptureAfterDiscard(
+        ProjectSessionSnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        if (!snapshot.IsDirty)
+        {
+            throw new ArgumentException(
+                "A Discard transition expectation requires a dirty document.",
+                nameof(snapshot));
+        }
+        return CaptureCore(snapshot, allowsUnsavedDiscard: true);
+    }
+
+    private static ProjectDocumentTransitionExpectation CaptureCore(
+        ProjectSessionSnapshot snapshot,
+        bool allowsUnsavedDiscard)
+    {
+        if (!snapshot.IsReady)
+        {
+            return new ProjectDocumentTransitionExpectation(
+                ProjectSessionState.NoProject,
+                default,
+                Guid.Empty,
+                Guid.Empty,
+                documentRevision: 0,
+                default,
+                default,
+                allowsUnsavedDiscard: false);
+        }
+
+        return new ProjectDocumentTransitionExpectation(
+            ProjectSessionState.Ready,
+            snapshot.Project!.SessionId,
+            snapshot.Project.ProjectId,
+            snapshot.Document!.SceneId,
+            snapshot.Document.Revision,
+            snapshot.CurrentContentStateId,
+            snapshot.SavedContentStateId,
+            allowsUnsavedDiscard);
+    }
+
+    internal bool Matches(ProjectSessionSnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        return State == snapshot.State &&
+            (State == ProjectSessionState.NoProject ||
+             snapshot.Project!.SessionId == SessionId &&
+             snapshot.Project.ProjectId == ProjectId &&
+             snapshot.Document!.SceneId == SceneId &&
+             snapshot.Document.Revision == DocumentRevision &&
+             snapshot.CurrentContentStateId == CurrentContentStateId &&
+             snapshot.SavedContentStateId == SavedContentStateId);
+    }
+}
+
 public enum ProjectSessionState
 {
     NoProject,
@@ -223,6 +330,7 @@ public enum ProjectSessionFailureKind
     IoFailure,
     NativeUnavailable,
     NoProject,
+    StaleDocumentTransition,
     InternalError,
 }
 
@@ -358,13 +466,20 @@ public interface IProjectSession : IAsyncDisposable
     ValueTask<ProjectSessionOperationResult> CreateProjectAsync(
         string parentDirectory,
         string projectName,
+        ProjectDocumentTransitionExpectation expectation,
         CancellationToken cancellationToken = default);
 
     ValueTask<ProjectSessionOperationResult> OpenProjectAsync(
         string projectPath,
+        ProjectDocumentTransitionExpectation expectation,
         CancellationToken cancellationToken = default);
 
     ValueTask<ProjectSessionOperationResult> CloseProjectAsync(
+        ProjectDocumentTransitionExpectation expectation,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<ProjectSessionOperationResult> PrepareExitAsync(
+        ProjectDocumentTransitionExpectation expectation,
         CancellationToken cancellationToken = default);
 
     ValueTask<ProjectSessionOperationResult> CreateEntityAsync(

@@ -183,6 +183,7 @@
                         <DataTemplate x:DataType="vm:StudioHierarchyRowViewModel">
                             <Grid Classes="hierarchy-row"
                                   ColumnDefinitions="Auto,18,16,*,80"
+                                  ContextRequested="OnHierarchyContextRequested"
                                   DoubleTapped="OnHierarchyRowDoubleTapped"
                                   AutomationProperties.Name="{Binding AutomationName}">
                                 <Grid Grid.Column="0"

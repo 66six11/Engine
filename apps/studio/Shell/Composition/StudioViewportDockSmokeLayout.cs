@@ -1,4 +1,5 @@
 using System;
+using Asharia.Studio.Presentation.Avalonia.Diagnostics;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Editor.Shell.Docking.Panels;
@@ -67,7 +68,8 @@ internal sealed class StudioViewportDockSmokeLayout
         var splitter = (EditorDockStagedGridSplitter)EditorDockSplitNodeView.CreateSplitter(
             split,
             GridResizeDirection.Columns,
-            "vertical");
+            "vertical",
+            StudioAvaloniaDiagnosticHubResolver.RequireCurrent());
         Grid.SetColumn(splitter, 1);
         root.Children.Add(splitter);
         Grid.SetColumn(secondContent, 2);

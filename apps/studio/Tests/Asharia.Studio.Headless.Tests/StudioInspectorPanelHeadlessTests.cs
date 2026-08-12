@@ -10,6 +10,7 @@ using Avalonia.Headless.XUnit;
 using Avalonia.Threading;
 using Editor.Shell.ViewModels.Panels;
 using Editor.Shell.Views.Panels;
+using Editor.Shell.Views.Windowing;
 using Xunit;
 
 namespace Asharia.Studio.Headless.Tests;
@@ -72,7 +73,7 @@ public sealed class StudioInspectorPanelHeadlessTests
         {
             DataContext = new StudioInspectorPanelViewModel(shell),
         };
-        var window = new Window
+        var window = new MainWindow
         {
             Width = 420,
             Height = 520,
@@ -102,7 +103,8 @@ public sealed class StudioInspectorPanelHeadlessTests
             Assert.Equal("1.234567", shell.ScaleX);
 
             var apply = Assert.IsType<Button>(view.FindControl<Button>("ApplyTransformButton"));
-            Assert.Same(shell.ApplyEntityTransformCommand, apply.Command);
+            Assert.NotNull(apply.Command);
+            Assert.NotSame(shell.ApplyEntityTransformCommand, apply.Command);
             apply.Command!.Execute(apply.CommandParameter);
             await WaitUntilAsync(() => requestedTransform.HasValue);
             Dispatcher.UIThread.RunJobs();
@@ -160,7 +162,7 @@ public sealed class StudioInspectorPanelHeadlessTests
         {
             DataContext = new StudioInspectorPanelViewModel(shell),
         };
-        var window = new Window
+        var window = new MainWindow
         {
             Width = 420,
             Height = 520,

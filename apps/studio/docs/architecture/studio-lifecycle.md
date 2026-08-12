@@ -1,8 +1,8 @@
 # Studio 生命周期
 
-状态：Current baseline + Target（Project/SceneDocument owner 已落地；generation/ALC 路径后置）
+状态：Current baseline + Target（Project/SceneDocument owner与dirty transition guard已落地；generation/ALC路径后置）
 
-更新日期：2026-08-04
+更新日期：2026-08-12
 
 > 当前权威 session tree 与 hard-cut 顺序见
 > [Studio 前端硬切架构](studio-frontend-hard-cut.md)。本文涉及 dynamic extension generation、
@@ -22,8 +22,9 @@ gate与dispose共享一个monotonic deadline并输出immutable `StudioTeardownRe
 只由tail observer观察，不能改写已缓存receipt；`DisposeAsync`调用的同步前段仍必须O(1)返回，deadline不能抢占任意同步阻塞。
 production composition graph 只有 `StudioCompositionSession -> StudioShellViewModel -> ProjectSession`；ProjectSession
 串行项目和文档命令，EngineBridge 为每个 SceneDocument 持有 dedicated native owner lane。关闭项目或 composition 时先
-停止新命令并关闭 SceneDocument lane，再清除活动项目。legacy adapter、Workbench、panel timer与 UI-thread sync wait
-保持删除。MainWindow只借用DataContext并发布首次closing fact。
+由`ProjectDocumentTransitionCoordinator`对当前dirty content执行Save/Discard/Cancel；只有guard允许后才停止新命令、
+关闭SceneDocument lane并清除活动项目。legacy adapter、Workbench、panel timer与UI-thread sync wait保持删除。
+MainWindow只借用DataContext；首次closing fact被取消并single-flight等待guard，允许后才进入既有process teardown。
 
 R0 process acceptance由目标外的`Editor.Tests`拥有：它启动构建输出中的真实`Editor.exe`，以有界轮询观察真实
 Ready Window，正常路径只发送OS Window close；随后由上述唯一App owner完成teardown，classic-desktop lifetime的
@@ -131,11 +132,29 @@ sequenceDiagram
 
 ## 5. 显式关闭
 
-Avalonia desktop lifetime 使用显式关闭策略。第一次 main-window close request 被取消，Studio 完成异步 stop 后再调用最终 shutdown。
+Avalonia desktop lifetime 使用显式关闭策略。第一次main-window close request被取消；Studio先异步完成dirty document
+decision，再完成process stop，最后调用explicit shutdown。dirty guard与process teardown是两个顺序阶段，不能先进入
+`Stopping`再询问用户，因为Cancel必须保留完整可编辑session。
 
 ### 5.1 Project close
 
 Project close 必须在 native capability 仍可用时完成 managed Project scope 的终止清理：
+
+关闭协议开始前先执行当前事实的document transition guard：
+
+1. clean document直接允许；dirty document显示Save/Discard/Cancel，并冻结ProjectSessionId、project/scene identity、
+   document revision、CurrentContentStateId与SavedContentStateId；
+2. prompt返回后若同一document的content identity变化，重新读取最新snapshot并重新决策；若session/project/scene scope变化则返回typed `Stale`并fail closed，旧Discard/Save不得应用到新document；
+3. Save调用同一`ProjectSession.SaveSceneAsync`，且只在结果发布同一文档的clean authoritative content state时允许继续；
+   save失败、异常、取消或save期间新编辑都保持project/window可用；
+4. Discard只授权当前仍匹配的dirty snapshot继续transition，不提前修改Document；Cancel终止本次transition；
+5. create/open/close/exit共享single-flight coordinator；coordinator生成的session/project/scene/revision/current+saved content
+   expectation必须在`ProjectSession`持有同一个operation gate时重新验证并执行destructive transition，最终检查与commit之间
+   不留可插入edit的窗口；并发第二个transition返回Busy，不叠加modal或并行teardown；
+6. Exit验证成功会在同一个operation gate内设置exit-prepared seal，之后任何document mutation/history命令都返回Busy，
+   直到既有shutdown owner dispose该session。
+
+guard返回允许后，才进入资源终止顺序：
 
 1. `ProjectSession` 进入 `Stopping`，拒绝新的 command、provider change、panel open 和 viewport frame request。
 2. `ViewportService` 停止调度新 frame，Panel/Window host detach presentation，并排空或放弃 in-flight frame lease。
@@ -154,6 +173,10 @@ Barrier 未满足时，Project 进入 `StopFailed/Quarantined`，保留 EngineHo
 ### 5.2 Application close
 
 Application close 先执行所有已打开 Project 的上述关闭协议，再关闭 Application scope：
+
+当前单project composition中，`App`截获Window/OS exit并调用同一个`PrepareExitAsync` guard。Cancel、save failure或
+transition failure都不调用`BeginShutdown`，且清除single-flight task，下一次close可以重新提示；允许后才启动
+`StudioProcessSession`原有deadline-bounded teardown。fatal/startup内部终止不是用户document transition，不显示modal。
 
 若任一 Project 未通过 `NativeSafeBarrier`，Application close 停在第 7 步，不得继续 dispose Application scope或关闭 Window；只能 retry/cancel，或执行明确的 whole-process force-exit。
 
@@ -177,8 +200,14 @@ sequenceDiagram
     participant Viewports as ViewportService
     participant Engine as EngineHost
     participant Ext as ExtensionHost
+    participant Guard as DocumentTransitionGuard
 
     Window->>Window: Cancel first close
+    Window->>Guard: PrepareExitAsync
+    alt Dirty document
+        Guard->>Guard: Save / Discard / Cancel + revalidate
+    end
+    Guard-->>Window: MayProceed
     Window->>Studio: StopAsync(timeout)
     Studio->>Tasks: Stop accepting and cancel
     Studio->>Viewports: Pause and drain presentations

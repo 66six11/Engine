@@ -1,4 +1,6 @@
 using System;
+using Asharia.Studio.Application.Diagnostics;
+using Asharia.Studio.Presentation.Avalonia.Diagnostics;
 using Avalonia.Controls;
 using Avalonia.Data;
 using Editor.Shell.ViewModels.Docking;
@@ -45,7 +47,11 @@ public partial class EditorDockSplitNodeView : UserControl
 
             var firstHost = CreateNodeHost(nameof(split.First));
             var secondHost = CreateNodeHost(nameof(split.Second));
-            var splitter = CreateSplitter(split, GridResizeDirection.Columns, "vertical");
+            var splitter = CreateSplitter(
+                split,
+                GridResizeDirection.Columns,
+                "vertical",
+                StudioAvaloniaDiagnosticHubResolver.RequireCurrent());
             Grid.SetColumn(firstHost, 0);
             Grid.SetColumn(splitter, 1);
             Grid.SetColumn(secondHost, 2);
@@ -65,7 +71,11 @@ public partial class EditorDockSplitNodeView : UserControl
 
             var firstHost = CreateNodeHost(nameof(split.First));
             var secondHost = CreateNodeHost(nameof(split.Second));
-            var splitter = CreateSplitter(split, GridResizeDirection.Rows, "horizontal");
+            var splitter = CreateSplitter(
+                split,
+                GridResizeDirection.Rows,
+                "horizontal",
+                StudioAvaloniaDiagnosticHubResolver.RequireCurrent());
             Grid.SetRow(firstHost, 0);
             Grid.SetRow(splitter, 1);
             Grid.SetRow(secondHost, 2);
@@ -88,9 +98,11 @@ public partial class EditorDockSplitNodeView : UserControl
     internal static GridSplitter CreateSplitter(
         EditorDockSplitNodeViewModel split,
         GridResizeDirection resizeDirection,
-        string orientationClass)
+        string orientationClass,
+        IStudioDiagnosticHub diagnostics)
     {
-        var splitter = new EditorDockStagedGridSplitter
+        ArgumentNullException.ThrowIfNull(diagnostics);
+        var splitter = new EditorDockStagedGridSplitter(diagnostics)
         {
             DataContext = split,
             ResizeDirection = resizeDirection,

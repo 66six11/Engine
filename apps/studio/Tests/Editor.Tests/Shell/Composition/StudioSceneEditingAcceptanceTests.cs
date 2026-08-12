@@ -53,7 +53,10 @@ public sealed class StudioSceneEditingAcceptanceTests
             var session = CreateSession();
             try
             {
-                var createdProject = await Await(session.CreateProjectAsync(parent, "Sample"))
+                var createdProject = await Await(session.CreateProjectAsync(
+                        parent,
+                        "Sample",
+                        ProjectDocumentTransitionExpectation.Capture(session.Current)))
                     .ConfigureAwait(false);
                 Assert.True(createdProject.Succeeded, createdProject.Message);
                 Assert.True(File.Exists(createdProject.Current.Document!.Path));
@@ -186,7 +189,8 @@ public sealed class StudioSceneEditingAcceptanceTests
             try
             {
                 var reopened = await Await(reopenedSession.OpenProjectAsync(
-                    Path.Combine(parent, "Sample", "asharia.project.json")))
+                    Path.Combine(parent, "Sample", "asharia.project.json"),
+                    ProjectDocumentTransitionExpectation.Capture(reopenedSession.Current)))
                     .ConfigureAwait(false);
                 Assert.True(reopened.Succeeded, reopened.Message);
                 var entity = Assert.Single(reopened.Current.Document!.Entities);
