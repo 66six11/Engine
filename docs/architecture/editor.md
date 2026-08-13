@@ -1,6 +1,6 @@
 # Editor 架构
 
-更新日期：2026-07-13
+更新日期：2026-08-13
 
 本文记录当前 `apps/editor` 的真实架构边界。它描述已经落地的 editor host、ImGui
 integration、panel/action/event、Scene View viewport、input/shortcut routing、ImGui texture registry 和验证入口。
@@ -41,6 +41,7 @@ runtime app 不链接 editor UI；未来 `packages/systems/editor` 内部 `edito
 - `asharia::asset_core`
 - `asharia::asset_core_io`
 - `asharia::asset_pipeline`
+- `asharia::editor_content`
 - `asharia::project_core_io`
 - `asharia::shader_slang`
 - `imgui::imgui`
@@ -75,7 +76,8 @@ renderer/GPU lifetime。
 | `editor_dock_layout` | translating workspace dock presets into Dear ImGui DockBuilder nodes | editor tool behavior, panel content, renderer or viewport ownership |
 | `editor_tool` | tool descriptors and contributions to panels, actions, toolbar slots and viewport overlays | panel factories, command execution, viewport rendering or persistent document state |
 | `editor_tool_manager` | editor-local active tool state, per-viewport primary tool selection and activate/deactivate lifecycle | renderer pass policy, Vulkan resources, panel factories or persistent scene/asset mutation |
-| `editor_asset_catalog` | editor-owned read-only project catalog snapshot service, source-root/path helpers and deterministic catalog reports composed from public `project-core` / `asset-pipeline` / `asset-core` APIs | filesystem watcher, importer execution, product manifest/blob writes, runtime asset handles or GPU resources |
+| `asharia::editor_content` | shared UI-neutral read-only project catalog query、source-root/path/navigation helpers composed from public `project-core` / `asset-pipeline` / `asset-core` APIs | ImGui/Avalonia UI、filesystem watcher、importer execution、product manifest/blob writes、runtime asset handles or GPU resources |
+| `EditorAssetCatalogStore` / report | ImGui-host fixture/current snapshot selection、deterministic text/icon report与frame-context handoff | shared query truth、watcher、runtime/GPU resource |
 | `editor_asset_import_settings_command` | undoable `.ameta` import-setting edits plus editor-owned reimport request/pending facts | import scheduling, product cache mutation, catalog truth, runtime loading or preview texture allocation |
 | `editor_asset_icon` | editor-owned Lucide icon ids, asset icon query descriptors, custom resolver registry and ImGui glyph rendering | plugin-owned SVG injection, source scanning, texture/Vulkan ownership or runtime asset loading |
 | `imgui_editor_shell` | dockspace host, main menu, command bar, status bar and action menu binding through shell-local capability contexts | renderer command recording、panel object ownership、hard-coded tool layout policy |
@@ -538,9 +540,10 @@ Icon ownership stays in `editor_asset_icon`:
   importer or product state does not mutate catalog order, asset metadata, product records or project files.
 - The Asset Browser main table displays import profile as a first-level column so source images with different semantics
   such as Texture2D, SpriteSheet, TextureCube or Skybox are browsable without opening the details pane.
-- `editor_asset_catalog` composes public `project-core`, `asset-pipeline` and `asset-core` APIs into a read-only project
-  snapshot for future browser wiring. It does not own watcher, hot reload, import execution, runtime loading or renderer
-  resources.
+- `packages/editor-content` 的 `asharia::editor_content` 现在组合 public `project-core`、`asset-pipeline` 和
+  `asset-core` APIs，形成 UI-neutral read-only project snapshot。旧 app-private `editor_asset_catalog` query source
+  已硬切删除；`apps/editor` 只保留 ImGui-owned store/fixture/icon/report/command consumer。该 package 不拥有 watcher、
+  hot reload、import execution、runtime loading 或 renderer resources。
 - Editor project snapshots explicitly sequence source scan, metadata discovery, source hashing and import planning instead
   of treating `planScannedAssetImports()` as the UI contract. Missing `.ameta` sidecars and orphan sidecars are editor
   warnings for Resource Browser visibility, while invalid roots, filesystem errors, invalid source paths and duplicate

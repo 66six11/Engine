@@ -3,7 +3,9 @@
 #include <algorithm>
 #include <cctype>
 #include <cstddef>
+#include <map>
 #include <optional>
+#include <set>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -75,20 +77,6 @@ namespace asharia::asset {
             return index;
         }
 
-        [[nodiscard]] IndexedSubAsset& findOrAppendSubAsset(std::vector<IndexedSubAsset>& subAssets,
-                                                            std::size_t index) {
-            const auto found =
-                std::ranges::find_if(subAssets, [index](const IndexedSubAsset& subAsset) {
-                    return subAsset.index == index;
-                });
-            if (found != subAssets.end()) {
-                return *found;
-            }
-
-            subAssets.push_back(IndexedSubAsset{.index = index, .stableId = {}, .displayName = {}});
-            return subAssets.back();
-        }
-
         [[nodiscard]] AssetCatalogDiagnostic
         sourceMetadataDiagnostic(const SourceAssetRecord& source, std::string message) {
             return AssetCatalogDiagnostic{
@@ -119,35 +107,36 @@ namespace asharia::asset {
         void appendSpriteSheetSubAssets(AssetCatalogSourceFacet& facet,
                                         const SourceAssetRecord& source,
                                         std::span<const AssetImportSetting> settings) {
-            std::vector<IndexedSubAsset> indexedSubAssets;
+            std::map<std::size_t, IndexedSubAsset> indexedSubAssets;
             for (const AssetImportSetting& setting : settings) {
                 if (const std::optional<std::size_t> idIndex =
                         parseSubAssetSettingIndex(setting.key, kTextureSubAssetIdSettingSuffix)) {
-                    findOrAppendSubAsset(indexedSubAssets, *idIndex).stableId = setting.value;
+                    indexedSubAssets
+                        .try_emplace(
+                            *idIndex,
+                            IndexedSubAsset{.index = *idIndex, .stableId = {}, .displayName = {}})
+                        .first->second.stableId = setting.value;
                     continue;
                 }
                 if (const std::optional<std::size_t> nameIndex =
                         parseSubAssetSettingIndex(setting.key, kTextureSubAssetNameSettingSuffix)) {
-                    findOrAppendSubAsset(indexedSubAssets, *nameIndex).displayName = setting.value;
+                    indexedSubAssets
+                        .try_emplace(
+                            *nameIndex,
+                            IndexedSubAsset{.index = *nameIndex, .stableId = {}, .displayName = {}})
+                        .first->second.displayName = setting.value;
                 }
             }
 
-            std::ranges::sort(indexedSubAssets,
-                              [](const IndexedSubAsset& left, const IndexedSubAsset& right) {
-                                  return left.index < right.index;
-                              });
-
-            for (const IndexedSubAsset& subAsset : indexedSubAssets) {
+            std::set<std::string, std::less<>> stableIds;
+            for (const auto& [index, subAsset] : indexedSubAssets) {
+                (void)index;
                 if (subAsset.stableId.empty()) {
                     facet.diagnostics.push_back(sourceMetadataDiagnostic(
                         source, "Texture sprite-sheet sub-asset is missing a stable id."));
                     continue;
                 }
-                const bool duplicateStableId = std::ranges::any_of(
-                    facet.subAssets, [&subAsset](const AssetCatalogSubAssetViewEntry& existing) {
-                        return existing.stableId == subAsset.stableId;
-                    });
-                if (duplicateStableId) {
+                if (!stableIds.emplace(subAsset.stableId).second) {
                     facet.diagnostics.push_back(sourceMetadataDiagnostic(
                         source, "Texture sprite-sheet sub-asset has duplicate stable id '" +
                                     subAsset.stableId + "'."));

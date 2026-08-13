@@ -12,13 +12,14 @@
 
 #include "asharia/asset_pipeline/asset_texture_import_profile.hpp"
 #include "asharia/core/log.hpp"
+#include "asharia/editor_content/asset_catalog_snapshot.hpp"
 #include "asharia/window_glfw/glfw_window.hpp"
 
 #include "editor_app_config.hpp"
 #include "editor_app_run_completion.hpp"
 #include "editor_app_services.hpp"
-#include "editor_asset_catalog.hpp"
 #include "editor_asset_catalog_smoke.hpp"
+#include "editor_asset_catalog_store.hpp"
 #include "editor_asset_import_settings_command.hpp"
 #include "editor_loop_host.hpp"
 #include "editor_render_runtime.hpp"
@@ -193,8 +194,7 @@ namespace asharia::editor {
         }
 
         auto window = asharia::GlfwWindow::create(
-            *glfw,
-            asharia::WindowDesc{.title = "Asharia Engine Editor", .visible = !smokeMode});
+            *glfw, asharia::WindowDesc{.title = "Asharia Engine Editor", .visible = !smokeMode});
         if (!window) {
             asharia::logError(window.error().message);
             return EXIT_FAILURE;

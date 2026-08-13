@@ -1,6 +1,6 @@
 # 整体路线图
 
-更新日期：2026-08-10
+更新日期：2026-08-13
 
 本文是全项目下一阶段的唯一**功能阶段路线图**；目标系统框架、package/target 收敛方向、跨系统契约和架构迁移门禁见 `docs/planning/system-architecture-roadmap.md`，Kernel、Host Runtime、Foundation Systems、scope/activation 和基础门禁见 `docs/architecture/foundation-framework.md`；每项能力的最早/最迟接入窗口、Integration Gates 和 Owner Card 见 `docs/workflow/architecture-health.md`。RenderGraph 当前语义见 `docs/rendergraph/mvp.md` 与 `docs/rendergraph/rhi-boundary.md`，可编程管线边界见 `docs/rendergraph/programmable-pipeline.md`；Editor 当前事实见 `docs/architecture/editor.md`；资产系统见 `docs/systems/asset-architecture.md`；shader/material authoring 见 `docs/systems/shader-material-authoring.md` 及 V2 specs。实际 Slice 顺序、状态、阻塞和 Done evidence 维护在 GitHub Issues / Project，不在本文重复。
 
@@ -10,7 +10,7 @@
 
 - 已有 package-first 基线：`rendergraph` 后端无关，`rhi-vulkan` 不依赖 RenderGraph，Vulkan/RG 翻译在 `rhi_vulkan_rendergraph`，`renderer_basic` 不暴露 Vulkan。
 - Vulkan 主路径已覆盖 dynamic rendering、synchronization2 barrier、descriptor/pipeline wrapper、transient image pool、buffer upload、compute dispatch、offscreen RenderView、Frame Debug replay、editor viewport sampled texture，以及真实 RenderView indexed scene-mesh pass。后者使用 Color/Depth + VertexRead/IndexRead、`DrawIndexed` 和 draw packet context，并支持 per-view Solid/Wireframe。
-- native Dear ImGui Editor 已具备 production workbench shell、Scene View camera/grid/debug-line、Live RG View、Frame Debugger、Asset Browser snapshot-backed catalog 和多项 smoke。Avalonia Studio 已完成 R0 硬切；#352 建立真实 ProjectSession，#353 已接通 `SceneDocument -> EditWorld -> Hierarchy/Inspector -> dirty/save/reopen`。#359 建立 UI-neutral `ViewportSession`、EngineBridge typed frame lease；当前 Viewport V7、Document ABI v3 与 Scene schema v2 均为硬切合同。最近项目、模板、asset catalog、多 viewport/input/preview 与 Play Mode 尚未接入。
+- native Dear ImGui Editor 已具备 production workbench shell、Scene View camera/grid/debug-line、Live RG View、Frame Debugger、Asset Browser snapshot-backed catalog 和多项 smoke。Avalonia Studio 已完成 R0 硬切；#352 建立真实 ProjectSession，#353 已接通 `SceneDocument -> EditWorld -> Hierarchy/Inspector -> dirty/save/reopen`，#359 建立 UI-neutral `ViewportSession`/EngineBridge typed frame lease，#385 又以共享 `editor-content` query 接入只读 catalog-backed Resource Browser。当前 Viewport V7、Document ABI v3、Catalog ABI v1 与 Scene schema v2 均为硬切合同；最近项目、模板、模型 cooked product/ResourceRuntime GPU 闭环、thumbnail、多 viewport/input/preview 与 Play Mode 尚未接入。
 - `asset-core` / `asset-pipeline` / `project-core` / `material-core` / `scene-core` 已是 CPU/headless 数据模型或 baseline package。#367 已闭合 authored typed mesh GUID -> backend-neutral extraction -> validation product binding -> indexed scene raster -> Frame Debug source revision 的受限路径；通用 mesh product/runtime GPU resource、reload/deferred deletion、material authoring 仍未完成。
 - 当前风险不是缺少大系统名词，而是 route 太多：渲染、资产、scene、editor、material、play/session 必须按可验证切片合流。
 

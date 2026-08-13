@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Asharia.Runtime;
 using Asharia.Studio.Application.Diagnostics;
+using Asharia.Studio.Application.Assets;
 using Asharia.Studio.Application.Projects;
 using Asharia.Studio.Application.Scenes;
 using Editor.Shell.Services.Projects;
@@ -26,7 +27,8 @@ internal static class StudioShellTestFactory
             projectSession,
             projectDialogs,
             CreateDocumentTransitions(projectSession),
-            CreateDiagnosticWriter());
+            CreateDiagnosticWriter(),
+            new TestProjectAssetCatalog());
     }
 
     public static ProjectDocumentTransitionCoordinator CreateDocumentTransitions(
@@ -41,6 +43,48 @@ internal static class StudioShellTestFactory
     {
         hub = new StudioDiagnosticHub(diagnosticCapacity: 64, logCapacity: 16);
         return new StudioOperationDiagnosticWriter(hub);
+    }
+
+    public static TestProjectAssetCatalog CreateProjectAssetCatalog() => new();
+}
+
+internal sealed class TestProjectAssetCatalog : IProjectAssetCatalog
+{
+    public event EventHandler<AssetCatalogSessionSnapshotChangedEventArgs>? SnapshotChanged;
+
+    public AssetCatalogSessionSnapshot Current { get; private set; } =
+        AssetCatalogSessionSnapshot.NoProject();
+
+    public int RefreshCount { get; private set; }
+
+    public int DisposeCount { get; private set; }
+
+    public Exception? DisposeException { get; set; }
+
+    public ValueTask RefreshAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        RefreshCount++;
+        return ValueTask.CompletedTask;
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        DisposeCount++;
+        if (DisposeException is not null)
+        {
+            return ValueTask.FromException(DisposeException);
+        }
+        return ValueTask.CompletedTask;
+    }
+
+    public void Publish(AssetCatalogSessionSnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        Current = snapshot;
+        SnapshotChanged?.Invoke(
+            this,
+            new AssetCatalogSessionSnapshotChangedEventArgs(snapshot));
     }
 }
 
@@ -125,6 +169,8 @@ internal sealed class TestProjectSession : IProjectSession
 
     public int DisposeCount { get; private set; }
 
+    public Exception? DisposeException { get; set; }
+
     public ValueTask<ProjectSessionOperationResult> CreateProjectAsync(
         string parentDirectory,
         string projectName,
@@ -202,6 +248,10 @@ internal sealed class TestProjectSession : IProjectSession
     public ValueTask DisposeAsync()
     {
         DisposeCount++;
+        if (DisposeException is not null)
+        {
+            return ValueTask.FromException(DisposeException);
+        }
         return ValueTask.CompletedTask;
     }
 

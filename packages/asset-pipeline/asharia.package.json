@@ -20,12 +20,14 @@
   "targets": ["asharia-asset-pipeline"],
   "testTargets": [
     "asharia-asset-pipeline-smoke-tests",
-    "asharia-asset-pipeline-header-tests"
+    "asharia-asset-pipeline-header-tests",
+    "asharia-asset-pipeline-scaling-tests"
   ],
   "targetRoles": {
     "asharia-asset-pipeline": "tool",
     "asharia-asset-pipeline-smoke-tests": "test",
-    "asharia-asset-pipeline-header-tests": "test"
+    "asharia-asset-pipeline-header-tests": "test",
+    "asharia-asset-pipeline-scaling-tests": "test"
   },
   "targetDependencies": {
     "asharia-asset-pipeline": [
@@ -40,6 +42,7 @@
       "asharia-asset-pipeline",
       "asharia-asset-core-io"
     ],
-    "asharia-asset-pipeline-header-tests": ["asharia-asset-pipeline"]
+    "asharia-asset-pipeline-header-tests": ["asharia-asset-pipeline"],
+    "asharia-asset-pipeline-scaling-tests": ["asharia-asset-pipeline"]
   }
 }

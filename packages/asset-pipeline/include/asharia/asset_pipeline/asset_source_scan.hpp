@@ -1,5 +1,6 @@
 ﻿#pragma once
 
+#include <cstdint>
 #include <filesystem>
 #include <string>
 #include <string_view>
@@ -18,6 +19,7 @@ namespace asharia::asset {
         DuplicateMetadataPath,
         MissingMetadata,
         OrphanMetadata,
+        LimitExceeded,
     };
 
     struct AssetSourceScanRequest {
@@ -25,11 +27,12 @@ namespace asharia::asset {
         std::string sourcePathPrefix;
         std::string metadataSuffix{std::string{kAssetMetadataSidecarSuffix}};
         std::vector<std::string> ignoredDirectoryNames;
+        std::uint64_t maxDiscoveredFiles{100'000U};
 
         [[nodiscard]] friend bool operator==(const AssetSourceScanRequest&,
                                              const AssetSourceScanRequest&) = default;
         [[nodiscard]] explicit operator bool() const noexcept {
-            return !sourceRoot.empty();
+            return !sourceRoot.empty() && maxDiscoveredFiles > 0U;
         }
     };
 
@@ -54,6 +57,7 @@ namespace asharia::asset {
     };
 
     struct AssetSourceScanResult {
+        std::uint64_t discoveredFileCount{};
         std::vector<AssetSourceScanEntry> entries;
         std::vector<AssetSourceScanDiagnostic> diagnostics;
 

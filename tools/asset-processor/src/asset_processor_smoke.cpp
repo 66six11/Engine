@@ -28,6 +28,7 @@
 
 #include "asset_processor_dry_run.hpp"
 #include "asset_processor_execute.hpp"
+#include "asset_processor_project_input.hpp"
 #include "asset_processor_text.hpp"
 
 namespace asharia::asset_processor {
@@ -159,9 +160,8 @@ namespace asharia::asset_processor {
             return true;
         }
 
-        [[nodiscard]] bool
-        expectReplacedManifestOutput(const std::filesystem::path& outputRoot,
-                                     std::size_t expectedProductCount) {
+        [[nodiscard]] bool expectReplacedManifestOutput(const std::filesystem::path& outputRoot,
+                                                        std::size_t expectedProductCount) {
             const std::filesystem::path manifestPath = outputRoot / "product-manifest.json";
             auto manifest = asharia::asset::readAssetProductManifestFile(manifestPath);
             if (!manifest || manifest->products.size() != expectedProductCount ||
@@ -407,6 +407,50 @@ namespace asharia::asset_processor {
             return EXIT_FAILURE;
         }
 
+        const std::filesystem::path countRootA = workspace->root / "CountA";
+        const std::filesystem::path countRootB = workspace->root / "CountB";
+        if (!writeSmokeSource(countRootA,
+                              SmokeSourceFixture{
+                                  .relativePath = "First.png",
+                                  .bytes = "first",
+                                  .guidText = "a39aca3d-2094-4fd7-a19b-814db0709a0d",
+                                  .metadataSourceHash = 0x3000f00d1234cafeULL,
+                              }) ||
+            !writeSmokeSource(countRootB, SmokeSourceFixture{
+                                              .relativePath = "Second.png",
+                                              .bytes = "second",
+                                              .guidText = "67fd6437-c89e-41a4-a2b0-3456feb6fa99",
+                                              .metadataSourceHash = 0x4000f00d1234cafeULL,
+                                          })) {
+            return EXIT_FAILURE;
+        }
+        const asharia::asset::AssetSourceScanResult combinedScan =
+            scanAssetProcessorSourceRoots(AssetProcessorResolvedInput{
+                .succeeded = true,
+                .projectPath = std::nullopt,
+                .projectRoot = {},
+                .projectName = {},
+                .projectId = {},
+                .assetCacheRoot = {},
+                .sourceRoots =
+                    {
+                        AssetProcessorSourceRoot{.rootName = "count-a",
+                                                 .sourceRoot = countRootA,
+                                                 .directory = "CountA",
+                                                 .sourcePathPrefix = "CountA"},
+                        AssetProcessorSourceRoot{.rootName = "count-b",
+                                                 .sourceRoot = countRootB,
+                                                 .directory = "CountB",
+                                                 .sourcePathPrefix = "CountB"},
+                    },
+                .ignoredDirectoryNames = {},
+                .error = {},
+            });
+        if (combinedScan.discoveredFileCount != 4U || combinedScan.entries.size() != 2U) {
+            std::cerr << "asset-processor smoke did not aggregate discovered source files\n";
+            return EXIT_FAILURE;
+        }
+
         const DryRunOptions emptyManifestOptions{
             .projectPath = std::nullopt,
             .sourceRoot = contentRoot,
@@ -461,7 +505,7 @@ namespace asharia::asset_processor {
                         .sourcePathPrefix = "Content",
                         .metadataSuffix = std::string{kDefaultMetadataSuffix},
                         .ignoredDirectoryNames = {},
-                },
+                    },
                 .productManifest = {},
                 .targetProfile = "windows-msvc-debug",
                 .toolVersions = {},

@@ -125,6 +125,45 @@ public sealed class StudioLayeringTests
     }
 
     [Fact]
+    public void Resource_browser_uses_the_editor_content_query_without_runtime_or_import_ownership()
+    {
+        var studioRoot = FindRepositoryRoot();
+        var repositoryRoot = Path.GetFullPath(Path.Combine(studioRoot, "..", ".."));
+        var projectSource = File.ReadAllText(Path.Combine(studioRoot, "Editor.csproj"));
+        var panelSource = File.ReadAllText(Path.Combine(
+            studioRoot,
+            "Shell",
+            "ViewModels",
+            "Panels",
+            "StudioProjectPanelViewModel.cs"));
+        var panelXaml = File.ReadAllText(Path.Combine(
+            studioRoot,
+            "Shell",
+            "Views",
+            "Panels",
+            "StudioProjectPanelView.axaml"));
+
+        Assert.True(Directory.Exists(Path.Combine(
+            repositoryRoot,
+            "packages",
+            "editor-content")));
+        Assert.True(Directory.Exists(Path.Combine(
+            studioRoot,
+            "src",
+            "Asharia.Studio.EngineBridge",
+            "Assets")));
+        Assert.Contains("asharia_editor_content_native.dll", projectSource, StringComparison.Ordinal);
+        Assert.Contains("IProjectAssetCatalog", panelSource, StringComparison.Ordinal);
+        Assert.Contains("VirtualizingStackPanel", panelXaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("ResourceRuntime", panelSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("RuntimeResource", panelSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("Vulkan", panelSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("ImportAsync", panelSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("File.Delete", panelSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("File.Move", panelSource, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Disconnected_native_project_bridge_tail_is_deleted()
     {
         var studioRoot = FindRepositoryRoot();

@@ -66,6 +66,10 @@ Asharia Engine 当前目标仍是先做一个小而完整的 Vulkan renderer，�
   和 asset discovery ignore policy；不拥有 cook/package profiles、editor workspace 或 runtime state。
 - `packages/asset-core`：asset GUID、type、handle/reference、metadata、product/cache/dependency/catalog
   的 CPU 数据模型；不拥有 GPU resource 或 editor UI。
+- `packages/editor-content`：editor-owned、UI-neutral 的 project asset catalog query source boundary。
+  `asharia::editor_content` 只读组合 project descriptor、source scan/discovery/snapshot/import planning、product manifest
+  与 `AssetCatalogView`；`asharia::editor_content_native` 以严格有界 C ABI/JSON 向 Studio 投影 immutable snapshot。
+  它不拥有 Avalonia/ImGui presentation、import execution、watcher、`ResourceRuntime`、renderer 或 GPU resource。
 - `packages/material-core`：material resource signature、descriptor contract、shader/signature compatibility
   validation 和 pipeline key hash 的 CPU 数据模型；不拥有 `.amat` IO、GPU resource、Vulkan pipeline/cache
   或 editor UI。
@@ -87,15 +91,21 @@ Asharia Engine 当前目标仍是先做一个小而完整的 Vulkan renderer，�
   这是 MVP 验证事实，不是长期 runtime 边界。
 - `apps/editor`：Dear ImGui editor host。它组合 `window-glfw`、`rhi-vulkan`、`renderer_basic_vulkan` 和
   ImGui backend，拥有 shell、panel/action/event、viewport coordination、texture registry、Frame Debug 和
-  editor smokes；未来 `packages/systems/editor` 内部 `editor_domain` 只能接收 backend-neutral editor state。
+  editor smokes；Asset Browser 的 fixture/store/icon/command 仍归 host，但 project catalog query 已消费
+  `asharia::editor_content`，不再由 app-private source 拥有。未来 `packages/systems/editor` 内部 `editor_domain`
+  只能接收 backend-neutral editor state。
 - `apps/studio`：Avalonia managed Studio shell。当前产品链是 `App/Shell -> Application ProjectSession -> EngineBridge
-  project + scene adapters -> asharia_project_native + asharia_scene_native`。ProjectSession 只有在 canonical descriptor
+  project + scene adapters -> asharia_project_native + asharia_scene_native`。Project catalog 链是
+  `ProjectSession -> Application ProjectAssetCatalog -> EngineBridge AssetCatalogGateway ->
+  asharia_editor_content_native -> asharia::editor_content`。ProjectSession 只有在 canonical descriptor
   与默认 SceneDocument 都打开后才发布 Ready；EngineBridge 用 dedicated owner lane 封装 native document handle，Shell
   只发送 command 并投影 authoritative snapshot。当前 UI 提供单文档 Hierarchy、名称/local Transform Inspector、Create
-  Entity、Save 与 dirty。首个可见 Scene View 已按 `StudioScenePanelView -> ViewportCompositionControl -> ViewportSession
+  Entity、Save/Undo/Redo/dirty，以及只读 catalog-backed Resource Browser。首个可见 Scene View 已按
+  `StudioScenePanelView -> ViewportCompositionControl -> ViewportSession
   -> EngineBridge ViewportBridge V7 stream -> editor_native bounded scheduler -> process RenderThread -> renderer_basic_vulkan`
-  接通；Release image 部署 `editor_native.dll` 与精确 shader closure。Studio 不录制 Vulkan command，也不拥有 native
-  handle/GPU resource；完整 Dock、Asset Browser、undo/redo、Play Mode、第二 Viewport 与 viewport input 尚未接入。
+  接通；Release image 部署 project/scene/editor-content/editor native DLL 与精确 shader closure。Studio 不录制 Vulkan
+  command，也不拥有 native handle/GPU resource；Resource Browser 不执行 importer、不创建 runtime/GPU resource，模型
+  cooked product、ResourceRuntime payload、缩略图、Play Mode、第二 Viewport 与 viewport input 尚未接入。
 
   <details>
   <summary>Retired Studio Project Code / viewport 设计记录（非当前产品事实）</summary>

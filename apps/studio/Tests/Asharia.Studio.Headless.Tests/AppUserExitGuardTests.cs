@@ -1,13 +1,18 @@
 using System;
+using System.Linq;
 using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
+using Asharia.Studio.Application.Diagnostics;
 using Asharia.Studio.Application.Projects;
 using Asharia.Studio.Application.Scenes;
 using Asharia.Studio.TestSupport;
+using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Headless.XUnit;
 using Avalonia.Threading;
 using Editor;
+using Editor.Shell.Composition;
+using Editor.Shell.Views.Windowing;
 using Xunit;
 
 namespace Asharia.Studio.Headless.Tests;
@@ -48,6 +53,46 @@ public sealed class AppUserExitGuardTests
 
         Assert.Equal(2, prompt.RequestCount);
         Assert.Null(GetField<Task>(app, "shutdownTask_"));
+    }
+
+    [AvaloniaFact]
+    public async Task Disposed_startup_shell_does_not_block_process_stop_or_final_shutdown()
+    {
+        var app = Assert.IsType<App>(Avalonia.Application.Current);
+        var diagnostics = Assert.IsType<StudioDiagnosticHub>(
+            Assert.IsAssignableFrom<IStudioDiagnosticHubProvider>(app).Diagnostics);
+        var shell = StudioShellTestFactory.Create();
+        var mainWindow = new MainWindow { DataContext = shell };
+        shell.Dispose();
+        var process = new StudioProcessSession(
+            _ => throw new InvalidOperationException("Injected composition startup failure."));
+        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await process.StartAsync());
+        var desktop = DispatchProxy.Create<
+            IClassicDesktopStyleApplicationLifetime,
+            RecordingDesktopLifetime>();
+        var recordingDesktop = Assert.IsAssignableFrom<RecordingDesktopLifetime>(desktop);
+
+        await app.StopAndShutdownOwnedSessionAsync(
+            desktop,
+            mainWindow,
+            process,
+            requestedExitCode: 1);
+
+        Assert.Null(mainWindow.DataContext);
+        Assert.Equal(StudioProcessSessionState.Stopped, process.State);
+        Assert.NotNull(app.LastTeardownReceipt);
+        Assert.Equal(StudioProcessStopStatus.Completed, app.LastTeardownReceipt.Status);
+        Assert.Equal(
+            StudioCompositionTeardownStatus.NotCreated,
+            app.LastTeardownReceipt.CompositionStatus);
+        Assert.Equal(1, recordingDesktop.ShutdownCallCount);
+        Assert.Equal(1, recordingDesktop.ExitCode);
+        Assert.Single(diagnostics.ReadDiagnostics(
+                maxCount: diagnostics.DiagnosticCapacity,
+                channel: StudioDiagnosticChannel.Problem)
+            .Items
+            .Where(record => record.Code == "studio.lifecycle.shell-stop.failed"));
     }
 
     private static void RequestUserShutdown(App app)
@@ -136,5 +181,28 @@ public sealed class AppUserExitGuardTests
 
         public void ReleaseFirstRequest() =>
             firstDecision_.TrySetResult(ProjectDocumentTransitionDecision.Cancel);
+    }
+
+    public class RecordingDesktopLifetime : DispatchProxy
+    {
+        public int ShutdownCallCount { get; private set; }
+
+        public int? ExitCode { get; private set; }
+
+        protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
+        {
+            ArgumentNullException.ThrowIfNull(targetMethod);
+            if (string.Equals(targetMethod.Name, "Shutdown", StringComparison.Ordinal))
+            {
+                ShutdownCallCount++;
+                ExitCode = Assert.IsType<int>(Assert.Single(args ?? []));
+            }
+
+            return targetMethod.ReturnType == typeof(void)
+                ? null
+                : targetMethod.ReturnType.IsValueType
+                    ? Activator.CreateInstance(targetMethod.ReturnType)
+                    : null;
+        }
     }
 }

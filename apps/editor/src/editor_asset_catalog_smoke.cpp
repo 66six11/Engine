@@ -23,10 +23,11 @@
 #include "asharia/asset_pipeline/asset_source_snapshot.hpp"
 #include "asharia/asset_pipeline/asset_texture_import_profile.hpp"
 #include "asharia/core/log.hpp"
+#include "asharia/editor_content/asset_catalog_snapshot.hpp"
 #include "asharia/project/project_descriptor_io.hpp"
 
-#include "editor_asset_catalog.hpp"
 #include "editor_asset_catalog_report.hpp"
+#include "editor_asset_catalog_store.hpp"
 #include "editor_asset_icon.hpp"
 #include "editor_asset_import_settings_command.hpp"
 #include "editor_smoke.hpp"

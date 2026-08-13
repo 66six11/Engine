@@ -5,9 +5,11 @@
 #include <cstdint>
 #include <expected>
 #include <limits>
+#include <map>
 #include <span>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <utility>
 
 #include "asharia/archive/json_archive.hpp"
@@ -24,6 +26,18 @@ namespace asharia::asset {
         using namespace std::string_view_literals;
 
         inline constexpr std::uint64_t kMaxAssetProductManifestBytes = 64ULL * 1024ULL * 1024ULL;
+
+        struct AssetProductKeyLess {
+            [[nodiscard]] bool operator()(const AssetProductKey& lhs,
+                                          const AssetProductKey& rhs) const noexcept {
+                return std::tie(lhs.guid.bytes, lhs.assetType.value, lhs.importerId.value,
+                                lhs.importerVersion.value, lhs.sourceHash, lhs.settingsHash,
+                                lhs.dependencyHash, lhs.targetProfileHash) <
+                       std::tie(rhs.guid.bytes, rhs.assetType.value, rhs.importerId.value,
+                                rhs.importerVersion.value, rhs.sourceHash, rhs.settingsHash,
+                                rhs.dependencyHash, rhs.targetProfileHash);
+            }
+        };
 
         struct HashTextField {
             std::string_view text;
@@ -403,6 +417,11 @@ namespace asharia::asset {
             if (!productsValue) {
                 return std::unexpected{std::move(productsValue.error())};
             }
+            if ((*productsValue)->arrayValue.size() > kMaxAssetProductManifestProducts) {
+                return std::unexpected{productManifestIoError(
+                    "asset product manifest root products exceeds maximum count " +
+                    std::to_string(kMaxAssetProductManifestProducts) + ".")};
+            }
 
             AssetProductManifestDocument document;
             document.products.reserve((*productsValue)->arrayValue.size());
@@ -473,6 +492,33 @@ namespace asharia::asset {
     }
 
     VoidResult validateAssetProductManifestDocument(const AssetProductManifestDocument& document) {
+        if (document.products.size() > kMaxAssetProductManifestProducts) {
+            return std::unexpected{
+                productManifestIoError("Asset product manifest products exceeds maximum count " +
+                                       std::to_string(kMaxAssetProductManifestProducts) + ".")};
+        }
+
+        std::map<AssetProductKey, std::vector<std::size_t>, AssetProductKeyLess> indicesByKey;
+        std::map<std::uint64_t, std::vector<std::size_t>> indicesByKeyHash;
+        std::map<std::string, std::vector<std::size_t>, std::less<>> indicesByPath;
+        for (std::size_t index = 0U; index < document.products.size(); ++index) {
+            const AssetProductRecord& product = document.products[index];
+            indicesByKey[product.key].push_back(index);
+            indicesByKeyHash[hashAssetProductKey(product.key)].push_back(index);
+            indicesByPath[product.relativeProductPath].push_back(index);
+        }
+
+        const auto firstLaterIndex = [](const auto& groups, const auto& key,
+                                        std::size_t index) -> std::size_t {
+            const auto group = groups.find(key);
+            if (group == groups.end()) {
+                return (std::numeric_limits<std::size_t>::max)();
+            }
+            const auto later = std::ranges::upper_bound(group->second, index);
+            return later == group->second.end() ? (std::numeric_limits<std::size_t>::max)()
+                                                : *later;
+        };
+
         for (std::size_t index = 0; index < document.products.size(); ++index) {
             const AssetProductRecord& product = document.products[index];
             const std::string context = "Asset product manifest product[" + std::to_string(index) +
@@ -505,27 +551,30 @@ namespace asharia::asset {
                     productManifestIoError(context + " is missing a product hash.")};
             }
 
-            for (std::size_t otherIndex = index + 1; otherIndex < document.products.size();
-                 ++otherIndex) {
-                const AssetProductRecord& other = document.products[otherIndex];
-                if (product.key == other.key) {
-                    return std::unexpected{productManifestIoError(
-                        context + " duplicates product key with product[" +
-                        std::to_string(otherIndex) + "] " + productLabel(other) + ".")};
-                }
-
-                if (hashAssetProductKey(product.key) == hashAssetProductKey(other.key)) {
-                    return std::unexpected{productManifestIoError(
-                        context + " duplicates product key hash with product[" +
-                        std::to_string(otherIndex) + "] " + productLabel(other) + ".")};
-                }
-
-                if (product.relativeProductPath == other.relativeProductPath) {
-                    return std::unexpected{productManifestIoError(
-                        context + " duplicates product path with product[" +
-                        std::to_string(otherIndex) + "] " + productLabel(other) + ".")};
-                }
+            const std::size_t sameKey = firstLaterIndex(indicesByKey, product.key, index);
+            const std::size_t sameKeyHash =
+                firstLaterIndex(indicesByKeyHash, hashAssetProductKey(product.key), index);
+            const std::size_t samePath =
+                firstLaterIndex(indicesByPath, product.relativeProductPath, index);
+            const std::size_t otherIndex = (std::min)({sameKey, sameKeyHash, samePath});
+            if (otherIndex == (std::numeric_limits<std::size_t>::max)()) {
+                continue;
             }
+
+            const AssetProductRecord& other = document.products[otherIndex];
+            if (sameKey == otherIndex) {
+                return std::unexpected{productManifestIoError(
+                    context + " duplicates product key with product[" + std::to_string(otherIndex) +
+                    "] " + productLabel(other) + ".")};
+            }
+            if (sameKeyHash == otherIndex) {
+                return std::unexpected{productManifestIoError(
+                    context + " duplicates product key hash with product[" +
+                    std::to_string(otherIndex) + "] " + productLabel(other) + ".")};
+            }
+            return std::unexpected{productManifestIoError(
+                context + " duplicates product path with product[" + std::to_string(otherIndex) +
+                "] " + productLabel(other) + ".")};
         }
 
         return {};

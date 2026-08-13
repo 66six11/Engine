@@ -64,6 +64,8 @@ namespace asharia::asset_processor {
                 return "MissingMetadata";
             case Code::OrphanMetadata:
                 return "OrphanMetadata";
+            case Code::LimitExceeded:
+                return "LimitExceeded";
             }
             return "Unknown";
         }
@@ -102,6 +104,8 @@ namespace asharia::asset_processor {
                 return "SourceFileReadFailed";
             case Code::DuplicateSourcePath:
                 return "DuplicateSourcePath";
+            case Code::ByteLimitExceeded:
+                return "ByteLimitExceeded";
             }
             return "Unknown";
         }
@@ -127,6 +131,8 @@ namespace asharia::asset_processor {
                 return "MetadataSourceHashDrift";
             case Code::ToolFingerprintFailed:
                 return "ToolFingerprintFailed";
+            case Code::UnresolvedToolDependency:
+                return "UnresolvedToolDependency";
             }
             return "Unknown";
         }

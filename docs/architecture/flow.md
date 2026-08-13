@@ -34,11 +34,13 @@ flowchart TD
     ProjectNative["packages/project-core<br/>asharia::project_native C ABI"]
     ProjectBootstrap["packages/project-bootstrap<br/>reader + ProcessApplicationV1 provider"]
     Studio["apps/studio<br/>Avalonia Shell + composition"]
-    StudioApplication["Studio.Application<br/>ProjectSession + SceneDocument ports"]
-    StudioBridge["Studio.EngineBridge<br/>project + scene adapters"]
+    StudioApplication["Studio.Application<br/>ProjectSession + SceneDocument + Catalog ports"]
+    StudioBridge["Studio.EngineBridge<br/>project + scene + catalog adapters"]
     AssetCore["packages/asset-core"]
     AssetCoreIo["packages/asset-core<br/>asharia::asset_core_io"]
     AssetPipeline["packages/asset-pipeline"]
+    EditorContent["packages/editor-content<br/>UI-neutral catalog query"]
+    EditorContentNative["packages/editor-content<br/>catalog C ABI adapter"]
     ResourceRuntime["packages/resource-runtime"]
     MaterialCore["packages/material-core"]
     ShaderAuthoring["packages/shader-authoring"]
@@ -85,12 +87,18 @@ flowchart TD
     Studio --> StudioBridge
     StudioBridge -.P/Invoke.-> ProjectNative
     StudioBridge -.P/Invoke.-> SceneNative
+    StudioBridge -.P/Invoke.-> EditorContentNative
     AssetCore --> Core
     AssetCoreIo --> AssetCore
     AssetCoreIo --> Archive
     AssetPipeline --> AssetCore
     AssetPipeline -.metadata read.-> AssetCoreIo
     AssetPipeline --> ShaderAuthoring
+    EditorContent --> ProjectCoreIo
+    EditorContent --> AssetCore
+    EditorContent -.metadata read.-> AssetCoreIo
+    EditorContent -.snapshot planning.-> AssetPipeline
+    EditorContentNative --> EditorContent
     ResourceRuntime --> AssetCore
     MaterialCore --> Core
     ShaderAuthoring --> Core
@@ -133,6 +141,7 @@ flowchart TD
     EditorApp -->|catalog view + metadata IO| AssetCore
     EditorApp -->|.ameta text IO| AssetCoreIo
     EditorApp -->|snapshot planning only| AssetPipeline
+    EditorApp -->|shared catalog query| EditorContent
     EditorApp -->|selection EntityId values| SceneCore
     EditorApp -->|authored scene mesh extraction| SceneRendering
     EditorApp --> Window
@@ -194,6 +203,10 @@ flowchart TD
   `AssetHandle<T>` / `AssetProductKey` / `AssetProductRecord`，表达 pending / ready / failed、generation 和
   product-cache diagnostics；它不依赖 `asset-pipeline`、RenderGraph、renderer、RHI 或 editor，也不创建
   GPU resource。
+- `editor-content` 是 editor owner domain 的 UI-neutral source boundary。`asharia::editor_content` 只读组合
+  `project_core_io`、`asset_core`/`asset_core_io` 与 `asset_pipeline`，产出 project asset catalog snapshot；
+  `asharia::editor_content_native` 只增加自有 strict bounded JSON writer 和 caller-owned C ABI。两个 target 都不依赖
+  Avalonia、ImGui、`resource-runtime`、renderer、RHI 或 Vulkan，也不执行 importer、watcher 或 product write。
 - `material-core` 当前只做 CPU-only material resource signature、shader/signature compatibility validation 和
   material pipeline key hash；它不做 `.amat` IO、asset import、GPU upload、Vulkan descriptor/pipeline cache、
   RenderGraph/RHI changes 或 editor UI。
@@ -202,8 +215,8 @@ flowchart TD
 - `sample-viewer` 的 smoke validation 可以直接验证 `rhi_vulkan_rendergraph` 字段；普通运行路径不应把
   Vulkan barrier/layout 细节扩散到 app 层。
 - `apps/editor` 当前承担 editor host 和 editor smoke harness。它可以直接链接 ImGui、`window-glfw`、
-  `rhi-vulkan`、`renderer_basic_vulkan`、`project_core_io`、`asset_core`、`asset_core_io`、`asset_pipeline`
-  和 `scene_core`，因为这些都属于 host integration、只读 project/asset snapshot 组装或 editor-owned
+  `rhi-vulkan`、`renderer_basic_vulkan`、`project_core_io`、`asset_core`、`asset_core_io`、`asset_pipeline`、
+  `editor_content` 和 `scene_core`，因为这些都属于 host integration、只读 project/asset snapshot 组装或 editor-owned
   selection value contracts；未来
   `packages/systems/editor` 内部 `editor_domain` target 只能保留 backend-neutral editor state，不能继承 ImGui、Vulkan、renderer 或 importer
   execution 依赖。
@@ -215,17 +228,22 @@ flowchart TD
   执行。Shell 只选择路径、发命令和投影 snapshot；
   ViewModel、Dock 与 Application 不解析 descriptor/scene JSON，也不持有 native/GPU handle。Windows composition root 优先
   选择 Avalonia Vulkan compositor，由专用 presentation adapter 导入 opaque NT image/semaphore；AngleEgl/Software 只保留
-  Studio 非渲染功能并让 Scene View 明确降级。Release image 精确包含 project/scene/editor 三个 native DLL 与 16 个
-  renderer-basic shader/reflection 文件，不携带 Slang、Vulkan SDK 或 validation layer。当前已有单 SceneDocument、Hierarchy、
-  名称/local Transform Inspector、Create Entity、Save、dirty、现有 Dock 中的一个可见 Scene View 与 on-demand revision/resize
-  更新；仍无 Asset Browser、undo/redo、Play Mode、第二 Viewport、通用 fair scheduler、camera/input 或 preview consumer。
+  Studio 非渲染功能并让 Scene View 明确降级。Resource Browser 链为
+  `ProjectSession -> Application ProjectAssetCatalog -> EngineBridge AssetCatalogGateway ->
+  asharia_editor_content_native -> asharia::editor_content`；Application 只拥有 immutable snapshot/generation，EngineBridge
+  独占 P/Invoke/strict JSON，Project panel 只拥有 filter/selection。Release image 精确包含
+  project/scene/editor-content/editor 四个 native DLL 与 16 个 renderer-basic shader/reflection 文件，不携带 Slang、
+  Vulkan SDK 或 validation layer。当前已有单 SceneDocument、Hierarchy、名称/local Transform Inspector、Create Entity、
+  Save/Undo/Redo/dirty、一个可见 Scene View 与只读 catalog-backed Resource Browser；仍无 cooked model product、runtime
+  mesh/GPU resource、thumbnail/preview service、Play Mode、第二 Viewport、通用 fair scheduler 或完整 camera/input consumer。
 - Editor panels 仍由 `EditorPanelRegistry::drawPanels(EditorFrameContext)` 适配每帧能力，但内置
   panel 的 `draw()` 实现会先收敛为 panel-local context，再把最小能力传给 helper。Scene View panel
   不创建 Vulkan objects、不注册 descriptor、不录 command buffer。
-- Asset Browser 当前消费 `EditorAssetCatalogStore` 提供的 `AssetCatalogView` 和可选 snapshot facts；project
-  descriptor 读取、source scan/discovery/snapshot、import planning 和 catalog report 生成在 `apps/editor`
-  的 host 服务中组合 public package API。它不执行 importer、不写 product manifest/blob、不创建 runtime asset
-  handle，也不上传 GPU 资源。
+- Dear ImGui Asset Browser 当前消费 app-owned `EditorAssetCatalogStore` 提供的 `AssetCatalogView` 和可选 snapshot facts；
+  project descriptor 读取、source scan/discovery/snapshot、import planning 和 navigation facts 已由共享
+  `asharia::editor_content` query 组合。ImGui fixture/store/icon/report/metadata command 仍归 `apps/editor` host。
+  Avalonia Resource Browser 则经专用 native ABI 和 Application owner 消费同一 query truth；两者都不执行 importer、
+  不写 product manifest/blob、不创建 runtime asset handle，也不上传 GPU 资源。
 - R0 删除的 legacy Scene Tree/Inspector workbench 与无 consumer Selection 岛保持删除。ADR-0009 的最小 Shell 从
   authoritative SceneDocument snapshot 重建 selection：ViewModel 只保存 stable object ID，并在 snapshot 更新时 remap/
   清除；它不复用 C++ editor-local `EditorSelectionSet`，也不把 selection 升级为 engine truth。
@@ -610,12 +628,52 @@ flowchart LR
   `asharia.project.json`。已有目标、损坏描述符、IO/ABI/binding failure 都是 typed fail-closed result。
 - Avalonia dialog service 只返回本地路径；`StudioShellViewModel` 发起操作并投影 snapshot，不解析 JSON、不持有 native
   pointer。Hierarchy/Inspector mutations 携 expected revision，成功后以重新读取的 authoritative snapshot 更新 dirty/selection。
-- `App` 创建 gateway、ProjectSession、dialog 和 ViewModel；`StudioCompositionSession` 在 Shell 之后 cancel + await
-  ProjectSession。测试组合显式注入 doubles，不读取用户偏好或创建生产 service。
+- `App` 创建 gateway、ProjectSession、ProjectAssetCatalog、dialog 和 ViewModel；`StudioCompositionSession` 在 Shell/panel
+  content 之后先 cancel + await catalog owner，再关闭 ProjectSession。测试组合显式注入 doubles，不读取用户偏好或创建生产 service。
 - `ActiveProjectSnapshot` 与 `SceneDocumentSnapshot` 只表达已验证的 identity/value，不持有 Avalonia 对象、原生指针或
   runtime 对象。关闭顺序先关闭 document connection/owner lane，再清除 active project。
-- 当前没有 recent store、自动恢复、多模板、Project extension scope、asset catalog、EngineHost、非 Transform mutation Undo 或 Play；
-  Bootstrap `Ready` 与活动项目/文档 `Ready` 仍是不同状态。
+- `App` 还以同一 `ProjectSession` 创建一个 `ProjectAssetCatalog`。它只在 active project scope 上查询；项目切换使用新的
+  request generation，旧请求晚到不得发布；同 scope refresh failure 可保留 last-known-good 并显式 Degraded。
+- 当前没有 recent store、自动恢复、多模板、Project extension scope、EngineHost、非 Transform persistent mutation Undo
+  或 Play；Bootstrap `Ready`、活动项目/文档 `Ready` 与 catalog `Ready/Degraded` 仍是不同状态。
+
+### #385 Studio Resource Browser 当前流程
+
+[`ADR-0014`](../../apps/studio/docs/adr/0014-catalog-backed-resource-browser.md) 决定 Studio 与 Dear ImGui editor
+共享 UI-neutral `editor-content` query，而不是共享任一前端的 panel/store。当前读流为：
+
+```mermaid
+flowchart LR
+    Project["ProjectSession Ready<br/>session + project scope"]
+    Owner["Application ProjectAssetCatalog<br/>generation + last-known-good"]
+    Port["IAssetCatalogGateway"]
+    Bridge["EngineBridge AssetCatalogGateway<br/>strict ABI + JSON"]
+    Native["asharia_editor_content_native<br/>bounded C ABI v1"]
+    Query["asharia::editor_content<br/>read-only snapshot query"]
+    Inputs["project_core_io + asset_core_io<br/>asset_pipeline + product manifest"]
+    Snapshot["immutable AssetCatalogSessionSnapshot"]
+    Panel["KeepAlive Project panel<br/>local folder/filter/selection"]
+
+    Project --> Owner --> Port --> Bridge --> Native --> Query --> Inputs
+    Inputs --> Query --> Native --> Bridge --> Owner --> Snapshot --> Panel
+```
+
+- query 默认限制 10,000 source files、8 GiB aggregate source bytes、10,000 diagnostics 与 16 MiB JSON；路径、
+  UTF-8、closed schema、row/navigation/sub-asset identity、scope 和 response spans 都 fail closed。C ABI 使用 caller-owned
+  response buffer，不返回 native-owned string/pointer；source byte ceiling 在实际 open/read/hash 中累计，JSON 使用
+  schema-specific bounded writer，不先物化另一棵 JSON tree；
+- project-mode source roots 必须经 project-core-io canonical containment 校验，symlink/junction（含中间路径段）不能
+  把 editor-content 或 Asset Processor 扫描引出 project root。catalog planning 使用 `DeclaredOnly`，不读取 host
+  `PATH`/`VULKAN_SDK` 工具链；无法证明工具版本时保留 row + Warning，但不生成 provisional product key；
+- owner scope 绑定 `ProjectSessionId + ProjectId + canonical project path + editor-preview profile`。同 scope refresh 可以
+  保留 last-known-good；跨项目绝不继承。partial snapshot 保留 rows/diagnostics 并进入 Degraded；
+- Project panel 只投影 source-root/folder navigation、asset rows、sub-asset summary、product state 与 diagnostics。搜索采用
+  150 ms debounce；selection 以 GUID 为优先、untracked source path 为 fallback，在 refresh 后 remap；
+- 两个固定 22 px 的虚拟化列表承载 navigation/assets；10,000-row Headless test 验证 realized controls 有界。filter、
+  details expansion、selection 与 clear 都是 view-local state，不写入 catalog/project/metadata；
+- refresh 不执行 importer，不写 manifest/blob/cache，不创建 `ResourceRuntime` handle 或 GPU resource，也不从 source
+  decode thumbnail。cooked mesh product、runtime payload、renderer resource、preview service、watcher 与 mutation command
+  均是后续独立 Slice。
 
 ### #373 Transform Undo/Redo 当前流程
 
@@ -1495,6 +1553,7 @@ sequenceDiagram
 flowchart LR
     ProjectInput["--project / ASHARIA_EDITOR_PROJECT"]
     ProductInput["optional product manifest"]
+    EditorContent["editor_content<br/>shared read-only query"]
     ProjectIo["project_core_io<br/>read asharia.project.json"]
     AssetScan["asset_pipeline<br/>scan / discover / snapshot / plan"]
     AssetIo["asset_core_io<br/>read .ameta text"]
@@ -1508,17 +1567,21 @@ flowchart LR
     Pending["EditorAssetReimportPendingState<br/>pending facts"]
     FutureScheduler["future import scheduler / catalog refresh"]
 
-    ProjectInput --> ProjectIo --> AssetScan
-    ProductInput -.read facts if present.-> AssetScan
-    AssetIo --> AssetScan
-    AssetScan --> CatalogView --> Store --> FrameContext --> Browser
+    ProjectInput --> EditorContent
+    ProductInput -.read facts if present.-> EditorContent
+    EditorContent --> ProjectIo
+    EditorContent --> AssetScan
+    EditorContent --> AssetIo
+    AssetScan --> CatalogView --> EditorContent --> Store --> FrameContext --> Browser
     Browser --> ImportUi --> Transaction --> MetadataCommand --> Pending
     Pending -.explicit future handoff.-> FutureScheduler
 ```
 
 约束：
 
-- `EditorAssetCatalogStore` 在 frame loop 前选择 deterministic fixture 或 project snapshot；panel 只读取
+- `asharia::editor_content` 现在拥有 UI-neutral project snapshot composition；原 app-private
+  `editor_asset_catalog` query implementation 已硬切删除。`EditorAssetCatalogStore` 仍在 frame loop 前选择
+  deterministic fixture 或 shared-query project snapshot；panel 只读取
   `AssetCatalogView`、snapshot diagnostics 和 source-root/path helper 结果。
 - `asset-pipeline` 在这个路径里只提供 source scan/discovery/snapshot、import planning 和 diagnostics。它不被
   Asset Browser 用作 importer scheduler，也不在 UI 线程写 product blobs。

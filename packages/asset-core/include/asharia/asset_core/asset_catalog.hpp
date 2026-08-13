@@ -1,6 +1,12 @@
 ﻿#pragma once
 
+#include <array>
+#include <cstddef>
+#include <cstdint>
+#include <functional>
+#include <map>
 #include <span>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -29,7 +35,11 @@ namespace asharia::asset {
         [[nodiscard]] std::span<const SourceAssetRecord> sources() const noexcept;
 
     private:
+        using GuidBytes = std::array<std::uint8_t, 16>;
+
         std::vector<SourceAssetRecord> sources_;
+        std::map<GuidBytes, std::size_t> sourceIndicesByGuid_;
+        std::map<std::string, std::size_t, std::less<>> sourceIndicesByPath_;
     };
 
 } // namespace asharia::asset

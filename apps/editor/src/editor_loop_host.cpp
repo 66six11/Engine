@@ -8,13 +8,14 @@
 #include <thread>
 #include <utility>
 
+#include "asharia/editor_content/asset_catalog_snapshot.hpp"
 #include "asharia/renderer_basic_vulkan/basic_renderers.hpp"
 #include "asharia/rhi_vulkan/vulkan_error.hpp"
 #include "asharia/rhi_vulkan/vulkan_frame_loop.hpp"
 #include "asharia/window_glfw/glfw_window.hpp"
 
 #include "editor_action.hpp"
-#include "editor_asset_catalog.hpp"
+#include "editor_asset_catalog_store.hpp"
 #include "editor_asset_icon.hpp"
 #include "editor_asset_import_settings_command.hpp"
 #include "editor_command.hpp"
@@ -69,11 +70,11 @@ namespace asharia::editor {
             return rows;
         }
 
-        [[nodiscard]] VoidResult validateResizeSmokeSwapchainRetirement(
-            EditorRunMode mode, const VulkanFrameLoop& frameLoop) {
+        [[nodiscard]] VoidResult
+        validateResizeSmokeSwapchainRetirement(EditorRunMode mode,
+                                               const VulkanFrameLoop& frameLoop) {
             if (!isEditorViewportResizeSmokeMode(mode) ||
-                validateSwapchainRetirementAfterRecreate(
-                    frameLoop.swapchainRetirementStats())) {
+                validateSwapchainRetirementAfterRecreate(frameLoop.swapchainRetirementStats())) {
                 return {};
             }
             return std::unexpected{
@@ -117,8 +118,7 @@ namespace asharia::editor {
             if (!*extentReady) {
                 continue;
             }
-            auto retirementInvariant =
-                validateResizeSmokeSwapchainRetirement(mode, frameLoop);
+            auto retirementInvariant = validateResizeSmokeSwapchainRetirement(mode, frameLoop);
             if (!retirementInvariant) {
                 return std::unexpected{std::move(retirementInvariant.error())};
             }

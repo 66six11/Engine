@@ -1,5 +1,6 @@
 ﻿#include <chrono>
 #include <cstdint>
+#include <cstdlib>
 #include <exception>
 #include <filesystem>
 #include <fstream>
@@ -9,6 +10,13 @@
 #include <string_view>
 #include <system_error>
 #include <utility>
+
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <Windows.h>
+#endif
 
 #include "asharia/project/project_descriptor.hpp"
 #include "asharia/project/project_descriptor_io.hpp"
@@ -317,18 +325,84 @@ namespace {
         asharia::project::AshariaProjectDescriptor duplicateRoots = descriptor;
         duplicateRoots.assetSourceRoots.push_back(duplicateRoots.assetSourceRoots.front());
 
+        asharia::project::AshariaProjectDescriptor overlappingPrefixes = descriptor;
+        overlappingPrefixes.assetSourceRoots.push_back(asharia::project::AssetSourceRootDesc{
+            .rootName = "nested-assets",
+            .directory = "NestedAssets",
+            .sourcePathPrefix = "Assets/Nested",
+        });
+
+        asharia::project::AshariaProjectDescriptor overlappingDirectories = descriptor;
+        overlappingDirectories.assetSourceRoots.push_back(asharia::project::AssetSourceRootDesc{
+            .rootName = "nested-assets",
+            .directory = "Assets/Nested",
+            .sourcePathPrefix = "DLC",
+        });
+
         asharia::project::AshariaProjectDescriptor invalidIgnored = descriptor;
         invalidIgnored.assetDiscovery.ignoredDirectoryNames.emplace_back("Bad/Name");
 
         asharia::project::AshariaProjectDescriptor duplicateIgnored = descriptor;
         duplicateIgnored.assetDiscovery.ignoredDirectoryNames.emplace_back(".git");
 
+        asharia::project::AshariaProjectDescriptor tooManyRoots = descriptor;
+        tooManyRoots.assetSourceRoots.resize(asharia::project::kMaxProjectAssetSourceRoots + 1U);
+
+        asharia::project::AshariaProjectDescriptor tooManyIgnoredDirectories = descriptor;
+        tooManyIgnoredDirectories.assetDiscovery.ignoredDirectoryNames.resize(
+            asharia::project::kMaxProjectIgnoredDirectories + 1U);
+
         return expectInvalidProject(invalidProjectId, "project id") &&
                expectInvalidProject(invalidRootName, "rootName") &&
                expectInvalidProject(invalidPrefix, "sourcePathPrefix") &&
                expectInvalidProject(duplicateRoots, "duplicate rootName") &&
+               expectInvalidProject(overlappingDirectories, "overlapping directory") &&
+               expectInvalidProject(overlappingPrefixes, "overlapping sourcePathPrefix") &&
                expectInvalidProject(invalidIgnored, "ignoredDirectories") &&
-               expectInvalidProject(duplicateIgnored, "duplicate name");
+               expectInvalidProject(duplicateIgnored, "duplicate name") &&
+               expectInvalidProject(tooManyRoots, "maximum supported count") &&
+               expectInvalidProject(tooManyIgnoredDirectories, "maximum supported count");
+    }
+
+    [[nodiscard]] bool smokeContainedProjectPathRejectsRedirectedAncestor() {
+        std::optional<SmokeWorkspace> workspace = makeSmokeWorkspace();
+        if (!workspace) {
+            return false;
+        }
+        const std::filesystem::path assets = workspace->root / "Assets";
+        const std::filesystem::path outside =
+            workspace->root.parent_path() / (workspace->root.filename().string() + "-outside");
+        const std::filesystem::path redirected = assets / "Redirected";
+        std::error_code error;
+        std::filesystem::create_directories(assets, error);
+        std::filesystem::create_directories(outside / "Nested", error);
+        if (error) {
+            return false;
+        }
+#if defined(_WIN32)
+        const std::wstring command =
+            L"mklink /J \"" + redirected.native() + L"\" \"" + outside.native() + L"\" >nul 2>&1";
+        // Agent-owned temporary paths are quoted. Junction creation is unprivileged on Windows.
+        // NOLINTNEXTLINE(cert-env33-c)
+        const bool linked = _wsystem(command.c_str()) == 0;
+#else
+        std::filesystem::create_directory_symlink(outside, redirected, error);
+        const bool linked = !error;
+#endif
+        auto cleanupOutside = [&]() {
+            std::error_code removeError;
+            std::filesystem::remove_all(outside, removeError);
+        };
+        if (!linked) {
+            cleanupOutside();
+            return true;
+        }
+
+        auto resolved = asharia::project::resolveContainedProjectPath(
+            workspace->root, std::filesystem::path{"Assets/Redirected/Nested"},
+            "asset source root");
+        cleanupOutside();
+        return !resolved && messageContains(resolved.error().message, "outside the project root");
     }
 
 } // namespace
@@ -339,7 +413,8 @@ int main() noexcept {
     try {
         const bool passed = smokeProjectId() && smokeProjectDescriptorRoundTrip() &&
                             smokeProjectDescriptorInvalidText() &&
-                            smokeProjectDescriptorValidation();
+                            smokeProjectDescriptorValidation() &&
+                            smokeContainedProjectPathRejectsRedirectedAncestor();
         if (!passed) {
             return 1;
         }

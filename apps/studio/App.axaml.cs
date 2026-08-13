@@ -3,8 +3,10 @@ using System.Collections.Immutable;
 using System.Threading.Tasks;
 using Asharia.Studio.Application.Actions;
 using Asharia.Studio.Application.Diagnostics;
+using Asharia.Studio.Application.Assets;
 using Asharia.Studio.Application.Projects;
 using Asharia.Studio.EngineBridge.Project;
+using Asharia.Studio.EngineBridge.Assets;
 using Asharia.Studio.EngineBridge.Scene;
 using Asharia.Studio.Presentation.Avalonia.Windowing;
 using Avalonia;
@@ -121,6 +123,7 @@ public partial class App : Application,
         var projectSession = new ProjectSession(
             new ProjectDescriptorBridge(),
             new SceneDocumentBridge());
+        ProjectAssetCatalog? projectAssetCatalog = null;
         var projectDialogs = new MainWindowProjectDialogService();
         var documentPrompt = new MainWindowDocumentTransitionPrompt();
         var documentTransitions = new ProjectDocumentTransitionCoordinator(
@@ -130,11 +133,15 @@ public partial class App : Application,
         MainWindow mainWindow;
         try
         {
+            projectAssetCatalog = new ProjectAssetCatalog(
+                projectSession,
+                new AssetCatalogGateway());
             shellViewModel = new StudioShellViewModel(
                 projectSession,
                 projectDialogs,
                 documentTransitions,
-                operationDiagnostics_);
+                operationDiagnostics_,
+                projectAssetCatalog);
             mainWindow = new MainWindow
             {
                 DataContext = shellViewModel,
@@ -144,8 +151,34 @@ public partial class App : Application,
         }
         catch (Exception exception)
         {
-            shellViewModel?.Dispose();
-            await projectSession.DisposeAsync();
+            var cleanupFailures = ImmutableArray.CreateBuilder<Exception>();
+            try
+            {
+                shellViewModel?.Dispose();
+            }
+            catch (Exception cleanupFailure)
+            {
+                cleanupFailures.Add(cleanupFailure);
+            }
+            if (projectAssetCatalog is not null)
+            {
+                try
+                {
+                    await projectAssetCatalog.DisposeAsync();
+                }
+                catch (Exception cleanupFailure)
+                {
+                    cleanupFailures.Add(cleanupFailure);
+                }
+            }
+            try
+            {
+                await projectSession.DisposeAsync();
+            }
+            catch (Exception cleanupFailure)
+            {
+                cleanupFailures.Add(cleanupFailure);
+            }
             if (exception is StudioActionRegistrationException registrationFailure)
             {
                 operationDiagnostics_.PublishActionRegistrationFailure(
@@ -168,6 +201,14 @@ public partial class App : Application,
                     "lifecycle",
                     "Studio shell window failed to initialize.",
                     exception);
+            }
+            foreach (var cleanupFailure in cleanupFailures)
+            {
+                PublishFailure(
+                    "studio.lifecycle.window-create-cleanup.failed",
+                    "lifecycle",
+                    "Studio shell owner cleanup failed after initialization failed.",
+                    cleanupFailure);
             }
             BeginFinalShutdown(desktop, exitCode: 1);
             return;
@@ -315,69 +356,101 @@ public partial class App : Application,
             return;
         }
 
-        var mainWindow = mainWindow_;
+        await StopAndShutdownOwnedSessionAsync(
+            desktop,
+            mainWindow_,
+            processSession_,
+            requestedExitCode_);
+    }
+
+    internal async Task StopAndShutdownOwnedSessionAsync(
+        IClassicDesktopStyleApplicationLifetime desktop,
+        MainWindow? mainWindow,
+        StudioProcessSession? processSession,
+        int requestedExitCode)
+    {
+        ArgumentNullException.ThrowIfNull(desktop);
+        var exitCode = requestedExitCode;
+        var shellViewModel = mainWindow?.DataContext as StudioShellViewModel;
         if (mainWindow is not null)
         {
-            if (mainWindow.DataContext is StudioShellViewModel shellViewModel)
-            {
-                shellViewModel.MarkStopping();
-            }
-
             mainWindow.DataContext = null;
         }
 
-        var exitCode = requestedExitCode_;
         try
         {
-            var processSession = processSession_;
-            if (processSession is not null)
+            if (shellViewModel is not null)
             {
-                LastTeardownReceipt = await processSession.StopAsync(
-                    TimeSpan.FromSeconds(5));
-                if (LastTeardownReceipt.Status != StudioProcessStopStatus.Completed)
+                try
+                {
+                    shellViewModel.MarkStopping();
+                }
+                catch (Exception exception)
                 {
                     exitCode = 1;
-                    diagnostics_.PublishDiagnostic(new StudioDiagnosticWrite(
-                        StudioDiagnosticSeverity.Error,
-                        StudioDiagnosticChannel.Problem,
-                        LastTeardownReceipt.Status == StudioProcessStopStatus.TimedOut
-                            ? "studio.lifecycle.stop.timed-out"
-                            : "studio.lifecycle.stop.failed",
+                    PublishFailure(
+                        "studio.lifecycle.shell-stop.failed",
                         "lifecycle",
-                        CreateManagedContext("process-session"),
-                        "Studio process teardown did not complete cleanly.",
-                        "Exit the process and inspect the teardown receipt before restarting.",
-                        [
-                            new StudioDiagnosticAttribute(
-                                "status",
-                                LastTeardownReceipt.Status.ToString()),
-                            new StudioDiagnosticAttribute(
-                                "compositionStatus",
-                                LastTeardownReceipt.CompositionStatus.ToString()),
-                        ]));
-                }
-                else
-                {
-                    PublishManagedLog(
-                        StudioLogLevel.Information,
-                        "lifecycle",
-                        "Studio process teardown completed cleanly.");
+                        "Studio shell failed to enter its stopping state.",
+                        exception);
                 }
             }
         }
-        catch (Exception exception)
+        finally
         {
-            exitCode = 1;
-            PublishFailure(
-                "studio.lifecycle.stop.unhandled",
-                "lifecycle",
-                "Studio process teardown raised an unhandled failure.",
-                exception);
-        }
+            try
+            {
+                if (processSession is not null)
+                {
+                    LastTeardownReceipt = await processSession.StopAsync(
+                        TimeSpan.FromSeconds(5));
+                    if (LastTeardownReceipt.Status != StudioProcessStopStatus.Completed)
+                    {
+                        exitCode = 1;
+                        diagnostics_.PublishDiagnostic(new StudioDiagnosticWrite(
+                            StudioDiagnosticSeverity.Error,
+                            StudioDiagnosticChannel.Problem,
+                            LastTeardownReceipt.Status == StudioProcessStopStatus.TimedOut
+                                ? "studio.lifecycle.stop.timed-out"
+                                : "studio.lifecycle.stop.failed",
+                            "lifecycle",
+                            CreateManagedContext("process-session"),
+                            "Studio process teardown did not complete cleanly.",
+                            "Exit the process and inspect the teardown receipt before restarting.",
+                            [
+                                new StudioDiagnosticAttribute(
+                                    "status",
+                                    LastTeardownReceipt.Status.ToString()),
+                                new StudioDiagnosticAttribute(
+                                    "compositionStatus",
+                                    LastTeardownReceipt.CompositionStatus.ToString()),
+                            ]));
+                    }
+                    else
+                    {
+                        PublishManagedLog(
+                            StudioLogLevel.Information,
+                            "lifecycle",
+                            "Studio process teardown completed cleanly.");
+                    }
+                }
+            }
+            catch (Exception exception)
+            {
+                exitCode = 1;
+                PublishFailure(
+                    "studio.lifecycle.stop.unhandled",
+                    "lifecycle",
+                    "Studio process teardown raised an unhandled failure.",
+                    exception);
+            }
 
-        BeginFinalShutdown(
-            desktop,
-            Math.Max(exitCode, requestedExitCode_));
+            BeginFinalShutdown(
+                desktop,
+                Math.Max(
+                    exitCode,
+                    Math.Max(requestedExitCode, requestedExitCode_)));
+        }
     }
 
     private void BeginFinalShutdown(

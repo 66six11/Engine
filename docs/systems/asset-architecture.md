@@ -1,6 +1,6 @@
 # Asset 与 Resource 架构
 
-资料核对日期：2026-05-12
+资料核对日期：2026-08-13
 状态：Current boundary + Target Architecture；实现状态以 package/tests 与 GitHub Issues 为准。
 
 本文定义 `packages/asset-core` 的当前边界、资料依据和数据模型，并与
@@ -11,8 +11,8 @@
 核心结论：`asset-core` 先负责稳定身份、source metadata、import settings、product/cache key、依赖摘要和
 runtime-safe asset handle。文件修改监听、source hash、metadata IO、import 调度、product cache manifest
 和 dependency invalidation 由独立 `asset-pipeline` / `asset-processor` 逐步承担；runtime loaded-resource
-状态由独立 `resource-runtime` 承担；真实 importer、GPU upload、shader/material pipeline key、editor browser
-和热重载分别在后续 package 或工具层接入，不能反向污染
+状态由独立 `resource-runtime` 承担；UI-neutral editor catalog query 由 `editor-content` 承担；真实 importer、
+GPU upload、shader/material pipeline key、editor preview 和热重载分别在后续 package 或工具层接入，不能反向污染
 `asset-core`。
 
 ## 资料结论
@@ -24,6 +24,8 @@ runtime-safe asset handle。文件修改监听、source hash、metadata IO、imp
 | O3DE Asset Processor: https://docs.o3de.org/docs/user-guide/assets/asset-processor/ | Asset Processor 监控 source assets，生成 product assets，并维护 source/product/dependency 关系。 | `asset-core` 只定义 source record、product record 和 dependency graph 数据；未来 `tools/asset-processor` 才负责执行 import。 |
 | Godot import process: https://docs.godotengine.org/en/stable/tutorials/assets_pipeline/import_process.html | Godot 保存 source 旁的 import metadata，并把 imported result 放入隐藏 cache。 | Asharia Engine 的 generated product 不提交到项目源目录；开发期可放在 `build/asset-cache/`，未来项目可放 `.asharia/cache/`。 |
 | Unreal asynchronous asset loading: https://dev.epicgames.com/documentation/en-us/unreal-engine/asynchronous-asset-loading-in-unreal-engine | Unreal 使用 soft reference / path 让资源引用不等于立即加载对象。 | `AssetHandle<T>` 是稳定引用，不是 loaded pointer；加载状态和 fallback resource 由 resource/asset manager 处理。 |
+| Unreal Asset Registry: https://dev.epicgames.com/documentation/en-us/unreal-engine/asset-registry-in-unreal-engine | Asset Registry 收集未加载资产 metadata，Content Browser 是主要 consumer。 | Resource Browser 查询 catalog facts，不为列表先加载 runtime object；view filter/selection 不成为 catalog truth。 |
+| O3DE Asset Cache / Catalog: https://docs.o3de.org/docs/user-guide/assets/pipeline/asset-cache/ | Processor database、runtime catalog、product cache 与 Browser consumer 分开拥有。 | `editor-content` 只读组合 snapshot；Browser 不执行 importer或修改 product cache。 |
 
 ## 设计目标
 
@@ -36,9 +38,9 @@ runtime-safe asset handle。文件修改监听、source hash、metadata IO、imp
 
 ## 非目标
 
-第一版不做：
+本文最初的 `asset-core` 第一版边界不做：
 
-- 完整 editor Asset Browser。
+- 完整 editor Asset Browser（#385 后当前只读 Resource Browser 的事实见“Editor”章节；mutation/preview 仍延期）。
 - 文件系统 watcher 和后台导入线程。
 - glTF、PNG、DDS、mesh、texture 等具体 importer。
 - GPU buffer/image 创建、staging allocator 或 Vulkan upload。
@@ -51,7 +53,7 @@ runtime-safe asset handle。文件修改监听、source hash、metadata IO、imp
 
 ## Package 边界
 
-建议第一版目录：
+当前相关 package 的关键文件（省略无关文件）：
 
 ```text
 packages/asset-core/
@@ -94,6 +96,20 @@ packages/resource-runtime/
     runtime_resource_registry.cpp
   tests/
     resource_runtime_smoke_tests.cpp
+
+packages/editor-content/
+  CMakeLists.txt
+  asharia.package.json
+  include/asharia/editor_content/
+    asset_catalog_snapshot.hpp
+    asset_catalog_native_api.h
+  src/
+    asset_catalog_snapshot.cpp
+    asset_catalog_snapshot_json.cpp
+    asset_catalog_native_api.cpp
+  tests/
+    asset_catalog_native_smoke_tests.cpp
+    asset_catalog_native_c_header_smoke.c
 ```
 
 依赖原则：
@@ -113,6 +129,10 @@ packages/resource-runtime/
 - `asharia::resource_runtime` 只依赖 `asset-core`，当前提供 CPU-only runtime resource key、ticket、
   pending / ready / failed 状态、product-record resolution 和 diagnostics；不依赖 `asset-pipeline`、RenderGraph、
   renderer、RHI、editor 或 ImGui。
+- `asharia::editor_content` 依赖 `asset-core`、`asset_core_io`、`asset-pipeline` 与 `project_core_io`，只读组合
+  project catalog snapshot；`asharia::editor_content_native` 只依赖该 query target，并以自有 bounded writer 提供
+  C ABI/JSON transport。
+  两者不依赖 `resource-runtime`、renderer、RHI、Vulkan、ImGui 或 Avalonia，不拥有 importer/watcher/product writes。
 - `asset-core` 不依赖 renderer、RHI、RenderGraph、editor、ImGui、script runtime 或具体 importer。
 - `apps/editor`、`packages/scene-core`、`packages/material-core` 和未来 `packages/systems/scripting-dotnet` 可以消费
   `AssetGuid` / `AssetHandle<T>`，但不能重建自己的 asset identity 系统。
@@ -134,7 +154,8 @@ flowchart TD
     AssetPipeline["packages/asset-pipeline"]
     ImportTool["future tools/asset-processor"]
     ResourceRuntime["packages/resource-runtime"]
-    Editor["apps/editor / editor_domain"]
+    EditorContent["packages/editor-content<br/>UI-neutral query"]
+    Editor["apps/editor / apps/studio"]
 
     ProjectCore --> Core
     ProjectCoreIo --> ProjectCore
@@ -149,7 +170,11 @@ flowchart TD
     ImportTool --> AssetCore
     ImportTool -.project descriptor.-> ProjectCoreIo
     ResourceRuntime --> AssetCore
-    Editor --> AssetCore
+    EditorContent --> ProjectCoreIo
+    EditorContent --> AssetCore
+    EditorContent --> AssetPipeline
+    EditorContent -.metadata IO.-> AssetCoreIo
+    Editor --> EditorContent
     AssetPipeline -.metadata IO.-> AssetCoreIo
     ImportTool -.metadata IO.-> AssetCoreIo
     AssetCore -.optional reflected settings.-> Reflection
@@ -589,16 +614,37 @@ struct RuntimeResourceRecord {
 
 ### Editor
 
-- Asset Browser 消费 catalog view。
+- Dear ImGui Asset Browser 与 Avalonia Resource Browser 都消费 catalog view/snapshot；共享的是
+  `editor-content` UI-neutral query，不是任一 panel/store/ViewModel。
 - Inspector 修改 import settings 时生成 editor command，更新 `.ameta` 后触发 reimport request。
 - Editor UI 不直接修改 product cache；它只请求 import、展示状态和诊断。
+- #385 将原 `apps/editor` 私有 `editor_asset_catalog` query composition 硬切到
+  `packages/editor-content`。`asharia::editor_content` 组合 canonical project descriptor、source scan/discovery/
+  snapshot/import planning、product manifest 与 `AssetCatalogView`，产出 source roots、navigation、rows 和 diagnostics；
+  Dear ImGui 的 `EditorAssetCatalogStore`/fixture/icon/report/metadata command 仍是 app-owned consumer。
+- #385 同时建立 Studio 生产链：`ProjectSession -> ProjectAssetCatalog -> IAssetCatalogGateway -> EngineBridge ->
+  asharia_editor_content_native -> asharia::editor_content`。Application owner 以 project scope + request generation
+  实现 newest-request-wins；同 scope refresh failure 可保留 last-known-good，跨项目不复用；partial snapshot 显式
+  Degraded。Project panel 只拥有 150 ms debounce search、folder/type/product filters、stable selection 与 details state。
+- native/managed query 默认限制 10,000 source files、8 GiB aggregate source bytes、10,000 diagnostics 与
+  16 MiB JSON；ABI/string/schema/navigation/scope 都严格验证。Project panel 的 navigation/assets 列表采用固定 22 px
+  virtualized rows，并以 10,000-row Headless test 验证 realized controls 有界；100,000 仅是 parser safety ceiling，
+  不是 production query 的性能承诺。
+- catalog refresh 以 `DeclaredOnly` planning 消费显式 metadata/manifest/tool-version facts，不探测 host `PATH` 或
+  `VULKAN_SDK`；无法证明工具依赖时保留 source row、输出 Warning，并拒绝 provisional product key。source roots 经
+  project-core-io canonical containment 校验，symlink/junction 不能把 editor-content 或 project-mode Asset Processor
+  引出 canonical project root；source bytes 在实际 hash read 中累计，JSON 由 bounded schema writer 流式写入。
+- Resource Browser refresh 只重建 snapshot，不执行 importer、不写 `.ameta`/manifest/blob/cache、不创建
+  `ResourceRuntime`/GPU resource，也不从 source decode thumbnail。模型 cooked product、runtime mesh payload、renderer
+  vertex/index resource 与 ThumbnailService 必须作为后续 owner Slice 依次闭环。
 - 当前 Asset Browser shell 已通过 #76 / PR #77 落地面板、菜单、dock 和 Lucide icon resolver 合同。
 - #78 / PR #79 已将该 shell 推进到 public `asset-core` catalog view model：editor 可消费排序稳定的
   source/product 诊断 rows，但仍不从 panel 执行扫描、读取 manifest 文件、写 product cache 或触发 import。
-- #80 正在补 editor-owned read-only project catalog snapshot service：它可组合 `project-core` descriptor、
-  `asset-pipeline` source scan / discovery / snapshot / import planning 和 `asset-core` catalog view；panel 仍只消费
-  snapshot/view facts，不拥有 watcher、hot reload、import execution、product writes、runtime loading 或 GPU upload。
-- #80 已新增 `EditorAssetCatalogStore`，Asset Browser 通过 panel draw context 消费当前 `AssetCatalogView`；无项目时使用
+- #80 最初在 `apps/editor` 落地 read-only project catalog snapshot service；#385 已把其中的 UI-neutral query
+  composition迁入 `editor-content`，Dear ImGui panel 仍只消费 snapshot/view facts，不拥有 watcher、hot reload、
+  import execution、product writes、runtime loading 或 GPU upload。
+- #80 新增的 `EditorAssetCatalogStore` 仍属于 Dear ImGui host；Asset Browser 通过 panel draw context 消费当前
+  `AssetCatalogView`，无项目时使用
   deterministic fixture，交互式运行可通过 `ASHARIA_EDITOR_PROJECT` 加载静态 project snapshot；普通 editor smoke 仍走
   fixture，`--smoke-editor-asset-browser` 会加载临时 snapshot-backed project catalog 来验证启动到 panel context 的路由。
 - #81 推进 texture import profile classification：`.png`、`.jpg`、`.hdr`、`.exr` 等仍只是 source file
@@ -627,7 +673,7 @@ struct RuntimeResourceRecord {
   deterministic read-only work snapshot with sorted changed-setting keys for a future scheduler handoff, but that snapshot
   is still coordination data and does not execute imports, refresh catalog truth, write products or allocate runtime
   resources.
-  #102 adds the first explicit editor catalog refresh service: it rebuilds an `EditorAssetCatalogStore` snapshot from the
+  #102 adds the first explicit Dear ImGui editor catalog refresh service: it rebuilds an `EditorAssetCatalogStore` snapshot from the
   same project/product-manifest/target-profile request, so real `.ameta` changes can become read-only catalog facts while
   import execution, product manifest/blob writes, runtime resource allocation and GPU upload remain out of scope.
   The selected-row Import Settings UI can also read the canonical `texture.profile` back from the source `.ameta` after
@@ -1132,7 +1178,8 @@ scan-to-planning bridge baseline 稳定。
 | --- | --- |
 | `tools/asset-processor` / 完整 import 调度 | 等后续 slice 接入真实 importer、dependency invalidation 和调度策略。 |
 | `--smoke-mesh-resource` / runtime texture owner | 等 CPU texture import contract、真实 decoder 选择、resource-runtime 状态合同和 upload lifetime 策略稳定后接入真实 mesh/texture product data、resource owner 和 lifetime。 |
-| Full Asset Browser / import settings UI | 第一版 shell/icon contract 和 public catalog view model 已落地；#80 正在补 read-only project catalog snapshot service 与 Asset Browser context 接线。import settings 编辑和 reimport request 仍等 editor command/transaction 与 catalog snapshot 稳定。 |
+| Resource Browser 后续 mutation/preview | #385 已接通 Studio 只读 catalog-backed browser；create/rename/move/delete、watcher、background processor、完整 import settings、thumbnail/grid view 仍需 typed command、processor 和 preview owner。 |
+| Model product / runtime / GPU / thumbnail | 先定义稳定 Mesh cooked product 与一个 importer，再由 ResourceRuntime 读取 typed CPU payload、renderer 创建 generation-safe GPU resource，最后 ThumbnailService 复用同一 runtime resource；禁止 Browser 旁路 decode source。 |
 | Material asset IO / Material Editor | 等 material-core 合同、asset product execution 和 editor transaction 稳定。 |
 
 不建议现在做：
@@ -1143,7 +1190,7 @@ scan-to-planning bridge baseline 稳定。
   product writer，不解析 KTX/HDR，也不压缩 Basis。
 - 完整 GPU upload owner；当前只允许保留 graph-visible buffer/texture upload baseline 和 source-path-free runtime state。
 - 热重载。
-- 资产数据库 UI。
+- 持久/增量资产数据库与自动 watcher（当前 Resource Browser 是显式 refresh 的 bounded snapshot query）。
 - package marketplace。
 
 ## 最小 smoke 建议

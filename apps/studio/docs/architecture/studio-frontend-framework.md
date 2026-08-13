@@ -12,6 +12,8 @@
 > Application Action/dirty transition/diagnostic ingress合同；这不恢复旧Workbench/public SDK或兼容路径。
 > 2026-08-13，#381在当前production Dock中增加一个Diagnostics tool panel；#383随后让内部Console/Problems以
 > 两条stream-specific subscriptions投影同一App-owned bounded hub，不恢复动态Feature/extension注册路径。
+> 2026-08-13，#385又让Project panel消费Application-owned catalog snapshot；下文“固定空状态/asset catalog未实现”
+> 仍只是早期审查记录。当前事实见[ADR-0014](../adr/0014-catalog-backed-resource-browser.md)。
 
 更新日期：2026-08-13
 
@@ -257,7 +259,7 @@ retained composition viewport 的方向可行；以下问题在关闭前，前�
 | P1 | 默认 layout 中任一 panel factory/attach/show 失败会使 DockWorkspace 构造重抛并终止 Studio startup | contribution fault 不应摧毁整个 Shell | factory 返回 typed result；Host 保留 placement 并显示 error placeholder，支持 retry/disable；隔离 owner/dependent chain |
 | P1 | Scene View attach/probe 存在 fire-and-forget Task，前序 detach fault 可成为未观察异常 | viewport operation 必须有 generation、owner 与 terminal observation | 交给 session task supervisor；整个 pipeline 使用 `try/catch/finally`、generation/cancellation，并在 detach/shutdown await |
 | P1 | project create/open/restore 从 UI event/startup 同步调用 native descriptor/filesystem gateway | UI thread 只提交 intent 和投影 snapshot | 提供可取消 `Start/Open/Create/RestoreAsync`，task center 显示进度；用 operation generation 保证 latest-request-wins |
-| P2 | window title 消费 `IProjectSessionService`，Project panel 仍硬编码 `No active project` | 同一概念只有一份 truth | Project panel 消费相同 immutable project snapshot；asset catalog 未实现时只显示明确的 unavailable/empty capability |
+| P2（历史；#385已关闭） | window title 消费 `IProjectSessionService`，当时 Project panel 仍硬编码 `No active project` | 同一概念只有一份 truth | #385 已让 Project panel 消费 active project-scoped immutable catalog snapshot；NoProject/Loading/Degraded/Failed 仍显式呈现 |
 | P2 | Dock tab 和 Hierarchy 展开主要依赖 pointer/double-tap，缺少 Tab/TreeItem keyboard 与 automation 语义 | Host 拥有 keyboard、focus 与 accessibility | 实现标准键盘路由、focus-visible、AutomationProperties/peer，并用 Avalonia Headless 验证 |
 | P2 | public event 由 caller thread 直接 multicast，subscriber 抛错会阻止后续 subscriber；部分 Presenter 未统一 marshal | event 只是 invalidation；subscriber/fault/thread owner 显式 | Host-owned per-subscriber 隔离；consumer 收到通知后重读 latest snapshot；Presenter 统一 dispatcher/coalescing |
 | P2 | Hierarchy 的 `SelectedRow = null` 不清理共享 selection，UI 可无高亮而 Inspector 仍显示旧对象 | view selection 与 content selection 必须一致或明确隐藏 | 区分用户清空和 filter 隐藏；用户清空发布 empty selection，隐藏 selection 保留并给出 reveal state |
@@ -837,9 +839,9 @@ Ready 只在 project launch surface 显示 canonical candidate name 与“projec
 window title/context，也不提升为 `ProjectReady`。没有真实 application service 时，next action 只显示为非交互文本。
 session diagnostic 在有界滚动 surface 就地显示首项，manifest path 与 JSON pointer 分开；当前 Problems service 是
 append-only，尚无 replace-by-source 语义，因此本阶段不复制，避免同一 project-open 状态产生过期或重复问题记录。
-Project panel 不消费 project-open source；正式 `IProjectSessionService` 已存在，但当前 panel 尚未投影它并仍显示
-固定空状态。修复时先消费同一 active-project snapshot；asset/product catalog 未落地前继续显示明确的 unavailable/empty
-capability，不伪造 asset 数据。
+本段记录的早期 Project panel 不消费 project-open source、固定空状态已由 #385 关闭。当前 panel 消费同一
+active-project scope 的 immutable catalog session；No Project、initial load、partial/degraded 与 failure 均显式呈现，仍不伪造
+runtime/product resource。
 
 ### F3：Scene Document session + scoped transaction baseline
 

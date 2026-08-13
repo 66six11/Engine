@@ -13,6 +13,7 @@ asharia_require_package_target(asharia::archive packages/archive)
 asharia_require_package_target(asharia::asset_core packages/asset-core)
 asharia_require_package_target(asharia::asset_core_io packages/asset-core)
 asharia_require_package_target(asharia::asset_pipeline packages/asset-pipeline)
+asharia_require_package_target(asharia::editor_content packages/editor-content)
 asharia_require_package_target(asharia::project_core_io packages/project-core)
 asharia_require_package_target(asharia::renderer_basic_vulkan packages/renderer-basic)
 asharia_require_package_target(asharia::rhi_vulkan packages/rhi-vulkan)
@@ -74,7 +75,6 @@ if(WIN32)
             OBJECT_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/resources/asharia-editor.ico"
     )
 endif()
-
 add_library(editor-native SHARED
     src/editor_shared_viewport_external_image_pool.cpp
     src/editor_shared_viewport_frame_epoch.cpp
@@ -129,9 +129,9 @@ add_executable(asharia-editor
     src/editor_app_registration.cpp
     src/editor_app_run_completion.cpp
     src/editor_app_services.cpp
-    src/editor_asset_catalog.cpp
     src/editor_asset_catalog_report.cpp
     src/editor_asset_catalog_smoke.cpp
+    src/editor_asset_catalog_store.cpp
     src/editor_asset_import_settings_command.cpp
     src/editor_asset_icon.cpp
     src/editor_command.cpp
@@ -229,6 +229,7 @@ target_link_libraries(asharia-editor
         asharia::asset_core_io
         asharia::asset_pipeline
         asharia::core
+        asharia::editor_content
         asharia::editor_native
         asharia::project_core_io
         asharia::renderer_basic_vulkan

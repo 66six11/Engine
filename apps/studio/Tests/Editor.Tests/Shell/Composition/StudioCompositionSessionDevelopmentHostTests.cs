@@ -73,6 +73,7 @@ public sealed class StudioCompositionSessionDevelopmentHostTests
     {
         var hub = new StudioDiagnosticHub(diagnosticCapacity: 2, logCapacity: 2);
         var shell = StudioShellTestFactory.Create();
+        var catalog = Assert.IsType<TestProjectAssetCatalog>(shell.ProjectAssetCatalog);
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
         try
@@ -85,6 +86,7 @@ public sealed class StudioCompositionSessionDevelopmentHostTests
                     cancellation.Token,
                     enableReadOnlyDevelopmentObservation: true));
             Assert.Throws<ObjectDisposedException>(() => shell.MarkReady());
+            Assert.Equal(1, catalog.DisposeCount);
         }
         finally
         {
@@ -96,6 +98,7 @@ public sealed class StudioCompositionSessionDevelopmentHostTests
     public async Task Host_creation_failure_disposes_the_unpublished_shell_owner()
     {
         var shell = StudioShellTestFactory.Create();
+        var catalog = Assert.IsType<TestProjectAssetCatalog>(shell.ProjectAssetCatalog);
 
         await Assert.ThrowsAsync<InvalidOperationException>(async () =>
             await StudioCompositionSession.CreateAsync(
@@ -105,6 +108,40 @@ public sealed class StudioCompositionSessionDevelopmentHostTests
                 CancellationToken.None));
 
         Assert.Throws<ObjectDisposedException>(() => shell.MarkReady());
+        Assert.Equal(1, catalog.DisposeCount);
+    }
+
+    [Fact]
+    public async Task Startup_failure_attempts_all_owner_cleanup_and_preserves_every_failure()
+    {
+        var shell = StudioShellTestFactory.Create(
+            out var projectSession,
+            out _);
+        var catalog = Assert.IsType<TestProjectAssetCatalog>(shell.ProjectAssetCatalog);
+        catalog.DisposeException = new InvalidOperationException("catalog dispose failed");
+        projectSession.DisposeException = new InvalidOperationException("session dispose failed");
+
+        var failure = await Assert.ThrowsAsync<AggregateException>(async () =>
+            await StudioCompositionSession.CreateAsync(
+                shell,
+                projectSession,
+                mainWindow: null,
+                new ThrowingIdentityDiagnosticHub(),
+                CancellationToken.None));
+
+        Assert.Equal(1, catalog.DisposeCount);
+        Assert.Equal(1, projectSession.DisposeCount);
+        Assert.Contains(
+            failure.InnerExceptions,
+            exception => exception.Message.Contains(
+                "Injected host-creation failure",
+                StringComparison.Ordinal));
+        Assert.Contains(
+            failure.InnerExceptions,
+            exception => exception.Message == "catalog dispose failed");
+        Assert.Contains(
+            failure.InnerExceptions,
+            exception => exception.Message == "session dispose failed");
     }
 
     [Theory]

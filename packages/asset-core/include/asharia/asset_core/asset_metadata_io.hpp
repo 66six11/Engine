@@ -1,5 +1,6 @@
 ﻿#pragma once
 
+#include <cstddef>
 #include <filesystem>
 #include <string>
 #include <string_view>
@@ -9,6 +10,10 @@
 #include "asharia/core/result.hpp"
 
 namespace asharia::asset {
+
+    inline constexpr std::size_t kMaxAssetMetadataSettings = 1'024U;
+    inline constexpr std::size_t kMaxAssetMetadataSettingKeyBytes = 1'024U;
+    inline constexpr std::size_t kMaxAssetMetadataSettingValueBytes = 64U * 1'024U;
 
     struct AssetMetadataDocument {
         SourceAssetRecord source;

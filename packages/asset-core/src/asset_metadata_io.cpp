@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <expected>
 #include <limits>
+#include <set>
 #include <span>
 #include <string>
 #include <string_view>
@@ -243,6 +244,11 @@ namespace asharia::asset {
             if (!settingsValue) {
                 return std::unexpected{std::move(settingsValue.error())};
             }
+            if ((*settingsValue)->objectValue.size() > kMaxAssetMetadataSettings) {
+                return std::unexpected{assetMetadataIoError(
+                    ".ameta settings exceeds the maximum supported setting count of " +
+                    std::to_string(kMaxAssetMetadataSettings) + ".")};
+            }
 
             std::vector<AssetImportSetting> settings;
             settings.reserve((*settingsValue)->objectValue.size());
@@ -251,10 +257,19 @@ namespace asharia::asset {
                     return std::unexpected{
                         assetMetadataIoError(".ameta settings cannot contain an empty key.")};
                 }
+                if (member.key.size() > kMaxAssetMetadataSettingKeyBytes) {
+                    return std::unexpected{assetMetadataIoError(
+                        ".ameta setting key exceeds the maximum supported UTF-8 byte length.")};
+                }
                 if (member.value.kind != ArchiveValueKind::String) {
                     return std::unexpected{
                         assetMetadataIoError(".ameta setting '" + member.key +
                                              "' must use a string value in metadata IO v1.")};
+                }
+                if (member.value.stringValue.size() > kMaxAssetMetadataSettingValueBytes) {
+                    return std::unexpected{
+                        assetMetadataIoError(".ameta setting '" + member.key +
+                                             "' exceeds the maximum supported value byte length.")};
                 }
                 settings.push_back(AssetImportSetting{
                     .key = member.key,
@@ -404,6 +419,14 @@ namespace asharia::asset {
                                                         " is missing a source hash.")};
         }
 
+        if (document.settings.size() > kMaxAssetMetadataSettings) {
+            return std::unexpected{assetMetadataIoError(
+                "Asset metadata document " + assetMetadataSourceLabel(document.source) +
+                " exceeds the maximum supported setting count of " +
+                std::to_string(kMaxAssetMetadataSettings) + ".")};
+        }
+
+        std::set<std::string_view, std::less<>> settingKeys;
         for (std::size_t index = 0; index < document.settings.size(); ++index) {
             const AssetImportSetting& setting = document.settings[index];
             if (setting.key.empty()) {
@@ -411,13 +434,16 @@ namespace asharia::asset {
                     "Asset metadata document " + assetMetadataSourceLabel(document.source) +
                     " has an empty import setting key.")};
             }
-            for (std::size_t otherIndex = index + 1; otherIndex < document.settings.size();
-                 ++otherIndex) {
-                if (setting.key == document.settings[otherIndex].key) {
-                    return std::unexpected{assetMetadataIoError(
-                        "Asset metadata document " + assetMetadataSourceLabel(document.source) +
-                        " has duplicate import setting key '" + setting.key + "'.")};
-                }
+            if (setting.key.size() > kMaxAssetMetadataSettingKeyBytes ||
+                setting.value.size() > kMaxAssetMetadataSettingValueBytes) {
+                return std::unexpected{assetMetadataIoError(
+                    "Asset metadata document " + assetMetadataSourceLabel(document.source) +
+                    " has an import setting that exceeds metadata IO v1 byte limits.")};
+            }
+            if (!settingKeys.emplace(setting.key).second) {
+                return std::unexpected{assetMetadataIoError(
+                    "Asset metadata document " + assetMetadataSourceLabel(document.source) +
+                    " has duplicate import setting key '" + setting.key + "'.")};
             }
         }
 

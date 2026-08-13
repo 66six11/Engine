@@ -76,6 +76,10 @@ if(ASHARIA_BUILD_TESTS)
       tests/asset_tool_fingerprint_header_test.cpp
   )
 
+  add_executable(asharia-asset-pipeline-scaling-tests
+      tests/asset_pipeline_scaling_tests.cpp
+  )
+
   target_link_libraries(asharia-asset-pipeline-smoke-tests
       PRIVATE
           asharia::asset_pipeline
@@ -92,9 +96,17 @@ if(ASHARIA_BUILD_TESTS)
           asharia::asset_pipeline
   )
 
+  target_link_libraries(asharia-asset-pipeline-scaling-tests
+      PRIVATE
+          asharia::asset_pipeline
+  )
+
   asharia_configure_target(asharia-asset-pipeline-smoke-tests)
   asharia_configure_target(asharia-asset-pipeline-header-tests)
+  asharia_configure_target(asharia-asset-pipeline-scaling-tests)
 
   add_test(NAME asharia-asset-pipeline-smoke-tests COMMAND asharia-asset-pipeline-smoke-tests)
   add_test(NAME asharia-asset-pipeline-header-tests COMMAND asharia-asset-pipeline-header-tests)
+  add_test(NAME asharia-asset-pipeline-scaling-tests COMMAND asharia-asset-pipeline-scaling-tests)
+  set_tests_properties(asharia-asset-pipeline-scaling-tests PROPERTIES TIMEOUT 30)
 endif()
