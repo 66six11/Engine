@@ -3,6 +3,7 @@
 namespace asharia::asset_pipeline_header_tests {
 
     void touchImportPlanningHeader();
+    void touchGlbImportHeader();
     void touchProductBlobHeader();
     void touchProductExecutionHeader();
     void touchProductManifestIoHeader();
@@ -18,6 +19,7 @@ namespace asharia::asset_pipeline_header_tests {
 
 int main() {
     asharia::asset_pipeline_header_tests::touchImportPlanningHeader();
+    asharia::asset_pipeline_header_tests::touchGlbImportHeader();
     asharia::asset_pipeline_header_tests::touchProductBlobHeader();
     asharia::asset_pipeline_header_tests::touchProductExecutionHeader();
     asharia::asset_pipeline_header_tests::touchProductManifestIoHeader();

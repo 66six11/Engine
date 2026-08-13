@@ -1,0 +1,14 @@
+{
+  "schema": "com.asharia.asset.metadata",
+  "schemaVersion": 1,
+  "guid": "6f5299ad-9c29-47b2-9366-159c00ebfe9c",
+  "assetType": "com.asharia.asset.Mesh",
+  "sourcePath": "assets/fixtures/mesh-product-v1/restricted-static-mesh.glb",
+  "sourceHash": "a5197d70b66fed88",
+  "settingsHash": "a8c7f832281a39c5",
+  "importer": {
+    "id": "com.asharia.importer.mesh.glb-static",
+    "version": 1
+  },
+  "settings": {}
+}

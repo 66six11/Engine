@@ -15,19 +15,22 @@
     "com.asharia.archive",
     "com.asharia.asset-core",
     "com.asharia.material-instance",
+    "com.asharia.mesh-product",
     "com.asharia.shader-authoring"
   ],
   "targets": ["asharia-asset-pipeline"],
   "testTargets": [
     "asharia-asset-pipeline-smoke-tests",
     "asharia-asset-pipeline-header-tests",
-    "asharia-asset-pipeline-scaling-tests"
+    "asharia-asset-pipeline-scaling-tests",
+    "asharia-asset-glb-import-tests"
   ],
   "targetRoles": {
     "asharia-asset-pipeline": "tool",
     "asharia-asset-pipeline-smoke-tests": "test",
     "asharia-asset-pipeline-header-tests": "test",
-    "asharia-asset-pipeline-scaling-tests": "test"
+    "asharia-asset-pipeline-scaling-tests": "test",
+    "asharia-asset-glb-import-tests": "test"
   },
   "targetDependencies": {
     "asharia-asset-pipeline": [
@@ -36,6 +39,7 @@
       "asharia-asset-core",
       "asharia-asset-core-io",
       "asharia-material-instance",
+      "asharia-mesh-product-writer",
       "asharia-shader-authoring"
     ],
     "asharia-asset-pipeline-smoke-tests": [
@@ -43,6 +47,7 @@
       "asharia-asset-core-io"
     ],
     "asharia-asset-pipeline-header-tests": ["asharia-asset-pipeline"],
-    "asharia-asset-pipeline-scaling-tests": ["asharia-asset-pipeline"]
+    "asharia-asset-pipeline-scaling-tests": ["asharia-asset-pipeline"],
+    "asharia-asset-glb-import-tests": ["asharia-asset-pipeline"]
   }
 }

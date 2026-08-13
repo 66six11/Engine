@@ -1537,8 +1537,6 @@ namespace {
 
             asharia::asset::AssetImportPlanResult ambiguousProductPlan = basePlan;
             ambiguousProductPlan.requests.front().relativeProductPath += suffix;
-            const std::filesystem::path ambiguousProductFinal =
-                executionRoot / ambiguousProductPlan.requests.front().relativeProductPath;
             const asharia::asset::AssetProductExecutionRequest ambiguousProductRequest{
                 .plan = std::move(ambiguousProductPlan),
                 .existingManifest = {},
@@ -1554,9 +1552,9 @@ namespace {
                     ambiguousProductRequest, ambiguousProductOperations);
             if (ambiguousProductExecution.diagnostics.size() != 1U ||
                 ambiguousProductExecution.diagnostics.front().code !=
-                    asharia::asset::AssetProductExecutionDiagnosticCode::ProductWriteFailed ||
-                !messageHasFinalPath(ambiguousProductExecution.diagnostics.front().message,
-                                     ambiguousProductFinal) ||
+                    asharia::asset::AssetProductExecutionDiagnosticCode::InvalidPlan ||
+                ambiguousProductExecution.diagnostics.front().message.find(
+                    "canonical import plan") == std::string::npos ||
                 !ambiguousProductOperations.events.empty()) {
                 logFailure("Asset product execution accepted an ambiguous Windows product leaf.");
                 rejectedAmbiguousEndpoints = false;
@@ -1565,8 +1563,6 @@ namespace {
             asharia::asset::AssetImportPlanResult reservedPlan = basePlan;
             reservedPlan.requests.front().relativeProductPath =
                 ".asharia-product-staging" + std::string{suffix} + "/escape.product";
-            const std::filesystem::path reservedFinal =
-                executionRoot / reservedPlan.requests.front().relativeProductPath;
             const asharia::asset::AssetProductExecutionRequest reservedRequest{
                 .plan = std::move(reservedPlan),
                 .existingManifest = {},
@@ -1581,9 +1577,9 @@ namespace {
                     reservedRequest, reservedOperations);
             if (reservedExecution.diagnostics.size() != 1U ||
                 reservedExecution.diagnostics.front().code !=
-                    asharia::asset::AssetProductExecutionDiagnosticCode::ProductWriteFailed ||
-                !messageHasFinalPath(reservedExecution.diagnostics.front().message,
-                                     reservedFinal) ||
+                    asharia::asset::AssetProductExecutionDiagnosticCode::InvalidPlan ||
+                reservedExecution.diagnostics.front().message.find("canonical import plan") ==
+                    std::string::npos ||
                 !reservedOperations.events.empty()) {
                 logFailure("Asset product execution accepted an ambiguous Windows staging "
                            "namespace.");
@@ -3505,6 +3501,97 @@ namespace {
         return false;
     }
 
+    [[nodiscard]] bool expectForgedProductKeyRejected(
+        const asharia::asset::AssetImportPlanResult& plan,
+        const std::vector<asharia::asset::AssetProductSourceBytes>& sourceBytes,
+        const std::filesystem::path& outputRoot, const std::filesystem::path& manifestPath) {
+        asharia::asset::AssetImportPlanResult forgedPlan = plan;
+        forgedPlan.requests.front().productKey.sourceHash ^= 1U;
+        const asharia::asset::AssetProductExecutionResult execution =
+            asharia::asset::executeAssetProducts(asharia::asset::AssetProductExecutionRequest{
+                .plan = std::move(forgedPlan),
+                .existingManifest = {},
+                .sourceBytes = sourceBytes,
+                .dependencyProductBytes = {},
+                .productOutputRoot = outputRoot,
+                .productManifestOutputPath = manifestPath,
+            });
+        if (execution.succeeded() || !execution.writtenProducts.empty() ||
+            execution.manifestWritten ||
+            !expectExecutionDiagnostic(
+                execution, asharia::asset::AssetProductExecutionDiagnosticCode::InvalidPlan,
+                "canonical import plan")) {
+            logFailure("Asset product execution accepted a forged product key.");
+            return false;
+        }
+        return true;
+    }
+
+    [[nodiscard]] bool expectInvalidCacheArtifactsRejected(
+        const asharia::asset::AssetScannedImportPlanResult& cachePlan,
+        const asharia::asset::AssetProductManifestDocument& manifest,
+        const std::filesystem::path& outputRoot, const std::filesystem::path& manifestPath) {
+        asharia::asset::AssetImportPlanResult oversizedCachePlan = cachePlan.plan;
+        asharia::asset::AssetProductManifestDocument oversizedManifest = manifest;
+        constexpr std::uint64_t kOversizedCacheArtifactBytes =
+            asharia::asset::AssetProductBlobReadLimits{}.maxProductBytes + 1U;
+        oversizedCachePlan.cacheHits.front().product.productSizeBytes =
+            kOversizedCacheArtifactBytes;
+        const auto oversizedManifestProduct = std::ranges::find_if(
+            oversizedManifest.products,
+            [&oversizedCachePlan](const asharia::asset::AssetProductRecord& product) {
+                return product.key == oversizedCachePlan.cacheHits.front().product.key;
+            });
+        if (oversizedManifestProduct == oversizedManifest.products.end()) {
+            logFailure("Asset product execution smoke could not locate its cache manifest record.");
+            return false;
+        }
+        oversizedManifestProduct->productSizeBytes = kOversizedCacheArtifactBytes;
+        const asharia::asset::AssetProductExecutionResult oversizedExecution =
+            asharia::asset::executeAssetProducts(asharia::asset::AssetProductExecutionRequest{
+                .plan = std::move(oversizedCachePlan),
+                .existingManifest = std::move(oversizedManifest),
+                .sourceBytes = {},
+                .dependencyProductBytes = {},
+                .productOutputRoot = outputRoot,
+                .productManifestOutputPath = manifestPath,
+            });
+        if (oversizedExecution.succeeded() ||
+            !expectExecutionDiagnostic(
+                oversizedExecution,
+                asharia::asset::AssetProductExecutionDiagnosticCode::CacheProductInvalid,
+                "cache verification limit")) {
+            logFailure("Asset product execution accepted an oversized cached artifact record.");
+            return false;
+        }
+
+        const std::filesystem::path missingArtifact =
+            outputRoot / cachePlan.plan.cacheHits.front().product.relativeProductPath;
+        std::error_code removeError;
+        if (!std::filesystem::remove(missingArtifact, removeError) || removeError) {
+            logFailure("Asset product execution smoke could not remove its cached artifact.");
+            return false;
+        }
+        const asharia::asset::AssetProductExecutionResult missingExecution =
+            asharia::asset::executeAssetProducts(asharia::asset::AssetProductExecutionRequest{
+                .plan = cachePlan.plan,
+                .existingManifest = manifest,
+                .sourceBytes = {},
+                .dependencyProductBytes = {},
+                .productOutputRoot = outputRoot,
+                .productManifestOutputPath = manifestPath,
+            });
+        if (missingExecution.succeeded() || missingExecution.manifestWritten ||
+            !expectExecutionDiagnostic(
+                missingExecution,
+                asharia::asset::AssetProductExecutionDiagnosticCode::CacheProductInvalid,
+                "missing")) {
+            logFailure("Asset product execution accepted a missing cached artifact.");
+            return false;
+        }
+        return true;
+    }
+
     [[nodiscard]] bool smokeProductExecutionWritesDeterministicProducts() {
         const std::filesystem::path root =
             smokeRoot("asharia-asset-pipeline-smoke-product-execution");
@@ -3546,6 +3633,10 @@ namespace {
         };
         const std::filesystem::path outputRoot = root / "ProductCache";
         const std::filesystem::path manifestPath = outputRoot / "product-manifest.json";
+
+        if (!expectForgedProductKeyRejected(plan.plan, sourceBytes, outputRoot, manifestPath)) {
+            return false;
+        }
 
         const asharia::asset::AssetProductExecutionResult first =
             asharia::asset::executeAssetProducts(asharia::asset::AssetProductExecutionRequest{
@@ -3637,6 +3728,11 @@ namespace {
             noManifestCacheExecution.manifestWritten ||
             !noManifestCacheExecution.diagnostics.empty()) {
             logFailure("Asset product execution smoke failed unchanged-input cache hit rerun.");
+            return false;
+        }
+
+        if (!expectInvalidCacheArtifactsRejected(cachePlan, first.manifest, outputRoot,
+                                                 manifestPath)) {
             return false;
         }
 

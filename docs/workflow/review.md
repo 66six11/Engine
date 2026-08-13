@@ -445,6 +445,22 @@ public asset-pipeline headers、asset-processor tool code、runtime texture owne
 和 sample-viewer smoke。KTX/KTX2/Basis/DDS/HDR/EXR policy 不等于 decoder implementation，不能因为
 文档提到格式就让 runtime、editor、RenderGraph、renderer 或 RHI 直接依赖具体 decoder/transcoder library。
 
+涉及 `packages/mesh-product` Mesh Product v1 layout/reader/writer，或 `asset-pipeline` 受限 `.glb`
+importer/product execution 时，必须跑两个 package-local suites 与资产边界检查：
+
+```powershell
+cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake -S packages\mesh-product -B build\cmake\package-mesh-product-tests-msvc-debug -G Ninja -DCMAKE_BUILD_TYPE=Debug -DASHARIA_BUILD_TESTS=ON -DCMAKE_TOOLCHAIN_FILE=%CD%/build/conan/msvc-debug/Debug/generators/conan_toolchain.cmake && cmake --build build\cmake\package-mesh-product-tests-msvc-debug && ctest --test-dir build\cmake\package-mesh-product-tests-msvc-debug --output-on-failure"
+cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake -S packages\asset-pipeline -B build\cmake\package-asset-pipeline-tests-msvc-debug -G Ninja -DCMAKE_BUILD_TYPE=Debug -DASHARIA_BUILD_TESTS=ON -DCMAKE_TOOLCHAIN_FILE=%CD%/build/conan/msvc-debug/Debug/generators/conan_toolchain.cmake && cmake --build build\cmake\package-asset-pipeline-tests-msvc-debug && ctest --test-dir build\cmake\package-asset-pipeline-tests-msvc-debug --output-on-failure"
+powershell -ExecutionPolicy Bypass -File tools\check-asset-boundaries.ps1
+```
+
+审查证据必须确认：canonical little-endian layout/limits 和 malformed/truncated/oversized/range negatives；
+相同输入 byte-identical；真实 `assets/fixtures/mesh-product-v1/restricted-static-mesh.glb` 完成 artifact +
+manifest + reader round-trip；default-scene/source-order、RH→Asharia LH、node transform、negative determinant
+CCW repair、missing normal/UV 与 material slots 没有漂移。Khronos glTF Validator 应对 fixture 返回 zero errors。
+`mesh-product` runtime-safe target 不得依赖 fastgltf/`asset-pipeline`；此门禁也不能宣称 ResourceRuntime、GPU
+mesh、reload/deferred destroy、Scene View 或 ThumbnailService 已完成。
+
 涉及 `project-core` 描述符 model/IO 或 Editor 资产目录的项目描述符读取路径时，还必须在两个test presets上
 构建并运行package-owned smoke，证明round-trip、duplicate/missing field与malformed input仍被正确处理：
 

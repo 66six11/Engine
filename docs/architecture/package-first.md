@@ -177,6 +177,9 @@ package 用来承载可选能力：
   source/.ameta 条目，产出 deterministic manifest / catalog 输入、product blob 和诊断；它可以私有复用
   texture importer、`material-instance` 或 `shader-authoring` 等 importer-specific package，但不把这些语义
   推入 `asset-core`，也不拥有 watcher、后台 import 调度、GPU upload 或 editor UI。
+- `mesh-product` 提供 runtime-safe `asharia::mesh_product` reader 与 tool-only
+  `asharia::mesh_product_writer`。`asset-pipeline` 可私有链接 writer 和 fastgltf 生成受限 `.glb` static
+  Mesh Product v1；Runtime 只允许依赖 reader target，不依赖 importer/source parser。
 - `resource-runtime` 当前是 CPU-only product-resolution baseline：按稳定资产 key 和期望 product record 管理
   request generation 与 Pending/Ready/Failed 状态；它尚不读取 artifact bytes、不拥有 typed CPU payload 或 GPU object。
 - `editor-content` 是 `ownerDomain=editor` 的 source-boundary package，计划归入完整

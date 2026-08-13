@@ -9,15 +9,18 @@ if(NOT DEFINED ASHARIA_REPOSITORY_ROOT)
 endif()
 include("${ASHARIA_REPOSITORY_ROOT}/cmake/AshariaPackage.cmake")
 asharia_package_init()
+find_package(fastgltf CONFIG REQUIRED)
 find_package(stb CONFIG REQUIRED)
 asharia_require_package_target(asharia::core engine/core)
 asharia_require_package_target(asharia::archive packages/archive)
 asharia_require_package_target(asharia::asset_core packages/asset-core)
 asharia_require_package_target(asharia::asset_core_io packages/asset-core)
 asharia_require_package_target(asharia::material_instance packages/material-instance)
+asharia_require_package_target(asharia::mesh_product_writer packages/mesh-product)
 asharia_require_package_target(asharia::shader_authoring packages/shader-authoring)
 
 add_library(asharia-asset-pipeline STATIC
+    src/asset_glb_import.cpp
     src/asset_import_planning.cpp
     src/asset_tool_fingerprint.cpp
     src/asset_product_blob.cpp
@@ -44,11 +47,13 @@ target_link_libraries(asharia-asset-pipeline
     PUBLIC
         asharia::asset_core
         asharia::core
+        asharia::mesh_product_writer
     PRIVATE
         asharia::archive
         asharia::asset_core_io
         asharia::material_instance
         asharia::shader_authoring
+        fastgltf::fastgltf
         stb::stb
 )
 
@@ -64,6 +69,7 @@ if(ASHARIA_BUILD_TESTS)
   add_executable(asharia-asset-pipeline-header-tests
       tests/asset_pipeline_header_tests.cpp
       tests/asset_import_planning_header_test.cpp
+      tests/asset_glb_import_header_test.cpp
       tests/asset_product_blob_header_test.cpp
       tests/asset_product_execution_header_test.cpp
       tests/asset_product_manifest_io_header_test.cpp
@@ -78,6 +84,10 @@ if(ASHARIA_BUILD_TESTS)
 
   add_executable(asharia-asset-pipeline-scaling-tests
       tests/asset_pipeline_scaling_tests.cpp
+  )
+
+  add_executable(asharia-asset-glb-import-tests
+      tests/asset_glb_import_tests.cpp
   )
 
   target_link_libraries(asharia-asset-pipeline-smoke-tests
@@ -101,12 +111,19 @@ if(ASHARIA_BUILD_TESTS)
           asharia::asset_pipeline
   )
 
+  target_link_libraries(asharia-asset-glb-import-tests
+      PRIVATE
+          asharia::asset_pipeline
+  )
+
   asharia_configure_target(asharia-asset-pipeline-smoke-tests)
   asharia_configure_target(asharia-asset-pipeline-header-tests)
   asharia_configure_target(asharia-asset-pipeline-scaling-tests)
+  asharia_configure_target(asharia-asset-glb-import-tests)
 
   add_test(NAME asharia-asset-pipeline-smoke-tests COMMAND asharia-asset-pipeline-smoke-tests)
   add_test(NAME asharia-asset-pipeline-header-tests COMMAND asharia-asset-pipeline-header-tests)
   add_test(NAME asharia-asset-pipeline-scaling-tests COMMAND asharia-asset-pipeline-scaling-tests)
+  add_test(NAME asharia-asset-glb-import-tests COMMAND asharia-asset-glb-import-tests)
   set_tests_properties(asharia-asset-pipeline-scaling-tests PROPERTIES TIMEOUT 30)
 endif()

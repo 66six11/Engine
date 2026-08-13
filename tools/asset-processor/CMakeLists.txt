@@ -12,6 +12,7 @@ asharia_package_init()
 asharia_require_package_target(asharia::core engine/core)
 asharia_require_package_target(asharia::asset_core_io packages/asset-core)
 asharia_require_package_target(asharia::asset_pipeline packages/asset-pipeline)
+asharia_require_package_target(asharia::mesh_product packages/mesh-product)
 asharia_require_package_target(asharia::project_core_io packages/project-core)
 
 add_executable(asharia-asset-processor
@@ -28,6 +29,7 @@ target_link_libraries(asharia-asset-processor
         asharia::core
         asharia::asset_core_io
         asharia::asset_pipeline
+        asharia::mesh_product
         asharia::project_core_io
 )
 
@@ -36,11 +38,25 @@ asharia_configure_target(asharia-asset-processor)
 if(ASHARIA_BUILD_TESTS)
   enable_testing()
 
+  set(ASHARIA_ASSET_PROCESSOR_MESH_FIXTURE
+      "${ASHARIA_REPOSITORY_ROOT}/assets/fixtures/mesh-product-v1/restricted-static-mesh.glb")
+  add_custom_command(TARGET asharia-asset-processor POST_BUILD
+      COMMAND "${CMAKE_COMMAND}" -E make_directory
+              "$<TARGET_FILE_DIR:asharia-asset-processor>/fixtures/mesh-product-v1"
+      COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+              "${ASHARIA_ASSET_PROCESSOR_MESH_FIXTURE}"
+              "$<TARGET_FILE_DIR:asharia-asset-processor>/fixtures/mesh-product-v1/restricted-static-mesh.glb"
+      VERBATIM
+  )
+
   add_test(NAME asharia-asset-processor-smoke-dry-run
       COMMAND asharia-asset-processor --smoke-dry-run
   )
 
   add_test(NAME asharia-asset-processor-smoke-product-execution
       COMMAND asharia-asset-processor --smoke-product-execution
+  )
+  set_tests_properties(asharia-asset-processor-smoke-product-execution PROPERTIES
+      WORKING_DIRECTORY "$<TARGET_FILE_DIR:asharia-asset-processor>"
   )
 endif()
