@@ -35,6 +35,64 @@ process-owned `ViewportPresentationLifetime` 完成 Avalonia import/presentation
 “每帧重建 presentation resource”和“caller 线程直接拥有 Vulkan”三个旧事实，但尚未解决 process singleton、
 device epoch/recovery 或跨 stream weighted fairness。
 
+普通 Studio build 现在也在实际部署边界 fail closed。root `Editor.csproj` 仍只消费
+`build/cmake/$(StudioNativeBuildPreset)`，不会运行 Conan/CMake 或自动构建 `editor-native`；native ABI 或 checkout 变化后必须先
+native-first 重建。随后 `editor_native.dll` 以 `CopyToOutputDirectory="Always"` 和
+`CopyToPublishDirectory="Always"` 覆盖 managed output，避免 `PreserveNewest` 让历史 sibling 留在 `TargetDir`。
+`ValidateStudioViewportNativeRuntimeContract` 在非 design-time `Build` 完成后执行最终
+`$(TargetDir)\Editor.exe --verify-native-contract`；`Program` 将该窄入口交给 EngineBridge 内部的
+`ViewportNativeRuntimeContract`，后者只加载并检查最终 `$(TargetDir)\editor_native.dll` 的 exports，不启动 Avalonia 或
+Viewport runtime。
+
+当前普通 build 与 Release Editor Image 共同要求以下 V7 production exports：
+
+```text
+editor_viewport_query_composition_compatibility
+editor_viewport_release_compatibility_result
+editor_viewport_open_stream_v7
+editor_viewport_submit_latest_v7
+editor_viewport_try_take_ready_v7
+editor_viewport_complete_frame_v7
+editor_viewport_release_slot_import_v7
+editor_viewport_close_stream_v7
+editor_viewport_poll_stream_v7
+editor_viewport_destroy_stream_v7
+editor_viewport_shutdown
+```
+
+并共同拒绝以下 legacy V1--V6 entry-point set：
+
+```text
+editor_viewport_acquire_present_packet
+editor_viewport_release_present_packet
+editor_viewport_acquire_present_packet_v2
+editor_viewport_create_present_slot_v3
+editor_viewport_render_present_slot_v3
+editor_viewport_create_present_slot_v4
+editor_viewport_open_stream_v5
+editor_viewport_submit_latest_v5
+editor_viewport_try_take_ready_v5
+editor_viewport_complete_frame_v5
+editor_viewport_release_slot_import_v5
+editor_viewport_close_stream_v5
+editor_viewport_poll_stream_v5
+editor_viewport_destroy_stream_v5
+editor_viewport_open_stream_v6
+editor_viewport_submit_latest_v6
+editor_viewport_try_take_ready_v6
+editor_viewport_complete_frame_v6
+editor_viewport_release_slot_import_v6
+editor_viewport_close_stream_v6
+editor_viewport_poll_stream_v6
+editor_viewport_destroy_stream_v6
+```
+
+这不是兼容探测或 fallback：任一 required export 缺失、任一 legacy export 存在、DLL 无法加载或架构不匹配，都使普通 build
+失败。`msvc-debug-tests` 可以额外导出 `editor_viewport_open_stream_v7_for_test`，只用于显式 GPU/fault-injection 验收；普通本地
+admission 允许这个当前版本的 test-only 扩展，但不把它当 production dependency。发行资格由
+`StudioEditorImageProducer` 对全新 publish tree 执行静态 PE identity、required/forbidden exports、固定位置与 closed-tree 检查，且明确
+拒绝该 test-only export。两道门禁不能互相替代。
+
 #385 另以独立 `asharia_editor_content_native.dll` 接入只读 project asset catalog query；它不进入
 `editor_native.dll`/Vulkan closure。ABI v1 使用 C11 header、fixed-width POD、caller-owned response buffer、typed status、
 catch-all exception containment、native/managed size-offset tests 与 strict closed JSON parser。默认 10,000 files、8 GiB
@@ -392,6 +450,11 @@ ErrorInfo {
 
 关键验收项：
 
+- 普通 Studio build 必须先重建所选 `StudioNativeBuildPreset` 的 `editor-native`，再由
+  `ValidateStudioViewportNativeRuntimeContract` 对最终 `TargetDir` sibling 验证完整 V7 required exports 与 legacy V1--V6
+  forbidden exports；不得自动构建 native、回退 V6 或从历史输出猜选 DLL；
+- `ViewportNativeRuntimeContractTests` 必须逐项覆盖每个缺失 required export、每个出现的 legacy export 与 probe failure；
+  Release Editor Image 继续以独立静态 PE inspector 复验同一 export policy；
 - `ensureContext` pointer escape 有并发回归测试；
 - injected DeviceLost 进入 Faulted 且 device epoch 变化；
 - stop ticket 只在全部 frame lease terminal/quarantined 后变 Stopped；
