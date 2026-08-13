@@ -18,6 +18,7 @@ class AshariaEngineConan(ConanFile):
         self.requires("imgui/1.92.7-docking")
         self.requires("nlohmann_json/3.12.0")
         self.requires("stb/cci.20240531")
+        self.requires("fastgltf/0.9.0")
         self.requires("vulkan-headers/1.4.313.0")
         self.requires("vulkan-memory-allocator/3.3.0")
 

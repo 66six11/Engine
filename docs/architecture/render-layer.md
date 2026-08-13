@@ -159,6 +159,10 @@
   fixture；`tools/generate_validation_mesh_product.py` 在构建时验证封闭的 OBJ 子集并生成 deterministic C++
   product header/manifest。renderer 只消费生成的 vertex/index product 数据。该工具不是通用 OBJ importer，
   生成 schema 也不是承诺给项目资产的 runtime mesh product format。
+- 真实通用方向的第一条 product 合同现由 `packages/mesh-product` 与
+  [Mesh Product v1 文档](../systems/mesh-product-v1.md) 拥有；`asset-pipeline` 的受限 `.glb` importer
+  已能产生该 CPU product。renderer 当前仍没有消费它：scene-mesh GPU buffer/native resolver 继续只服务
+  directional-wedge validation fixture，直到 ResourceRuntime typed mesh 与 renderer GPU owner Slice 接入。
 - validation product native resolver 只是在 smoke/fixture 中把一个已知 asset identity 映射到显式 product binding；它不是
   importer、asset database 或 runtime resource registry。binding 缺失、type 不符、stale 或自身无效时，`scene-rendering`
   只为该 object 产生 contextual no-draw diagnostic，不能偷换为 fixture 或 fallback mesh。
@@ -180,7 +184,8 @@
 
 - Scene mesh validation slice 已满足 renderer-owned draw packet、RenderView pass policy、Color/Depth +
   VertexRead/IndexRead、`DrawIndexed` execution event 和 `--smoke-render-view-scene-mesh` 门禁。升级为通用
-  asset-backed mesh 前，仍必须补 product/runtime resource handle、GPU lifetime/reload/deferred deletion 和
+  asset-backed mesh 前，Mesh Product v1/受限 GLB source→artifact reader 已满足；仍必须补 RuntimeResource typed
+  payload/handle、GPU lifetime/reload/deferred deletion 和
   material compatibility；不能从 editor object、source path 或 diagnostics 读取 mesh。
 - Asset upload 接入前必须定义 asset-core source/product owner、renderer/RHI resource handle 或 upload request、GPU lifetime/deferred deletion 以及失败上下文；新增上传、copy 或 buffer 写入时必须进入 RenderGraph command/diagnostics，或作为命名 external pre-pass 出现在 Frame Debug/review 输出中。
 - 资源上传第一步只允许 renderer/RHI 消费显式 payload 或未来 product data；`asset-core` / `project-core`

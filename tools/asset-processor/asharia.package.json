@@ -14,6 +14,7 @@
     "com.asharia.core",
     "com.asharia.asset-core",
     "com.asharia.asset-pipeline",
+    "com.asharia.mesh-product",
     "com.asharia.project-core"
   ],
   "targets": ["asharia-asset-processor"],
@@ -25,6 +26,7 @@
       "asharia-core",
       "asharia-asset-core-io",
       "asharia-asset-pipeline",
+      "asharia-mesh-product",
       "asharia-project-core-io"
     ]
   }

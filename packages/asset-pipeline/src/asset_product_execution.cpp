@@ -24,11 +24,14 @@
 #endif
 
 #include "asharia/asset_core/asset_guid.hpp"
+#include "asharia/asset_pipeline/asset_glb_import.hpp"
 #include "asharia/asset_pipeline/asset_product_blob.hpp"
 #include "asharia/asset_pipeline/asset_texture_import.hpp"
 #include "asharia/core/error.hpp"
 #include "asharia/core/file_io.hpp"
 #include "asharia/material_instance/amat_io.hpp"
+#include "asharia/mesh_product/mesh_product_v1.hpp"
+#include "asharia/mesh_product/mesh_product_writer_v1.hpp"
 #include "asharia/shader_authoring/ashader_generated_slang.hpp"
 #include "asharia/shader_authoring/ashader_parser.hpp"
 
@@ -144,6 +147,14 @@ namespace asharia::asset {
             std::uint64_t hash = kFnv1a64Offset;
             for (const std::uint8_t byte : bytes) {
                 hash = hashByte(hash, byte);
+            }
+            return hash;
+        }
+
+        [[nodiscard]] std::uint64_t hashBytes(std::span<const std::byte> bytes) noexcept {
+            std::uint64_t hash = kFnv1a64Offset;
+            for (const std::byte byte : bytes) {
+                hash = hashByte(hash, std::to_integer<std::uint8_t>(byte));
             }
             return hash;
         }
@@ -641,6 +652,63 @@ namespace asharia::asset {
             return request.source.importerName == importer.importerName &&
                    request.source.importerVersion == importer.importerVersion &&
                    sourceExtension(request.source.sourcePath) == kTextureImportPngExtension;
+        }
+
+        [[nodiscard]] Result<std::vector<std::uint8_t>>
+        makeRestrictedGlbMeshProductBytes(const AssetImportRequest& request,
+                                          std::span<const std::uint8_t> sourceBytes) {
+            const AssetGlbImportLimits importLimits{};
+            if (sourceBytes.size() > importLimits.maxSourceBytes) {
+                return std::unexpected{
+                    Error{ErrorDomain::Asset,
+                          static_cast<int>(AssetGlbImportDiagnosticCode::SourceByteLimitExceeded),
+                          "Restricted GLB source '" + request.source.sourcePath + "' has " +
+                              std::to_string(sourceBytes.size()) + " bytes, exceeding the " +
+                              std::to_string(importLimits.maxSourceBytes) +
+                              "-byte importer limit before decode."}};
+            }
+
+            auto meshInput = importRestrictedGlbMesh(AssetGlbImportRequest{
+                .source = request.source,
+                .settings = request.settings,
+                .sourceBytes = {sourceBytes.begin(), sourceBytes.end()},
+                .limits = importLimits,
+            });
+            if (!meshInput) {
+                return std::unexpected{std::move(meshInput.error())};
+            }
+
+            auto encoded = mesh::writeMeshProductV1(
+                *meshInput, mesh::MeshProductWriteLimits{
+                                .maxProductBytes = 512ULL * 1024ULL * 1024ULL,
+                                .maxVertices = importLimits.maxVertices,
+                                .maxIndices = importLimits.maxIndices,
+                                .maxSubmeshes = importLimits.maxPrimitives,
+                                .maxMaterialSlots = importLimits.maxMaterialSlots,
+                            });
+            if (!encoded) {
+                return std::unexpected{std::move(encoded.error())};
+            }
+
+            const std::span<const std::byte> encodedBytes{encoded->data(), encoded->size()};
+            auto verified = mesh::readMeshProductV1(
+                encodedBytes, mesh::MeshProductReadLimits{
+                                  .maxProductBytes = 512ULL * 1024ULL * 1024ULL,
+                                  .maxVertices = importLimits.maxVertices,
+                                  .maxIndices = importLimits.maxIndices,
+                                  .maxSubmeshes = importLimits.maxPrimitives,
+                                  .maxMaterialSlots = importLimits.maxMaterialSlots,
+                              });
+            if (!verified) {
+                return std::unexpected{std::move(verified.error())};
+            }
+
+            std::vector<std::uint8_t> productBytes;
+            productBytes.reserve(encoded->size());
+            for (const std::byte byte : *encoded) {
+                productBytes.push_back(std::to_integer<std::uint8_t>(byte));
+            }
+            return productBytes;
         }
 
         [[nodiscard]] std::vector<std::uint8_t>
@@ -1173,6 +1241,95 @@ namespace asharia::asset {
             return outputRoot / pathFromUtf8(productPath);
         }
 
+        [[nodiscard]] bool validateImportRequestIdentity(AssetProductExecutionResult& result,
+                                                         const AssetImportRequest& request,
+                                                         std::string_view targetProfile,
+                                                         std::uint64_t targetProfileHash) {
+            const std::uint64_t expectedTargetHash = makeAssetTargetProfileHash(targetProfile);
+            const std::uint64_t expectedSettingsHash = hashAssetImportSettings(request.settings);
+            const std::uint64_t expectedDependencyHash =
+                hashAssetDependencies(request.dependencies);
+            const AssetProductKey expectedKey =
+                makeAssetProductKey(request.source, expectedDependencyHash, expectedTargetHash);
+            const std::string expectedPath = makeAssetImportProductPath(expectedKey, targetProfile);
+            if (request.source.assetType != makeAssetTypeId(request.source.assetTypeName) ||
+                request.source.importerId != makeImporterId(request.source.importerName) ||
+                targetProfileHash != expectedTargetHash ||
+                request.source.settingsHash != expectedSettingsHash ||
+                request.productKey != expectedKey || request.relativeProductPath != expectedPath) {
+                addRequestDiagnostic(
+                    result, AssetProductExecutionDiagnosticCode::InvalidPlan, request,
+                    "Asset product execution rejected a request whose target/settings/"
+                    "dependencies/product key/path do not match the canonical import plan for " +
+                        productLabel(request) + ".");
+                return false;
+            }
+            return true;
+        }
+
+        [[nodiscard]] bool validateCacheHits(AssetProductExecutionResult& result,
+                                             const AssetProductExecutionRequest& request) {
+            bool valid = true;
+            for (const AssetImportCacheHit& hit : request.plan.cacheHits) {
+                const std::uint64_t expectedTargetHash =
+                    makeAssetTargetProfileHash(request.plan.targetProfile);
+                const AssetProductKey expectedKey = makeAssetProductKey(
+                    hit.source, hashAssetDependencies(hit.dependencies), expectedTargetHash);
+                const std::string expectedPath =
+                    makeAssetImportProductPath(expectedKey, request.plan.targetProfile);
+                const bool manifestOwnsProduct =
+                    std::ranges::find(request.existingManifest.products, hit.product) !=
+                    request.existingManifest.products.end();
+                if (hit.source.assetType != makeAssetTypeId(hit.source.assetTypeName) ||
+                    hit.source.importerId != makeImporterId(hit.source.importerName) ||
+                    request.plan.targetProfileHash != expectedTargetHash ||
+                    hit.product.key != expectedKey ||
+                    hit.product.relativeProductPath != expectedPath || !manifestOwnsProduct) {
+                    addDiagnostic(
+                        result, AssetProductExecutionDiagnosticCode::InvalidPlan,
+                        hit.source.sourcePath, hit.product.relativeProductPath,
+                        "Asset product execution rejected a cache hit that does not match its "
+                        "canonical key/path or existing manifest record.");
+                    valid = false;
+                    continue;
+                }
+
+                const std::filesystem::path productPath =
+                    makeOutputPath(request.productOutputRoot, hit.product.relativeProductPath);
+                constexpr std::uint64_t kMaxCachedProductBytes =
+                    AssetProductBlobReadLimits{}.maxProductBytes;
+                if (hit.product.productSizeBytes > kMaxCachedProductBytes) {
+                    addDiagnostic(result, AssetProductExecutionDiagnosticCode::CacheProductInvalid,
+                                  hit.source.sourcePath, hit.product.relativeProductPath,
+                                  "Asset product execution cache artifact declares " +
+                                      std::to_string(hit.product.productSizeBytes) +
+                                      " bytes, exceeding the " +
+                                      std::to_string(kMaxCachedProductBytes) +
+                                      "-byte cache verification limit for product=\"" +
+                                      hit.product.relativeProductPath + "\".");
+                    valid = false;
+                    continue;
+                }
+
+                auto bytes = core::readFileBytes(
+                    productPath,
+                    core::FileReadLimits{.maxBytes = hit.product.productSizeBytes == 0U
+                                                         ? 1U
+                                                         : hit.product.productSizeBytes});
+                if (!bytes || bytes->size() != hit.product.productSizeBytes ||
+                    hashBytes(*bytes) != hit.product.productHash) {
+                    addDiagnostic(
+                        result, AssetProductExecutionDiagnosticCode::CacheProductInvalid,
+                        hit.source.sourcePath, hit.product.relativeProductPath,
+                        "Asset product execution cache artifact is missing, oversized, truncated, "
+                        "or hash-mismatched for product=\"" +
+                            hit.product.relativeProductPath + "\".");
+                    valid = false;
+                }
+            }
+            return valid;
+        }
+
         [[nodiscard]] bool productOrdersBefore(const AssetProductRecord& left,
                                                const AssetProductRecord& right) {
             if (left.relativeProductPath != right.relativeProductPath) {
@@ -1237,6 +1394,19 @@ namespace asharia::asset {
                 }
 
                 productBytes = makeTexture2DProductBytes(importRequest, *texture);
+            } else if (isRestrictedGlbMeshImportCandidate(importRequest.source)) {
+                auto meshProductBytes =
+                    makeRestrictedGlbMeshProductBytes(importRequest, sourceBytes->bytes);
+                if (!meshProductBytes) {
+                    addRequestDiagnostic(
+                        result, AssetProductExecutionDiagnosticCode::MeshImportFailed,
+                        importRequest,
+                        "Asset product execution mesh import failed for " +
+                            productLabel(importRequest) + ": " + meshProductBytes.error().message);
+                    return std::nullopt;
+                }
+
+                productBytes = std::move(*meshProductBytes);
             } else if (isMaterialInstanceProductRequest(importRequest)) {
                 auto materialProductBytes =
                     makeMaterialInstanceProductBytes(importRequest, sourceBytes->bytes);
@@ -1347,9 +1517,17 @@ namespace asharia::asset {
             return result;
         }
 
+        if (!validateCacheHits(result, request)) {
+            return result;
+        }
+
         std::vector<PreparedProduct> preparedProducts;
         preparedProducts.reserve(request.plan.requests.size());
         for (const AssetImportRequest& importRequest : request.plan.requests) {
+            if (!validateImportRequestIdentity(result, importRequest, request.plan.targetProfile,
+                                               request.plan.targetProfileHash)) {
+                continue;
+            }
             if (auto product = prepareProduct(result, request.productOutputRoot, importRequest,
                                               request.sourceBytes, request.dependencyProductBytes);
                 product) {

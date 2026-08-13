@@ -19,11 +19,13 @@
 #include "asharia/asset_core/asset_metadata_io.hpp"
 #include "asharia/asset_core/asset_product.hpp"
 #include "asharia/asset_core/asset_type.hpp"
+#include "asharia/asset_pipeline/asset_glb_import.hpp"
 #include "asharia/asset_pipeline/asset_product_blob.hpp"
 #include "asharia/asset_pipeline/asset_product_manifest_io.hpp"
 #include "asharia/asset_pipeline/asset_scanned_import_planning.hpp"
 #include "asharia/asset_pipeline/asset_texture_import.hpp"
 #include "asharia/asset_pipeline/asset_texture_import_profile.hpp"
+#include "asharia/mesh_product/mesh_product_v1.hpp"
 #include "asharia/project/project_descriptor_io.hpp"
 
 #include "asset_processor_dry_run.hpp"
@@ -130,6 +132,36 @@ namespace asharia::asset_processor {
                 }
             }
             return true;
+        }
+
+        [[nodiscard]] std::optional<std::vector<std::uint8_t>>
+        readBytesFile(const std::filesystem::path& path) {
+            std::ifstream stream{path, std::ios::binary | std::ios::ate};
+            if (!stream) {
+                std::cerr << "Failed to open smoke fixture " << pathText(path) << ".\n";
+                return std::nullopt;
+            }
+            const std::streampos end = stream.tellg();
+            if (end < 0 || static_cast<std::uint64_t>(end) > 256ULL * 1024ULL * 1024ULL) {
+                std::cerr << "Smoke fixture has an invalid or oversized byte length.\n";
+                return std::nullopt;
+            }
+            stream.seekg(0, std::ios::beg);
+            std::vector<char> characters(static_cast<std::size_t>(end));
+            if (!characters.empty()) {
+                stream.read(characters.data(), static_cast<std::streamsize>(characters.size()));
+            }
+            if (!stream) {
+                std::cerr << "Failed to read smoke fixture " << pathText(path) << ".\n";
+                return std::nullopt;
+            }
+
+            std::vector<std::uint8_t> bytes;
+            bytes.reserve(characters.size());
+            for (const char character : characters) {
+                bytes.push_back(static_cast<std::uint8_t>(static_cast<unsigned char>(character)));
+            }
+            return bytes;
         }
 
         [[nodiscard]] bool createDirectories(const std::filesystem::path& path);
@@ -323,6 +355,50 @@ namespace asharia::asset_processor {
             }
 
             return true;
+        }
+
+        [[nodiscard]] std::optional<std::vector<std::uint8_t>>
+        writeGlbMeshSmokeSource(const std::filesystem::path& contentRoot) {
+            const std::filesystem::path fixturePath = std::filesystem::path{"fixtures"} /
+                                                      "mesh-product-v1" /
+                                                      "restricted-static-mesh.glb";
+            auto sourceBytes = readBytesFile(fixturePath);
+            const std::filesystem::path sourcePath = contentRoot / "Meshes" / "Fixture.glb";
+            if (!sourceBytes || !createDirectories(sourcePath.parent_path()) ||
+                !writeBytesFile(sourcePath, *sourceBytes)) {
+                return std::nullopt;
+            }
+
+            auto guid = asharia::asset::parseAssetGuid("6f5299ad-9c29-47b2-9366-159c00ebfe9c");
+            if (!guid) {
+                std::cerr << guid.error().message << '\n';
+                return std::nullopt;
+            }
+            const std::vector<asharia::asset::AssetImportSetting> settings;
+            const asharia::asset::AssetGlbImporterDescriptor importer =
+                asharia::asset::makeRestrictedGlbMeshImporterDescriptor();
+            auto written = asharia::asset::writeAssetMetadataFile(
+                metadataSidecarPath(sourcePath),
+                asharia::asset::AssetMetadataDocument{
+                    .source =
+                        asharia::asset::SourceAssetRecord{
+                            .guid = *guid,
+                            .assetType = asharia::asset::makeAssetTypeId("com.asharia.asset.Mesh"),
+                            .assetTypeName = "com.asharia.asset.Mesh",
+                            .sourcePath = "Content/Meshes/Fixture.glb",
+                            .importerId = asharia::asset::makeImporterId(importer.importerName),
+                            .importerName = importer.importerName,
+                            .importerVersion = importer.importerVersion,
+                            .sourceHash = smokeHashBytes(*sourceBytes),
+                            .settingsHash = asharia::asset::hashAssetImportSettings(settings),
+                        },
+                    .settings = settings,
+                });
+            if (!written) {
+                std::cerr << written.error().message << '\n';
+                return std::nullopt;
+            }
+            return sourceBytes;
         }
 
         [[nodiscard]] bool writeSmokeProjectDescriptor(const std::filesystem::path& projectPath) {
@@ -574,115 +650,98 @@ namespace asharia::asset_processor {
         return EXIT_SUCCESS;
     }
 
-    int runSmokeProductExecution() {
-        std::optional<SmokeWorkspace> workspace = makeSmokeWorkspace();
-        if (!workspace) {
-            return EXIT_FAILURE;
-        }
+    namespace {
 
-        const std::filesystem::path contentRoot = workspace->root / "Content";
-        if (!writeSmokeSource(contentRoot,
-                              SmokeSourceFixture{
-                                  .relativePath = "Textures/Crate.png",
-                                  .bytes = "crate bytes",
-                                  .guidText = "9f7a31a0-0b63-4d4c-9f18-bd9a0d2e9c21",
-                                  .metadataSourceHash = 0x1000f00d1234cafeULL,
-                              }) ||
-            !writeSmokeSource(contentRoot, SmokeSourceFixture{
-                                               .relativePath = "Textures/Decal.png",
-                                               .bytes = "decal bytes",
-                                               .guidText = "785e2474-65c4-4f28-a8fb-ff8a21449a61",
-                                               .metadataSourceHash = 0x2000f00d1234cafeULL,
-                                           })) {
-            return EXIT_FAILURE;
-        }
+        [[nodiscard]] int runBasicProductExecutionSmoke() {
+            std::optional<SmokeWorkspace> workspace = makeSmokeWorkspace();
+            if (!workspace) {
+                return EXIT_FAILURE;
+            }
 
-        const std::filesystem::path outputRoot = workspace->root / "ProductCache";
-        const std::filesystem::path manifestPath = outputRoot / "product-manifest.json";
-        if (!prepareManifestReplacementFixture(outputRoot)) {
-            return EXIT_FAILURE;
-        }
-        const ProductExecution firstExecution = runProductExecution(ProductExecutionOptions{
-            .sourceRoot = contentRoot,
-            .sourcePathPrefix = "Content",
-            .targetProfile = "windows-msvc-debug",
-            .outputRoot = outputRoot,
-            .productManifestPath = std::nullopt,
-            .productManifestOutputPath = manifestPath,
-            .ignoredDirectoryNames = {},
-            .projectPath = std::nullopt,
-        });
-        if (firstExecution.exitCode != EXIT_SUCCESS ||
-            !expectReportText(firstExecution.text, "asset-processor execute") ||
-            !expectReportText(firstExecution.text,
-                              "planning requests=2 cacheHits=0 diagnostics=2") ||
-            !expectReportText(firstExecution.text, "diagnostic stage=planning severity=Warning "
-                                                   "code=MetadataSourceHashDrift") ||
-            !expectReportText(firstExecution.text,
-                              "execution written=2 cacheHits=0 diagnostics=0 manifestProducts=2 "
-                              "manifestWritten=true") ||
-            !expectReportText(firstExecution.text,
-                              "product-written source=\"Content/Textures/Crate.png\"") ||
-            !expectReportText(firstExecution.text,
-                              "product-written source=\"Content/Textures/Decal.png\"")) {
-            return EXIT_FAILURE;
-        }
+            const std::filesystem::path contentRoot = workspace->root / "Content";
+            if (!writeSmokeSource(contentRoot,
+                                  SmokeSourceFixture{
+                                      .relativePath = "Textures/Crate.png",
+                                      .bytes = "crate bytes",
+                                      .guidText = "9f7a31a0-0b63-4d4c-9f18-bd9a0d2e9c21",
+                                      .metadataSourceHash = 0x1000f00d1234cafeULL,
+                                  }) ||
+                !writeSmokeSource(contentRoot,
+                                  SmokeSourceFixture{
+                                      .relativePath = "Textures/Decal.png",
+                                      .bytes = "decal bytes",
+                                      .guidText = "785e2474-65c4-4f28-a8fb-ff8a21449a61",
+                                      .metadataSourceHash = 0x2000f00d1234cafeULL,
+                                  })) {
+                return EXIT_FAILURE;
+            }
 
-        if (!expectReplacedManifestOutput(outputRoot, 2U)) {
-            return EXIT_FAILURE;
-        }
+            const std::filesystem::path outputRoot = workspace->root / "ProductCache";
+            const std::filesystem::path manifestPath = outputRoot / "product-manifest.json";
+            if (!prepareManifestReplacementFixture(outputRoot)) {
+                return EXIT_FAILURE;
+            }
+            const ProductExecution firstExecution = runProductExecution(ProductExecutionOptions{
+                .sourceRoot = contentRoot,
+                .sourcePathPrefix = "Content",
+                .targetProfile = "windows-msvc-debug",
+                .outputRoot = outputRoot,
+                .productManifestPath = std::nullopt,
+                .productManifestOutputPath = manifestPath,
+                .ignoredDirectoryNames = {},
+                .projectPath = std::nullopt,
+            });
+            if (firstExecution.exitCode != EXIT_SUCCESS ||
+                !expectReportText(firstExecution.text, "asset-processor execute") ||
+                !expectReportText(firstExecution.text,
+                                  "planning requests=2 cacheHits=0 diagnostics=2") ||
+                !expectReportText(firstExecution.text, "diagnostic stage=planning severity=Warning "
+                                                       "code=MetadataSourceHashDrift") ||
+                !expectReportText(
+                    firstExecution.text,
+                    "execution written=2 cacheHits=0 diagnostics=0 manifestProducts=2 "
+                    "manifestWritten=true") ||
+                !expectReportText(firstExecution.text,
+                                  "product-written source=\"Content/Textures/Crate.png\"") ||
+                !expectReportText(firstExecution.text,
+                                  "product-written source=\"Content/Textures/Decal.png\"")) {
+                return EXIT_FAILURE;
+            }
 
-        const ProductExecution cacheHitExecution = runProductExecution(ProductExecutionOptions{
-            .sourceRoot = contentRoot,
-            .sourcePathPrefix = "Content",
-            .targetProfile = "windows-msvc-debug",
-            .outputRoot = outputRoot,
-            .productManifestPath = manifestPath,
-            .productManifestOutputPath = manifestPath,
-            .ignoredDirectoryNames = {},
-            .projectPath = std::nullopt,
-        });
-        if (cacheHitExecution.exitCode != EXIT_SUCCESS ||
-            !expectReportText(cacheHitExecution.text, "planning requests=0 cacheHits=2") ||
-            !expectReportText(cacheHitExecution.text,
-                              "execution written=0 cacheHits=2 diagnostics=0 manifestProducts=2 "
-                              "manifestWritten=true") ||
-            !expectReportText(cacheHitExecution.text,
-                              "cache-hit source=\"Content/Textures/Crate.png\"") ||
-            !expectReportText(cacheHitExecution.text,
-                              "cache-hit source=\"Content/Textures/Decal.png\"")) {
-            return EXIT_FAILURE;
-        }
+            if (!expectReplacedManifestOutput(outputRoot, 2U)) {
+                return EXIT_FAILURE;
+            }
 
-        const std::filesystem::path projectPath =
-            workspace->root / std::string{asharia::project::kDefaultAshariaProjectFileName};
-        if (!writeSmokeProjectDescriptor(projectPath)) {
-            return EXIT_FAILURE;
-        }
+            const ProductExecution cacheHitExecution = runProductExecution(ProductExecutionOptions{
+                .sourceRoot = contentRoot,
+                .sourcePathPrefix = "Content",
+                .targetProfile = "windows-msvc-debug",
+                .outputRoot = outputRoot,
+                .productManifestPath = manifestPath,
+                .productManifestOutputPath = manifestPath,
+                .ignoredDirectoryNames = {},
+                .projectPath = std::nullopt,
+            });
+            if (cacheHitExecution.exitCode != EXIT_SUCCESS ||
+                !expectReportText(cacheHitExecution.text, "planning requests=0 cacheHits=2") ||
+                !expectReportText(
+                    cacheHitExecution.text,
+                    "execution written=0 cacheHits=2 diagnostics=0 manifestProducts=2 "
+                    "manifestWritten=true") ||
+                !expectReportText(cacheHitExecution.text,
+                                  "cache-hit source=\"Content/Textures/Crate.png\"") ||
+                !expectReportText(cacheHitExecution.text,
+                                  "cache-hit source=\"Content/Textures/Decal.png\"")) {
+                return EXIT_FAILURE;
+            }
 
-        const ProductExecution projectExecution = runProductExecution(ProductExecutionOptions{
-            .sourceRoot = {},
-            .sourcePathPrefix = {},
-            .targetProfile = "windows-msvc-debug",
-            .outputRoot = {},
-            .productManifestPath = std::nullopt,
-            .productManifestOutputPath = {},
-            .ignoredDirectoryNames = {},
-            .projectPath = projectPath,
-        });
-        if (projectExecution.exitCode != EXIT_SUCCESS ||
-            !expectReportText(projectExecution.text, "projectPath=") ||
-            !expectReportText(projectExecution.text, "assetCacheRoot=\".asharia/cache/assets\"") ||
-            !expectReportText(projectExecution.text, "source-root rootName=\"project-assets\"") ||
-            !expectReportText(projectExecution.text, "planning requests=2 cacheHits=0") ||
-            !expectReportText(projectExecution.text,
-                              "execution written=2 cacheHits=0 diagnostics=0 manifestProducts=2 "
-                              "manifestWritten=true")) {
-            return EXIT_FAILURE;
-        }
+            const std::filesystem::path projectPath =
+                workspace->root / std::string{asharia::project::kDefaultAshariaProjectFileName};
+            if (!writeSmokeProjectDescriptor(projectPath)) {
+                return EXIT_FAILURE;
+            }
 
-        const ProductExecution projectCacheHitExecution =
-            runProductExecution(ProductExecutionOptions{
+            const ProductExecution projectExecution = runProductExecution(ProductExecutionOptions{
                 .sourceRoot = {},
                 .sourcePathPrefix = {},
                 .targetProfile = "windows-msvc-debug",
@@ -692,92 +751,325 @@ namespace asharia::asset_processor {
                 .ignoredDirectoryNames = {},
                 .projectPath = projectPath,
             });
-        if (projectCacheHitExecution.exitCode != EXIT_SUCCESS ||
-            !expectReportText(projectCacheHitExecution.text, "productManifest=") ||
-            !expectReportText(projectCacheHitExecution.text, "products.aproducts.json") ||
-            !expectReportText(projectCacheHitExecution.text, "planning requests=0 cacheHits=2") ||
-            !expectReportText(projectCacheHitExecution.text,
-                              "execution written=0 cacheHits=2 diagnostics=0 manifestProducts=2 "
-                              "manifestWritten=true")) {
-            return EXIT_FAILURE;
-        }
+            if (projectExecution.exitCode != EXIT_SUCCESS ||
+                !expectReportText(projectExecution.text, "projectPath=") ||
+                !expectReportText(projectExecution.text,
+                                  "assetCacheRoot=\".asharia/cache/assets\"") ||
+                !expectReportText(projectExecution.text,
+                                  "source-root rootName=\"project-assets\"") ||
+                !expectReportText(projectExecution.text, "planning requests=2 cacheHits=0") ||
+                !expectReportText(
+                    projectExecution.text,
+                    "execution written=2 cacheHits=0 diagnostics=0 manifestProducts=2 "
+                    "manifestWritten=true")) {
+                return EXIT_FAILURE;
+            }
 
-        const std::filesystem::path cratePath = contentRoot / "Textures" / "Crate.png";
-        if (!writeTextFile(cratePath, "crate bytes v2")) {
-            return EXIT_FAILURE;
-        }
+            const ProductExecution projectCacheHitExecution =
+                runProductExecution(ProductExecutionOptions{
+                    .sourceRoot = {},
+                    .sourcePathPrefix = {},
+                    .targetProfile = "windows-msvc-debug",
+                    .outputRoot = {},
+                    .productManifestPath = std::nullopt,
+                    .productManifestOutputPath = {},
+                    .ignoredDirectoryNames = {},
+                    .projectPath = projectPath,
+                });
+            if (projectCacheHitExecution.exitCode != EXIT_SUCCESS ||
+                !expectReportText(projectCacheHitExecution.text, "productManifest=") ||
+                !expectReportText(projectCacheHitExecution.text, "products.aproducts.json") ||
+                !expectReportText(projectCacheHitExecution.text,
+                                  "planning requests=0 cacheHits=2") ||
+                !expectReportText(
+                    projectCacheHitExecution.text,
+                    "execution written=0 cacheHits=2 diagnostics=0 manifestProducts=2 "
+                    "manifestWritten=true")) {
+                return EXIT_FAILURE;
+            }
 
-        const ProductExecution changedExecution = runProductExecution(ProductExecutionOptions{
-            .sourceRoot = contentRoot,
-            .sourcePathPrefix = "Content",
-            .targetProfile = "windows-msvc-debug",
-            .outputRoot = outputRoot,
-            .productManifestPath = manifestPath,
-            .productManifestOutputPath = manifestPath,
-            .ignoredDirectoryNames = {},
-            .projectPath = std::nullopt,
-        });
-        if (changedExecution.exitCode != EXIT_SUCCESS ||
-            !expectReportText(changedExecution.text, "planning requests=1 cacheHits=1") ||
-            !expectReportText(changedExecution.text,
-                              "execution written=1 cacheHits=1 diagnostics=0 manifestProducts=3 "
-                              "manifestWritten=true") ||
-            !expectReportText(changedExecution.text,
-                              "product-written source=\"Content/Textures/Crate.png\"") ||
-            !expectReportText(changedExecution.text,
-                              "cache-hit source=\"Content/Textures/Decal.png\"")) {
-            return EXIT_FAILURE;
-        }
+            const std::filesystem::path cratePath = contentRoot / "Textures" / "Crate.png";
+            if (!writeTextFile(cratePath, "crate bytes v2")) {
+                return EXIT_FAILURE;
+            }
 
-        std::optional<SmokeWorkspace> pngWorkspace = makeSmokeWorkspace();
-        if (!pngWorkspace) {
-            return EXIT_FAILURE;
-        }
-        const std::filesystem::path pngContentRoot = pngWorkspace->root / "Content";
-        if (!writePngTextureSmokeSource(pngContentRoot)) {
-            return EXIT_FAILURE;
-        }
-
-        const std::filesystem::path pngOutputRoot = pngWorkspace->root / "PngProductCache";
-        const std::filesystem::path pngManifestPath = pngOutputRoot / "product-manifest.json";
-        const ProductExecution pngExecution = runProductExecution(ProductExecutionOptions{
-            .sourceRoot = pngContentRoot,
-            .sourcePathPrefix = "Content",
-            .targetProfile = "windows-msvc-debug",
-            .outputRoot = pngOutputRoot,
-            .productManifestPath = std::nullopt,
-            .productManifestOutputPath = pngManifestPath,
-            .ignoredDirectoryNames = {},
-            .projectPath = std::nullopt,
-        });
-        if (pngExecution.exitCode != EXIT_SUCCESS ||
-            !expectReportText(pngExecution.text, "planning requests=1 cacheHits=0 diagnostics=0") ||
-            !expectReportText(pngExecution.text,
-                              "execution written=1 cacheHits=0 diagnostics=0 manifestProducts=1 "
-                              "manifestWritten=true") ||
-            !expectReportText(pngExecution.text,
-                              "product-written source=\"Content/Textures/Crate.png\"")) {
-            return EXIT_FAILURE;
-        }
-
-        auto pngManifest = asharia::asset::readAssetProductManifestFile(pngManifestPath);
-        if (!pngManifest || pngManifest->products.size() != 1U) {
-            std::cerr << "asset-processor product execution smoke could not read PNG product "
-                         "manifest.\n";
-            return EXIT_FAILURE;
-        }
-        const asharia::asset::AssetProductRecord& pngProduct = pngManifest->products.front();
-        auto texturePayload =
-            asharia::asset::readTexture2DProductPayload(asharia::asset::AssetProductBlobReadRequest{
-                .productFilePath = pngOutputRoot / pngProduct.relativeProductPath,
-                .relativeProductPath = pngProduct.relativeProductPath,
+            const ProductExecution changedExecution = runProductExecution(ProductExecutionOptions{
+                .sourceRoot = contentRoot,
+                .sourcePathPrefix = "Content",
+                .targetProfile = "windows-msvc-debug",
+                .outputRoot = outputRoot,
+                .productManifestPath = manifestPath,
+                .productManifestOutputPath = manifestPath,
+                .ignoredDirectoryNames = {},
+                .projectPath = std::nullopt,
             });
-        const std::vector<std::uint8_t> expectedPngPayload{0x10U, 0x20U, 0x30U, 0xFFU};
-        if (!texturePayload || texturePayload->width != 1U || texturePayload->height != 1U ||
-            texturePayload->format != asharia::asset::AssetTextureImportFormat::Rgba8Srgb ||
-            texturePayload->payload != expectedPngPayload) {
-            std::cerr << "asset-processor product execution smoke could not read PNG texture "
-                         "product payload.\n";
+            if (changedExecution.exitCode != EXIT_SUCCESS ||
+                !expectReportText(changedExecution.text, "planning requests=1 cacheHits=1") ||
+                !expectReportText(
+                    changedExecution.text,
+                    "execution written=1 cacheHits=1 diagnostics=0 manifestProducts=3 "
+                    "manifestWritten=true") ||
+                !expectReportText(changedExecution.text,
+                                  "product-written source=\"Content/Textures/Crate.png\"") ||
+                !expectReportText(changedExecution.text,
+                                  "cache-hit source=\"Content/Textures/Decal.png\"")) {
+                return EXIT_FAILURE;
+            }
+
+            return EXIT_SUCCESS;
+        }
+
+        [[nodiscard]] int runPngProductExecutionSmoke() {
+            std::optional<SmokeWorkspace> pngWorkspace = makeSmokeWorkspace();
+            if (!pngWorkspace) {
+                return EXIT_FAILURE;
+            }
+            const std::filesystem::path pngContentRoot = pngWorkspace->root / "Content";
+            if (!writePngTextureSmokeSource(pngContentRoot)) {
+                return EXIT_FAILURE;
+            }
+
+            const std::filesystem::path pngOutputRoot = pngWorkspace->root / "PngProductCache";
+            const std::filesystem::path pngManifestPath = pngOutputRoot / "product-manifest.json";
+            const ProductExecution pngExecution = runProductExecution(ProductExecutionOptions{
+                .sourceRoot = pngContentRoot,
+                .sourcePathPrefix = "Content",
+                .targetProfile = "windows-msvc-debug",
+                .outputRoot = pngOutputRoot,
+                .productManifestPath = std::nullopt,
+                .productManifestOutputPath = pngManifestPath,
+                .ignoredDirectoryNames = {},
+                .projectPath = std::nullopt,
+            });
+            if (pngExecution.exitCode != EXIT_SUCCESS ||
+                !expectReportText(pngExecution.text,
+                                  "planning requests=1 cacheHits=0 diagnostics=0") ||
+                !expectReportText(
+                    pngExecution.text,
+                    "execution written=1 cacheHits=0 diagnostics=0 manifestProducts=1 "
+                    "manifestWritten=true") ||
+                !expectReportText(pngExecution.text,
+                                  "product-written source=\"Content/Textures/Crate.png\"")) {
+                return EXIT_FAILURE;
+            }
+
+            auto pngManifest = asharia::asset::readAssetProductManifestFile(pngManifestPath);
+            if (!pngManifest || pngManifest->products.size() != 1U) {
+                std::cerr << "asset-processor product execution smoke could not read PNG product "
+                             "manifest.\n";
+                return EXIT_FAILURE;
+            }
+            const asharia::asset::AssetProductRecord& pngProduct = pngManifest->products.front();
+            auto texturePayload = asharia::asset::readTexture2DProductPayload(
+                asharia::asset::AssetProductBlobReadRequest{
+                    .productFilePath = pngOutputRoot / pngProduct.relativeProductPath,
+                    .relativeProductPath = pngProduct.relativeProductPath,
+                });
+            const std::vector<std::uint8_t> expectedPngPayload{0x10U, 0x20U, 0x30U, 0xFFU};
+            if (!texturePayload || texturePayload->width != 1U || texturePayload->height != 1U ||
+                texturePayload->format != asharia::asset::AssetTextureImportFormat::Rgba8Srgb ||
+                texturePayload->payload != expectedPngPayload) {
+                std::cerr << "asset-processor product execution smoke could not read PNG texture "
+                             "product payload.\n";
+                return EXIT_FAILURE;
+            }
+
+            return EXIT_SUCCESS;
+        }
+
+        [[nodiscard]] bool expectGlbMeshProduct(const std::filesystem::path& productPath) {
+            auto meshProduct = asharia::mesh::readMeshProductV1File(productPath);
+            if (meshProduct && meshProduct->vertices().size() == 11U &&
+                meshProduct->indices().size() == 9U && meshProduct->submeshes().size() == 3U &&
+                meshProduct->materialSlots().size() == 3U &&
+                meshProduct->bounds() == asharia::mesh::MeshAabbV1{
+                                             .minX = -2.0F,
+                                             .minY = 0.0F,
+                                             .minZ = 0.0F,
+                                             .maxX = 2.0F,
+                                             .maxY = 1.0F,
+                                             .maxZ = 1.0F,
+                                         }) {
+                return true;
+            }
+
+            std::cerr << "asset-processor product execution smoke could not round-trip Mesh "
+                         "Product v1";
+            if (!meshProduct) {
+                std::cerr << ": " << meshProduct.error().message;
+            } else {
+                const asharia::mesh::MeshAabbV1 bounds = meshProduct->bounds();
+                std::cerr << " counts=" << meshProduct->vertices().size() << "/"
+                          << meshProduct->indices().size() << "/" << meshProduct->submeshes().size()
+                          << "/" << meshProduct->materialSlots().size() << " bounds=("
+                          << bounds.minX << "," << bounds.minY << "," << bounds.minZ << ")..("
+                          << bounds.maxX << "," << bounds.maxY << "," << bounds.maxZ << ")";
+            }
+            std::cerr << ".\n";
+            return false;
+        }
+
+        [[nodiscard]] int runGlbProductExecutionSmoke() {
+            std::optional<SmokeWorkspace> glbWorkspace = makeSmokeWorkspace();
+            if (!glbWorkspace) {
+                return EXIT_FAILURE;
+            }
+            const std::filesystem::path glbContentRoot = glbWorkspace->root / "Content";
+            const auto glbSourceBytes = writeGlbMeshSmokeSource(glbContentRoot);
+            if (!glbSourceBytes) {
+                return EXIT_FAILURE;
+            }
+
+            const std::filesystem::path glbOutputRoot = glbWorkspace->root / "GlbProductCache";
+            const std::filesystem::path glbManifestPath = glbOutputRoot / "product-manifest.json";
+            const ProductExecution glbExecution = runProductExecution(ProductExecutionOptions{
+                .sourceRoot = glbContentRoot,
+                .sourcePathPrefix = "Content",
+                .targetProfile = "windows-msvc-debug",
+                .outputRoot = glbOutputRoot,
+                .productManifestPath = std::nullopt,
+                .productManifestOutputPath = glbManifestPath,
+                .ignoredDirectoryNames = {},
+                .projectPath = std::nullopt,
+            });
+            if (glbExecution.exitCode != EXIT_SUCCESS) {
+                std::cerr << glbExecution.text;
+                return EXIT_FAILURE;
+            }
+            if (!expectReportText(glbExecution.text,
+                                  "planning requests=1 cacheHits=0 diagnostics=0") ||
+                !expectReportText(
+                    glbExecution.text,
+                    "execution written=1 cacheHits=0 diagnostics=0 manifestProducts=1 "
+                    "manifestWritten=true") ||
+                !expectReportText(glbExecution.text,
+                                  "product-written source=\"Content/Meshes/Fixture.glb\"")) {
+                return EXIT_FAILURE;
+            }
+
+            auto glbManifest = asharia::asset::readAssetProductManifestFile(glbManifestPath);
+            if (!glbManifest || glbManifest->products.size() != 1U) {
+                std::cerr << "asset-processor product execution smoke could not read GLB product "
+                             "manifest.\n";
+                return EXIT_FAILURE;
+            }
+            const asharia::asset::AssetProductRecord& glbProduct = glbManifest->products.front();
+            const std::filesystem::path glbProductPath =
+                glbOutputRoot / glbProduct.relativeProductPath;
+            if (!expectGlbMeshProduct(glbProductPath)) {
+                return EXIT_FAILURE;
+            }
+
+            const auto firstGlbProductBytes = readBytesFile(glbProductPath);
+            auto firstGlbManifestText = asharia::asset::writeAssetProductManifestText(*glbManifest);
+            if (!firstGlbProductBytes || !firstGlbManifestText) {
+                std::cerr
+                    << "asset-processor product execution smoke could not capture deterministic "
+                       "GLB outputs.\n";
+                return EXIT_FAILURE;
+            }
+
+            const std::filesystem::path deterministicOutputRoot =
+                glbWorkspace->root / "GlbProductCacheRepeat";
+            const std::filesystem::path deterministicManifestPath =
+                deterministicOutputRoot / "product-manifest.json";
+            const ProductExecution deterministicGlbExecution =
+                runProductExecution(ProductExecutionOptions{
+                    .sourceRoot = glbContentRoot,
+                    .sourcePathPrefix = "Content",
+                    .targetProfile = "windows-msvc-debug",
+                    .outputRoot = deterministicOutputRoot,
+                    .productManifestPath = std::nullopt,
+                    .productManifestOutputPath = deterministicManifestPath,
+                    .ignoredDirectoryNames = {},
+                    .projectPath = std::nullopt,
+                });
+            auto deterministicManifest =
+                asharia::asset::readAssetProductManifestFile(deterministicManifestPath);
+            if (deterministicGlbExecution.exitCode != EXIT_SUCCESS) {
+                std::cerr << deterministicGlbExecution.text;
+                return EXIT_FAILURE;
+            }
+            if (!deterministicManifest || deterministicManifest->products.size() != 1U) {
+                std::cerr
+                    << "asset-processor product execution smoke failed deterministic GLB rerun.\n";
+                return EXIT_FAILURE;
+            }
+            const auto deterministicProductBytes =
+                readBytesFile(deterministicOutputRoot /
+                              deterministicManifest->products.front().relativeProductPath);
+            auto deterministicManifestText =
+                asharia::asset::writeAssetProductManifestText(*deterministicManifest);
+            if (!deterministicProductBytes || !deterministicManifestText ||
+                *deterministicProductBytes != *firstGlbProductBytes ||
+                *deterministicManifestText != *firstGlbManifestText) {
+                std::cerr
+                    << "asset-processor GLB artifact or manifest was not byte deterministic.\n";
+                return EXIT_FAILURE;
+            }
+
+            const ProductExecution glbCacheHit = runProductExecution(ProductExecutionOptions{
+                .sourceRoot = glbContentRoot,
+                .sourcePathPrefix = "Content",
+                .targetProfile = "windows-msvc-debug",
+                .outputRoot = glbOutputRoot,
+                .productManifestPath = glbManifestPath,
+                .productManifestOutputPath = glbManifestPath,
+                .ignoredDirectoryNames = {},
+                .projectPath = std::nullopt,
+            });
+            if (glbCacheHit.exitCode != EXIT_SUCCESS) {
+                std::cerr << glbCacheHit.text;
+                return EXIT_FAILURE;
+            }
+            if (!expectReportText(glbCacheHit.text, "planning requests=0 cacheHits=1") ||
+                !expectReportText(
+                    glbCacheHit.text,
+                    "execution written=0 cacheHits=1 diagnostics=0 manifestProducts=1 "
+                    "manifestWritten=true")) {
+                return EXIT_FAILURE;
+            }
+
+            const auto lastKnownGoodProductBytes = readBytesFile(glbProductPath);
+            const auto lastKnownGoodManifestBytes = readBytesFile(glbManifestPath);
+            const std::filesystem::path glbSourcePath = glbContentRoot / "Meshes" / "Fixture.glb";
+            const std::vector<std::uint8_t> malformedGlb{0x67U, 0x6CU, 0x54U, 0x46U};
+            if (!lastKnownGoodProductBytes || !lastKnownGoodManifestBytes ||
+                !writeBytesFile(glbSourcePath, malformedGlb)) {
+                return EXIT_FAILURE;
+            }
+            const ProductExecution malformedGlbExecution =
+                runProductExecution(ProductExecutionOptions{
+                    .sourceRoot = glbContentRoot,
+                    .sourcePathPrefix = "Content",
+                    .targetProfile = "windows-msvc-debug",
+                    .outputRoot = glbOutputRoot,
+                    .productManifestPath = glbManifestPath,
+                    .productManifestOutputPath = glbManifestPath,
+                    .ignoredDirectoryNames = {},
+                    .projectPath = std::nullopt,
+                });
+            const auto preservedProductBytes = readBytesFile(glbProductPath);
+            const auto preservedManifestBytes = readBytesFile(glbManifestPath);
+            if (malformedGlbExecution.exitCode == EXIT_SUCCESS ||
+                !expectReportText(malformedGlbExecution.text, "code=MeshImportFailed") ||
+                !preservedProductBytes || !preservedManifestBytes ||
+                *preservedProductBytes != *lastKnownGoodProductBytes ||
+                *preservedManifestBytes != *lastKnownGoodManifestBytes) {
+                std::cerr
+                    << "asset-processor malformed GLB did not preserve last-known-good output.\n";
+                return EXIT_FAILURE;
+            }
+
+            return EXIT_SUCCESS;
+        }
+
+    } // namespace
+
+    int runSmokeProductExecution() {
+        if (runBasicProductExecutionSmoke() != EXIT_SUCCESS ||
+            runPngProductExecutionSmoke() != EXIT_SUCCESS ||
+            runGlbProductExecutionSmoke() != EXIT_SUCCESS) {
             return EXIT_FAILURE;
         }
 

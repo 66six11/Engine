@@ -31,7 +31,7 @@
 | Editor UI 规范 | [architecture/editor-ui-style-v1.md](architecture/editor-ui-style-v1.md)、[architecture/editor-ui-visual-target.md](architecture/editor-ui-visual-target.md) |
 | Studio 前端目标与实现细节 | [前端硬切架构](../apps/studio/docs/architecture/studio-frontend-hard-cut.md)、[native 边界审查](../apps/studio/docs/architecture/studio-native-boundary-audit.md)、[apps/studio 架构入口](../apps/studio/docs/architecture/README.md) |
 | 项目 build/cook/package/launch | [architecture/project-build-and-launch.md](architecture/project-build-and-launch.md) |
-| Asset 与 runtime resource | [systems/asset-architecture.md](systems/asset-architecture.md)、[resource-runtime package 设计](../packages/resource-runtime/README.md) |
+| Asset 与 runtime resource | [systems/asset-architecture.md](systems/asset-architecture.md)、[Mesh Product v1 与受限 GLB](systems/mesh-product-v1.md)、[resource-runtime package 设计](../packages/resource-runtime/README.md) |
 | Scene / World | [systems/scene-world.md](systems/scene-world.md) |
 | Schema、反射与持久化 | [systems/reflection-serialization.md](systems/reflection-serialization.md) |
 | Shader / Material | [systems/shader-material-authoring.md](systems/shader-material-authoring.md)、[specs/ashader-v2.md](specs/ashader-v2.md)、[specs/material-runtime-products-v2.md](specs/material-runtime-products-v2.md) |

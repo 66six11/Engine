@@ -66,6 +66,12 @@ Asharia Engine 当前目标仍是先做一个小而完整的 Vulkan renderer，�
   和 asset discovery ignore policy；不拥有 cook/package profiles、editor workspace 或 runtime state。
 - `packages/asset-core`：asset GUID、type、handle/reference、metadata、product/cache/dependency/catalog
   的 CPU 数据模型；不拥有 GPU resource 或 editor UI。
+- `packages/mesh-product`：`asharia::mesh_product` 是 CPU/runtime-safe Mesh Product v1 bounded reader，
+  `asharia::mesh_product_writer` 是 tool-side canonical writer。格式固定 `P3N3Uv2F32`、`uint32` indices、
+  submesh/material-slot/local AABB，不包含 source/importer、runtime generation、renderer 或 Vulkan state。
+- `packages/asset-pipeline`：除既有 metadata/plan/product execution 与 texture 路径外，当前以私有 fastgltf
+  实现 `com.asharia.importer.mesh.glb-static` v1，只把受限 `.glb` default-scene static geometry cook 为
+  Mesh Product v1；不拥有 ResourceRuntime、GPU resource、thumbnail 或 watcher。
 - `packages/editor-content`：editor-owned、UI-neutral 的 project asset catalog query source boundary。
   `asharia::editor_content` 只读组合 project descriptor、source scan/discovery/snapshot/import planning、product manifest
   与 `AssetCatalogView`；`asharia::editor_content_native` 以严格有界 C ABI/JSON 向 Studio 投影 immutable snapshot。
@@ -104,8 +110,9 @@ Asharia Engine 当前目标仍是先做一个小而完整的 Vulkan renderer，�
   `StudioScenePanelView -> ViewportCompositionControl -> ViewportSession
   -> EngineBridge ViewportBridge V7 stream -> editor_native bounded scheduler -> process RenderThread -> renderer_basic_vulkan`
   接通；Release image 部署 project/scene/editor-content/editor native DLL 与精确 shader closure。Studio 不录制 Vulkan
-  command，也不拥有 native handle/GPU resource；Resource Browser 不执行 importer、不创建 runtime/GPU resource，模型
-  cooked product、ResourceRuntime payload、缩略图、Play Mode、第二 Viewport 与 viewport input 尚未接入。
+  command，也不拥有 native handle/GPU resource；Resource Browser 不执行 importer、不创建 runtime/GPU resource。
+  #386 已实现并冻结 Mesh Product v1 与受限 `.glb` importer；该纵切现为 Current，但 ResourceRuntime typed mesh payload、renderer GPU mesh、
+  缩略图、Play Mode、第二 Viewport 与 viewport input 尚未接入。
 
   <details>
   <summary>Retired Studio Project Code / viewport 设计记录（非当前产品事实）</summary>

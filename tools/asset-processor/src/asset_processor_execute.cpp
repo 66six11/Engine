@@ -12,10 +12,12 @@
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
 #include "asharia/asset_core/asset_guid.hpp"
+#include "asharia/asset_pipeline/asset_glb_import.hpp"
 #include "asharia/asset_pipeline/asset_product_execution.hpp"
 #include "asharia/asset_pipeline/asset_product_manifest_io.hpp"
 #include "asharia/asset_pipeline/asset_scanned_import_planning.hpp"
@@ -172,6 +174,8 @@ namespace asharia::asset_processor {
                 return "DuplicateDependencyProductBytes";
             case Code::DependencyProductBytesHashMismatch:
                 return "DependencyProductBytesHashMismatch";
+            case Code::CacheProductInvalid:
+                return "CacheProductInvalid";
             case Code::InvalidOutputRoot:
                 return "InvalidOutputRoot";
             case Code::InvalidProductPath:
@@ -182,6 +186,8 @@ namespace asharia::asset_processor {
                 return "ManifestWriteFailed";
             case Code::TextureImportFailed:
                 return "TextureImportFailed";
+            case Code::MeshImportFailed:
+                return "MeshImportFailed";
             case Code::MaterialInstanceImportFailed:
                 return "MaterialInstanceImportFailed";
             case Code::ShaderAuthoringImportFailed:
@@ -220,9 +226,8 @@ namespace asharia::asset_processor {
         }
 
         [[nodiscard]] asharia::Result<std::vector<std::uint8_t>>
-        readSourceFileBytes(const std::filesystem::path& path) {
-            auto fileBytes =
-                asharia::core::readFileBytes(path, {.maxBytes = kMaxAssetProcessorSourceBytes});
+        readSourceFileBytes(const std::filesystem::path& path, std::uint64_t maxBytes) {
+            auto fileBytes = asharia::core::readFileBytes(path, {.maxBytes = maxBytes});
             if (!fileBytes) {
                 return std::unexpected{std::move(fileBytes.error())};
             }
@@ -237,22 +242,45 @@ namespace asharia::asset_processor {
 
         [[nodiscard]] std::vector<asharia::asset::AssetProductSourceBytes>
         readSourceBytes(std::ostream& output,
-                        std::span<const asharia::asset::AssetSourceScanEntry> entries) {
-            std::vector<asharia::asset::AssetProductSourceBytes> sources;
-            sources.reserve(entries.size());
+                        std::span<const asharia::asset::AssetSourceScanEntry> entries,
+                        std::span<const asharia::asset::AssetImportRequest> requests) {
+            std::unordered_map<std::string_view, const asharia::asset::AssetSourceScanEntry*>
+                entriesBySourcePath;
+            entriesBySourcePath.reserve(entries.size());
             for (const asharia::asset::AssetSourceScanEntry& entry : entries) {
-                auto bytes = readSourceFileBytes(entry.sourceFilePath);
+                entriesBySourcePath.emplace(entry.sourcePath, &entry);
+            }
+
+            std::vector<asharia::asset::AssetProductSourceBytes> sources;
+            sources.reserve(requests.size());
+            for (const asharia::asset::AssetImportRequest& request : requests) {
+                const auto entry = entriesBySourcePath.find(request.source.sourcePath);
+                if (entry == entriesBySourcePath.end()) {
+                    output << "diagnostic stage=source-bytes"
+                           << " code=MissingScanEntry"
+                           << " source=" << quoteText(request.source.sourcePath) << " message="
+                           << quoteText("Planned source has no matching scanned file entry.")
+                           << '\n';
+                    continue;
+                }
+
+                const std::uint64_t maxBytes =
+                    asharia::asset::isRestrictedGlbMeshImportCandidate(request.source)
+                        ? asharia::asset::AssetGlbImportLimits{}.maxSourceBytes
+                        : kMaxAssetProcessorSourceBytes;
+                const asharia::asset::AssetSourceScanEntry& scanEntry = *entry->second;
+                auto bytes = readSourceFileBytes(scanEntry.sourceFilePath, maxBytes);
                 if (!bytes) {
                     output << "diagnostic stage=source-bytes"
                            << " code=ReadFailed"
-                           << " source=" << quoteText(entry.sourcePath)
-                           << " file=" << quotePath(entry.sourceFilePath)
+                           << " source=" << quoteText(scanEntry.sourcePath)
+                           << " file=" << quotePath(scanEntry.sourceFilePath)
                            << " message=" << quoteText(bytes.error().message) << '\n';
                     continue;
                 }
 
                 sources.push_back(asharia::asset::AssetProductSourceBytes{
-                    .sourcePath = entry.sourcePath,
+                    .sourcePath = scanEntry.sourcePath,
                     .bytes = std::move(*bytes),
                 });
             }
@@ -525,8 +553,8 @@ namespace asharia::asset_processor {
         }
 
         std::vector<asharia::asset::AssetProductSourceBytes> sourceBytes =
-            readSourceBytes(output, plan.scan.entries);
-        if (sourceBytes.size() != plan.scan.entries.size()) {
+            readSourceBytes(output, plan.scan.entries, plan.plan.requests);
+        if (sourceBytes.size() != plan.plan.requests.size()) {
             return ProductExecution{
                 .exitCode = EXIT_FAILURE,
                 .text = output.str(),

@@ -30,6 +30,9 @@
 - `stb`：`packages/asset-pipeline` 的 PNG-first CPU texture decoder，当前只通过 `stb_image` 把 `.png`
   source bytes 标准化为 RGBA8 payload；不作为 runtime dependency，也不进入 `asset-core`、editor、RHI 或
   RenderGraph。
+- `fastgltf` 0.9：`packages/asset-pipeline` 的受限 `.glb` static Mesh source parser。它只进入
+  tool-side importer target，不作为 Mesh Product/runtime dependency，也不进入 `mesh-product` reader、
+  `asset-core`、editor、resource runtime、renderer 或 RHI。
 
 Vulkan loader/binding 策略：
 

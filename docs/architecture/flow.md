@@ -39,6 +39,7 @@ flowchart TD
     AssetCore["packages/asset-core"]
     AssetCoreIo["packages/asset-core<br/>asharia::asset_core_io"]
     AssetPipeline["packages/asset-pipeline"]
+    MeshProduct["packages/mesh-product<br/>runtime-safe reader + tool writer"]
     EditorContent["packages/editor-content<br/>UI-neutral catalog query"]
     EditorContentNative["packages/editor-content<br/>catalog C ABI adapter"]
     ResourceRuntime["packages/resource-runtime"]
@@ -92,6 +93,8 @@ flowchart TD
     AssetCoreIo --> AssetCore
     AssetCoreIo --> Archive
     AssetPipeline --> AssetCore
+    MeshProduct --> AssetCore
+    AssetPipeline --> MeshProduct
     AssetPipeline -.metadata read.-> AssetCoreIo
     AssetPipeline --> ShaderAuthoring
     EditorContent --> ProjectCoreIo
@@ -195,9 +198,12 @@ flowchart TD
 - `packages/project-bootstrap` 是 Engine Distribution 固定选择、项目不可替换的 source boundary。reader/summary target 复用
   `project_core_io`，provider target 发布单例 `ProcessApplicationV1`；factory create/activate 不做 IO，只有 ProcessScope Active 后的
   `run()` 才读取真实 `asharia.project.json` 并返回确定性摘要。
+- `mesh-product` 当前拥有 CPU/runtime-safe Mesh Product v1 bounded reader 与独立 tool-side canonical writer；
+  它不依赖 `asset-pipeline`、resource-runtime、renderer、RHI 或 editor。
 - `asset-pipeline` 当前做 CPU-only metadata discovery / product execution：显式 source/.ameta 条目进入
   discovery facade，输出 deterministic manifest、`AssetCatalog` 输入、product blob 和 diagnostics；它可以
-  私有复用 importer-specific package，例如 texture importer、`material-instance` 和 `shader-authoring`，但不做
+  私有复用 importer-specific package，例如 `mesh-product` writer、texture importer、`material-instance` 和
+  `shader-authoring`；当前受限 `.glb` static importer 把 default-scene geometry cook 为 Mesh Product v1，但不做
   watcher、后台 import 调度、GPU upload 或 editor UI，也不把 authoring/importer 语义推入 `asset-core`。
 - `resource-runtime` 当前只做 CPU-only runtime resource handle 状态合同：消费 `asset-core` 的
   `AssetHandle<T>` / `AssetProductKey` / `AssetProductRecord`，表达 pending / ready / failed、generation 和
@@ -235,8 +241,9 @@ flowchart TD
   project/scene/editor-content/editor 四个 native DLL 与 16 个 renderer-basic shader/reflection 文件，不携带 Slang、
   Vulkan SDK 或 validation layer。当前已有单 SceneDocument、Hierarchy、名称/local Transform Inspector、Create Entity、
   Save/Undo/Redo/dirty、一个可见 Scene View、只读 catalog-backed Resource Browser，以及由 typed selection 驱动的只读
-  Asset Inspector；仍无 cooked model product、runtime mesh/GPU resource、thumbnail/preview service、Play Mode、第二
-  Viewport、通用 fair scheduler 或完整 camera/input consumer。
+  Asset Inspector；Content 层已有 Mesh Product v1/受限 `.glb` cooked artifact，但 Studio 尚未消费它，仍无 runtime
+  mesh/GPU resource、thumbnail/preview service、Play Mode、第二 Viewport、通用 fair scheduler 或完整
+  camera/input consumer。
 - Editor panels 仍由 `EditorPanelRegistry::drawPanels(EditorFrameContext)` 适配每帧能力，但内置
   panel 的 `draw()` 实现会先收敛为 panel-local context，再把最小能力传给 helper。Scene View panel
   不创建 Vulkan objects、不注册 descriptor、不录 command buffer。
@@ -1770,9 +1777,11 @@ flowchart TD
     Execute --> Evidence
 ```
 
-该 OBJ 路径是 repository validation fixture/tool，只接受门禁所需的封闭子集；它不声明通用 OBJ importer、
-runtime mesh product schema 或 asset resource registry 已完成。renderer 消费生成后的 product data，不读取
-source path 或 `.ameta`，Avalonia/editor 也不持有 GPU buffer。
+该 OBJ 路径是 repository validation fixture/tool，只接受门禁所需的封闭子集；它仍不是通用 OBJ importer、
+Mesh Product v1 或 asset resource registry。#386 的真实 source→product 路径由 `asset-pipeline` 受限 `.glb`
+importer → `mesh-product` canonical writer/reader → artifact/manifest 构成；renderer 尚未消费该 product，继续只
+消费 validation fixture 生成的数据。后续必须按 ResourceRuntime typed CPU payload → renderer GPU resource/
+deferred retirement → Scene View → ThumbnailService 接入，不能从 Browser/renderer 旁路解析 source。
 
 `--smoke-fullscreen-texture` 当前真实录制流程：
 
