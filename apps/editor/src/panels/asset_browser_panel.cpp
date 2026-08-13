@@ -17,8 +17,8 @@
 #include "asharia/asset_core/asset_catalog_view.hpp"
 #include "asharia/asset_core/asset_guid.hpp"
 #include "asharia/asset_pipeline/asset_texture_import_profile.hpp"
+#include "asharia/editor_content/asset_catalog_snapshot.hpp"
 
-#include "editor_asset_catalog.hpp"
 #include "editor_asset_icon.hpp"
 #include "editor_asset_import_settings_command.hpp"
 #include "editor_command.hpp"

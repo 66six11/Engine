@@ -2036,7 +2036,7 @@ namespace {
                 .metadataSuffix = std::string{asharia::asset::kAssetMetadataSidecarSuffix},
                 .ignoredDirectoryNames = {},
             });
-        return result.entries.empty() &&
+        return result.discoveredFileCount == 1U && result.entries.empty() &&
                expectScanDiagnostic(result,
                                     asharia::asset::AssetSourceScanDiagnosticCode::MissingMetadata,
                                     "missing metadata");
@@ -2093,6 +2093,33 @@ namespace {
                                     "does not exist");
     }
 
+    [[nodiscard]] bool smokeSourceScanRejectsRedirectedRoot() {
+        const std::filesystem::path root =
+            smokeRoot("asharia-asset-pipeline-smoke-source-scan-redirected-root");
+        if (root.empty() || !prepareWorkspace(root)) {
+            return false;
+        }
+        const std::filesystem::path outsideRoot = root / "Outside";
+        const std::filesystem::path redirectedRoot = root / "Redirected";
+        if (!createDirectories(outsideRoot) ||
+            !writeTextFile(outsideRoot / "outside.txt", "outside") ||
+            !createRedirectedDirectoryLink(redirectedRoot, outsideRoot)) {
+            // Some locked-down hosts cannot create a directory link. Other redirect tests still
+            // cover the policy in that environment.
+            return true;
+        }
+
+        const auto result =
+            asharia::asset::scanAssetSourceTree(asharia::asset::AssetSourceScanRequest{
+                .sourceRoot = redirectedRoot,
+                .sourcePathPrefix = "Content",
+            });
+        return result.discoveredFileCount == 0U && result.entries.empty() &&
+               expectScanDiagnostic(result,
+                                    asharia::asset::AssetSourceScanDiagnosticCode::InvalidRoot,
+                                    "symbolic-link root");
+    }
+
     [[nodiscard]] bool smokeSourceScanInvalidPrefix() {
         const std::filesystem::path root =
             smokeRoot("asharia-asset-pipeline-smoke-source-scan-invalid-prefix");
@@ -2116,6 +2143,29 @@ namespace {
                expectScanDiagnostic(result,
                                     asharia::asset::AssetSourceScanDiagnosticCode::InvalidRequest,
                                     "'/' separators");
+    }
+
+    [[nodiscard]] bool smokeSourceScanDiscoveredFileLimit() {
+        const std::filesystem::path root =
+            smokeRoot("asharia-asset-pipeline-smoke-source-scan-file-limit");
+        if (root.empty() || !prepareWorkspace(root)) {
+            return false;
+        }
+        const std::filesystem::path contentRoot = root / "Content";
+        if (!createDirectories(contentRoot) || !writeTextFile(contentRoot / "first.txt", "first") ||
+            !writeTextFile(contentRoot / "second.txt", "second")) {
+            return false;
+        }
+        const asharia::asset::AssetSourceScanResult result =
+            asharia::asset::scanAssetSourceTree(asharia::asset::AssetSourceScanRequest{
+                .sourceRoot = contentRoot,
+                .sourcePathPrefix = "Content",
+                .maxDiscoveredFiles = 1U,
+            });
+        return result.entries.empty() &&
+               expectScanDiagnostic(result,
+                                    asharia::asset::AssetSourceScanDiagnosticCode::LimitExceeded,
+                                    "max discovered files");
     }
 
     [[nodiscard]] asharia::asset::AssetProductRecord
@@ -2751,6 +2801,74 @@ namespace {
                    "injected fingerprint failure");
     }
 
+    [[nodiscard]] bool smokeImportPlanningDeclaredOnlyDoesNotResolveTools() {
+        const auto source =
+            makeShaderSource("69bc6326-c04a-49d8-a4d2-653445a0e423",
+                             "Content/Shaders/DeclaredOnly.ashader", 0x1000F00D1234CAFEULL);
+        const std::array sources{source};
+        const std::array snapshots{
+            makeSourceSnapshot(source.source.sourcePath, source.source.sourceHash),
+        };
+        const asharia::asset::AssetImportPlanOptions options{
+            .toolVersions = {},
+            .toolFingerprintResolver = &changingToolFingerprint,
+            .toolDependencyPolicy = asharia::asset::AssetImportToolDependencyPolicy::DeclaredOnly,
+        };
+
+        FingerprintResolverState& resolverState = fingerprintResolverState();
+        resolverState.calls.clear();
+        resolverState.failsSpirvVal = false;
+        const asharia::asset::AssetImportPlanResult plan = asharia::asset::planAssetImports(
+            sources, snapshots, asharia::asset::AssetProductManifestDocument{},
+            "windows-msvc-debug", options);
+        if (!plan.succeeded() || !plan.requests.empty() || !plan.cacheHits.empty() ||
+            !resolverState.calls.empty() || plan.diagnostics.size() != 1U ||
+            plan.diagnostics.front().code !=
+                asharia::asset::AssetImportPlanDiagnosticCode::UnresolvedToolDependency ||
+            plan.diagnostics.front().severity !=
+                asharia::asset::AssetImportPlanDiagnosticSeverity::Warning ||
+            plan.diagnostics.front().sourcePath != source.source.sourcePath ||
+            !messageContains(plan.diagnostics.front().message, "'slangc', 'spirv-val'") ||
+            !messageContains(plan.diagnostics.front().message,
+                             "No environment tools were resolved")) {
+            logFailure("Declared-only asset planning resolved tools or proved a provisional key.");
+            return false;
+        }
+
+        const asharia::asset::AssetImportPlanOptions declaredOptions{
+            .toolVersions =
+                {
+                    asharia::asset::AssetImportToolVersionDependency{
+                        .importerId = source.source.importerId,
+                        .toolName = "slangc",
+                        .versionHash = 0x1111111111111111ULL,
+                    },
+                    asharia::asset::AssetImportToolVersionDependency{
+                        .importerId = source.source.importerId,
+                        .toolName = "spirv-val",
+                        .versionHash = 0x2222222222222222ULL,
+                    },
+                },
+            .toolFingerprintResolver = &changingToolFingerprint,
+            .toolDependencyPolicy = asharia::asset::AssetImportToolDependencyPolicy::DeclaredOnly,
+        };
+        const asharia::asset::AssetImportPlanResult declaredPlan = asharia::asset::planAssetImports(
+            sources, snapshots, asharia::asset::AssetProductManifestDocument{},
+            "windows-msvc-debug", declaredOptions);
+        if (!declaredPlan.succeeded() || declaredPlan.requests.size() != 1U ||
+            !declaredPlan.cacheHits.empty() || !declaredPlan.diagnostics.empty() ||
+            !resolverState.calls.empty() ||
+            !hasToolVersionDependency(declaredPlan.requests.front().dependencies,
+                                      source.source.guid, "slangc", 0x1111111111111111ULL) ||
+            !hasToolVersionDependency(declaredPlan.requests.front().dependencies,
+                                      source.source.guid, "spirv-val", 0x2222222222222222ULL)) {
+            logFailure("Declared-only asset planning ignored explicit tool dependencies.");
+            return false;
+        }
+
+        return true;
+    }
+
     [[nodiscard]] bool smokeImportPlanningShaderToolVersionChanged() {
         constexpr std::string_view kShaderTypeName = "com.asharia.asset.Shader";
         constexpr std::string_view kImporterName = "com.asharia.importer.shader-compile-reflection";
@@ -2895,6 +3013,29 @@ namespace {
                expectPlanDiagnostic(plan,
                                     asharia::asset::AssetImportPlanDiagnosticCode::DuplicateSource,
                                     "duplicates source");
+    }
+
+    [[nodiscard]] bool smokeImportPlanningDuplicateDiagnosticOrder() {
+        const auto first =
+            makeDiscoveredSource("9f7a31a0-0b63-4d4c-9f18-bd9a0d2e9c21",
+                                 "Content/Textures/First.png", 0x1000F00D1234CAFEULL);
+        auto duplicatePath =
+            makeDiscoveredSource("785e2474-65c4-4f28-a8fb-ff8a21449a61",
+                                 "Content/Textures/Second.png", 0x2000F00D1234CAFEULL);
+        duplicatePath.source.sourcePath = first.source.sourcePath;
+        duplicatePath.entry.sourcePath = first.source.sourcePath;
+        auto duplicateGuid =
+            makeDiscoveredSource("69bc6326-c04a-49d8-a4d2-653445a0e423",
+                                 "Content/Textures/Third.png", 0x3000F00D1234CAFEULL);
+        duplicateGuid.source.guid = first.source.guid;
+        const std::array sources{first, duplicatePath, duplicateGuid};
+        const auto plan = asharia::asset::planAssetImports(
+            sources, std::array<asharia::asset::AssetSourceSnapshot, 0>{},
+            asharia::asset::AssetProductManifestDocument{}, "windows-msvc-debug");
+        return plan.requests.empty() && plan.cacheHits.empty() && plan.diagnostics.size() == 2U &&
+               messageContains(plan.diagnostics[0].message,
+                               "duplicates source path with source[1]") &&
+               messageContains(plan.diagnostics[1].message, "duplicates source[2]");
     }
 
     [[nodiscard]] bool smokeImportPlanningDuplicateSnapshot() {
@@ -3067,6 +3208,15 @@ namespace {
         return expectInvalidProductManifestWrite(
             asharia::asset::AssetProductManifestDocument{.products = {productA, productB}},
             "duplicates product path");
+    }
+
+    [[nodiscard]] bool smokeProductManifestProductCountLimit() {
+        const auto product = makeProductRecord("9f7a31a0-0b63-4d4c-9f18-bd9a0d2e9c21",
+                                               "windows-msvc-debug/textures/crate.texture.bin",
+                                               0x1000F00D1234CAFEULL, "windows-msvc-debug");
+        asharia::asset::AssetProductManifestDocument document;
+        document.products.resize(asharia::asset::kMaxAssetProductManifestProducts + 1U, product);
+        return expectInvalidProductManifestWrite(document, "exceeds maximum count 100000");
     }
 
     [[nodiscard]] bool smokeProductManifestInvalidProductPath() {
@@ -6005,6 +6155,42 @@ shader "asharia.material.compile_reflection" {
         return true;
     }
 
+    [[nodiscard]] bool smokeSourceSnapshotByteLimit() {
+        const std::filesystem::path root =
+            smokeRoot("asharia-asset-pipeline-smoke-snapshot-byte-limit");
+        if (root.empty() || !prepareWorkspace(root)) {
+            return false;
+        }
+
+        constexpr std::string_view kSourceBytes = "123456789";
+        const std::filesystem::path source = root / "bounded.bin";
+        if (!writeTextFile(source, kSourceBytes)) {
+            return false;
+        }
+
+        const std::array entries{
+            asharia::asset::AssetSourceSnapshotEntry{
+                .sourcePath = "Content/Bounded.bin",
+                .sourceFilePath = source,
+            },
+        };
+        const auto exact = asharia::asset::snapshotAssetSourceFiles(entries, kSourceBytes.size());
+        const auto oneByteShort =
+            asharia::asset::snapshotAssetSourceFiles(entries, kSourceBytes.size() - 1U);
+
+        if (!exact.succeeded() || exact.snapshots.size() != 1U ||
+            exact.bytesHashed != kSourceBytes.size()) {
+            logFailure("Asset pipeline source snapshot rejected its exact byte budget.");
+            return false;
+        }
+
+        return oneByteShort.snapshots.empty() && oneByteShort.bytesHashed == 0U &&
+               expectSingleSnapshotDiagnostic(
+                   oneByteShort,
+                   asharia::asset::AssetSourceSnapshotDiagnosticCode::ByteLimitExceeded,
+                   "hashed-byte limit");
+    }
+
     [[nodiscard]] bool smokeSourceSnapshotMissingFile() {
         const std::filesystem::path root =
             smokeRoot("asharia-asset-pipeline-smoke-snapshot-missing");
@@ -6388,7 +6574,8 @@ int main() noexcept {
         const bool passed =
             smokeShaderToolOutputReadLimits() && smokeGeneratedSlangAtomicOverwrite() &&
             smokeSourceScanValidAndDeterministic() && smokeSourceScanOrphanMetadata() &&
-            smokeSourceScanInvalidRoot() && smokeSourceScanInvalidPrefix() &&
+            smokeSourceScanInvalidRoot() && smokeSourceScanRejectsRedirectedRoot() &&
+            smokeSourceScanInvalidPrefix() && smokeSourceScanDiscoveredFileLimit() &&
             smokeScannedImportPlanningRequestsAndCacheHits() &&
             smokeScannedImportPlanningStopsOnScanDiagnostics() &&
             smokeScannedImportPlanningStopsOnDiscoveryDiagnostics() &&
@@ -6431,24 +6618,25 @@ int main() noexcept {
             smokeImportPlanningToolFingerprintFailureBatchCache() &&
             smokeAssetToolFingerprintStreamFailureContext() &&
             smokeImportPlanningToolFingerprintFailure() &&
+            smokeImportPlanningDeclaredOnlyDoesNotResolveTools() &&
             smokeImportPlanningShaderToolVersionChanged() && smokeImportPlanningMissingSnapshot() &&
-            smokeImportPlanningDuplicateSource() && smokeImportPlanningDuplicateSnapshot() &&
-            smokeImportPlanningInvalidTargetProfile() && smokeTextureImportContractRawRgba8() &&
-            smokeTextureImportContractPng() && smokeTextureImportContractDiagnostics() &&
-            smokeTextureImportProfiles() && smokeProductManifestRoundTrip() &&
-            smokeProductManifestMalformedInput() && smokeProductManifestDuplicateField() &&
-            smokeProductManifestMissingField() && smokeProductManifestUnknownField() &&
-            smokeProductManifestDuplicateProductKey() &&
-            smokeProductManifestDuplicateProductPath() &&
+            smokeImportPlanningDuplicateSource() && smokeImportPlanningDuplicateDiagnosticOrder() &&
+            smokeImportPlanningDuplicateSnapshot() && smokeImportPlanningInvalidTargetProfile() &&
+            smokeTextureImportContractRawRgba8() && smokeTextureImportContractPng() &&
+            smokeTextureImportContractDiagnostics() && smokeTextureImportProfiles() &&
+            smokeProductManifestRoundTrip() && smokeProductManifestMalformedInput() &&
+            smokeProductManifestDuplicateField() && smokeProductManifestMissingField() &&
+            smokeProductManifestUnknownField() && smokeProductManifestDuplicateProductKey() &&
+            smokeProductManifestDuplicateProductPath() && smokeProductManifestProductCountLimit() &&
             smokeProductManifestInvalidProductPath() &&
             smokeProductManifestProductKeyHashMismatch() &&
             smokeSourceSnapshotValidAndDeterministic() && smokeSourceSnapshotContentChange() &&
-            smokeSourceSnapshotMissingFile() && smokeSourceSnapshotDirectory() &&
-            smokeSourceSnapshotInvalidSourcePath() && smokeSourceSnapshotDuplicateSourcePath() &&
-            smokeDiscoveryValidAndDeterministic() && smokeMissingMetadata() &&
-            smokeMalformedMetadata() && smokeSourcePathMismatch() && smokeDuplicateGuid() &&
-            smokeDuplicateSourcePath() && smokeInvalidEntry() && smokeInvalidEntrySourcePath() &&
-            smokeInvalidMetadataSourcePath();
+            smokeSourceSnapshotByteLimit() && smokeSourceSnapshotMissingFile() &&
+            smokeSourceSnapshotDirectory() && smokeSourceSnapshotInvalidSourcePath() &&
+            smokeSourceSnapshotDuplicateSourcePath() && smokeDiscoveryValidAndDeterministic() &&
+            smokeMissingMetadata() && smokeMalformedMetadata() && smokeSourcePathMismatch() &&
+            smokeDuplicateGuid() && smokeDuplicateSourcePath() && smokeInvalidEntry() &&
+            smokeInvalidEntrySourcePath() && smokeInvalidMetadataSourcePath();
         return passed ? EXIT_SUCCESS : EXIT_FAILURE;
     } catch (const std::exception& exception) {
         logFailure(exception.what());

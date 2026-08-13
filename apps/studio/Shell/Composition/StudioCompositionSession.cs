@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Asharia.Studio.Application.Diagnostics;
+using Asharia.Studio.Application.Assets;
 using Asharia.Studio.Application.Projects;
 using Asharia.Studio.EngineBridge.Viewports;
 using Asharia.Studio.Presentation.Avalonia.Viewports;
@@ -22,6 +23,7 @@ internal sealed class StudioCompositionSession : IAsyncDisposable
     private bool isDisposed_;
     private readonly StudioShellViewModel shellViewModel_;
     private readonly IProjectSession projectSession_;
+    private readonly IProjectAssetCatalog projectAssetCatalog_;
     private readonly ViewportPresentationLifetime viewportPresentationLifetime_;
     private readonly ViewportRuntimeBridge viewportRuntime_;
     private readonly Task<ViewportFrameFailure?> viewportWarmUpTask_;
@@ -46,6 +48,7 @@ internal sealed class StudioCompositionSession : IAsyncDisposable
         ArgumentNullException.ThrowIfNull(projectSession);
         shellViewModel_ = shellViewModel;
         projectSession_ = projectSession;
+        projectAssetCatalog_ = shellViewModel.ProjectAssetCatalog;
         viewportPresentationLifetime_ = shellViewModel.ViewportPresentationLifetime;
         viewportRuntime_ = new ViewportRuntimeBridge();
         viewportWarmUpTask_ = startViewportWarmUp
@@ -74,6 +77,7 @@ internal sealed class StudioCompositionSession : IAsyncDisposable
         ArgumentNullException.ThrowIfNull(developmentHost);
         shellViewModel_ = shellViewModel;
         projectSession_ = projectSession;
+        projectAssetCatalog_ = shellViewModel.ProjectAssetCatalog;
         viewportPresentationLifetime_ = shellViewModel.ViewportPresentationLifetime;
         viewportRuntime_ = new ViewportRuntimeBridge();
         viewportWarmUpTask_ = viewportRuntime_.WarmUpAsync();
@@ -104,8 +108,19 @@ internal sealed class StudioCompositionSession : IAsyncDisposable
         ArgumentNullException.ThrowIfNull(diagnostics);
         if (cancellationToken.IsCancellationRequested)
         {
-            shellViewModel.Dispose();
-            await projectSession.DisposeAsync();
+            var cleanupFailures = await DisposeUnpublishedOwnersAsync(
+                shellViewModel,
+                shellViewModel.ProjectAssetCatalog,
+                projectSession);
+            if (cleanupFailures.Count != 0)
+            {
+                cleanupFailures.Insert(
+                    0,
+                    new OperationCanceledException(cancellationToken));
+                throw new AggregateException(
+                    "Studio composition was canceled and teardown did not complete cleanly.",
+                    cleanupFailures);
+            }
             cancellationToken.ThrowIfCancellationRequested();
         }
 #if DEBUG
@@ -178,7 +193,7 @@ internal sealed class StudioCompositionSession : IAsyncDisposable
         }
         catch (Exception startError)
         {
-            Exception? hostStopError = null;
+            var cleanupFailures = new List<Exception>(capacity: 4);
             if (host is not null)
             {
                 try
@@ -187,21 +202,61 @@ internal sealed class StudioCompositionSession : IAsyncDisposable
                 }
                 catch (Exception error)
                 {
-                    hostStopError = error;
+                    cleanupFailures.Add(error);
                 }
             }
 
-            shellViewModel.Dispose();
-            await projectSession.DisposeAsync();
-            if (hostStopError is not null)
+            cleanupFailures.AddRange(await DisposeUnpublishedOwnersAsync(
+                shellViewModel,
+                shellViewModel.ProjectAssetCatalog,
+                projectSession));
+            if (cleanupFailures.Count != 0)
             {
-                throw new AggregateException(startError, hostStopError);
+                cleanupFailures.Insert(0, startError);
+                throw new AggregateException(
+                    "Studio composition startup failed and teardown did not complete cleanly.",
+                    cleanupFailures);
             }
 
             throw;
         }
     }
 #endif
+
+    private static async ValueTask<List<Exception>> DisposeUnpublishedOwnersAsync(
+        StudioShellViewModel shellViewModel,
+        IProjectAssetCatalog projectAssetCatalog,
+        IProjectSession projectSession)
+    {
+        var failures = new List<Exception>(capacity: 3);
+        try
+        {
+            shellViewModel.Dispose();
+        }
+        catch (Exception error)
+        {
+            failures.Add(error);
+        }
+
+        try
+        {
+            await projectAssetCatalog.DisposeAsync();
+        }
+        catch (Exception error)
+        {
+            failures.Add(error);
+        }
+
+        try
+        {
+            await projectSession.DisposeAsync();
+        }
+        catch (Exception error)
+        {
+            failures.Add(error);
+        }
+        return failures;
+    }
 
     public async ValueTask DisposeAsync()
     {
@@ -275,6 +330,15 @@ internal sealed class StudioCompositionSession : IAsyncDisposable
         try
         {
             viewportRuntime_.Shutdown();
+        }
+        catch (Exception error)
+        {
+            failures.Add(error);
+        }
+
+        try
+        {
+            await projectAssetCatalog_.DisposeAsync();
         }
         catch (Exception error)
         {

@@ -75,6 +75,10 @@ public static partial class StudioEditorImageProducer
         "asharia_project_create_minimal",
         "asharia_project_open",
     ];
+    private static readonly string[] EditorContentNativeRequiredExports =
+    [
+        "asharia_editor_content_query",
+    ];
     private static readonly string[] SceneNativeRequiredExports =
     [
         "asharia_scene_document_open_default",
@@ -344,6 +348,18 @@ public static partial class StudioEditorImageProducer
             "asharia_project_native.dll",
             ProjectNativeRequiredExports,
             "publishRoot/asharia_project_native.dll");
+        var editorContentNativeEntry = InspectFile(
+            Path.Combine(publishRoot, "asharia_editor_content_native.dll"),
+            "publishRoot/asharia_editor_content_native.dll");
+        ValidatePortableExecutable(
+            editorContentNativeEntry,
+            expectDll: true,
+            "publishRoot/asharia_editor_content_native.dll");
+        ValidateRequiredExports(
+            editorContentNativeEntry,
+            "asharia_editor_content_native.dll",
+            EditorContentNativeRequiredExports,
+            "publishRoot/asharia_editor_content_native.dll");
         var sceneNativeEntry = InspectFile(
             Path.Combine(publishRoot, "asharia_scene_native.dll"),
             "publishRoot/asharia_scene_native.dll");
@@ -492,6 +508,11 @@ public static partial class StudioEditorImageProducer
             projectNativeEntry,
             "bin/asharia_project_native.dll",
             "publishRoot/asharia_project_native.dll");
+        EnsurePlannedDestination(
+            files,
+            editorContentNativeEntry,
+            "bin/asharia_editor_content_native.dll",
+            "publishRoot/asharia_editor_content_native.dll");
         EnsurePlannedDestination(
             files,
             sceneNativeEntry,
@@ -736,6 +757,16 @@ public static partial class StudioEditorImageProducer
                 && !file.DestinationPath.Equals(
                     "bin/asharia_scene_native.dll",
                     StringComparison.OrdinalIgnoreCase);
+            var isUnexpectedEditorContentNativeArtifact =
+                (fileName.Equals(
+                     "asharia_editor_content_native",
+                     StringComparison.OrdinalIgnoreCase)
+                 || fileName.StartsWith(
+                     "asharia_editor_content_native.",
+                     StringComparison.OrdinalIgnoreCase))
+                && !file.DestinationPath.Equals(
+                    "bin/asharia_editor_content_native.dll",
+                    StringComparison.OrdinalIgnoreCase);
             var isUnexpectedViewportNativeArtifact =
                 (fileName.Equals("editor_native", StringComparison.OrdinalIgnoreCase)
                  || fileName.StartsWith(
@@ -758,6 +789,7 @@ public static partial class StudioEditorImageProducer
                 && !ViewportShaderFiles.Contains(fileName, StringComparer.Ordinal);
             if (isForbiddenStudioArtifact
                 || isUnexpectedSceneNativeArtifact
+                || isUnexpectedEditorContentNativeArtifact
                 || isUnexpectedViewportNativeArtifact
                 || isUnexpectedViewportShader
                 || hasForbiddenDirectory
@@ -1250,6 +1282,18 @@ public static partial class StudioEditorImageProducer
             "asharia_project_native.dll",
             ProjectNativeRequiredExports,
             "publishRoot/asharia_project_native.dll");
+        var editorContentNativeEntry = Resolve(
+            stagingRoot,
+            "bin/asharia_editor_content_native.dll");
+        ValidatePortableExecutable(
+            editorContentNativeEntry,
+            expectDll: true,
+            "publishRoot/asharia_editor_content_native.dll");
+        ValidateRequiredExports(
+            editorContentNativeEntry,
+            "asharia_editor_content_native.dll",
+            EditorContentNativeRequiredExports,
+            "publishRoot/asharia_editor_content_native.dll");
         var sceneNativeEntry = Resolve(
             stagingRoot,
             "bin/asharia_scene_native.dll");

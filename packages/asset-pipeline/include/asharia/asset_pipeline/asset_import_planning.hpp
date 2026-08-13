@@ -40,6 +40,7 @@ namespace asharia::asset {
         InvalidProductManifest,
         MetadataSourceHashDrift,
         ToolFingerprintFailed,
+        UnresolvedToolDependency,
     };
 
     struct AssetImportToolVersionDependency {
@@ -54,9 +55,16 @@ namespace asharia::asset {
     using AssetToolFingerprintResolver =
         Result<AssetToolFingerprint> (*)(std::string_view logicalToolName);
 
+    enum class AssetImportToolDependencyPolicy : std::uint8_t {
+        ResolveImplicit,
+        DeclaredOnly,
+    };
+
     struct AssetImportPlanOptions {
         std::vector<AssetImportToolVersionDependency> toolVersions;
         AssetToolFingerprintResolver toolFingerprintResolver{};
+        AssetImportToolDependencyPolicy toolDependencyPolicy{
+            AssetImportToolDependencyPolicy::ResolveImplicit};
 
         [[nodiscard]] friend bool operator==(const AssetImportPlanOptions&,
                                              const AssetImportPlanOptions&) = default;

@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -13,6 +14,8 @@ namespace asharia::project {
     inline constexpr std::string_view kAshariaProjectSchema = "com.asharia.project";
     inline constexpr std::uint32_t kAshariaProjectSchemaVersion = 1;
     inline constexpr std::string_view kDefaultAshariaProjectFileName = "asharia.project.json";
+    inline constexpr std::size_t kMaxProjectAssetSourceRoots = 1'024U;
+    inline constexpr std::size_t kMaxProjectIgnoredDirectories = 1'024U;
 
     struct ProjectId {
         std::array<std::uint8_t, 16> bytes{};

@@ -28,6 +28,7 @@ namespace asharia::editor {
         ImportPlanning,
         CatalogMerge,
         CatalogView,
+        LimitExceeded,
     };
 
     struct EditorAssetCatalogDiagnostic {
@@ -45,11 +46,16 @@ namespace asharia::editor {
         std::filesystem::path projectFile;
         std::filesystem::path productManifestFile;
         std::string targetProfile{"editor-preview"};
+        std::uint64_t maxSourceRoots{1'024U};
+        std::uint64_t maxSourceFiles{10'000U};
+        std::uint64_t maxTotalSourceBytes{8ULL * 1024ULL * 1024ULL * 1024ULL};
+        std::uint64_t maxDiagnostics{10'000U};
 
         [[nodiscard]] friend bool operator==(const EditorAssetCatalogSnapshotRequest&,
                                              const EditorAssetCatalogSnapshotRequest&) = default;
         [[nodiscard]] explicit operator bool() const noexcept {
-            return !projectFile.empty() && !targetProfile.empty();
+            return !projectFile.empty() && !targetProfile.empty() && maxSourceRoots > 0U &&
+                   maxSourceFiles > 0U && maxTotalSourceBytes > 0U && maxDiagnostics > 0U;
         }
     };
 
@@ -109,32 +115,10 @@ namespace asharia::editor {
                                              const EditorAssetCatalogNavigationNode&) = default;
     };
 
-    class EditorAssetCatalogStore {
-    public:
-        EditorAssetCatalogStore();
-
-        void useFixtureCatalog();
-        void useSnapshot(EditorAssetCatalogSnapshot snapshot);
-
-        [[nodiscard]] const asharia::asset::AssetCatalogView& catalogView() const noexcept;
-        [[nodiscard]] const EditorAssetCatalogSnapshot* snapshot() const noexcept;
-        [[nodiscard]] std::span<const EditorAssetCatalogDiagnostic> diagnostics() const noexcept;
-
-    private:
-        asharia::asset::AssetCatalogView fixtureCatalog_;
-        EditorAssetCatalogSnapshot snapshot_;
-        bool hasSnapshot_{false};
-    };
-
     [[nodiscard]] EditorAssetCatalogSnapshot
     loadEditorAssetCatalogSnapshot(const EditorAssetCatalogSnapshotRequest& request);
     [[nodiscard]] EditorAssetCatalogSnapshotRequest
     makeEditorAssetCatalogSnapshotRequest(const EditorAssetCatalogSnapshot& snapshot);
-    [[nodiscard]] const EditorAssetCatalogSnapshot*
-    refreshEditorAssetCatalogStore(EditorAssetCatalogStore& store);
-    [[nodiscard]] const EditorAssetCatalogSnapshot*
-    refreshEditorAssetCatalogStore(EditorAssetCatalogStore& store,
-                                   const EditorAssetCatalogSnapshotRequest& request);
     [[nodiscard]] std::filesystem::path
     resolveEditorAssetCatalogSourceFilePath(const EditorAssetCatalogSnapshot& snapshot,
                                             std::string_view sourcePath);
@@ -150,7 +134,6 @@ namespace asharia::editor {
     makeEditorAssetCatalogNavigationNodes(const EditorAssetCatalogSnapshot& snapshot);
     [[nodiscard]] std::string_view
     editorAssetCatalogNavigationNodeKindName(EditorAssetCatalogNavigationNodeKind kind) noexcept;
-    [[nodiscard]] asharia::asset::AssetCatalogView makeEditorAssetBrowserFixtureCatalogView();
     [[nodiscard]] std::string_view
     editorAssetCatalogDiagnosticCodeName(EditorAssetCatalogDiagnosticCode code) noexcept;
     [[nodiscard]] std::string_view editorAssetCatalogDiagnosticSeverityName(

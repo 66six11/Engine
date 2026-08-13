@@ -11,6 +11,7 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -35,6 +36,23 @@ namespace asharia::asset {
         using ToolFingerprintCacheKey = std::pair<std::uint64_t, std::string>;
         using ToolFingerprintCache =
             std::map<ToolFingerprintCacheKey, Result<AssetToolFingerprint>>;
+        using GuidBytes = std::array<std::uint8_t, 16>;
+
+        struct AssetProductKeyLess {
+            [[nodiscard]] bool operator()(const AssetProductKey& lhs,
+                                          const AssetProductKey& rhs) const noexcept {
+                return std::tie(lhs.guid.bytes, lhs.assetType.value, lhs.importerId.value,
+                                lhs.importerVersion.value, lhs.sourceHash, lhs.settingsHash,
+                                lhs.dependencyHash, lhs.targetProfileHash) <
+                       std::tie(rhs.guid.bytes, rhs.assetType.value, rhs.importerId.value,
+                                rhs.importerVersion.value, rhs.sourceHash, rhs.settingsHash,
+                                rhs.dependencyHash, rhs.targetProfileHash);
+            }
+        };
+
+        using SnapshotsBySourcePath = std::map<std::string, std::size_t, std::less<>>;
+        using ProductsByKey = std::map<AssetProductKey, std::size_t, AssetProductKeyLess>;
+        using ProductsByGuid = std::map<GuidBytes, std::vector<const AssetProductRecord*>>;
 
         [[nodiscard]] std::string formatHash64(std::uint64_t value) {
             constexpr std::string_view kHexDigits = "0123456789abcdef";
@@ -101,7 +119,7 @@ namespace asharia::asset {
             if (left.source.sourcePath != right.source.sourcePath) {
                 return left.source.sourcePath < right.source.sourcePath;
             }
-            return formatAssetGuid(left.source.guid) < formatAssetGuid(right.source.guid);
+            return left.source.guid.bytes < right.source.guid.bytes;
         }
 
         [[nodiscard]] std::string toolExecutableName(std::string_view toolName) {
@@ -207,6 +225,41 @@ namespace asharia::asset {
                 });
         }
 
+        [[nodiscard]] bool isShaderCompileReflectionSource(const SourceAssetRecord& source) {
+            return source.importerName == kShaderCompileReflectionImporterName &&
+                   source.importerId == makeImporterId(kShaderCompileReflectionImporterName);
+        }
+
+        [[nodiscard]] std::vector<std::string> unresolvedImplicitToolDependencies(
+            const SourceAssetRecord& source,
+            std::span<const AssetImportToolVersionDependency> toolVersions,
+            AssetImportToolDependencyPolicy toolDependencyPolicy) {
+            if (toolDependencyPolicy != AssetImportToolDependencyPolicy::DeclaredOnly ||
+                !isShaderCompileReflectionSource(source)) {
+                return {};
+            }
+
+            std::vector<std::string> unresolved;
+            for (const std::string_view toolName :
+                 {std::string_view{"slangc"}, std::string_view{"spirv-val"}}) {
+                if (!hasToolVersionFor(toolVersions, source.importerId, toolName)) {
+                    unresolved.emplace_back(toolName);
+                }
+            }
+            return unresolved;
+        }
+
+        [[nodiscard]] std::string unresolvedToolList(std::span<const std::string> toolNames) {
+            std::string list;
+            for (const std::string& toolName : toolNames) {
+                if (!list.empty()) {
+                    list += ", ";
+                }
+                list += "'" + toolName + "'";
+            }
+            return list;
+        }
+
         [[nodiscard]] VoidResult appendDefaultShaderToolVersionDependency(
             std::vector<AssetImportToolVersionDependency>& toolVersions, ImporterId importerId,
             std::string_view toolName, AssetToolFingerprintResolver resolver,
@@ -235,43 +288,13 @@ namespace asharia::asset {
             return {};
         }
 
-        [[nodiscard]] bool isShaderCompileReflectionSource(const SourceAssetRecord& source) {
-            return source.importerName == kShaderCompileReflectionImporterName &&
-                   source.importerId == makeImporterId(kShaderCompileReflectionImporterName);
-        }
-
-        [[nodiscard]] std::optional<std::size_t>
-        findSnapshotIndex(std::span<const AssetSourceSnapshot> snapshots,
-                          std::string_view sourcePath) {
-            for (std::size_t index = 0; index < snapshots.size(); ++index) {
-                if (snapshots[index].sourcePath == sourcePath) {
-                    return index;
-                }
-            }
-            return std::nullopt;
-        }
-
-        [[nodiscard]] std::optional<std::size_t>
-        findProductIndex(std::span<const AssetProductRecord> products,
-                         const AssetProductKey& productKey) {
-            for (std::size_t index = 0; index < products.size(); ++index) {
-                if (products[index].key == productKey) {
-                    return index;
-                }
-            }
-            return std::nullopt;
-        }
-
         [[nodiscard]] AssetImportRequestReason
-        classifyMissReason(std::span<const AssetProductRecord> products,
+        classifyMissReason(std::span<const AssetProductRecord* const> products,
                            const AssetProductKey& productKey) {
             bool sawGuid = false;
             bool sawTargetProfile = false;
-            for (const AssetProductRecord& product : products) {
-                if (product.key.guid != productKey.guid) {
-                    continue;
-                }
-
+            for (const AssetProductRecord* productPointer : products) {
+                const AssetProductRecord& product = *productPointer;
                 sawGuid = true;
                 if (product.key.targetProfileHash != productKey.targetProfileHash) {
                     continue;
@@ -304,6 +327,7 @@ namespace asharia::asset {
         makeImportDependencies(const SourceAssetRecord& source,
                                std::span<const AssetImportToolVersionDependency> toolVersions,
                                AssetToolFingerprintResolver resolver,
+                               AssetImportToolDependencyPolicy toolDependencyPolicy,
                                ToolFingerprintCache& fingerprintCache) {
             std::vector<AssetDependency> dependencies{
                 AssetDependency{
@@ -326,7 +350,8 @@ namespace asharia::asset {
                     matchingToolVersions.push_back(toolVersion);
                 }
             }
-            if (isShaderCompileReflectionSource(source)) {
+            if (toolDependencyPolicy == AssetImportToolDependencyPolicy::ResolveImplicit &&
+                isShaderCompileReflectionSource(source)) {
                 if (auto appended = appendDefaultShaderToolVersionDependency(
                         matchingToolVersions, source.importerId, "slangc", resolver,
                         fingerprintCache);
@@ -362,8 +387,27 @@ namespace asharia::asset {
             return dependencies;
         }
 
+        template <typename Key, typename Compare>
+        [[nodiscard]] std::span<const std::size_t>
+        laterDuplicateIndices(const std::map<Key, std::vector<std::size_t>, Compare>& groups,
+                              const Key& key, std::size_t index) {
+            const auto group = groups.find(key);
+            if (group == groups.end()) {
+                return {};
+            }
+            const auto firstLater = std::ranges::upper_bound(group->second, index);
+            return std::span<const std::size_t>{firstLater, group->second.end()};
+        }
+
         [[nodiscard]] bool validatePlanSources(AssetImportPlanResult& result,
                                                std::span<const DiscoveredSourceAsset> sources) {
+            std::map<GuidBytes, std::vector<std::size_t>> indicesByGuid;
+            std::map<std::string, std::vector<std::size_t>, std::less<>> indicesBySourcePath;
+            for (std::size_t index = 0; index < sources.size(); ++index) {
+                indicesByGuid[sources[index].source.guid.bytes].push_back(index);
+                indicesBySourcePath[sources[index].source.sourcePath].push_back(index);
+            }
+
             bool valid = true;
             for (std::size_t index = 0; index < sources.size(); ++index) {
                 const DiscoveredSourceAsset& source = sources[index];
@@ -387,10 +431,20 @@ namespace asharia::asset {
                     valid = false;
                 }
 
-                for (std::size_t otherIndex = index + 1; otherIndex < sources.size();
-                     ++otherIndex) {
+                const std::span<const std::size_t> sameGuid =
+                    laterDuplicateIndices(indicesByGuid, source.source.guid.bytes, index);
+                const std::span<const std::size_t> samePath =
+                    laterDuplicateIndices(indicesBySourcePath, source.source.sourcePath, index);
+                std::size_t guidOffset = 0U;
+                std::size_t pathOffset = 0U;
+                while (guidOffset < sameGuid.size() || pathOffset < samePath.size()) {
+                    const std::size_t guidIndex =
+                        guidOffset < sameGuid.size() ? sameGuid[guidOffset] : sources.size();
+                    const std::size_t pathIndex =
+                        pathOffset < samePath.size() ? samePath[pathOffset] : sources.size();
+                    const std::size_t otherIndex = (std::min)(guidIndex, pathIndex);
                     const DiscoveredSourceAsset& other = sources[otherIndex];
-                    if (source.source.guid == other.source.guid) {
+                    if (guidIndex == otherIndex) {
                         addDiagnostic(result, AssetImportPlanDiagnosticCode::DuplicateSource,
                                       source.source.sourcePath,
                                       "Asset import planning source[" + std::to_string(index) +
@@ -398,9 +452,10 @@ namespace asharia::asset {
                                           " duplicates source[" + std::to_string(otherIndex) +
                                           "] guid=\"" + formatAssetGuid(other.source.guid) + "\".");
                         valid = false;
+                        ++guidOffset;
                     }
 
-                    if (source.source.sourcePath == other.source.sourcePath) {
+                    if (pathIndex == otherIndex) {
                         addDiagnostic(result, AssetImportPlanDiagnosticCode::DuplicateSource,
                                       source.source.sourcePath,
                                       "Asset import planning source[" + std::to_string(index) +
@@ -408,6 +463,7 @@ namespace asharia::asset {
                                           " duplicates source path with source[" +
                                           std::to_string(otherIndex) + "].");
                         valid = false;
+                        ++pathOffset;
                     }
                 }
             }
@@ -417,6 +473,11 @@ namespace asharia::asset {
 
         [[nodiscard]] bool validatePlanSnapshots(AssetImportPlanResult& result,
                                                  std::span<const AssetSourceSnapshot> snapshots) {
+            std::map<std::string, std::vector<std::size_t>, std::less<>> indicesBySourcePath;
+            for (std::size_t index = 0; index < snapshots.size(); ++index) {
+                indicesBySourcePath[snapshots[index].sourcePath].push_back(index);
+            }
+
             bool valid = true;
             for (std::size_t index = 0; index < snapshots.size(); ++index) {
                 const AssetSourceSnapshot& snapshot = snapshots[index];
@@ -438,21 +499,34 @@ namespace asharia::asset {
                     valid = false;
                 }
 
-                for (std::size_t otherIndex = index + 1; otherIndex < snapshots.size();
-                     ++otherIndex) {
-                    if (snapshot.sourcePath == snapshots[otherIndex].sourcePath) {
-                        addDiagnostic(result,
-                                      AssetImportPlanDiagnosticCode::DuplicateSourceSnapshot,
-                                      snapshot.sourcePath,
-                                      "Asset import planning snapshot[" + std::to_string(index) +
-                                          "] duplicates source path with snapshot[" +
-                                          std::to_string(otherIndex) + "].");
-                        valid = false;
-                    }
+                const std::span<const std::size_t> duplicates =
+                    laterDuplicateIndices(indicesBySourcePath, snapshot.sourcePath, index);
+                for (const std::size_t otherIndex : duplicates) {
+                    addDiagnostic(result, AssetImportPlanDiagnosticCode::DuplicateSourceSnapshot,
+                                  snapshot.sourcePath,
+                                  "Asset import planning snapshot[" + std::to_string(index) +
+                                      "] duplicates source path with snapshot[" +
+                                      std::to_string(otherIndex) + "].");
+                    valid = false;
                 }
             }
 
             return valid;
+        }
+
+        void populatePlanIndex(std::span<const AssetSourceSnapshot> snapshots,
+                               std::span<const AssetProductRecord> products,
+                               SnapshotsBySourcePath& snapshotsBySourcePath,
+                               ProductsByKey& productsByKey, ProductsByGuid& productsByGuid) {
+            for (std::size_t snapshotIndex = 0U; snapshotIndex < snapshots.size();
+                 ++snapshotIndex) {
+                snapshotsBySourcePath.emplace(snapshots[snapshotIndex].sourcePath, snapshotIndex);
+            }
+            for (std::size_t productIndex = 0U; productIndex < products.size(); ++productIndex) {
+                const AssetProductRecord& product = products[productIndex];
+                productsByKey.emplace(product.key, productIndex);
+                productsByGuid[product.key.guid.bytes].push_back(&product);
+            }
         }
 
     } // namespace
@@ -497,6 +571,11 @@ namespace asharia::asset {
         if (!validSources || !validSnapshots) {
             return result;
         }
+        SnapshotsBySourcePath snapshotsBySourcePath;
+        ProductsByKey productsByKey;
+        ProductsByGuid productsByGuid;
+        populatePlanIndex(snapshots, productManifest.products, snapshotsBySourcePath, productsByKey,
+                          productsByGuid);
 
         std::vector<std::size_t> orderedSourceIndices;
         orderedSourceIndices.reserve(sources.size());
@@ -512,9 +591,8 @@ namespace asharia::asset {
 
         for (std::size_t sourceIndex : orderedSourceIndices) {
             const DiscoveredSourceAsset& discovered = sources[sourceIndex];
-            const std::optional<std::size_t> snapshotIndex =
-                findSnapshotIndex(snapshots, discovered.source.sourcePath);
-            if (!snapshotIndex) {
+            const auto snapshotIndex = snapshotsBySourcePath.find(discovered.source.sourcePath);
+            if (snapshotIndex == snapshotsBySourcePath.end()) {
                 addDiagnostic(result, AssetImportPlanDiagnosticCode::MissingSourceSnapshot,
                               discovered.source.sourcePath,
                               "Asset import planning source " + sourceLabel(discovered.source) +
@@ -523,7 +601,7 @@ namespace asharia::asset {
             }
 
             SourceAssetRecord plannedSource = discovered.source;
-            plannedSource.sourceHash = snapshots[*snapshotIndex].sourceHash;
+            plannedSource.sourceHash = snapshots[snapshotIndex->second].sourceHash;
             plannedSource.settingsHash = hashAssetImportSettings(discovered.settings);
             if (discovered.source.sourceHash != plannedSource.sourceHash) {
                 addDiagnostic(result, AssetImportPlanDiagnosticCode::MetadataSourceHashDrift,
@@ -538,9 +616,23 @@ namespace asharia::asset {
                               AssetImportPlanDiagnosticSeverity::Warning);
             }
 
-            Result<std::vector<AssetDependency>> dependencyResult =
-                makeImportDependencies(plannedSource, options.toolVersions,
-                                       options.toolFingerprintResolver, fingerprintCache);
+            const std::vector<std::string> unresolvedTools = unresolvedImplicitToolDependencies(
+                plannedSource, options.toolVersions, options.toolDependencyPolicy);
+            if (!unresolvedTools.empty()) {
+                addDiagnostic(result, AssetImportPlanDiagnosticCode::UnresolvedToolDependency,
+                              plannedSource.sourcePath,
+                              "Asset import planning cannot prove a product key for " +
+                                  sourceLabel(plannedSource) +
+                                  " because declared-only tool dependencies " +
+                                  unresolvedToolList(unresolvedTools) +
+                                  " were not provided. No environment tools were resolved.",
+                              AssetImportPlanDiagnosticSeverity::Warning);
+                continue;
+            }
+
+            Result<std::vector<AssetDependency>> dependencyResult = makeImportDependencies(
+                plannedSource, options.toolVersions, options.toolFingerprintResolver,
+                options.toolDependencyPolicy, fingerprintCache);
             if (!dependencyResult) {
                 addDiagnostic(result, AssetImportPlanDiagnosticCode::ToolFingerprintFailed,
                               plannedSource.sourcePath,
@@ -562,13 +654,12 @@ namespace asharia::asset {
                 continue;
             }
 
-            const std::optional<std::size_t> productIndex =
-                findProductIndex(productManifest.products, productKey);
-            if (productIndex) {
+            const auto productIndex = productsByKey.find(productKey);
+            if (productIndex != productsByKey.end()) {
                 result.cacheHits.push_back(AssetImportCacheHit{
                     .source = std::move(plannedSource),
                     .dependencies = std::move(dependencies),
-                    .product = productManifest.products[*productIndex],
+                    .product = productManifest.products[productIndex->second],
                 });
                 continue;
             }
@@ -579,7 +670,15 @@ namespace asharia::asset {
                 .dependencies = std::move(dependencies),
                 .productKey = productKey,
                 .relativeProductPath = productPath,
-                .reason = classifyMissReason(productManifest.products, productKey),
+                .reason =
+                    [&productsByGuid, &productKey]() {
+                        const auto products = productsByGuid.find(productKey.guid.bytes);
+                        const std::span<const AssetProductRecord* const> matching =
+                            products == productsByGuid.end()
+                                ? std::span<const AssetProductRecord* const>{}
+                                : std::span<const AssetProductRecord* const>{products->second};
+                        return classifyMissReason(matching, productKey);
+                    }(),
             });
         }
 

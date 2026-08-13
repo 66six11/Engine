@@ -1,30 +1,397 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:icons="using:Editor.UI.Icons"
              xmlns:vm="using:Editor.Shell.ViewModels.Panels"
-             xmlns:commands="using:Editor.Shell.Commands"
-             xmlns:actions="using:Editor.Shell.Actions"
              x:Class="Editor.Shell.Views.Panels.StudioProjectPanelView"
              x:DataType="vm:StudioProjectPanelViewModel"
+             MinWidth="180"
              AutomationProperties.AutomationId="StudioProjectPanel"
-             AutomationProperties.Name="Project"
+             AutomationProperties.Name="Resource Browser"
              AutomationProperties.ControlTypeOverride="Group">
-    <ScrollViewer>
-        <StackPanel Margin="10" Spacing="8">
-            <TextBlock FontWeight="SemiBold" Text="{Binding Shell.ProjectStateText}" />
-            <TextBlock FontSize="11"
-                       Foreground="{DynamicResource EditorBrushTextMuted}"
-                       TextWrapping="Wrap"
-                       Text="{Binding Shell.ProjectPathText}" />
-            <TextBlock Margin="0,8,0,0"
-                       Foreground="{DynamicResource EditorBrushTextMuted}"
-                       TextWrapping="Wrap"
-                       Text="Asset browsing will attach here after the document editing closure." />
-            <StackPanel Orientation="Horizontal" Spacing="8">
-                <Button commands:StudioActionButton.ActionId="{x:Static actions:StudioShellActionIds.OpenProject}"
-                        Content="Open" />
-                <Button commands:StudioActionButton.ActionId="{x:Static actions:StudioShellActionIds.CloseProject}"
-                        Content="Close" />
-            </StackPanel>
-        </StackPanel>
-    </ScrollViewer>
+    <UserControl.Styles>
+        <Style Selector="Border.resource-toolbar">
+            <Setter Property="Padding" Value="6,5,6,4" />
+            <Setter Property="Background" Value="{DynamicResource EditorBrushSurface01}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource EditorBrushDivider}" />
+            <Setter Property="BorderThickness" Value="0,0,0,1" />
+        </Style>
+
+        <Style Selector="Border.resource-search-frame">
+            <Setter Property="MinHeight" Value="22" />
+            <Setter Property="Background" Value="{DynamicResource EditorBrushInputBackground}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource EditorBrushBorderSubtle}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="4" />
+        </Style>
+
+        <Style Selector="Border.resource-search-frame:focus-within">
+            <Setter Property="BorderBrush" Value="{DynamicResource EditorBrushBorderInteractive}" />
+        </Style>
+
+        <Style Selector="TextBox.resource-search">
+            <Setter Property="MinHeight" Value="22" />
+            <Setter Property="Padding" Value="21,0,5,0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeDefault}" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+
+        <Style Selector="Button.resource-tool-button, ToggleButton.resource-tool-button">
+            <Setter Property="MinWidth" Value="0" />
+            <Setter Property="MinHeight" Value="22" />
+            <Setter Property="Padding" Value="6,2" />
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeSmall}" />
+        </Style>
+
+        <Style Selector="ComboBox.resource-filter">
+            <Setter Property="MinWidth" Value="92" />
+            <Setter Property="MinHeight" Value="22" />
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeSmall}" />
+        </Style>
+
+        <Style Selector="Border.resource-notice">
+            <Setter Property="Padding" Value="6,4" />
+            <Setter Property="Background" Value="{DynamicResource EditorBrushSurface02}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource EditorBrushWarning}" />
+            <Setter Property="BorderThickness" Value="0,0,0,1" />
+        </Style>
+
+        <Style Selector="TextBlock.resource-notice-text">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushWarning}" />
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeSmall}" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+
+        <Style Selector="Border.resource-section-header">
+            <Setter Property="Padding" Value="6,2" />
+            <Setter Property="Background" Value="{DynamicResource EditorBrushBase01}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource EditorBrushDivider}" />
+            <Setter Property="BorderThickness" Value="0,0,0,1" />
+        </Style>
+
+        <Style Selector="TextBlock.resource-section-label">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextDisabled}" />
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeSmall}" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <Style Selector="ListBox.resource-list">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="0" />
+        </Style>
+
+        <Style Selector="ListBox.resource-list ListBoxItem">
+            <Setter Property="Height" Value="22" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="FocusAdorner" Value="{x:Null}" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        </Style>
+
+        <Style Selector="ListBox.resource-list ListBoxItem:pointerover">
+            <Setter Property="Background" Value="{DynamicResource EditorBrushHierarchyRowHover}" />
+        </Style>
+
+        <Style Selector="ListBox.resource-list ListBoxItem:selected">
+            <Setter Property="Background" Value="{DynamicResource EditorBrushSelectionInactive}" />
+        </Style>
+
+        <Style Selector="icons|EditorIconView.resource-icon">
+            <Setter Property="Width" Value="14" />
+            <Setter Property="Height" Value="14" />
+            <Setter Property="IconBrush" Value="{DynamicResource EditorBrushIconSecondary}" />
+            <Setter Property="IsHitTestVisible" Value="False" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <Style Selector="TextBlock.resource-primary-cell">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextPrimary}" />
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeDefault}" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <Style Selector="TextBlock.resource-secondary-cell">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextMuted}" />
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeSmall}" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <Style Selector="TextBlock.resource-empty-title">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextSecondary}" />
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeDefault}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="TextAlignment" Value="Center" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+
+        <Style Selector="TextBlock.resource-empty-message">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextMuted}" />
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeSmall}" />
+            <Setter Property="TextAlignment" Value="Center" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+
+        <Style Selector="TextBlock.resource-detail-label">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextDisabled}" />
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeSmall}" />
+            <Setter Property="VerticalAlignment" Value="Top" />
+        </Style>
+
+        <Style Selector="TextBlock.resource-detail-value">
+            <Setter Property="Foreground" Value="{DynamicResource EditorBrushTextSecondary}" />
+            <Setter Property="FontSize" Value="{DynamicResource EditorFontSizeSmall}" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+            <Setter Property="VerticalAlignment" Value="Top" />
+        </Style>
+    </UserControl.Styles>
+
+    <Border Background="{DynamicResource EditorBrushBase00}">
+        <Grid RowDefinitions="Auto,Auto,86,Auto,Auto,*,Auto,Auto">
+            <Border Grid.Row="0" Classes="resource-toolbar">
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                    <Border Grid.Column="0" Classes="resource-search-frame">
+                        <Grid>
+                            <TextBox x:Name="ResourceSearchBox"
+                                     Classes="resource-search"
+                                     Text="{Binding SearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                     IsEnabled="{Binding IsSearchEnabled}"
+                                     PlaceholderText="Search resources"
+                                     AutomationProperties.Name="Search resources" />
+                            <icons:EditorIconView Margin="5,0,0,0"
+                                                  Width="12"
+                                                  Height="12"
+                                                  HorizontalAlignment="Left"
+                                                  VerticalAlignment="Center"
+                                                  IsHitTestVisible="False"
+                                                  IconBrush="{DynamicResource EditorBrushIconSecondary}"
+                                                  IconKey="{x:Static icons:EditorIconKey.UiSearch}"
+                                                  IconSize="12" />
+                        </Grid>
+                    </Border>
+                    <Button x:Name="ResourceRefreshButton"
+                            Grid.Column="1"
+                            Classes="resource-tool-button"
+                            Command="{Binding RefreshCommand}"
+                            Content="Refresh"
+                            AutomationProperties.Name="Refresh resource catalog" />
+                </Grid>
+            </Border>
+
+            <Border x:Name="ResourceDegradedBanner"
+                    Grid.Row="1"
+                    Classes="resource-notice"
+                    IsVisible="{Binding IsDegraded}">
+                <TextBlock Classes="resource-notice-text"
+                           Text="{Binding DegradedMessage}" />
+            </Border>
+
+            <Grid Grid.Row="2" RowDefinitions="Auto,*" IsVisible="{Binding IsContentVisible}">
+                <Border Grid.Row="0" Classes="resource-section-header">
+                    <TextBlock Classes="resource-section-label" Text="LOCATION" />
+                </Border>
+                <ListBox x:Name="ResourceNavigationList"
+                         Grid.Row="1"
+                         Classes="resource-list"
+                         ItemsSource="{Binding NavigationRows}"
+                         SelectedItem="{Binding SelectedNavigation, Mode=TwoWay}"
+                         AutomationProperties.Name="Resource locations">
+                    <ListBox.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <VirtualizingStackPanel />
+                        </ItemsPanelTemplate>
+                    </ListBox.ItemsPanel>
+                    <ListBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:StudioResourceNavigationRowViewModel">
+                            <Grid Height="22"
+                                  ColumnDefinitions="Auto,16,*"
+                                  AutomationProperties.Name="{Binding AutomationName}">
+                                <Border Grid.Column="0" Width="{Binding IndentWidth}" />
+                                <icons:EditorIconView Grid.Column="1"
+                                                      Classes="resource-icon"
+                                                      IconKey="{Binding IconKey}"
+                                                      IconSize="14" />
+                                <TextBlock Grid.Column="2"
+                                           Margin="3,0,6,0"
+                                           Classes="resource-primary-cell"
+                                           Text="{Binding DisplayName}"
+                                           ToolTip.Tip="{Binding ScopePath}" />
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </Grid>
+
+            <Border Grid.Row="3"
+                    Classes="resource-toolbar"
+                    IsVisible="{Binding IsContentVisible}">
+                <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                              VerticalScrollBarVisibility="Disabled">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <ComboBox x:Name="ResourceTypeFilter"
+                                  Classes="resource-filter"
+                                  ItemsSource="{Binding TypeOptions}"
+                                  SelectedItem="{Binding SelectedType, Mode=TwoWay}"
+                                  AutomationProperties.Name="Resource type filter" />
+                        <ComboBox x:Name="ResourceProductFilter"
+                                  Classes="resource-filter"
+                                  ItemsSource="{Binding ProductFilterOptions}"
+                                  SelectedItem="{Binding SelectedProductFilter, Mode=TwoWay}"
+                                  AutomationProperties.Name="Product status filter">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate x:DataType="vm:StudioResourceProductFilterOption">
+                                    <TextBlock Text="{Binding DisplayName}" />
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <ToggleButton x:Name="ResourceDetailsToggle"
+                                      Classes="resource-tool-button"
+                                      IsChecked="{Binding IsDetailsExpanded, Mode=TwoWay}"
+                                      IsEnabled="{Binding HasSelection}"
+                                      Content="Details"
+                                      AutomationProperties.Name="Toggle resource details" />
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+
+            <Grid Grid.Row="4"
+                  Height="22"
+                  ColumnDefinitions="16,*,78,74"
+                  Classes="resource-section-header"
+                  IsVisible="{Binding IsContentVisible}">
+                <TextBlock Grid.Column="1" Classes="resource-section-label" Text="Name" />
+                <TextBlock Grid.Column="2" Margin="6,0" Classes="resource-section-label" Text="Type" />
+                <TextBlock Grid.Column="3" Margin="6,0" Classes="resource-section-label" Text="Product" />
+            </Grid>
+
+            <Grid Grid.Row="5" IsVisible="{Binding IsContentVisible}">
+                <ListBox x:Name="ResourceAssetList"
+                         Classes="resource-list"
+                         ItemsSource="{Binding VisibleAssets}"
+                         SelectedItem="{Binding SelectedAsset, Mode=TwoWay}"
+                         AutomationProperties.Name="Project resources">
+                    <ListBox.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <VirtualizingStackPanel />
+                        </ItemsPanelTemplate>
+                    </ListBox.ItemsPanel>
+                    <ListBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:StudioResourceAssetRowViewModel">
+                            <Grid Height="22"
+                                  ColumnDefinitions="16,*,78,74"
+                                  AutomationProperties.Name="{Binding AutomationName}">
+                                <icons:EditorIconView Grid.Column="0"
+                                                      Classes="resource-icon"
+                                                      IconKey="{Binding IconKey}"
+                                                      IconSize="14" />
+                                <TextBlock Grid.Column="1"
+                                           Margin="3,0,0,0"
+                                           Classes="resource-primary-cell"
+                                           Text="{Binding DisplayName}"
+                                           ToolTip.Tip="{Binding SourcePath}" />
+                                <TextBlock Grid.Column="2"
+                                           Margin="6,0"
+                                           Classes="resource-secondary-cell"
+                                           Text="{Binding AssetTypeName}" />
+                                <TextBlock Grid.Column="3"
+                                           Margin="6,0"
+                                           Classes="resource-secondary-cell"
+                                           Text="{Binding ProductStateText}" />
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+
+                <Border x:Name="ResourceEmptyState"
+                        IsVisible="{Binding IsEmptyStateVisible}"
+                        IsHitTestVisible="False">
+                    <TextBlock HorizontalAlignment="Center"
+                               VerticalAlignment="Center"
+                               Margin="12"
+                               Classes="resource-empty-message"
+                               Text="{Binding EmptyStateText}" />
+                </Border>
+            </Grid>
+
+            <Border x:Name="ResourceDetails"
+                    Grid.Row="6"
+                    MaxHeight="132"
+                    Padding="6,4"
+                    Background="{DynamicResource EditorBrushSurface01}"
+                    BorderBrush="{DynamicResource EditorBrushDivider}"
+                    BorderThickness="0,1,0,0"
+                    IsVisible="{Binding IsDetailsVisible}">
+                <ScrollViewer HorizontalScrollBarVisibility="Disabled"
+                              VerticalScrollBarVisibility="Auto">
+                    <Grid ColumnDefinitions="64,*"
+                          RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
+                          RowSpacing="2">
+                        <TextBlock Grid.Row="0" Grid.Column="0" Classes="resource-detail-label" Text="Asset" />
+                        <TextBlock Grid.Row="0" Grid.Column="1" Classes="resource-detail-value" Text="{Binding SelectedAsset.DetailHeader}" />
+                        <TextBlock Grid.Row="1" Grid.Column="0" Classes="resource-detail-label" Text="Path" />
+                        <TextBlock Grid.Row="1" Grid.Column="1" Classes="resource-detail-value" Text="{Binding SelectedAsset.SourcePath}" ToolTip.Tip="{Binding SelectedAsset.SourcePath}" />
+                        <TextBlock Grid.Row="2" Grid.Column="0" Classes="resource-detail-label" Text="GUID" />
+                        <TextBlock Grid.Row="2" Grid.Column="1" Classes="resource-detail-value" Text="{Binding SelectedAsset.GuidText}" />
+                        <TextBlock Grid.Row="3" Grid.Column="0" Classes="resource-detail-label" Text="Importer" />
+                        <TextBlock Grid.Row="3" Grid.Column="1" Classes="resource-detail-value" Text="{Binding SelectedAsset.ImporterText}" />
+                        <TextBlock Grid.Row="4" Grid.Column="0" Classes="resource-detail-label" Text="Profile" />
+                        <TextBlock Grid.Row="4" Grid.Column="1" Classes="resource-detail-value" Text="{Binding SelectedAsset.ProfileText}" />
+                        <TextBlock Grid.Row="5" Grid.Column="0" Classes="resource-detail-label" Text="Role" />
+                        <TextBlock Grid.Row="5" Grid.Column="1" Classes="resource-detail-value" Text="{Binding SelectedAsset.RoleText}" />
+                        <TextBlock Grid.Row="6" Grid.Column="0" Classes="resource-detail-label" Text="Products" />
+                        <TextBlock Grid.Row="6" Grid.Column="1" Classes="resource-detail-value" Text="{Binding SelectedAsset.ProductCountText}" />
+                        <TextBlock Grid.Row="7" Grid.Column="0" Classes="resource-detail-label" Text="Sub-assets" />
+                        <TextBlock Grid.Row="7" Grid.Column="1" Classes="resource-detail-value" Text="{Binding SelectedAsset.SubAssetSummaryText}" ToolTip.Tip="{Binding SelectedAsset.SubAssetSummaryText}" />
+                        <TextBlock Grid.Row="8" Grid.Column="0" Classes="resource-detail-label" Text="Diagnostics" />
+                        <TextBlock Grid.Row="8" Grid.Column="1" Classes="resource-detail-value" Text="{Binding SelectedAsset.DiagnosticSummaryText}" ToolTip.Tip="{Binding SelectedAsset.DiagnosticSummaryText}" />
+                    </Grid>
+                </ScrollViewer>
+            </Border>
+
+            <Border Grid.Row="7"
+                    MinHeight="22"
+                    Padding="6,2"
+                    Background="{DynamicResource EditorBrushBase01}"
+                    BorderBrush="{DynamicResource EditorBrushDivider}"
+                    BorderThickness="0,1,0,0">
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                    <TextBlock Grid.Column="0"
+                               Classes="resource-secondary-cell"
+                               Text="{Binding StatusText}" />
+                    <TextBlock Grid.Column="1"
+                               Classes="resource-secondary-cell"
+                               IsVisible="{Binding HasCatalogDiagnostics}"
+                               Text="{Binding CatalogDiagnosticText}" />
+                </Grid>
+            </Border>
+
+            <Border x:Name="ResourceBlockingState"
+                    Grid.Row="0"
+                    Grid.RowSpan="8"
+                    Background="{DynamicResource EditorBrushBase00}"
+                    IsVisible="{Binding IsBlockingStateVisible}">
+                <StackPanel MaxWidth="220"
+                            Margin="16"
+                            Spacing="6"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center">
+                    <TextBlock Classes="resource-empty-title"
+                               Text="{Binding BlockingTitle}" />
+                    <TextBlock Classes="resource-empty-message"
+                               Text="{Binding BlockingMessage}" />
+                    <Button Classes="resource-tool-button"
+                            Margin="0,4,0,0"
+                            HorizontalAlignment="Center"
+                            Command="{Binding RefreshCommand}"
+                            Content="Try again"
+                            IsVisible="{Binding IsFailed}"
+                            AutomationProperties.Name="Retry resource catalog" />
+                </StackPanel>
+            </Border>
+        </Grid>
+    </Border>
 </UserControl>

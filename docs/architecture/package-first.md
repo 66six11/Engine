@@ -31,6 +31,7 @@ AshariaEngine/
     project-core/
     asset-core/
     asset-pipeline/
+    editor-content/
     resource-runtime/
     material-core/
     shader-authoring/
@@ -178,6 +179,11 @@ package 用来承载可选能力：
   推入 `asset-core`，也不拥有 watcher、后台 import 调度、GPU upload 或 editor UI。
 - `resource-runtime` 当前是 CPU-only product-resolution baseline：按稳定资产 key 和期望 product record 管理
   request generation 与 Pending/Ready/Failed 状态；它尚不读取 artifact bytes、不拥有 typed CPU payload 或 GPU object。
+- `editor-content` 是 `ownerDomain=editor` 的 source-boundary package，计划归入完整
+  `com.asharia.system.editor`。`asharia::editor_content` 只读组合 `project_core_io`、`asset_core`/`asset_core_io`
+  和 `asset_pipeline`，导出 UI-neutral project catalog snapshot；`asharia::editor_content_native` 只增加
+  `archive` JSON 与 Studio caller-owned bounded C ABI。它不是用户可选安装碎片，不拥有 ImGui/Avalonia UI、
+  importer execution、watcher、`resource-runtime`、renderer/RHI 或 GPU resource。
 - `material-core` 提供 CPU-only material resource signature、descriptor contract 和 pipeline key 数据模型；
   当前只依赖 `core`，不拥有 `.amat` IO、asset import、GPU upload、Vulkan pipeline/cache 或 editor UI。
 - `shader-authoring` 提供 CPU-only `.ashader` document model、parser、source spans、authoring diagnostics、
@@ -664,6 +670,9 @@ runtime/rendering packages 的 editor-only executable：
 
 - 当前 editor 负责 ImGui runtime、dockspace、main menu、panel/action/event state、Scene View
   viewport request 和 ImGui texture descriptor registration。
+- 当前 Dear ImGui Asset Browser 的 fixture/store/icon/import-settings command 留在 `apps/editor` host；project catalog
+  query 已抽到 `editor-content`，因此 Avalonia Studio 可经专用 adapter 消费同一 value contract，而不依赖 ImGui host
+  或复制 query logic。
 - 当前 editor 通过 `renderer_basic_vulkan` 输出 sampled RenderView，并通过 `rhi-vulkan`
   frame loop 提交/present；panel 代码不录制 Vulkan commands。
 - 未来 editor 加载 package metadata、读取 asset database，并通过 renderer package 提供的
@@ -686,6 +695,8 @@ app integration 层，不能为了方便把 package/private 实现直接并进 a
 
 - `apps/sample-viewer` 是 sample host 和 runtime smoke harness。
 - `apps/editor` 是 editor host 和 editor smoke harness。
+- `packages/editor-content` 是两个 editor host 共用的 UI-neutral只读 catalog query 边界；它不因被 host 消费而成为
+  runtime app dependency。
 - Vulkan 代码位于 `packages/rhi-vulkan`。
 - 性能数据底座位于 `packages/profiling`，不依赖 Vulkan、RenderGraph 或 editor UI。
 - render graph 位于 `packages/rendergraph`。

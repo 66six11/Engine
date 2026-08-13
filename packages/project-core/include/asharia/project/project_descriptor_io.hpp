@@ -42,6 +42,11 @@ namespace asharia::project {
     [[nodiscard]] Result<AshariaProjectDescriptor>
     readAshariaProjectDescriptorFile(const std::filesystem::path& path);
 
+    [[nodiscard]] Result<std::filesystem::path>
+    resolveContainedProjectPath(const std::filesystem::path& projectRoot,
+                                const std::filesystem::path& projectRelativePath,
+                                std::string_view context);
+
     [[nodiscard]] Result<OpenedAshariaProject>
     openAshariaProject(const std::filesystem::path& projectPath);
     [[nodiscard]] Result<OpenedAshariaProject>

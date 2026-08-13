@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <expected>
+#include <iterator>
 #include <string>
 #include <utility>
 
@@ -38,6 +39,19 @@ namespace asharia::asset {
         }
 
         sources_.push_back(std::move(record));
+        const std::size_t sourceIndex = sources_.size() - 1U;
+        try {
+            sourceIndicesByGuid_.emplace(sources_.back().guid.bytes, sourceIndex);
+            try {
+                sourceIndicesByPath_.emplace(sources_.back().sourcePath, sourceIndex);
+            } catch (...) {
+                sourceIndicesByGuid_.erase(sources_.back().guid.bytes);
+                throw;
+            }
+        } catch (...) {
+            sources_.pop_back();
+            throw;
+        }
         return {};
     }
 
@@ -48,14 +62,12 @@ namespace asharia::asset {
             return std::unexpected{std::move(validRecord.error())};
         }
 
-        auto existing =
-            std::ranges::find_if(sources_, [guid = record.guid](const SourceAssetRecord& source) {
-                return source.guid == guid;
-            });
-        if (existing == sources_.end()) {
+        const auto existingIndex = sourceIndicesByGuid_.find(record.guid.bytes);
+        if (existingIndex == sourceIndicesByGuid_.end()) {
             return std::unexpected{assetCatalogError("Asset catalog cannot update missing source " +
                                                      sourceRecordLabel(record) + ".")};
         }
+        SourceAssetRecord& existing = sources_[existingIndex->second];
 
         if (const SourceAssetRecord* pathOwner = findBySourcePath(record.sourcePath);
             pathOwner != nullptr && pathOwner->guid != record.guid) {
@@ -64,14 +76,24 @@ namespace asharia::asset {
                 " new " + sourceRecordLabel(record) + ".")};
         }
 
-        if (existing->sourcePath != record.sourcePath &&
+        if (existing.sourcePath != record.sourcePath &&
             relocationPolicy == AssetCatalogRelocationPolicy::RejectPathChange) {
             return std::unexpected{assetCatalogError("Asset catalog relocation rejected existing " +
-                                                     sourceRecordLabel(*existing) + " new " +
+                                                     sourceRecordLabel(existing) + " new " +
                                                      sourceRecordLabel(record) + ".")};
         }
 
-        *existing = std::move(record);
+        if (existing.sourcePath != record.sourcePath) {
+            const auto inserted =
+                sourceIndicesByPath_.emplace(record.sourcePath, existingIndex->second);
+            if (!inserted.second) {
+                return std::unexpected{
+                    assetCatalogError("Asset catalog could not index relocated source " +
+                                      sourceRecordLabel(record) + ".")};
+            }
+            sourceIndicesByPath_.erase(existing.sourcePath);
+        }
+        existing = std::move(record);
         return {};
     }
 
@@ -81,31 +103,41 @@ namespace asharia::asset {
                 assetCatalogError("Asset catalog cannot remove invalid asset GUID.")};
         }
 
-        const auto existing = std::ranges::find_if(
-            sources_, [guid](const SourceAssetRecord& source) { return source.guid == guid; });
-        if (existing == sources_.end()) {
+        const auto existing = sourceIndicesByGuid_.find(guid.bytes);
+        if (existing == sourceIndicesByGuid_.end()) {
             return std::unexpected{
                 assetCatalogError("Asset catalog cannot remove missing source guid=\"" +
                                   formatAssetGuid(guid) + "\".")};
         }
 
-        sources_.erase(existing);
+        const std::size_t removedIndex = existing->second;
+        sourceIndicesByPath_.erase(sources_[removedIndex].sourcePath);
+        sourceIndicesByGuid_.erase(existing);
+        sources_.erase(std::next(sources_.begin(), static_cast<std::ptrdiff_t>(removedIndex)));
+        for (auto& [guidBytes, sourceIndex] : sourceIndicesByGuid_) {
+            (void)guidBytes;
+            if (sourceIndex > removedIndex) {
+                --sourceIndex;
+            }
+        }
+        for (auto& [sourcePath, sourceIndex] : sourceIndicesByPath_) {
+            (void)sourcePath;
+            if (sourceIndex > removedIndex) {
+                --sourceIndex;
+            }
+        }
         return {};
     }
 
     const SourceAssetRecord* AssetCatalog::findByGuid(AssetGuid guid) const noexcept {
-        const auto found = std::ranges::find_if(
-            sources_, [guid](const SourceAssetRecord& source) { return source.guid == guid; });
-        return found == sources_.end() ? nullptr : &*found;
+        const auto found = sourceIndicesByGuid_.find(guid.bytes);
+        return found == sourceIndicesByGuid_.end() ? nullptr : &sources_[found->second];
     }
 
     const SourceAssetRecord*
     AssetCatalog::findBySourcePath(std::string_view sourcePath) const noexcept {
-        const auto found =
-            std::ranges::find_if(sources_, [sourcePath](const SourceAssetRecord& source) {
-                return source.sourcePath == sourcePath;
-            });
-        return found == sources_.end() ? nullptr : &*found;
+        const auto found = sourceIndicesByPath_.find(sourcePath);
+        return found == sourceIndicesByPath_.end() ? nullptr : &sources_[found->second];
     }
 
     std::span<const SourceAssetRecord> AssetCatalog::sources() const noexcept {

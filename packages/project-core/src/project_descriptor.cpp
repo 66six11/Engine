@@ -100,6 +100,10 @@ namespace asharia::project {
         validateUniqueAssetSourceRoot(const AssetSourceRootDesc& root,
                                       const std::vector<AssetSourceRootDesc>& roots,
                                       std::size_t index) {
+            const auto isPathPrefix = [](std::string_view prefix, std::string_view path) {
+                return path.starts_with(prefix) && path.size() > prefix.size() &&
+                       path[prefix.size()] == '/';
+            };
             for (std::size_t otherIndex = index + 1; otherIndex < roots.size(); ++otherIndex) {
                 const AssetSourceRootDesc& other = roots[otherIndex];
                 if (root.rootName == other.rootName) {
@@ -112,10 +116,24 @@ namespace asharia::project {
                         projectError("Asharia project assetSourceRoots duplicate directory \"" +
                                      root.directory + "\".")};
                 }
+                if (isPathPrefix(root.directory, other.directory) ||
+                    isPathPrefix(other.directory, root.directory)) {
+                    return std::unexpected{projectError(
+                        "Asharia project assetSourceRoots must not use overlapping directory "
+                        "values \"" +
+                        root.directory + "\" and \"" + other.directory + "\".")};
+                }
                 if (root.sourcePathPrefix == other.sourcePathPrefix) {
                     return std::unexpected{projectError(
                         "Asharia project assetSourceRoots duplicate sourcePathPrefix \"" +
                         root.sourcePathPrefix + "\".")};
+                }
+                if (isPathPrefix(root.sourcePathPrefix, other.sourcePathPrefix) ||
+                    isPathPrefix(other.sourcePathPrefix, root.sourcePathPrefix)) {
+                    return std::unexpected{projectError(
+                        "Asharia project assetSourceRoots must not use overlapping "
+                        "sourcePathPrefix values \"" +
+                        root.sourcePathPrefix + "\" and \"" + other.sourcePathPrefix + "\".")};
                 }
             }
             return {};
@@ -257,6 +275,16 @@ namespace asharia::project {
         if (descriptor.assetSourceRoots.empty()) {
             return std::unexpected{
                 projectError("Asharia project assetSourceRoots must not be empty.")};
+        }
+        if (descriptor.assetSourceRoots.size() > kMaxProjectAssetSourceRoots) {
+            return std::unexpected{projectError(
+                "Asharia project assetSourceRoots exceeds the maximum supported count.")};
+        }
+        if (descriptor.assetDiscovery.ignoredDirectoryNames.size() >
+            kMaxProjectIgnoredDirectories) {
+            return std::unexpected{projectError(
+                "Asharia project assetDiscovery.ignoredDirectories exceeds the maximum "
+                "supported count.")};
         }
 
         for (std::size_t index = 0; index < descriptor.assetSourceRoots.size(); ++index) {

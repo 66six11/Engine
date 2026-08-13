@@ -6,6 +6,8 @@
 
 > 本文保留旧统一扩展/八项目迁移目标的历史背景。当前权威目标见
 > [Studio 前端硬切架构](studio-frontend-hard-cut.md)。
+> 其中下文“asset catalog/Dock尚未进入production”等表述只记录2026-08-04的历史状态；#385当前只读
+> catalog-backed Resource Browser事实见[ADR-0014](../adr/0014-catalog-backed-resource-browser.md)。
 
 2026-08-04 当前事实：R0 后第一条 ProjectSession Slice 已按
 [ADR-0008](../adr/0008-authoritative-project-session.md) 接入。No Project Shell 现在可创建或打开 canonical

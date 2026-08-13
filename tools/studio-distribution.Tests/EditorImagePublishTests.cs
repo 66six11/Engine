@@ -250,6 +250,7 @@ public sealed class EditorImagePublishTests
                     "Asharia.Studio.EngineBridge.dll",
                     "Asharia.Studio.Presentation.Avalonia.dll",
                     "asharia_project_native.dll",
+                    "asharia_editor_content_native.dll",
                     "asharia_scene_native.dll",
                     "editor_native.dll",
                 },
@@ -329,6 +330,7 @@ public sealed class EditorImagePublishTests
             Assert.Contains(
                 $"managed/dotnet/shared/Microsoft.NETCore.App/{inputs_.HostRuntimeVersion}/coreclr.dll",
                 files);
+            Assert.Contains("bin/asharia_editor_content_native.dll", files);
             Assert.DoesNotContain("managed/dotnet/dotnet.exe", files);
             Assert.DoesNotContain(
                 files,

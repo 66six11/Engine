@@ -25,8 +25,15 @@ public sealed class AppSourceTests
         Assert.Contains("new StudioShellViewModel(", source, StringComparison.Ordinal);
         Assert.Contains("documentTransitions", source, StringComparison.Ordinal);
         Assert.Matches(
-            @"try\s*\{[\s\S]*?shellViewModel = new StudioShellViewModel\([\s\S]*?mainWindow = new MainWindow",
+            @"ProjectAssetCatalog\? projectAssetCatalog = null;[\s\S]*?try\s*\{\s*projectAssetCatalog = new ProjectAssetCatalog\([\s\S]*?shellViewModel = new StudioShellViewModel\([\s\S]*?mainWindow = new MainWindow",
             source);
+        Assert.Matches(
+            @"catch \(Exception exception\)[\s\S]*?shellViewModel\?\.Dispose\(\);[\s\S]*?if \(projectAssetCatalog is not null\)[\s\S]*?await projectAssetCatalog\.DisposeAsync\(\);[\s\S]*?await projectSession\.DisposeAsync\(\);",
+            source);
+        Assert.Contains(
+            "studio.lifecycle.window-create-cleanup.failed",
+            source,
+            StringComparison.Ordinal);
         Assert.Contains(
             "PublishActionRegistrationFailure(",
             source,
@@ -45,6 +52,9 @@ public sealed class AppSourceTests
         Assert.Contains("startupTask_ = StartDesktopAsync(desktop)", source, StringComparison.Ordinal);
         Assert.DoesNotContain("await startupTask_", source, StringComparison.Ordinal);
         Assert.Contains("BeginShutdown(exitCode: 1)", source, StringComparison.Ordinal);
+        Assert.Matches(
+            @"var shellViewModel = mainWindow\?\.DataContext as StudioShellViewModel;[\s\S]*?mainWindow\.DataContext = null;[\s\S]*?shellViewModel\.MarkStopping\(\);[\s\S]*?catch \(Exception exception\)[\s\S]*?studio\.lifecycle\.shell-stop\.failed[\s\S]*?finally[\s\S]*?await processSession\.StopAsync[\s\S]*?BeginFinalShutdown",
+            source);
         Assert.DoesNotContain("\n            _ = StartDesktopAsync", source, StringComparison.Ordinal);
         Assert.DoesNotContain("new StudioCompositionRoot", source, StringComparison.Ordinal);
         Assert.Contains("diagnostics_.ProcessIdentity", source, StringComparison.Ordinal);

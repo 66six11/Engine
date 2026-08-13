@@ -11,6 +11,7 @@ using System.Threading.Tasks;
 using System.Windows.Input;
 using Asharia.Runtime;
 using Asharia.Studio.Application.Actions;
+using Asharia.Studio.Application.Assets;
 using Asharia.Studio.Application.Diagnostics;
 using Asharia.Studio.Application.Projects;
 using Asharia.Studio.Application.Scenes;
@@ -93,6 +94,7 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
         TransformFieldMask.RotationZ;
 
     private readonly IProjectSession projectSession_;
+    private readonly IProjectAssetCatalog projectAssetCatalog_;
     private readonly IStudioProjectDialogService projectDialogs_;
     private readonly ProjectDocumentTransitionCoordinator documentTransitions_;
     private readonly StudioOperationDiagnosticWriter diagnostics_;
@@ -144,13 +146,16 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
         IProjectSession projectSession,
         IStudioProjectDialogService projectDialogs,
         ProjectDocumentTransitionCoordinator documentTransitions,
-        StudioOperationDiagnosticWriter diagnostics)
+        StudioOperationDiagnosticWriter diagnostics,
+        IProjectAssetCatalog projectAssetCatalog)
     {
         ArgumentNullException.ThrowIfNull(projectSession);
         ArgumentNullException.ThrowIfNull(projectDialogs);
         ArgumentNullException.ThrowIfNull(documentTransitions);
         ArgumentNullException.ThrowIfNull(diagnostics);
+        ArgumentNullException.ThrowIfNull(projectAssetCatalog);
         projectSession_ = projectSession;
+        projectAssetCatalog_ = projectAssetCatalog;
         projectDialogs_ = projectDialogs;
         documentTransitions_ = documentTransitions;
         diagnostics_ = diagnostics;
@@ -170,6 +175,8 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
     public event EventHandler? ActionStateChanged;
 
     public StudioShellStage Stage => stage_;
+
+    internal IProjectAssetCatalog ProjectAssetCatalog => projectAssetCatalog_;
 
     public string WindowTitle
     {
@@ -684,7 +691,7 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
             EditorDockArea.Left,
             "Window/Panels/Project",
             DockContentCachePolicy.KeepAlive,
-            () => new StudioProjectPanelViewModel(this),
+            () => new StudioProjectPanelViewModel(this, projectAssetCatalog_),
             EditorIconKey.PanelProject,
             "PROJECT",
             "Project content",

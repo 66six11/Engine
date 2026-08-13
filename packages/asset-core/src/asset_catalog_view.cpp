@@ -1,24 +1,46 @@
 ﻿#include "asharia/asset_core/asset_catalog_view.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
+#include <map>
+#include <set>
 #include <span>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <utility>
 
 namespace asharia::asset {
     namespace {
 
-        [[nodiscard]] std::string lower(std::string_view value) {
-            std::string lowered;
-            lowered.reserve(value.size());
-            for (const char character : value) {
-                lowered.push_back(
-                    static_cast<char>(std::tolower(static_cast<unsigned char>(character))));
+        using GuidBytes = std::array<std::uint8_t, 16>;
+
+        struct AssetProductKeyLess {
+            [[nodiscard]] bool operator()(const AssetProductKey& lhs,
+                                          const AssetProductKey& rhs) const noexcept {
+                return std::tie(lhs.guid.bytes, lhs.assetType.value, lhs.importerId.value,
+                                lhs.importerVersion.value, lhs.sourceHash, lhs.settingsHash,
+                                lhs.dependencyHash, lhs.targetProfileHash) <
+                       std::tie(rhs.guid.bytes, rhs.assetType.value, rhs.importerId.value,
+                                rhs.importerVersion.value, rhs.sourceHash, rhs.settingsHash,
+                                rhs.dependencyHash, rhs.targetProfileHash);
             }
-            return lowered;
-        }
+        };
+
+        struct IndexedSourceFacet {
+            std::size_t index{};
+            const AssetCatalogSourceFacet* facet{};
+        };
+
+        struct SourceFacetGroups {
+            std::vector<IndexedSourceFacet> wildcard;
+            std::map<std::string, std::vector<IndexedSourceFacet>, std::less<>> bySourcePath;
+        };
+
+        using ProductsByGuid = std::map<GuidBytes, std::vector<const AssetProductRecord*>>;
+        using ExpectedProductKeys = std::set<AssetProductKey, AssetProductKeyLess>;
+        using FacetsByGuid = std::map<GuidBytes, SourceFacetGroups>;
 
         [[nodiscard]] std::string displayNameForPath(std::string_view sourcePath) {
             const std::size_t slash = sourcePath.find_last_of('/');
@@ -35,26 +57,11 @@ namespace asharia::asset {
             return std::string{displayName.substr(dot)};
         }
 
-        [[nodiscard]] bool productBelongsToSource(const AssetProductRecord& product,
-                                                  const SourceAssetRecord& source) noexcept {
-            return product.key.guid == source.guid;
-        }
-
-        [[nodiscard]] bool
-        productMatchesExpectedKey(const AssetProductRecord& product,
-                                  const SourceAssetRecord& source,
-                                  std::span<const AssetProductKey> expectedProductKeys) noexcept {
-            return std::ranges::any_of(
-                expectedProductKeys, [&product, &source](const AssetProductKey& expectedKey) {
-                    return expectedKey.guid == source.guid && product.key == expectedKey;
-                });
-        }
-
         [[nodiscard]] bool productMatchesActiveView(const AssetProductRecord& product,
-                                                    const SourceAssetRecord& source,
+                                                    const ExpectedProductKeys& expectedProductKeys,
                                                     const AssetCatalogViewOptions& options) {
             if (!options.expectedProductKeys.empty()) {
-                return productMatchesExpectedKey(product, source, options.expectedProductKeys);
+                return expectedProductKeys.contains(product.key);
             }
             return false;
         }
@@ -101,27 +108,31 @@ namespace asharia::asset {
             };
         }
 
-        [[nodiscard]] bool sourceFacetMatches(const AssetCatalogSourceFacet& facet,
-                                              const SourceAssetRecord& source) {
-            return facet.guid == source.guid &&
-                   (facet.sourcePath.empty() || facet.sourcePath == source.sourcePath);
-        }
-
         [[nodiscard]] const AssetCatalogSourceFacet*
-        firstSourceFacet(std::span<const AssetCatalogSourceFacet> facets,
-                         const SourceAssetRecord& source, std::size_t& matchCount) {
-            const AssetCatalogSourceFacet* first = nullptr;
-            matchCount = 0U;
-            for (const AssetCatalogSourceFacet& facet : facets) {
-                if (!sourceFacetMatches(facet, source)) {
-                    continue;
-                }
-                if (first == nullptr) {
-                    first = &facet;
-                }
-                ++matchCount;
+        firstSourceFacet(const FacetsByGuid& facetsByGuid, const SourceAssetRecord& source,
+                         std::size_t& matchCount) {
+            const auto groups = facetsByGuid.find(source.guid.bytes);
+            if (groups == facetsByGuid.end()) {
+                matchCount = 0U;
+                return nullptr;
             }
-            return first;
+
+            const auto exact = groups->second.bySourcePath.find(source.sourcePath);
+            const std::span<const IndexedSourceFacet> exactMatches =
+                exact == groups->second.bySourcePath.end()
+                    ? std::span<const IndexedSourceFacet>{}
+                    : std::span<const IndexedSourceFacet>{exact->second};
+            const std::span<const IndexedSourceFacet> wildcardMatches{groups->second.wildcard};
+            matchCount = exactMatches.size() + wildcardMatches.size();
+            if (exactMatches.empty()) {
+                return wildcardMatches.empty() ? nullptr : wildcardMatches.front().facet;
+            }
+            if (wildcardMatches.empty()) {
+                return exactMatches.front().facet;
+            }
+            return exactMatches.front().index < wildcardMatches.front().index
+                       ? exactMatches.front().facet
+                       : wildcardMatches.front().facet;
         }
 
         void applySourceFacet(AssetCatalogViewEntry& entry, const AssetCatalogSourceFacet& facet) {
@@ -132,9 +143,10 @@ namespace asharia::asset {
                                      facet.diagnostics.end());
         }
 
-        [[nodiscard]] AssetCatalogViewEntry makeEntry(const SourceAssetRecord& source,
-                                                      std::span<const AssetProductRecord> products,
-                                                      const AssetCatalogViewOptions& options) {
+        [[nodiscard]] AssetCatalogViewEntry
+        makeEntry(const SourceAssetRecord& source, const ProductsByGuid& productsByGuid,
+                  const ExpectedProductKeys& expectedProductKeys, const FacetsByGuid& facetsByGuid,
+                  const AssetCatalogViewOptions& options) {
             AssetCatalogViewEntry entry{
                 .guid = source.guid,
                 .guidText = formatAssetGuid(source.guid),
@@ -158,7 +170,7 @@ namespace asharia::asset {
 
             std::size_t sourceFacetMatchCount = 0U;
             if (const AssetCatalogSourceFacet* facet =
-                    firstSourceFacet(options.sourceFacets, source, sourceFacetMatchCount)) {
+                    firstSourceFacet(facetsByGuid, source, sourceFacetMatchCount)) {
                 applySourceFacet(entry, *facet);
             }
             if (sourceFacetMatchCount > 1U) {
@@ -167,21 +179,21 @@ namespace asharia::asset {
             }
 
             std::size_t invalidProductCount = 0U;
-            for (const AssetProductRecord& product : products) {
+            const auto sourceProducts = productsByGuid.find(source.guid.bytes);
+            const std::span<const AssetProductRecord* const> products =
+                sourceProducts == productsByGuid.end()
+                    ? std::span<const AssetProductRecord* const>{}
+                    : std::span<const AssetProductRecord* const>{sourceProducts->second};
+            for (const AssetProductRecord* productPointer : products) {
+                const AssetProductRecord& product = *productPointer;
                 if (!product) {
                     AssetCatalogDiagnostic invalid = invalidProductDiagnostic(product);
-                    if (productBelongsToSource(product, source)) {
-                        ++invalidProductCount;
-                        entry.diagnostics.push_back(std::move(invalid));
-                    }
+                    ++invalidProductCount;
+                    entry.diagnostics.push_back(std::move(invalid));
                     continue;
                 }
 
-                if (!productBelongsToSource(product, source)) {
-                    continue;
-                }
-
-                if (productMatchesActiveView(product, source, options)) {
+                if (productMatchesActiveView(product, expectedProductKeys, options)) {
                     ++entry.currentProductCount;
                 } else {
                     ++entry.staleProductCount;
@@ -206,6 +218,43 @@ namespace asharia::asset {
             }
 
             return entry;
+        }
+
+        void populateCatalogViewIndex(std::span<const AssetProductRecord> products,
+                                      const AssetCatalogViewOptions& options,
+                                      ProductsByGuid& productsByGuid,
+                                      ExpectedProductKeys& expectedProductKeys,
+                                      FacetsByGuid& facetsByGuid) {
+            for (const AssetProductRecord& product : products) {
+                productsByGuid[product.key.guid.bytes].push_back(&product);
+            }
+            expectedProductKeys.insert(options.expectedProductKeys.begin(),
+                                       options.expectedProductKeys.end());
+            for (std::size_t facetIndex = 0U; facetIndex < options.sourceFacets.size();
+                 ++facetIndex) {
+                const AssetCatalogSourceFacet& facet = options.sourceFacets[facetIndex];
+                IndexedSourceFacet indexed{.index = facetIndex, .facet = &facet};
+                SourceFacetGroups& groups = facetsByGuid[facet.guid.bytes];
+                if (facet.sourcePath.empty()) {
+                    groups.wildcard.push_back(indexed);
+                } else {
+                    groups.bySourcePath[facet.sourcePath].push_back(indexed);
+                }
+            }
+        }
+
+        [[nodiscard]] bool loweredTextLess(std::string_view left, std::string_view right) {
+            const std::size_t sharedSize = (std::min)(left.size(), right.size());
+            for (std::size_t index = 0U; index < sharedSize; ++index) {
+                const char leftCharacter =
+                    static_cast<char>(std::tolower(static_cast<unsigned char>(left[index])));
+                const char rightCharacter =
+                    static_cast<char>(std::tolower(static_cast<unsigned char>(right[index])));
+                if (leftCharacter != rightCharacter) {
+                    return leftCharacter < rightCharacter;
+                }
+            }
+            return left.size() < right.size();
         }
 
     } // namespace
@@ -244,9 +293,15 @@ namespace asharia::asset {
                                            std::span<const AssetProductRecord> products,
                                            AssetCatalogViewOptions options) {
         AssetCatalogView view;
+        ProductsByGuid productsByGuid;
+        ExpectedProductKeys expectedProductKeys;
+        FacetsByGuid facetsByGuid;
+        populateCatalogViewIndex(products, options, productsByGuid, expectedProductKeys,
+                                 facetsByGuid);
         view.entries.reserve(catalog.sources().size());
         for (const SourceAssetRecord& source : catalog.sources()) {
-            view.entries.push_back(makeEntry(source, products, options));
+            view.entries.push_back(
+                makeEntry(source, productsByGuid, expectedProductKeys, facetsByGuid, options));
         }
         for (const AssetProductRecord& product : products) {
             if (!product) {
@@ -256,12 +311,13 @@ namespace asharia::asset {
 
         std::ranges::sort(view.entries, [](const AssetCatalogViewEntry& left,
                                            const AssetCatalogViewEntry& right) {
-            const std::string leftPath = lower(left.sourcePath);
-            const std::string rightPath = lower(right.sourcePath);
-            if (leftPath != rightPath) {
-                return leftPath < rightPath;
+            if (loweredTextLess(left.sourcePath, right.sourcePath)) {
+                return true;
             }
-            return formatAssetGuid(left.guid) < formatAssetGuid(right.guid);
+            if (loweredTextLess(right.sourcePath, left.sourcePath)) {
+                return false;
+            }
+            return left.guid.bytes < right.guid.bytes;
         });
         return view;
     }

@@ -1,5 +1,6 @@
 ﻿#pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <string>
@@ -14,6 +15,7 @@ namespace asharia::asset {
     inline constexpr std::string_view kAssetProductManifestSchema =
         "com.asharia.asset.product-manifest";
     inline constexpr std::uint32_t kAssetProductManifestVersion = 1;
+    inline constexpr std::size_t kMaxAssetProductManifestProducts = 100'000U;
 
     struct AssetProductManifestDocument {
         std::vector<AssetProductRecord> products;

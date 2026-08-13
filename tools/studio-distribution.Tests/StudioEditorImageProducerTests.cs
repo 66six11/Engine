@@ -66,6 +66,9 @@ public sealed class StudioEditorImageProducerTests
             file => file.Path == "bin/asharia_project_native.dll");
         Assert.Contains(
             receipt.Files,
+            file => file.Path == "bin/asharia_editor_content_native.dll");
+        Assert.Contains(
+            receipt.Files,
             file => file.Path == "bin/asharia_scene_native.dll");
         Assert.Contains(
             receipt.Files,
@@ -415,6 +418,8 @@ public sealed class StudioEditorImageProducerTests
     [InlineData("nested/Asharia.Editor.dll")]
     [InlineData("dev/Asharia.Studio.DevelopmentHost.dll")]
     [InlineData("dev/Asharia.Studio.DevelopmentProtocol.dll")]
+    [InlineData("deep/asharia_editor_content_native")]
+    [InlineData("deep/ASHARIA_EDITOR_CONTENT_NATIVE.PDB")]
     [InlineData("deep/asharia_scene_native")]
     [InlineData("deep/ASHARIA_SCENE_NATIVE.PDB")]
     [InlineData("plugins/Editor_Native.DlL")]
@@ -467,6 +472,35 @@ public sealed class StudioEditorImageProducerTests
             diagnostic => diagnostic.Code
                     == "studio-distribution.editor-image.native-identity-invalid"
                 && diagnostic.Location == "publishRoot/asharia_project_native.dll");
+        Assert.False(Directory.Exists(fixture.OutputRoot));
+    }
+
+    [Fact]
+    public void Produce_rejects_an_editor_content_adapter_without_the_exact_query_export()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using var fixture = new ProducerFixture(inputs_);
+        StudioEditorImageTestInputs.WriteNativeDll(
+            Path.Combine(fixture.PublishRoot, "asharia_editor_content_native.dll"),
+            "asharia_editor_content_native.dll",
+            ["asharia_editor_content_query_v1"]);
+
+        var result = StudioEditorImageProducer.Produce(fixture.Request);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(
+            result.Diagnostics,
+            diagnostic => diagnostic.Code
+                    == "studio-distribution.editor-image.native-identity-invalid"
+                && diagnostic.Location
+                    == "publishRoot/asharia_editor_content_native.dll"
+                && diagnostic.Message.Contains(
+                    "asharia_editor_content_query",
+                    StringComparison.Ordinal));
         Assert.False(Directory.Exists(fixture.OutputRoot));
     }
 

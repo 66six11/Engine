@@ -115,7 +115,8 @@ public sealed class StudioShellViewModelTests
             session,
             new TestProjectDialogService(),
             StudioShellTestFactory.CreateDocumentTransitions(session),
-            StudioShellTestFactory.CreateDiagnosticWriter());
+            StudioShellTestFactory.CreateDiagnosticWriter(),
+            StudioShellTestFactory.CreateProjectAssetCatalog());
         viewModel.MarkReady();
         var context = viewModel.CaptureActionContext(
             StudioActionInvocationSource.ContextMenu,
@@ -175,7 +176,8 @@ public sealed class StudioShellViewModelTests
             session,
             new TestProjectDialogService(),
             StudioShellTestFactory.CreateDocumentTransitions(session),
-            StudioShellTestFactory.CreateDiagnosticWriter());
+            StudioShellTestFactory.CreateDiagnosticWriter(),
+            StudioShellTestFactory.CreateProjectAssetCatalog());
         viewModel.MarkReady();
 
         var resolved = viewModel.TryExecuteShortcut(
@@ -205,7 +207,8 @@ public sealed class StudioShellViewModelTests
             session,
             new TestProjectDialogService(),
             StudioShellTestFactory.CreateDocumentTransitions(session),
-            diagnostics);
+            diagnostics,
+            StudioShellTestFactory.CreateProjectAssetCatalog());
         viewModel.MarkReady();
         var context = viewModel.CaptureActionContext(
             StudioActionInvocationSource.Menu,
@@ -248,7 +251,8 @@ public sealed class StudioShellViewModelTests
             session,
             new TestProjectDialogService(),
             StudioShellTestFactory.CreateDocumentTransitions(session),
-            diagnostics);
+            diagnostics,
+            StudioShellTestFactory.CreateProjectAssetCatalog());
         viewModel.MarkReady();
         var context = viewModel.CaptureActionContext(
             StudioActionInvocationSource.Menu,
@@ -299,7 +303,8 @@ public sealed class StudioShellViewModelTests
             session,
             new TestProjectDialogService(),
             StudioShellTestFactory.CreateDocumentTransitions(session),
-            StudioShellTestFactory.CreateDiagnosticWriter());
+            StudioShellTestFactory.CreateDiagnosticWriter(),
+            StudioShellTestFactory.CreateProjectAssetCatalog());
         var stateChangeCount = 0;
         viewModel.ActionStateChanged += (_, _) => stateChangeCount++;
         viewModel.MarkReady();
@@ -328,7 +333,8 @@ public sealed class StudioShellViewModelTests
             session,
             new ThrowingProjectDialogService(),
             StudioShellTestFactory.CreateDocumentTransitions(session),
-            diagnostics);
+            diagnostics,
+            StudioShellTestFactory.CreateProjectAssetCatalog());
         viewModel.MarkReady();
         var context = viewModel.CaptureActionContext(
             StudioActionInvocationSource.Menu,
@@ -467,7 +473,8 @@ public sealed class StudioShellViewModelTests
             projectSession,
             new TestProjectDialogService(),
             StudioShellTestFactory.CreateDocumentTransitions(projectSession),
-            StudioShellTestFactory.CreateDiagnosticWriter());
+            StudioShellTestFactory.CreateDiagnosticWriter(),
+            StudioShellTestFactory.CreateProjectAssetCatalog());
         viewModel.MarkReady();
         viewModel.SelectedEntity = entityA;
 
@@ -548,7 +555,8 @@ public sealed class StudioShellViewModelTests
             projectSession,
             new TestProjectDialogService(),
             StudioShellTestFactory.CreateDocumentTransitions(projectSession),
-            StudioShellTestFactory.CreateDiagnosticWriter());
+            StudioShellTestFactory.CreateDiagnosticWriter(),
+            StudioShellTestFactory.CreateProjectAssetCatalog());
         viewModel.MarkReady();
         viewModel.SelectedEntity = currentEntity;
         viewModel.PositionX = "1.2";
@@ -690,7 +698,8 @@ public sealed class StudioShellViewModelTests
             session,
             dialogs,
             new ProjectDocumentTransitionCoordinator(session, prompt),
-            StudioShellTestFactory.CreateDiagnosticWriter());
+            StudioShellTestFactory.CreateDiagnosticWriter(),
+            StudioShellTestFactory.CreateProjectAssetCatalog());
         viewModel.MarkReady();
         viewModel.NewProjectName = "Replacement";
 
@@ -778,7 +787,8 @@ public sealed class StudioShellViewModelTests
             projectSession,
             new TestProjectDialogService(),
             StudioShellTestFactory.CreateDocumentTransitions(projectSession),
-            StudioShellTestFactory.CreateDiagnosticWriter());
+            StudioShellTestFactory.CreateDiagnosticWriter(),
+            StudioShellTestFactory.CreateProjectAssetCatalog());
         viewModel.MarkReady();
         var createdObjectId = Guid.NewGuid();
         var trailingObjectId = Guid.NewGuid();
@@ -855,7 +865,8 @@ public sealed class StudioShellViewModelTests
             projectSession,
             new TestProjectDialogService(),
             StudioShellTestFactory.CreateDocumentTransitions(projectSession),
-            StudioShellTestFactory.CreateDiagnosticWriter());
+            StudioShellTestFactory.CreateDiagnosticWriter(),
+            StudioShellTestFactory.CreateProjectAssetCatalog());
         viewModel.MarkReady();
         viewModel.SelectedEntity = selected;
         projectSession.CreateMeshEntityHandler = (_, _, _) =>
@@ -976,7 +987,8 @@ public sealed class StudioShellViewModelTests
             projectSession,
             new TestProjectDialogService(),
             StudioShellTestFactory.CreateDocumentTransitions(projectSession),
-            StudioShellTestFactory.CreateDiagnosticWriter());
+            StudioShellTestFactory.CreateDiagnosticWriter(),
+            StudioShellTestFactory.CreateProjectAssetCatalog());
         viewModel.MarkReady();
         viewModel.SelectedEntity = initialEntity;
         viewModel.PositionX = "1.2";
@@ -1128,7 +1140,8 @@ public sealed class StudioShellViewModelTests
             projectSession,
             new TestProjectDialogService(),
             StudioShellTestFactory.CreateDocumentTransitions(projectSession),
-            StudioShellTestFactory.CreateDiagnosticWriter());
+            StudioShellTestFactory.CreateDiagnosticWriter(),
+            StudioShellTestFactory.CreateProjectAssetCatalog());
         viewModel.MarkReady();
         viewModel.SelectedEntity = entity;
         var originalX = viewModel.RotationDegreesX;
@@ -1215,7 +1228,8 @@ public sealed class StudioShellViewModelTests
             projectSession,
             new TestProjectDialogService(),
             StudioShellTestFactory.CreateDocumentTransitions(projectSession),
-            StudioShellTestFactory.CreateDiagnosticWriter());
+            StudioShellTestFactory.CreateDiagnosticWriter(),
+            StudioShellTestFactory.CreateProjectAssetCatalog());
         viewModel.MarkReady();
         viewModel.SelectedEntity = entity;
         viewModel.RotationDegreesY = "365";
@@ -1273,7 +1287,8 @@ public sealed class StudioShellViewModelTests
             projectSession,
             new TestProjectDialogService(),
             StudioShellTestFactory.CreateDocumentTransitions(projectSession),
-            StudioShellTestFactory.CreateDiagnosticWriter());
+            StudioShellTestFactory.CreateDiagnosticWriter(),
+            StudioShellTestFactory.CreateProjectAssetCatalog());
         viewModel.MarkReady();
         viewModel.SelectedEntity = entity;
         viewModel.PositionX = "1.2";
@@ -1441,7 +1456,8 @@ public sealed class StudioShellViewModelTests
             projectSession,
             new TestProjectDialogService(),
             StudioShellTestFactory.CreateDocumentTransitions(projectSession),
-            StudioShellTestFactory.CreateDiagnosticWriter());
+            StudioShellTestFactory.CreateDiagnosticWriter(),
+            StudioShellTestFactory.CreateProjectAssetCatalog());
         viewModel.MarkReady();
         viewModel.SelectedEntity = entity;
         viewModel.PositionX = "-0.000";
@@ -1575,7 +1591,8 @@ public sealed class StudioShellViewModelTests
             projectSession,
             new TestProjectDialogService(),
             StudioShellTestFactory.CreateDocumentTransitions(projectSession),
-            StudioShellTestFactory.CreateDiagnosticWriter());
+            StudioShellTestFactory.CreateDiagnosticWriter(),
+            StudioShellTestFactory.CreateProjectAssetCatalog());
         viewModel.MarkReady();
         viewModel.SelectedEntity = entity;
         viewModel.PositionX = "1.2";
@@ -1659,7 +1676,8 @@ public sealed class StudioShellViewModelTests
             projectSession,
             new TestProjectDialogService(),
             StudioShellTestFactory.CreateDocumentTransitions(projectSession),
-            StudioShellTestFactory.CreateDiagnosticWriter());
+            StudioShellTestFactory.CreateDiagnosticWriter(),
+            StudioShellTestFactory.CreateProjectAssetCatalog());
         viewModel.MarkReady();
         viewModel.SelectedEntity = entity;
         viewModel.RotationDegreesY = "365";
@@ -1746,7 +1764,8 @@ public sealed class StudioShellViewModelTests
             projectSession,
             new TestProjectDialogService(),
             StudioShellTestFactory.CreateDocumentTransitions(projectSession),
-            StudioShellTestFactory.CreateDiagnosticWriter());
+            StudioShellTestFactory.CreateDiagnosticWriter(),
+            StudioShellTestFactory.CreateProjectAssetCatalog());
         viewModel.MarkReady();
         viewModel.SelectedEntity = first;
         viewModel.PositionX = "1.2";
@@ -1808,7 +1827,8 @@ public sealed class StudioShellViewModelTests
             projectSession,
             new TestProjectDialogService(),
             StudioShellTestFactory.CreateDocumentTransitions(projectSession),
-            StudioShellTestFactory.CreateDiagnosticWriter());
+            StudioShellTestFactory.CreateDiagnosticWriter(),
+            StudioShellTestFactory.CreateProjectAssetCatalog());
         viewModel.MarkReady();
 
         viewModel.SelectedEntity = positive;
@@ -1875,7 +1895,8 @@ public sealed class StudioShellViewModelTests
             projectSession,
             new TestProjectDialogService(),
             StudioShellTestFactory.CreateDocumentTransitions(projectSession),
-            StudioShellTestFactory.CreateDiagnosticWriter());
+            StudioShellTestFactory.CreateDiagnosticWriter(),
+            StudioShellTestFactory.CreateProjectAssetCatalog());
         viewModel.MarkReady();
 
         viewModel.SelectedEntity = entity;
@@ -1937,7 +1958,8 @@ public sealed class StudioShellViewModelTests
             projectSession,
             new TestProjectDialogService(),
             StudioShellTestFactory.CreateDocumentTransitions(projectSession),
-            StudioShellTestFactory.CreateDiagnosticWriter());
+            StudioShellTestFactory.CreateDiagnosticWriter(),
+            StudioShellTestFactory.CreateProjectAssetCatalog());
         viewModel.MarkReady();
 
         viewModel.SelectedEntity = entity;
@@ -1992,7 +2014,8 @@ public sealed class StudioShellViewModelTests
             projectSession,
             new TestProjectDialogService(),
             StudioShellTestFactory.CreateDocumentTransitions(projectSession),
-            StudioShellTestFactory.CreateDiagnosticWriter());
+            StudioShellTestFactory.CreateDiagnosticWriter(),
+            StudioShellTestFactory.CreateProjectAssetCatalog());
         viewModel.MarkReady();
         viewModel.SelectedEntity = entity;
         viewModel.RotationDegreesY = "NaN";

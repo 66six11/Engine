@@ -13,9 +13,9 @@
 
 #include "asharia/core/log.hpp"
 #include "asharia/core/version.hpp"
+#include "asharia/editor_content/asset_catalog_snapshot.hpp"
 
 #include "editor_app.hpp"
-#include "editor_asset_catalog.hpp"
 #include "editor_asset_catalog_report.hpp"
 #include "native_bridge/frame_debugger_native_smoke.hpp"
 #include "native_bridge/viewport_native_smoke.hpp"

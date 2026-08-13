@@ -1,6 +1,8 @@
 ﻿#include "asharia/asset_pipeline/asset_source_scan.hpp"
 
 #include <algorithm>
+#include <functional>
+#include <set>
 #include <span>
 #include <string>
 #include <string_view>
@@ -30,35 +32,23 @@ namespace asharia::asset {
             });
         }
 
-        struct SourceScanFileView {
-            std::span<const std::filesystem::path> sourceFiles;
-            std::span<const std::filesystem::path> metadataFiles;
-        };
-
-        struct MetadataMatchView {
-            std::span<const std::filesystem::path> metadataFiles;
-            std::span<const std::filesystem::path> matchedMetadataFiles;
-        };
-
-        [[nodiscard]] bool containsPathText(std::span<const std::filesystem::path> paths,
-                                            const std::filesystem::path& candidate) {
-            const std::string candidateText = pathText(candidate);
-            return std::ranges::any_of(paths, [&candidateText](const std::filesystem::path& path) {
-                return pathText(path) == candidateText;
-            });
-        }
-
-        [[nodiscard]] bool containsSourcePath(std::span<const AssetSourceScanEntry> entries,
-                                              std::string_view sourcePath) {
-            return std::ranges::any_of(entries, [sourcePath](const AssetSourceScanEntry& entry) {
-                return entry.sourcePath == sourcePath;
-            });
-        }
+        using PathTextSet = std::set<std::string, std::less<>>;
 
         [[nodiscard]] bool isValidSinglePathSegment(std::string_view text) {
             return !text.empty() && text != "." && text != ".." &&
                    text.find('/') == std::string_view::npos &&
                    text.find('\\') == std::string_view::npos;
+        }
+
+        [[nodiscard]] bool isRedirectingLink(const std::filesystem::file_status& status) noexcept {
+            if (std::filesystem::is_symlink(status)) {
+                return true;
+            }
+#if defined(_WIN32)
+            return status.type() == std::filesystem::file_type::junction;
+#else
+            return false;
+#endif
         }
 
         [[nodiscard]] bool validateMetadataSuffix(AssetSourceScanResult& result,
@@ -77,6 +67,16 @@ namespace asharia::asset {
             }
 
             return true;
+        }
+
+        [[nodiscard]] bool validateLimits(AssetSourceScanResult& result,
+                                          const AssetSourceScanRequest& request) {
+            if (request.maxDiscoveredFiles > 0U) {
+                return true;
+            }
+            addDiagnostic(result, AssetSourceScanDiagnosticCode::InvalidRequest, {}, {}, {},
+                          "Asset source scan max discovered files must be greater than zero.");
+            return false;
         }
 
         [[nodiscard]] bool
@@ -141,6 +141,24 @@ namespace asharia::asset {
             }
 
             rootError.clear();
+            const std::filesystem::file_status linkStatus =
+                std::filesystem::symlink_status(sourceRoot, rootError);
+            if (rootError) {
+                addDiagnostic(result, AssetSourceScanDiagnosticCode::FilesystemError, {},
+                              sourceRoot, {},
+                              "Asset source scan could not inspect root link status for \"" +
+                                  pathText(sourceRoot) + "\": " + rootError.message() + ".");
+                return false;
+            }
+            if (isRedirectingLink(linkStatus)) {
+                addDiagnostic(result, AssetSourceScanDiagnosticCode::InvalidRoot, {}, sourceRoot,
+                              {},
+                              "Asset source scan rejected symbolic-link root \"" +
+                                  pathText(sourceRoot) + "\".");
+                return false;
+            }
+
+            rootError.clear();
             const bool directory = std::filesystem::is_directory(sourceRoot, rootError);
             if (rootError) {
                 addDiagnostic(result, AssetSourceScanDiagnosticCode::FilesystemError, {},
@@ -182,14 +200,117 @@ namespace asharia::asset {
             return metadataPath;
         }
 
+        using RecursiveDirectoryIterator = std::filesystem::recursive_directory_iterator;
+
+        enum class EntryCollectionResult : std::uint8_t {
+            Continue,
+            LimitExceeded,
+        };
+
+        void skipRejectedEntry(RecursiveDirectoryIterator& iterator,
+                               std::error_code& iteratorError) {
+            iterator.disable_recursion_pending();
+            iterator.increment(iteratorError);
+            iteratorError.clear();
+        }
+
+        [[nodiscard]] bool rejectRedirectingEntry(AssetSourceScanResult& result,
+                                                  RecursiveDirectoryIterator& iterator,
+                                                  const std::filesystem::path& currentPath,
+                                                  std::error_code& iteratorError) {
+            std::error_code entryError;
+            const std::filesystem::file_status linkStatus = iterator->symlink_status(entryError);
+            if (entryError) {
+                addDiagnostic(result, AssetSourceScanDiagnosticCode::FilesystemError, {},
+                              currentPath, {},
+                              "Asset source scan could not inspect link status for \"" +
+                                  pathText(currentPath) + "\": " + entryError.message() + ".");
+                skipRejectedEntry(iterator, iteratorError);
+                return true;
+            }
+            if (!isRedirectingLink(linkStatus)) {
+                return false;
+            }
+
+            addDiagnostic(result, AssetSourceScanDiagnosticCode::FilesystemError, {}, currentPath,
+                          {},
+                          "Asset source scan rejected symbolic-link entry \"" +
+                              pathText(currentPath) + "\".");
+            skipRejectedEntry(iterator, iteratorError);
+            return true;
+        }
+
+        [[nodiscard]] EntryCollectionResult
+        collectEntry(AssetSourceScanResult& result, const AssetSourceScanRequest& request,
+                     RecursiveDirectoryIterator& iterator, const std::filesystem::path& currentPath,
+                     std::vector<std::filesystem::path>& sourceFiles,
+                     std::vector<std::filesystem::path>& metadataFiles) {
+            std::error_code entryError;
+            const bool directory = iterator->is_directory(entryError);
+            if (entryError) {
+                addDiagnostic(result, AssetSourceScanDiagnosticCode::FilesystemError, {},
+                              currentPath, {},
+                              "Asset source scan could not inspect \"" + pathText(currentPath) +
+                                  "\": " + entryError.message() + ".");
+                return EntryCollectionResult::Continue;
+            }
+            if (directory) {
+                if (shouldIgnoreDirectory(currentPath, request.ignoredDirectoryNames)) {
+                    iterator.disable_recursion_pending();
+                }
+                return EntryCollectionResult::Continue;
+            }
+
+            const bool regularFile = iterator->is_regular_file(entryError);
+            if (entryError) {
+                addDiagnostic(result, AssetSourceScanDiagnosticCode::FilesystemError, {},
+                              currentPath, {},
+                              "Asset source scan could not inspect file \"" +
+                                  pathText(currentPath) + "\": " + entryError.message() + ".");
+                return EntryCollectionResult::Continue;
+            }
+            if (!regularFile) {
+                return EntryCollectionResult::Continue;
+            }
+            if (result.discoveredFileCount >= request.maxDiscoveredFiles) {
+                addDiagnostic(result, AssetSourceScanDiagnosticCode::LimitExceeded, {}, {}, {},
+                              "Asset source scan exceeded max discovered files limit=" +
+                                  std::to_string(request.maxDiscoveredFiles) + ".");
+                return EntryCollectionResult::LimitExceeded;
+            }
+
+            ++result.discoveredFileCount;
+            if (isMetadataSidecarPath(currentPath, request.metadataSuffix)) {
+                metadataFiles.push_back(currentPath);
+            } else {
+                sourceFiles.push_back(currentPath);
+            }
+            return EntryCollectionResult::Continue;
+        }
+
+        void advanceIterator(AssetSourceScanResult& result, RecursiveDirectoryIterator& iterator,
+                             const std::filesystem::path& currentPath,
+                             std::error_code& iteratorError) {
+            iterator.increment(iteratorError);
+            if (!iteratorError) {
+                return;
+            }
+
+            addDiagnostic(result, AssetSourceScanDiagnosticCode::FilesystemError, {}, currentPath,
+                          {},
+                          "Asset source scan could not advance past \"" + pathText(currentPath) +
+                              "\": " + iteratorError.message() + ".");
+            iteratorError.clear();
+        }
+
         void collectRegularFiles(AssetSourceScanResult& result,
                                  const AssetSourceScanRequest& request,
                                  std::vector<std::filesystem::path>& sourceFiles,
                                  std::vector<std::filesystem::path>& metadataFiles) {
             std::error_code iteratorError;
-            std::filesystem::recursive_directory_iterator iterator{
+            RecursiveDirectoryIterator iterator{
                 request.sourceRoot, std::filesystem::directory_options::none, iteratorError};
-            const std::filesystem::recursive_directory_iterator end;
+            const RecursiveDirectoryIterator end;
             if (iteratorError) {
                 addDiagnostic(result, AssetSourceScanDiagnosticCode::FilesystemError, {},
                               request.sourceRoot, {},
@@ -201,44 +322,14 @@ namespace asharia::asset {
 
             while (iterator != end) {
                 const std::filesystem::path currentPath = iterator->path();
-
-                std::error_code entryError;
-                const bool directory = iterator->is_directory(entryError);
-                if (entryError) {
-                    addDiagnostic(result, AssetSourceScanDiagnosticCode::FilesystemError, {},
-                                  currentPath, {},
-                                  "Asset source scan could not inspect \"" + pathText(currentPath) +
-                                      "\": " + entryError.message() + ".");
-                } else if (directory) {
-                    if (shouldIgnoreDirectory(currentPath, request.ignoredDirectoryNames)) {
-                        iterator.disable_recursion_pending();
-                    }
-                } else {
-                    entryError.clear();
-                    const bool regularFile = iterator->is_regular_file(entryError);
-                    if (entryError) {
-                        addDiagnostic(result, AssetSourceScanDiagnosticCode::FilesystemError, {},
-                                      currentPath, {},
-                                      "Asset source scan could not inspect file \"" +
-                                          pathText(currentPath) + "\": " + entryError.message() +
-                                          ".");
-                    } else if (regularFile) {
-                        if (isMetadataSidecarPath(currentPath, request.metadataSuffix)) {
-                            metadataFiles.push_back(currentPath);
-                        } else {
-                            sourceFiles.push_back(currentPath);
-                        }
-                    }
+                if (rejectRedirectingEntry(result, iterator, currentPath, iteratorError)) {
+                    continue;
                 }
-
-                iterator.increment(iteratorError);
-                if (iteratorError) {
-                    addDiagnostic(
-                        result, AssetSourceScanDiagnosticCode::FilesystemError, {}, currentPath, {},
-                        "Asset source scan could not advance past \"" + pathText(currentPath) +
-                            "\": " + iteratorError.message() + ".");
-                    iteratorError.clear();
+                if (collectEntry(result, request, iterator, currentPath, sourceFiles,
+                                 metadataFiles) == EntryCollectionResult::LimitExceeded) {
+                    return;
                 }
+                advanceIterator(result, iterator, currentPath, iteratorError);
             }
         }
 
@@ -276,9 +367,12 @@ namespace asharia::asset {
         }
 
         void appendScannedSources(AssetSourceScanResult& result,
-                                  const AssetSourceScanRequest& request, SourceScanFileView files,
-                                  std::vector<std::filesystem::path>& matchedMetadataFiles) {
-            for (const std::filesystem::path& sourceFilePath : files.sourceFiles) {
+                                  const AssetSourceScanRequest& request,
+                                  std::span<const std::filesystem::path> sourceFiles,
+                                  const PathTextSet& metadataFileTexts,
+                                  PathTextSet& matchedMetadataFileTexts) {
+            std::set<std::string, std::less<>> sourcePaths;
+            for (const std::filesystem::path& sourceFilePath : sourceFiles) {
                 bool validSourcePath = false;
                 std::string sourcePathError;
                 std::string sourcePath =
@@ -291,7 +385,7 @@ namespace asharia::asset {
                     continue;
                 }
 
-                if (containsSourcePath(result.entries, sourcePath)) {
+                if (sourcePaths.contains(sourcePath)) {
                     addDiagnostic(result, AssetSourceScanDiagnosticCode::DuplicateSourcePath,
                                   sourcePath, sourceFilePath, {},
                                   "Asset source scan duplicate source path source=\"" + sourcePath +
@@ -301,7 +395,8 @@ namespace asharia::asset {
 
                 const std::filesystem::path metadataPath =
                     makeExpectedMetadataPath(sourceFilePath, request.metadataSuffix);
-                if (!containsPathText(files.metadataFiles, metadataPath)) {
+                const std::string metadataText = pathText(metadataPath);
+                if (!metadataFileTexts.contains(metadataText)) {
                     addDiagnostic(result, AssetSourceScanDiagnosticCode::MissingMetadata,
                                   sourcePath, sourceFilePath, metadataPath,
                                   "Asset source scan missing metadata for source=\"" + sourcePath +
@@ -310,7 +405,7 @@ namespace asharia::asset {
                     continue;
                 }
 
-                if (containsPathText(matchedMetadataFiles, metadataPath)) {
+                if (matchedMetadataFileTexts.contains(metadataText)) {
                     addDiagnostic(result, AssetSourceScanDiagnosticCode::DuplicateMetadataPath,
                                   sourcePath, sourceFilePath, metadataPath,
                                   "Asset source scan metadata path collision source=\"" +
@@ -319,7 +414,8 @@ namespace asharia::asset {
                     continue;
                 }
 
-                matchedMetadataFiles.push_back(metadataPath);
+                sourcePaths.emplace(sourcePath);
+                matchedMetadataFileTexts.emplace(metadataText);
                 result.entries.push_back(AssetSourceScanEntry{
                     .sourcePath = std::move(sourcePath),
                     .sourceFilePath = sourceFilePath,
@@ -330,14 +426,15 @@ namespace asharia::asset {
 
         void appendOrphanMetadataDiagnostics(AssetSourceScanResult& result,
                                              const AssetSourceScanRequest& request,
-                                             MetadataMatchView files) {
-            for (const std::filesystem::path& metadataPath : files.metadataFiles) {
-                if (containsPathText(files.matchedMetadataFiles, metadataPath)) {
+                                             std::span<const std::filesystem::path> metadataFiles,
+                                             const PathTextSet& matchedMetadataFileTexts) {
+            for (const std::filesystem::path& metadataPath : metadataFiles) {
+                const std::string metadataText = pathText(metadataPath);
+                if (matchedMetadataFileTexts.contains(metadataText)) {
                     continue;
                 }
 
                 std::filesystem::path sourceFilePath = metadataPath;
-                const std::string metadataText = pathText(metadataPath);
                 std::string sourcePath;
                 if (metadataText.ends_with(request.metadataSuffix)) {
                     sourceFilePath = std::filesystem::path{metadataText.substr(
@@ -364,6 +461,7 @@ namespace asharia::asset {
         AssetSourceScanResult result;
 
         const bool requestValid =
+            validateLimits(result, request) &&
             validateMetadataSuffix(result, request.metadataSuffix) &&
             validateIgnoredDirectoryNames(result, request.ignoredDirectoryNames) &&
             validateSourcePathPrefix(result, request.sourcePathPrefix) &&
@@ -377,24 +475,19 @@ namespace asharia::asset {
         collectRegularFiles(result, request, sourceFiles, metadataFiles);
         sortPathList(sourceFiles);
         sortPathList(metadataFiles);
+        PathTextSet metadataFileTexts;
+        for (const std::filesystem::path& metadataFile : metadataFiles) {
+            metadataFileTexts.emplace(pathText(metadataFile));
+        }
 
         result.entries.reserve(sourceFiles.size());
         result.diagnostics.reserve(result.diagnostics.size() + sourceFiles.size() +
                                    metadataFiles.size());
 
-        std::vector<std::filesystem::path> matchedMetadataFiles;
-        matchedMetadataFiles.reserve(sourceFiles.size());
-        appendScannedSources(result, request,
-                             SourceScanFileView{
-                                 .sourceFiles = sourceFiles,
-                                 .metadataFiles = metadataFiles,
-                             },
-                             matchedMetadataFiles);
-        appendOrphanMetadataDiagnostics(result, request,
-                                        MetadataMatchView{
-                                            .metadataFiles = metadataFiles,
-                                            .matchedMetadataFiles = matchedMetadataFiles,
-                                        });
+        PathTextSet matchedMetadataFileTexts;
+        appendScannedSources(result, request, sourceFiles, metadataFileTexts,
+                             matchedMetadataFileTexts);
+        appendOrphanMetadataDiagnostics(result, request, metadataFiles, matchedMetadataFileTexts);
 
         return result;
     }

@@ -173,6 +173,3 @@ internal sealed class StudioScenePanelViewModel :
 
 internal sealed class StudioInspectorPanelViewModel(StudioShellViewModel shell)
     : StudioDockPanelViewModel(shell);
-
-internal sealed class StudioProjectPanelViewModel(StudioShellViewModel shell)
-    : StudioDockPanelViewModel(shell);

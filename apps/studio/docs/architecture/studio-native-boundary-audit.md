@@ -1,11 +1,12 @@
 # Studio native boundary 审查
 
-状态：Current audit（SceneDocument ABI v3 consumer 与 V7 async viewport stream 已建立；device epoch/recovery 仍开放）
+状态：Current audit（SceneDocument ABI v3、catalog query ABI v1 consumer 与 V7 async viewport stream 已建立；device epoch/recovery 仍开放）
 
-更新日期：2026-08-12
+更新日期：2026-08-13
 
 目标架构和实施顺序见 [Studio 前端硬切架构](studio-frontend-hard-cut.md)。本文只记录
-`apps/studio <-> apps/editor/packages/scene-core` 的当前事实、触发条件、风险和新合同门禁。
+`apps/studio` 与 `apps/editor`、`packages/scene-core`、`packages/editor-content` 之间 native boundaries 的当前事实、
+触发条件、风险和新合同门禁。
 
 ## 1. 结论
 
@@ -33,6 +34,13 @@ process-owned `ViewportPresentationLifetime` 完成 Avalonia import/presentation
 最多一个 executing、一个 pending latest、一个 ready frame 与三个持久 full slots。这关闭了“同步 caller 等帧”、
 “每帧重建 presentation resource”和“caller 线程直接拥有 Vulkan”三个旧事实，但尚未解决 process singleton、
 device epoch/recovery 或跨 stream weighted fairness。
+
+#385 另以独立 `asharia_editor_content_native.dll` 接入只读 project asset catalog query；它不进入
+`editor_native.dll`/Vulkan closure。ABI v1 使用 C11 header、fixed-width POD、caller-owned response buffer、typed status、
+catch-all exception containment、native/managed size-offset tests 与 strict closed JSON parser。默认 10,000 files、8 GiB
+source bytes、10,000 diagnostics、16 MiB JSON 和 64 KiB string/message；超限不返回 partial ABI payload。它没有 native
+session handle，因为调用不产生需跨 call 持有的 native object；Application generation 只解决异步发布 supersession，不冒充
+native cancellation。设计和拒绝项见 [ADR-0014](../adr/0014-catalog-backed-resource-browser.md)。
 
 ## 2. 阻断级问题
 
@@ -257,6 +265,10 @@ native size/offset static assertions 与 managed layout tests；Release producer
 `root/name/projectId`；managed 侧不解析、不修改也不回写 descriptor。未来任一 consumer 需要 asset roots/cache/discovery
 字段时，必须版本化扩展 immutable descriptor snapshot 或 generation，不得让 C# 拼装第二份 JSON truth。
 
+#385 不扩张 `asharia_project_native` descriptor ABI。需要 asset roots/cache/discovery 的 Resource Browser 通过专用
+`editor-content` query 在 native 内重新读取同一 canonical descriptor，并只返回 catalog-facing immutable snapshot；C# 不解析、
+修改或回写 descriptor。因此 project open identity 与 catalog snapshot 仍是两个窄 adapter，而不是把完整 descriptor 泄漏给 UI。
+
 ### P2-4 shared viewport mailbox 仍缺 per-session 公平调度
 
 owner-thread Slice 已把 Vulkan context create、record/queue submit、fence polling、retirement 与析构移出
@@ -390,6 +402,10 @@ ErrorInfo {
 ## 8. 参考资料
 
 - [Unreal Threaded Rendering](https://dev.epicgames.com/documentation/en-us/unreal-engine/threaded-rendering-in-unreal-engine)
+- [Unreal Asset Registry](https://dev.epicgames.com/documentation/en-us/unreal-engine/asset-registry-in-unreal-engine)
+- [Unity Asset Database](https://docs.unity3d.com/Manual/AssetDatabase.html)
+- [Godot Import process](https://docs.godotengine.org/en/stable/tutorials/assets_pipeline/import_process.html)
+- [O3DE Asset Cache](https://docs.o3de.org/docs/user-guide/assets/pipeline/asset-cache/)
 - [Godot RenderingServer](https://docs.godotengine.org/en/stable/classes/class_renderingserver.html)
 - [O3DE Atom Scene and RenderPipeline](https://docs.o3de.org/docs/atom-guide/dev-guide/rpi/working-with-scene-and-rendering-pipeline/)
 - [Vulkan vkGetSemaphoreWin32HandleKHR](https://docs.vulkan.org/refpages/latest/refpages/source/vkGetSemaphoreWin32HandleKHR.html)

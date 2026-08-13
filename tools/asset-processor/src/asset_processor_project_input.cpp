@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <iterator>
+#include <limits>
 #include <span>
 #include <utility>
 
@@ -95,9 +96,25 @@ namespace asharia::asset_processor {
         std::vector<AssetProcessorSourceRoot> sourceRoots;
         sourceRoots.reserve(descriptor->assetSourceRoots.size());
         for (const asharia::project::AssetSourceRootDesc& root : descriptor->assetSourceRoots) {
+            auto resolvedRoot = asharia::project::resolveContainedProjectPath(
+                projectRoot, std::filesystem::path{root.directory},
+                "asset source root '" + root.rootName + "'");
+            if (!resolvedRoot) {
+                return AssetProcessorResolvedInput{
+                    .succeeded = false,
+                    .projectPath = options.projectPath,
+                    .projectRoot = projectRoot,
+                    .projectName = descriptor->projectName,
+                    .projectId = asharia::project::formatProjectId(descriptor->projectId),
+                    .assetCacheRoot = descriptor->assetCacheRoot,
+                    .sourceRoots = {},
+                    .ignoredDirectoryNames = {},
+                    .error = resolvedRoot.error().message,
+                };
+            }
             sourceRoots.push_back(AssetProcessorSourceRoot{
                 .rootName = root.rootName,
-                .sourceRoot = projectRoot / std::filesystem::path{root.directory},
+                .sourceRoot = std::move(*resolvedRoot),
                 .directory = root.directory,
                 .sourcePathPrefix = root.sourcePathPrefix,
             });
@@ -134,6 +151,10 @@ namespace asharia::asset_processor {
                     .ignoredDirectoryNames = input.ignoredDirectoryNames,
                 });
 
+            const std::uint64_t remaining =
+                std::numeric_limits<std::uint64_t>::max() - combined.discoveredFileCount;
+            combined.discoveredFileCount += std::min(remaining, rootScan.discoveredFileCount);
+
             combined.entries.insert(combined.entries.end(),
                                     std::make_move_iterator(rootScan.entries.begin()),
                                     std::make_move_iterator(rootScan.entries.end()));
@@ -142,19 +163,17 @@ namespace asharia::asset_processor {
                                         std::make_move_iterator(rootScan.diagnostics.end()));
         }
 
-        std::ranges::sort(combined.entries,
-                          [](const asharia::asset::AssetSourceScanEntry& left,
-                             const asharia::asset::AssetSourceScanEntry& right) {
-                              return left.sourcePath < right.sourcePath;
-                          });
+        std::ranges::sort(combined.entries, [](const asharia::asset::AssetSourceScanEntry& left,
+                                               const asharia::asset::AssetSourceScanEntry& right) {
+            return left.sourcePath < right.sourcePath;
+        });
         return combined;
     }
 
     asharia::asset::AssetScannedImportPlanResult
-    planAssetProcessorImports(
-        const AssetProcessorResolvedInput& input,
-        const asharia::asset::AssetProductManifestDocument& productManifest,
-        std::string_view targetProfile) {
+    planAssetProcessorImports(const AssetProcessorResolvedInput& input,
+                              const asharia::asset::AssetProductManifestDocument& productManifest,
+                              std::string_view targetProfile) {
         asharia::asset::AssetScannedImportPlanResult result;
 
         result.scan = scanAssetProcessorSourceRoots(input);
@@ -177,8 +196,8 @@ namespace asharia::asset_processor {
         }
 
         result.plan = asharia::asset::planAssetImports(result.discovery.manifest.records,
-                                                       result.snapshot.snapshots,
-                                                       productManifest, targetProfile);
+                                                       result.snapshot.snapshots, productManifest,
+                                                       targetProfile);
         return result;
     }
 

@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <limits>
 #include <span>
 #include <string>
 #include <vector>
@@ -14,6 +15,7 @@ namespace asharia::asset {
         SourceFileNotRegular,
         SourceFileReadFailed,
         DuplicateSourcePath,
+        ByteLimitExceeded,
     };
 
     struct AssetSourceSnapshotEntry {
@@ -49,6 +51,7 @@ namespace asharia::asset {
     struct AssetSourceSnapshotResult {
         std::vector<AssetSourceSnapshot> snapshots;
         std::vector<AssetSourceSnapshotDiagnostic> diagnostics;
+        std::uint64_t bytesHashed{};
 
         [[nodiscard]] bool succeeded() const noexcept {
             return diagnostics.empty();
@@ -56,6 +59,7 @@ namespace asharia::asset {
     };
 
     [[nodiscard]] AssetSourceSnapshotResult
-    snapshotAssetSourceFiles(std::span<const AssetSourceSnapshotEntry> entries);
+    snapshotAssetSourceFiles(std::span<const AssetSourceSnapshotEntry> entries,
+                             std::uint64_t maxBytes = (std::numeric_limits<std::uint64_t>::max)());
 
 } // namespace asharia::asset

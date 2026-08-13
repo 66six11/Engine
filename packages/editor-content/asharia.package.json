@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "packageKind": "source-boundary",
+  "sourceRole": "module-group",
+  "ownerDomain": "editor",
+  "plannedOwnershipRoot": "com.asharia.system.editor",
+  "selectable": false,
+  "catalogVisible": false,
+  "name": "com.asharia.editor-content",
+  "version": "0.1.0",
+  "displayName": "Asharia Editor Content",
+  "description": "UI-neutral project asset catalog query and Studio native adapter.",
+  "dependencies": [
+    "com.asharia.asset-core",
+    "com.asharia.asset-pipeline",
+    "com.asharia.project-core"
+  ],
+  "targets": ["asharia-editor-content", "asharia-editor-content-native"],
+  "testTargets": [
+    "asharia-editor-content-native-smoke-tests",
+    "asharia-editor-content-native-c-header-smoke"
+  ],
+  "targetRoles": {
+    "asharia-editor-content": "runtime",
+    "asharia-editor-content-native": "adapter",
+    "asharia-editor-content-native-smoke-tests": "test",
+    "asharia-editor-content-native-c-header-smoke": "test"
+  },
+  "targetDependencies": {
+    "asharia-editor-content": [
+      "asharia-asset-core",
+      "asharia-asset-core-io",
+      "asharia-asset-pipeline",
+      "asharia-project-core-io"
+    ],
+    "asharia-editor-content-native": ["asharia-editor-content"],
+    "asharia-editor-content-native-smoke-tests": [
+      "asharia-editor-content-native",
+      "asharia-project-core-io"
+    ],
+    "asharia-editor-content-native-c-header-smoke": []
+  }
+}

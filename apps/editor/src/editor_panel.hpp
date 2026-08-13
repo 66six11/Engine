@@ -10,8 +10,8 @@
 #include <vector>
 
 #include "asharia/core/result.hpp"
+#include "asharia/editor_content/asset_catalog_snapshot.hpp"
 
-#include "editor_asset_catalog.hpp"
 #include "editor_asset_icon.hpp"
 #include "editor_asset_import_settings_command.hpp"
 #include "editor_command.hpp"

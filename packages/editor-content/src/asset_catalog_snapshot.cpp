@@ -1,7 +1,9 @@
-﻿#include "editor_asset_catalog.hpp"
+﻿#include "asharia/editor_content/asset_catalog_snapshot.hpp"
 
 #include <algorithm>
 #include <array>
+#include <fstream>
+#include <set>
 #include <span>
 #include <string>
 #include <string_view>
@@ -27,6 +29,11 @@ namespace asharia::editor {
         constexpr std::string_view kDefaultAssetTypeName = "com.asharia.asset.DefaultAsset";
         constexpr std::string_view kDefaultAssetRoleName = "com.asharia.asset.DefaultAsset";
 
+        struct IngestionTotals {
+            std::uint64_t sourceFiles{};
+            std::uint64_t sourceBytes{};
+        };
+
         void addDiagnostic(EditorAssetCatalogSnapshot& snapshot,
                            EditorAssetCatalogDiagnosticCode code,
                            EditorAssetCatalogDiagnosticSeverity severity, std::string sourcePath,
@@ -38,6 +45,27 @@ namespace asharia::editor {
                 .path = std::move(path),
                 .message = std::move(message),
             });
+        }
+
+        [[nodiscard]] bool addDiagnosticBounded(EditorAssetCatalogSnapshot& snapshot,
+                                                std::uint64_t maxDiagnostics,
+                                                EditorAssetCatalogDiagnosticCode code,
+                                                EditorAssetCatalogDiagnosticSeverity severity,
+                                                std::string sourcePath, std::filesystem::path path,
+                                                std::string message) {
+            if (snapshot.diagnostics.size() >= maxDiagnostics) {
+                snapshot.diagnostics.back() = EditorAssetCatalogDiagnostic{
+                    .code = EditorAssetCatalogDiagnosticCode::LimitExceeded,
+                    .severity = EditorAssetCatalogDiagnosticSeverity::Error,
+                    .sourcePath = {},
+                    .path = {},
+                    .message = "Editor asset catalog snapshot exceeded the diagnostic limit.",
+                };
+                return false;
+            }
+            addDiagnostic(snapshot, code, severity, std::move(sourcePath), std::move(path),
+                          std::move(message));
+            return true;
         }
 
         [[nodiscard]] std::filesystem::path
@@ -142,14 +170,6 @@ namespace asharia::editor {
             return key;
         }
 
-        [[nodiscard]] bool
-        hasNavigationNodeKey(std::span<const EditorAssetCatalogNavigationNode> nodes,
-                             std::string_view key) {
-            return std::ranges::any_of(nodes, [key](const EditorAssetCatalogNavigationNode& node) {
-                return node.key == key;
-            });
-        }
-
         [[nodiscard]] std::size_t
         sourceRootIndexForSourcePath(const EditorAssetCatalogSnapshot& snapshot,
                                      std::string_view sourcePath) {
@@ -170,6 +190,7 @@ namespace asharia::editor {
         }
 
         void appendNavigationFolderNodes(std::vector<EditorAssetCatalogNavigationNode>& nodes,
+                                         std::set<std::string, std::less<>>& nodeKeys,
                                          const EditorAssetCatalogResolvedSourceRoot& sourceRoot,
                                          std::size_t sourceRootIndex,
                                          std::string_view folderScope) {
@@ -188,7 +209,7 @@ namespace asharia::editor {
                     }
                     currentScope += segment;
                     std::string nodeKey = folderNavigationKey(currentScope);
-                    if (!hasNavigationNodeKey(nodes, nodeKey)) {
+                    if (nodeKeys.emplace(nodeKey).second) {
                         nodes.push_back(EditorAssetCatalogNavigationNode{
                             .kind = EditorAssetCatalogNavigationNodeKind::Folder,
                             .key = nodeKey,
@@ -220,7 +241,7 @@ namespace asharia::editor {
         }
 
         [[nodiscard]] std::string
-        navigationParentKeyForAsset(std::span<const EditorAssetCatalogNavigationNode> nodes,
+        navigationParentKeyForAsset(const std::set<std::string, std::less<>>& nodeKeys,
                                     const EditorAssetCatalogResolvedSourceRoot& sourceRoot,
                                     std::size_t sourceRootIndex, std::string_view sourcePath) {
             const std::string_view folderScope = sourcePathDirectory(sourcePath);
@@ -228,7 +249,7 @@ namespace asharia::editor {
                 return sourceRootNavigationKey(sourceRootIndex);
             }
             std::string folderKey = folderNavigationKey(folderScope);
-            if (hasNavigationNodeKey(nodes, folderKey)) {
+            if (nodeKeys.contains(folderKey)) {
                 return folderKey;
             }
             return sourceRootNavigationKey(sourceRootIndex);
@@ -308,17 +329,19 @@ namespace asharia::editor {
 
         [[nodiscard]] asharia::asset::AssetProductManifestDocument
         readProductManifest(const std::filesystem::path& productManifestFile,
-                            EditorAssetCatalogSnapshot& snapshot) {
+                            EditorAssetCatalogSnapshot& snapshot, std::uint64_t maxDiagnostics) {
             if (productManifestFile.empty()) {
                 return {};
             }
 
             auto manifest = asharia::asset::readAssetProductManifestFile(productManifestFile);
             if (!manifest) {
-                addDiagnostic(snapshot, EditorAssetCatalogDiagnosticCode::ProductManifestReadFailed,
-                              EditorAssetCatalogDiagnosticSeverity::Error, {}, productManifestFile,
-                              "Editor asset catalog snapshot could not read product manifest: " +
-                                  manifest.error().message);
+                (void)addDiagnosticBounded(
+                    snapshot, maxDiagnostics,
+                    EditorAssetCatalogDiagnosticCode::ProductManifestReadFailed,
+                    EditorAssetCatalogDiagnosticSeverity::Warning, {}, productManifestFile,
+                    "Editor asset catalog snapshot could not read product manifest: " +
+                        manifest.error().message);
                 return {};
             }
             return std::move(*manifest);
@@ -336,6 +359,7 @@ namespace asharia::editor {
             case asharia::asset::AssetSourceScanDiagnosticCode::InvalidSourcePath:
             case asharia::asset::AssetSourceScanDiagnosticCode::DuplicateSourcePath:
             case asharia::asset::AssetSourceScanDiagnosticCode::DuplicateMetadataPath:
+            case asharia::asset::AssetSourceScanDiagnosticCode::LimitExceeded:
                 return true;
             }
             return true;
@@ -357,31 +381,43 @@ namespace asharia::editor {
 
         void appendScanDiagnostics(
             EditorAssetCatalogSnapshot& snapshot,
-            std::span<const asharia::asset::AssetSourceScanDiagnostic> diagnostics) {
+            std::span<const asharia::asset::AssetSourceScanDiagnostic> diagnostics,
+            std::uint64_t maxDiagnostics) {
             for (const asharia::asset::AssetSourceScanDiagnostic& diagnostic : diagnostics) {
-                addDiagnostic(snapshot, EditorAssetCatalogDiagnosticCode::SourceScan,
-                              severityForScanDiagnostic(diagnostic.code), diagnostic.sourcePath,
-                              diagnostic.sourceFilePath, diagnostic.message);
+                if (!addDiagnosticBounded(
+                        snapshot, maxDiagnostics, EditorAssetCatalogDiagnosticCode::SourceScan,
+                        severityForScanDiagnostic(diagnostic.code), diagnostic.sourcePath,
+                        diagnostic.sourceFilePath, diagnostic.message)) {
+                    break;
+                }
             }
         }
 
         void appendDiscoveryDiagnostics(
             EditorAssetCatalogSnapshot& snapshot,
-            std::span<const asharia::asset::AssetSourceDiscoveryDiagnostic> diagnostics) {
+            std::span<const asharia::asset::AssetSourceDiscoveryDiagnostic> diagnostics,
+            std::uint64_t maxDiagnostics) {
             for (const asharia::asset::AssetSourceDiscoveryDiagnostic& diagnostic : diagnostics) {
-                addDiagnostic(snapshot, EditorAssetCatalogDiagnosticCode::SourceDiscovery,
-                              EditorAssetCatalogDiagnosticSeverity::Error, diagnostic.sourcePath,
-                              diagnostic.metadataPath, diagnostic.message);
+                if (!addDiagnosticBounded(
+                        snapshot, maxDiagnostics, EditorAssetCatalogDiagnosticCode::SourceDiscovery,
+                        EditorAssetCatalogDiagnosticSeverity::Error, diagnostic.sourcePath,
+                        diagnostic.metadataPath, diagnostic.message)) {
+                    break;
+                }
             }
         }
 
         void appendSnapshotDiagnostics(
             EditorAssetCatalogSnapshot& snapshot,
-            std::span<const asharia::asset::AssetSourceSnapshotDiagnostic> diagnostics) {
+            std::span<const asharia::asset::AssetSourceSnapshotDiagnostic> diagnostics,
+            std::uint64_t maxDiagnostics) {
             for (const asharia::asset::AssetSourceSnapshotDiagnostic& diagnostic : diagnostics) {
-                addDiagnostic(snapshot, EditorAssetCatalogDiagnosticCode::SourceSnapshot,
-                              EditorAssetCatalogDiagnosticSeverity::Error, diagnostic.sourcePath,
-                              diagnostic.sourceFilePath, diagnostic.message);
+                if (!addDiagnosticBounded(
+                        snapshot, maxDiagnostics, EditorAssetCatalogDiagnosticCode::SourceSnapshot,
+                        EditorAssetCatalogDiagnosticSeverity::Error, diagnostic.sourcePath,
+                        diagnostic.sourceFilePath, diagnostic.message)) {
+                    break;
+                }
             }
         }
 
@@ -400,11 +436,15 @@ namespace asharia::editor {
 
         void appendImportPlanDiagnostics(
             EditorAssetCatalogSnapshot& snapshot,
-            std::span<const asharia::asset::AssetImportPlanDiagnostic> diagnostics) {
+            std::span<const asharia::asset::AssetImportPlanDiagnostic> diagnostics,
+            std::uint64_t maxDiagnostics) {
             for (const asharia::asset::AssetImportPlanDiagnostic& diagnostic : diagnostics) {
-                addDiagnostic(snapshot, EditorAssetCatalogDiagnosticCode::ImportPlanning,
-                              severityForImportPlanDiagnostic(diagnostic.severity),
-                              diagnostic.sourcePath, {}, diagnostic.message);
+                if (!addDiagnosticBounded(snapshot, maxDiagnostics,
+                                          EditorAssetCatalogDiagnosticCode::ImportPlanning,
+                                          severityForImportPlanDiagnostic(diagnostic.severity),
+                                          diagnostic.sourcePath, {}, diagnostic.message)) {
+                    break;
+                }
             }
         }
 
@@ -423,35 +463,38 @@ namespace asharia::editor {
 
         void appendCatalogViewDiagnostics(
             EditorAssetCatalogSnapshot& snapshot,
-            std::span<const asharia::asset::AssetCatalogDiagnostic> diagnostics) {
+            std::span<const asharia::asset::AssetCatalogDiagnostic> diagnostics,
+            std::uint64_t maxDiagnostics) {
             for (const asharia::asset::AssetCatalogDiagnostic& diagnostic : diagnostics) {
-                addDiagnostic(snapshot, EditorAssetCatalogDiagnosticCode::CatalogView,
-                              severityForCatalogDiagnostic(diagnostic), diagnostic.sourcePath, {},
-                              diagnostic.message);
+                if (!addDiagnosticBounded(snapshot, maxDiagnostics,
+                                          EditorAssetCatalogDiagnosticCode::CatalogView,
+                                          severityForCatalogDiagnostic(diagnostic),
+                                          diagnostic.sourcePath, {}, diagnostic.message)) {
+                    break;
+                }
             }
         }
 
         void mergeSource(asharia::asset::AssetCatalog& catalog,
                          EditorAssetCatalogSnapshot& snapshot,
-                         asharia::asset::SourceAssetRecord source) {
+                         asharia::asset::SourceAssetRecord source, std::uint64_t maxDiagnostics) {
             const std::string sourcePath = source.sourcePath;
             auto added = catalog.addSource(std::move(source));
             if (!added) {
-                addDiagnostic(snapshot, EditorAssetCatalogDiagnosticCode::CatalogMerge,
-                              EditorAssetCatalogDiagnosticSeverity::Error, sourcePath, {},
-                              "Editor asset catalog snapshot could not merge source: " +
-                                  added.error().message);
+                (void)addDiagnosticBounded(
+                    snapshot, maxDiagnostics, EditorAssetCatalogDiagnosticCode::CatalogMerge,
+                    EditorAssetCatalogDiagnosticSeverity::Error, sourcePath, {},
+                    "Editor asset catalog snapshot could not merge source: " +
+                        added.error().message);
             }
         }
 
-        void mergePlannedSources(asharia::asset::AssetCatalog& catalog,
-                                 EditorAssetCatalogSnapshot& snapshot,
-                                 const asharia::asset::AssetImportPlanResult& plan) {
-            for (const asharia::asset::AssetImportCacheHit& hit : plan.cacheHits) {
-                mergeSource(catalog, snapshot, hit.source);
-            }
-            for (const asharia::asset::AssetImportRequest& request : plan.requests) {
-                mergeSource(catalog, snapshot, request.source);
+        void mergeDiscoveredSources(
+            asharia::asset::AssetCatalog& catalog, EditorAssetCatalogSnapshot& snapshot,
+            std::span<const asharia::asset::DiscoveredSourceAsset> discoveredSources,
+            std::uint64_t maxDiagnostics) {
+            for (const asharia::asset::DiscoveredSourceAsset& discovered : discoveredSources) {
+                mergeSource(catalog, snapshot, discovered.source, maxDiagnostics);
             }
         }
 
@@ -466,24 +509,6 @@ namespace asharia::editor {
             for (const asharia::asset::AssetImportRequest& request : plan.requests) {
                 expectedProductKeys.push_back(request.productKey);
             }
-        }
-
-        [[nodiscard]] bool catalogViewContainsSourcePath(
-            std::span<const asharia::asset::AssetCatalogViewEntry> entries,
-            std::string_view sourcePath) {
-            return std::ranges::any_of(
-                entries, [sourcePath](const asharia::asset::AssetCatalogViewEntry& entry) {
-                    return entry.sourcePath == sourcePath;
-                });
-        }
-
-        [[nodiscard]] bool
-        discoveryContainsSourcePath(std::span<const asharia::asset::DiscoveredSourceAsset> records,
-                                    std::string_view sourcePath) {
-            return std::ranges::any_of(
-                records, [sourcePath](const asharia::asset::DiscoveredSourceAsset& discovered) {
-                    return discovered.source.sourcePath == sourcePath;
-                });
         }
 
         [[nodiscard]] asharia::asset::AssetCatalogDiagnostic
@@ -521,8 +546,9 @@ namespace asharia::editor {
         }
 
         void appendDefaultAssetRow(std::vector<asharia::asset::AssetCatalogViewEntry>& defaultRows,
+                                   std::set<std::string, std::less<>>& defaultRowSourcePaths,
                                    std::string_view sourcePath, std::string_view message) {
-            if (sourcePath.empty() || catalogViewContainsSourcePath(defaultRows, sourcePath)) {
+            if (sourcePath.empty() || !defaultRowSourcePaths.emplace(sourcePath).second) {
                 return;
             }
             defaultRows.push_back(makeDefaultAssetEntry(sourcePath, message));
@@ -530,13 +556,14 @@ namespace asharia::editor {
 
         void appendMissingMetadataDefaultRows(
             std::vector<asharia::asset::AssetCatalogViewEntry>& defaultRows,
+            std::set<std::string, std::less<>>& defaultRowSourcePaths,
             std::span<const asharia::asset::AssetSourceScanDiagnostic> diagnostics) {
             for (const asharia::asset::AssetSourceScanDiagnostic& diagnostic : diagnostics) {
                 if (diagnostic.code !=
                     asharia::asset::AssetSourceScanDiagnosticCode::MissingMetadata) {
                     continue;
                 }
-                appendDefaultAssetRow(defaultRows, diagnostic.sourcePath,
+                appendDefaultAssetRow(defaultRows, defaultRowSourcePaths, diagnostic.sourcePath,
                                       "Asset source has no metadata sidecar; it is visible as a "
                                       "default asset and no product will be generated.");
             }
@@ -544,13 +571,18 @@ namespace asharia::editor {
 
         void appendUndiscoveredSourceDefaultRows(
             std::vector<asharia::asset::AssetCatalogViewEntry>& defaultRows,
+            std::set<std::string, std::less<>>& defaultRowSourcePaths,
             std::span<const asharia::asset::AssetSourceScanEntry> scanEntries,
             std::span<const asharia::asset::DiscoveredSourceAsset> discoveredSources) {
+            std::set<std::string_view, std::less<>> discoveredSourcePaths;
+            for (const asharia::asset::DiscoveredSourceAsset& discovered : discoveredSources) {
+                discoveredSourcePaths.emplace(discovered.source.sourcePath);
+            }
             for (const asharia::asset::AssetSourceScanEntry& entry : scanEntries) {
-                if (discoveryContainsSourcePath(discoveredSources, entry.sourcePath)) {
+                if (discoveredSourcePaths.contains(entry.sourcePath)) {
                     continue;
                 }
-                appendDefaultAssetRow(defaultRows, entry.sourcePath,
+                appendDefaultAssetRow(defaultRows, defaultRowSourcePaths, entry.sourcePath,
                                       "Asset source metadata did not produce a catalog source; it "
                                       "is visible as a default asset and no product will be "
                                       "generated.");
@@ -582,7 +614,7 @@ namespace asharia::editor {
             }
         }
 
-        void appendRootSnapshot(const std::filesystem::path& projectDirectory,
+        void appendRootSnapshot(const std::filesystem::path& sourceRootDirectory,
                                 const asharia::project::AssetSourceRootDesc& root,
                                 const asharia::asset::AssetProductManifestDocument& productManifest,
                                 const std::string& targetProfile,
@@ -590,18 +622,43 @@ namespace asharia::editor {
                                 std::vector<asharia::asset::AssetProductKey>& expectedProductKeys,
                                 std::vector<asharia::asset::AssetCatalogSourceFacet>& sourceFacets,
                                 std::vector<asharia::asset::AssetCatalogViewEntry>& defaultRows,
-                                EditorAssetCatalogSnapshot& snapshot) {
+                                std::set<std::string, std::less<>>& defaultRowSourcePaths,
+                                const EditorAssetCatalogSnapshotRequest& request,
+                                IngestionTotals& totals, EditorAssetCatalogSnapshot& snapshot) {
             const asharia::asset::AssetSourceScanRequest scanRequest{
-                .sourceRoot = sourceRootPath(projectDirectory, root),
+                .sourceRoot = sourceRootDirectory,
                 .sourcePathPrefix = root.sourcePathPrefix,
                 .metadataSuffix = std::string{asharia::asset::kAssetMetadataSidecarSuffix},
                 .ignoredDirectoryNames = snapshot.project.assetDiscovery.ignoredDirectoryNames,
+                // Check the aggregate after this bounded root scan. Passing only the remaining
+                // count would reject an empty trailing root when prior roots use the budget
+                // exactly.
+                .maxDiscoveredFiles = request.maxSourceFiles,
             };
 
             const asharia::asset::AssetSourceScanResult scan =
                 asharia::asset::scanAssetSourceTree(scanRequest);
-            appendScanDiagnostics(snapshot, scan.diagnostics);
-            appendMissingMetadataDefaultRows(defaultRows, scan.diagnostics);
+            if (scan.discoveredFileCount > request.maxSourceFiles - totals.sourceFiles) {
+                (void)addDiagnosticBounded(
+                    snapshot, request.maxDiagnostics,
+                    EditorAssetCatalogDiagnosticCode::LimitExceeded,
+                    EditorAssetCatalogDiagnosticSeverity::Error, {}, {},
+                    "Editor asset catalog snapshot exceeded the aggregate source file limit.");
+                return;
+            }
+            totals.sourceFiles += scan.discoveredFileCount;
+            appendScanDiagnostics(snapshot, scan.diagnostics, request.maxDiagnostics);
+            if (std::ranges::any_of(scan.diagnostics, [](const auto& diagnostic) {
+                    return diagnostic.code ==
+                           asharia::asset::AssetSourceScanDiagnosticCode::LimitExceeded;
+                })) {
+                (void)addDiagnosticBounded(
+                    snapshot, request.maxDiagnostics,
+                    EditorAssetCatalogDiagnosticCode::LimitExceeded,
+                    EditorAssetCatalogDiagnosticSeverity::Error, {}, {},
+                    "Editor asset catalog snapshot exceeded the aggregate source file limit.");
+            }
+            appendMissingMetadataDefaultRows(defaultRows, defaultRowSourcePaths, scan.diagnostics);
             if (hasFatalScanDiagnostics(scan.diagnostics)) {
                 return;
             }
@@ -610,92 +667,47 @@ namespace asharia::editor {
                 makeDiscoveryEntries(scan.entries);
             const asharia::asset::AssetSourceDiscoveryResult discovery =
                 asharia::asset::discoverAssetSources(discoveryEntries);
-            appendDiscoveryDiagnostics(snapshot, discovery.diagnostics);
-            appendUndiscoveredSourceDefaultRows(defaultRows, scan.entries,
+            appendDiscoveryDiagnostics(snapshot, discovery.diagnostics, request.maxDiagnostics);
+            mergeDiscoveredSources(catalog, snapshot, discovery.manifest.records,
+                                   request.maxDiagnostics);
+            appendUndiscoveredSourceDefaultRows(defaultRows, defaultRowSourcePaths, scan.entries,
                                                 discovery.manifest.records);
 
             const std::vector<asharia::asset::AssetSourceSnapshotEntry> snapshotEntries =
                 makeSnapshotEntries(scan.entries);
             const asharia::asset::AssetSourceSnapshotResult sourceSnapshot =
-                asharia::asset::snapshotAssetSourceFiles(snapshotEntries);
-            appendSnapshotDiagnostics(snapshot, sourceSnapshot.diagnostics);
+                asharia::asset::snapshotAssetSourceFiles(
+                    snapshotEntries, request.maxTotalSourceBytes - totals.sourceBytes);
+            totals.sourceBytes += sourceSnapshot.bytesHashed;
+            appendSnapshotDiagnostics(snapshot, sourceSnapshot.diagnostics, request.maxDiagnostics);
+            if (std::ranges::any_of(sourceSnapshot.diagnostics, [](const auto& diagnostic) {
+                    return diagnostic.code ==
+                           asharia::asset::AssetSourceSnapshotDiagnosticCode::ByteLimitExceeded;
+                })) {
+                (void)addDiagnosticBounded(
+                    snapshot, request.maxDiagnostics,
+                    EditorAssetCatalogDiagnosticCode::LimitExceeded,
+                    EditorAssetCatalogDiagnosticSeverity::Error, {}, {},
+                    "Editor asset catalog snapshot exceeded the aggregate source byte limit "
+                    "while hashing source files.");
+                return;
+            }
 
             const asharia::asset::AssetImportPlanResult plan = asharia::asset::planAssetImports(
                 discovery.manifest.records, sourceSnapshot.snapshots, productManifest,
-                targetProfile);
-            appendImportPlanDiagnostics(snapshot, plan.diagnostics);
+                targetProfile,
+                asharia::asset::AssetImportPlanOptions{
+                    .toolVersions = {},
+                    .toolFingerprintResolver = {},
+                    .toolDependencyPolicy =
+                        asharia::asset::AssetImportToolDependencyPolicy::DeclaredOnly,
+                });
+            appendImportPlanDiagnostics(snapshot, plan.diagnostics, request.maxDiagnostics);
             appendTextureProfileFacets(sourceFacets, discovery.manifest.records);
             appendExpectedProductKeys(expectedProductKeys, plan);
-            mergePlannedSources(catalog, snapshot, plan);
-        }
-
-        struct FixtureSourceDesc {
-            std::string_view guidText;
-            std::string_view assetTypeName;
-            std::string_view sourcePath;
-            std::string_view importerName;
-            std::uint64_t sourceHash{};
-            std::uint64_t settingsHash{};
-        };
-
-        [[nodiscard]] asharia::asset::SourceAssetRecord
-        fixtureSourceRecord(const FixtureSourceDesc& desc) {
-            auto guid = asharia::asset::parseAssetGuid(desc.guidText);
-            return asharia::asset::SourceAssetRecord{
-                .guid = guid ? *guid : asharia::asset::AssetGuid{},
-                .assetType = asharia::asset::makeAssetTypeId(desc.assetTypeName),
-                .assetTypeName = std::string{desc.assetTypeName},
-                .sourcePath = std::string{desc.sourcePath},
-                .importerId = asharia::asset::makeImporterId(desc.importerName),
-                .importerName = std::string{desc.importerName},
-                .importerVersion = asharia::asset::ImporterVersion{1},
-                .sourceHash = desc.sourceHash,
-                .settingsHash = desc.settingsHash,
-            };
-        }
-
-        [[nodiscard]] asharia::asset::AssetProductRecord
-        fixtureProductRecord(const asharia::asset::SourceAssetRecord& source,
-                             std::uint64_t dependencyHash, std::uint64_t targetProfileHash,
-                             std::string_view relativeProductPath, std::uint64_t productSizeBytes) {
-            const asharia::asset::AssetProductKey productKey =
-                asharia::asset::makeAssetProductKey(source, dependencyHash, targetProfileHash);
-            return asharia::asset::AssetProductRecord{
-                .key = productKey,
-                .relativeProductPath = std::string{relativeProductPath},
-                .productSizeBytes = productSizeBytes,
-                .productHash = asharia::asset::hashAssetProductKey(productKey),
-            };
         }
 
     } // namespace
-
-    EditorAssetCatalogStore::EditorAssetCatalogStore()
-        : fixtureCatalog_{makeEditorAssetBrowserFixtureCatalogView()} {}
-
-    void EditorAssetCatalogStore::useFixtureCatalog() {
-        snapshot_ = {};
-        hasSnapshot_ = false;
-    }
-
-    void EditorAssetCatalogStore::useSnapshot(EditorAssetCatalogSnapshot snapshot) {
-        snapshot_ = std::move(snapshot);
-        hasSnapshot_ = true;
-    }
-
-    const asharia::asset::AssetCatalogView& EditorAssetCatalogStore::catalogView() const noexcept {
-        return hasSnapshot_ ? snapshot_.catalogView : fixtureCatalog_;
-    }
-
-    const EditorAssetCatalogSnapshot* EditorAssetCatalogStore::snapshot() const noexcept {
-        return hasSnapshot_ ? &snapshot_ : nullptr;
-    }
-
-    std::span<const EditorAssetCatalogDiagnostic>
-    EditorAssetCatalogStore::diagnostics() const noexcept {
-        return hasSnapshot_ ? std::span<const EditorAssetCatalogDiagnostic>{snapshot_.diagnostics}
-                            : std::span<const EditorAssetCatalogDiagnostic>{};
-    }
 
     EditorAssetCatalogSnapshotRequest
     makeEditorAssetCatalogSnapshotRequest(const EditorAssetCatalogSnapshot& snapshot) {
@@ -704,24 +716,6 @@ namespace asharia::editor {
             .productManifestFile = snapshot.productManifestFile,
             .targetProfile = snapshot.targetProfile,
         };
-    }
-
-    const EditorAssetCatalogSnapshot*
-    refreshEditorAssetCatalogStore(EditorAssetCatalogStore& store) {
-        const EditorAssetCatalogSnapshot* snapshot = store.snapshot();
-        if (snapshot == nullptr) {
-            return nullptr;
-        }
-
-        return refreshEditorAssetCatalogStore(store,
-                                              makeEditorAssetCatalogSnapshotRequest(*snapshot));
-    }
-
-    const EditorAssetCatalogSnapshot*
-    refreshEditorAssetCatalogStore(EditorAssetCatalogStore& store,
-                                   const EditorAssetCatalogSnapshotRequest& request) {
-        store.useSnapshot(loadEditorAssetCatalogSnapshot(request));
-        return store.snapshot();
     }
 
     std::string_view
@@ -745,6 +739,8 @@ namespace asharia::editor {
             return "catalog-merge";
         case EditorAssetCatalogDiagnosticCode::CatalogView:
             return "catalog-view";
+        case EditorAssetCatalogDiagnosticCode::LimitExceeded:
+            return "limit-exceeded";
         }
         return "invalid-request";
     }
@@ -777,7 +773,14 @@ namespace asharia::editor {
         const std::filesystem::path projectDirectory = projectDirectoryFor(snapshot.projectFile);
         for (const asharia::project::AssetSourceRootDesc& root :
              snapshot.project.assetSourceRoots) {
-            std::filesystem::path resolvedDirectory = sourceRootPath(projectDirectory, root);
+            auto containedDirectory = asharia::project::resolveContainedProjectPath(
+                projectDirectory, std::filesystem::path{root.directory},
+                "asset source root '" + root.rootName + "'");
+            if (!containedDirectory) {
+                roots.push_back(EditorAssetCatalogResolvedSourceRoot{});
+                continue;
+            }
+            std::filesystem::path resolvedDirectory = std::move(*containedDirectory);
             resolvedDirectory.make_preferred();
             roots.push_back(EditorAssetCatalogResolvedSourceRoot{
                 .matched = true,
@@ -808,8 +811,13 @@ namespace asharia::editor {
             return {};
         }
 
-        std::filesystem::path resolvedDirectory =
-            sourceRootPath(projectDirectoryFor(snapshot.projectFile), *bestRoot);
+        auto containedDirectory = asharia::project::resolveContainedProjectPath(
+            projectDirectoryFor(snapshot.projectFile), std::filesystem::path{bestRoot->directory},
+            "asset source root '" + bestRoot->rootName + "'");
+        if (!containedDirectory) {
+            return {};
+        }
+        std::filesystem::path resolvedDirectory = std::move(*containedDirectory);
         resolvedDirectory.make_preferred();
         return EditorAssetCatalogResolvedSourceRoot{
             .matched = true,
@@ -838,6 +846,7 @@ namespace asharia::editor {
     std::vector<EditorAssetCatalogNavigationNode>
     makeEditorAssetCatalogNavigationNodes(const EditorAssetCatalogSnapshot& snapshot) {
         std::vector<EditorAssetCatalogNavigationNode> nodes;
+        std::set<std::string, std::less<>> nodeKeys;
         const std::vector<EditorAssetCatalogResolvedSourceRoot> sourceRoots =
             resolveEditorAssetCatalogSourceRoots(snapshot);
         nodes.reserve(sourceRoots.size() + snapshot.catalogView.entries.size());
@@ -847,9 +856,11 @@ namespace asharia::editor {
             const EditorAssetCatalogResolvedSourceRoot& sourceRoot = sourceRoots[sourceRootIndex];
             const std::string displayName =
                 sourceRoot.rootName.empty() ? sourceRoot.sourcePathPrefix : sourceRoot.rootName;
+            std::string sourceRootKey = sourceRootNavigationKey(sourceRootIndex);
+            nodeKeys.emplace(sourceRootKey);
             nodes.push_back(EditorAssetCatalogNavigationNode{
                 .kind = EditorAssetCatalogNavigationNodeKind::SourceRoot,
-                .key = sourceRootNavigationKey(sourceRootIndex),
+                .key = std::move(sourceRootKey),
                 .parentKey = {},
                 .displayName =
                     displayName.empty() ? pathText(sourceRoot.resolvedDirectory) : displayName,
@@ -880,16 +891,18 @@ namespace asharia::editor {
                     : resolveEditorAssetCatalogSourceRootForSourcePath(snapshot, entry.sourcePath);
             const std::string_view folderScope = sourcePathDirectory(entry.sourcePath);
             if (hasSourceRoot && !folderScope.empty()) {
-                appendNavigationFolderNodes(nodes, sourceRoot, sourceRootIndex, folderScope);
+                appendNavigationFolderNodes(nodes, nodeKeys, sourceRoot, sourceRootIndex,
+                                            folderScope);
             }
 
             const std::string assetKey = assetNavigationKey(entry.sourcePath);
+            nodeKeys.emplace(assetKey);
             nodes.push_back(EditorAssetCatalogNavigationNode{
                 .kind = EditorAssetCatalogNavigationNodeKind::Asset,
                 .key = assetKey,
                 .parentKey = hasSourceRoot
-                                 ? navigationParentKeyForAsset(nodes, sourceRoot, sourceRootIndex,
-                                                               entry.sourcePath)
+                                 ? navigationParentKeyForAsset(nodeKeys, sourceRoot,
+                                                               sourceRootIndex, entry.sourcePath)
                                  : std::string{},
                 .displayName = entry.displayName.empty()
                                    ? std::string{sourcePathFileName(entry.sourcePath)}
@@ -911,9 +924,12 @@ namespace asharia::editor {
             });
 
             for (const asharia::asset::AssetCatalogSubAssetViewEntry& subAsset : entry.subAssets) {
+                std::string subAssetKey =
+                    subAssetNavigationKey(entry.sourcePath, subAsset.stableId);
+                nodeKeys.emplace(subAssetKey);
                 nodes.push_back(EditorAssetCatalogNavigationNode{
                     .kind = EditorAssetCatalogNavigationNodeKind::SubAsset,
-                    .key = subAssetNavigationKey(entry.sourcePath, subAsset.stableId),
+                    .key = std::move(subAssetKey),
                     .parentKey = assetKey,
                     .displayName =
                         subAsset.displayName.empty() ? subAsset.stableId : subAsset.displayName,
@@ -967,20 +983,44 @@ namespace asharia::editor {
             return snapshot;
         }
         snapshot.project = std::move(*project);
+        if (snapshot.project.assetSourceRoots.size() > request.maxSourceRoots) {
+            addDiagnostic(snapshot, EditorAssetCatalogDiagnosticCode::LimitExceeded,
+                          EditorAssetCatalogDiagnosticSeverity::Error, {}, resolvedProjectFile,
+                          "Editor asset catalog snapshot exceeded the source root limit.");
+            return snapshot;
+        }
 
         const std::filesystem::path projectDirectory = projectDirectoryFor(resolvedProjectFile);
         snapshot.productManifestFile =
             productManifestFileFor(request, projectDirectory, snapshot.project);
         const asharia::asset::AssetProductManifestDocument productManifest =
-            readProductManifest(snapshot.productManifestFile, snapshot);
+            readProductManifest(snapshot.productManifestFile, snapshot, request.maxDiagnostics);
         asharia::asset::AssetCatalog catalog;
         std::vector<asharia::asset::AssetProductKey> expectedProductKeys;
         std::vector<asharia::asset::AssetCatalogSourceFacet> sourceFacets;
         std::vector<asharia::asset::AssetCatalogViewEntry> defaultRows;
+        std::set<std::string, std::less<>> defaultRowSourcePaths;
+        IngestionTotals totals;
         for (const asharia::project::AssetSourceRootDesc& root :
              snapshot.project.assetSourceRoots) {
-            appendRootSnapshot(projectDirectory, root, productManifest, request.targetProfile,
-                               catalog, expectedProductKeys, sourceFacets, defaultRows, snapshot);
+            auto sourceRoot = asharia::project::resolveContainedProjectPath(
+                projectDirectory, std::filesystem::path{root.directory},
+                "asset source root '" + root.rootName + "'");
+            if (!sourceRoot) {
+                (void)addDiagnosticBounded(
+                    snapshot, request.maxDiagnostics, EditorAssetCatalogDiagnosticCode::SourceScan,
+                    EditorAssetCatalogDiagnosticSeverity::Error, {},
+                    sourceRootPath(projectDirectory, root), sourceRoot.error().message);
+                continue;
+            }
+            appendRootSnapshot(*sourceRoot, root, productManifest, request.targetProfile, catalog,
+                               expectedProductKeys, sourceFacets, defaultRows,
+                               defaultRowSourcePaths, request, totals, snapshot);
+            if (std::ranges::any_of(snapshot.diagnostics, [](const auto& diagnostic) {
+                    return diagnostic.code == EditorAssetCatalogDiagnosticCode::LimitExceeded;
+                })) {
+                break;
+            }
         }
 
         snapshot.catalogView = asharia::asset::buildAssetCatalogView(
@@ -988,18 +1028,19 @@ namespace asharia::editor {
             asharia::asset::AssetCatalogViewOptions{.requireProducts = true,
                                                     .expectedProductKeys = expectedProductKeys,
                                                     .sourceFacets = sourceFacets});
+        std::set<std::string, std::less<>> catalogSourcePaths;
+        for (const asharia::asset::AssetCatalogViewEntry& entry : snapshot.catalogView.entries) {
+            catalogSourcePaths.emplace(entry.sourcePath);
+        }
         for (asharia::asset::AssetCatalogViewEntry& defaultRow : defaultRows) {
-            if (catalogViewContainsSourcePath(snapshot.catalogView.entries,
-                                              defaultRow.sourcePath)) {
+            if (catalogSourcePaths.contains(defaultRow.sourcePath)) {
                 continue;
             }
             snapshot.catalogView.entries.push_back(std::move(defaultRow));
         }
         sortCatalogViewEntries(snapshot.catalogView.entries);
-        appendCatalogViewDiagnostics(snapshot, snapshot.catalogView.diagnostics);
-        for (const asharia::asset::AssetCatalogViewEntry& entry : snapshot.catalogView.entries) {
-            appendCatalogViewDiagnostics(snapshot, entry.diagnostics);
-        }
+        appendCatalogViewDiagnostics(snapshot, snapshot.catalogView.diagnostics,
+                                     request.maxDiagnostics);
         return snapshot;
     }
 
@@ -1033,160 +1074,6 @@ namespace asharia::editor {
         metadataFile += std::string{asharia::asset::kAssetMetadataSidecarSuffix};
         metadataFile.make_preferred();
         return metadataFile;
-    }
-
-    asharia::asset::AssetCatalogView makeEditorAssetBrowserFixtureCatalogView() {
-        constexpr std::string_view kMaterialTypeName = "com.asharia.asset.Material";
-        constexpr std::string_view kMeshTypeName = "com.asharia.asset.Mesh";
-        constexpr std::string_view kShaderTypeName = "com.asharia.asset.Shader";
-        constexpr std::string_view kTextureTypeName = "com.asharia.asset.Texture";
-        constexpr std::string_view kTextTypeName = "com.asharia.asset.Text";
-        const asharia::asset::SourceAssetRecord material = fixtureSourceRecord(FixtureSourceDesc{
-            .guidText = "b8373128-8e46-44e1-a5a4-df4c2ef9d2ad",
-            .assetTypeName = kMaterialTypeName,
-            .sourcePath = "Assets/Materials/brushed_metal.amat",
-            .importerName = "asharia.material",
-            .sourceHash = 0x1001ULL,
-            .settingsHash = 0x2001ULL,
-        });
-        const asharia::asset::SourceAssetRecord shader = fixtureSourceRecord(FixtureSourceDesc{
-            .guidText = "13a10d4b-6987-48d1-ad27-ae4055e5a936",
-            .assetTypeName = kShaderTypeName,
-            .sourcePath = "Assets/Shaders/grid.slang",
-            .importerName = "asharia.shader-slang",
-            .sourceHash = 0x1002ULL,
-            .settingsHash = 0x2002ULL,
-        });
-        asharia::asset::SourceAssetRecord staleMesh = fixtureSourceRecord(FixtureSourceDesc{
-            .guidText = "1135c477-65aa-4d44-92f1-f208fc6142ad",
-            .assetTypeName = kMeshTypeName,
-            .sourcePath = "Assets/Meshes/cube.mesh",
-            .importerName = "asharia.mesh-placeholder",
-            .sourceHash = 0x1003ULL,
-            .settingsHash = 0x2003ULL,
-        });
-        const asharia::asset::SourceAssetRecord texture = fixtureSourceRecord(FixtureSourceDesc{
-            .guidText = "cd9c0f3d-20e2-4028-a3e9-c3f42d3fd515",
-            .assetTypeName = kTextureTypeName,
-            .sourcePath = "Assets/Textures/checker.png",
-            .importerName = "asharia.texture-placeholder",
-            .sourceHash = 0x1004ULL,
-            .settingsHash = 0x2004ULL,
-        });
-        const asharia::asset::SourceAssetRecord spriteSheet = fixtureSourceRecord(FixtureSourceDesc{
-            .guidText = "fd2e5880-dffb-4d27-b5d1-0c249005023a",
-            .assetTypeName = kTextureTypeName,
-            .sourcePath = "Assets/Textures/hero_sprites.png",
-            .importerName = "asharia.texture-placeholder",
-            .sourceHash = 0x1006ULL,
-            .settingsHash = 0x2006ULL,
-        });
-        const asharia::asset::SourceAssetRecord skybox = fixtureSourceRecord(FixtureSourceDesc{
-            .guidText = "3b2cef92-bc92-43be-8e7d-a74a89c1d502",
-            .assetTypeName = kTextureTypeName,
-            .sourcePath = "Assets/Textures/studio_skybox.hdr",
-            .importerName = "asharia.texture-placeholder",
-            .sourceHash = 0x1007ULL,
-            .settingsHash = 0x2007ULL,
-        });
-        const asharia::asset::SourceAssetRecord textureCube = fixtureSourceRecord(FixtureSourceDesc{
-            .guidText = "38fd0dc8-55ee-44c9-b12f-0179e0039c6b",
-            .assetTypeName = kTextureTypeName,
-            .sourcePath = "Assets/Textures/studio_probe_cube.ktx2",
-            .importerName = "asharia.texture-placeholder",
-            .sourceHash = 0x1008ULL,
-            .settingsHash = 0x2008ULL,
-        });
-        const asharia::asset::SourceAssetRecord note = fixtureSourceRecord(FixtureSourceDesc{
-            .guidText = "f98f9d88-237f-4e8a-a4b6-9977d3a1fc2b",
-            .assetTypeName = kTextTypeName,
-            .sourcePath = "Assets/readme.md",
-            .importerName = "asharia.text-placeholder",
-            .sourceHash = 0x1005ULL,
-            .settingsHash = 0x2005ULL,
-        });
-
-        asharia::asset::AssetCatalog catalog;
-        if (!catalog.addSource(shader) || !catalog.addSource(note) || !catalog.addSource(texture) ||
-            !catalog.addSource(spriteSheet) || !catalog.addSource(skybox) ||
-            !catalog.addSource(textureCube) || !catalog.addSource(material) ||
-            !catalog.addSource(staleMesh)) {
-            return {};
-        }
-
-        const std::uint64_t targetProfile =
-            asharia::asset::makeAssetTargetProfileHash("editor-preview");
-        asharia::asset::SourceAssetRecord oldMesh = staleMesh;
-        oldMesh.sourceHash ^= 0x40ULL;
-        const std::array expectedProductKeys{
-            asharia::asset::makeAssetProductKey(material, 0x3001ULL, targetProfile),
-            asharia::asset::makeAssetProductKey(shader, 0x3002ULL, targetProfile),
-            asharia::asset::makeAssetProductKey(staleMesh, 0x3003ULL, targetProfile),
-            asharia::asset::makeAssetProductKey(texture, 0x3004ULL, targetProfile),
-            asharia::asset::makeAssetProductKey(note, 0x3005ULL, targetProfile),
-            asharia::asset::makeAssetProductKey(spriteSheet, 0x3006ULL, targetProfile),
-            asharia::asset::makeAssetProductKey(skybox, 0x3007ULL, targetProfile),
-            asharia::asset::makeAssetProductKey(textureCube, 0x3008ULL, targetProfile),
-        };
-        const std::array<asharia::asset::AssetProductRecord, 7> products{
-            fixtureProductRecord(material, 0x3001ULL, targetProfile,
-                                 "materials/brushed_metal.product", 512),
-            fixtureProductRecord(shader, 0x3002ULL, targetProfile, "shaders/grid.product", 256),
-            fixtureProductRecord(texture, 0x3004ULL, targetProfile, "textures/checker.product",
-                                 1024),
-            fixtureProductRecord(spriteSheet, 0x3006ULL, targetProfile,
-                                 "textures/hero_sprites.product", 4096),
-            fixtureProductRecord(skybox, 0x3007ULL, targetProfile, "textures/studio_skybox.product",
-                                 8192),
-            fixtureProductRecord(textureCube, 0x3008ULL, targetProfile,
-                                 "textures/studio_probe_cube.product", 8192),
-            fixtureProductRecord(oldMesh, 0x3003ULL, targetProfile, "meshes/cube.old.product",
-                                 2048),
-        };
-        const std::array textureSettings{
-            asharia::asset::AssetImportSetting{
-                .key = std::string{asharia::asset::kTextureImportProfileSettingKey},
-                .value = std::string{asharia::asset::kTextureImportProfileTexture2D},
-            },
-        };
-        const std::array spriteSheetSettings{
-            asharia::asset::AssetImportSetting{
-                .key = std::string{asharia::asset::kTextureImportProfileSettingKey},
-                .value = std::string{asharia::asset::kTextureImportProfileSpriteSheet},
-            },
-            asharia::asset::AssetImportSetting{.key = "texture.subAsset.0.id",
-                                               .value = "hero-idle-0"},
-            asharia::asset::AssetImportSetting{.key = "texture.subAsset.0.name",
-                                               .value = "Hero Idle 0"},
-            asharia::asset::AssetImportSetting{.key = "texture.subAsset.1.id",
-                                               .value = "hero-run-0"},
-            asharia::asset::AssetImportSetting{.key = "texture.subAsset.1.name",
-                                               .value = "Hero Run 0"},
-        };
-        const std::array skyboxSettings{
-            asharia::asset::AssetImportSetting{
-                .key = std::string{asharia::asset::kTextureImportProfileSettingKey},
-                .value = std::string{asharia::asset::kTextureImportProfileSkybox},
-            },
-        };
-        const std::array textureCubeSettings{
-            asharia::asset::AssetImportSetting{
-                .key = std::string{asharia::asset::kTextureImportProfileSettingKey},
-                .value = std::string{asharia::asset::kTextureImportProfileTextureCube},
-            },
-        };
-        const std::array sourceFacets{
-            asharia::asset::makeTextureImportCatalogSourceFacet(texture, textureSettings),
-            asharia::asset::makeTextureImportCatalogSourceFacet(spriteSheet, spriteSheetSettings),
-            asharia::asset::makeTextureImportCatalogSourceFacet(skybox, skyboxSettings),
-            asharia::asset::makeTextureImportCatalogSourceFacet(textureCube, textureCubeSettings),
-        };
-
-        return asharia::asset::buildAssetCatalogView(
-            catalog, products,
-            asharia::asset::AssetCatalogViewOptions{.requireProducts = true,
-                                                    .expectedProductKeys = expectedProductKeys,
-                                                    .sourceFacets = sourceFacets});
     }
 
 } // namespace asharia::editor

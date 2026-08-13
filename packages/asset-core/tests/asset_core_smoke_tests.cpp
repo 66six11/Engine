@@ -442,6 +442,15 @@ namespace {
             return false;
         }
 
+        asharia::asset::AssetMetadataDocument tooManySettings = document;
+        tooManySettings.settings.resize(asharia::asset::kMaxAssetMetadataSettings + 1U);
+        auto tooManySettingsWrite = asharia::asset::writeAssetMetadataText(tooManySettings);
+        if (tooManySettingsWrite || !messageContains(tooManySettingsWrite.error().message,
+                                                     "maximum supported setting count")) {
+            logFailure("Asset metadata IO smoke accepted too many import settings.");
+            return false;
+        }
+
         const std::string missingGuid = R"json({
   "schema": "com.asharia.asset.metadata",
   "schemaVersion": 1,
@@ -738,6 +747,11 @@ namespace {
             catalog.sources().size() != 1 ||
             !expectCatalogFailure(catalog.removeSource(*textureGuid), "missing source")) {
             logFailure("Asset catalog smoke failed remove behavior.");
+            return false;
+        }
+        if (catalog.findByGuid(*meshGuid) == nullptr ||
+            catalog.findBySourcePath(meshRecord.sourcePath) == nullptr) {
+            logFailure("Asset catalog smoke lost reindexed records after removal.");
             return false;
         }
 

@@ -68,6 +68,7 @@ Studio 文档分为三类，不能混用：
 - [ADR-0011：Studio shared viewport 由 native 进程级 RenderThread 拥有](../adr/0011-native-shared-viewport-render-thread.md)
 - [ADR-0012：Viewport 显式保持水平或垂直 FOV](../adr/0012-viewport-field-of-view-axis.md)
 - [ADR-0013：Studio 采用 authoritative document Transform Undo/Redo 与逻辑保存点](../adr/0013-authoritative-document-transform-undo-redo.md)
+- [ADR-0014：Studio Resource Browser 消费有界只读 Catalog snapshot](../adr/0014-catalog-backed-resource-browser.md)
 
 ## Current guides
 
@@ -97,6 +98,7 @@ Studio 文档分为三类，不能混用：
 - frame lease、GPU handle 或同步语义变化；
 - Play Mode world copy/load、selection remap 或应用变更规则变化；
 - Feature、Action、Document、Selection、transaction 或 panel 生命周期变化；
+- project catalog query、Resource Browser、asset/runtime/preview owner 或其容量合同变化；
 - public Editor SDK 被重新提出或出现第二个真实外部 consumer；
 - extension build/ALC/generation/last-known-good 被重新提出；
 - 启动、关闭、device lost 或 standalone process 流程变化。

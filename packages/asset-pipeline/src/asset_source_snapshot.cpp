@@ -4,6 +4,7 @@
 #include <array>
 #include <fstream>
 #include <ios>
+#include <set>
 #include <string>
 #include <system_error>
 #include <utility>
@@ -41,13 +42,6 @@ namespace asharia::asset {
                 .sourcePath = entry.sourcePath,
                 .sourceFilePath = entry.sourceFilePath,
                 .message = std::move(message),
-            });
-        }
-
-        [[nodiscard]] bool sourcePathAlreadySeen(std::span<const std::string> seenSourcePaths,
-                                                 std::string_view sourcePath) {
-            return std::ranges::any_of(seenSourcePaths, [sourcePath](const std::string& seen) {
-                return seen == sourcePath;
             });
         }
 
@@ -114,8 +108,8 @@ namespace asharia::asset {
 
         [[nodiscard]] bool hashSourceFile(AssetSourceSnapshotResult& result,
                                           const AssetSourceSnapshotEntry& entry,
-                                          std::uint64_t& sourceHash) {
-            std::ifstream file(entry.sourceFilePath, std::ios::binary);
+                                          std::uint64_t maxBytes, std::uint64_t& sourceHash) {
+            std::ifstream file(entry.sourceFilePath, std::ios::binary | std::ios::ate);
             if (!file) {
                 addDiagnostic(result, AssetSourceSnapshotDiagnosticCode::SourceFileReadFailed,
                               entry,
@@ -123,21 +117,58 @@ namespace asharia::asset {
                 return false;
             }
 
+            const std::streampos end = file.tellg();
+            if (end < std::streampos{0}) {
+                addDiagnostic(result, AssetSourceSnapshotDiagnosticCode::SourceFileReadFailed,
+                              entry,
+                              "Asset source snapshot could not measure " + entryLabel(entry) + ".");
+                return false;
+            }
+            const auto fileSize = static_cast<std::uint64_t>(end);
+            if (fileSize > maxBytes - result.bytesHashed) {
+                addDiagnostic(result, AssetSourceSnapshotDiagnosticCode::ByteLimitExceeded, entry,
+                              "Asset source snapshot exceeded the aggregate hashed-byte limit "
+                              "before reading " +
+                                  entryLabel(entry) + ".");
+                return false;
+            }
+            file.seekg(0, std::ios::beg);
+            if (!file) {
+                addDiagnostic(result, AssetSourceSnapshotDiagnosticCode::SourceFileReadFailed,
+                              entry,
+                              "Asset source snapshot could not seek " + entryLabel(entry) + ".");
+                return false;
+            }
+
             std::uint64_t hash = kFnv1a64Offset;
             std::array<char, 4096> buffer{};
-            while (file) {
-                file.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
+            std::uint64_t remaining = fileSize;
+            while (remaining > 0U) {
+                const std::size_t requested = static_cast<std::size_t>(
+                    (std::min)(remaining, static_cast<std::uint64_t>(buffer.size())));
+                file.read(buffer.data(), static_cast<std::streamsize>(requested));
                 const std::streamsize bytesRead = file.gcount();
-                const auto end = buffer.begin() + bytesRead;
-                for (auto byte = buffer.begin(); byte != end; ++byte) {
+                if (bytesRead <= 0) {
+                    addDiagnostic(result, AssetSourceSnapshotDiagnosticCode::SourceFileReadFailed,
+                                  entry,
+                                  "Asset source snapshot source changed or became truncated while "
+                                  "reading " +
+                                      entryLabel(entry) + ".");
+                    return false;
+                }
+                result.bytesHashed += static_cast<std::uint64_t>(bytesRead);
+                remaining -= static_cast<std::uint64_t>(bytesRead);
+                const auto bufferEnd = buffer.begin() + bytesRead;
+                for (auto byte = buffer.begin(); byte != bufferEnd; ++byte) {
                     hash = hashByte(hash, static_cast<std::uint8_t>(*byte));
                 }
             }
 
-            if (file.bad()) {
+            if (file.bad() || file.peek() != std::char_traits<char>::eof()) {
                 addDiagnostic(result, AssetSourceSnapshotDiagnosticCode::SourceFileReadFailed,
                               entry,
-                              "Asset source snapshot could not read " + entryLabel(entry) + ".");
+                              "Asset source snapshot source changed while reading " +
+                                  entryLabel(entry) + ".");
                 return false;
             }
 
@@ -148,34 +179,34 @@ namespace asharia::asset {
     } // namespace
 
     AssetSourceSnapshotResult
-    snapshotAssetSourceFiles(std::span<const AssetSourceSnapshotEntry> entries) {
+    snapshotAssetSourceFiles(std::span<const AssetSourceSnapshotEntry> entries,
+                             std::uint64_t maxBytes) {
         AssetSourceSnapshotResult result;
         result.snapshots.reserve(entries.size());
         result.diagnostics.reserve(entries.size());
 
-        std::vector<std::string> seenSourcePaths;
-        seenSourcePaths.reserve(entries.size());
+        std::set<std::string, std::less<>> seenSourcePaths;
 
         for (const AssetSourceSnapshotEntry& entry : entries) {
             if (!validateEntry(result, entry)) {
                 continue;
             }
 
-            if (sourcePathAlreadySeen(seenSourcePaths, entry.sourcePath)) {
+            if (seenSourcePaths.contains(entry.sourcePath)) {
                 addDiagnostic(result, AssetSourceSnapshotDiagnosticCode::DuplicateSourcePath, entry,
                               "Asset source snapshot duplicate source path source=\"" +
                                   entry.sourcePath + "\" file=\"" +
                                   filePathText(entry.sourceFilePath) + "\".");
                 continue;
             }
-            seenSourcePaths.push_back(entry.sourcePath);
+            seenSourcePaths.emplace(entry.sourcePath);
 
             if (!validateSourceFile(result, entry)) {
                 continue;
             }
 
             std::uint64_t sourceHash{};
-            if (!hashSourceFile(result, entry, sourceHash)) {
+            if (!hashSourceFile(result, entry, maxBytes, sourceHash)) {
                 continue;
             }
 
