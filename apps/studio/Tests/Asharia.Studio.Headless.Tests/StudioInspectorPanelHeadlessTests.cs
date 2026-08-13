@@ -1,12 +1,18 @@
 using System;
+using System.Collections.Immutable;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Asharia.Runtime;
+using Asharia.Studio.Application.Assets;
 using Asharia.Studio.Application.Projects;
 using Asharia.Studio.Application.Scenes;
+using Asharia.Studio.Application.Selection;
 using Asharia.Studio.TestSupport;
 using Avalonia.Controls;
+using Avalonia.Automation;
 using Avalonia.Headless.XUnit;
+using Avalonia.LogicalTree;
 using Avalonia.Threading;
 using Editor.Shell.ViewModels.Panels;
 using Editor.Shell.Views.Panels;
@@ -17,6 +23,121 @@ namespace Asharia.Studio.Headless.Tests;
 
 public sealed class StudioInspectorPanelHeadlessTests
 {
+    [AvaloniaFact]
+    public async Task Asset_selection_shows_structured_read_only_catalog_facts()
+    {
+        using var shell = StudioShellTestFactory.Create(
+            out var projectSession,
+            out _);
+        var initial = Ready(Guid.NewGuid(), revision: 1);
+        var assetGuid = Guid.NewGuid();
+        var entry = AssetEntry(assetGuid);
+        var gateway = new SingleAssetCatalogGateway(
+            AssetCatalogQueryResult.Success(AssetSnapshot(
+                initial.Project!.ProjectId,
+                entry)));
+        await using var catalog = new ProjectAssetCatalog(projectSession, gateway);
+        using var viewModel = new StudioInspectorPanelViewModel(
+            shell,
+            catalog,
+            shell.EditorSelection);
+        var view = new StudioInspectorPanelView { DataContext = viewModel };
+        var window = new Window { Width = 260, Height = 420, Content = view };
+
+        try
+        {
+            projectSession.Publish(initial);
+            window.Show();
+            await WaitUntilAsync(() => catalog.Current.State == AssetCatalogSessionState.Ready);
+            var scope = catalog.Current.Scope!;
+            shell.EditorSelection.Replace(new AssetSelectionTarget(
+                scope.SessionId,
+                scope.ProjectId,
+                scope.TargetProfile,
+                entry.SelectionKey));
+            await WaitUntilAsync(() => viewModel.IsAssetSelection);
+
+            Assert.True(Assert.IsType<ScrollViewer>(
+                view.FindControl<ScrollViewer>("InspectorAssetContent")).IsVisible);
+            Assert.False(Assert.IsType<ScrollViewer>(
+                view.FindControl<ScrollViewer>("InspectorEntityContent")).IsVisible);
+            Assert.False(Assert.IsType<TextBlock>(
+                view.FindControl<TextBlock>("InspectorEmptyState")).IsVisible);
+            Assert.Equal(1, Assert.IsType<ListBox>(
+                view.FindControl<ListBox>("InspectorSubAssets")).ItemCount);
+            Assert.Equal(1, Assert.IsType<ListBox>(
+                view.FindControl<ListBox>("InspectorAssetDiagnostics")).ItemCount);
+            Assert.Equal("Assets/Models/Wedge.glb", viewModel.Asset?.SourcePath);
+            Assert.Equal("Ready", viewModel.Asset?.CatalogState);
+            Assert.Equal("9", viewModel.Asset?.CatalogRevision);
+            Assert.Equal("Current", viewModel.Asset?.ProductState);
+            Assert.Empty(Assert.IsType<ScrollViewer>(
+                view.FindControl<ScrollViewer>("InspectorAssetContent"))
+                .GetLogicalDescendants()
+                .OfType<TextBox>());
+            Assert.Empty(Assert.IsType<ScrollViewer>(
+                view.FindControl<ScrollViewer>("InspectorAssetContent"))
+                .GetLogicalDescendants()
+                .OfType<Button>());
+            Assert.Equal("Inspector", AutomationProperties.GetName(view));
+            Assert.Equal("Asset sub-assets", AutomationProperties.GetName(
+                Assert.IsType<ListBox>(view.FindControl<ListBox>("InspectorSubAssets"))));
+            Assert.True(view.DesiredSize.Width <= 260d);
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
+    [AvaloniaFact]
+    public async Task Stale_product_remains_a_distinct_read_only_asset_selection()
+    {
+        using var shell = StudioShellTestFactory.Create(
+            out var projectSession,
+            out _);
+        var initial = Ready(Guid.NewGuid(), revision: 1);
+        var entry = AssetEntry(Guid.NewGuid(), AssetCatalogProductState.Stale);
+        var gateway = new SingleAssetCatalogGateway(
+            AssetCatalogQueryResult.Success(AssetSnapshot(
+                initial.Project!.ProjectId,
+                entry)));
+        await using var catalog = new ProjectAssetCatalog(projectSession, gateway);
+        using var viewModel = new StudioInspectorPanelViewModel(
+            shell,
+            catalog,
+            shell.EditorSelection);
+        var view = new StudioInspectorPanelView { DataContext = viewModel };
+        var window = new Window { Width = 260, Height = 240, Content = view };
+
+        try
+        {
+            projectSession.Publish(initial);
+            window.Show();
+            await WaitUntilAsync(() => catalog.Current.State == AssetCatalogSessionState.Ready);
+            var scope = catalog.Current.Scope!;
+            shell.EditorSelection.Replace(new AssetSelectionTarget(
+                scope.SessionId,
+                scope.ProjectId,
+                scope.TargetProfile,
+                entry.SelectionKey));
+            await WaitUntilAsync(() => viewModel.IsAssetSelection);
+
+            Assert.False(viewModel.IsEmptySelection);
+            Assert.Equal("Stale", viewModel.Asset?.ProductState);
+            Assert.True(Assert.IsType<ScrollViewer>(
+                view.FindControl<ScrollViewer>("InspectorAssetContent")).IsVisible);
+            Assert.False(Assert.IsType<TextBlock>(
+                view.FindControl<TextBlock>("InspectorEmptyState")).IsVisible);
+            Assert.Equal("Inspector", AutomationProperties.GetName(view));
+            Assert.True(view.DesiredSize.Width <= 260d);
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
     [AvaloniaFact]
     public async Task Euler_degree_text_input_publishes_a_local_rotation_request()
     {
@@ -69,9 +190,13 @@ public sealed class StudioInspectorPanelHeadlessTests
                     "Updated entity Transform.",
                     originatingEditId: editContext.EditId));
         };
+        using var viewModel = new StudioInspectorPanelViewModel(
+            shell,
+            shell.ProjectAssetCatalog,
+            shell.EditorSelection);
         var view = new StudioInspectorPanelView
         {
-            DataContext = new StudioInspectorPanelViewModel(shell),
+            DataContext = viewModel,
         };
         var window = new MainWindow
         {
@@ -158,9 +283,13 @@ public sealed class StudioInspectorPanelHeadlessTests
             requested = true;
             throw new InvalidOperationException("Invalid input reached the project session.");
         };
+        using var viewModel = new StudioInspectorPanelViewModel(
+            shell,
+            shell.ProjectAssetCatalog,
+            shell.EditorSelection);
         var view = new StudioInspectorPanelView
         {
-            DataContext = new StudioInspectorPanelViewModel(shell),
+            DataContext = viewModel,
         };
         var window = new MainWindow
         {
@@ -223,6 +352,69 @@ public sealed class StudioInspectorPanelHeadlessTests
         {
             Dispatcher.UIThread.RunJobs();
             await Task.Delay(10, timeout.Token);
+        }
+    }
+
+    private static AssetCatalogSnapshot AssetSnapshot(
+        Guid projectId,
+        AssetCatalogEntry entry) =>
+        new(
+            AssetCatalogSnapshotState.Ready,
+            revision: 9,
+            DateTimeOffset.UtcNow,
+            projectId,
+            "C:\\Projects\\Sample\\asharia.project.json",
+            "C:\\Projects\\Sample\\.asharia\\cache\\assets\\manifest.json",
+            "editor-preview",
+            [new AssetCatalogSourceRoot(
+                "Assets",
+                "Assets",
+                "Assets",
+                "C:\\Projects\\Sample\\Assets")],
+            ImmutableArray<AssetCatalogNavigationEntry>.Empty,
+            [entry],
+            ImmutableArray<AssetCatalogDiagnostic>.Empty);
+
+    private static AssetCatalogEntry AssetEntry(
+        Guid guid,
+        AssetCatalogProductState productState = AssetCatalogProductState.Current) =>
+        new(
+            new AssetSelectionKey(guid, "Assets/Models/Wedge.glb"),
+            guid,
+            guid.ToString("D"),
+            "Assets/Models/Wedge.glb",
+            "Assets",
+            "Assets",
+            "C:\\Projects\\Sample\\Assets",
+            "C:\\Projects\\Sample\\Assets\\Models\\Wedge.glb",
+            "C:\\Projects\\Sample\\Assets\\Models\\Wedge.glb.ameta",
+            "Wedge",
+            ".glb",
+            "Model",
+            "GlbImporter",
+            importerVersion: 1,
+            "default",
+            "Mesh",
+            productState,
+            currentProductCount: productState == AssetCatalogProductState.Current ? 1 : 0,
+            staleProductCount: productState == AssetCatalogProductState.Stale ? 1 : 0,
+            [new AssetCatalogSubAsset("mesh:0", "Body", "Mesh")],
+            [new AssetCatalogDiagnostic(
+                AssetCatalogDiagnosticSeverity.Warning,
+                "MODEL-NORMALS",
+                "Assets/Models/Wedge.glb",
+                "meshes/0",
+                "Normals were generated.")]);
+
+    private sealed class SingleAssetCatalogGateway(AssetCatalogQueryResult result) :
+        IAssetCatalogGateway
+    {
+        public ValueTask<AssetCatalogQueryResult> QueryAsync(
+            AssetCatalogQueryScope scope,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return ValueTask.FromResult(result);
         }
     }
 }

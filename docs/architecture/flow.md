@@ -34,7 +34,7 @@ flowchart TD
     ProjectNative["packages/project-core<br/>asharia::project_native C ABI"]
     ProjectBootstrap["packages/project-bootstrap<br/>reader + ProcessApplicationV1 provider"]
     Studio["apps/studio<br/>Avalonia Shell + composition"]
-    StudioApplication["Studio.Application<br/>ProjectSession + SceneDocument + Catalog ports"]
+    StudioApplication["Studio.Application<br/>ProjectSession + SceneDocument + Catalog + Selection"]
     StudioBridge["Studio.EngineBridge<br/>project + scene + catalog adapters"]
     AssetCore["packages/asset-core"]
     AssetCoreIo["packages/asset-core<br/>asharia::asset_core_io"]
@@ -230,12 +230,13 @@ flowchart TD
   选择 Avalonia Vulkan compositor，由专用 presentation adapter 导入 opaque NT image/semaphore；AngleEgl/Software 只保留
   Studio 非渲染功能并让 Scene View 明确降级。Resource Browser 链为
   `ProjectSession -> Application ProjectAssetCatalog -> EngineBridge AssetCatalogGateway ->
-  asharia_editor_content_native -> asharia::editor_content`；Application 只拥有 immutable snapshot/generation，EngineBridge
-  独占 P/Invoke/strict JSON，Project panel 只拥有 filter/selection。Release image 精确包含
+  asharia_editor_content_native -> asharia::editor_content`；Application 只拥有 immutable catalog/selection snapshot 与
+  request generation，EngineBridge 独占 P/Invoke/strict JSON，Project panel 只拥有 filter/location/row presentation。Release image 精确包含
   project/scene/editor-content/editor 四个 native DLL 与 16 个 renderer-basic shader/reflection 文件，不携带 Slang、
   Vulkan SDK 或 validation layer。当前已有单 SceneDocument、Hierarchy、名称/local Transform Inspector、Create Entity、
-  Save/Undo/Redo/dirty、一个可见 Scene View 与只读 catalog-backed Resource Browser；仍无 cooked model product、runtime
-  mesh/GPU resource、thumbnail/preview service、Play Mode、第二 Viewport、通用 fair scheduler 或完整 camera/input consumer。
+  Save/Undo/Redo/dirty、一个可见 Scene View、只读 catalog-backed Resource Browser，以及由 typed selection 驱动的只读
+  Asset Inspector；仍无 cooked model product、runtime mesh/GPU resource、thumbnail/preview service、Play Mode、第二
+  Viewport、通用 fair scheduler 或完整 camera/input consumer。
 - Editor panels 仍由 `EditorPanelRegistry::drawPanels(EditorFrameContext)` 适配每帧能力，但内置
   panel 的 `draw()` 实现会先收敛为 panel-local context，再把最小能力传给 helper。Scene View panel
   不创建 Vulkan objects、不注册 descriptor、不录 command buffer。
@@ -244,9 +245,10 @@ flowchart TD
   `asharia::editor_content` query 组合。ImGui fixture/store/icon/report/metadata command 仍归 `apps/editor` host。
   Avalonia Resource Browser 则经专用 native ABI 和 Application owner 消费同一 query truth；两者都不执行 importer、
   不写 product manifest/blob、不创建 runtime asset handle，也不上传 GPU 资源。
-- R0 删除的 legacy Scene Tree/Inspector workbench 与无 consumer Selection 岛保持删除。ADR-0009 的最小 Shell 从
-  authoritative SceneDocument snapshot 重建 selection：ViewModel 只保存 stable object ID，并在 snapshot 更新时 remap/
-  清除；它不复用 C++ editor-local `EditorSelectionSet`，也不把 selection 升级为 engine truth。
+- R0 删除的 legacy Scene Tree/Inspector workbench 与旧 public `Asharia.Editor.Selection` 岛保持删除。ADR-0009 的最小
+  SceneDocument stable-ID remap现由#388的 `Asharia.Studio.Application.Selection` 跨面板合同承接：Hierarchy与
+  Resource Browser发布typed target，Application按project/scene/catalog scope验证、重映射或清除；它不复用C++
+  editor-local `EditorSelectionSet`，也不把selection升级为engine truth。
 
 ## 当前 Windows Development Host 生成、验证与 normal 执行流
 
@@ -652,10 +654,14 @@ flowchart LR
     Query["asharia::editor_content<br/>read-only snapshot query"]
     Inputs["project_core_io + asset_core_io<br/>asset_pipeline + product manifest"]
     Snapshot["immutable AssetCatalogSessionSnapshot"]
-    Panel["KeepAlive Project panel<br/>local folder/filter/selection"]
+    Panel["KeepAlive Project panel<br/>local folder/filter + selection intent"]
+    Selection["Application typed selection<br/>project scope + typed stable target"]
+    Inspector["Inspector<br/>scene edit or read-only asset facts"]
 
     Project --> Owner --> Port --> Bridge --> Native --> Query --> Inputs
     Inputs --> Query --> Native --> Bridge --> Owner --> Snapshot --> Panel
+    Panel --> Selection --> Inspector
+    Snapshot --> Inspector
 ```
 
 - query 默认限制 10,000 source files、8 GiB aggregate source bytes、10,000 diagnostics 与 16 MiB JSON；路径、
@@ -670,10 +676,45 @@ flowchart LR
 - Project panel 只投影 source-root/folder navigation、asset rows、sub-asset summary、product state 与 diagnostics。搜索采用
   150 ms debounce；selection 以 GUID 为优先、untracked source path 为 fallback，在 refresh 后 remap；
 - 两个固定 22 px 的虚拟化列表承载 navigation/assets；10,000-row Headless test 验证 realized controls 有界。filter、
-  details expansion、selection 与 clear 都是 view-local state，不写入 catalog/project/metadata；
+  location与row highlight是view-local projection；Project panel只发布selection intent，完整只读asset facts由Inspector投影，不写入
+  catalog/project/metadata；
 - refresh 不执行 importer，不写 manifest/blob/cache，不创建 `ResourceRuntime` handle 或 GPU resource，也不从 source
   decode thumbnail。cooked mesh product、runtime payload、renderer resource、preview service、watcher 与 mutation command
   均是后续独立 Slice。
+
+### #388 Studio typed selection 与只读 Asset Inspector 当前流程
+
+[`ADR-0015`](../../apps/studio/docs/adr/0015-typed-editor-selection-and-asset-inspector.md) 决定跨面板只传 typed stable
+identity；Inspector 不接收 Project panel row，也不为 inspect 行为进入 filesystem、native bridge 或 runtime：
+
+```mermaid
+flowchart LR
+    Browser["Resource Browser<br/>selected AssetSelectionKey"]
+    Hierarchy["Hierarchy<br/>selected stable ObjectId"]
+    Selection["IEditorSelectionService<br/>project scope + revision + typed target"]
+    Scene["SceneDocument snapshot"]
+    Catalog["AssetCatalogSessionSnapshot"]
+    Inspector["StudioInspectorPanelViewModel<br/>read-only snapshot composition"]
+    View["Inspector View"]
+
+    Browser -->|AssetSelectionTarget| Selection
+    Hierarchy -->|SceneObjectSelectionTarget| Selection
+    Selection --> Inspector
+    Scene --> Inspector
+    Catalog --> Inspector
+    Inspector -->|scene presentation or read-only asset facts| View
+```
+
+- `EditorSelectionSnapshot.Primary` 为 `null`、`SceneObjectSelectionTarget` 或 `AssetSelectionTarget`；asset target 复用
+  GUID-first `AssetSelectionKey`，source path 只为 untracked row fallback。project close/switch、entity removal、catalog
+  refresh remap failure 会使旧 identity 失效；
+- Asset Inspector 只投影 catalog identity/source、type/importer、profile/role、product state/counts、sub-assets 和 diagnostics。
+  `Current` 不表示 runtime/GPU/thumbnail ready；
+- `StudioInspectorPanelViewModel` 只组合 selection + catalog snapshot presentation，不新增 Application inspection service，
+  不引用 Project panel row/ViewModel，也不成为 catalog truth；
+- scene name/local Transform 继续走 `ProjectSession` expected-revision mutation 与 document Undo/Redo；asset presentation
+  当前无 mutation surface；
+- import-settings draft/Apply/Revert、processor job、watcher、runtime load、thumbnail 与 staged hot reload 均未进入此流。
 
 ### #373 Transform Undo/Redo 当前流程
 
@@ -1591,8 +1632,9 @@ flowchart LR
   target profile 和 changed-setting keys。Undo/redo 恢复 metadata 文本；command-produced request/pending facts 只是
   editor coordination state。真正 reimport、product manifest/blob writes、catalog invalidation、runtime asset loading
   和 GPU preview allocation 留给后续显式服务。
-- Scene Tree / Inspector 没有进入这条 asset flow。它们目前不消费 asset catalog row selection，也不把 panel state
-  写回 project descriptor、asset metadata 或 runtime scene。
+- Dear ImGui Scene Tree / Inspector 没有进入这条 asset flow。Avalonia Studio 的独立 #388 路径只消费 shared-query
+  catalog snapshot 和 typed asset identity；两个前端都不把 panel state 写回 project descriptor、asset metadata 或
+  runtime scene。
 
 Editor smoke 入口：
 

@@ -66,6 +66,15 @@ internal sealed class StudioHierarchyPanelViewModel :
         {
             if (ReferenceEquals(selectedRow_, value))
             {
+                if (value is null
+                    && !isReplacingProjection_
+                    && Shell.IsSceneSelectionPrimary
+                    && Shell.SelectedEntity is { } currentEntity
+                    && visibleRows_.Any(
+                        row => row.Entity?.ObjectId == currentEntity.ObjectId))
+                {
+                    Shell.SelectedEntity = null;
+                }
                 return;
             }
 
@@ -124,6 +133,14 @@ internal sealed class StudioHierarchyPanelViewModel :
         }
 
         if (string.Equals(e.PropertyName, nameof(StudioShellViewModel.SelectedEntity),
+                StringComparison.Ordinal))
+        {
+            SynchronizeVisibleSelection();
+            return;
+        }
+        if (string.Equals(
+                e.PropertyName,
+                nameof(StudioShellViewModel.IsSceneSelectionPrimary),
                 StringComparison.Ordinal))
         {
             SynchronizeVisibleSelection();
@@ -251,10 +268,13 @@ internal sealed class StudioHierarchyPanelViewModel :
 
     private StudioHierarchyRowViewModel? ResolveVisibleSelection()
     {
-        var selectedObjectId = Shell.SelectedEntity?.ObjectId;
+        var selectedObjectId = Shell.IsSceneSelectionPrimary
+            ? Shell.SelectedEntity?.ObjectId
+            : null;
         return selectedObjectId is { } objectId
             ? visibleRows_.FirstOrDefault(row => row.Entity?.ObjectId == objectId)
-            : selectedRow_ is { IsSceneRoot: true }
+            : Shell.EditorSelection.Current.Primary is null
+                && selectedRow_ is { IsSceneRoot: true }
                 ? visibleRows_.FirstOrDefault(row => row.IsSceneRoot)
                 : null;
     }

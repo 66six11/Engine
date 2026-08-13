@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Asharia.Studio.Application.Diagnostics;
 using Asharia.Studio.Application.Assets;
 using Asharia.Studio.Application.Projects;
+using Asharia.Studio.Application.Selection;
 using Asharia.Studio.EngineBridge.Viewports;
 using Asharia.Studio.Presentation.Avalonia.Viewports;
 #if DEBUG
@@ -24,6 +25,7 @@ internal sealed class StudioCompositionSession : IAsyncDisposable
     private readonly StudioShellViewModel shellViewModel_;
     private readonly IProjectSession projectSession_;
     private readonly IProjectAssetCatalog projectAssetCatalog_;
+    private readonly IEditorSelectionService editorSelection_;
     private readonly ViewportPresentationLifetime viewportPresentationLifetime_;
     private readonly ViewportRuntimeBridge viewportRuntime_;
     private readonly Task<ViewportFrameFailure?> viewportWarmUpTask_;
@@ -49,6 +51,7 @@ internal sealed class StudioCompositionSession : IAsyncDisposable
         shellViewModel_ = shellViewModel;
         projectSession_ = projectSession;
         projectAssetCatalog_ = shellViewModel.ProjectAssetCatalog;
+        editorSelection_ = shellViewModel.EditorSelection;
         viewportPresentationLifetime_ = shellViewModel.ViewportPresentationLifetime;
         viewportRuntime_ = new ViewportRuntimeBridge();
         viewportWarmUpTask_ = startViewportWarmUp
@@ -78,6 +81,7 @@ internal sealed class StudioCompositionSession : IAsyncDisposable
         shellViewModel_ = shellViewModel;
         projectSession_ = projectSession;
         projectAssetCatalog_ = shellViewModel.ProjectAssetCatalog;
+        editorSelection_ = shellViewModel.EditorSelection;
         viewportPresentationLifetime_ = shellViewModel.ViewportPresentationLifetime;
         viewportRuntime_ = new ViewportRuntimeBridge();
         viewportWarmUpTask_ = viewportRuntime_.WarmUpAsync();
@@ -111,6 +115,7 @@ internal sealed class StudioCompositionSession : IAsyncDisposable
             var cleanupFailures = await DisposeUnpublishedOwnersAsync(
                 shellViewModel,
                 shellViewModel.ProjectAssetCatalog,
+                shellViewModel.EditorSelection,
                 projectSession);
             if (cleanupFailures.Count != 0)
             {
@@ -209,6 +214,7 @@ internal sealed class StudioCompositionSession : IAsyncDisposable
             cleanupFailures.AddRange(await DisposeUnpublishedOwnersAsync(
                 shellViewModel,
                 shellViewModel.ProjectAssetCatalog,
+                shellViewModel.EditorSelection,
                 projectSession));
             if (cleanupFailures.Count != 0)
             {
@@ -226,12 +232,22 @@ internal sealed class StudioCompositionSession : IAsyncDisposable
     private static async ValueTask<List<Exception>> DisposeUnpublishedOwnersAsync(
         StudioShellViewModel shellViewModel,
         IProjectAssetCatalog projectAssetCatalog,
+        IEditorSelectionService editorSelection,
         IProjectSession projectSession)
     {
-        var failures = new List<Exception>(capacity: 3);
+        var failures = new List<Exception>(capacity: 4);
         try
         {
             shellViewModel.Dispose();
+        }
+        catch (Exception error)
+        {
+            failures.Add(error);
+        }
+
+        try
+        {
+            editorSelection.Dispose();
         }
         catch (Exception error)
         {
@@ -330,6 +346,15 @@ internal sealed class StudioCompositionSession : IAsyncDisposable
         try
         {
             viewportRuntime_.Shutdown();
+        }
+        catch (Exception error)
+        {
+            failures.Add(error);
+        }
+
+        try
+        {
+            editorSelection_.Dispose();
         }
         catch (Exception error)
         {

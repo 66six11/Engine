@@ -151,7 +151,7 @@
     </UserControl.Styles>
 
     <Border Background="{DynamicResource EditorBrushBase00}">
-        <Grid RowDefinitions="Auto,Auto,86,Auto,Auto,*,Auto,Auto">
+        <Grid RowDefinitions="Auto,Auto,86,Auto,Auto,*,Auto">
             <Border Grid.Row="0" Classes="resource-toolbar">
                 <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
                     <Border Grid.Column="0" Classes="resource-search-frame">
@@ -248,12 +248,6 @@
                                 </DataTemplate>
                             </ComboBox.ItemTemplate>
                         </ComboBox>
-                        <ToggleButton x:Name="ResourceDetailsToggle"
-                                      Classes="resource-tool-button"
-                                      IsChecked="{Binding IsDetailsExpanded, Mode=TwoWay}"
-                                      IsEnabled="{Binding HasSelection}"
-                                      Content="Details"
-                                      AutomationProperties.Name="Toggle resource details" />
                     </StackPanel>
                 </ScrollViewer>
             </Border>
@@ -317,42 +311,7 @@
                 </Border>
             </Grid>
 
-            <Border x:Name="ResourceDetails"
-                    Grid.Row="6"
-                    MaxHeight="132"
-                    Padding="6,4"
-                    Background="{DynamicResource EditorBrushSurface01}"
-                    BorderBrush="{DynamicResource EditorBrushDivider}"
-                    BorderThickness="0,1,0,0"
-                    IsVisible="{Binding IsDetailsVisible}">
-                <ScrollViewer HorizontalScrollBarVisibility="Disabled"
-                              VerticalScrollBarVisibility="Auto">
-                    <Grid ColumnDefinitions="64,*"
-                          RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
-                          RowSpacing="2">
-                        <TextBlock Grid.Row="0" Grid.Column="0" Classes="resource-detail-label" Text="Asset" />
-                        <TextBlock Grid.Row="0" Grid.Column="1" Classes="resource-detail-value" Text="{Binding SelectedAsset.DetailHeader}" />
-                        <TextBlock Grid.Row="1" Grid.Column="0" Classes="resource-detail-label" Text="Path" />
-                        <TextBlock Grid.Row="1" Grid.Column="1" Classes="resource-detail-value" Text="{Binding SelectedAsset.SourcePath}" ToolTip.Tip="{Binding SelectedAsset.SourcePath}" />
-                        <TextBlock Grid.Row="2" Grid.Column="0" Classes="resource-detail-label" Text="GUID" />
-                        <TextBlock Grid.Row="2" Grid.Column="1" Classes="resource-detail-value" Text="{Binding SelectedAsset.GuidText}" />
-                        <TextBlock Grid.Row="3" Grid.Column="0" Classes="resource-detail-label" Text="Importer" />
-                        <TextBlock Grid.Row="3" Grid.Column="1" Classes="resource-detail-value" Text="{Binding SelectedAsset.ImporterText}" />
-                        <TextBlock Grid.Row="4" Grid.Column="0" Classes="resource-detail-label" Text="Profile" />
-                        <TextBlock Grid.Row="4" Grid.Column="1" Classes="resource-detail-value" Text="{Binding SelectedAsset.ProfileText}" />
-                        <TextBlock Grid.Row="5" Grid.Column="0" Classes="resource-detail-label" Text="Role" />
-                        <TextBlock Grid.Row="5" Grid.Column="1" Classes="resource-detail-value" Text="{Binding SelectedAsset.RoleText}" />
-                        <TextBlock Grid.Row="6" Grid.Column="0" Classes="resource-detail-label" Text="Products" />
-                        <TextBlock Grid.Row="6" Grid.Column="1" Classes="resource-detail-value" Text="{Binding SelectedAsset.ProductCountText}" />
-                        <TextBlock Grid.Row="7" Grid.Column="0" Classes="resource-detail-label" Text="Sub-assets" />
-                        <TextBlock Grid.Row="7" Grid.Column="1" Classes="resource-detail-value" Text="{Binding SelectedAsset.SubAssetSummaryText}" ToolTip.Tip="{Binding SelectedAsset.SubAssetSummaryText}" />
-                        <TextBlock Grid.Row="8" Grid.Column="0" Classes="resource-detail-label" Text="Diagnostics" />
-                        <TextBlock Grid.Row="8" Grid.Column="1" Classes="resource-detail-value" Text="{Binding SelectedAsset.DiagnosticSummaryText}" ToolTip.Tip="{Binding SelectedAsset.DiagnosticSummaryText}" />
-                    </Grid>
-                </ScrollViewer>
-            </Border>
-
-            <Border Grid.Row="7"
+            <Border Grid.Row="6"
                     MinHeight="22"
                     Padding="6,2"
                     Background="{DynamicResource EditorBrushBase01}"

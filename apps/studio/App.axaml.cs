@@ -5,6 +5,7 @@ using Asharia.Studio.Application.Actions;
 using Asharia.Studio.Application.Diagnostics;
 using Asharia.Studio.Application.Assets;
 using Asharia.Studio.Application.Projects;
+using Asharia.Studio.Application.Selection;
 using Asharia.Studio.EngineBridge.Project;
 using Asharia.Studio.EngineBridge.Assets;
 using Asharia.Studio.EngineBridge.Scene;
@@ -124,6 +125,7 @@ public partial class App : Application,
             new ProjectDescriptorBridge(),
             new SceneDocumentBridge());
         ProjectAssetCatalog? projectAssetCatalog = null;
+        EditorSelectionService? editorSelection = null;
         var projectDialogs = new MainWindowProjectDialogService();
         var documentPrompt = new MainWindowDocumentTransitionPrompt();
         var documentTransitions = new ProjectDocumentTransitionCoordinator(
@@ -136,12 +138,16 @@ public partial class App : Application,
             projectAssetCatalog = new ProjectAssetCatalog(
                 projectSession,
                 new AssetCatalogGateway());
+            editorSelection = new EditorSelectionService(
+                projectSession,
+                projectAssetCatalog);
             shellViewModel = new StudioShellViewModel(
                 projectSession,
                 projectDialogs,
                 documentTransitions,
                 operationDiagnostics_,
-                projectAssetCatalog);
+                projectAssetCatalog,
+                editorSelection);
             mainWindow = new MainWindow
             {
                 DataContext = shellViewModel,
@@ -155,6 +161,14 @@ public partial class App : Application,
             try
             {
                 shellViewModel?.Dispose();
+            }
+            catch (Exception cleanupFailure)
+            {
+                cleanupFailures.Add(cleanupFailure);
+            }
+            try
+            {
+                editorSelection?.Dispose();
             }
             catch (Exception cleanupFailure)
             {

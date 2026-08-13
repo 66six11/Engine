@@ -7,9 +7,9 @@ using Asharia.Runtime;
 using Asharia.Studio.Application.Assets;
 using Asharia.Studio.Application.Projects;
 using Asharia.Studio.Application.Scenes;
+using Asharia.Studio.Application.Selection;
 using Asharia.Studio.TestSupport;
 using Avalonia.Controls;
-using Avalonia.Controls.Primitives;
 using Avalonia.Headless.XUnit;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
@@ -29,7 +29,8 @@ public sealed class StudioProjectPanelHeadlessTests
         using var shell = StudioShellTestFactory.Create();
         using var viewModel = new StudioProjectPanelViewModel(
             shell,
-            shell.ProjectAssetCatalog);
+            shell.ProjectAssetCatalog,
+            shell.EditorSelection);
         var view = new StudioProjectPanelView { DataContext = viewModel };
         var window = new Window { Width = 260, Height = 320, Content = view };
 
@@ -64,7 +65,10 @@ public sealed class StudioProjectPanelHeadlessTests
                     .Select(Entry)
                     .ToImmutableArray())));
         await using var catalog = new ProjectAssetCatalog(projectSession, gateway);
-        using var viewModel = new StudioProjectPanelViewModel(shell, catalog);
+        using var viewModel = new StudioProjectPanelViewModel(
+            shell,
+            catalog,
+            shell.EditorSelection);
         projectSession.Publish(ReadyProject());
         var view = new StudioProjectPanelView { DataContext = viewModel };
         var window = new Window { Width = 260, Height = 360, Content = view };
@@ -98,8 +102,9 @@ public sealed class StudioProjectPanelHeadlessTests
             assets.SelectedIndex = 0;
             Dispatcher.UIThread.RunJobs();
             Assert.True(viewModel.HasSelection);
-            Assert.True(Assert.IsType<ToggleButton>(
-                view.FindControl<ToggleButton>("ResourceDetailsToggle")).IsEnabled);
+            Assert.IsType<AssetSelectionTarget>(
+                shell.EditorSelection.Current.Primary);
+            Assert.Null(view.FindControl<Control>("ResourceDetailsToggle"));
         }
         finally
         {
@@ -118,7 +123,10 @@ public sealed class StudioProjectPanelHeadlessTests
                 AssetCatalogQueryFailureKind.IoFailure,
                 "Refresh could not read the manifest.")));
         await using var catalog = new ProjectAssetCatalog(projectSession, gateway);
-        using var viewModel = new StudioProjectPanelViewModel(shell, catalog);
+        using var viewModel = new StudioProjectPanelViewModel(
+            shell,
+            catalog,
+            shell.EditorSelection);
         projectSession.Publish(ReadyProject());
         var view = new StudioProjectPanelView { DataContext = viewModel };
         var window = new Window { Width = 260, Height = 320, Content = view };

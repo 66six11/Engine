@@ -1,8 +1,10 @@
 using System;
 using System.Linq;
 using Asharia.Runtime;
+using Asharia.Studio.Application.Assets;
 using Asharia.Studio.Application.Projects;
 using Asharia.Studio.Application.Scenes;
+using Asharia.Studio.Application.Selection;
 using Asharia.Studio.TestSupport;
 using Editor.Shell.ViewModels.Panels;
 using Editor.Shell.ViewModels.Windowing;
@@ -101,6 +103,36 @@ public sealed class StudioHierarchyPanelViewModelTests
     }
 
     [Fact]
+    public void Asset_selection_clears_scene_highlight_and_reclick_restores_scene_target()
+    {
+        var camera = Entity("Main Camera");
+        using var shell = CreateShell(
+            Ready(Guid.NewGuid(), revision: 1, camera),
+            out _);
+        using var viewModel = new StudioHierarchyPanelViewModel(shell);
+        var row = viewModel.VisibleRows.Single(
+            candidate => candidate.StableId == camera.ObjectId);
+        viewModel.SelectedRow = row;
+        Assert.IsType<SceneObjectSelectionTarget>(shell.EditorSelection.Current.Primary);
+        var project = shell.AppliedProjectSnapshot.Project!;
+
+        shell.EditorSelection.Replace(new AssetSelectionTarget(
+            project.SessionId,
+            project.ProjectId,
+            "editor-preview",
+            new AssetSelectionKey(Guid.NewGuid(), "Assets/Model.glb")));
+
+        Assert.Null(viewModel.SelectedRow);
+        Assert.Same(camera, shell.SelectedEntity);
+
+        viewModel.SelectedRow = row;
+
+        var restored = Assert.IsType<SceneObjectSelectionTarget>(
+            shell.EditorSelection.Current.Primary);
+        Assert.Equal(camera.ObjectId, restored.ObjectId);
+    }
+
+    [Fact]
     public void Explicitly_clearing_a_visible_row_clears_shell_and_inspector_selection()
     {
         var camera = Entity("Main Camera");
@@ -180,7 +212,8 @@ public sealed class StudioHierarchyPanelViewModelTests
             new TestProjectDialogService(),
             StudioShellTestFactory.CreateDocumentTransitions(projectSession),
             StudioShellTestFactory.CreateDiagnosticWriter(),
-            StudioShellTestFactory.CreateProjectAssetCatalog());
+            StudioShellTestFactory.CreateProjectAssetCatalog(),
+            StudioShellTestFactory.CreateEditorSelectionService());
     }
 
     private static SceneEntitySnapshot Entity(string name) =>

@@ -15,6 +15,7 @@ using Asharia.Studio.Application.Assets;
 using Asharia.Studio.Application.Diagnostics;
 using Asharia.Studio.Application.Projects;
 using Asharia.Studio.Application.Scenes;
+using Asharia.Studio.Application.Selection;
 using Asharia.Studio.Presentation.Avalonia.Viewports;
 using Avalonia.Threading;
 using Editor.Shell.Actions;
@@ -95,6 +96,7 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
 
     private readonly IProjectSession projectSession_;
     private readonly IProjectAssetCatalog projectAssetCatalog_;
+    private readonly IEditorSelectionService editorSelection_;
     private readonly IStudioProjectDialogService projectDialogs_;
     private readonly ProjectDocumentTransitionCoordinator documentTransitions_;
     private readonly StudioOperationDiagnosticWriter diagnostics_;
@@ -140,6 +142,7 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
     private string scaleY_ = "1";
     private string scaleZ_ = "1";
     private bool isProjectOperationRunning_;
+    private bool wasSceneSelectionPrimary_;
     private bool isDisposed_;
 
     public StudioShellViewModel(
@@ -147,27 +150,33 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
         IStudioProjectDialogService projectDialogs,
         ProjectDocumentTransitionCoordinator documentTransitions,
         StudioOperationDiagnosticWriter diagnostics,
-        IProjectAssetCatalog projectAssetCatalog)
+        IProjectAssetCatalog projectAssetCatalog,
+        IEditorSelectionService editorSelection)
     {
         ArgumentNullException.ThrowIfNull(projectSession);
         ArgumentNullException.ThrowIfNull(projectDialogs);
         ArgumentNullException.ThrowIfNull(documentTransitions);
         ArgumentNullException.ThrowIfNull(diagnostics);
         ArgumentNullException.ThrowIfNull(projectAssetCatalog);
+        ArgumentNullException.ThrowIfNull(editorSelection);
         projectSession_ = projectSession;
         projectAssetCatalog_ = projectAssetCatalog;
+        editorSelection_ = editorSelection;
         projectDialogs_ = projectDialogs;
         documentTransitions_ = documentTransitions;
         diagnostics_ = diagnostics;
         actionExecutor_ = new StudioActionExecutor(actionRegistry_);
         viewportPresentationLifetime_ = new ViewportPresentationLifetime();
         projectSnapshot_ = projectSession.Current;
+        wasSceneSelectionPrimary_ =
+            editorSelection.Current.Primary is SceneObjectSelectionTarget;
         dockWorkspace_ = CreateDockWorkspace();
         RegisterActions();
         CreateActionCommands();
         dockWorkspace_.DockContentChanged += OnDockContentChanged;
         EditorDockFloatingWindowRegistry.DockContentChanged += OnDockContentChanged;
         projectSession_.SnapshotChanged += OnProjectSnapshotChanged;
+        editorSelection_.Changed += OnEditorSelectionChanged;
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -177,6 +186,8 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
     public StudioShellStage Stage => stage_;
 
     internal IProjectAssetCatalog ProjectAssetCatalog => projectAssetCatalog_;
+
+    internal IEditorSelectionService EditorSelection => editorSelection_;
 
     public string WindowTitle
     {
@@ -222,6 +233,8 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
 
     public bool HasSelection => SelectedEntity is not null;
 
+    internal bool IsSceneSelectionPrimary => IsPrimarySceneSelection();
+
     public string StartingStateText => "Starting";
 
     public string ProjectStateText =>
@@ -247,12 +260,14 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
         {
             if (ReferenceEquals(selectedEntity_, value))
             {
+                PublishSceneSelection(value);
                 return;
             }
             selectedEntity_ = value;
             LoadInspector(value);
             OnPropertyChanged();
             OnPropertyChanged(nameof(HasSelection));
+            PublishSceneSelection(value);
             RaiseProjectCommandStateChanged();
         }
     }
@@ -495,7 +510,7 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
         ThrowIfDisposed();
         var project = projectSnapshot_.Project;
         var document = projectSnapshot_.Document;
-        var selection = selectedEntity_ is { } selected
+        var selection = IsPrimarySceneSelection() && selectedEntity_ is { } selected
             ? new StudioActionSelectionSnapshot([selected.ObjectId], selected.ObjectId)
             : StudioActionSelectionSnapshot.Empty;
         var frozenTarget = target ?? (document is not null && project is not null
@@ -661,6 +676,7 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
             return;
         }
         isDisposed_ = true;
+        editorSelection_.Changed -= OnEditorSelectionChanged;
         projectSession_.SnapshotChanged -= OnProjectSnapshotChanged;
         dockWorkspace_.DockContentChanged -= OnDockContentChanged;
         EditorDockFloatingWindowRegistry.DockContentChanged -= OnDockContentChanged;
@@ -691,7 +707,10 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
             EditorDockArea.Left,
             "Window/Panels/Project",
             DockContentCachePolicy.KeepAlive,
-            () => new StudioProjectPanelViewModel(this, projectAssetCatalog_),
+            () => new StudioProjectPanelViewModel(
+                this,
+                projectAssetCatalog_,
+                editorSelection_),
             EditorIconKey.PanelProject,
             "PROJECT",
             "Project content",
@@ -715,9 +734,12 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
             EditorDockArea.Right,
             "Window/Panels/Inspector",
             DockContentCachePolicy.KeepAlive,
-            () => new StudioInspectorPanelViewModel(this),
+            () => new StudioInspectorPanelViewModel(
+                this,
+                projectAssetCatalog_,
+                editorSelection_),
             EditorIconKey.PanelInspector,
-            "ENTITY",
+            "SELECTION",
             "Selection context",
             "tool"));
         panels.Register(new PanelDescriptor(
@@ -1017,7 +1039,8 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
         var project = projectSnapshot_.Project;
         var document = projectSnapshot_.Document;
         var selected = selectedEntity_;
-        return project is null || document is null || selected is null
+        return project is null || document is null || selected is null ||
+            !IsPrimarySceneSelection()
             ? null
             : StudioActionTarget.SceneObject(
                 project.SessionId,
@@ -1629,7 +1652,38 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
     private bool CanRedoDocument() =>
         CanEditDocument() && projectSnapshot_.CanRedo;
 
-    private bool CanEditSelection() => CanEditDocument() && HasSelection;
+    private bool CanEditSelection() =>
+        CanEditDocument() && HasSelection && IsPrimarySceneSelection();
+
+    private bool IsPrimarySceneSelection() =>
+        editorSelection_.Current.Primary is SceneObjectSelectionTarget target &&
+        projectSnapshot_.Project?.SessionId == target.SessionId &&
+        projectSnapshot_.Document?.SceneId == target.SceneId &&
+        selectedEntity_?.ObjectId == target.ObjectId;
+
+    private void PublishSceneSelection(SceneEntitySnapshot? entity)
+    {
+        if (isDisposed_)
+        {
+            return;
+        }
+
+        var project = projectSnapshot_.Project;
+        var document = projectSnapshot_.Document;
+        if (entity is not null && project is not null && document is not null)
+        {
+            editorSelection_.Replace(new SceneObjectSelectionTarget(
+                project.SessionId,
+                document.SceneId,
+                entity.ObjectId));
+            return;
+        }
+
+        if (editorSelection_.Current.Primary is SceneObjectSelectionTarget)
+        {
+            editorSelection_.Clear();
+        }
+    }
 
     private void SelectCreatedEntity(ProjectSessionOperationResult? result)
     {
@@ -1682,6 +1736,66 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
         });
     }
 
+    private void OnEditorSelectionChanged(
+        object? sender,
+        EditorSelectionChangedEventArgs e)
+    {
+        if (Dispatcher.UIThread.CheckAccess())
+        {
+            ApplyEditorSelection(e.Snapshot);
+            return;
+        }
+
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (!isDisposed_)
+            {
+                ApplyEditorSelection(e.Snapshot);
+            }
+        });
+    }
+
+    private void ApplyEditorSelection(EditorSelectionSnapshot snapshot)
+    {
+        if (snapshot.Revision != editorSelection_.Current.Revision)
+        {
+            return;
+        }
+
+        var isSceneSelection = snapshot.Primary is SceneObjectSelectionTarget;
+        if (snapshot.Primary is SceneObjectSelectionTarget target &&
+            projectSnapshot_.Project?.SessionId == target.SessionId &&
+            projectSnapshot_.Document is { } document &&
+            document.SceneId == target.SceneId)
+        {
+            var entity = document.Entities.FirstOrDefault(
+                candidate => candidate.ObjectId == target.ObjectId);
+            if (entity is not null)
+            {
+                var entityChanged = !ReferenceEquals(selectedEntity_, entity);
+                selectedEntity_ = entity;
+                if (!wasSceneSelectionPrimary_ || entityChanged)
+                {
+                    LoadInspector(entity);
+                }
+                if (entityChanged)
+                {
+                    OnPropertyChanged(nameof(SelectedEntity));
+                    OnPropertyChanged(nameof(HasSelection));
+                }
+            }
+        }
+
+        if (!isSceneSelection)
+        {
+            LoadInspector(entity: null);
+        }
+
+        wasSceneSelectionPrimary_ = isSceneSelection;
+        OnPropertyChanged(nameof(IsSceneSelectionPrimary));
+        RaiseProjectCommandStateChanged();
+    }
+
     private void ApplyProjectSnapshot(
         ProjectSessionSnapshot snapshot,
         ProjectEditId? originatingEditId = null,
@@ -1689,11 +1803,18 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
     {
         var previousSessionId = projectSnapshot_.Project?.SessionId;
         var previousSceneId = projectSnapshot_.Document?.SceneId;
+        var previousSelectedObjectId = selectedEntity_?.ObjectId;
         var sameSelectionScope = previousSessionId == snapshot.Project?.SessionId
             && previousSceneId == snapshot.Document?.SceneId;
-        var selectedObjectId = sameSelectionScope
-            ? selectedEntity_?.ObjectId
-            : null;
+        var selectedObjectId = editorSelection_.Current.Primary is
+            SceneObjectSelectionTarget sceneTarget
+                ? snapshot.Project?.SessionId == sceneTarget.SessionId
+                  && snapshot.Document?.SceneId == sceneTarget.SceneId
+                    ? sceneTarget.ObjectId
+                    : null
+                : sameSelectionScope
+                    ? previousSelectedObjectId
+                    : null;
         projectSnapshot_ = snapshot;
         var nextSelection = selectedObjectId is { } id
             ? snapshot.Document?.Entities.FirstOrDefault(entity => entity.ObjectId == id)
@@ -1701,7 +1822,7 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
         var selectionChanged = !ReferenceEquals(selectedEntity_, nextSelection);
         selectedEntity_ = nextSelection;
         if (sameSelectionScope &&
-            selectedObjectId is not null &&
+            previousSelectedObjectId == selectedObjectId &&
             nextSelection is not null)
         {
             ReconcileInspector(
@@ -1709,7 +1830,7 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
                 originatingEditId,
                 originatingEditSucceeded);
         }
-        else if (selectionChanged)
+        else if (selectionChanged || nextSelection is not null)
         {
             LoadInspector(nextSelection);
         }
@@ -1718,6 +1839,7 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
             OnPropertyChanged(nameof(SelectedEntity));
             OnPropertyChanged(nameof(HasSelection));
         }
+        OnPropertyChanged(nameof(IsSceneSelectionPrimary));
         OnPropertyChanged(nameof(WindowTitle));
         OnPropertyChanged(nameof(HasProject));
         OnPropertyChanged(nameof(HasNoProject));

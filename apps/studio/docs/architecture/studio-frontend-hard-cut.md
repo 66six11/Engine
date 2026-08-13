@@ -27,6 +27,10 @@ R0.5 只读开发态观测面已由[对应 Slice 1→8](studio-development-obser
 > `ProjectAssetCatalog`按active project scope查询共享`editor-content` package，EngineBridge独占strict C ABI/JSON，
 > Avalonia只拥有folder/filter/selection投影。它不执行importer、不写filesystem/product cache，也不创建
 > `ResourceRuntime`、GPU resource或thumbnail；决策见[ADR-0014](../adr/0014-catalog-backed-resource-browser.md)。
+> 2026-08-13，#388又以不兼容的新 `Asharia.Studio.Application.Selection` closed target hierarchy建立真实跨面板
+> selection：Hierarchy与Resource Browser发布scene/asset intent，Inspector按当前SceneDocument或catalog snapshot投影；
+> 资产分支只读且不触发import、runtime load、preview或hot reload。决策见
+> [ADR-0015](../adr/0015-typed-editor-selection-and-asset-inspector.md)。
 
 ## 1. 结论与范围
 
@@ -929,12 +933,12 @@ timeout 是 typed fault/quarantine，不授权越过 native barrier。UI thread 
 
 | 字段 | 当前合同与证据 |
 | --- | --- |
-| Current evidence | #385新增`packages/editor-content` source boundary；`asharia::editor_content`从canonical project descriptor、source roots、`.ameta`、source snapshot/import plan和product manifest生成immutable catalog snapshot，`asharia_editor_content_native`以strict bounded C ABI/JSON投影。App从同一`ProjectSession`创建唯一`ProjectAssetCatalog`；Project panel成为KeepAlive Resource Browser，显示location、asset/sub-asset摘要、type/product state、details与diagnostics。 |
+| Current evidence | #385新增`packages/editor-content` source boundary；`asharia::editor_content`从canonical project descriptor、source roots、`.ameta`、source snapshot/import plan和product manifest生成immutable catalog snapshot，`asharia_editor_content_native`以strict bounded C ABI/JSON投影。App从同一`ProjectSession`创建唯一`ProjectAssetCatalog`；Project panel成为KeepAlive Resource Browser，显示location、asset/sub-asset摘要、type/product state与catalog diagnostic状态，并向#388 Application-owned typed selection发布用户选择；完整只读asset facts由Inspector投影。 |
 | Engine precedent adopted | Unreal [Asset Registry](https://dev.epicgames.com/documentation/en-us/unreal-engine/asset-registry-in-unreal-engine)让Content Browser查询unloaded asset metadata；Unity [Asset Database](https://docs.unity3d.com/Manual/AssetDatabase.html)拆分source与artifact、[Project window](https://docs.unity3d.com/Manual/ProjectView.html)拆分folder/list/filter；Godot [FileSystem dock](https://docs.godotengine.org/en/stable/getting_started/introduction/first_look_at_the_editor.html)投影project files而[import process](https://docs.godotengine.org/en/stable/tutorials/assets_pipeline/import_process.html)拆分source/hidden imported cache且preview另有service；O3DE [Asset Cache](https://docs.o3de.org/docs/user-guide/assets/pipeline/asset-cache/)拆分Processor Database/Catalog/Cache/Browser。Asharia采用unloaded catalog query与owner分离，不复制global registry、自动watcher或mutation UI。 |
 | Rejected / Asharia rationale | 拒绝Studio重写descriptor/source/manifest parser，拒绝共享ImGui panel/store，拒绝Browser直接import/reimport、写`.ameta`/manifest/cache、rename/move/delete或从source decode thumbnail。Catalog row不是loaded resource；`ResourceRuntime`、renderer GPU resource与ThumbnailService保持独立owner。 |
 | Owner / lifetime | App创建`ProjectAssetCatalog(ProjectSession, AssetCatalogGateway)`；owner订阅ProjectSession，Project panel只订阅immutable session snapshot。Shell/terminal panel content先dispose，随后composition await catalog owner，最后dispose ProjectSession。跨项目不复用last-known-good。 |
 | Thread / data / error | Gateway在background call执行native query，并串行ABI调用；Application以scope+单调request generation只接受newest completion。ABI使用caller-owned buffer、typed status、strict UTF-8/closed JSON；partial rows+diagnostics进入Degraded，same-scope refresh failure保留last-good，initial failure进入Failed。subscriber fault逐个隔离。v1 cancellation不承诺中止native scan，只阻止stale result发布。 |
-| Bounds / UI | 默认query为10,000 files、8 GiB source bytes、10,000 diagnostics、16 MiB JSON、64 KiB string；100,000只是parser safety ceiling，超限fail closed。Project panel搜索150 ms debounce；navigation/assets使用22 px `VirtualizingStackPanel`，10,000-row Headless gate证明realized controls小于items。filter、details、selection只属于view。 |
+| Bounds / UI | 默认query为10,000 files、8 GiB source bytes、10,000 diagnostics、16 MiB JSON、64 KiB string；100,000只是parser safety ceiling，超限fail closed。Project panel搜索150 ms debounce；navigation/assets使用22 px `VirtualizingStackPanel`，10,000-row Headless gate证明realized controls小于items。filter属于view；selection truth由#388 Application service拥有，Inspector承接只读details。 |
 | Earliest / latest gate | 此Slice晚于authoritative ProjectSession、Dock、Action和Diagnostics，先证明catalog/read-only UI边界；它是任意模型缩略图之前的基础。下一纵切必须先定义versioned Mesh product，再接ResourceRuntime CPU payload、renderer GPU resource，最后ThumbnailService复用同一resource。 |
 | Non-goals | glTF/OBJ/FBX importer、Mesh cooked product、artifact async IO、runtime dependency loading/reload、vertex/index GPU resource、thumbnail/preview queue/cache、watcher/incremental database、background processor、asset mutation、drag/drop、grid/thumbnail view。 |
 | Exit evidence | editor-content C/C++ ABI/limit smoke、asset-pipeline limit regression、Application newest-wins/last-good/cancel tests、EngineBridge strict parser/layout/single-call buffer tests、real DLL acceptance、ViewModel state/filter/selection tests、Avalonia Headless 10,000-row virtualization，以及 full build/encoding/doc-sync/diff gates。 |

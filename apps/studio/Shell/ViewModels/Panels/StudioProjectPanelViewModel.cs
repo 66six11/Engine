@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using Asharia.Studio.Application.Assets;
+using Asharia.Studio.Application.Selection;
 using Avalonia.Threading;
 using Editor.Shell.ViewModels.Windowing;
 using Editor.UI.Icons;
@@ -82,6 +83,7 @@ internal sealed class StudioProjectPanelViewModel :
         ];
 
     private readonly IProjectAssetCatalog assetCatalog_;
+    private readonly IEditorSelectionService selection_;
     private readonly IStudioResourceBrowserUiScheduler scheduler_;
     private readonly CancellationTokenSource lifetimeCancellation_ = new();
     private readonly StudioResourceBrowserCommand refreshCommand_;
@@ -104,7 +106,6 @@ internal sealed class StudioProjectPanelViewModel :
         StudioResourceProductFilterOption.All;
     private string assetCountText_ = "0";
     private string emptyStateText_ = "No resources found";
-    private bool isDetailsExpanded_;
     private bool isReplacingProjection_;
     private ulong appliedGeneration_;
     private int isDisposed_;
@@ -112,16 +113,20 @@ internal sealed class StudioProjectPanelViewModel :
     public StudioProjectPanelViewModel(
         StudioShellViewModel shell,
         IProjectAssetCatalog assetCatalog,
+        IEditorSelectionService selection,
         IStudioResourceBrowserUiScheduler? scheduler = null)
         : base(shell)
     {
         ArgumentNullException.ThrowIfNull(assetCatalog);
+        ArgumentNullException.ThrowIfNull(selection);
         assetCatalog_ = assetCatalog;
+        selection_ = selection;
         scheduler_ = scheduler ?? StudioAvaloniaResourceBrowserUiScheduler.Instance;
         refreshCommand_ = new StudioResourceBrowserCommand(
             RequestRefresh,
             () => CanRefresh);
         assetCatalog_.SnapshotChanged += OnCatalogSnapshotChanged;
+        selection_.Changed += OnSelectionChanged;
         snapshot_ = assetCatalog.Current;
         ApplySnapshot(snapshot_);
     }
@@ -232,29 +237,16 @@ internal sealed class StudioProjectPanelViewModel :
 
             selectedAsset_ = value;
             selectedAssetKey_ = value?.SelectionKey;
-            if (value is null)
+            if (value is not null)
             {
-                isDetailsExpanded_ = false;
-                OnPropertyChanged(nameof(IsDetailsExpanded));
+                PublishAssetSelection(value.SelectionKey);
+            }
+            else
+            {
+                selection_.Clear(EditorSelectionChangeReason.User);
             }
             OnPropertyChanged();
             OnPropertyChanged(nameof(HasSelection));
-            OnPropertyChanged(nameof(IsDetailsVisible));
-        }
-    }
-
-    public bool IsDetailsExpanded
-    {
-        get => isDetailsExpanded_;
-        set
-        {
-            if (isDetailsExpanded_ == value)
-            {
-                return;
-            }
-            isDetailsExpanded_ = value;
-            OnPropertyChanged();
-            OnPropertyChanged(nameof(IsDetailsVisible));
         }
     }
 
@@ -263,8 +255,6 @@ internal sealed class StudioProjectPanelViewModel :
     public string EmptyStateText => emptyStateText_;
 
     public bool HasSelection => SelectedAsset is not null;
-
-    public bool IsDetailsVisible => IsDetailsExpanded && HasSelection;
 
     public bool IsNoProject => snapshot_.State == AssetCatalogSessionState.NoProject;
 
@@ -349,6 +339,7 @@ internal sealed class StudioProjectPanelViewModel :
         }
 
         assetCatalog_.SnapshotChanged -= OnCatalogSnapshotChanged;
+        selection_.Changed -= OnSelectionChanged;
         lifetimeCancellation_.Cancel();
         lock (searchGate_)
         {
@@ -373,6 +364,41 @@ internal sealed class StudioProjectPanelViewModel :
         });
     }
 
+    private void OnSelectionChanged(object? sender, EditorSelectionChangedEventArgs e)
+    {
+        scheduler_.Post(() =>
+        {
+            if (Volatile.Read(ref isDisposed_) == 0)
+            {
+                SynchronizeSelection(selection_.Current);
+            }
+        });
+    }
+
+    private void SynchronizeSelection(EditorSelectionSnapshot selection)
+    {
+        var target = selection.Primary as AssetSelectionTarget;
+        var isMatchingAsset = target is not null
+            && SameScope(target, snapshot_.Scope);
+        if (isMatchingAsset)
+        {
+            selectedAssetKey_ = target!.Asset;
+        }
+
+        var nextSelection = isMatchingAsset
+            ? visibleAssets_.FirstOrDefault(
+                row => row.SelectionKey.Equals(target!.Asset))
+            : null;
+        if (ReferenceEquals(selectedAsset_, nextSelection))
+        {
+            return;
+        }
+
+        selectedAsset_ = nextSelection;
+        OnPropertyChanged(nameof(SelectedAsset));
+        OnPropertyChanged(nameof(HasSelection));
+    }
+
     private void ApplySnapshot(AssetCatalogSessionSnapshot snapshot)
     {
         if (snapshot.RequestGeneration < appliedGeneration_)
@@ -389,7 +415,6 @@ internal sealed class StudioProjectPanelViewModel :
             selectedNavigationKey_ = null;
             selectedAssetKey_ = null;
             selectedAsset_ = null;
-            isDetailsExpanded_ = false;
         }
 
         RebuildCatalogRows();
@@ -520,8 +545,16 @@ internal sealed class StudioProjectPanelViewModel :
             && (!hasSearch || Matches(row.Entry, query)))
             .ToArray();
 
-        var nextSelection = selectedAssetKey_ is { } selectedKey
-            ? filtered.FirstOrDefault(row => row.SelectionKey.Equals(selectedKey))
+        var activeSelectionKey = selection_.Current.Primary is AssetSelectionTarget target
+            && SameScope(target, snapshot_.Scope)
+            ? target.Asset
+            : (AssetSelectionKey?)null;
+        if (activeSelectionKey is { } selectedKey)
+        {
+            selectedAssetKey_ = selectedKey;
+        }
+        var nextSelection = activeSelectionKey is { } activeKey
+            ? filtered.FirstOrDefault(row => row.SelectionKey.Equals(activeKey))
             : null;
         var selectionChanged = !ReferenceEquals(selectedAsset_, nextSelection);
         visibleAssets_ = filtered;
@@ -544,13 +577,27 @@ internal sealed class StudioProjectPanelViewModel :
             {
                 OnPropertyChanged(nameof(SelectedAsset));
                 OnPropertyChanged(nameof(HasSelection));
-                OnPropertyChanged(nameof(IsDetailsVisible));
             }
         }
         finally
         {
             isReplacingProjection_ = false;
         }
+    }
+
+    private void PublishAssetSelection(AssetSelectionKey key)
+    {
+        var scope = snapshot_.Scope;
+        if (scope is null)
+        {
+            return;
+        }
+
+        selection_.Replace(new AssetSelectionTarget(
+            scope.SessionId,
+            scope.ProjectId,
+            scope.TargetProfile,
+            key));
     }
 
     private string DetermineEmptyStateText(
@@ -615,9 +662,7 @@ internal sealed class StudioProjectPanelViewModel :
         OnPropertyChanged(nameof(DegradedMessage));
         OnPropertyChanged(nameof(CatalogDiagnosticText));
         OnPropertyChanged(nameof(HasCatalogDiagnostics));
-        OnPropertyChanged(nameof(IsDetailsExpanded));
         OnPropertyChanged(nameof(HasSelection));
-        OnPropertyChanged(nameof(IsDetailsVisible));
         refreshCommand_.NotifyCanExecuteChanged();
     }
 
@@ -652,6 +697,17 @@ internal sealed class StudioProjectPanelViewModel :
         && string.Equals(left.ProjectRootPath, right.ProjectRootPath, StringComparison.Ordinal)
         && string.Equals(left.ProjectFilePath, right.ProjectFilePath, StringComparison.Ordinal)
         && string.Equals(left.TargetProfile, right.TargetProfile, StringComparison.Ordinal);
+
+    private static bool SameScope(
+        AssetSelectionTarget selection,
+        AssetCatalogQueryScope? scope) =>
+        scope is not null
+        && selection.SessionId == scope.SessionId
+        && selection.ProjectId == scope.ProjectId
+        && string.Equals(
+            selection.TargetProfile,
+            scope.TargetProfile,
+            StringComparison.Ordinal);
 
     private void OnPropertyChanged(
         [System.Runtime.CompilerServices.CallerMemberName] string? propertyName = null) =>
@@ -752,24 +808,7 @@ internal sealed class StudioResourceAssetRowViewModel
         $"{Entry.CurrentProductCount.ToString(CultureInfo.InvariantCulture)} current · " +
         $"{Entry.StaleProductCount.ToString(CultureInfo.InvariantCulture)} stale";
 
-    public string SubAssetSummaryText => Entry.SubAssets.Length == 0
-        ? "None"
-        : string.Join(
-            ", ",
-            Entry.SubAssets.Select(static subAsset =>
-                $"{subAsset.DisplayName} [{subAsset.StableId}] · " +
-                subAsset.AssetRoleName));
-
-    public string DiagnosticSummaryText => Entry.Diagnostics.Length == 0
-        ? "None"
-        : string.Join(
-            " | ",
-            Entry.Diagnostics.Select(static diagnostic =>
-                $"{diagnostic.Severity} {diagnostic.Code}: {diagnostic.Message}"));
-
     public string IconKey => EditorIconKey.ObjectDefault;
-
-    public string DetailHeader => $"{DisplayName} · {ProductStateText}";
 
     public string AutomationName =>
         $"{DisplayName}, {AssetTypeName}, {ProductStateText}";

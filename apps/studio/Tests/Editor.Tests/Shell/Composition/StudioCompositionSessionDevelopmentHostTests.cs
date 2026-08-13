@@ -74,6 +74,7 @@ public sealed class StudioCompositionSessionDevelopmentHostTests
         var hub = new StudioDiagnosticHub(diagnosticCapacity: 2, logCapacity: 2);
         var shell = StudioShellTestFactory.Create();
         var catalog = Assert.IsType<TestProjectAssetCatalog>(shell.ProjectAssetCatalog);
+        var selection = Assert.IsType<TestEditorSelectionService>(shell.EditorSelection);
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
         try
@@ -86,6 +87,7 @@ public sealed class StudioCompositionSessionDevelopmentHostTests
                     cancellation.Token,
                     enableReadOnlyDevelopmentObservation: true));
             Assert.Throws<ObjectDisposedException>(() => shell.MarkReady());
+            Assert.Equal(1, selection.DisposeCount);
             Assert.Equal(1, catalog.DisposeCount);
         }
         finally
@@ -99,6 +101,7 @@ public sealed class StudioCompositionSessionDevelopmentHostTests
     {
         var shell = StudioShellTestFactory.Create();
         var catalog = Assert.IsType<TestProjectAssetCatalog>(shell.ProjectAssetCatalog);
+        var selection = Assert.IsType<TestEditorSelectionService>(shell.EditorSelection);
 
         await Assert.ThrowsAsync<InvalidOperationException>(async () =>
             await StudioCompositionSession.CreateAsync(
@@ -108,6 +111,7 @@ public sealed class StudioCompositionSessionDevelopmentHostTests
                 CancellationToken.None));
 
         Assert.Throws<ObjectDisposedException>(() => shell.MarkReady());
+        Assert.Equal(1, selection.DisposeCount);
         Assert.Equal(1, catalog.DisposeCount);
     }
 
@@ -118,6 +122,8 @@ public sealed class StudioCompositionSessionDevelopmentHostTests
             out var projectSession,
             out _);
         var catalog = Assert.IsType<TestProjectAssetCatalog>(shell.ProjectAssetCatalog);
+        var selection = Assert.IsType<TestEditorSelectionService>(shell.EditorSelection);
+        selection.DisposeException = new InvalidOperationException("selection dispose failed");
         catalog.DisposeException = new InvalidOperationException("catalog dispose failed");
         projectSession.DisposeException = new InvalidOperationException("session dispose failed");
 
@@ -129,6 +135,7 @@ public sealed class StudioCompositionSessionDevelopmentHostTests
                 new ThrowingIdentityDiagnosticHub(),
                 CancellationToken.None));
 
+        Assert.Equal(1, selection.DisposeCount);
         Assert.Equal(1, catalog.DisposeCount);
         Assert.Equal(1, projectSession.DisposeCount);
         Assert.Contains(
@@ -136,6 +143,9 @@ public sealed class StudioCompositionSessionDevelopmentHostTests
             exception => exception.Message.Contains(
                 "Injected host-creation failure",
                 StringComparison.Ordinal));
+        Assert.Contains(
+            failure.InnerExceptions,
+            exception => exception.Message == "selection dispose failed");
         Assert.Contains(
             failure.InnerExceptions,
             exception => exception.Message == "catalog dispose failed");

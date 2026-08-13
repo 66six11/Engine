@@ -1,7 +1,12 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
+using System.Globalization;
+using System.Linq;
 using System.Runtime.CompilerServices;
+using Asharia.Studio.Application.Assets;
 using Asharia.Studio.Application.Projects;
+using Asharia.Studio.Application.Selection;
 using Asharia.Studio.Application.Viewports;
 using Asharia.Studio.Presentation.Avalonia.Viewports;
 using Avalonia.Threading;
@@ -171,5 +176,226 @@ internal sealed class StudioScenePanelViewModel :
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 }
 
-internal sealed class StudioInspectorPanelViewModel(StudioShellViewModel shell)
-    : StudioDockPanelViewModel(shell);
+internal sealed class StudioInspectorPanelViewModel :
+    StudioDockPanelViewModel,
+    INotifyPropertyChanged,
+    IDisposable
+{
+    private readonly IProjectAssetCatalog assetCatalog_;
+    private readonly IEditorSelectionService selection_;
+    private readonly IStudioResourceBrowserUiScheduler scheduler_;
+    private bool isDisposed_;
+    private bool isEntitySelection_;
+    private bool isAssetSelection_;
+    private StudioAssetInspectorViewModel? asset_;
+
+    public StudioInspectorPanelViewModel(
+        StudioShellViewModel shell,
+        IProjectAssetCatalog assetCatalog,
+        IEditorSelectionService selection,
+        IStudioResourceBrowserUiScheduler? scheduler = null)
+        : base(shell)
+    {
+        ArgumentNullException.ThrowIfNull(assetCatalog);
+        ArgumentNullException.ThrowIfNull(selection);
+        assetCatalog_ = assetCatalog;
+        selection_ = selection;
+        scheduler_ = scheduler ?? StudioAvaloniaResourceBrowserUiScheduler.Instance;
+        selection_.Changed += OnSelectionChanged;
+        assetCatalog_.SnapshotChanged += OnCatalogSnapshotChanged;
+        Shell.PropertyChanged += OnShellPropertyChanged;
+        ApplyProjection(selection_.Current, assetCatalog_.Current);
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    public bool HasSelection => IsEntitySelection || IsAssetSelection;
+
+    public bool IsEmptySelection => !HasSelection;
+
+    public bool IsEntitySelection => isEntitySelection_;
+
+    public bool IsAssetSelection => isAssetSelection_;
+
+    public StudioAssetInspectorViewModel? Asset => asset_;
+
+    public void Dispose()
+    {
+        if (isDisposed_)
+        {
+            return;
+        }
+
+        isDisposed_ = true;
+        selection_.Changed -= OnSelectionChanged;
+        assetCatalog_.SnapshotChanged -= OnCatalogSnapshotChanged;
+        Shell.PropertyChanged -= OnShellPropertyChanged;
+    }
+
+    private void OnSelectionChanged(object? sender, EditorSelectionChangedEventArgs e) =>
+        PostProjection();
+
+    private void OnCatalogSnapshotChanged(
+        object? sender,
+        AssetCatalogSessionSnapshotChangedEventArgs e) =>
+        PostProjection();
+
+    private void OnShellPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (string.Equals(
+                e.PropertyName,
+                nameof(StudioShellViewModel.SelectedEntity),
+                StringComparison.Ordinal))
+        {
+            PostProjection();
+        }
+    }
+
+    private void PostProjection() =>
+        scheduler_.Post(() =>
+        {
+            if (!isDisposed_)
+            {
+                ApplyProjection(selection_.Current, assetCatalog_.Current);
+            }
+        });
+
+    private void ApplyProjection(
+        EditorSelectionSnapshot selection,
+        AssetCatalogSessionSnapshot catalog)
+    {
+        var entitySelected = selection.Primary is SceneObjectSelectionTarget;
+        StudioAssetInspectorViewModel? asset = null;
+        if (selection.Primary is AssetSelectionTarget target
+            && SameScope(target, catalog.Scope))
+        {
+            var entry = catalog.Catalog?.Entries.FirstOrDefault(
+                candidate => candidate.SelectionKey.Equals(target.Asset));
+            if (entry is not null)
+            {
+                asset = new StudioAssetInspectorViewModel(
+                    entry,
+                    target.TargetProfile,
+                    catalog);
+            }
+        }
+
+        isEntitySelection_ = entitySelected;
+        isAssetSelection_ = asset is not null;
+        asset_ = asset;
+        OnPropertyChanged(nameof(HasSelection));
+        OnPropertyChanged(nameof(IsEmptySelection));
+        OnPropertyChanged(nameof(IsEntitySelection));
+        OnPropertyChanged(nameof(IsAssetSelection));
+        OnPropertyChanged(nameof(Asset));
+    }
+
+    private static bool SameScope(
+        AssetSelectionTarget selection,
+        AssetCatalogQueryScope? scope) =>
+        scope is not null
+        && selection.SessionId == scope.SessionId
+        && selection.ProjectId == scope.ProjectId
+        && string.Equals(
+            selection.TargetProfile,
+            scope.TargetProfile,
+            StringComparison.Ordinal);
+
+    private void OnPropertyChanged([CallerMemberName] string? name = null) =>
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+}
+
+internal sealed class StudioAssetInspectorViewModel
+{
+    public StudioAssetInspectorViewModel(
+        AssetCatalogEntry entry,
+        string targetProfile,
+        AssetCatalogSessionSnapshot catalog)
+    {
+        ArgumentNullException.ThrowIfNull(entry);
+        ArgumentException.ThrowIfNullOrWhiteSpace(targetProfile);
+        Name = entry.DisplayName;
+        TypeName = entry.AssetTypeName;
+        ProductState = entry.ProductState switch
+        {
+            AssetCatalogProductState.NotTracked => "Not tracked",
+            AssetCatalogProductState.Current => "Current",
+            AssetCatalogProductState.Missing => "Missing",
+            AssetCatalogProductState.Stale => "Stale",
+            AssetCatalogProductState.Invalid => "Invalid",
+            _ => "Unknown",
+        };
+        SourcePath = entry.SourcePath;
+        Extension = string.IsNullOrWhiteSpace(entry.Extension) ? "None" : entry.Extension;
+        GuidText = string.IsNullOrWhiteSpace(entry.GuidText) ? "Untracked" : entry.GuidText;
+        Importer = string.IsNullOrWhiteSpace(entry.ImporterName)
+            ? "No importer"
+            : $"{entry.ImporterName} v{entry.ImporterVersion.ToString(CultureInfo.InvariantCulture)}";
+        Profile = string.IsNullOrWhiteSpace(entry.ImportProfileName)
+            ? "Default profile"
+            : entry.ImportProfileName;
+        Role = string.IsNullOrWhiteSpace(entry.AssetRoleName)
+            ? "Unspecified role"
+            : entry.AssetRoleName;
+        TargetProfile = targetProfile;
+        CatalogState = catalog.State switch
+        {
+            AssetCatalogSessionState.Ready => "Ready",
+            AssetCatalogSessionState.Degraded => "Degraded",
+            AssetCatalogSessionState.Loading => "Refreshing",
+            _ => "Unavailable",
+        };
+        CatalogRevision = catalog.Catalog?.Revision.ToString(CultureInfo.InvariantCulture)
+            ?? "Unavailable";
+        Products = $"{entry.CurrentProductCount.ToString(CultureInfo.InvariantCulture)} current · "
+            + $"{entry.StaleProductCount.ToString(CultureInfo.InvariantCulture)} stale";
+        SubAssets = entry.SubAssets
+            .Select(static item => new StudioAssetInspectorSubAssetViewModel(
+                item.DisplayName,
+                item.StableId,
+                item.AssetRoleName))
+            .ToArray();
+        Diagnostics = entry.Diagnostics
+            .Select(static item => new StudioAssetInspectorDiagnosticViewModel(
+                item.Severity.ToString(),
+                item.Code,
+                item.Message))
+            .ToArray();
+    }
+
+    public string Name { get; }
+    public string TypeName { get; }
+    public string ProductState { get; }
+    public string SourcePath { get; }
+    public string Extension { get; }
+    public string GuidText { get; }
+    public string Importer { get; }
+    public string Profile { get; }
+    public string Role { get; }
+    public string TargetProfile { get; }
+    public string CatalogState { get; }
+    public string CatalogRevision { get; }
+    public string Products { get; }
+    public IReadOnlyList<StudioAssetInspectorSubAssetViewModel> SubAssets { get; }
+    public IReadOnlyList<StudioAssetInspectorDiagnosticViewModel> Diagnostics { get; }
+    public bool HasSubAssets => SubAssets.Count != 0;
+    public bool HasDiagnostics => Diagnostics.Count != 0;
+}
+
+internal sealed record StudioAssetInspectorSubAssetViewModel(
+    string Name,
+    string StableId,
+    string Role)
+{
+    public string AutomationName => $"{Name}, {Role}, {StableId}";
+}
+
+internal sealed record StudioAssetInspectorDiagnosticViewModel(
+    string Severity,
+    string Code,
+    string Message)
+{
+    public string Header => $"{Severity}  {Code}";
+
+    public string AutomationName => $"{Severity}, {Code}, {Message}";
+}
