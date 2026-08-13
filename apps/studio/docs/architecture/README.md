@@ -2,7 +2,7 @@
 
 状态：Current
 
-更新日期：2026-08-12
+更新日期：2026-08-13
 
 本目录是 `apps/studio` 的正式框架技术文档入口。目标读者是修改 Studio 框架、编辑器功能、native bridge、Viewport、Play Mode 或扩展系统的开发者。
 
@@ -69,6 +69,7 @@ Studio 文档分为三类，不能混用：
 - [ADR-0012：Viewport 显式保持水平或垂直 FOV](../adr/0012-viewport-field-of-view-axis.md)
 - [ADR-0013：Studio 采用 authoritative document Transform Undo/Redo 与逻辑保存点](../adr/0013-authoritative-document-transform-undo-redo.md)
 - [ADR-0014：Studio Resource Browser 消费有界只读 Catalog snapshot](../adr/0014-catalog-backed-resource-browser.md)
+- [ADR-0015：Studio 用 typed editor selection 驱动只读 Asset Inspector](../adr/0015-typed-editor-selection-and-asset-inspector.md)
 
 ## Current guides
 

@@ -127,9 +127,9 @@ Host owner，证明 start → run → quiesce → reverse stop。synthetic contr
 - 无任何code/test consumer且文档声称的compatibility adapter实际不存在的Core provider declarations先行删除；随后
   仅相互引用并由self-tests维持的public Scene snapshot、Application provider host与Core in-memory provider SCC也已
   整体删除。当前App/composition没有Document/World、provider registry、Scene snapshot或只读Scene能力；
-- 仅由Application内存service/self-tests维持的public Selection岛已删除；distribution fixture中唯一越界引用是
-  `typeof(IEditorSelectionService)`合成锚点，现已连同test工程直接public ProjectReference移除，且未换绑其他public type。
-  当前App/composition没有selection producer、reader、subscription或Document/World scope；
+- 旧 `Asharia.Editor.Selection` public 岛及 distribution fixture 的 synthetic selection anchor 保持删除；#388 以不兼容的
+  `Asharia.Studio.Application.Selection` closed target hierarchy 重建真实跨面板选择。App/composition拥有唯一
+  `EditorSelectionService`，Hierarchy/Resource Browser只发布 typed intent，Inspector只消费 revisioned snapshot；
 - 无Window/Dock/Control/panel instance producer的public lifecycle/frame callback与Application scheduler岛已删除；旧文档声称的
   Presentation timer调用链实际已随legacy UI消失。Application及其test工程现不再引用`Asharia.Editor`，只保留App-owned
   bounded diagnostics source；panel descriptor/declaration仍留到Extensions/Contributions SCC的下一依赖格；

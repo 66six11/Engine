@@ -616,7 +616,7 @@ public sealed class ProjectReferenceGraphTests
     }
 
     [Fact]
-    public void Disconnected_selection_surface_and_synthetic_distribution_anchor_are_deleted()
+    public void Typed_selection_is_application_owned_and_not_a_distribution_fixture_contract()
     {
         var studioRoot = FindStudioRoot();
         var repositoryRoot = Path.GetFullPath(Path.Combine(studioRoot, "..", ".."));
@@ -634,20 +634,31 @@ public sealed class ProjectReferenceGraphTests
             "Selection");
 
         Assert.False(Directory.Exists(publicRoot), $"Public Selection source remains at {publicRoot}.");
-        Assert.False(
+        Assert.True(
             Directory.Exists(applicationRoot),
-            $"Application Selection source remains at {applicationRoot}.");
+            $"Application Selection source is missing at {applicationRoot}.");
         Assert.False(Directory.Exists(publicTestRoot), $"Public Selection tests remain at {publicTestRoot}.");
-        Assert.False(
+        Assert.True(
             Directory.Exists(applicationTestRoot),
-            $"Application Selection tests remain at {applicationTestRoot}.");
+            $"Application Selection tests are missing at {applicationTestRoot}.");
 
         var applicationSelectionTypes = typeof(StudioDiagnosticHub).Assembly
             .GetExportedTypes()
             .Where(type => type.Namespace is not null
                 && type.Namespace.StartsWith("Asharia.Studio.Application.Selection", StringComparison.Ordinal))
             .ToArray();
-        Assert.Empty(applicationSelectionTypes);
+        Assert.Contains(
+            applicationSelectionTypes,
+            type => string.Equals(
+                type.FullName,
+                "Asharia.Studio.Application.Selection.IEditorSelectionService",
+                StringComparison.Ordinal));
+        Assert.Contains(
+            applicationSelectionTypes,
+            type => string.Equals(
+                type.FullName,
+                "Asharia.Studio.Application.Selection.EditorSelectionService",
+                StringComparison.Ordinal));
 
         var distributionTestRoot = Path.Combine(repositoryRoot, "tools", "studio-distribution.Tests");
         var distributionTestProject = XDocument.Load(Path.Combine(

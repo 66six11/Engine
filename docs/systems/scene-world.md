@@ -471,6 +471,13 @@ sequenceDiagram
 
 Selection 属于 Editor System 的 `editor_domain`，不属于 scene-core；但保存 selection preset 或 editor layout 时可序列化 editor-only 数据。
 
+Studio 当前进一步把跨面板 selection 限定为 Application-owned、project-scoped typed immutable snapshot：
+`SceneObjectSelectionTarget` 使用 authoritative document 的 session/scene/object identity，`AssetSelectionTarget` 使用
+session/project/target-profile scope 与 `AssetSelectionKey`，两种 target 不可混用。Asset selection 与只读 catalog
+inspection 不进入 World、SceneDocument 或 scene Undo；Inspector 的既有 scene name/Transform mutation 仍经
+`ProjectSession` expected-revision command 提交。Project close、entity 删除或 catalog refresh 后 identity 不再存在时，
+owner 必须清除或 remap selection，不能保存 panel row、native pointer、runtime handle 或 GPU handle。
+
 ```cpp
 struct SelectionSet {
     std::vector<EntityId> entities;

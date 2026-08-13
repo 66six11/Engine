@@ -19,10 +19,15 @@
 > 2026-08-13：#381在当前生产Dock上建立一个Diagnostics面板，内部Console读取时序日志、Problems读取可行动
 > 结构化诊断；#383将同一App-owned hub加固为双预算、stream-specific subscriptions和Active/History问题生命周期，
 > 不恢复本文已删除的旧Workbench/Feature框架。
+>
+> 2026-08-13：#385 已接入 catalog-backed Resource Browser；#388 按
+> [ADR-0015](../adr/0015-typed-editor-selection-and-asset-inspector.md) 建立 project-scoped typed selection，
+> 让 Resource Browser 选择以稳定 `AssetSelectionKey` 驱动同一个 Inspector 的只读 asset presentation。
+> 该路径只显示 catalog facts，不执行 import、runtime load、preview 或 hot reload。
 
 更新日期：2026-08-13
 
-跟踪：GitHub Epic #119；设计 Slice #337；首个实现 Slice #338；Hierarchy 第一纵切 #363；Transform Undo/Redo #373；Diagnostics #381
+跟踪：GitHub Epic #119；设计 Slice #337；首个实现 Slice #338；Hierarchy 第一纵切 #363；Transform Undo/Redo #373；Diagnostics #381；Resource Browser #385；typed selection / Asset Inspector #388
 
 ## 1. 目的
 
@@ -70,15 +75,19 @@ find -> inspect -> select -> edit -> preview -> validate -> commit/undo
 - #363 的 Hierarchy UI 继续消费同一 authoritative snapshot，并以 `SceneEntitySnapshot.ObjectId` 在 snapshot
   替换后重映射 selection；row/control 不是 scene truth；
 - Create Entity、Save、dirty 标记与关闭重开恢复经过 Application/EngineBridge/native Document 真实链；
-- selection 仅由 ViewModel 按 stable ID remap，不成为 engine truth；
+- scene/asset selection 由 Application project scope 的 typed immutable snapshot 协调；scene identity 来自
+  authoritative document stable object ID，asset identity 使用 GUID-first `AssetSelectionKey`，二者都不成为 engine truth；
 - Dock已恢复当前production实现；#381在一个Diagnostics tool panel中提供Console/Problems两个tab，读取同一
-  bounded hub。Project/Asset数据、Command Palette、多文档、非Transform mutation Undo和Play Mode尚未实现。
+  bounded hub。#385 已提供只读 catalog-backed Resource Browser，#388 让 Asset Inspector 显示同一 snapshot 的
+  identity/import/product/sub-asset/diagnostic facts；asset mutation、thumbnail/preview、Command Palette、多文档、
+  非Transform mutation Undo和Play Mode尚未实现。
 
 当前缺口：
 
-1. Project package manifest/lock、细分 loading/degraded 状态和 asset workspace 仍待真实 service。
-2. Inspector 只覆盖名称与 local Transform；Transform 已接入 document Undo/Redo，component reflection、validation rows、
-   其他 mutation Undo 与 multi-selection 未实现。
+1. Resource Browser 当前只显式 refresh 有界 catalog snapshot；watcher、background processor、asset mutation、preview
+   与 runtime resource 尚未接入。
+2. Inspector 的 asset presentation 只读；scene Transform 已接入 document Undo/Redo，component reflection、asset
+   import-settings Apply/Revert、其他 mutation Undo 与 multi-selection 未实现。
 3. Scene View、render lane、工具栏和 overlay 未实现。
 4. Diagnostics已接入有界projection；持久Editor log、problem report/crash artifact、typed source/target导航仍需各自owner。
 5. 多文档、Play 和viewport tools只有相应owner/command落地后才能启用。
@@ -171,11 +180,16 @@ diagnostic summary
 
 ### 5.2 Selection
 
-- 历史目标要求Selection service成为跨面板唯一共享truth；当前R0旧service已因无consumer删除，必须由真实Document/World/asset owner重新接入。
-- Hierarchy、Project 与 Scene View 可以发起 selection，但必须携带稳定 id 和 source。
-- Inspector 只消费 selection snapshot，不从控件树或 engine object 反查状态。
+- #388 重新建立的 selection 是 project-scoped Application snapshot，而不是被 R0 删除的旧 public Editor SDK 岛；
+  它只服务当前真实 Hierarchy/Resource Browser/Inspector consumers。
+- Hierarchy、Resource Browser 与未来 Scene View 可以发起 selection intent，但必须提交 closed typed target：
+  `SceneObjectSelectionTarget` 携 session/scene/object identity，`AssetSelectionTarget` 携 session/project/target profile
+  和稳定 `AssetSelectionKey`。
+- Inspector 只消费 `EditorSelectionSnapshot` 与 authoritative document/catalog snapshot，不从控件树、panel row、
+  filesystem 或 engine object 反查状态。
 - 面板自己的 hover、focused row、expanded node 和 keyboard anchor 不进入全局 selection。
-- Project asset selection 与 scene object selection 使用可区分的 kind；不可把文件路径当 identity。
+- Project asset selection 与 scene object selection 使用不同 target type；tracked asset 以 GUID 为 identity，source path
+  只允许作为未追踪 catalog row 的 fallback。
 - 面板 pin 是 Inspector 的局部状态：pin 后继续显示原对象，并明确标记，不篡改全局 selection。
 - selection 变化本身不进入 document undo；由 selection 触发的 mutation 必须进入 transaction。
 
@@ -227,6 +241,11 @@ Inspector header 固定回答“正在看什么、能否编辑、为何不能编
 字段错误在字段附近是 primary feedback；Problems 保存结构化详情。普通 validation failure 不弹 modal。
 
 第一版不建立通用 property-grid ABI。Transform、material reference 等真实字段按 Feature 需求实现明确 ViewModel；出现两个以上稳定 consumer 后再提取共享行/section primitive。
+
+#388 的 Asset Inspector 是上述 `read-only` 状态的第一个资产投影：它只显示 catalog 已有的 display/source/GUID、
+asset type、importer/version、profile/role、product state/counts、sub-assets 与 diagnostics。它不读取 source/metadata/product
+blob，不创建 runtime/GPU/preview resource，也不提供 Apply/Revert、Import/Reimport 或 Hot Reload。未来可写 import settings
+必须先建立 revision-scoped draft，再由 typed command 明确 Apply；Revert 只丢弃 draft，不冒充 scene Undo 或 product 回滚。
 
 ## 8. Project 与 Hierarchy
 
@@ -435,9 +454,10 @@ launch Studio
 1. #343 已把 project-open snapshot 注入 workbench；#345 把生命周期状态收敛到 Shell launch surface，
    Project 面板恢复为 active-project asset workspace 占位；
 2. 接入正式 project selection/report provider；每个动作只有在对应 application service 与 command route 存在后才渲染为控件；
-3. 完成正式 ProjectSession/ProjectReady 后，Project 面板接入真实 asset/product snapshot 与 readiness；
+3. #385 已让 Project 面板接入真实 asset/product snapshot 与 readiness；#388 已让稳定 asset selection 驱动只读 Inspector；
 4. #381已用同一Diagnostics面板接入Console时序日志与Problems结构化诊断；按稳定typed source替换和导航仍待source/target合同；
-5. Inspector 明确 empty/read-only/dirty/invalid，并接入第一个 transaction-backed writable field；
+5. Inspector 已区分 scene/asset/empty；scene Transform 是首个 transaction-backed writable field，asset import settings
+   仍等待独立 Apply/Revert command 与 processor owner；
 6. Scene View toolbar/overlay 与 diagnostic deduplication；
 7. Scene picking、gizmo transaction 和 Scene Authoring MVP；
 8. Play/Game View 与运行态 session。

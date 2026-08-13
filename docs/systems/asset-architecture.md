@@ -616,7 +616,16 @@ struct RuntimeResourceRecord {
 
 - Dear ImGui Asset Browser 与 Avalonia Resource Browser 都消费 catalog view/snapshot；共享的是
   `editor-content` UI-neutral query，不是任一 panel/store/ViewModel。
-- Inspector 修改 import settings 时生成 editor command，更新 `.ameta` 后触发 reimport request。
+- Studio 的 project-scoped typed selection 以 closed target type 区分 scene object 与 asset；asset identity 复用
+  GUID-first `AssetSelectionKey`。Resource Browser 只发布 `AssetSelectionTarget` intent，Inspector 从
+  `EditorSelectionSnapshot` 与同一 immutable catalog snapshot 生成只读 inspection，不引用 Project panel row/ViewModel，
+  也不为检查资产加载 runtime object。
+- 当前 Asset Inspector 只显示 `AssetCatalogEntry` 已证明的 identity/source、type、importer/version、profile/role、
+  product state/counts、sub-assets 与 diagnostics；它不读取 source/`.ameta`/product blob，不创建 thumbnail、
+  `RuntimeResource` 或 GPU resource，也不执行 import/reimport/hot reload。
+- 未来 Inspector 修改 import settings 时必须先持有 revision-scoped draft；`Apply` 通过 typed editor command 原子更新
+  `.ameta` 并提交 reimport request，`Revert` 只丢弃 draft并重读 authoritative facts。Apply 被接受不表示新 product、
+  runtime generation 或 GPU resource 已就绪。
 - Editor UI 不直接修改 product cache；它只请求 import、展示状态和诊断。
 - #385 将原 `apps/editor` 私有 `editor_asset_catalog` query composition 硬切到
   `packages/editor-content`。`asharia::editor_content` 组合 canonical project descriptor、source scan/discovery/
@@ -625,7 +634,8 @@ struct RuntimeResourceRecord {
 - #385 同时建立 Studio 生产链：`ProjectSession -> ProjectAssetCatalog -> IAssetCatalogGateway -> EngineBridge ->
   asharia_editor_content_native -> asharia::editor_content`。Application owner 以 project scope + request generation
   实现 newest-request-wins；同 scope refresh failure 可保留 last-known-good，跨项目不复用；partial snapshot 显式
-  Degraded。Project panel 只拥有 150 ms debounce search、folder/type/product filters、stable selection 与 details state。
+  Degraded。Project panel 只拥有150 ms debounce search、folder/type/product filters与当前row highlight；稳定selection
+  truth由Application service拥有，Project panel发布typed asset intent，完整只读详情由Inspector投影。
 - native/managed query 默认限制 10,000 source files、8 GiB aggregate source bytes、10,000 diagnostics 与
   16 MiB JSON；ABI/string/schema/navigation/scope 都严格验证。Project panel 的 navigation/assets 列表采用固定 22 px
   virtualized rows，并以 10,000-row Headless test 验证 realized controls 有界；100,000 仅是 parser safety ceiling，
@@ -1178,7 +1188,7 @@ scan-to-planning bridge baseline 稳定。
 | --- | --- |
 | `tools/asset-processor` / 完整 import 调度 | 等后续 slice 接入真实 importer、dependency invalidation 和调度策略。 |
 | `--smoke-mesh-resource` / runtime texture owner | 等 CPU texture import contract、真实 decoder 选择、resource-runtime 状态合同和 upload lifetime 策略稳定后接入真实 mesh/texture product data、resource owner 和 lifetime。 |
-| Resource Browser 后续 mutation/preview | #385 已接通 Studio 只读 catalog-backed browser；create/rename/move/delete、watcher、background processor、完整 import settings、thumbnail/grid view 仍需 typed command、processor 和 preview owner。 |
+| Resource Browser / Asset Inspector 后续 mutation/preview | #385 已接通 Studio 只读 catalog-backed browser，#388 已接通 typed selection 与只读 Asset Inspector；create/rename/move/delete、watcher、background processor、import-settings Apply/Revert、thumbnail/grid view 仍需 typed command、processor 和 preview owner。 |
 | Model product / runtime / GPU / thumbnail | 先定义稳定 Mesh cooked product 与一个 importer，再由 ResourceRuntime 读取 typed CPU payload、renderer 创建 generation-safe GPU resource，最后 ThumbnailService 复用同一 runtime resource；禁止 Browser 旁路 decode source。 |
 | Material asset IO / Material Editor | 等 material-core 合同、asset product execution 和 editor transaction 稳定。 |
 

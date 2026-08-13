@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
@@ -11,6 +12,39 @@ namespace Editor.Tests.Shell.Composition;
 
 public sealed class StudioProcessSessionTests
 {
+    [Fact]
+    public async Task Composition_teardown_disposes_selection_before_catalog_and_project_session()
+    {
+        var order = new List<string>();
+        var projectSession = new TestProjectSession
+        {
+            DisposeHandler = () => order.Add("session"),
+        };
+        var catalog = new TestProjectAssetCatalog
+        {
+            DisposeHandler = () => order.Add("catalog"),
+        };
+        var selection = new TestEditorSelectionService
+        {
+            DisposeHandler = () => order.Add("selection"),
+        };
+        var shellViewModel = new StudioShellViewModel(
+            projectSession,
+            new TestProjectDialogService(),
+            StudioShellTestFactory.CreateDocumentTransitions(projectSession),
+            StudioShellTestFactory.CreateDiagnosticWriter(),
+            catalog,
+            selection);
+        var composition = new StudioCompositionSession(shellViewModel);
+
+        await composition.DisposeAsync();
+
+        Assert.Equal(["selection", "catalog", "session"], order);
+        Assert.Equal(1, selection.DisposeCount);
+        Assert.Equal(1, catalog.DisposeCount);
+        Assert.Equal(1, projectSession.DisposeCount);
+    }
+
     [Fact]
     public async Task Start_and_stop_publish_complete_managed_teardown_evidence()
     {

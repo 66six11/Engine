@@ -7,6 +7,7 @@ using Asharia.Studio.Application.Diagnostics;
 using Asharia.Studio.Application.Assets;
 using Asharia.Studio.Application.Projects;
 using Asharia.Studio.Application.Scenes;
+using Asharia.Studio.Application.Selection;
 using Editor.Shell.Services.Projects;
 using Editor.Shell.ViewModels.Windowing;
 
@@ -28,7 +29,8 @@ internal static class StudioShellTestFactory
             projectDialogs,
             CreateDocumentTransitions(projectSession),
             CreateDiagnosticWriter(),
-            new TestProjectAssetCatalog());
+            new TestProjectAssetCatalog(),
+            new TestEditorSelectionService());
     }
 
     public static ProjectDocumentTransitionCoordinator CreateDocumentTransitions(
@@ -46,6 +48,68 @@ internal static class StudioShellTestFactory
     }
 
     public static TestProjectAssetCatalog CreateProjectAssetCatalog() => new();
+
+    public static TestEditorSelectionService CreateEditorSelectionService() => new();
+}
+
+internal sealed class TestEditorSelectionService : IEditorSelectionService
+{
+    public event EventHandler<EditorSelectionChangedEventArgs>? Changed;
+
+    public EditorSelectionSnapshot Current { get; private set; } =
+        new(0, primary: null, EditorSelectionChangeReason.Initialization);
+
+    public int DisposeCount { get; private set; }
+
+    public Exception? DisposeException { get; set; }
+
+    public Action? DisposeHandler { get; set; }
+
+    public bool Replace(
+        EditorSelectionTarget target,
+        EditorSelectionChangeReason reason = EditorSelectionChangeReason.User)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        if (Equals(Current.Primary, target))
+        {
+            return false;
+        }
+
+        Publish(target, reason);
+        return true;
+    }
+
+    public bool Clear(
+        EditorSelectionChangeReason reason = EditorSelectionChangeReason.User)
+    {
+        if (Current.Primary is null)
+        {
+            return false;
+        }
+
+        Publish(primary: null, reason);
+        return true;
+    }
+
+    public void Dispose()
+    {
+        DisposeCount++;
+        DisposeHandler?.Invoke();
+        if (DisposeException is not null)
+        {
+            throw DisposeException;
+        }
+        Changed = null;
+    }
+
+    private void Publish(EditorSelectionTarget? primary, EditorSelectionChangeReason reason)
+    {
+        Current = new EditorSelectionSnapshot(
+            checked(Current.Revision + 1),
+            primary,
+            reason);
+        Changed?.Invoke(this, new EditorSelectionChangedEventArgs(Current));
+    }
 }
 
 internal sealed class TestProjectAssetCatalog : IProjectAssetCatalog
@@ -61,6 +125,8 @@ internal sealed class TestProjectAssetCatalog : IProjectAssetCatalog
 
     public Exception? DisposeException { get; set; }
 
+    public Action? DisposeHandler { get; set; }
+
     public ValueTask RefreshAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -71,6 +137,7 @@ internal sealed class TestProjectAssetCatalog : IProjectAssetCatalog
     public ValueTask DisposeAsync()
     {
         DisposeCount++;
+        DisposeHandler?.Invoke();
         if (DisposeException is not null)
         {
             return ValueTask.FromException(DisposeException);
@@ -171,6 +238,8 @@ internal sealed class TestProjectSession : IProjectSession
 
     public Exception? DisposeException { get; set; }
 
+    public Action? DisposeHandler { get; set; }
+
     public ValueTask<ProjectSessionOperationResult> CreateProjectAsync(
         string parentDirectory,
         string projectName,
@@ -248,6 +317,7 @@ internal sealed class TestProjectSession : IProjectSession
     public ValueTask DisposeAsync()
     {
         DisposeCount++;
+        DisposeHandler?.Invoke();
         if (DisposeException is not null)
         {
             return ValueTask.FromException(DisposeException);

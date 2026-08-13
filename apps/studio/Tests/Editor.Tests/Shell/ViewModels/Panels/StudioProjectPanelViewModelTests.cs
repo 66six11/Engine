@@ -8,6 +8,7 @@ using Asharia.Runtime;
 using Asharia.Studio.Application.Assets;
 using Asharia.Studio.Application.Projects;
 using Asharia.Studio.Application.Scenes;
+using Asharia.Studio.Application.Selection;
 using Asharia.Studio.TestSupport;
 using Editor.Shell.ViewModels.Panels;
 using Xunit;
@@ -28,6 +29,7 @@ public sealed class StudioProjectPanelViewModelTests
         using var viewModel = new StudioProjectPanelViewModel(
             shell,
             catalog,
+            shell.EditorSelection,
             scheduler);
 
         projectSession.Publish(ReadyProject("Sample"));
@@ -89,7 +91,6 @@ public sealed class StudioProjectPanelViewModelTests
             option => option.State == AssetCatalogProductState.Stale);
         Assert.Single(viewModel.VisibleAssets);
         Assert.Equal("Albedo", viewModel.VisibleAssets[0].DisplayName);
-        Assert.Equal("Body [mesh:0] · Mesh", new StudioResourceAssetRowViewModel(mesh).SubAssetSummaryText);
     }
 
     [Fact]
@@ -104,6 +105,7 @@ public sealed class StudioProjectPanelViewModelTests
         using var viewModel = new StudioProjectPanelViewModel(
             shell,
             catalog,
+            shell.EditorSelection,
             scheduler);
         var guid = Guid.NewGuid();
 
@@ -138,22 +140,20 @@ public sealed class StudioProjectPanelViewModelTests
             scheduler);
 
         Assert.Equal("Assets/Models/After.glb", viewModel.SelectedAsset!.SourcePath);
-        viewModel.IsDetailsExpanded = true;
-        Assert.True(viewModel.IsDetailsVisible);
         var selectedBeforeFiltering = viewModel.SelectedAsset;
+        var selectedTarget = Assert.IsType<AssetSelectionTarget>(
+            shell.EditorSelection.Current.Primary);
         viewModel.SearchText = "missing";
         scheduler.RunScheduled();
         Assert.Null(viewModel.SelectedAsset);
         Assert.Empty(viewModel.VisibleAssets);
-        Assert.True(viewModel.IsDetailsExpanded);
-        Assert.False(viewModel.IsDetailsVisible);
+        Assert.Equal(selectedTarget, shell.EditorSelection.Current.Primary);
 
         viewModel.SearchText = string.Empty;
         scheduler.RunScheduled();
         Assert.Equal(guid, viewModel.SelectedAsset?.SelectionKey.AssetGuid);
         Assert.Equal("After", viewModel.SelectedAsset?.DisplayName);
         Assert.Same(selectedBeforeFiltering, viewModel.SelectedAsset);
-        Assert.True(viewModel.IsDetailsVisible);
     }
 
     [Fact]
@@ -168,6 +168,7 @@ public sealed class StudioProjectPanelViewModelTests
         using var viewModel = new StudioProjectPanelViewModel(
             shell,
             catalog,
+            shell.EditorSelection,
             scheduler);
 
         Assert.True(viewModel.IsNoProject);
@@ -219,6 +220,7 @@ public sealed class StudioProjectPanelViewModelTests
         using var viewModel = new StudioProjectPanelViewModel(
             shell,
             catalog,
+            shell.EditorSelection,
             scheduler);
 
         projectSession.Publish(ReadyProject("Partial"));
@@ -251,7 +253,11 @@ public sealed class StudioProjectPanelViewModelTests
         var gateway = new ControlledAssetCatalogGateway();
         await using var catalog = new ProjectAssetCatalog(projectSession, gateway);
         var scheduler = new TestResourceBrowserScheduler();
-        var viewModel = new StudioProjectPanelViewModel(shell, catalog, scheduler);
+        var viewModel = new StudioProjectPanelViewModel(
+            shell,
+            catalog,
+            shell.EditorSelection,
+            scheduler);
 
         projectSession.Publish(ReadyProject("Sample"));
         await WaitUntil(() => gateway.Requests.Count > 0, scheduler);
@@ -299,6 +305,7 @@ public sealed class StudioProjectPanelViewModelTests
         using var viewModel = new StudioProjectPanelViewModel(
             shell,
             catalog,
+            shell.EditorSelection,
             scheduler);
 
         projectSession.Publish(ReadyProject("Sample"));
@@ -323,6 +330,223 @@ public sealed class StudioProjectPanelViewModelTests
         scheduler.DrainPosts();
         Assert.True(viewModel.IsReady);
         Assert.Equal("Texture", Assert.Single(viewModel.VisibleAssets).DisplayName);
+    }
+
+    [Fact]
+    public async Task Scene_selection_clears_asset_highlight_and_reclick_restores_asset_target()
+    {
+        using var shell = StudioShellTestFactory.Create(
+            out var projectSession,
+            out _);
+        var gateway = new ControlledAssetCatalogGateway();
+        await using var catalog = new ProjectAssetCatalog(projectSession, gateway);
+        var scheduler = new TestResourceBrowserScheduler();
+        using var viewModel = new StudioProjectPanelViewModel(
+            shell,
+            catalog,
+            shell.EditorSelection,
+            scheduler);
+        var assetGuid = Guid.NewGuid();
+
+        projectSession.Publish(ReadyProject("CrossPanel"));
+        await WaitUntil(() => gateway.Requests.Count != 0, scheduler);
+        gateway.Requests[0].Complete(AssetCatalogQueryResult.Success(Snapshot(
+            1,
+            [Entry(
+                "Assets/Models/Wedge.glb",
+                "Wedge",
+                "Model",
+                AssetCatalogProductState.Current,
+                assetGuid)])));
+        await WaitUntil(() => viewModel.IsReady, scheduler);
+        var row = Assert.Single(viewModel.VisibleAssets);
+
+        viewModel.SelectedAsset = row;
+        Assert.IsType<AssetSelectionTarget>(shell.EditorSelection.Current.Primary);
+        var project = projectSession.Current.Project!;
+        var document = projectSession.Current.Document!;
+        shell.EditorSelection.Replace(new SceneObjectSelectionTarget(
+            project.SessionId,
+            document.SceneId,
+            Guid.NewGuid()));
+        scheduler.DrainPosts();
+
+        Assert.Null(viewModel.SelectedAsset);
+        viewModel.SelectedType = "Model";
+        Assert.Null(viewModel.SelectedAsset);
+
+        viewModel.SelectedAsset = row;
+
+        var restored = Assert.IsType<AssetSelectionTarget>(
+            shell.EditorSelection.Current.Primary);
+        Assert.Equal(assetGuid, restored.Asset.AssetGuid);
+    }
+
+    [Fact]
+    public async Task Inspector_uses_structured_catalog_facts_and_queued_updates_are_newest_wins()
+    {
+        using var shell = StudioShellTestFactory.Create(
+            out var projectSession,
+            out _);
+        var gateway = new ControlledAssetCatalogGateway();
+        await using var catalog = new ProjectAssetCatalog(projectSession, gateway);
+        var scheduler = new TestResourceBrowserScheduler();
+        using var inspector = new StudioInspectorPanelViewModel(
+            shell,
+            catalog,
+            shell.EditorSelection,
+            scheduler);
+        var entry = Entry(
+            "Assets/Models/Wedge.glb",
+            "Directional Wedge",
+            "Model",
+            AssetCatalogProductState.Current,
+            Guid.NewGuid(),
+            [new AssetCatalogSubAsset("mesh:0", "Body", "Mesh")],
+            [new AssetCatalogDiagnostic(
+                AssetCatalogDiagnosticSeverity.Warning,
+                "MODEL-NORMALS",
+                "Assets/Models/Wedge.glb",
+                "meshes/0",
+                "Normals were generated.")]);
+
+        projectSession.Publish(ReadyProject("Inspector"));
+        await WaitUntil(() => gateway.Requests.Count != 0, scheduler);
+        gateway.Requests[0].Complete(AssetCatalogQueryResult.Success(Snapshot(7, [entry])));
+        await WaitUntil(
+            () => catalog.Current.State == AssetCatalogSessionState.Ready,
+            scheduler);
+        var scope = catalog.Current.Scope!;
+        shell.EditorSelection.Replace(new AssetSelectionTarget(
+            scope.SessionId,
+            scope.ProjectId,
+            scope.TargetProfile,
+            entry.SelectionKey));
+        scheduler.DrainPosts();
+
+        var asset = Assert.IsType<StudioAssetInspectorViewModel>(inspector.Asset);
+        Assert.True(inspector.IsAssetSelection);
+        Assert.Equal("Assets/Models/Wedge.glb", asset.SourcePath);
+        Assert.Equal(".glb", asset.Extension);
+        Assert.Equal("Ready", asset.CatalogState);
+        Assert.Equal("7", asset.CatalogRevision);
+        Assert.Equal("Body", Assert.Single(asset.SubAssets).Name);
+        Assert.Equal("MODEL-NORMALS", Assert.Single(asset.Diagnostics).Code);
+        Assert.All(
+            typeof(StudioAssetInspectorViewModel).GetProperties(),
+            property => Assert.False(property.CanWrite));
+        Assert.DoesNotContain(
+            typeof(StudioAssetInspectorViewModel).GetProperties(),
+            property => property.Name is "SourceFilePath" or "MetadataFilePath"
+                || property.Name.Contains("Runtime", StringComparison.Ordinal));
+
+        var refresh = catalog.RefreshAsync().AsTask();
+        await WaitUntil(() => gateway.Requests.Count == 2, scheduler);
+        gateway.Requests[1].Complete(AssetCatalogQueryResult.Failed(
+            Failure("refresh failed")));
+        await refresh;
+        await WaitUntil(
+            () => catalog.Current.State == AssetCatalogSessionState.Degraded,
+            scheduler);
+        Assert.Equal("Degraded", inspector.Asset?.CatalogState);
+        Assert.Equal("7", inspector.Asset?.CatalogRevision);
+
+        shell.EditorSelection.Clear();
+        shell.EditorSelection.Replace(new AssetSelectionTarget(
+            scope.SessionId,
+            scope.ProjectId,
+            scope.TargetProfile,
+            entry.SelectionKey));
+        shell.EditorSelection.Clear();
+        scheduler.DrainPosts();
+
+        Assert.True(inspector.IsEmptySelection);
+        Assert.Null(inspector.Asset);
+    }
+
+    [Theory]
+    [InlineData(AssetCatalogProductState.NotTracked, null, "Untracked", "Not tracked")]
+    [InlineData(AssetCatalogProductState.Missing, "tracked", "tracked", "Missing")]
+    [InlineData(AssetCatalogProductState.Stale, "tracked", "tracked", "Stale")]
+    [InlineData(AssetCatalogProductState.Invalid, "tracked", "tracked", "Invalid")]
+    public async Task Inspector_distinguishes_untracked_and_noncurrent_product_states(
+        AssetCatalogProductState productState,
+        string? trackedMarker,
+        string expectedGuid,
+        string expectedState)
+    {
+        using var shell = StudioShellTestFactory.Create(out var projectSession, out _);
+        var gateway = new ControlledAssetCatalogGateway();
+        await using var catalog = new ProjectAssetCatalog(projectSession, gateway);
+        var scheduler = new TestResourceBrowserScheduler();
+        using var inspector = new StudioInspectorPanelViewModel(
+            shell,
+            catalog,
+            shell.EditorSelection,
+            scheduler);
+        var guid = trackedMarker is null ? (Guid?)null : Guid.NewGuid();
+        var entry = Entry(
+            "Assets/Models/State.glb",
+            "State",
+            "Model",
+            productState,
+            guid);
+
+        projectSession.Publish(ReadyProject("Inspector states"));
+        await WaitUntil(() => gateway.Requests.Count != 0, scheduler);
+        gateway.Requests[0].Complete(AssetCatalogQueryResult.Success(Snapshot(11, [entry])));
+        await WaitUntil(() => catalog.Current.State == AssetCatalogSessionState.Ready, scheduler);
+        var scope = catalog.Current.Scope!;
+        Assert.True(shell.EditorSelection.Replace(new AssetSelectionTarget(
+            scope.SessionId,
+            scope.ProjectId,
+            scope.TargetProfile,
+            entry.SelectionKey)));
+        scheduler.DrainPosts();
+
+        var asset = Assert.IsType<StudioAssetInspectorViewModel>(inspector.Asset);
+        Assert.Equal(expectedState, asset.ProductState);
+        Assert.Equal(
+            trackedMarker is null ? expectedGuid : guid!.Value.ToString("D"),
+            asset.GuidText);
+    }
+
+    [Fact]
+    public async Task Disposed_inspector_ignores_already_queued_projection_work()
+    {
+        using var shell = StudioShellTestFactory.Create(out var projectSession, out _);
+        var gateway = new ControlledAssetCatalogGateway();
+        await using var catalog = new ProjectAssetCatalog(projectSession, gateway);
+        var scheduler = new TestResourceBrowserScheduler();
+        var inspector = new StudioInspectorPanelViewModel(
+            shell,
+            catalog,
+            shell.EditorSelection,
+            scheduler);
+        var entry = Entry(
+            "Assets/Models/Wedge.glb",
+            "Wedge",
+            "Model",
+            AssetCatalogProductState.Current,
+            Guid.NewGuid());
+
+        projectSession.Publish(ReadyProject("Disposed Inspector"));
+        await WaitUntil(() => gateway.Requests.Count != 0, scheduler);
+        gateway.Requests[0].Complete(AssetCatalogQueryResult.Success(Snapshot(1, [entry])));
+        await WaitUntil(() => catalog.Current.State == AssetCatalogSessionState.Ready, scheduler);
+        var scope = catalog.Current.Scope!;
+        Assert.True(shell.EditorSelection.Replace(new AssetSelectionTarget(
+            scope.SessionId,
+            scope.ProjectId,
+            scope.TargetProfile,
+            entry.SelectionKey)));
+        Assert.True(scheduler.HasPostedWork);
+
+        inspector.Dispose();
+        scheduler.DrainPosts();
+
+        Assert.True(inspector.IsEmptySelection);
+        Assert.Null(inspector.Asset);
     }
 
     private static async Task WaitUntil(
@@ -423,7 +647,8 @@ public sealed class StudioProjectPanelViewModelTests
         string assetType,
         AssetCatalogProductState productState,
         Guid? assetGuid,
-        ImmutableArray<AssetCatalogSubAsset> subAssets = default)
+        ImmutableArray<AssetCatalogSubAsset> subAssets = default,
+        ImmutableArray<AssetCatalogDiagnostic> diagnostics = default)
     {
         var fileName = sourcePath.Split('/').Last();
         var extension = System.IO.Path.GetExtension(fileName);
@@ -450,7 +675,7 @@ public sealed class StudioProjectPanelViewModelTests
             productState == AssetCatalogProductState.Current ? 1 : 0,
             productState == AssetCatalogProductState.Stale ? 1 : 0,
             subAssets.IsDefault ? ImmutableArray<AssetCatalogSubAsset>.Empty : subAssets,
-            ImmutableArray<AssetCatalogDiagnostic>.Empty);
+            diagnostics.IsDefault ? ImmutableArray<AssetCatalogDiagnostic>.Empty : diagnostics);
     }
 
     private static AssetCatalogQueryFailure Failure(string message) =>

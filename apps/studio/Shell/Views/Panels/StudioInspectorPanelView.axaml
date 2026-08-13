@@ -6,15 +6,17 @@
              x:Class="Editor.Shell.Views.Panels.StudioInspectorPanelView"
              x:DataType="vm:StudioInspectorPanelViewModel"
              AutomationProperties.AutomationId="StudioInspectorPanel"
-             AutomationProperties.Name="Entity Inspector"
+             AutomationProperties.Name="Inspector"
              AutomationProperties.ControlTypeOverride="Group">
     <Grid Margin="8">
-        <TextBlock IsVisible="{Binding !Shell.HasSelection}"
+        <TextBlock x:Name="InspectorEmptyState"
+                   IsVisible="{Binding IsEmptySelection}"
                    Foreground="{DynamicResource EditorBrushTextMuted}"
                    HorizontalAlignment="Center"
                    VerticalAlignment="Center"
-                   Text="Select an entity" />
-        <ScrollViewer IsVisible="{Binding Shell.HasSelection}">
+                   Text="Select an entity or resource" />
+        <ScrollViewer x:Name="InspectorEntityContent"
+                      IsVisible="{Binding IsEntitySelection}">
             <StackPanel Spacing="8">
                 <TextBlock FontSize="13" FontWeight="SemiBold" Text="Entity" />
                 <TextBlock Foreground="{DynamicResource EditorBrushTextMuted}" Text="Name" />
@@ -79,6 +81,128 @@
                            Foreground="{DynamicResource EditorBrushWarning}"
                            Text="{Binding Shell.ProjectOperationMessage}"
                            TextWrapping="Wrap" />
+            </StackPanel>
+        </ScrollViewer>
+
+        <ScrollViewer x:Name="InspectorAssetContent"
+                      IsVisible="{Binding IsAssetSelection}">
+            <StackPanel Spacing="8">
+                <StackPanel Spacing="2">
+                    <TextBlock FontSize="13"
+                               FontWeight="SemiBold"
+                               Text="{Binding Asset.Name}" />
+                    <TextBlock Foreground="{DynamicResource EditorBrushTextMuted}"
+                               Text="{Binding Asset.TypeName}" />
+                    <TextBlock Foreground="{DynamicResource EditorBrushTextSecondary}"
+                               Text="{Binding Asset.ProductState}" />
+                </StackPanel>
+
+                <TextBlock Margin="0,4,0,0" FontWeight="SemiBold" Text="Identity" />
+                <Grid ColumnDefinitions="76,*"
+                      RowDefinitions="Auto,Auto,Auto"
+                      RowSpacing="4">
+                    <TextBlock Grid.Row="0"
+                               Foreground="{DynamicResource EditorBrushTextMuted}"
+                               Text="Path" />
+                    <TextBlock Grid.Row="0"
+                               Grid.Column="1"
+                               Text="{Binding Asset.SourcePath}"
+                               TextTrimming="CharacterEllipsis"
+                               ToolTip.Tip="{Binding Asset.SourcePath}" />
+                    <TextBlock Grid.Row="1"
+                               Foreground="{DynamicResource EditorBrushTextMuted}"
+                               Text="GUID" />
+                    <TextBlock Grid.Row="1"
+                               Grid.Column="1"
+                               Text="{Binding Asset.GuidText}"
+                               TextTrimming="CharacterEllipsis"
+                               ToolTip.Tip="{Binding Asset.GuidText}" />
+                    <TextBlock Grid.Row="2"
+                               Foreground="{DynamicResource EditorBrushTextMuted}"
+                               Text="Extension" />
+                    <TextBlock Grid.Row="2"
+                               Grid.Column="1"
+                               Text="{Binding Asset.Extension}" />
+                </Grid>
+
+                <TextBlock Margin="0,4,0,0" FontWeight="SemiBold" Text="Import" />
+                <Grid ColumnDefinitions="76,*"
+                      RowDefinitions="Auto,Auto,Auto"
+                      RowSpacing="4">
+                    <TextBlock Grid.Row="0" Foreground="{DynamicResource EditorBrushTextMuted}" Text="Importer" />
+                    <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Asset.Importer}" TextWrapping="Wrap" />
+                    <TextBlock Grid.Row="1" Foreground="{DynamicResource EditorBrushTextMuted}" Text="Profile" />
+                    <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding Asset.Profile}" TextWrapping="Wrap" />
+                    <TextBlock Grid.Row="2" Foreground="{DynamicResource EditorBrushTextMuted}" Text="Role" />
+                    <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding Asset.Role}" TextWrapping="Wrap" />
+                </Grid>
+
+                <TextBlock Margin="0,4,0,0" FontWeight="SemiBold" Text="Products" />
+                <Grid ColumnDefinitions="76,*"
+                      RowDefinitions="Auto,Auto,Auto,Auto"
+                      RowSpacing="4">
+                    <TextBlock Grid.Row="0" Foreground="{DynamicResource EditorBrushTextMuted}" Text="Target" />
+                    <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Asset.TargetProfile}" TextWrapping="Wrap" />
+                    <TextBlock Grid.Row="1" Foreground="{DynamicResource EditorBrushTextMuted}" Text="Catalog" />
+                    <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding Asset.CatalogState}" />
+                    <TextBlock Grid.Row="2" Foreground="{DynamicResource EditorBrushTextMuted}" Text="Revision" />
+                    <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding Asset.CatalogRevision}" />
+                    <TextBlock Grid.Row="3" Foreground="{DynamicResource EditorBrushTextMuted}" Text="Artifacts" />
+                    <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding Asset.Products}" TextWrapping="Wrap" />
+                </Grid>
+
+                <StackPanel IsVisible="{Binding Asset.HasSubAssets}" Spacing="4">
+                    <TextBlock Margin="0,4,0,0" FontWeight="SemiBold" Text="Sub-assets" />
+                    <ListBox x:Name="InspectorSubAssets"
+                             ItemsSource="{Binding Asset.SubAssets}"
+                             MaxHeight="160"
+                             AutomationProperties.Name="Asset sub-assets">
+                        <ListBox.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <VirtualizingStackPanel />
+                            </ItemsPanelTemplate>
+                        </ListBox.ItemsPanel>
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="vm:StudioAssetInspectorSubAssetViewModel">
+                                <StackPanel Margin="4,3"
+                                            Spacing="1"
+                                            AutomationProperties.Name="{Binding AutomationName}">
+                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                                    <TextBlock Foreground="{DynamicResource EditorBrushTextMuted}"
+                                               Text="{Binding StableId}"
+                                               TextTrimming="CharacterEllipsis"
+                                               ToolTip.Tip="{Binding StableId}" />
+                                    <TextBlock Foreground="{DynamicResource EditorBrushTextSecondary}"
+                                               Text="{Binding Role}" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </StackPanel>
+
+                <StackPanel IsVisible="{Binding Asset.HasDiagnostics}" Spacing="4">
+                    <TextBlock Margin="0,4,0,0" FontWeight="SemiBold" Text="Diagnostics" />
+                    <ListBox x:Name="InspectorAssetDiagnostics"
+                             ItemsSource="{Binding Asset.Diagnostics}"
+                             MaxHeight="180"
+                             AutomationProperties.Name="Asset diagnostics">
+                        <ListBox.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <VirtualizingStackPanel />
+                            </ItemsPanelTemplate>
+                        </ListBox.ItemsPanel>
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="vm:StudioAssetInspectorDiagnosticViewModel">
+                                <StackPanel Margin="4,3"
+                                            Spacing="1"
+                                            AutomationProperties.Name="{Binding AutomationName}">
+                                    <TextBlock FontWeight="SemiBold" Text="{Binding Header}" />
+                                    <TextBlock Text="{Binding Message}" TextWrapping="Wrap" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </StackPanel>
             </StackPanel>
         </ScrollViewer>
     </Grid>
