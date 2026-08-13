@@ -9,6 +9,8 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Editor" />
+    <InternalsVisibleTo Include="Editor.Tests" />
     <InternalsVisibleTo Include="Asharia.Studio.EngineBridge.Tests" />
     <InternalsVisibleTo Include="Asharia.Studio.Presentation.Avalonia" />
   </ItemGroup>

@@ -59,8 +59,8 @@
               CopyToPublishDirectory="PreserveNewest" />
         <None Include="$(StudioViewportNativeLibrary)"
               Link="editor_native.dll"
-              CopyToOutputDirectory="PreserveNewest"
-              CopyToPublishDirectory="PreserveNewest" />
+              CopyToOutputDirectory="Always"
+              CopyToPublishDirectory="Always" />
         <None Include="$(StudioEditorContentNativeLibrary)"
               Link="asharia_editor_content_native.dll"
               CopyToOutputDirectory="PreserveNewest"
@@ -101,6 +101,13 @@
                Text="The Studio viewport shader bundle is missing at '$(StudioViewportShaderDirectory)'. Build the asharia-renderer-basic-shaders target first." />
         <Error Condition="!Exists('$(StudioViewportShaderDirectory)\basic_mesh3d.vert.spv')"
                Text="The Studio Scene mesh shader bundle is missing at '$(StudioViewportShaderDirectory)'. Build the asharia-renderer-basic-shaders target first." />
+    </Target>
+
+    <Target Name="ValidateStudioViewportNativeRuntimeContract"
+            AfterTargets="Build"
+            Condition="'$(AshariaStudioTargetsWindows)' == 'true' and '$(DesignTimeBuild)' != 'true'">
+        <Exec Command="&quot;$(TargetDir)$(AssemblyName).exe&quot; --verify-native-contract"
+              WorkingDirectory="$(TargetDir)" />
     </Target>
 
 </Project>

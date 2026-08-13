@@ -104,8 +104,9 @@ public static partial class StudioEditorImageProducer
         "editor_viewport_destroy_stream_v7",
         "editor_viewport_shutdown",
     ];
-    private static readonly string[] LegacyViewportStreamAbiExports =
+    private static readonly string[] ForbiddenViewportNativeExports =
     [
+        "editor_viewport_open_stream_v7_for_test",
         "editor_viewport_acquire_present_packet",
         "editor_viewport_release_present_packet",
         "editor_viewport_acquire_present_packet_v2",
@@ -1441,7 +1442,7 @@ public static partial class StudioEditorImageProducer
                 path,
                 "editor_native.dll",
                 ViewportNativeRequiredExports,
-                LegacyViewportStreamAbiExports,
+                ForbiddenViewportNativeExports,
                 out var error))
         {
             Fail(

@@ -555,6 +555,7 @@ public sealed class StudioEditorImageProducerTests
     }
 
     [Theory]
+    [InlineData("editor_viewport_open_stream_v7_for_test")]
     [InlineData("editor_viewport_acquire_present_packet")]
     [InlineData("editor_viewport_release_present_packet")]
     [InlineData("editor_viewport_acquire_present_packet_v2")]
@@ -577,7 +578,7 @@ public sealed class StudioEditorImageProducerTests
     [InlineData("editor_viewport_close_stream_v6")]
     [InlineData("editor_viewport_poll_stream_v6")]
     [InlineData("editor_viewport_destroy_stream_v6")]
-    public void Produce_rejects_legacy_viewport_stream_abi_export(string legacyExport)
+    public void Produce_rejects_nonproduction_viewport_stream_abi_export(string legacyExport)
     {
         if (!OperatingSystem.IsWindows())
         {

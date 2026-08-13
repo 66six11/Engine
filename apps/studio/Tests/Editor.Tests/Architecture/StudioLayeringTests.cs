@@ -417,7 +417,25 @@ public sealed class StudioLayeringTests
             "Editor.Tests",
             "Build",
             "EditorNativeRuntimeCopyTests.cs")));
+        var viewportNativeContractTestPath = Path.Combine(
+            root,
+            "Tests",
+            "Editor.Tests",
+            "Build",
+            "ViewportNativeRuntimeContractTests.cs");
+        Assert.True(File.Exists(viewportNativeContractTestPath));
+        var viewportNativeContractTestSource = File.ReadAllText(viewportNativeContractTestPath);
+        Assert.Contains(
+            "Every_missing_current_export_fails_closed",
+            viewportNativeContractTestSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Every_forbidden_export_fails_closed",
+            viewportNativeContractTestSource,
+            StringComparison.Ordinal);
         Assert.Contains("editor_native.dll", projectSource, StringComparison.Ordinal);
+        Assert.Contains("CopyToOutputDirectory=\"Always\"", projectSource, StringComparison.Ordinal);
+        Assert.Contains("--verify-native-contract", projectSource, StringComparison.Ordinal);
         Assert.Contains(
             "Asharia.Studio.Presentation.Avalonia",
             projectSource,

@@ -257,6 +257,22 @@ dotnet test apps\studio\Tests\Editor.Tests\Editor.Tests.csproj -c Release --filt
 dotnet test apps\studio\Asharia.Studio.sln -c Release --no-build --blame-hang --blame-hang-timeout 10m
 ```
 
+上面的 `dotnet build` 不构建 native。若改动涉及 `apps/editor`、Viewport native ABI/interop、renderer shader closure，或当前
+`build/cmake/msvc-release` artifact 不能证明与 checkout 同代，必须先运行 native-first gate：
+
+```powershell
+cmd /c "build\conan\msvc-release\Release\generators\conanbuild.bat && cmake --preset msvc-release && cmake --build build\cmake\msvc-release --target editor-native"
+```
+
+Studio build 随后以 `Always` 复制所选 preset 的 `editor_native.dll`，并由
+`ValidateStudioViewportNativeRuntimeContract` 对最终 `$(TargetDir)` sibling 执行完整 V7 required / legacy V1--V6 forbidden
+admission。这个 gate 不允许 V6 fallback，也不从其他 `bin/`、test preset 或历史隔离输出发现“最新”DLL；失败时必须重建显式选择的
+native preset。它只保护普通 build 的实际 sibling，不能替代 `StudioEditorImageProducer` 对发行 publish tree 的静态 PE identity、
+export 与 closed-tree qualification。
+
+显式选择 `msvc-debug-tests` 只用于本地 GPU/fault-injection 验收，其中
+`editor_viewport_open_stream_v7_for_test` 是允许的测试扩展；正式 Release Editor Image 必须拒绝该 export。
+
 涉及`Program`入口、App/process lifecycle、Window close或teardown exit-code时，focused反馈还必须运行真实的
 Windows disposable-child边界（它会启动当前构建输出中的`Editor.exe`，并保证timeout/cancel/fatal路径kill tree后有界reap）：
 
