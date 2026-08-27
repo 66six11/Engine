@@ -1,7 +1,7 @@
 # Mesh Product v1 与受限 GLB 导入
 
 资料核对日期：2026-08-14
-状态：Current（#386）；以本文件、`mesh-product` package 与受限 `.glb` importer tests 为合同真相。
+状态：Current（#386/#394）；以本文件、`mesh-product`、`asset-artifact`、`resource-runtime` 与真实 smoke 为合同真相。
 
 ## 目的与所有权
 
@@ -15,7 +15,9 @@ ResourceRuntime 或 renderer 成为 importer 的依赖。
 | cooked format/write | `mesh-product` 的 tool-side `asharia::mesh_product_writer` | 归一化 facts → canonical Mesh Product v1 bytes |
 | product read | runtime-safe `asharia::mesh_product` | product bytes/file → immutable owning `MeshProductV1` |
 | publication | `asset-pipeline` | 发布前以内存 bounded reader 校验 product；staging 复读 size/hash 后原子替换，并发布 manifest record/hash |
-| runtime/GPU/preview | 后续 Slice | 本 Slice 不创建 RuntimeResource、GPU buffer 或 thumbnail |
+| artifact verification | runtime-safe `asharia::asset_artifact` | manifest-relative path/limit/size/V1 hash → owning verified bytes |
+| runtime CPU resource | `asharia::resource_runtime` | exact product selection → generation-safe `MeshResourceLease`；reload failure 保留旧 active |
+| GPU/preview | 后续 Slice | 当前不创建 GPU buffer、Scene View binding 或 thumbnail |
 
 `mesh-product` 不保存 source path、importer/settings、editor state、runtime generation、renderer key 或
 Vulkan object。artifact 内容身份与 publication 完整性由外层 manifest/product hash 负责，v1 不在容器内再定义
@@ -160,23 +162,28 @@ node transform、negative determinant 与 material slot。真实 cook 的固定�
 path → 通用 publication 层复读并验证 size/hash → 原子替换 artifact → 发布 manifest。import/write/read 任一失败
 都不得破坏 last-known-good artifact/manifest；当前没有声称对 staging file 再执行一次类型专属 Mesh reader。
 
-## 明确延期与后续顺序
+## Runtime CPU 接入与后续顺序
 
 本 Slice 不实现 `.gltf`、OBJ/FBX、textures/material products、LOD、tangent、skin、morph、animation、meshopt、
-meshlet、streaming、watcher、Editor settings、RuntimeResource、GPU upload、reload 或 thumbnail。
+meshlet、streaming、watcher、Editor settings、GPU upload 或 thumbnail。
+
+#394 已完成第一条 runtime CPU 路径：`asset-artifact` 复验当前 manifest v1 的相对路径、byte budget、size/hash，
+`loadMeshResourceCandidate()` 再从 verified bytes 调用 bounded Mesh Product reader。`MeshResourceStore` 用 slot/request
+两种 generation 拒绝 stale handle/completion，active/candidate 分离；成功 reload 递增 revision，失败 reload 保留旧
+active lease。Store 不拥有 thread pool，worker 只产生 owning completion，publish/unload 只在 owner thread 执行。
 
 后续必须保持以下 owner 顺序：
 
 ```text
-Mesh Product v1 artifact
-→ ResourceRuntime typed CPU Mesh payload / async artifact IO / generation-safe handle
+Mesh Product v1 artifact（Current）
+→ ResourceRuntime typed CPU Mesh payload / artifact IO / generation-safe lease（Current）
 → renderer-owned vertex/index GPU resource / safe swap / deferred retirement
 → Scene View consumes runtime handle (remove validation GUID special case)
 → ThumbnailService reuses the same RuntimeResource and renderer preview path
 → manual reload proven first; watcher/debounce/automatic reimport last
 ```
 
-Runtime-safe reader 可以移动到未来 `asset-artifact`/type-specific runtime-safe target，但 Runtime 不能因此依赖
+`asset-artifact` 只拥有外层 bytes/path/size/hash verification，type-specific reader 继续归 `mesh-product`；Runtime 不依赖
 `asset-pipeline` 或 fastgltf。Inspector 只能显示 catalog/product facts；在 #389 前不拥有 importer settings Apply/
 Revert，缩略图也不能从 source 绕过 product/runtime 链。
 
@@ -187,5 +194,6 @@ Revert，缩略图也不能从 source 绕过 product/runtime 链。
 - `asset-pipeline` package：真实 GLB fixture、source-order flatten、basis/transform/winding、missing normal/UV、
   material slot，以及 malformed/truncated/oversized/unsupported failure tests；
 - `asset-processor --smoke-product-execution`：真实 `.glb` → artifact + manifest → disk reader；
+- `asset-processor --smoke-mesh-resource`：同一真实 artifact/manifest → verified bytes → `MeshResourceStore` → typed lease；
 - Khronos glTF Validator、package topology/target dependency、MSVC CTest、changed clang-tidy、encoding、doc sync 与
   `git diff --check`。

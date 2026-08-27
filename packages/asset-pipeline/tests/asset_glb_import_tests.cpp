@@ -141,9 +141,8 @@ namespace {
             .source =
                 asharia::asset::SourceAssetRecord{
                     .guid = asharia::asset::AssetGuid{.bytes = {0x38U, 0x6U}},
-                    .assetType =
-                        asharia::asset::makeAssetTypeId(asharia::asset::kGlbMeshAssetTypeName),
-                    .assetTypeName = std::string{asharia::asset::kGlbMeshAssetTypeName},
+                    .assetType = asharia::asset::makeAssetTypeId(asharia::mesh::kMeshAssetTypeName),
+                    .assetTypeName = std::string{asharia::mesh::kMeshAssetTypeName},
                     .sourcePath = "Content/Models/restricted-static-mesh.glb",
                     .importerId =
                         asharia::asset::makeImporterId(asharia::asset::kGlbMeshImporterName),
@@ -574,13 +573,12 @@ namespace {
                            "expected importer id must select mesh import");
 
         auto assetTypeName = baseline;
-        assetTypeName.assetTypeName = std::string{asharia::asset::kGlbMeshAssetTypeName};
+        assetTypeName.assetTypeName = std::string{asharia::mesh::kMeshAssetTypeName};
         testContext.expect(asharia::asset::isRestrictedGlbMeshImportCandidate(assetTypeName),
                            "Mesh asset type name must select mesh import");
 
         auto assetTypeId = baseline;
-        assetTypeId.assetType =
-            asharia::asset::makeAssetTypeId(asharia::asset::kGlbMeshAssetTypeName);
+        assetTypeId.assetType = asharia::asset::makeAssetTypeId(asharia::mesh::kMeshAssetTypeName);
         testContext.expect(asharia::asset::isRestrictedGlbMeshImportCandidate(assetTypeId),
                            "Mesh asset type id must select mesh import");
 

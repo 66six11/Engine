@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "packageKind": "source-boundary",
+  "sourceRole": "module-group",
+  "ownerDomain": "content",
+  "plannedOwnershipRoot": "com.asharia.system.content",
+  "selectable": false,
+  "catalogVisible": false,
+  "name": "com.asharia.asset-artifact",
+  "version": "0.1.0",
+  "displayName": "Asharia Engine Asset Artifact",
+  "description": "Runtime-safe verification and bounded reading of published asset artifact bytes.",
+  "dependencies": ["com.asharia.core", "com.asharia.asset-core"],
+  "targets": ["asharia-asset-artifact"],
+  "testTargets": ["asharia-asset-artifact-tests"],
+  "targetRoles": {
+    "asharia-asset-artifact": "runtime",
+    "asharia-asset-artifact-tests": "test"
+  },
+  "targetDependencies": {
+    "asharia-asset-artifact": ["asharia-core", "asharia-asset-core"],
+    "asharia-asset-artifact-tests": ["asharia-asset-artifact"]
+  }
+}

@@ -91,11 +91,21 @@ packages/resource-runtime/
   CMakeLists.txt
   asharia.package.json
   include/asharia/resource_runtime/
-    runtime_resource_registry.hpp
+    mesh_resource_store.hpp
   src/
-    runtime_resource_registry.cpp
+    mesh_resource_store.cpp
   tests/
     resource_runtime_smoke_tests.cpp
+
+packages/asset-artifact/
+  CMakeLists.txt
+  asharia.package.json
+  include/asharia/asset_artifact/
+    asset_artifact_v1.hpp
+  src/
+    asset_artifact_v1.cpp
+  tests/
+    asset_artifact_tests.cpp
 
 packages/editor-content/
   CMakeLists.txt
@@ -126,9 +136,11 @@ packages/editor-content/
 - `asharia::asset_pipeline` 第一阶段只提供显式 source/.ameta 条目的 metadata discovery 和诊断；
   public API 只依赖 `asset-core`，实现内部通过 `asset_core_io` 读取 `.ameta`，不拥有 watcher、importer、
   product cache 或 GPU upload。
-- `asharia::resource_runtime` 只依赖 `asset-core`，当前提供 CPU-only runtime resource key、ticket、
-  pending / ready / failed 状态、product-record resolution 和 diagnostics；不依赖 `asset-pipeline`、RenderGraph、
-  renderer、RHI、editor 或 ImGui。
+- `asharia::asset_artifact` 依赖 `core` / `asset-core`，提供 manifest-relative locator、bounded read、exact
+  size/V1 hash verification 与 owning bytes；diagnostics 不泄露 absolute artifact root。
+- `asharia::resource_runtime` 依赖 `asset-core`、`asset-artifact` 与 runtime-safe `mesh-product`，当前提供
+  generation-safe Mesh Product v1 typed CPU lease、active/candidate reload 与 owner-thread publish；不依赖
+  `asset-pipeline`、RenderGraph、renderer、RHI、editor 或 ImGui。
 - `asharia::editor_content` 依赖 `asset-core`、`asset_core_io`、`asset-pipeline` 与 `project_core_io`，只读组合
   project catalog snapshot；`asharia::editor_content_native` 只依赖该 query target，并以自有 bounded writer 提供
   C ABI/JSON transport。
@@ -148,10 +160,12 @@ flowchart TD
     ProjectCoreIo["packages/project-core<br/>asharia::project_core_io"]
     AssetCore["packages/asset-core"]
     AssetCoreIo["packages/asset-core<br/>asharia::asset_core_io"]
+    AssetArtifact["packages/asset-artifact"]
     Archive["packages/archive"]
     Scene["packages/scene-core"]
     Material["future packages/material"]
     AssetPipeline["packages/asset-pipeline"]
+    MeshProduct["packages/mesh-product"]
     ImportTool["future tools/asset-processor"]
     ResourceRuntime["packages/resource-runtime"]
     EditorContent["packages/editor-content<br/>UI-neutral query"]
@@ -163,13 +177,20 @@ flowchart TD
     AssetCore --> Core
     AssetCoreIo --> AssetCore
     AssetCoreIo --> Archive
+    AssetArtifact --> Core
+    AssetArtifact --> AssetCore
     Scene --> AssetCore
     Material --> AssetCore
     AssetPipeline --> AssetCore
+    AssetPipeline --> AssetArtifact
+    MeshProduct --> AssetCore
+    AssetPipeline --> MeshProduct
     ImportTool --> AssetPipeline
     ImportTool --> AssetCore
     ImportTool -.project descriptor.-> ProjectCoreIo
     ResourceRuntime --> AssetCore
+    ResourceRuntime --> AssetArtifact
+    ResourceRuntime --> MeshProduct
     EditorContent --> ProjectCoreIo
     EditorContent --> AssetCore
     EditorContent --> AssetPipeline
@@ -222,8 +243,8 @@ flowchart TD
 
 Mesh Product v1 在 #386 实现的二进制、坐标、受限 `.glb` 支持矩阵、limits、failure 与后续顺序由
 [mesh-product-v1.md](mesh-product-v1.md) 治理。`asharia::mesh_product` 是 runtime-safe bounded reader；
-`asharia::mesh_product_writer` 与 fastgltf 只进入 tool-side 路径。此事实不表示 `resource-runtime` 已读取
-typed mesh payload，也不表示 renderer/ThumbnailService 已接入。
+`asharia::mesh_product_writer` 与 fastgltf 只进入 tool-side 路径。#394 已让 `resource-runtime` 通过
+`asset-artifact` verified bytes 读取 typed mesh payload；此事实仍不表示 renderer/ThumbnailService 已接入。
 
 进入条件：
 
@@ -559,38 +580,42 @@ struct AssetDependency {
 
 ## Runtime 引用与加载状态
 
-`AssetHandle<T>` 不等同于 loaded resource。当前 `packages/resource-runtime` 提供第一版 CPU-only
-状态合同：
+`AssetHandle<T>` 不等同于 loaded resource。当前 `packages/resource-runtime` 为 Mesh Product v1 提供
+typed CPU store/lease 合同：
 
 ```cpp
-enum class RuntimeResourceState {
+enum class MeshResourceState {
+    FailedNoActive,
     Pending,
     Ready,
-    Failed,
+    ReloadPending,
 };
 
-struct RuntimeResourceTicket {
-    RuntimeResourceKey key;
-    std::uint64_t generation;
+struct MeshResourceHandle {
+    std::uint32_t slot;
+    std::uint32_t slotGeneration;
 };
 
-struct RuntimeResourceRecord {
-    RuntimeResourceKey key;
-    RuntimeResourceState state;
-    std::uint64_t generation;
-    AssetProductKey expectedProductKey;
+struct MeshResourceLoadTicket {
+    MeshResourceHandle handle;
+    std::uint64_t requestGeneration;
+    std::uint64_t expectedProductHash;
 };
 ```
 
 规则：
 
 - scene、material、script 保存 `AssetHandle<T>` 或 `AssetReference`。
-- runtime resource registry 只保存 GUID / asset type / product key / generation / diagnostics，不保存 source
-  path 或 editor-only pending marker。
-- product manifest records 可以被解析为 runtime state：exact expected product key 进入 `Ready`，
-  missing/stale/mismatched/invalid product record 进入 `Failed`，但这仍只是 CPU state，不读取 product blob。
+- `MeshResourceStore` 按 exact product key 选择 record；`Ready` 表示 artifact 已验证、Mesh Product 已解析且
+  immutable CPU payload 可以由 `MeshResourceLease` 借用。
+- slot generation 只处理 unload/reuse；request generation 只处理异步 completion freshness。Worker 只产生
+  owning completion，owner thread 才 mutation store。
+- active/candidate 分离；reload 失败保留旧 active，成功 publish 递增 revision。旧 lease 在 swap/unload 后仍
+  通过 shared immutable ownership 安全存活。
+- missing/stale/invalid selection 是 typed resource state；invalid key/type/handle、wrong owner thread 与 stale/
+  forged completion 才是 API error。
 - renderer 和 RHI 只消费已经解析好的 resource packet，不直接读 `.ameta`。
-- missing asset 必须能返回 fallback resource 或明确错误；不允许崩在 render recording 阶段。
+- missing asset 必须返回明确错误或由后继 consumer 显式选择 fallback；不允许崩在 render recording 阶段。
 - hot reload 只能通过 asset/resource manager 发布新 product，不直接修改 live World 或 command buffer。
 
 ## 与其他系统的关系
@@ -1149,27 +1174,27 @@ scan-to-planning bridge baseline 稳定。
   upload payload，不来自 source path 或 metadata IO。
 - `--smoke-texture-upload` 证明 texture upload 输入来自 deterministic product payload，最终 GPU image
   能作为 sampled view 暴露；runtime 不直接依赖 source path。
-- 后续 `--smoke-mesh-resource` 证明 mesh runtime resource 不直接依赖 source path。
+- `--smoke-mesh-resource` 已证明真实 Mesh Product runtime CPU resource 不直接依赖 source path。
 
-### 切片 P：Runtime resource handle baseline
+### 切片 P/Q：Runtime resource baseline 与 typed Mesh hard cut
 
 交付：
 
-- `packages/resource-runtime` 新增 `asharia::resource_runtime` target，target 只依赖 `asset-core`。
-- `RuntimeResourceRegistry` 提供 `Pending` / `Ready` / `Failed` 状态、`RuntimeResourceTicket`
-  generation、expected `AssetProductKey` 和 failure reason。
-- `resolveProductRecords()` 把 product manifest records 解析为 runtime state：exact match -> `Ready`；
-  missing/stale/mismatched/invalid records -> `Failed` with deterministic diagnostics。
-- package-local smoke 覆盖 invalid handle、pending -> ready、pending -> failed、stale generation rejection、
-  product key mismatch、product record resolution matrix 和 source-path-free diagnostics。
+- 早期 `RuntimeResourceRegistry` 只提供 product-record resolution baseline；#394 将它硬切为 mesh-specific
+  `MeshResourceStore`，不保留含混的 record-only `Ready`。
+- `asset-artifact` 统一 manifest-relative path、limit、exact size 与 V1 hash verification；runtime 不依赖
+  `asset-pipeline` 或 importer。
+- `MeshResourceStore` 提供 slot/request 双 generation、active/candidate、typed immutable payload、lease、reload
+  fallback 与 owner-thread mutation。
+- `loadMeshResourceCandidate()` 可在 worker 执行 artifact IO/parse，但只返回 owning completion。
+- package-local tests 与真实 `--smoke-mesh-resource` 覆盖 selection、load、publish、reload 与 lease lifetime。
 
 验收：
 
-- runtime resource state 不暴露 source path，不持有 Vulkan / RenderGraph / editor 对象。
-- `Ready` 必须绑定完整 `AssetProductKey`；旧 generation 或 product key mismatch 会 fail early。
-- product-cache truth 可以进入 runtime state，但 product blob 读取、GPU resource owner、upload scheduling 和
-  hot reload 仍是后续切片。
-- `resource-runtime` 可独立构建测试，后续 GPU texture/mesh owner 只能消费它的状态合同，不能把 loader
+- runtime resource diagnostics 不暴露 source/absolute artifact root，不持有 Vulkan / RenderGraph / editor 对象。
+- `Ready` 必须绑定已验证 bytes 与 typed `MeshProductV1`；stale handle/request 或 identity drift fail early。
+- reload failure 保留旧 active，unload/reuse 使旧 handle 失效但不破坏既有 lease。
+- 后续 GPU mesh owner 只能消费 lease/immutable upload facts，不能把 loader
   逻辑塞回 `asset-core` 或 Asset Browser。
 
 ## 并行开发建议
@@ -1198,9 +1223,9 @@ scan-to-planning bridge baseline 稳定。
 | 工作 | 等待项 |
 | --- | --- |
 | `tools/asset-processor` / 完整 import 调度 | 等后续 slice 接入真实 importer、dependency invalidation 和调度策略。 |
-| `--smoke-mesh-resource` / runtime texture owner | 等 CPU texture import contract、真实 decoder 选择、resource-runtime 状态合同和 upload lifetime 策略稳定后接入真实 mesh/texture product data、resource owner 和 lifetime。 |
+| runtime texture owner | 等 CPU texture import contract、真实 decoder 选择与 texture-specific fallback/dependency/lifetime 需求稳定；不能假设 Mesh store 可直接模板化复用。 |
 | Resource Browser / Asset Inspector 后续 mutation/preview | #385 已接通 Studio 只读 catalog-backed browser，#388 已接通 typed selection 与只读 Asset Inspector；create/rename/move/delete、watcher、background processor、import-settings Apply/Revert、thumbnail/grid view 仍需 typed command、processor 和 preview owner。 |
-| Model runtime / GPU / thumbnail | #386 已实现并验证 Mesh Product v1 与受限 `.glb` importer；随后由 ResourceRuntime 读取 typed CPU payload、renderer 创建 generation-safe GPU resource，最后 ThumbnailService 复用同一 runtime resource；禁止 Browser 旁路 decode source。 |
+| Model GPU / thumbnail | #386/#394 已实现 Mesh Product v1、受限 `.glb` importer 与 generation-safe typed CPU lease；随后由 renderer 创建 GPU revision/safe retirement，最后 ThumbnailService 复用同一 resource/preview path；禁止 Browser 旁路 decode source。 |
 | Material asset IO / Material Editor | 等 material-core 合同、asset product execution 和 editor transaction 稳定。 |
 
 不建议现在做：

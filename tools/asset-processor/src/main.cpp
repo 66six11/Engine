@@ -21,6 +21,7 @@ namespace asharia::asset_processor {
             Execute,
             SmokeDryRun,
             SmokeProductExecution,
+            SmokeMeshResource,
         };
 
         enum class DryRunOptionKind : std::uint8_t {
@@ -267,14 +268,12 @@ namespace asharia::asset_processor {
             }
 
             if (parsed.execute.projectPath &&
-                (!parsed.execute.sourceRoot.empty() ||
-                 !parsed.execute.sourcePathPrefix.empty())) {
+                (!parsed.execute.sourceRoot.empty() || !parsed.execute.sourcePathPrefix.empty())) {
                 parsed.error = "execute --project cannot be combined with --source-root or "
                                "--source-path-prefix.";
             } else if (!parsed.execute.projectPath && parsed.execute.sourceRoot.empty()) {
                 parsed.error = "execute requires --source-root.";
-            } else if (!parsed.execute.projectPath &&
-                       parsed.execute.sourcePathPrefix.empty()) {
+            } else if (!parsed.execute.projectPath && parsed.execute.sourcePathPrefix.empty()) {
                 parsed.error = "execute requires --source-path-prefix.";
             } else if (parsed.execute.targetProfile.empty()) {
                 parsed.error = "execute requires --target-profile.";
@@ -323,6 +322,15 @@ namespace asharia::asset_processor {
                 };
             }
 
+            if (command == "--smoke-mesh-resource") {
+                return ParsedArguments{
+                    .command = CommandKind::SmokeMeshResource,
+                    .dryRun = {},
+                    .execute = {},
+                    .error = {},
+                };
+            }
+
             if (command == "dry-run") {
                 return parseDryRunArguments(arguments);
             }
@@ -356,7 +364,8 @@ namespace asharia::asset_processor {
                       "[--product-manifest <path>] [--manifest-output <path>] "
                       "[--ignore-dir <name> ...]\n"
                    << "  asharia-asset-processor --smoke-dry-run\n"
-                   << "  asharia-asset-processor --smoke-product-execution\n";
+                   << "  asharia-asset-processor --smoke-product-execution\n"
+                   << "  asharia-asset-processor --smoke-mesh-resource\n";
         }
 
         [[nodiscard]] int runMain(std::span<char* const> arguments) {
@@ -385,6 +394,8 @@ namespace asharia::asset_processor {
                 return runSmokeDryRun();
             case CommandKind::SmokeProductExecution:
                 return runSmokeProductExecution();
+            case CommandKind::SmokeMeshResource:
+                return runSmokeMeshResource();
             }
 
             return EXIT_FAILURE;

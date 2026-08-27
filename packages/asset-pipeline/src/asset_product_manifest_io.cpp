@@ -13,6 +13,7 @@
 #include <utility>
 
 #include "asharia/archive/json_archive.hpp"
+#include "asharia/asset_artifact/asset_artifact_v1.hpp"
 #include "asharia/asset_core/asset_guid.hpp"
 #include "asharia/asset_core/asset_metadata.hpp"
 #include "asharia/asset_core/asset_type.hpp"
@@ -198,10 +199,6 @@ namespace asharia::asset {
                 .fieldName = memberName,
                 .context = context,
             });
-        }
-
-        [[nodiscard]] bool isAsciiAlpha(char character) noexcept {
-            return (character >= 'A' && character <= 'Z') || (character >= 'a' && character <= 'z');
         }
 
         [[nodiscard]] std::string productLabel(const AssetProductRecord& product) {
@@ -444,51 +441,13 @@ namespace asharia::asset {
     } // namespace
 
     VoidResult validateAssetProductPath(std::string_view productPath) {
-        auto pathError = [productPath](std::string_view reason) {
-            return productManifestIoError("Invalid asset product path product=\"" +
-                                          std::string{productPath} + "\": " + std::string{reason});
-        };
-
-        if (productPath.empty()) {
-            return std::unexpected{pathError("product path is missing")};
+        auto validPath = validateAssetArtifactRelativePathV1(productPath);
+        if (!validPath) {
+            return std::unexpected{productManifestIoError("Invalid asset product path product=\"" +
+                                                          std::string{productPath} +
+                                                          "\": " + validPath.error().message)};
         }
-
-        if (productPath.find('\\') != std::string_view::npos) {
-            return std::unexpected{pathError("product path must use '/' separators")};
-        }
-
-        if (productPath.front() == '/') {
-            return std::unexpected{pathError("product path must be manifest-relative")};
-        }
-
-        if (productPath.size() >= 2 && isAsciiAlpha(productPath[0]) && productPath[1] == ':') {
-            return std::unexpected{pathError("product path must not use a drive prefix")};
-        }
-
-        std::size_t segmentStart = 0;
-        while (segmentStart <= productPath.size()) {
-            const std::size_t segmentEnd = productPath.find('/', segmentStart);
-            const std::size_t clampedEnd =
-                segmentEnd == std::string_view::npos ? productPath.size() : segmentEnd;
-            const std::string_view segment =
-                productPath.substr(segmentStart, clampedEnd - segmentStart);
-
-            if (segment.empty()) {
-                return std::unexpected{pathError("product path contains an empty segment")};
-            }
-
-            if (segment == "." || segment == "..") {
-                return std::unexpected{
-                    pathError("product path must not contain '.' or '..' segments")};
-            }
-
-            if (segmentEnd == std::string_view::npos) {
-                break;
-            }
-            segmentStart = segmentEnd + 1;
-        }
-
-        return {};
+        return validPath;
     }
 
     VoidResult validateAssetProductManifestDocument(const AssetProductManifestDocument& document) {

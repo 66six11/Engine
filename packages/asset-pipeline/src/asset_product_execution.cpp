@@ -23,6 +23,7 @@
 #include <Windows.h>
 #endif
 
+#include "asharia/asset_artifact/asset_artifact_v1.hpp"
 #include "asharia/asset_core/asset_guid.hpp"
 #include "asharia/asset_pipeline/asset_glb_import.hpp"
 #include "asharia/asset_pipeline/asset_product_blob.hpp"
@@ -97,8 +98,6 @@ namespace asharia::asset::detail {
 namespace asharia::asset {
     namespace {
 
-        constexpr std::uint64_t kFnv1a64Offset = 14695981039346656037ULL;
-        constexpr std::uint64_t kFnv1a64Prime = 1099511628211ULL;
         constexpr std::string_view kMaterialInstanceImporterName =
             "com.asharia.importer.material-instance";
         constexpr std::uint32_t kMaterialInstanceImporterVersion = 1;
@@ -136,27 +135,12 @@ namespace asharia::asset {
             std::string diagnosticText;
         };
 
-        [[nodiscard]] constexpr std::uint64_t hashByte(std::uint64_t hash,
-                                                       std::uint8_t byte) noexcept {
-            hash ^= byte;
-            hash *= kFnv1a64Prime;
-            return hash;
-        }
-
         [[nodiscard]] std::uint64_t hashBytes(std::span<const std::uint8_t> bytes) noexcept {
-            std::uint64_t hash = kFnv1a64Offset;
-            for (const std::uint8_t byte : bytes) {
-                hash = hashByte(hash, byte);
-            }
-            return hash;
+            return hashAssetArtifactBytesV1(std::as_bytes(bytes));
         }
 
         [[nodiscard]] std::uint64_t hashBytes(std::span<const std::byte> bytes) noexcept {
-            std::uint64_t hash = kFnv1a64Offset;
-            for (const std::byte byte : bytes) {
-                hash = hashByte(hash, std::to_integer<std::uint8_t>(byte));
-            }
-            return hash;
+            return hashAssetArtifactBytesV1(bytes);
         }
 
         [[nodiscard]] std::string formatHash64(std::uint64_t value) {

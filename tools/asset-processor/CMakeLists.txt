@@ -14,6 +14,7 @@ asharia_require_package_target(asharia::asset_core_io packages/asset-core)
 asharia_require_package_target(asharia::asset_pipeline packages/asset-pipeline)
 asharia_require_package_target(asharia::mesh_product packages/mesh-product)
 asharia_require_package_target(asharia::project_core_io packages/project-core)
+asharia_require_package_target(asharia::resource_runtime packages/resource-runtime)
 
 add_executable(asharia-asset-processor
     src/asset_processor_dry_run.cpp
@@ -31,6 +32,7 @@ target_link_libraries(asharia-asset-processor
         asharia::asset_pipeline
         asharia::mesh_product
         asharia::project_core_io
+        asharia::resource_runtime
 )
 
 asharia_configure_target(asharia-asset-processor)
@@ -57,6 +59,13 @@ if(ASHARIA_BUILD_TESTS)
       COMMAND asharia-asset-processor --smoke-product-execution
   )
   set_tests_properties(asharia-asset-processor-smoke-product-execution PROPERTIES
+      WORKING_DIRECTORY "$<TARGET_FILE_DIR:asharia-asset-processor>"
+  )
+
+  add_test(NAME asharia-asset-processor-smoke-mesh-resource
+      COMMAND asharia-asset-processor --smoke-mesh-resource
+  )
+  set_tests_properties(asharia-asset-processor-smoke-mesh-resource PROPERTIES
       WORKING_DIRECTORY "$<TARGET_FILE_DIR:asharia-asset-processor>"
   )
 endif()

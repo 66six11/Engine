@@ -458,8 +458,22 @@ powershell -ExecutionPolicy Bypass -File tools\check-asset-boundaries.ps1
 相同输入 byte-identical；真实 `assets/fixtures/mesh-product-v1/restricted-static-mesh.glb` 完成 artifact +
 manifest + reader round-trip；default-scene/source-order、RH→Asharia LH、node transform、negative determinant
 CCW repair、missing normal/UV 与 material slots 没有漂移。Khronos glTF Validator 应对 fixture 返回 zero errors。
-`mesh-product` runtime-safe target 不得依赖 fastgltf/`asset-pipeline`；此门禁也不能宣称 ResourceRuntime、GPU
-mesh、reload/deferred destroy、Scene View 或 ThumbnailService 已完成。
+`mesh-product` runtime-safe target 不得依赖 fastgltf/`asset-pipeline`；`--smoke-product-execution` 单独不能宣称
+ResourceRuntime、GPU mesh、reload/deferred destroy、Scene View 或 ThumbnailService 已完成。
+
+涉及 `packages/asset-artifact`、`packages/resource-runtime` 的 Mesh Product typed CPU load/reload/lease，或
+`tools/asset-processor --smoke-mesh-resource` 时，必须在 Conan bootstrap 后运行：
+
+```powershell
+cmd /c "build\conan\msvc-debug\Debug\generators\conanbuild.bat && cmake --preset msvc-debug-tests && cmake --build --preset msvc-debug-tests --target asharia-asset-artifact-tests asharia-resource-runtime-smoke-tests asharia-asset-processor"
+ctest --test-dir build\cmake\msvc-debug-tests --output-on-failure -R "^(asharia-asset-artifact-tests|asharia-resource-runtime-smoke-tests|asharia-asset-processor-smoke-mesh-resource)$"
+```
+
+证据必须覆盖 invalid relative path、limit/size/hash/missing artifact、absolute-root redaction、missing/stale/invalid
+selection、pending/ready dedup、slot/request 双 generation、stale completion、reload success/failure、unload/reuse、
+旧 lease 存活与 owner-thread mutation。真实 smoke 必须从 restricted GLB 重新生成 artifact/manifest，再通过
+`MeshResourceStore` lease 复验 11 vertices、9 indices、3 submeshes、3 material slots 与固定 bounds。该门禁只证明
+typed CPU resource；GPU upload、fence retirement、Scene View 与 thumbnail 仍需后继 renderer/editor smoke。
 
 涉及 `project-core` 描述符 model/IO 或 Editor 资产目录的项目描述符读取路径时，还必须在两个test presets上
 构建并运行package-owned smoke，证明round-trip、duplicate/missing field与malformed input仍被正确处理：

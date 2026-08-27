@@ -15,7 +15,8 @@
     "com.asharia.asset-core",
     "com.asharia.asset-pipeline",
     "com.asharia.mesh-product",
-    "com.asharia.project-core"
+    "com.asharia.project-core",
+    "com.asharia.resource-runtime"
   ],
   "targets": ["asharia-asset-processor"],
   "targetRoles": {
@@ -27,7 +28,8 @@
       "asharia-asset-core-io",
       "asharia-asset-pipeline",
       "asharia-mesh-product",
-      "asharia-project-core-io"
+      "asharia-project-core-io",
+      "asharia-resource-runtime"
     ]
   }
 }

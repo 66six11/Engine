@@ -9,10 +9,13 @@ if(NOT DEFINED ASHARIA_REPOSITORY_ROOT)
 endif()
 include("${ASHARIA_REPOSITORY_ROOT}/cmake/AshariaPackage.cmake")
 asharia_package_init()
+asharia_require_package_target(asharia::core engine/core)
+asharia_require_package_target(asharia::asset_artifact packages/asset-artifact)
 asharia_require_package_target(asharia::asset_core packages/asset-core)
+asharia_require_package_target(asharia::mesh_product packages/mesh-product)
 
 add_library(asharia-resource-runtime STATIC
-    src/runtime_resource_registry.cpp
+    src/mesh_resource_store.cpp
 )
 
 add_library(asharia::resource_runtime ALIAS asharia-resource-runtime)
@@ -24,7 +27,10 @@ target_include_directories(asharia-resource-runtime
 
 target_link_libraries(asharia-resource-runtime
     PUBLIC
+        asharia::asset_artifact
         asharia::asset_core
+        asharia::core
+        asharia::mesh_product
 )
 
 asharia_configure_target(asharia-resource-runtime)
@@ -39,6 +45,7 @@ if(ASHARIA_BUILD_TESTS)
   target_link_libraries(asharia-resource-runtime-smoke-tests
       PRIVATE
           asharia::resource_runtime
+          asharia::mesh_product_writer
   )
 
   asharia_configure_target(asharia-resource-runtime-smoke-tests)

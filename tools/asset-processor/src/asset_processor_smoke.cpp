@@ -27,6 +27,7 @@
 #include "asharia/asset_pipeline/asset_texture_import_profile.hpp"
 #include "asharia/mesh_product/mesh_product_v1.hpp"
 #include "asharia/project/project_descriptor_io.hpp"
+#include "asharia/resource_runtime/mesh_resource_store.hpp"
 
 #include "asset_processor_dry_run.hpp"
 #include "asset_processor_execute.hpp"
@@ -383,8 +384,9 @@ namespace asharia::asset_processor {
                     .source =
                         asharia::asset::SourceAssetRecord{
                             .guid = *guid,
-                            .assetType = asharia::asset::makeAssetTypeId("com.asharia.asset.Mesh"),
-                            .assetTypeName = "com.asharia.asset.Mesh",
+                            .assetType =
+                                asharia::asset::makeAssetTypeId(asharia::mesh::kMeshAssetTypeName),
+                            .assetTypeName = std::string{asharia::mesh::kMeshAssetTypeName},
                             .sourcePath = "Content/Meshes/Fixture.glb",
                             .importerId = asharia::asset::makeImporterId(importer.importerName),
                             .importerName = importer.importerName,
@@ -909,6 +911,60 @@ namespace asharia::asset_processor {
             return false;
         }
 
+        [[nodiscard]] bool
+        expectGlbMeshResource(const std::filesystem::path& productRoot,
+                              const asharia::asset::AssetProductRecord& product) {
+            auto store = asharia::resource::MeshResourceStore::create(
+                {.artifactRoot = productRoot, .artifactLimits = {}, .meshLimits = {}});
+            if (!store) {
+                std::cerr << store.error().message << '\n';
+                return false;
+            }
+
+            const asharia::resource::MeshResourceKey resourceKey{
+                .guid = product.key.guid,
+                .assetType = product.key.assetType,
+            };
+            auto request = store->request(resourceKey, product.key, std::span{&product, 1U});
+            if (!request || !request->loadPlan ||
+                request->disposition !=
+                    asharia::resource::MeshResourceRequestDisposition::LoadQueued) {
+                std::cerr << (request ? "Mesh resource smoke did not queue a load.\n"
+                                      : request.error().message + "\n");
+                return false;
+            }
+
+            auto published =
+                store->publish(asharia::resource::loadMeshResourceCandidate(*request->loadPlan));
+            auto lease = store->acquire(request->handle);
+            if (published && published->state == asharia::resource::MeshResourceState::Ready &&
+                published->activeRevision == 1U && lease &&
+                lease->product().vertices().size() == 11U &&
+                lease->product().indices().size() == 9U &&
+                lease->product().submeshes().size() == 3U &&
+                lease->product().materialSlots().size() == 3U &&
+                lease->product().bounds() == asharia::mesh::MeshAabbV1{
+                                                 .minX = -2.0F,
+                                                 .minY = 0.0F,
+                                                 .minZ = 0.0F,
+                                                 .maxX = 2.0F,
+                                                 .maxY = 1.0F,
+                                                 .maxZ = 1.0F,
+                                             }) {
+                return true;
+            }
+
+            std::cerr << "asset-processor Mesh Product v1 could not become a typed runtime "
+                         "resource";
+            if (!published) {
+                std::cerr << ": " << published.error().message;
+            } else if (!lease) {
+                std::cerr << ": " << lease.error().message;
+            }
+            std::cerr << ".\n";
+            return false;
+        }
+
         [[nodiscard]] int runGlbProductExecutionSmoke() {
             std::optional<SmokeWorkspace> glbWorkspace = makeSmokeWorkspace();
             if (!glbWorkspace) {
@@ -956,7 +1012,8 @@ namespace asharia::asset_processor {
             const asharia::asset::AssetProductRecord& glbProduct = glbManifest->products.front();
             const std::filesystem::path glbProductPath =
                 glbOutputRoot / glbProduct.relativeProductPath;
-            if (!expectGlbMeshProduct(glbProductPath)) {
+            if (!expectGlbMeshProduct(glbProductPath) ||
+                !expectGlbMeshResource(glbOutputRoot, glbProduct)) {
                 return EXIT_FAILURE;
             }
 
@@ -1074,6 +1131,15 @@ namespace asharia::asset_processor {
         }
 
         std::cout << "asset-processor product execution smoke passed\n";
+        return EXIT_SUCCESS;
+    }
+
+    int runSmokeMeshResource() {
+        if (runGlbProductExecutionSmoke() != EXIT_SUCCESS) {
+            return EXIT_FAILURE;
+        }
+
+        std::cout << "asset-processor mesh resource smoke passed\n";
         return EXIT_SUCCESS;
     }
 
