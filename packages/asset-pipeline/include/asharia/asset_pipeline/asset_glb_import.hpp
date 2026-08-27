@@ -12,7 +12,6 @@
 namespace asharia::asset {
 
     inline constexpr std::string_view kGlbMeshImporterName = "com.asharia.importer.mesh.glb-static";
-    inline constexpr std::string_view kGlbMeshAssetTypeName = "com.asharia.asset.Mesh";
     inline constexpr std::string_view kGlbMeshSourceExtension = ".glb";
     inline constexpr ImporterVersion kGlbMeshImporterVersion{1U};
 

@@ -38,6 +38,7 @@ flowchart TD
     StudioBridge["Studio.EngineBridge<br/>project + scene + catalog adapters"]
     AssetCore["packages/asset-core"]
     AssetCoreIo["packages/asset-core<br/>asharia::asset_core_io"]
+    AssetArtifact["packages/asset-artifact<br/>runtime-safe verified bytes"]
     AssetPipeline["packages/asset-pipeline"]
     MeshProduct["packages/mesh-product<br/>runtime-safe reader + tool writer"]
     EditorContent["packages/editor-content<br/>UI-neutral catalog query"]
@@ -92,7 +93,10 @@ flowchart TD
     AssetCore --> Core
     AssetCoreIo --> AssetCore
     AssetCoreIo --> Archive
+    AssetArtifact --> Core
+    AssetArtifact --> AssetCore
     AssetPipeline --> AssetCore
+    AssetPipeline --> AssetArtifact
     MeshProduct --> AssetCore
     AssetPipeline --> MeshProduct
     AssetPipeline -.metadata read.-> AssetCoreIo
@@ -103,6 +107,8 @@ flowchart TD
     EditorContent -.snapshot planning.-> AssetPipeline
     EditorContentNative --> EditorContent
     ResourceRuntime --> AssetCore
+    ResourceRuntime --> AssetArtifact
+    ResourceRuntime --> MeshProduct
     MaterialCore --> Core
     ShaderAuthoring --> Core
     MaterialInstance --> Core
@@ -137,7 +143,9 @@ flowchart TD
     App -->|selected sample renderer| RendererVk
     AssetProcessor --> AssetCoreIo
     AssetProcessor --> AssetPipeline
+    AssetProcessor --> MeshProduct
     AssetProcessor --> ProjectCoreIo
+    AssetProcessor --> ResourceRuntime
     EditorApp --> Core
     EditorApp --> Archive
     EditorApp -->|project descriptor IO| ProjectCoreIo
@@ -200,15 +208,18 @@ flowchart TD
   `run()` 才读取真实 `asharia.project.json` 并返回确定性摘要。
 - `mesh-product` 当前拥有 CPU/runtime-safe Mesh Product v1 bounded reader 与独立 tool-side canonical writer；
   它不依赖 `asset-pipeline`、resource-runtime、renderer、RHI 或 editor。
+- `asset-artifact` 当前拥有 manifest-relative path、byte budget、exact size 与 V1 product hash 校验，并返回
+  owning verified bytes；它不解释 source/importer，不转发 absolute cache root，也不依赖 `asset-pipeline`。
 - `asset-pipeline` 当前做 CPU-only metadata discovery / product execution：显式 source/.ameta 条目进入
   discovery facade，输出 deterministic manifest、`AssetCatalog` 输入、product blob 和 diagnostics；它可以
   私有复用 importer-specific package，例如 `mesh-product` writer、texture importer、`material-instance` 和
   `shader-authoring`；当前受限 `.glb` static importer 把 default-scene geometry cook 为 Mesh Product v1，但不做
   watcher、后台 import 调度、GPU upload 或 editor UI，也不把 authoring/importer 语义推入 `asset-core`。
-- `resource-runtime` 当前只做 CPU-only runtime resource handle 状态合同：消费 `asset-core` 的
-  `AssetHandle<T>` / `AssetProductKey` / `AssetProductRecord`，表达 pending / ready / failed、generation 和
-  product-cache diagnostics；它不依赖 `asset-pipeline`、RenderGraph、renderer、RHI 或 editor，也不创建
-  GPU resource。
+- `resource-runtime` 当前把 exact `AssetProductRecord` 经 `asset-artifact` verified bytes 与 runtime-safe
+  `mesh-product` reader 转换为 immutable `MeshProductV1` lease。`MeshResourceHandle` 的 slot generation 与 load
+  ticket 的 request generation 分离；active/candidate 独立，stale completion 不 mutation，reload failure 保留旧
+  active。IO/parse 可在 worker 执行，但 store mutation 只允许 create owner thread。它不依赖 `asset-pipeline`、
+  RenderGraph、renderer、RHI 或 editor，也不创建 GPU resource。
 - `editor-content` 是 editor owner domain 的 UI-neutral source boundary。`asharia::editor_content` 只读组合
   `project_core_io`、`asset_core`/`asset_core_io` 与 `asset_pipeline`，产出 project asset catalog snapshot；
   `asharia::editor_content_native` 只增加自有 strict bounded JSON writer 和 caller-owned C ABI。两个 target 都不依赖
@@ -241,8 +252,8 @@ flowchart TD
   project/scene/editor-content/editor 四个 native DLL 与 16 个 renderer-basic shader/reflection 文件，不携带 Slang、
   Vulkan SDK 或 validation layer。当前已有单 SceneDocument、Hierarchy、名称/local Transform Inspector、Create Entity、
   Save/Undo/Redo/dirty、一个可见 Scene View、只读 catalog-backed Resource Browser，以及由 typed selection 驱动的只读
-  Asset Inspector；Content 层已有 Mesh Product v1/受限 `.glb` cooked artifact，但 Studio 尚未消费它，仍无 runtime
-  mesh/GPU resource、thumbnail/preview service、Play Mode、第二 Viewport、通用 fair scheduler 或完整
+  Asset Inspector；Content 层已有 Mesh Product v1/受限 `.glb` cooked artifact 与 generation-safe runtime CPU mesh
+  lease，但 Studio 尚未消费它，仍无 GPU mesh resource、thumbnail/preview service、Play Mode、第二 Viewport、通用 fair scheduler 或完整
   camera/input consumer。
 - Editor panels 仍由 `EditorPanelRegistry::drawPanels(EditorFrameContext)` 适配每帧能力，但内置
   panel 的 `draw()` 实现会先收敛为 panel-local context，再把最小能力传给 helper。Scene View panel
@@ -256,6 +267,29 @@ flowchart TD
   SceneDocument stable-ID remap现由#388的 `Asharia.Studio.Application.Selection` 跨面板合同承接：Hierarchy与
   Resource Browser发布typed target，Application按project/scene/catalog scope验证、重映射或清除；它不复用C++
   editor-local `EditorSelectionSet`，也不把selection升级为engine truth。
+
+## 当前 Mesh Product runtime CPU resource 流
+
+```mermaid
+flowchart LR
+    Glb["restricted .glb source"]
+    Pipeline["asset-pipeline importer + writer"]
+    Manifest["AssetProductRecord<br/>relative path / bytes / V1 hash"]
+    Artifact["asset-artifact<br/>bounded read + size/hash verify"]
+    Parse["mesh-product reader<br/>immutable MeshProductV1"]
+    Completion["owning load completion<br/>slot + request generation"]
+    Store["MeshResourceStore owner thread<br/>active / candidate / lastFailure"]
+    Lease["MeshResourceLease<br/>shared immutable CPU revision"]
+    Gpu["next Slice:<br/>renderer-owned GPU mesh revision"]
+
+    Glb --> Pipeline --> Manifest --> Artifact --> Parse --> Completion --> Store --> Lease
+    Lease -.-> Gpu
+```
+
+当前 `tools/asset-processor --smoke-mesh-resource` 真实执行实线全链路。Worker 可以执行 Artifact/Parse 并产生
+completion，但不能直接 mutation Store；owner thread publish 时同时复验 slot generation、request generation、
+selection hash 与 product hash。成功 reload 替换 active revision，失败只记录 `lastFailure` 并保留旧 lease。
+虚线 GPU consumer 尚未实现，不能把 CPU lease、Vulkan buffer lifetime 与 fence retirement 合并为同一状态。
 
 ## 当前 Windows Development Host 生成、验证与 normal 执行流
 

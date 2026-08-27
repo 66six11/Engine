@@ -13,6 +13,7 @@
   "dependencies": [
     "com.asharia.core",
     "com.asharia.archive",
+    "com.asharia.asset-artifact",
     "com.asharia.asset-core",
     "com.asharia.material-instance",
     "com.asharia.mesh-product",
@@ -36,6 +37,7 @@
     "asharia-asset-pipeline": [
       "asharia-core",
       "asharia-archive",
+      "asharia-asset-artifact",
       "asharia-asset-core",
       "asharia-asset-core-io",
       "asharia-material-instance",

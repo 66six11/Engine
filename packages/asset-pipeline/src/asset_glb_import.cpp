@@ -905,11 +905,11 @@ namespace asharia::asset {
                     glbImportError(AssetGlbImportDiagnosticCode::InvalidRequest, request.source,
                                    "does not contain a valid source asset record")};
             }
-            if (request.source.assetTypeName != kGlbMeshAssetTypeName ||
-                request.source.assetType != makeAssetTypeId(kGlbMeshAssetTypeName)) {
+            if (request.source.assetTypeName != mesh::kMeshAssetTypeName ||
+                request.source.assetType != makeAssetTypeId(mesh::kMeshAssetTypeName)) {
                 return std::unexpected{glbImportError(
                     AssetGlbImportDiagnosticCode::InvalidRequest, request.source,
-                    "does not select mesh asset type " + std::string{kGlbMeshAssetTypeName})};
+                    "does not select mesh asset type " + std::string{mesh::kMeshAssetTypeName})};
             }
             if (!request.settings.empty()) {
                 return std::unexpected{glbImportError(
@@ -1861,8 +1861,8 @@ namespace asharia::asset {
         return hasSourceExtension(source.sourcePath, kGlbMeshSourceExtension) ||
                source.importerName == kGlbMeshImporterName ||
                source.importerId == makeImporterId(kGlbMeshImporterName) ||
-               source.assetTypeName == kGlbMeshAssetTypeName ||
-               source.assetType == makeAssetTypeId(kGlbMeshAssetTypeName);
+               source.assetTypeName == mesh::kMeshAssetTypeName ||
+               source.assetType == makeAssetTypeId(mesh::kMeshAssetTypeName);
     }
 
     const char* assetGlbImportDiagnosticCodeName(AssetGlbImportDiagnosticCode code) noexcept {

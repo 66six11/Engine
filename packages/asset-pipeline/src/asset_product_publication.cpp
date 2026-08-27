@@ -27,14 +27,12 @@
 #include <unistd.h>
 #endif
 
+#include "asharia/asset_artifact/asset_artifact_v1.hpp"
 #include "asharia/asset_pipeline/asset_product_manifest_io.hpp"
 #include "asharia/core/error.hpp"
 
 namespace asharia::asset::detail {
     namespace {
-
-        constexpr std::uint64_t kFnv1a64Offset = 14695981039346656037ULL;
-        constexpr std::uint64_t kFnv1a64Prime = 1099511628211ULL;
 
         [[nodiscard]] std::string pathText(const std::filesystem::path& path) {
             const std::u8string text = path.generic_u8string();
@@ -50,12 +48,7 @@ namespace asharia::asset::detail {
         }
 
         [[nodiscard]] std::uint64_t hashBytes(std::span<const std::byte> bytes) noexcept {
-            std::uint64_t hash = kFnv1a64Offset;
-            for (const std::byte byte : bytes) {
-                hash ^= static_cast<std::uint8_t>(byte);
-                hash *= kFnv1a64Prime;
-            }
-            return hash;
+            return hashAssetArtifactBytesV1(bytes);
         }
 
         [[nodiscard]] std::string formatHash64(std::uint64_t value) {

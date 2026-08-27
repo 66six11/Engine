@@ -9,8 +9,13 @@
   "name": "com.asharia.resource-runtime",
   "version": "0.1.0",
   "displayName": "Asharia Engine Resource Runtime",
-  "description": "CPU-only runtime resource handle state and diagnostics contracts.",
-  "dependencies": ["com.asharia.asset-core"],
+  "description": "Generation-safe CPU Mesh Product loading, publication, lease, and reload contracts.",
+  "dependencies": [
+    "com.asharia.core",
+    "com.asharia.asset-artifact",
+    "com.asharia.asset-core",
+    "com.asharia.mesh-product"
+  ],
   "targets": ["asharia-resource-runtime"],
   "testTargets": ["asharia-resource-runtime-smoke-tests"],
   "targetRoles": {
@@ -18,7 +23,15 @@
     "asharia-resource-runtime-smoke-tests": "test"
   },
   "targetDependencies": {
-    "asharia-resource-runtime": ["asharia-asset-core"],
-    "asharia-resource-runtime-smoke-tests": ["asharia-resource-runtime"]
+    "asharia-resource-runtime": [
+      "asharia-core",
+      "asharia-asset-artifact",
+      "asharia-asset-core",
+      "asharia-mesh-product"
+    ],
+    "asharia-resource-runtime-smoke-tests": [
+      "asharia-resource-runtime",
+      "asharia-mesh-product-writer"
+    ]
   }
 }

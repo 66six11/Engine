@@ -13,6 +13,7 @@ find_package(fastgltf CONFIG REQUIRED)
 find_package(stb CONFIG REQUIRED)
 asharia_require_package_target(asharia::core engine/core)
 asharia_require_package_target(asharia::archive packages/archive)
+asharia_require_package_target(asharia::asset_artifact packages/asset-artifact)
 asharia_require_package_target(asharia::asset_core packages/asset-core)
 asharia_require_package_target(asharia::asset_core_io packages/asset-core)
 asharia_require_package_target(asharia::material_instance packages/material-instance)
@@ -50,6 +51,7 @@ target_link_libraries(asharia-asset-pipeline
         asharia::mesh_product_writer
     PRIVATE
         asharia::archive
+        asharia::asset_artifact
         asharia::asset_core_io
         asharia::material_instance
         asharia::shader_authoring

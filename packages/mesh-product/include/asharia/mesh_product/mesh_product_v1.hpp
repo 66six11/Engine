@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <limits>
 #include <span>
+#include <string_view>
 #include <type_traits>
 #include <vector>
 
@@ -13,6 +14,7 @@
 
 namespace asharia::mesh {
 
+    inline constexpr std::string_view kMeshAssetTypeName = "com.asharia.asset.Mesh";
     inline constexpr std::uint32_t kMeshProductFormatVersionV1 = 1U;
     inline constexpr std::uint32_t kMeshVertexStrideP3N3Uv2F32 = 32U;
 
