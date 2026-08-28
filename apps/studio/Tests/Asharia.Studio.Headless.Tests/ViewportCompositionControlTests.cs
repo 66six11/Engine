@@ -1030,7 +1030,8 @@ public sealed class ViewportCompositionControlTests
         ViewportTargetKind.DocumentScene,
         targetId,
         revision,
-        sequence);
+        ViewStateRevision: 0,
+        Sequence: sequence);
 
     private static ViewportSessionSnapshot Snapshot(
         ViewportSessionId sessionId,
@@ -1042,6 +1043,8 @@ public sealed class ViewportCompositionControlTests
         ViewportTargetKind.DocumentScene,
         targetId,
         revision,
+        ViewStateRevision: 0,
+        SelectedObjectId: null,
         LastSequence: 0,
         MinimumPresentableSequence: minimumPresentableSequence,
         IsFrameInFlight: false,

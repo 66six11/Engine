@@ -460,6 +460,34 @@ namespace asharia::editor {
                 });
         }
 
+        [[nodiscard]] std::vector<BasicDrawListItem> selectionOutlineDrawItems(
+            EditorSharedViewportPresentDesc desc,
+            const scene_rendering::SceneMeshExtraction& extraction) {
+            if (!desc.hasSelectionOutline || desc.kind != EditorViewportKind::Scene) {
+                return {};
+            }
+            const auto selected = std::ranges::find_if(
+                desc.authoredMeshes,
+                [&desc](const EditorSharedViewportAuthoredMeshSnapshot& snapshot) {
+                    return snapshot.objectId == desc.selectedObjectId;
+                });
+            if (selected == desc.authoredMeshes.end()) {
+                return {};
+            }
+            const BasicDrawSourceId selectedSource{
+                .index = selected->runtimeEntityIndex,
+                .generation = selected->runtimeEntityGeneration,
+            };
+            const auto draw = std::ranges::find_if(
+                extraction.drawItems(), [selectedSource](const BasicDrawListItem& item) {
+                    return item.context.sourceObject == selectedSource;
+                });
+            if (draw == extraction.drawItems().end()) {
+                return {};
+            }
+            return {*draw};
+        }
+
         void populateSceneMeshReceipt(EditorSharedViewportPresentDesc desc,
                                       const scene_rendering::SceneMeshExtraction& extraction,
                                       EditorSharedViewportSceneMeshReceipt& receipt) {
@@ -532,6 +560,7 @@ namespace asharia::editor {
                         .opacity = 0.72F,
                         .color = {0.36F, 0.39F, 0.44F, 1.0F},
                     },
+                .selectionOutline = {},
                 .debugWorldLines = std::span<const BasicDebugWorldLine>{debugLines},
             };
         }
@@ -597,6 +626,8 @@ namespace asharia::editor {
             view.frameParams = frameParams;
             view.viewName = desc.panelId.empty() ? "Studio Viewport" : desc.panelId;
             const scene_rendering::SceneMeshExtraction extraction = extractAuthoredMeshes(desc);
+            std::vector<BasicDrawListItem> selectedDrawItems =
+                selectionOutlineDrawItems(desc, extraction);
             EditorSharedViewportSceneMeshReceipt& receipt = state.sceneMeshReceipt;
             populateSceneMeshReceipt(desc, extraction, receipt);
             view.scene = BasicRenderViewSceneDesc{
@@ -606,6 +637,9 @@ namespace asharia::editor {
             };
             std::vector<BasicDebugWorldLine> debugLines;
             configureSceneCameraAndOverlay(desc, view, debugLines);
+            view.overlay.selectionOutline = BasicRenderViewSelectionOutlineDesc{
+                .drawItems = selectedDrawItems,
+            };
 
             BasicRenderViewDiagnostics diagnostics;
             if (desc.captureSceneMeshEvidence) {

@@ -75,6 +75,7 @@ internal enum ViewportNativePresentRequestV7Flags : uint
     HasLogicalExtent = 1U << 0,
     FlashSentinelCorners = 1U << 1,
     CaptureSceneMeshEvidence = 1U << 2,
+    HasSelectionOutline = 1U << 3,
 }
 
 [StructLayout(LayoutKind.Sequential)]
@@ -249,7 +250,9 @@ internal readonly record struct ViewportNativePresentRequestV7(
     uint LogicalHeightPixels,
     nint AuthoredMeshes,
     uint AuthoredMeshCount,
-    uint SceneRasterMode);
+    uint SceneRasterMode,
+    ViewportNativeCanonicalUuid SelectedObjectId,
+    ulong ViewStateRevision);
 
 [StructLayout(LayoutKind.Sequential)]
 internal readonly record struct ViewportNativeReadyFrameV7(
@@ -275,7 +278,8 @@ internal readonly record struct ViewportNativeReadyFrameV7(
     uint TargetKind,
     uint LogicalWidthPixels,
     uint LogicalHeightPixels,
-    ViewportNativeSceneMeshReceiptV7 SceneMeshReceipt);
+    ViewportNativeSceneMeshReceiptV7 SceneMeshReceipt,
+    ulong ViewStateRevision);
 
 [StructLayout(LayoutKind.Sequential)]
 internal readonly record struct ViewportNativeStreamPollV7(

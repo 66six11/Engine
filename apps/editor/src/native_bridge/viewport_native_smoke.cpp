@@ -459,6 +459,10 @@ namespace asharia::editor {
             firstRequest.authoredMeshCount = static_cast<std::uint32_t>(authoredMeshes.size());
             firstRequest.flags |=
                 EditorViewportNativePresentRequestV7Flags_CaptureSceneMeshEvidence;
+            firstRequest.flags |=
+                EditorViewportNativePresentRequestV7Flags_HasSelectionOutline;
+            std::ranges::copy(authoredMeshes.front().objectId, firstRequest.selectedObjectId);
+            firstRequest.viewStateRevision = 71U;
 
             auto duplicateObjectMeshes = std::array{
                 authoredMeshes.front(),
@@ -546,7 +550,7 @@ namespace asharia::editor {
 
             EditorViewportNativeReadyFrameV7 firstFrame{};
             if (!waitForReadyFrame(stream.streamId, firstFrame) ||
-                firstFrame.requestSequence != 1U) {
+                firstFrame.requestSequence != 1U || firstFrame.viewStateRevision != 71U) {
                 logError("Viewport V7 smoke did not receive its first frame.");
                 return false;
             }

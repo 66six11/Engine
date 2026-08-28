@@ -102,6 +102,10 @@ public sealed class ViewportBridge
             {
                 nativeFlags |= ViewportNativePresentRequestV7Flags.CaptureSceneMeshEvidence;
             }
+            if (request.SelectedObjectId is not null)
+            {
+                nativeFlags |= ViewportNativePresentRequestV7Flags.HasSelectionOutline;
+            }
             var nativeRequest = new ViewportNativePresentRequestV7(
                 ViewportNativeAbiHeader.Current<ViewportNativePresentRequestV7>(),
                 ViewportNativeId.FromGuid(request.SessionId.Value),
@@ -125,7 +129,11 @@ public sealed class ViewportBridge
                     ViewportSceneRasterMode.Solid => (uint)ViewportNativeSceneRasterMode.Solid,
                     ViewportSceneRasterMode.Wireframe => (uint)ViewportNativeSceneRasterMode.Wireframe,
                     _ => throw new ArgumentOutOfRangeException(nameof(request)),
-                });
+                },
+                request.SelectedObjectId is { } selectedObjectId
+                    ? ViewportNativeCanonicalUuid.FromGuid(selectedObjectId)
+                    : default,
+                request.ViewStateRevision);
             try
             {
                 var status = nativeApi_.SubmitLatestV7(streamId, in nativeRequest);

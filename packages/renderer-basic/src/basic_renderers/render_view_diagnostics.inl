@@ -147,6 +147,10 @@ void setBasicRenderViewDiagnostics(const BasicRenderViewDesc& view, const Render
                 .blendMode = view.overlay.blendMode,
                 .worldGridEnabled = view.overlay.worldGrid.enabled,
                 .worldGrid = view.overlay.worldGrid,
+                .selectionOutlineEnabled =
+                    !view.overlay.selectionOutline.drawItems.empty(),
+                .selectionOutlineDrawItemCount = static_cast<std::uint64_t>(
+                    view.overlay.selectionOutline.drawItems.size()),
                 .debugWorldLineCount =
                     static_cast<std::uint64_t>(view.overlay.debugWorldLines.size()),
                 .sourceOverlayIds = std::move(sourceOverlayIds),

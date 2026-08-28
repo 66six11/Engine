@@ -2,6 +2,7 @@
     RenderGraph& graph;
     RenderGraphImageHandle renderTarget{};
     RenderGraphImageHandle sceneDepth{};
+    RenderGraphImageHandle selectionMask{};
     RenderGraphBufferHandle sceneVertices{};
     RenderGraphBufferHandle sceneIndices{};
     const BasicRenderViewPassPolicy& policy;
@@ -11,12 +12,72 @@
     BasicRenderViewTarget viewTarget{};
     BasicRenderViewCamera camera{};
     std::span<const BasicDrawListItem> sceneDrawItems;
+    std::span<const BasicDrawListItem> selectionOutlineDrawItems;
     BasicSceneRasterMode sceneRasterMode{BasicSceneRasterMode::Solid};
     BasicRenderViewOverlayColorLoadOp colorLoadOp{
         BasicRenderViewOverlayColorLoadOp::LoadSceneColor};
     BasicRenderViewOverlayColorStoreOp colorStoreOp{BasicRenderViewOverlayColorStoreOp::Store};
     BasicRenderViewExecutionEventRecorder& eventRecorder;
 };
+
+void addBasicRenderViewSelectionMaskPass(const BasicRenderViewPassRecordingContext& context,
+                                         VkPipeline pipeline,
+                                         VkPipelineLayout pipelineLayout) {
+    context.graph.addPass("RenderViewSelectionMask", kBasicRenderViewSelectionMaskPassType)
+        .setParams(kBasicRenderViewSelectionMaskParamsType,
+                   context.policy.selectionMaskParams)
+        .writeColor("target", context.selectionMask)
+        .writeDepth("depth", context.sceneDepth)
+        .readVertexBuffer("vertices", context.sceneVertices)
+        .readIndexBuffer("indices", context.sceneIndices)
+        .recordCommands(
+            [params = context.policy.selectionMaskParams,
+             drawItems = context.selectionOutlineDrawItems](RenderGraphCommandList& commands) {
+                commands.setShader("Hidden/RenderViewSelectionMask", "SelectedMesh")
+                    .setInt("SelectedDrawItemCount", static_cast<int>(params.drawItemCount));
+                for (const BasicDrawListItem& item : drawItems) {
+                    commands.drawIndexed(item.drawItem.indexCount, item.drawItem.instanceCount,
+                                         item.drawItem.firstIndex, item.drawItem.vertexOffset,
+                                         item.drawItem.firstInstance);
+                }
+            })
+        .execute(
+            [&frame = context.frame, &bindings = context.bindings,
+             &bufferBindings = context.bufferBindings, viewTarget = context.viewTarget,
+             camera = context.camera, pipeline, pipelineLayout,
+             drawItems = context.selectionOutlineDrawItems,
+             &eventRecorder = context.eventRecorder](RenderGraphPassContext pass) -> Result<void> {
+                return executeBasicRenderViewSelectionMaskPass(
+                    frame, pass, bindings, bufferBindings, viewTarget.extent, camera, pipeline,
+                    pipelineLayout, drawItems, &eventRecorder);
+            });
+}
+
+void addBasicRenderViewSelectionOutlinePass(const BasicRenderViewPassRecordingContext& context,
+                                            VkPipeline pipeline,
+                                            VkPipelineLayout pipelineLayout,
+                                            VkDescriptorSet descriptorSet, VkDevice device) {
+    context.graph.addPass("RenderViewSelectionOutline", kBasicRenderViewSelectionOutlinePassType)
+        .setParams(kBasicRenderViewSelectionOutlineParamsType,
+                   context.policy.selectionOutlineParams)
+        .readTexture("mask", context.selectionMask, RenderGraphShaderStage::Fragment)
+        .readWriteColor("target", context.renderTarget)
+        .recordCommands(
+            [params = context.policy.selectionOutlineParams](RenderGraphCommandList& commands) {
+                commands.setShader("Hidden/RenderViewSelectionOutline", "Fullscreen")
+                    .setTexture("SelectionMask", "mask")
+                    .setInt("OutlineWidthPixels", static_cast<int>(params.widthPixels))
+                    .drawFullscreenTriangle();
+            })
+        .execute(
+            [&frame = context.frame, &bindings = context.bindings,
+             viewTarget = context.viewTarget, pipeline, pipelineLayout, descriptorSet, device,
+             &eventRecorder = context.eventRecorder](RenderGraphPassContext pass) -> Result<void> {
+                return executeBasicRenderViewSelectionOutlinePass(
+                    frame, pass, bindings, device, pipeline, pipelineLayout, descriptorSet,
+                    viewTarget.extent, &eventRecorder);
+            });
+}
 
 void addBasicRenderViewWorldGridPass(const BasicRenderViewPassRecordingContext& context,
                                      VkPipeline worldGridPipeline,

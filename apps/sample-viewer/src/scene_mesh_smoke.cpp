@@ -1494,6 +1494,7 @@ namespace asharia::sample_viewer {
                             .opacity = 0.65F,
                             .color = {0.36F, 0.39F, 0.44F, 1.0F},
                         },
+                    .selectionOutline = {},
                     .sourceOverlayIds = {},
                     .debugWorldLines = debugLines,
                 };

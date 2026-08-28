@@ -1,0 +1,14 @@
+{
+  "name": "selection_outline",
+  "source": "selection_outline.slang",
+  "outputs": [
+    {
+      "entry": "selectionOutlineFragmentMain",
+      "stage": "fragment",
+      "profile": "glsl_450",
+      "target": "spirv",
+      "output": "selection_outline.frag.spv"
+    }
+  ],
+  "validation": "spirv-val"
+}

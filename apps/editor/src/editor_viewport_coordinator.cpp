@@ -186,6 +186,7 @@ namespace {
                     .opacity = worldGrid.opacity,
                     .color = worldGrid.color,
                 },
+            .selectionOutline = {},
             .sourceOverlayIds = sourceOverlayIds,
             .debugWorldLines = debugWorldLines,
         };

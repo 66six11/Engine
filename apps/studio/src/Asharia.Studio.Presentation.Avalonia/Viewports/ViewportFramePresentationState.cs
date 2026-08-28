@@ -445,6 +445,7 @@ internal readonly record struct ViewportPresentationFrame(
     ViewportTargetKind TargetKind,
     Guid TargetId,
     ulong TargetRevision,
+    ulong ViewStateRevision,
     ulong Sequence)
 {
     public static ViewportPresentationFrame FromRequest(ViewportRenderRequest request)
@@ -455,6 +456,7 @@ internal readonly record struct ViewportPresentationFrame(
             request.TargetKind,
             request.TargetId,
             request.TargetRevision,
+            request.ViewStateRevision,
             request.Sequence);
     }
 }
@@ -524,6 +526,7 @@ internal sealed class ViewportFramePresentationState
         frame.TargetKind == current.TargetKind &&
         frame.TargetId == current.TargetId &&
         frame.TargetRevision == current.TargetRevision &&
+        frame.ViewStateRevision == current.ViewStateRevision &&
         frame.Sequence >= current.MinimumPresentableSequence &&
         frame.Sequence > lastPresentedSequence_ &&
         !current.IsClosed;

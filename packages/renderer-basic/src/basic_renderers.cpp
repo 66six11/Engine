@@ -333,6 +333,50 @@ namespace asharia {
             return {};
         }
 
+        [[nodiscard]] Result<void>
+        validateBasicRenderViewSelectionOutline(const BasicRenderViewDesc& view) {
+            const auto drawItems = view.overlay.selectionOutline.drawItems;
+            if (drawItems.empty()) {
+                return {};
+            }
+            if (!view.overlay.enabled || view.viewKind != BasicRenderViewKind::Scene) {
+                return std::unexpected{Error{
+                    ErrorDomain::RenderGraph,
+                    0,
+                    "RenderView selection outline is available only in an enabled Scene overlay",
+                }};
+            }
+            if (drawItems.size() != 1U) {
+                return std::unexpected{Error{
+                    ErrorDomain::RenderGraph,
+                    0,
+                    "RenderView selection outline currently accepts exactly one selected draw "
+                    "packet",
+                }};
+            }
+            constexpr auto product = validation::directionalWedgeValidationMeshProduct();
+            auto valid = validateBasicRenderViewSceneMeshItem(
+                drawItems.front(), 0U, product.vertices, product.indices);
+            if (!valid) {
+                return std::unexpected{std::move(valid.error())};
+            }
+            const BasicDrawPacketContext selectedContext = drawItems.front().context;
+            const bool belongsToScene = std::ranges::any_of(
+                view.scene.drawItems, [selectedContext](const BasicDrawListItem& sceneItem) {
+                    return sceneItem.context.sourceObject == selectedContext.sourceObject &&
+                           sceneItem.context.meshResource == selectedContext.meshResource &&
+                           sceneItem.context.materialResource == selectedContext.materialResource;
+                });
+            if (!belongsToScene) {
+                return std::unexpected{Error{
+                    ErrorDomain::RenderGraph,
+                    0,
+                    "RenderView selection outline draw packet is not part of the current scene",
+                }};
+            }
+            return {};
+        }
+
         [[nodiscard]] Result<BasicRenderViewSceneMeshParams>
         basicRenderViewSceneMeshParams(const BasicRenderViewDesc& view) {
             auto rasterMode = basicSceneRasterModeValue(view.scene.rasterMode);
@@ -344,6 +388,28 @@ namespace asharia {
                 .viewKind = basicRenderViewKindValue(view.viewKind),
                 .rasterMode = *rasterMode,
                 .indexedDrawCount = static_cast<std::uint32_t>(view.scene.drawItems.size()),
+            };
+        }
+
+        [[nodiscard]] BasicRenderViewSelectionMaskParams
+        basicRenderViewSelectionMaskParams(const BasicRenderViewDesc& view) {
+            const auto count =
+                static_cast<std::uint32_t>(view.overlay.selectionOutline.drawItems.size());
+            return BasicRenderViewSelectionMaskParams{
+                .drawItemCount = count,
+                .viewKind = basicRenderViewKindValue(view.viewKind),
+                .indexedDrawCount = count,
+                .reserved = 0U,
+            };
+        }
+
+        [[nodiscard]] BasicRenderViewSelectionOutlineParams
+        basicRenderViewSelectionOutlineParams(const BasicRenderViewDesc& view) {
+            return BasicRenderViewSelectionOutlineParams{
+                .widthPixels = 2U,
+                .viewKind = basicRenderViewKindValue(view.viewKind),
+                .enabled = view.overlay.selectionOutline.drawItems.empty() ? 0U : 1U,
+                .reserved = 0U,
             };
         }
 
@@ -1117,6 +1183,11 @@ namespace asharia {
             VkImageView depth{VK_NULL_HANDLE};
         };
 
+        struct BasicRenderViewSceneMeshLoadOps {
+            VkAttachmentLoadOp color{VK_ATTACHMENT_LOAD_OP_LOAD};
+            VkAttachmentLoadOp depth{VK_ATTACHMENT_LOAD_OP_CLEAR};
+        };
+
         [[nodiscard]] std::optional<BasicProjectedDebugLinePoint>
         projectBasicDebugWorldLinePoint(const BasicRenderViewCamera& camera,
                                         std::array<float, 3> point) {
@@ -1384,19 +1455,23 @@ namespace asharia {
                                                 VkPipelineLayout pipelineLayout,
                                                 BasicDrawBuffers buffers,
                                                 const BasicRenderViewCamera& camera,
-                                                std::span<const BasicDrawListItem> drawItems) {
+                                                std::span<const BasicDrawListItem> drawItems,
+                                                BasicRenderViewSceneMeshLoadOps loadOps = {}) {
             VkRenderingAttachmentInfo colorAttachment{};
             colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
             colorAttachment.imageView = attachments.color;
             colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-            colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+            colorAttachment.loadOp = loadOps.color;
             colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+            colorAttachment.clearValue = VkClearValue{
+                .color = VkClearColorValue{{0.0F, 0.0F, 0.0F, 0.0F}},
+            };
 
             VkRenderingAttachmentInfo depthAttachment{};
             depthAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
             depthAttachment.imageView = attachments.depth;
             depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
-            depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+            depthAttachment.loadOp = loadOps.depth;
             depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
             depthAttachment.clearValue = VkClearValue{
                 .depthStencil =
@@ -1448,12 +1523,14 @@ namespace asharia {
         void recordFullscreenTextureDraw(const VulkanFrameRecordContext& frame,
                                          VkImageView targetImageView, VkExtent2D targetExtent,
                                          VkPipeline pipeline, VkPipelineLayout pipelineLayout,
-                                         VkDescriptorSet descriptorSet) {
+                                         VkDescriptorSet descriptorSet,
+                                         VkAttachmentLoadOp colorLoadOp =
+                                             VK_ATTACHMENT_LOAD_OP_CLEAR) {
             VkRenderingAttachmentInfo colorAttachment{};
             colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
             colorAttachment.imageView = targetImageView;
             colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-            colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+            colorAttachment.loadOp = colorLoadOp;
             colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
             colorAttachment.clearValue = VkClearValue{
                 .color = VkClearColorValue{{0.0F, 0.0F, 0.0F, 1.0F}},
@@ -1739,6 +1816,29 @@ namespace asharia {
         }
 
         [[nodiscard]] Result<void>
+        updateBasicSelectionMaskDescriptor(VkDevice device, VkDescriptorSet descriptorSet,
+                                           VkImageView maskImageView) {
+            if (descriptorSet == VK_NULL_HANDLE || maskImageView == VK_NULL_HANDLE) {
+                return std::unexpected{
+                    Error{ErrorDomain::Vulkan, 0,
+                          "Cannot update selection mask descriptor from incomplete inputs"}};
+            }
+            const std::array imageWrites{
+                VulkanDescriptorImageWrite{
+                    .descriptorSet = descriptorSet,
+                    .binding = 0,
+                    .arrayElement = 0,
+                    .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
+                    .imageView = maskImageView,
+                    .sampler = VK_NULL_HANDLE,
+                    .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                },
+            };
+            updateVulkanDescriptorImages(device, imageWrites);
+            return {};
+        }
+
+        [[nodiscard]] Result<void>
         executeBasicFullscreenSourceClear(const VulkanFrameRecordContext& frame,
                                           RenderGraphPassContext pass,
                                           std::span<const VulkanRenderGraphImageBinding> bindings,
@@ -1972,6 +2072,197 @@ namespace asharia {
                                           item.context, depthBinding->image.index,
                                           vertexBinding->buffer.index, indexBinding->buffer.index);
                 }
+                eventRecorder->endPass(pass);
+            }
+            return {};
+        }
+
+        [[nodiscard]] Result<void> executeBasicRenderViewSelectionMaskPass(
+            const VulkanFrameRecordContext& frame, RenderGraphPassContext pass,
+            std::span<const VulkanRenderGraphImageBinding> imageBindings,
+            std::span<const VulkanRenderGraphBufferBinding> bufferBindings, VkExtent2D targetExtent,
+            const BasicRenderViewCamera& camera, VkPipeline pipeline,
+            VkPipelineLayout pipelineLayout, std::span<const BasicDrawListItem> drawItems,
+            BasicRenderViewExecutionEventRecorder* eventRecorder) {
+            [[maybe_unused]] const auto timestamp = VulkanTimestampScope::begin(frame, pass.name);
+            [[maybe_unused]] const auto debugLabel = VulkanDebugLabelScope::begin(
+                frame, renderGraphPassDebugLabel(pass, imageBindings, bufferBindings));
+            if (eventRecorder != nullptr) {
+                eventRecorder->beginPass(pass);
+            }
+            auto imageTransitions =
+                recordRenderGraphTransitions(frame, pass.transitionsBefore, imageBindings);
+            if (!imageTransitions) {
+                return std::unexpected{std::move(imageTransitions.error())};
+            }
+            auto bufferTransitions = recordRenderGraphBufferTransitions(
+                frame, pass.bufferTransitionsBefore, bufferBindings);
+            if (!bufferTransitions) {
+                return std::unexpected{std::move(bufferTransitions.error())};
+            }
+            auto params = readPassParams<BasicRenderViewSelectionMaskParams>(
+                pass, kBasicRenderViewSelectionMaskParamsType, "RenderView selection mask pass");
+            if (!params) {
+                return std::unexpected{std::move(params.error())};
+            }
+            if (params->drawItemCount != drawItems.size() ||
+                params->indexedDrawCount != drawItems.size() || params->viewKind != 1U ||
+                params->reserved != 0U || pass.commands.size() != 2U + drawItems.size()) {
+                return std::unexpected{renderGraphError(
+                    "RenderView selection mask params do not match the selected draw packet")};
+            }
+            const RenderGraphCommand& shader = pass.commands[0];
+            const RenderGraphCommand& count = pass.commands[1];
+            if (shader.kind != RenderGraphCommandKind::SetShader ||
+                shader.name != "Hidden/RenderViewSelectionMask" ||
+                shader.secondaryName != "SelectedMesh" ||
+                count.kind != RenderGraphCommandKind::SetInt ||
+                count.name != "SelectedDrawItemCount" ||
+                count.intValue != static_cast<int>(params->drawItemCount)) {
+                return std::unexpected{renderGraphError(
+                    "RenderView selection mask commands do not match the current contract")};
+            }
+            for (std::size_t index = 0; index < drawItems.size(); ++index) {
+                const RenderGraphCommand& command = pass.commands[index + 2U];
+                const BasicDrawItem& draw = drawItems[index].drawItem;
+                if (command.kind != RenderGraphCommandKind::DrawIndexed ||
+                    command.uintValues !=
+                        std::array{draw.indexCount, draw.instanceCount, draw.firstIndex} ||
+                    command.intValue != draw.vertexOffset ||
+                    command.uintValue != draw.firstInstance) {
+                    return std::unexpected{renderGraphError(
+                        "RenderView selection mask indexed draw does not match its draw packet")};
+                }
+            }
+            if (pipeline == VK_NULL_HANDLE || pipelineLayout == VK_NULL_HANDLE) {
+                return std::unexpected{Error{ErrorDomain::Vulkan, 0,
+                                             "Selection mask pipeline resources are incomplete"}};
+            }
+            auto target = findVulkanRenderGraphColorWrite(pass, "target", imageBindings);
+            if (!target) {
+                return std::unexpected{std::move(target.error())};
+            }
+            auto depth = findVulkanRenderGraphDepthWrite(pass, "depth", imageBindings);
+            if (!depth) {
+                return std::unexpected{std::move(depth.error())};
+            }
+            auto vertices = findVulkanRenderGraphBufferSlot(pass.bufferVertexReadSlots, "vertices",
+                                                            pass, bufferBindings);
+            if (!vertices) {
+                return std::unexpected{std::move(vertices.error())};
+            }
+            auto indices = findVulkanRenderGraphBufferSlot(pass.bufferIndexReadSlots, "indices",
+                                                           pass, bufferBindings);
+            if (!indices) {
+                return std::unexpected{std::move(indices.error())};
+            }
+            recordBasicRenderViewSceneMeshDraw(
+                frame,
+                BasicRenderViewSceneMeshAttachments{
+                    .color = target->vulkanImageView,
+                    .depth = depth->vulkanImageView,
+                },
+                targetExtent, pipeline, pipelineLayout,
+                BasicDrawBuffers{
+                    .vertex = vertices->vulkanBuffer,
+                    .index = indices->vulkanBuffer,
+                    .vertexOffset = vertices->offset,
+                    .indexOffset = indices->offset,
+                },
+                camera, drawItems,
+                BasicRenderViewSceneMeshLoadOps{
+                    .color = VK_ATTACHMENT_LOAD_OP_CLEAR,
+                    .depth = VK_ATTACHMENT_LOAD_OP_LOAD,
+                });
+            if (eventRecorder != nullptr) {
+                for (std::size_t index = 0; index < drawItems.size(); ++index) {
+                    const BasicDrawListItem& item = drawItems[index];
+                    eventRecorder->append(
+                        pass, BasicRenderViewExecutionEventKind::DrawIndexed,
+                        "DrawSelectionMaskIndexed", index + 2U,
+                        BasicRenderViewDrawEvent{
+                            .vertexCount = item.drawItem.vertexCount,
+                            .indexCount = item.drawItem.indexCount,
+                            .instanceCount = item.drawItem.instanceCount,
+                            .firstVertex = item.drawItem.firstVertex,
+                            .firstIndex = item.drawItem.firstIndex,
+                            .vertexOffset = item.drawItem.vertexOffset,
+                            .firstInstance = item.drawItem.firstInstance,
+                        },
+                        {}, std::nullopt, target->image.index, index, item.context,
+                        depth->image.index, vertices->buffer.index, indices->buffer.index);
+                }
+                eventRecorder->endPass(pass);
+            }
+            return {};
+        }
+
+        [[nodiscard]] Result<void> executeBasicRenderViewSelectionOutlinePass(
+            const VulkanFrameRecordContext& frame, RenderGraphPassContext pass,
+            std::span<const VulkanRenderGraphImageBinding> bindings, VkDevice device,
+            VkPipeline pipeline, VkPipelineLayout pipelineLayout, VkDescriptorSet descriptorSet,
+            VkExtent2D targetExtent, BasicRenderViewExecutionEventRecorder* eventRecorder) {
+            [[maybe_unused]] const auto timestamp = VulkanTimestampScope::begin(frame, pass.name);
+            [[maybe_unused]] const auto debugLabel = VulkanDebugLabelScope::begin(frame, pass.name);
+            if (eventRecorder != nullptr) {
+                eventRecorder->beginPass(pass);
+            }
+            auto transitions = recordRenderGraphTransitions(frame, pass.transitionsBefore, bindings);
+            if (!transitions) {
+                return std::unexpected{std::move(transitions.error())};
+            }
+            auto params = readPassParams<BasicRenderViewSelectionOutlineParams>(
+                pass, kBasicRenderViewSelectionOutlineParamsType,
+                "RenderView selection outline pass");
+            if (!params) {
+                return std::unexpected{std::move(params.error())};
+            }
+            if (params->widthPixels != 2U || params->viewKind != 1U || params->enabled != 1U ||
+                params->reserved != 0U || pass.commands.size() != 4U) {
+                return std::unexpected{renderGraphError(
+                    "RenderView selection outline params do not match the fixed outline policy")};
+            }
+            const RenderGraphCommand& shader = pass.commands[0];
+            const RenderGraphCommand& texture = pass.commands[1];
+            const RenderGraphCommand& width = pass.commands[2];
+            const RenderGraphCommand& draw = pass.commands[3];
+            if (shader.kind != RenderGraphCommandKind::SetShader ||
+                shader.name != "Hidden/RenderViewSelectionOutline" ||
+                shader.secondaryName != "Fullscreen" ||
+                texture.kind != RenderGraphCommandKind::SetTexture ||
+                texture.name != "SelectionMask" || texture.secondaryName != "mask" ||
+                width.kind != RenderGraphCommandKind::SetInt ||
+                width.name != "OutlineWidthPixels" || width.intValue != 2 ||
+                draw.kind != RenderGraphCommandKind::DrawFullscreenTriangle) {
+                return std::unexpected{renderGraphError(
+                    "RenderView selection outline commands do not match the current contract")};
+            }
+            if (pipeline == VK_NULL_HANDLE || pipelineLayout == VK_NULL_HANDLE ||
+                descriptorSet == VK_NULL_HANDLE) {
+                return std::unexpected{Error{
+                    ErrorDomain::Vulkan, 0, "Selection outline pipeline resources are incomplete"}};
+            }
+            auto mask = findVulkanRenderGraphShaderRead(pass, "mask", bindings);
+            if (!mask) {
+                return std::unexpected{std::move(mask.error())};
+            }
+            auto target = findVulkanRenderGraphColorReadWrite(pass, "target", bindings);
+            if (!target) {
+                return std::unexpected{std::move(target.error())};
+            }
+            auto updated =
+                updateBasicSelectionMaskDescriptor(device, descriptorSet, mask->vulkanImageView);
+            if (!updated) {
+                return std::unexpected{std::move(updated.error())};
+            }
+            recordFullscreenTextureDraw(frame, target->vulkanImageView, targetExtent, pipeline,
+                                        pipelineLayout, descriptorSet, VK_ATTACHMENT_LOAD_OP_LOAD);
+            if (eventRecorder != nullptr) {
+                eventRecorder->append(
+                    pass, BasicRenderViewExecutionEventKind::DrawFullscreenTriangle,
+                    "DrawSelectionOutline", 3U,
+                    BasicRenderViewDrawEvent{.vertexCount = 3U, .instanceCount = 1U}, {},
+                    mask->image.index, target->image.index);
                 eventRecorder->endPass(pass);
             }
             return {};

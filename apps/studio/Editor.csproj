@@ -77,6 +77,12 @@
                        $(StudioViewportShaderDirectory)\descriptor_layout.frag.spv;
                        $(StudioViewportShaderDirectory)\descriptor_layout.vert.reflection.json;
                        $(StudioViewportShaderDirectory)\descriptor_layout.vert.spv;
+                       $(StudioViewportShaderDirectory)\selection_mask.frag.reflection.json;
+                       $(StudioViewportShaderDirectory)\selection_mask.frag.spv;
+                       $(StudioViewportShaderDirectory)\selection_outline.frag.reflection.json;
+                       $(StudioViewportShaderDirectory)\selection_outline.frag.spv;
+                       $(StudioViewportShaderDirectory)\selection_outline.vert.reflection.json;
+                       $(StudioViewportShaderDirectory)\selection_outline.vert.spv;
                        $(StudioViewportShaderDirectory)\world_grid.frag.reflection.json;
                        $(StudioViewportShaderDirectory)\world_grid.frag.spv;
                        $(StudioViewportShaderDirectory)\world_grid.vert.reflection.json;
@@ -101,6 +107,8 @@
                Text="The Studio viewport shader bundle is missing at '$(StudioViewportShaderDirectory)'. Build the asharia-renderer-basic-shaders target first." />
         <Error Condition="!Exists('$(StudioViewportShaderDirectory)\basic_mesh3d.vert.spv')"
                Text="The Studio Scene mesh shader bundle is missing at '$(StudioViewportShaderDirectory)'. Build the asharia-renderer-basic-shaders target first." />
+        <Error Condition="!Exists('$(StudioViewportShaderDirectory)\selection_mask.frag.spv') or !Exists('$(StudioViewportShaderDirectory)\selection_outline.vert.spv') or !Exists('$(StudioViewportShaderDirectory)\selection_outline.frag.spv')"
+               Text="The Studio selection-outline shader bundle is missing at '$(StudioViewportShaderDirectory)'. Build the asharia-renderer-basic-shaders target first." />
     </Target>
 
     <Target Name="ValidateStudioViewportNativeRuntimeContract"

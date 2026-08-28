@@ -497,7 +497,8 @@ public sealed class ViewportCompositionControl : Control, ICustomHitTest
             Session is not { } session || !lastPresentedFrame_.SessionId.IsValid ||
             !session.CanPresentPublishedFrame(
                 lastPresentedFrame_.Sequence,
-                lastPresentedFrame_.TargetRevision) ||
+                lastPresentedFrame_.TargetRevision,
+                lastPresentedFrame_.ViewStateRevision) ||
             !TryGetRenderSize(out var currentSize) ||
             currentSize.LogicalExtent != lastPresentedSize_.LogicalExtent ||
             currentSize.LogicalExtent != lastPresentedPanelExtent_ || renderScaling <= 0)
@@ -2351,7 +2352,10 @@ public sealed class ViewportCompositionControl : Control, ICustomHitTest
     private bool CanPresentFrameContent(ViewportFrameLease lease, ulong generation)
     {
         if (!IsCurrent(generation) || !IsEffectivelyVisible || Session is not { } session ||
-            !session.CanPresentPublishedFrame(lease.RequestSequence, lease.TargetRevision))
+            !session.CanPresentPublishedFrame(
+                lease.RequestSequence,
+                lease.TargetRevision,
+                lease.ViewStateRevision))
         {
             return false;
         }
@@ -2367,7 +2371,10 @@ public sealed class ViewportCompositionControl : Control, ICustomHitTest
         ulong geometryGeneration)
     {
         if (!IsCurrent(generation) || Session is not { } session ||
-            !session.MarkPublishedFramePresented(lease.RequestSequence, lease.TargetRevision))
+            !session.MarkPublishedFramePresented(
+                lease.RequestSequence,
+                lease.TargetRevision,
+                lease.ViewStateRevision))
         {
             return false;
         }
@@ -2405,6 +2412,7 @@ public sealed class ViewportCompositionControl : Control, ICustomHitTest
         lease.TargetKind,
         lease.TargetId,
         lease.TargetRevision,
+        lease.ViewStateRevision,
         lease.RequestSequence);
 
     private bool TryGetRenderSize(out ViewportRenderSize renderSize)
@@ -2663,7 +2671,8 @@ public sealed class ViewportCompositionControl : Control, ICustomHitTest
             !TryValidatePreparedPresentation(operation.Handle) ||
             !operation.Session.MarkPublishedFramePresented(
                 operation.Frame.Sequence,
-                operation.Frame.TargetRevision) ||
+                operation.Frame.TargetRevision,
+                operation.Frame.ViewStateRevision) ||
             !presentationState_.TryMarkPresented(
                 operation.AttachmentGeneration,
                 operation.Frame,
@@ -2879,7 +2888,8 @@ public sealed class ViewportCompositionControl : Control, ICustomHitTest
         operation.RenderSize.AllocationExtent == operation.Handle.TargetExtent &&
         operation.Session.CanPresentPublishedFrame(
             operation.Frame.Sequence,
-            operation.Frame.TargetRevision) &&
+            operation.Frame.TargetRevision,
+            operation.Frame.ViewStateRevision) &&
         presentationState_.CanPresent(
             operation.AttachmentGeneration,
             operation.Frame,

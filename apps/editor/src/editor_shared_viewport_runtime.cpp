@@ -103,6 +103,7 @@ namespace asharia::editor {
             .sessionId = desc.sessionId,
             .targetId = desc.targetId,
             .requestSequence = desc.requestSequence,
+            .viewStateRevision = desc.viewStateRevision,
             .hasCamera = desc.hasCamera,
             .camera = desc.camera,
             .debugProxies = {},
@@ -110,6 +111,8 @@ namespace asharia::editor {
             .sceneRasterMode = desc.sceneRasterMode,
             .captureSceneMeshEvidence = desc.captureSceneMeshEvidence,
             .flashSentinelCorners = desc.flashSentinelCorners,
+            .hasSelectionOutline = desc.hasSelectionOutline,
+            .selectedObjectId = desc.selectedObjectId,
         };
         if (!desc.debugProxies.empty()) {
             packet.debugProxies.assign(desc.debugProxies.begin(), desc.debugProxies.end());
@@ -132,6 +135,7 @@ namespace asharia::editor {
             .sessionId = sessionId,
             .targetId = targetId,
             .requestSequence = requestSequence,
+            .viewStateRevision = viewStateRevision,
             .hasCamera = hasCamera,
             .camera = camera,
             .debugProxies = debugProxies,
@@ -139,6 +143,8 @@ namespace asharia::editor {
             .sceneRasterMode = sceneRasterMode,
             .captureSceneMeshEvidence = captureSceneMeshEvidence,
             .flashSentinelCorners = flashSentinelCorners,
+            .hasSelectionOutline = hasSelectionOutline,
+            .selectedObjectId = selectedObjectId,
         };
     }
 
@@ -1323,6 +1329,7 @@ namespace asharia::editor {
                     .targetId = packet->targetId,
                     .targetRevision = packet->sceneRevision,
                     .requestSequence = packet->requestSequence,
+                    .viewStateRevision = packet->viewStateRevision,
                     .kind = packet->kind,
                     .logicalExtent = packet->logicalExtent,
                     .sceneMeshReceipt = static_cast<EditorSharedViewportPacketState*>(

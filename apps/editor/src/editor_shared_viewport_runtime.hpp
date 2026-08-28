@@ -87,6 +87,7 @@ namespace asharia::editor {
         std::array<std::uint64_t, 2> targetId{};
         std::uint64_t targetRevision{};
         std::uint64_t requestSequence{};
+        std::uint64_t viewStateRevision{};
         EditorViewportKind kind{EditorViewportKind::Scene};
         EditorExtent2D logicalExtent;
         EditorSharedViewportSceneMeshReceipt sceneMeshReceipt;
@@ -219,6 +220,7 @@ namespace asharia::editor {
             std::array<std::uint64_t, 2> sessionId{};
             std::array<std::uint64_t, 2> targetId{};
             std::uint64_t requestSequence{};
+            std::uint64_t viewStateRevision{};
             bool hasCamera{};
             EditorViewportCamera camera;
             std::vector<EditorSharedViewportDebugProxy> debugProxies;
@@ -227,6 +229,8 @@ namespace asharia::editor {
                 EditorSharedViewportSceneRasterMode::Solid};
             bool captureSceneMeshEvidence{};
             bool flashSentinelCorners{};
+            bool hasSelectionOutline{};
+            std::array<std::uint8_t, 16> selectedObjectId{};
 
             [[nodiscard]] static RenderFramePacket copyOf(EditorSharedViewportPresentDesc desc);
             [[nodiscard]] EditorSharedViewportPresentDesc view() const;

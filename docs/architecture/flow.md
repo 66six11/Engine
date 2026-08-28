@@ -252,7 +252,7 @@ flowchart TD
   `ProjectSession -> Application ProjectAssetCatalog -> EngineBridge AssetCatalogGateway ->
   asharia_editor_content_native -> asharia::editor_content`；Application 只拥有 immutable catalog/selection snapshot 与
   request generation，EngineBridge 独占 P/Invoke/strict JSON，Project panel 只拥有 filter/location/row presentation。Release image 精确包含
-  project/scene/editor-content/editor 四个 native DLL 与 16 个 renderer-basic shader/reflection 文件，不携带 Slang、
+  project/scene/editor-content/editor 四个 native DLL 与 22 个 renderer-basic shader/reflection 文件，不携带 Slang、
   Vulkan SDK 或 validation layer。当前已有单 SceneDocument、Hierarchy、名称/local Transform Inspector、Create Entity、
   Save/Undo/Redo/dirty、一个可见 Scene View、只读 catalog-backed Resource Browser，以及由 typed selection 驱动的只读
   Asset Inspector；Content 层已有 Mesh Product v1/受限 `.glb` cooked artifact 与 generation-safe runtime CPU mesh

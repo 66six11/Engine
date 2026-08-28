@@ -247,7 +247,10 @@ namespace {
         constexpr std::uint32_t kKnownFlags =
             EditorViewportNativePresentRequestV7Flags_HasLogicalExtent |
             EditorViewportNativePresentRequestV7Flags_FlashSentinelCorners |
-            EditorViewportNativePresentRequestV7Flags_CaptureSceneMeshEvidence;
+            EditorViewportNativePresentRequestV7Flags_CaptureSceneMeshEvidence |
+            EditorViewportNativePresentRequestV7Flags_HasSelectionOutline;
+        const bool hasSelectionOutline =
+            (request.flags & EditorViewportNativePresentRequestV7Flags_HasSelectionOutline) != 0U;
         const asharia::editor::EditorExtent2D logicalExtent = logicalExtentFor(request);
         if (!hasValue(request.sessionId) || !hasValue(request.targetId) ||
             request.targetRevision == 0U || request.requestSequence == 0U ||
@@ -263,6 +266,11 @@ namespace {
             request.authoredMeshCount > kMaximumAuthoredMeshCount ||
             (request.authoredMeshCount != 0U && request.authoredMeshes == nullptr) ||
             request.sceneRasterMode > EditorViewportNativeSceneRasterMode_Wireframe ||
+            (hasSelectionOutline &&
+             (request.kind != EditorViewportNativeRenderKind_Scene ||
+              !validCanonicalUuid(std::span{request.selectedObjectId}))) ||
+            (!hasSelectionOutline &&
+             validCanonicalUuid(std::span{request.selectedObjectId})) ||
             !validCamera(request.camera)) {
             return false;
         }
@@ -564,6 +572,8 @@ namespace {
             return EditorViewportNativeStatus_InternalError;
         }
 
+        std::array<std::uint8_t, 16> selectedObjectId{};
+        std::ranges::copy(request.selectedObjectId, selectedObjectId.begin());
         const asharia::editor::EditorSharedViewportPresentDesc desc{
             .panelId = "viewport-stream/native-v7",
             .kind = viewportKind(request.kind),
@@ -578,6 +588,7 @@ namespace {
             .sessionId = {request.sessionId.low, request.sessionId.high},
             .targetId = {request.targetId.low, request.targetId.high},
             .requestSequence = request.requestSequence,
+            .viewStateRevision = request.viewStateRevision,
             .hasCamera = true,
             .camera = viewportCamera(request.camera),
             .debugProxies = debugProxies,
@@ -589,6 +600,10 @@ namespace {
             .flashSentinelCorners =
                 (request.flags & EditorViewportNativePresentRequestV7Flags_FlashSentinelCorners) !=
                 0U,
+            .hasSelectionOutline =
+                (request.flags & EditorViewportNativePresentRequestV7Flags_HasSelectionOutline) !=
+                0U,
+            .selectedObjectId = selectedObjectId,
         };
         auto submitted =
             asharia::editor::EditorSharedViewportRuntime::instance().submitLatest(streamId, desc);
@@ -828,6 +843,7 @@ editor_viewport_try_take_ready_v7(std::uint64_t streamId, EditorViewportNativeRe
                     .productHash = nativeFrame.sceneMeshReceipt.productHash,
                     .sceneRevision = nativeFrame.sceneMeshReceipt.sceneRevision,
                 },
+            .viewStateRevision = nativeFrame.viewStateRevision,
         };
         std::ranges::copy(nativeFrame.sceneMeshReceipt.representativeObjectId,
                           frame->sceneMeshReceipt.representativeObjectId);

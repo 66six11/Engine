@@ -34,6 +34,9 @@ internal sealed class StudioScenePanelViewModel :
     private readonly IEditorSelectionService selection_;
     private ViewportSession? session_;
     private ulong viewportRevision_;
+    private ulong selectionSourceRevision_;
+    private ulong viewStateRevision_;
+    private Guid? selectedObjectId_;
     private bool isRealtime_ = true;
     private bool isWireframe_;
     private bool isDisposed_;
@@ -44,6 +47,7 @@ internal sealed class StudioScenePanelViewModel :
         projectSession_ = shell.ProjectSession;
         selection_ = shell.EditorSelection;
         projectSession_.SnapshotChanged += OnProjectSnapshotChanged;
+        selection_.Changed += OnSelectionChanged;
         ApplyProjectSnapshot(projectSession_.Current);
     }
 
@@ -135,6 +139,7 @@ internal sealed class StudioScenePanelViewModel :
 
         isDisposed_ = true;
         projectSession_.SnapshotChanged -= OnProjectSnapshotChanged;
+        selection_.Changed -= OnSelectionChanged;
         session_?.Close();
         session_ = null;
     }
@@ -171,6 +176,7 @@ internal sealed class StudioScenePanelViewModel :
         if (session_ is { } session && session.Current.TargetId == document.SceneId)
         {
             session.SynchronizeDocument(document);
+            ApplySelection(selection_.Current, snapshot);
             viewportRevision_ = document.Revision;
             OnPropertyChanged(nameof(ViewportRevision));
             return;
@@ -186,8 +192,53 @@ internal sealed class StudioScenePanelViewModel :
                 ? ViewportSceneRasterMode.Wireframe
                 : ViewportSceneRasterMode.Solid);
         ReplaceSession(replacement);
+        ApplySelection(selection_.Current, snapshot);
         viewportRevision_ = document.Revision;
         OnPropertyChanged(nameof(ViewportRevision));
+    }
+
+    private void OnSelectionChanged(object? sender, EditorSelectionChangedEventArgs e)
+    {
+        if (Dispatcher.UIThread.CheckAccess())
+        {
+            ApplySelection(e.Snapshot, projectSession_.Current);
+            return;
+        }
+
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (!isDisposed_)
+            {
+                ApplySelection(e.Snapshot, projectSession_.Current);
+            }
+        });
+    }
+
+    private void ApplySelection(
+        EditorSelectionSnapshot selection,
+        ProjectSessionSnapshot project)
+    {
+        if (session_ is not { } session || project.Project is not { } activeProject ||
+            project.Document is not { } document)
+        {
+            return;
+        }
+
+        var selectedObjectId = selection.Primary is SceneObjectSelectionTarget target &&
+            target.SessionId == activeProject.SessionId && target.SceneId == document.SceneId
+                ? target.ObjectId
+                : (Guid?)null;
+        if (selection.Revision < selectionSourceRevision_)
+        {
+            return;
+        }
+        selectionSourceRevision_ = selection.Revision;
+        if (selectedObjectId_ != selectedObjectId)
+        {
+            selectedObjectId_ = selectedObjectId;
+            viewStateRevision_ = checked(viewStateRevision_ + 1);
+        }
+        session.SetSelection(viewStateRevision_, selectedObjectId_);
     }
 
     private void ReplaceSession(ViewportSession? session)
