@@ -1,6 +1,6 @@
 # ADR-0015：Studio 用 typed editor selection 驱动只读 Asset Inspector
 
-状态：Accepted；由 GitHub Slice #388 实现
+状态：Accepted；由 GitHub Slice #388、#398、#402 递进实现
 
 日期：2026-08-13
 
@@ -105,12 +105,17 @@ Project close/switch 在新 project scope publication 时使旧 selection 失效
 未来异步 producer 仍必须保证旧 scope 或旧 revision 的晚到结果不能覆盖 current selection。subscriber failure 必须隔离，
 不能阻止 owner 完成 publication 或 shutdown。
 
-#### Scene View Transform proxy picking
+#### Scene View model bounds 与 Transform proxy picking
 
-#398 的首个 Scene View producer 只命中当前帧实际绘制的有界 Transform XYZ 轴代理。`ViewportSession` 在同一锁内
-捕获 session、scene、document revision、camera 与 proxy set；Application 的纯 CPU picker复用 native overlay 的
-投影轴、quaternion旋转和正 `clipW` 规则，并以 camera depth、screen distance、stable `ObjectId` 依次打破重叠候选。
-当前 debug-line overlay 不按 camera near/far 裁切端点，因此 picker 也不擅自增加不同的 near/far 可见性语义。
+#398 的首个 Scene View producer 只命中当前帧实际绘制的有界 Transform XYZ 轴代理。#402将当前唯一可解析并真实绘制的
+directional-wedge validation mesh source-controlled local AABB纳入同一Application pick snapshot：model body先以screen ray
+和inverse local TRS执行ray-OBB slab hit；只有没有model hit时，才检查没有model proxy的entity Transform axes。这样可见模型
+是主要入口，空entity仍有诚实回退；unknown/not-ready authored mesh不获得伪造bounds。
+
+`ViewportSession`在同一锁内捕获session、scene、document revision、camera、model bounds与bounded debug proxy set。model
+重叠按camera depth、stable `ObjectId`排序；axis重叠按camera depth、screen distance、stable `ObjectId`排序。rotation、
+non-uniform/negative scale保留，退化scale fail closed。fallback复用native overlay的投影轴、quaternion旋转和正`clipW`规则；
+当前debug-line overlay不按camera near/far裁切端点，因此fallback也不擅自增加不同的near/far可见性语义。
 
 Avalonia `ViewportCompositionControl` 只在 endpoint 为 Ready、未 degraded、当前 physical extent 与 front frame完全一致，
 且 frame sequence/revision仍可呈现时，暴露最小 presented interaction context；它不引用 selection。Shell View只保存
@@ -119,12 +124,17 @@ pick snapshot后，才发布 `SceneObjectSelectionTarget`，空白命中则 `Cle
 degraded画面保持原selection不变。该路径不修改SceneDocument、dirty/savepoint或Undo/Redo。
 
 采用 [Unreal `FEditorViewportClient::ProcessClick`](https://dev.epicgames.com/documentation/unreal-engine/API/Editor/UnrealEd/FEditorViewportClient/ProcessClick)
-的 viewport click context 与 stable hit identity边界，但拒绝其GPU hit-proxy实现；采用
-[Godot `Node3DEditorViewport`](https://github.com/godotengine/godot/blob/master/editor/scene/3d/node_3d_editor_viewport.cpp)
-和 [O3DE `EditorPickEntitySelectionHelper`](https://github.com/o3de/o3de/blob/development/Code/Framework/AzToolsFramework/AzToolsFramework/ViewportSelection/EditorPickEntitySelection.cpp)
-的“viewport resolve → shared editor selection”、nearest candidate与导航/选择输入分离。Asharia当前没有稳定mesh bounds或
-geometry hit合同，因此拒绝PhysicsWorld、collider raycast、mesh triangle、GPU ID buffer和readback；outline、hover、gizmo、
-camera navigation、多选与通用viewport tool framework继续独立演进。
+与 [`FViewport`](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/Engine/FViewport) 的viewport click context、
+presented hit proxy/typed element与stable identity边界，但拒绝其GPU hit-proxy实现；采用
+[Godot `Node3DEditorViewport`](https://github.com/godotengine/godot/blob/master/editor/scene/3d/node_3d_editor_viewport.h)
+公开的screen ray、AABB distance、depth sort与stable `ObjectID`路径，以及
+[O3DE `EditorPickEntitySelectionHelper`](https://github.com/o3de/o3de/blob/development/Code/Framework/AzToolsFramework/AzToolsFramework/ViewportSelection/EditorPickEntitySelection.cpp)
+的“viewport resolve → shared editor selection”和导航/选择输入分离。
+
+Asharia采用当前validation product已证明的真实local bounds，但不把这一绑定冒充通用mesh bounds/geometry hit合同。明确拒绝
+PhysicsWorld、collider raycast、mesh triangle/BVH、GPU ID buffer和readback作为本切片前置；完整asset bounds provider必须由未来
+resource/product owner提供逐项ready identity与bounds后再替换该窄绑定。outline、hover、gizmo、camera navigation、多选与通用
+viewport tool framework继续独立演进。
 
 ### 2. Asset Inspector 只投影同一 catalog snapshot 的 immutable facts
 

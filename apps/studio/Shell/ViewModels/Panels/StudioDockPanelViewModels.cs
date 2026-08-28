@@ -110,7 +110,7 @@ internal sealed class StudioScenePanelViewModel :
             return false;
         }
 
-        var result = ViewportTransformProxyPicker.Pick(snapshot, request);
+        var result = ViewportScenePicker.Pick(snapshot, request);
         if (result.ObjectId is { } objectId)
         {
             _ = selection_.Replace(new SceneObjectSelectionTarget(

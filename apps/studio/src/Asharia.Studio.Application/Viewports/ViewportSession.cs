@@ -1,11 +1,16 @@
 using System;
 using System.Linq;
+using Asharia.Runtime;
 using Asharia.Studio.Application.Scenes;
 
 namespace Asharia.Studio.Application.Viewports;
 
 public sealed class ViewportSession
 {
+    private static readonly ViewportLocalBounds DirectionalWedgeValidationLocalBounds = new(
+        new Float3(-1.25f, -0.125f, -0.625f),
+        new Float3(1.5f, 0.25f, 0.75f));
+
     private readonly object gate_ = new();
     private readonly ViewportSessionId sessionId_;
     private readonly ViewportRenderKind kind_;
@@ -15,6 +20,7 @@ public sealed class ViewportSession
     private ViewportCameraSnapshot camera_;
     private ViewportDebugProxySnapshot[] debugProxies_;
     private int totalDebugProxyCount_;
+    private ViewportModelPickProxySnapshot[] modelPickProxies_;
     private ViewportAuthoredMeshSnapshot[] authoredMeshes_;
     private ViewportSceneRasterMode sceneRasterMode_ = ViewportSceneRasterMode.Solid;
     private ViewportRenderSize? lastRenderSize_;
@@ -51,6 +57,7 @@ public sealed class ViewportSession
         targetRevision_ = document.Revision;
         camera_ = camera;
         (debugProxies_, totalDebugProxyCount_) = CaptureDebugProxies(document);
+        modelPickProxies_ = CaptureModelPickProxies(document);
         authoredMeshes_ = CaptureAuthoredMeshes(document);
     }
 
@@ -86,6 +93,7 @@ public sealed class ViewportSession
                 targetId_,
                 targetRevision_,
                 camera_,
+                modelPickProxies_,
                 debugProxies_,
                 totalDebugProxyCount_);
             return true;
@@ -117,10 +125,12 @@ public sealed class ViewportSession
             }
 
             var (nextDebugProxies, nextTotalDebugProxyCount) = CaptureDebugProxies(document);
+            var nextModelPickProxies = CaptureModelPickProxies(document);
             var nextAuthoredMeshes = CaptureAuthoredMeshes(document);
             targetRevision_ = document.Revision;
             debugProxies_ = nextDebugProxies;
             totalDebugProxyCount_ = nextTotalDebugProxyCount;
+            modelPickProxies_ = nextModelPickProxies;
             authoredMeshes_ = nextAuthoredMeshes;
             requestRefresh = InvalidateLocked(
                 ViewportInvalidationReason.TargetChanged,
@@ -386,6 +396,17 @@ public sealed class ViewportSession
             .ToArray();
         return (proxies, document.Entities.Count);
     }
+
+    private static ViewportModelPickProxySnapshot[] CaptureModelPickProxies(
+        SceneDocumentSnapshot document) =>
+        document.Entities
+            .Where(entity =>
+                entity.Mesh == SceneMeshReference.DirectionalWedgeValidation)
+            .Select(entity => new ViewportModelPickProxySnapshot(
+                entity.ObjectId,
+                DirectionalWedgeValidationLocalBounds,
+                entity.Transform))
+            .ToArray();
 
     private static ViewportAuthoredMeshSnapshot[] CaptureAuthoredMeshes(
         SceneDocumentSnapshot document)

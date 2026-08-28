@@ -27,10 +27,13 @@
 >
 > 2026-08-28：#398 让 Scene View 对当前已呈现的 Transform XYZ 轴代理执行确定性 picking，并把稳定
 > `SceneObjectSelectionTarget` 发布到同一 Application selection；它不引入 Physics、资产、native ABI 或日志改造。
+>
+> 2026-08-29：#402 让当前实际可解析的 directional-wedge validation model local bounds成为主选择入口，
+> Transform proxy只为没有可呈现model proxy的entity回退；通用asset bounds、triangle/GPU-ID picking与Physics仍未引入。
 
-更新日期：2026-08-28
+更新日期：2026-08-29
 
-跟踪：GitHub Epic #119；设计 Slice #337；首个实现 Slice #338；Hierarchy 第一纵切 #363；Transform Undo/Redo #373；Diagnostics #381；Resource Browser #385；typed selection / Asset Inspector #388；Scene View Transform proxy picking #398
+跟踪：GitHub Epic #119；设计 Slice #337；首个实现 Slice #338；Hierarchy 第一纵切 #363；Transform Undo/Redo #373；Diagnostics #381；Resource Browser #385；typed selection / Asset Inspector #388；Scene View picking #398 / #402
 
 ## 1. 目的
 
@@ -93,8 +96,8 @@ find -> inspect -> select -> edit -> preview -> validate -> commit/undo
    与 runtime resource 尚未接入。
 2. Inspector 的 asset presentation 只读；scene Transform 已接入 document Undo/Redo，component reflection、asset
    import-settings Apply/Revert、其他 mutation Undo 与 multi-selection 未实现。
-3. Scene View 已有render lane、Realtime/Wireframe toolbar与Transform proxy picking；camera navigation、selection
-   feedback/outline、hover、gizmo和通用viewport tools未实现。
+3. Scene View 已有render lane、Realtime/Wireframe toolbar、validation model bounds主选择与Transform proxy fallback；
+   通用asset bounds、camera navigation、selection feedback/outline、hover、gizmo和通用viewport tools未实现。
 4. Diagnostics已接入有界projection；持久Editor log、problem report/crash artifact、typed source/target导航仍需各自owner。
 5. 多文档、Play 和viewport tools只有相应owner/command落地后才能启用。
 6. 当前 `SceneEntitySnapshot` 只有 `ObjectId`、`Name` 与 `Transform`；Scene ABI 尚无 `ParentId`、entity kind、
@@ -315,15 +318,17 @@ Viewport backend 不可用时：
 - 提供 `Open Problems`、`Retry` 或明确的不可用原因（只显示实际支持的动作）；
 - 同一 structured diagnostic id 由 Scene View、Problems/Console 和 Status 引用，不生成三份独立错误。
 
-Scene View 不直接执行 engine mutation。当前左键click只对已呈现front中的Transform XYZ轴代理做screen-space picking：
+Scene View 不直接执行 engine mutation。当前左键click先命中已呈现front中validation model的真实local bounds，再为没有
+可呈现model proxy的entity保留Transform XYZ轴screen-space fallback：
 
 - control仅提供Ready、非degraded、exact extent且仍current的presented frame identity；resize/stale/closed时fail closed；
 - View只拥有pointer gesture、4 DIP drag threshold与DIP→physical pixel转换；toolbar、modified click、右/中键、视区外release不产生intent；
-- Application picker只消费一致的camera/proxy snapshot，结果以stable `ObjectId`进入project/scene-scoped typed selection；
+- Application picker只消费一致的camera/model-bounds/debug-proxy snapshot，执行ray-OBB后再做axis fallback，结果以stable
+  `ObjectId`进入project/scene-scoped typed selection；unknown/not-ready mesh不获得伪造bounds；
 - 空白点击清空selection；selection不推进document revision、dirty/savepoint或Undo/Redo。
 
-后续gizmo drag才产生有明确begin/update/commit/cancel的transaction intent。PhysicsWorld、mesh triangle/GPU ID picking、
-outline、hover、camera navigation、多选和通用input framework均不是当前路径的隐式前置。
+后续gizmo drag才产生有明确begin/update/commit/cancel的transaction intent。PhysicsWorld、collider、mesh triangle/BVH、
+通用asset bounds、GPU ID picking/readback、outline、hover、camera navigation、多选和通用input framework均不是当前路径的隐式前置。
 
 ## 10. Feedback 层级
 
@@ -473,7 +478,8 @@ launch Studio
 5. Inspector 已区分 scene/asset/empty；scene Transform 是首个 transaction-backed writable field，asset import settings
    仍等待独立 Apply/Revert command 与 processor owner；
 6. Scene View基础toolbar已存在；overlay与diagnostic deduplication仍后置；
-7. #398已闭合Transform proxy picking；gizmo transaction、selection feedback与Scene Authoring MVP仍独立跟踪；
+7. #398已闭合Transform proxy picking，#402让当前validation model bounds成为主选择入口；通用asset bounds、gizmo transaction、
+   selection feedback与Scene Authoring MVP仍独立跟踪；
 8. Play/Game View 与运行态 session。
 
 每项独立跟踪，不把后续能力并入 Slice A。
