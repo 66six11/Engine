@@ -1,6 +1,6 @@
 # Studio viewport rendering
 
-最近更新：2026-08-12
+最近更新：2026-08-29
 
 ## 当前 production 链路
 
@@ -50,7 +50,7 @@ multi-selection、连续多圈 animation history 与可配置 Euler order 仍 de
 | 模块 | 责任 | 禁止 |
 | --- | --- | --- |
 | `ViewportSession` | document/camera/extent/exposed invalidation；coalesced refresh signal；发布 immutable request；维护内容呈现序列下界 | 持有 native/GPU handle；等待 frame completion 才允许新 request；把 geometry revision 冒充内容 revision |
-| `ViewportTransformProxyPicker` | 捕获一致的scene/camera/有界proxy snapshot；按native debug-line projection做纯CPU screen-space hit test；返回stable object identity | 引用Avalonia/EngineBridge/Physics；声称mesh/triangle picking；修改selection或document |
+| `ViewportScenePicker` | 捕获一致的scene/camera/model-bounds/有界debug-proxy snapshot；先做纯CPU ray-OBB model hit，再为无可呈现模型的entity做screen-space Transform-axis fallback；返回stable object identity | 引用Avalonia/EngineBridge/Physics；声称triangle/GPU-ID或通用asset-bounds picking；修改selection或document |
 | `ViewportBridge` / `ViewportRenderStream` | V7 ABI 映射、typed status、view-local FOV axis、authored-mesh snapshot、slot/frame lease 与 request-correlated mesh receipt | 调 Vulkan；猜测 stale native metadata；把 asset GUID 替换成 backend resource key |
 | `ViewportPresentationTransactionCoordinator` | 以 `SessionId + EndpointEpoch + TransactionId` 协调 Proposal→Completed/Aborted/Quarantined；同 compositor group barrier | 假定跨 compositor 原子；拥有 endpoint surface/stream；把 dock policy 写进通用状态机 |
 | `EditorDockStagedGridSplitter` / `EditorDockSplitResizePolicy` / `EditorDockSplitResizeCoordinator` | latest splitter layout proposal、min/max/layout-rounding、同步 probe、requested/committed `GridLength`；作为 transaction adapter | 直接写 GPU handle；拥有 transaction/resource lifetime；把 drag event 变成 FIFO；只在 drag-end resize |
@@ -100,28 +100,44 @@ FOV；Godot `Camera3D` 的 `KEEP_WIDTH` / `KEEP_HEIGHT` 证明同类 axis constr
 则明确是垂直 FOV，因此支持 Game/Preview 保持垂直语义。Asharia 采用“显式、per-view axis constraint”，但不复制外部枚举/API，
 也暂不实现 `MajorAxisFOV`、physical camera/gate fit 或 UI preference：当前只有 Scene 与 Game/Preview 两个已证实需求。
 
-## Transform proxy picking
+## Scene model 与 Transform proxy picking
 
-#398不增加native ABI、render readback或Physics依赖。每次合格左键click按以下边界执行：
+#398先建立Transform proxy picking，#402在不增加native ABI、render readback或Physics依赖的前提下，让当前确实可呈现的
+directional-wedge validation model body成为主要选择入口。每次合格左键click按以下边界执行：
 
 ```text
 current presented front identity + exact physical extent
   -> View DIP position/tolerance × RenderScaling
   -> ViewportSession locked pick snapshot
-  -> Application CPU screen-space segment hit test
+  -> Application CPU ray-OBB model hit
+  -> no model hit: screen-space Transform-axis fallback for entities without a model proxy
   -> Shell publishes SceneObjectSelectionTarget or clears selection
 ```
 
-picker只遍历与V7 request相同的最多256个Transform debug proxies，并保留`TotalDebugProxyCount`/`DebugProxiesTruncated`
-证据；因此被截断、未绘制的entity不可命中。投影复用Scene/Game现有FOV axis、view basis与quaternion旋转。native
-`basicDebugLineVertices`仅拒绝非finite或`clipW <= epsilon`端点，随后直接写NDC line vertices，不按camera near/far裁切；
-picker遵循这条当前可见overlay合同，而不冒充geometry frustum/raycast。重叠候选依次按更小camera depth、更小screen
-distance、stable `ObjectId`排序，保证同一snapshot确定性。
+当前renderer唯一Ready product binding是source-controlled directional-wedge validation mesh；其产品local AABB为
+`[-1.25,-0.125,-0.625]..[1.5,0.25,0.75]`。`ViewportSession`只为同一稳定validation asset identity捕获
+`ObjectId + local AABB + Transform` model proxy；未知或未就绪authored mesh继续no-draw且不获得伪造pick bounds。这是当前
+binding的窄竖切，不是通用asset bounds provider、importer或runtime resolver。screen point按同一camera basis、FOV axis与
+physical extent构造ray，再通过inverse local TRS做ray-OBB slab hit；rotation、non-uniform/negative scale保留，任一退化scale
+fail closed。重叠model先按更小camera depth、再按stable `ObjectId`排序。
+
+只有model没有命中时才检查debug axes，并跳过已经拥有model proxy的entity，使model body成为主入口、Transform proxy只为
+空entity/当前不可呈现mesh提供诚实回退。fallback只遍历与V7 request相同的最多256个Transform debug proxies，并保留
+`TotalDebugProxyCount`/`DebugProxiesTruncated`证据；因此被截断、未绘制的axis不可命中。投影复用现有FOV axis、view basis与
+quaternion旋转。native `basicDebugLineVertices`只拒绝non-finite或`clipW <= epsilon`端点，随后直接写NDC line vertices，
+不按camera near/far裁切；fallback遵循这条当前可见overlay合同。重叠axis依次按更小camera depth、更小screen distance、
+stable `ObjectId`排序。
+
+采用Unreal `FEditorViewportClient::ProcessClick`/`FViewport`的presented hit identity边界；Godot
+`Node3DEditorViewport`明确包含screen ray、AABB screen-distance、depth排序与stable `ObjectID`路径；O3DE
+`EditorPickEntitySelectionHelper`同样在editor viewport解析stable entity identity。Asharia采用viewport-owned identity、bounds
+broad selection和确定性排序；拒绝把PhysicsWorld/collider当成editor selection前置，也暂不复制Unreal GPU hit proxy或推进
+triangle/BVH、GPU ID buffer/readback。
 
 Presentation不引用Selection；Application不引用Avalonia/EngineBridge/native；code-behind只桥接pointer transient state。
 document/camera/extent改变会让旧front identity或minimum presentable sequence失效，click必须fail closed并保留selection。
-该路径不产生document mutation。selection outline、hover、gizmo、camera navigation、multi-select、mesh/triangle picking与
-GPU ID/readback均deferred。
+该路径不产生document mutation。selection outline、hover、gizmo、camera navigation、multi-select、triangle-precise picking、
+通用asset bounds与GPU ID/readback均deferred。
 
 ## 帧与槽状态
 

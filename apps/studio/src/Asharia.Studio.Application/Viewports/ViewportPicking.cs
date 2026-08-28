@@ -52,6 +52,52 @@ public readonly record struct ViewportPickRequest
     public float TolerancePixels { get; }
 }
 
+public readonly record struct ViewportLocalBounds
+{
+    public ViewportLocalBounds(Float3 minimum, Float3 maximum)
+    {
+        if (!IsFinite(minimum) || !IsFinite(maximum) ||
+            minimum.X > maximum.X || minimum.Y > maximum.Y || minimum.Z > maximum.Z)
+        {
+            throw new ArgumentException("Viewport local bounds must be finite and ordered.");
+        }
+
+        Minimum = minimum;
+        Maximum = maximum;
+    }
+
+    public Float3 Minimum { get; }
+
+    public Float3 Maximum { get; }
+
+    private static bool IsFinite(Float3 value) =>
+        float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);
+}
+
+public sealed record ViewportModelPickProxySnapshot
+{
+    public ViewportModelPickProxySnapshot(
+        Guid objectId,
+        ViewportLocalBounds localBounds,
+        TransformValue transform)
+    {
+        if (objectId == Guid.Empty)
+        {
+            throw new ArgumentException("Model pick proxy object id must not be empty.", nameof(objectId));
+        }
+
+        ObjectId = objectId;
+        LocalBounds = localBounds;
+        Transform = transform;
+    }
+
+    public Guid ObjectId { get; }
+
+    public ViewportLocalBounds LocalBounds { get; }
+
+    public TransformValue Transform { get; }
+}
+
 public sealed record ViewportPickSnapshot
 {
     internal ViewportPickSnapshot(
@@ -59,6 +105,7 @@ public sealed record ViewportPickSnapshot
         Guid targetId,
         ulong targetRevision,
         ViewportCameraSnapshot camera,
+        IEnumerable<ViewportModelPickProxySnapshot> modelProxies,
         IEnumerable<ViewportDebugProxySnapshot> debugProxies,
         int totalDebugProxyCount)
     {
@@ -66,6 +113,8 @@ public sealed record ViewportPickSnapshot
         TargetId = targetId;
         TargetRevision = targetRevision;
         Camera = camera;
+        ModelProxies = new ReadOnlyCollection<ViewportModelPickProxySnapshot>(
+            modelProxies.ToArray());
         DebugProxies = new ReadOnlyCollection<ViewportDebugProxySnapshot>(
             debugProxies.ToArray());
         TotalDebugProxyCount = totalDebugProxyCount;
@@ -78,6 +127,8 @@ public sealed record ViewportPickSnapshot
     public ulong TargetRevision { get; }
 
     public ViewportCameraSnapshot Camera { get; }
+
+    public IReadOnlyList<ViewportModelPickProxySnapshot> ModelProxies { get; }
 
     public IReadOnlyList<ViewportDebugProxySnapshot> DebugProxies { get; }
 
@@ -118,7 +169,7 @@ public readonly record struct ViewportPickResult
         new(objectId, cameraDepth, screenDistancePixels);
 }
 
-public static class ViewportTransformProxyPicker
+public static class ViewportScenePicker
 {
     private const float ProjectionEpsilon = 0.000001f;
 
@@ -141,10 +192,34 @@ public static class ViewportTransformProxyPicker
             return ViewportPickResult.Miss;
         }
 
+        if (!TryCreateRay(projection, request.Point, out var ray))
+        {
+            return ViewportPickResult.Miss;
+        }
+
         var best = ViewportPickResult.Miss;
+        foreach (var proxy in snapshot.ModelProxies)
+        {
+            if (!TryPickModel(projection, ray, proxy, out var candidate) ||
+                !IsBetter(candidate, best))
+            {
+                continue;
+            }
+
+            best = candidate;
+        }
+        if (best.IsHit)
+        {
+            return best;
+        }
+
+        var modelObjectIds = snapshot.ModelProxies.Count == 0
+            ? null
+            : snapshot.ModelProxies.Select(proxy => proxy.ObjectId).ToHashSet();
         foreach (var proxy in snapshot.DebugProxies)
         {
-            if (!TryPickProxy(projection, proxy, request.Point, out var candidate))
+            if (modelObjectIds?.Contains(proxy.ObjectId) == true ||
+                !TryPickTransformProxy(projection, proxy, request.Point, out var candidate))
             {
                 continue;
             }
@@ -160,7 +235,117 @@ public static class ViewportTransformProxyPicker
         return best;
     }
 
-    private static bool TryPickProxy(
+    private static bool TryPickModel(
+        Projection projection,
+        Ray ray,
+        ViewportModelPickProxySnapshot proxy,
+        out ViewportPickResult result)
+    {
+        result = ViewportPickResult.Miss;
+        var transform = proxy.Transform;
+        if (!IsFinite(transform.Position) || !IsFinite(transform.Scale) ||
+            !IsNormalized(transform.Rotation) ||
+            MathF.Abs(transform.Scale.X) <= ProjectionEpsilon ||
+            MathF.Abs(transform.Scale.Y) <= ProjectionEpsilon ||
+            MathF.Abs(transform.Scale.Z) <= ProjectionEpsilon)
+        {
+            return false;
+        }
+
+        var inverseRotation = new Quaternion(
+            -transform.Rotation.X,
+            -transform.Rotation.Y,
+            -transform.Rotation.Z,
+            transform.Rotation.W);
+        var localOrigin = Divide(
+            Rotate(inverseRotation, Subtract(ray.Origin, transform.Position)),
+            transform.Scale);
+        var localDirection = Divide(
+            Rotate(inverseRotation, ray.Direction),
+            transform.Scale);
+        if (!IsFinite(localOrigin) || !IsFinite(localDirection) ||
+            !TryIntersectBounds(
+                localOrigin,
+                localDirection,
+                proxy.LocalBounds,
+                out var rayDistance))
+        {
+            return false;
+        }
+
+        var cameraDepth = rayDistance * Dot(projection.Forward, ray.Direction);
+        if (!float.IsFinite(cameraDepth) || cameraDepth < 0)
+        {
+            return false;
+        }
+
+        result = ViewportPickResult.Hit(proxy.ObjectId, cameraDepth, 0);
+        return true;
+    }
+
+    private static bool TryIntersectBounds(
+        Float3 origin,
+        Float3 direction,
+        ViewportLocalBounds bounds,
+        out float rayDistance)
+    {
+        var minimumDistance = 0.0f;
+        var maximumDistance = float.PositiveInfinity;
+        if (!ClipSlab(
+                origin.X,
+                direction.X,
+                bounds.Minimum.X,
+                bounds.Maximum.X,
+                ref minimumDistance,
+                ref maximumDistance) ||
+            !ClipSlab(
+                origin.Y,
+                direction.Y,
+                bounds.Minimum.Y,
+                bounds.Maximum.Y,
+                ref minimumDistance,
+                ref maximumDistance) ||
+            !ClipSlab(
+                origin.Z,
+                direction.Z,
+                bounds.Minimum.Z,
+                bounds.Maximum.Z,
+                ref minimumDistance,
+                ref maximumDistance))
+        {
+            rayDistance = 0;
+            return false;
+        }
+
+        rayDistance = minimumDistance;
+        return true;
+    }
+
+    private static bool ClipSlab(
+        float origin,
+        float direction,
+        float minimum,
+        float maximum,
+        ref float minimumDistance,
+        ref float maximumDistance)
+    {
+        if (MathF.Abs(direction) <= ProjectionEpsilon)
+        {
+            return origin >= minimum && origin <= maximum;
+        }
+
+        var first = (minimum - origin) / direction;
+        var second = (maximum - origin) / direction;
+        if (first > second)
+        {
+            (first, second) = (second, first);
+        }
+        minimumDistance = MathF.Max(minimumDistance, first);
+        maximumDistance = MathF.Min(maximumDistance, second);
+        return minimumDistance <= maximumDistance;
+    }
+
+    private static bool TryPickTransformProxy(
         Projection projection,
         ViewportDebugProxySnapshot proxy,
         ViewportPickPoint pointer,
@@ -203,6 +388,28 @@ public static class ViewportTransformProxyPicker
         }
 
         return result.IsHit;
+    }
+
+    private static bool TryCreateRay(
+        Projection projection,
+        ViewportPickPoint pointer,
+        out Ray ray)
+    {
+        ray = default;
+        var ndcX = (pointer.X * 2.0f / projection.Width) - 1.0f;
+        var ndcY = 1.0f - (pointer.Y * 2.0f / projection.Height);
+        var direction = Normalize(Add(
+            projection.Forward,
+            Add(
+                Scale(projection.Right, ndcX / projection.HorizontalScale),
+                Scale(projection.Up, ndcY / projection.VerticalScale))));
+        if (!IsFinite(direction))
+        {
+            return false;
+        }
+
+        ray = new Ray(projection.Position, direction);
+        return true;
     }
 
     private static bool IsBetter(ViewportPickResult candidate, ViewportPickResult current)
@@ -340,6 +547,9 @@ public static class ViewportTransformProxyPicker
     private static Float3 Scale(Float3 value, float scale) =>
         new(value.X * scale, value.Y * scale, value.Z * scale);
 
+    private static Float3 Divide(Float3 value, Float3 divisor) =>
+        new(value.X / divisor.X, value.Y / divisor.Y, value.Z / divisor.Z);
+
     private static float Dot(Float3 lhs, Float3 rhs) =>
         lhs.X * rhs.X + lhs.Y * rhs.Y + lhs.Z * rhs.Z;
 
@@ -382,4 +592,6 @@ public static class ViewportTransformProxyPicker
         float X,
         float Y,
         float CameraDepth);
+
+    private readonly record struct Ray(Float3 Origin, Float3 Direction);
 }

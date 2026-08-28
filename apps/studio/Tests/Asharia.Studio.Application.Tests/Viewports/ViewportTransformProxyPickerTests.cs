@@ -7,8 +7,119 @@ using Xunit;
 
 namespace Asharia.Studio.Application.Tests.Viewports;
 
-public sealed class ViewportTransformProxyPickerTests
+public sealed class ViewportScenePickerTests
 {
+    [Fact]
+    public void Model_body_click_far_from_transform_axes_hits_presented_model_bounds()
+    {
+        var objectId = Guid.NewGuid();
+        var camera = new ViewportCameraSnapshot(
+            new Float3(0, -5, 0),
+            Float3.Zero,
+            new Float3(0, 0, 1),
+            MathF.PI / 2,
+            ViewportFieldOfViewAxis.MaintainHorizontal,
+            0.1f,
+            1000.0f);
+        var snapshot = Capture(
+            camera,
+            Model(objectId, Float3.Zero));
+
+        var result = ViewportScenePicker.Pick(
+            snapshot,
+            Request(800, 600, 460, 332));
+
+        Assert.True(result.IsHit);
+        Assert.Equal(objectId, result.ObjectId);
+        Assert.Equal(0, result.ScreenDistancePixels);
+    }
+
+    [Fact]
+    public void Nearest_overlapping_model_bounds_win_then_stable_identity_breaks_ties()
+    {
+        var firstId = Guid.Parse("00000000-0000-0000-0000-000000000001");
+        var secondId = Guid.Parse("00000000-0000-0000-0000-000000000002");
+        var camera = ForwardCamera();
+        var nearestSnapshot = Capture(
+            camera,
+            Model(secondId, new Float3(0, 0, 6)),
+            Model(firstId, new Float3(0, 0, 3)));
+
+        var nearest = ViewportScenePicker.Pick(
+            nearestSnapshot,
+            Request(640, 480, 320, 240));
+
+        Assert.Equal(firstId, nearest.ObjectId);
+        Assert.InRange(nearest.CameraDepth, 2.374f, 2.376f);
+
+        var tiedSnapshot = Capture(
+            camera,
+            Model(secondId, new Float3(0, 0, 3)),
+            Model(firstId, new Float3(0, 0, 3)));
+
+        var tied = ViewportScenePicker.Pick(
+            tiedSnapshot,
+            Request(640, 480, 320, 240));
+
+        Assert.Equal(firstId, tied.ObjectId);
+    }
+
+    [Fact]
+    public void Rotated_non_uniform_negative_scale_model_is_pickable_but_degenerate_scale_is_not()
+    {
+        var objectId = Guid.NewGuid();
+        var rotation = new Quaternion(0, MathF.Sqrt(0.5f), 0, MathF.Sqrt(0.5f));
+        var transformed = Capture(
+            ForwardCamera(),
+            Model(
+                objectId,
+                new Float3(0, 0, 5),
+                new Float3(-2, 0.5f, 1.5f),
+                rotation));
+
+        Assert.Equal(
+            objectId,
+            ViewportScenePicker.Pick(
+                transformed,
+                Request(640, 480, 320, 240)).ObjectId);
+
+        var degenerate = Capture(
+            ForwardCamera(),
+            Model(objectId, new Float3(0, 0, 5), new Float3(0, 1, 1)));
+
+        Assert.False(ViewportScenePicker.Pick(
+            degenerate,
+            Request(640, 480, 320, 240)).IsHit);
+    }
+
+    [Fact]
+    public void Unknown_mesh_has_no_fabricated_model_bounds_and_empty_entity_keeps_axis_fallback()
+    {
+        var unknownMeshId = Guid.NewGuid();
+        var emptyEntityId = Guid.NewGuid();
+        var camera = new ViewportCameraSnapshot(
+            new Float3(0, -5, 0),
+            Float3.Zero,
+            new Float3(0, 0, 1),
+            MathF.PI / 2,
+            ViewportFieldOfViewAxis.MaintainHorizontal,
+            0.1f,
+            1000.0f);
+        var snapshot = Capture(
+            camera,
+            Model(unknownMeshId, Float3.Zero, mesh: new SceneMeshReference(Guid.NewGuid())),
+            Proxy(emptyEntityId, new Float3(2, 0, 0)));
+
+        Assert.False(ViewportScenePicker.Pick(
+            snapshot,
+            Request(800, 600, 460, 332)).IsHit);
+        Assert.Equal(
+            emptyEntityId,
+            ViewportScenePicker.Pick(
+                snapshot,
+                Request(800, 600, 240, 300)).ObjectId);
+    }
+
     [Fact]
     public void Center_click_hits_the_visible_identity_transform_proxy()
     {
@@ -17,7 +128,7 @@ public sealed class ViewportTransformProxyPickerTests
             ViewportCameraSnapshot.DefaultScene,
             Proxy(objectId, Float3.Zero));
 
-        var result = ViewportTransformProxyPicker.Pick(
+        var result = ViewportScenePicker.Pick(
             snapshot,
             Request(800, 600, 400, 300));
 
@@ -33,7 +144,7 @@ public sealed class ViewportTransformProxyPickerTests
             ViewportCameraSnapshot.DefaultScene,
             Proxy(Guid.NewGuid(), Float3.Zero));
 
-        var result = ViewportTransformProxyPicker.Pick(
+        var result = ViewportScenePicker.Pick(
             snapshot,
             Request(800, 600, 32, 32));
 
@@ -49,7 +160,7 @@ public sealed class ViewportTransformProxyPickerTests
             ViewportCameraSnapshot.DefaultScene,
             Proxy(objectId, Float3.Zero, Float3.Zero));
 
-        var result = ViewportTransformProxyPicker.Pick(
+        var result = ViewportScenePicker.Pick(
             snapshot,
             Request(800, 600, 400, 300));
 
@@ -74,7 +185,7 @@ public sealed class ViewportTransformProxyPickerTests
             Proxy(farId, new Float3(0, 0, 6)),
             Proxy(nearId, new Float3(0, 0, 3)));
 
-        var result = ViewportTransformProxyPicker.Pick(
+        var result = ViewportScenePicker.Pick(
             snapshot,
             Request(640, 480, 320, 240));
 
@@ -92,7 +203,7 @@ public sealed class ViewportTransformProxyPickerTests
             Proxy(secondId, Float3.Zero),
             Proxy(firstId, Float3.Zero));
 
-        var result = ViewportTransformProxyPicker.Pick(
+        var result = ViewportScenePicker.Pick(
             snapshot,
             Request(800, 600, 400, 300));
 
@@ -114,7 +225,7 @@ public sealed class ViewportTransformProxyPickerTests
             camera,
             Proxy(Guid.NewGuid(), new Float3(0, 0, -2)));
 
-        var result = ViewportTransformProxyPicker.Pick(
+        var result = ViewportScenePicker.Pick(
             snapshot,
             Request(640, 480, 320, 240));
 
@@ -137,7 +248,7 @@ public sealed class ViewportTransformProxyPickerTests
             farPlane: 3.0f);
         var snapshot = Capture(camera, Proxy(objectId, new Float3(0, 0, depth)));
 
-        var result = ViewportTransformProxyPicker.Pick(
+        var result = ViewportScenePicker.Pick(
             snapshot,
             Request(640, 480, 320, 240));
 
@@ -163,7 +274,7 @@ public sealed class ViewportTransformProxyPickerTests
             camera,
             Proxy(objectId, new Float3(0, 0, 4)));
 
-        var result = ViewportTransformProxyPicker.Pick(
+        var result = ViewportScenePicker.Pick(
             snapshot,
             Request(800, 400, 400, 200));
 
@@ -232,6 +343,34 @@ public sealed class ViewportTransformProxyPickerTests
         Assert.True(snapshot.DebugProxiesTruncated);
     }
 
+    [Fact]
+    public void Snapshot_only_captures_bounds_for_the_currently_presentable_validation_model()
+    {
+        var presentedId = Guid.NewGuid();
+        var unknownId = Guid.NewGuid();
+        var document = Document(
+            1,
+            Model(presentedId, Float3.Zero),
+            Model(unknownId, new Float3(2, 0, 0), mesh: new SceneMeshReference(Guid.NewGuid())));
+        var sessionId = ViewportSessionId.Create();
+        var session = new ViewportSession(
+            sessionId,
+            ViewportRenderKind.Scene,
+            document,
+            ViewportCameraSnapshot.DefaultScene);
+
+        Assert.True(session.TryCapturePickSnapshot(
+            sessionId,
+            document.SceneId,
+            document.Revision,
+            out var snapshot));
+
+        var model = Assert.Single(snapshot.ModelProxies);
+        Assert.Equal(presentedId, model.ObjectId);
+        Assert.Equal(new Float3(-1.25f, -0.125f, -0.625f), model.LocalBounds.Minimum);
+        Assert.Equal(new Float3(1.5f, 0.25f, 0.75f), model.LocalBounds.Maximum);
+    }
+
     private static ViewportPickRequest Request(
         uint width,
         uint height,
@@ -281,4 +420,29 @@ public sealed class ViewportTransformProxyPickerTests
             new EntityId(BitConverter.ToUInt32(objectId.ToByteArray(), 0) | 1U, 1U),
             "Proxy",
             new TransformValue(position, Quaternion.Identity, scale));
+
+    private static SceneEntitySnapshot Model(
+        Guid objectId,
+        Float3 position,
+        Float3? scale = null,
+        Quaternion? rotation = null,
+        SceneMeshReference? mesh = null) =>
+        new(
+            objectId,
+            new EntityId(BitConverter.ToUInt32(objectId.ToByteArray(), 0) | 1U, 1U),
+            "Model",
+            new TransformValue(
+                position,
+                rotation ?? Quaternion.Identity,
+                scale ?? Float3.One),
+            mesh ?? SceneMeshReference.DirectionalWedgeValidation);
+
+    private static ViewportCameraSnapshot ForwardCamera() => new(
+        Float3.Zero,
+        new Float3(0, 0, 1),
+        new Float3(0, 1, 0),
+        MathF.PI / 2,
+        ViewportFieldOfViewAxis.MaintainHorizontal,
+        0.1f,
+        1000.0f);
 }
