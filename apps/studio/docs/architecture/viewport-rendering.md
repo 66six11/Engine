@@ -50,12 +50,13 @@ multi-selection、连续多圈 animation history 与可配置 Euler order 仍 de
 | 模块 | 责任 | 禁止 |
 | --- | --- | --- |
 | `ViewportSession` | document/camera/extent/exposed invalidation；coalesced refresh signal；发布 immutable request；维护内容呈现序列下界 | 持有 native/GPU handle；等待 frame completion 才允许新 request；把 geometry revision 冒充内容 revision |
+| `ViewportTransformProxyPicker` | 捕获一致的scene/camera/有界proxy snapshot；按native debug-line projection做纯CPU screen-space hit test；返回stable object identity | 引用Avalonia/EngineBridge/Physics；声称mesh/triangle picking；修改selection或document |
 | `ViewportBridge` / `ViewportRenderStream` | V7 ABI 映射、typed status、view-local FOV axis、authored-mesh snapshot、slot/frame lease 与 request-correlated mesh receipt | 调 Vulkan；猜测 stale native metadata；把 asset GUID 替换成 backend resource key |
 | `ViewportPresentationTransactionCoordinator` | 以 `SessionId + EndpointEpoch + TransactionId` 协调 Proposal→Completed/Aborted/Quarantined；同 compositor group barrier | 假定跨 compositor 原子；拥有 endpoint surface/stream；把 dock policy 写进通用状态机 |
 | `EditorDockStagedGridSplitter` / `EditorDockSplitResizePolicy` / `EditorDockSplitResizeCoordinator` | latest splitter layout proposal、min/max/layout-rounding、同步 probe、requested/committed `GridLength`；作为 transaction adapter | 直接写 GPU handle；拥有 transaction/resource lifetime；把 drag event 变成 FIFO；只在 drag-end resize |
 | `EditorDockPresentationLayoutHost` / `Asharia.Studio.Presentation.Avalonia.Windowing` capability | Main/Floating Window 共用 workspace layout owner；以 `IInteractiveTopLevelResizeAdapterProvider`、`IInteractiveTopLevelResizeAdapterFactory`、`IInteractiveTopLevelResizeAttachment`、`IInteractiveTopLevelResizeSink`、`IInteractiveTopLevelResizeCommit` 与 `InteractiveTopLevelResizeProjection` 接收可选 outer-layout proposal，并以 active + queued-latest 驱动 workspace transaction | 引用 HWND、WM message、USER32 或 P/Invoke；拥有 native hook；假定每个平台都有 precommit seam |
 | `Asharia.Studio.Presentation.Avalonia.Windows` / `Win32InteractiveTopLevelResizeAdapterFactory` | 把 Win32 fixed-DPI 普通装饰边框 drag 的 native proposal、RECT projection、commit 与 interaction epoch 映射到 shared capability | 在 WndProc 中等待/渲染/遍历 visual tree；把 Snap、maximize、程序化 resize 或 DPI transition 冒充 `WM_SIZING` precommit；宣称 USER32/DWM 与 Avalonia batch 物理原子 |
-| `ViewportCompositionControl`（endpoint owner） | persistent import cache、front/candidate drawing surface、exact geometry/content gate、publish receipt、detach/quarantine/drain | 创建 renderer thread；逐帧 `Task.Run`；把 surface/stream ownership 交给 Shell/ViewModel |
+| `ViewportCompositionControl`（endpoint owner） | persistent import cache、front/candidate drawing surface、exact geometry/content gate、publish receipt、detach/quarantine/drain；只为current presented front暴露最小interaction context | 创建 renderer thread；逐帧 `Task.Run`；把 surface/stream ownership 交给 Shell/ViewModel；引用selection或执行domain picking |
 | `EditorSharedViewportRuntime` | stream registry、latest/ready/slot scheduler、唯一 owner thread、retirement | 引用 managed/SceneDocument object |
 | `EditorSharedViewportRenderProducer` | full slot Vulkan resources、显式 product binding、scene-mesh extraction、record/submit、grid/debug overlay | composition API；UI layout policy；从 source path 或 Avalonia 猜 mesh product |
 
@@ -98,6 +99,29 @@ camera 或投影策略。
 FOV；Godot `Camera3D` 的 `KEEP_WIDTH` / `KEEP_HEIGHT` 证明同类 axis constraint 可作为相机投影合同；Unity `Camera.fieldOfView`
 则明确是垂直 FOV，因此支持 Game/Preview 保持垂直语义。Asharia 采用“显式、per-view axis constraint”，但不复制外部枚举/API，
 也暂不实现 `MajorAxisFOV`、physical camera/gate fit 或 UI preference：当前只有 Scene 与 Game/Preview 两个已证实需求。
+
+## Transform proxy picking
+
+#398不增加native ABI、render readback或Physics依赖。每次合格左键click按以下边界执行：
+
+```text
+current presented front identity + exact physical extent
+  -> View DIP position/tolerance × RenderScaling
+  -> ViewportSession locked pick snapshot
+  -> Application CPU screen-space segment hit test
+  -> Shell publishes SceneObjectSelectionTarget or clears selection
+```
+
+picker只遍历与V7 request相同的最多256个Transform debug proxies，并保留`TotalDebugProxyCount`/`DebugProxiesTruncated`
+证据；因此被截断、未绘制的entity不可命中。投影复用Scene/Game现有FOV axis、view basis与quaternion旋转。native
+`basicDebugLineVertices`仅拒绝非finite或`clipW <= epsilon`端点，随后直接写NDC line vertices，不按camera near/far裁切；
+picker遵循这条当前可见overlay合同，而不冒充geometry frustum/raycast。重叠候选依次按更小camera depth、更小screen
+distance、stable `ObjectId`排序，保证同一snapshot确定性。
+
+Presentation不引用Selection；Application不引用Avalonia/EngineBridge/native；code-behind只桥接pointer transient state。
+document/camera/extent改变会让旧front identity或minimum presentable sequence失效，click必须fail closed并保留selection。
+该路径不产生document mutation。selection outline、hover、gizmo、camera navigation、multi-select、mesh/triangle picking与
+GPU ID/readback均deferred。
 
 ## 帧与槽状态
 
@@ -300,9 +324,10 @@ hook 留在独立 integration assembly、而非 shared transaction owner，是 p
 内容门禁，exact size 由 geometry generation + commit-time extent 独占裁决。dirty-only 长时间空闲后，下一帧的绝对时间跳到
 当前 monotonic elapsed，delta 反映真实空闲间隔，不按 `frameIndex / 60` 补播假帧。
 
-selection 与 native overlay intent 当前还没有进入 V7 immutable request；现有 selection 只属于 shell，grid/axes 仍是 producer
-固定策略。FOV axis、authored mesh snapshots 与 Scene raster mode 已进入 V7，但这些都是 per-view policy，不写回 SceneDocument。未来 selection
-接线必须增加显式 view-state snapshot/revision，并纳入内容门禁，不能复用 `TargetRevision` 或只设置 managed flag。
+typed selection与selection overlay intent仍没有进入V7 immutable request；现有selection由Application拥有，grid/axes仍是producer
+固定策略。#398只读取V7 request同源的Transform proxies并在managed侧发布stable identity，不给native添加selected flag。
+FOV axis、authored mesh snapshots与Scene raster mode已进入V7，但这些都是per-view policy，不写回SceneDocument。未来selection
+outline接线必须增加显式view-state snapshot/revision并纳入内容门禁，不能复用`TargetRevision`或只设置managed flag。
 
 ## Close 与 quarantine
 

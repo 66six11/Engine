@@ -14,6 +14,14 @@ namespace Asharia.Studio.Headless.Tests;
 
 public sealed class ViewportCompositionControlTests
 {
+    [AvaloniaFact]
+    public void Detached_control_has_no_presented_interaction_context()
+    {
+        var control = new ViewportCompositionControl();
+
+        Assert.False(control.TryCapturePresentedInteractionContext(out _));
+    }
+
     [Fact]
     public void Presented_frame_sequences_are_strictly_monotonic()
     {

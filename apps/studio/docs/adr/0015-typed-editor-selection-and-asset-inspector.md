@@ -96,7 +96,7 @@ AssetSelectionTarget(SessionId, ProjectId, TargetProfile, AssetSelectionKey)
 
 发布者通过 `IEditorSelectionService.Replace/Clear` 提交 intent，Application service 验证 scope/target/identity 后才发布
 新 snapshot；`EditorSelectionChangeReason` 区分 user、project scope 改变、scene target 删除与 asset target 删除。Resource Browser、
-Hierarchy 与未来 Scene View 不互相引用；Inspector 只订阅 snapshot。hover、focused row、folder location、filter、
+Hierarchy 与 Scene View 不互相引用；Inspector 只订阅 snapshot。hover、focused row、folder location、filter、
 expansion、keyboard anchor 和 pin 都是 panel-local state，不进入共享 selection。selection 变化不进入 scene/document
 Undo，也不写 project、scene、`.ameta` 或 product manifest。
 
@@ -104,6 +104,27 @@ Project close/switch 在新 project scope publication 时使旧 selection 失效
 `AssetSelectionKey` remap；找不到 identity 时清除 asset selection。同步 `Replace/Clear` publication 保持单调 revision；
 未来异步 producer 仍必须保证旧 scope 或旧 revision 的晚到结果不能覆盖 current selection。subscriber failure 必须隔离，
 不能阻止 owner 完成 publication 或 shutdown。
+
+#### Scene View Transform proxy picking
+
+#398 的首个 Scene View producer 只命中当前帧实际绘制的有界 Transform XYZ 轴代理。`ViewportSession` 在同一锁内
+捕获 session、scene、document revision、camera 与 proxy set；Application 的纯 CPU picker复用 native overlay 的
+投影轴、quaternion旋转和正 `clipW` 规则，并以 camera depth、screen distance、stable `ObjectId` 依次打破重叠候选。
+当前 debug-line overlay 不按 camera near/far 裁切端点，因此 picker 也不擅自增加不同的 near/far 可见性语义。
+
+Avalonia `ViewportCompositionControl` 只在 endpoint 为 Ready、未 degraded、当前 physical extent 与 front frame完全一致，
+且 frame sequence/revision仍可呈现时，暴露最小 presented interaction context；它不引用 selection。Shell View只保存
+单次pointer gesture并把DIP坐标和容差按`RenderScaling`变成physical pixels；ViewModel复验current project/document与
+pick snapshot后，才发布 `SceneObjectSelectionTarget`，空白命中则 `Clear`。过期、closed、resize mismatch、未呈现或
+degraded画面保持原selection不变。该路径不修改SceneDocument、dirty/savepoint或Undo/Redo。
+
+采用 [Unreal `FEditorViewportClient::ProcessClick`](https://dev.epicgames.com/documentation/unreal-engine/API/Editor/UnrealEd/FEditorViewportClient/ProcessClick)
+的 viewport click context 与 stable hit identity边界，但拒绝其GPU hit-proxy实现；采用
+[Godot `Node3DEditorViewport`](https://github.com/godotengine/godot/blob/master/editor/scene/3d/node_3d_editor_viewport.cpp)
+和 [O3DE `EditorPickEntitySelectionHelper`](https://github.com/o3de/o3de/blob/development/Code/Framework/AzToolsFramework/AzToolsFramework/ViewportSelection/EditorPickEntitySelection.cpp)
+的“viewport resolve → shared editor selection”、nearest candidate与导航/选择输入分离。Asharia当前没有稳定mesh bounds或
+geometry hit合同，因此拒绝PhysicsWorld、collider raycast、mesh triangle、GPU ID buffer和readback；outline、hover、gizmo、
+camera navigation、多选与通用viewport tool framework继续独立演进。
 
 ### 2. Asset Inspector 只投影同一 catalog snapshot 的 immutable facts
 
@@ -216,6 +237,9 @@ asset hot reload 的 owner。常规 runtime 只保留有界 milestone/diagnostic
   解析 scene/asset/none presentation，不保留前一资产内容；
 - Avalonia Headless：选择Resource Browser row后Inspector显示只读catalog facts、sub-assets与diagnostics，窄Dock保持可用；
   返回scene selection后现有Transform workflow保持工作。Apply/Revert/import控件属于后续mutation Slice；
+- Scene View picker/session tests：FOV axis、high-DPI physical extent、behind-camera、native overlay near/far行为、
+  重叠tie-break、bounded/truncated proxy set与stale/closed snapshot；ViewModel tests证明hit/blank/stale selection语义且
+  document revision、dirty/savepoint、Undo/Redo不变；
 - architecture/source gates：Inspector 不引用 Project panel ViewModel、EngineBridge、native ABI、filesystem、
   `resource-runtime`、renderer/RHI/Vulkan；Application 不引用 Avalonia；
 - encoding、doc-sync、diff 与相关 managed build/tests。

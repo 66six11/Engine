@@ -31,6 +31,7 @@ internal sealed class StudioScenePanelViewModel :
     IDisposable
 {
     private readonly IProjectSession projectSession_;
+    private readonly IEditorSelectionService selection_;
     private ViewportSession? session_;
     private ulong viewportRevision_;
     private bool isRealtime_ = true;
@@ -41,6 +42,7 @@ internal sealed class StudioScenePanelViewModel :
         : base(shell)
     {
         projectSession_ = shell.ProjectSession;
+        selection_ = shell.EditorSelection;
         projectSession_.SnapshotChanged += OnProjectSnapshotChanged;
         ApplyProjectSnapshot(projectSession_.Current);
     }
@@ -85,6 +87,44 @@ internal sealed class StudioScenePanelViewModel :
 
     public ViewportPresentationLifetime PresentationLifetime =>
         Shell.ViewportPresentationLifetime;
+
+    public bool TryApplyViewportPick(
+        ViewportPresentedInteractionContext context,
+        ViewportPickRequest request)
+    {
+        if (isDisposed_ || session_ is not { } session || request.Extent != context.Extent)
+        {
+            return false;
+        }
+
+        var project = projectSession_.Current;
+        if (project.Project is not { } activeProject || project.Document is not { } document ||
+            document.SceneId != context.TargetId ||
+            document.Revision != context.TargetRevision ||
+            !session.TryCapturePickSnapshot(
+                context.SessionId,
+                context.TargetId,
+                context.TargetRevision,
+                out var snapshot))
+        {
+            return false;
+        }
+
+        var result = ViewportTransformProxyPicker.Pick(snapshot, request);
+        if (result.ObjectId is { } objectId)
+        {
+            _ = selection_.Replace(new SceneObjectSelectionTarget(
+                activeProject.SessionId,
+                document.SceneId,
+                objectId));
+        }
+        else
+        {
+            _ = selection_.Clear();
+        }
+
+        return true;
+    }
 
     public void Dispose()
     {

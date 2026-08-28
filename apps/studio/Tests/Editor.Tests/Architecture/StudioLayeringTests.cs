@@ -371,6 +371,24 @@ public sealed class StudioLayeringTests
             "Views",
             "Panels",
             "StudioScenePanelView.axaml"));
+        var scenePanelCodeBehind = File.ReadAllText(Path.Combine(
+            root,
+            "Shell",
+            "Views",
+            "Panels",
+            "StudioScenePanelView.axaml.cs"));
+        var scenePanelViewModelSource = File.ReadAllText(Path.Combine(
+            root,
+            "Shell",
+            "ViewModels",
+            "Panels",
+            "StudioDockPanelViewModels.cs"));
+        var viewportPickerSource = File.ReadAllText(Path.Combine(
+            root,
+            "src",
+            "Asharia.Studio.Application",
+            "Viewports",
+            "ViewportPicking.cs"));
         var viewportControlSource = File.ReadAllText(Path.Combine(
             root,
             "src",
@@ -456,6 +474,36 @@ public sealed class StudioLayeringTests
         Assert.Contains("IsRealtime=\"{Binding IsRealtime}\"", scenePanelXaml, StringComparison.Ordinal);
         Assert.Contains("Content=\"Realtime\"", scenePanelXaml, StringComparison.Ordinal);
         Assert.Contains("#SceneViewport.IsDegraded", scenePanelXaml, StringComparison.Ordinal);
+        Assert.Contains(
+            "PointerPressed=\"OnSceneViewportPointerPressed\"",
+            scenePanelXaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "TryCapturePresentedInteractionContext",
+            viewportControlSource,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "Asharia.Studio.Application.Selection",
+            viewportControlSource,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "IEditorSelectionService",
+            scenePanelCodeBehind,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "IProjectSession",
+            scenePanelCodeBehind,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "IEditorSelectionService",
+            scenePanelViewModelSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "SceneObjectSelectionTarget",
+            scenePanelViewModelSource,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("Avalonia", viewportPickerSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("EngineBridge", viewportPickerSource, StringComparison.Ordinal);
         Assert.Contains(
             "AutomationProperties.ControlTypeOverride=\"Group\"",
             scenePanelXaml,
