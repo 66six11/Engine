@@ -72,6 +72,7 @@ namespace {
             .colorStoreOp = overlay.colorStoreOp,
             .blendMode = overlay.blendMode,
             .worldGrid = replayWorldGridDesc(overlay),
+            .selectionOutline = {},
             .debugWorldLines = {},
         };
     }

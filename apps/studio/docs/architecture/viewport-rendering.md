@@ -330,8 +330,9 @@ hook 留在独立 integration assembly、而非 shared transaction owner，是 p
 | 字段 | owner 与语义 | 不用于 |
 | --- | --- | --- |
 | `TargetRevision` | Application 的 SceneDocument 内容 revision | camera、geometry、frame cadence |
+| `ViewStateRevision` | Scene panel 投影后的瞬态 view state revision；当前覆盖单选模型描边，并由 native ready frame 原样回显 | SceneDocument dirty、undo/redo、资产修订 |
 | `RequestSequence` | 每个 session 单调的 immutable request / completion identity | wall time、simulation delta |
-| `MinimumPresentableSequence` | managed 内容门禁；target/camera/exposed 改变后拒绝更早 request | extent resize；geometry 由 generation 单独门控 |
+| `MinimumPresentableSequence` | managed 内容门禁；target/camera/selection/exposed 改变后拒绝更早 request | extent resize；geometry 由 generation 单独门控 |
 | native `frameIndex` | RenderThread 的进程级 render-attempt identity；失败允许留下 gap | 生成时间或假定 60 Hz |
 | `timeSeconds` | `EditorSharedViewportRuntime` steady clock epoch 后的单调 elapsed | Avalonia commit、GPU timeline、物理 present 时间 |
 | `deltaSeconds` | 上一次任意 stream 成功 shared-viewport record 到本次 sample 的真实间隔；首帧为 0 | World simulation fixed-step delta 或 per-view cadence |
@@ -340,10 +341,21 @@ hook 留在独立 integration assembly、而非 shared transaction owner，是 p
 内容门禁，exact size 由 geometry generation + commit-time extent 独占裁决。dirty-only 长时间空闲后，下一帧的绝对时间跳到
 当前 monotonic elapsed，delta 反映真实空闲间隔，不按 `frameIndex / 60` 补播假帧。
 
-typed selection与selection overlay intent仍没有进入V7 immutable request；现有selection由Application拥有，grid/axes仍是producer
-固定策略。#398只读取V7 request同源的Transform proxies并在managed侧发布stable identity，不给native添加selected flag。
-FOV axis、authored mesh snapshots与Scene raster mode已进入V7，但这些都是per-view policy，不写回SceneDocument。未来selection
-outline接线必须增加显式view-state snapshot/revision并纳入内容门禁，不能复用`TargetRevision`或只设置managed flag。
+typed selection 仍由 Application 拥有，不写回 `SceneDocument`，也不进入 dirty/undo/redo。Scene panel 把当前 scope 内的单个
+`ObjectId` 投影为独立 view state；selection/source scope 改变时推进 `ViewStateRevision`、写入 `SelectionChanged` 并推进
+`MinimumPresentableSequence`。V7 immutable request 显式携带 revision、selected canonical UUID 与 presence flag；native ready frame
+回显同一 revision，Avalonia content gate 同时核对 `TargetRevision`、`ViewStateRevision` 与 `RequestSequence`，因此选择切换后的旧像素
+不能重新出现。非 Scene viewport、asset selection、无 mesh 或尚未 resolved 的选中实体不生成描边 draw packet。
+
+渲染采用两个 renderer-owned RenderGraph pass：选中 draw packet 以已有 scene depth 写入临时 BGRA8 mask，随后固定橙色、2 px 的
+fullscreen edge pass 合成到 Scene color；debug lines 仍在其后。第一片只支持 visible selection、单选和固定样式，不提供 x-ray、
+hover、多选颜色表或通用 post-effect 框架。采用的是 Unreal 将 selection 状态镜像到 render proxy、由 primitive 决定是否需要
+selection outline 的 owner boundary，以及 O3DE `SelectedEntityState` 的 entity mask + effect pass 形态；拒绝把 editor selection
+塞进 material/scene schema，也不复制其 API。Asharia 额外拆出 `ViewStateRevision`，是因为本地 Avalonia/native external-image
+链路需要显式淘汰异步返回的旧帧。参考：
+[Unreal `WantsSelectionOutline`](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/Engine/FPrimitiveSceneProxy/WantsSelectionOutline)、
+[Unreal `SetSelection_GameThread`](https://dev.epicgames.com/documentation/unreal-engine/API/Runtime/Engine/FPrimitiveSceneProxy/SetSelection_GameThread?lang=en-US)、
+[O3DE `SelectedEntityState`](https://www.docs.o3de.org/docs/api/gems/atomlyintegration/class_a_z_1_1_render_1_1_selected_entity_state)。
 
 ## Close 与 quarantine
 

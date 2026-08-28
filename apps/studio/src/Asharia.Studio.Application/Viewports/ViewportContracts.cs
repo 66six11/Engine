@@ -59,6 +59,7 @@ public enum ViewportInvalidationReason : uint
     ExtentChanged = 1U << 3,
     Exposed = 1U << 4,
     Realtime = 1U << 5,
+    SelectionChanged = 1U << 6,
 }
 
 public readonly record struct ViewportExtent
@@ -265,7 +266,9 @@ public sealed record ViewportRenderRequest
         IEnumerable<ViewportDebugProxySnapshot> debugProxies,
         int totalDebugProxyCount,
         IEnumerable<ViewportAuthoredMeshSnapshot> authoredMeshes,
-        ViewportSceneRasterMode sceneRasterMode)
+        ViewportSceneRasterMode sceneRasterMode,
+        ulong viewStateRevision,
+        Guid? selectedObjectId)
     {
         SessionId = sessionId;
         Sequence = sequence;
@@ -282,6 +285,8 @@ public sealed record ViewportRenderRequest
         TotalDebugProxyCount = totalDebugProxyCount;
         AuthoredMeshes = new ReadOnlyCollection<ViewportAuthoredMeshSnapshot>(authoredMeshes.ToArray());
         SceneRasterMode = sceneRasterMode;
+        ViewStateRevision = viewStateRevision;
+        SelectedObjectId = selectedObjectId;
     }
 
     public ViewportSessionId SessionId { get; }
@@ -315,6 +320,10 @@ public sealed record ViewportRenderRequest
     public IReadOnlyList<ViewportAuthoredMeshSnapshot> AuthoredMeshes { get; }
 
     public ViewportSceneRasterMode SceneRasterMode { get; }
+
+    public ulong ViewStateRevision { get; }
+
+    public Guid? SelectedObjectId { get; }
 }
 
 public sealed record ViewportSessionSnapshot(
@@ -323,6 +332,8 @@ public sealed record ViewportSessionSnapshot(
     ViewportTargetKind TargetKind,
     Guid TargetId,
     ulong TargetRevision,
+    ulong ViewStateRevision,
+    Guid? SelectedObjectId,
     ulong LastSequence,
     ulong MinimumPresentableSequence,
     bool IsFrameInFlight,

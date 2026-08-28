@@ -262,6 +262,7 @@ public sealed class ViewportFrameLease : IDisposable, IAsyncDisposable
         SessionId = new ViewportSessionId(frame.SessionId.ToGuid());
         TargetId = frame.TargetId.ToGuid();
         TargetRevision = frame.TargetRevision;
+        ViewStateRevision = frame.ViewStateRevision;
         RequestSequence = frame.RequestSequence;
         Kind = (ViewportRenderKind)frame.Kind;
         TargetKind = (ViewportTargetKind)frame.TargetKind;
@@ -286,6 +287,8 @@ public sealed class ViewportFrameLease : IDisposable, IAsyncDisposable
     public Guid TargetId { get; }
 
     public ulong TargetRevision { get; }
+
+    public ulong ViewStateRevision { get; }
 
     public ViewportRenderKind Kind { get; }
 

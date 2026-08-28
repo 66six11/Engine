@@ -1,0 +1,14 @@
+{
+  "name": "selection_mask",
+  "source": "selection_mask.slang",
+  "outputs": [
+    {
+      "entry": "selectionMaskFragmentMain",
+      "stage": "fragment",
+      "profile": "glsl_450",
+      "target": "spirv",
+      "output": "selection_mask.frag.spv"
+    }
+  ],
+  "validation": "spirv-val"
+}

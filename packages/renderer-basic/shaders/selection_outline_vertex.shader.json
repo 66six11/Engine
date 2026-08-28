@@ -1,0 +1,14 @@
+{
+  "name": "selection_outline_vertex",
+  "source": "selection_outline_vertex.slang",
+  "outputs": [
+    {
+      "entry": "selectionOutlineVertexMain",
+      "stage": "vertex",
+      "profile": "glsl_450",
+      "target": "spirv",
+      "output": "selection_outline.vert.spv"
+    }
+  ],
+  "validation": "spirv-val"
+}

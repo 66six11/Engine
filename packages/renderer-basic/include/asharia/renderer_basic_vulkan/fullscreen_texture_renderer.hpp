@@ -40,6 +40,7 @@ namespace asharia {
         std::size_t index_{};
         std::size_t fullscreenDescriptorCursor_{};
         std::size_t compositeDescriptorCursor_{};
+        std::size_t selectionOutlineDescriptorCursor_{};
         std::size_t debugLineVertexBufferCursor_{};
     };
 
@@ -111,6 +112,8 @@ namespace asharia {
         [[nodiscard]] Result<VkPipeline> ensureSceneMeshPipeline(VkFormat colorFormat,
                                                                  VkFormat depthFormat,
                                                                  BasicSceneRasterMode rasterMode);
+        [[nodiscard]] Result<VkPipeline> ensureSelectionMaskPipeline(VkFormat depthFormat);
+        [[nodiscard]] Result<VkPipeline> ensureSelectionOutlinePipeline(VkFormat colorFormat);
         [[nodiscard]] Result<void> ensureSceneMeshResources();
         [[nodiscard]] VkDescriptorSet
         acquireFullscreenDescriptorSet(const VulkanFrameRecordContext& frame,
@@ -118,6 +121,9 @@ namespace asharia {
         [[nodiscard]] VkDescriptorSet
         acquireCompositeDescriptorSet(const VulkanFrameRecordContext& frame,
                                       BasicRenderFrameResourceContext* frameResources);
+        [[nodiscard]] VkDescriptorSet
+        acquireSelectionOutlineDescriptorSet(const VulkanFrameRecordContext& frame,
+                                             BasicRenderFrameResourceContext* frameResources);
         [[nodiscard]] Result<VkBuffer>
         uploadDebugLineVertices(const VulkanFrameRecordContext& frame,
                                 std::span<const std::byte> vertices,
@@ -140,16 +146,23 @@ namespace asharia {
         VulkanShaderModule debugLineFragmentShader_;
         VulkanShaderModule sceneMeshVertexShader_;
         VulkanShaderModule sceneMeshFragmentShader_;
+        VulkanShaderModule selectionMaskFragmentShader_;
+        VulkanShaderModule selectionOutlineVertexShader_;
+        VulkanShaderModule selectionOutlineFragmentShader_;
         std::vector<VulkanDescriptorSetLayout> descriptorSetLayouts_;
+        std::vector<VulkanDescriptorSetLayout> selectionOutlineDescriptorSetLayouts_;
         VulkanPipelineLayout pipelineLayout_;
         VulkanPipelineLayout worldGridPipelineLayout_;
         VulkanPipelineLayout debugLinePipelineLayout_;
         VulkanPipelineLayout sceneMeshPipelineLayout_;
+        VulkanPipelineLayout selectionOutlinePipelineLayout_;
         VulkanPipelineCache pipelineCache_;
         std::vector<FullscreenPipelineCacheEntry> fullscreenPipelines_;
         std::vector<OverlayPipelineCacheEntry> worldGridPipelines_;
         std::vector<OverlayPipelineCacheEntry> debugLinePipelines_;
         std::vector<SceneMeshPipelineCacheEntry> sceneMeshPipelines_;
+        VulkanGraphicsPipeline selectionMaskPipeline_;
+        std::vector<FullscreenPipelineCacheEntry> selectionOutlinePipelines_;
         BasicPipelineCacheStats pipelineCacheStats_;
         BasicPipelineCacheStats worldGridPipelineCacheStats_;
         BasicPipelineCacheStats debugLinePipelineCacheStats_;
@@ -158,10 +171,13 @@ namespace asharia {
         VulkanDescriptorAllocator descriptorAllocator_;
         std::vector<VkDescriptorSet> descriptorSets_;
         std::vector<VkDescriptorSet> compositeDescriptorSets_;
+        std::vector<VkDescriptorSet> selectionOutlineDescriptorSets_;
         std::uint64_t descriptorSetEpoch_{};
         std::uint64_t compositeDescriptorSetEpoch_{};
+        std::uint64_t selectionOutlineDescriptorSetEpoch_{};
         std::size_t descriptorSetCursor_{};
         std::size_t compositeDescriptorSetCursor_{};
+        std::size_t selectionOutlineDescriptorSetCursor_{};
         std::vector<VulkanBuffer> debugLineVertexBuffers_;
         std::vector<VkDeviceSize> debugLineVertexBufferSizes_;
         std::uint64_t debugLineVertexBufferEpoch_{};

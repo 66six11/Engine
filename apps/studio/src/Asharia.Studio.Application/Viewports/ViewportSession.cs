@@ -23,6 +23,8 @@ public sealed class ViewportSession
     private ViewportModelPickProxySnapshot[] modelPickProxies_;
     private ViewportAuthoredMeshSnapshot[] authoredMeshes_;
     private ViewportSceneRasterMode sceneRasterMode_ = ViewportSceneRasterMode.Solid;
+    private ulong viewStateRevision_;
+    private Guid? selectedObjectId_;
     private ViewportRenderSize? lastRenderSize_;
     private ViewportInvalidationReason pendingReasons_ = ViewportInvalidationReason.InitialFrame;
     private ulong lastSequence_;
@@ -182,6 +184,50 @@ public sealed class ViewportSession
         RaiseRefreshRequested(requestRefresh);
     }
 
+    public void SetSelection(ulong viewStateRevision, Guid? selectedObjectId)
+    {
+        if (selectedObjectId == Guid.Empty)
+        {
+            throw new ArgumentException(
+                "A selected viewport object id must be non-empty.",
+                nameof(selectedObjectId));
+        }
+        if (kind_ != ViewportRenderKind.Scene && selectedObjectId is not null)
+        {
+            throw new InvalidOperationException(
+                "Only Scene viewports can carry an editor object selection.");
+        }
+
+        var requestRefresh = false;
+        lock (gate_)
+        {
+            ThrowIfClosed();
+            if (viewStateRevision < viewStateRevision_)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(viewStateRevision),
+                    "Viewport view-state revisions must advance monotonically.");
+            }
+            if (viewStateRevision == viewStateRevision_)
+            {
+                if (selectedObjectId_ != selectedObjectId)
+                {
+                    throw new ArgumentException(
+                        "A viewport view-state revision cannot identify two selections.",
+                        nameof(selectedObjectId));
+                }
+                return;
+            }
+
+            viewStateRevision_ = viewStateRevision;
+            selectedObjectId_ = selectedObjectId;
+            requestRefresh = InvalidateLocked(
+                ViewportInvalidationReason.SelectionChanged,
+                advancePresentationFence: true);
+        }
+        RaiseRefreshRequested(requestRefresh);
+    }
+
     public void Invalidate(ViewportInvalidationReason reasons)
     {
         if (reasons == ViewportInvalidationReason.None ||
@@ -248,7 +294,9 @@ public sealed class ViewportSession
                 debugProxies_,
                 totalDebugProxyCount_,
                 authoredMeshes_,
-                sceneRasterMode_);
+                sceneRasterMode_,
+                viewStateRevision_,
+                selectedObjectId_);
             return true;
         }
     }
@@ -295,7 +343,9 @@ public sealed class ViewportSession
                 debugProxies_,
                 totalDebugProxyCount_,
                 authoredMeshes_,
-                sceneRasterMode_);
+                sceneRasterMode_,
+                viewStateRevision_,
+                selectedObjectId_);
             return true;
         }
     }
@@ -308,8 +358,26 @@ public sealed class ViewportSession
         }
     }
 
+    public bool CanPresentPublishedFrame(
+        ulong sequence,
+        ulong targetRevision,
+        ulong viewStateRevision)
+    {
+        lock (gate_)
+        {
+            return CanPresentPublishedFrameLocked(sequence, targetRevision) &&
+                viewStateRevision == viewStateRevision_;
+        }
+    }
+
     public bool MarkPublishedFramePresented(ulong sequence, ulong targetRevision) =>
         CanPresentPublishedFrame(sequence, targetRevision);
+
+    public bool MarkPublishedFramePresented(
+        ulong sequence,
+        ulong targetRevision,
+        ulong viewStateRevision) =>
+        CanPresentPublishedFrame(sequence, targetRevision, viewStateRevision);
 
     public void RetryPublishedFrame(ViewportRenderRequest request)
     {
@@ -380,12 +448,14 @@ public sealed class ViewportSession
         ViewportInvalidationReason.CameraChanged |
         ViewportInvalidationReason.ExtentChanged |
         ViewportInvalidationReason.Exposed |
-        ViewportInvalidationReason.Realtime;
+        ViewportInvalidationReason.Realtime |
+        ViewportInvalidationReason.SelectionChanged;
 
     private static readonly ViewportInvalidationReason PresentationInvalidationReasons =
         ViewportInvalidationReason.TargetChanged |
         ViewportInvalidationReason.CameraChanged |
-        ViewportInvalidationReason.Exposed;
+        ViewportInvalidationReason.Exposed |
+        ViewportInvalidationReason.SelectionChanged;
 
     private static (ViewportDebugProxySnapshot[] Proxies, int TotalCount)
         CaptureDebugProxies(SceneDocumentSnapshot document)
@@ -434,6 +504,8 @@ public sealed class ViewportSession
         targetKind_,
         targetId_,
         targetRevision_,
+        viewStateRevision_,
+        selectedObjectId_,
         lastSequence_,
         minimumPresentableSequence_,
         inFlightSequence_ != 0,

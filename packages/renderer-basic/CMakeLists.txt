@@ -229,6 +229,51 @@ set(ASHARIA_RENDERER_BASIC_COMPUTE_COMP_METADATA
 set(ASHARIA_RENDERER_BASIC_COMPUTE_COMP_REFLECTION
     "${ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR}/basic_compute.comp.reflection.json"
 )
+set(ASHARIA_RENDERER_BASIC_SELECTION_OUTLINE_SHADER_SOURCE
+    "${CMAKE_CURRENT_SOURCE_DIR}/shaders/selection_outline.slang"
+)
+set(ASHARIA_RENDERER_BASIC_SELECTION_MASK_SHADER_SOURCE
+    "${CMAKE_CURRENT_SOURCE_DIR}/shaders/selection_mask.slang"
+)
+set(ASHARIA_RENDERER_BASIC_SELECTION_MASK_SHADER_MANIFEST
+    "${CMAKE_CURRENT_SOURCE_DIR}/shaders/selection_mask.shader.json"
+)
+set(ASHARIA_RENDERER_BASIC_SELECTION_OUTLINE_SHADER_MANIFEST
+    "${CMAKE_CURRENT_SOURCE_DIR}/shaders/selection_outline.shader.json"
+)
+set(ASHARIA_RENDERER_BASIC_SELECTION_OUTLINE_VERTEX_SHADER_SOURCE
+    "${CMAKE_CURRENT_SOURCE_DIR}/shaders/selection_outline_vertex.slang"
+)
+set(ASHARIA_RENDERER_BASIC_SELECTION_OUTLINE_VERTEX_SHADER_MANIFEST
+    "${CMAKE_CURRENT_SOURCE_DIR}/shaders/selection_outline_vertex.shader.json"
+)
+set(ASHARIA_RENDERER_BASIC_SELECTION_MASK_FRAG_SPV
+    "${ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR}/selection_mask.frag.spv"
+)
+set(ASHARIA_RENDERER_BASIC_SELECTION_MASK_FRAG_METADATA
+    "${ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR}/selection_mask.frag.metadata.json"
+)
+set(ASHARIA_RENDERER_BASIC_SELECTION_MASK_FRAG_REFLECTION
+    "${ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR}/selection_mask.frag.reflection.json"
+)
+set(ASHARIA_RENDERER_BASIC_SELECTION_OUTLINE_VERT_SPV
+    "${ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR}/selection_outline.vert.spv"
+)
+set(ASHARIA_RENDERER_BASIC_SELECTION_OUTLINE_VERT_METADATA
+    "${ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR}/selection_outline.vert.metadata.json"
+)
+set(ASHARIA_RENDERER_BASIC_SELECTION_OUTLINE_VERT_REFLECTION
+    "${ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR}/selection_outline.vert.reflection.json"
+)
+set(ASHARIA_RENDERER_BASIC_SELECTION_OUTLINE_FRAG_SPV
+    "${ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR}/selection_outline.frag.spv"
+)
+set(ASHARIA_RENDERER_BASIC_SELECTION_OUTLINE_FRAG_METADATA
+    "${ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR}/selection_outline.frag.metadata.json"
+)
+set(ASHARIA_RENDERER_BASIC_SELECTION_OUTLINE_FRAG_REFLECTION
+    "${ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR}/selection_outline.frag.reflection.json"
+)
 
 asharia_add_slang_shader(asharia-renderer-basic-triangle-vert
     SOURCE "${ASHARIA_RENDERER_BASIC_TRIANGLE_SHADER_SOURCE}"
@@ -340,6 +385,36 @@ asharia_add_slang_shader(asharia-renderer-basic-compute-comp
     DEPENDS "${ASHARIA_RENDERER_BASIC_COMPUTE_SHADER_MANIFEST}"
 )
 
+asharia_add_slang_shader(asharia-renderer-basic-selection-mask-frag
+    SOURCE "${ASHARIA_RENDERER_BASIC_SELECTION_MASK_SHADER_SOURCE}"
+    ENTRY selectionMaskFragmentMain
+    STAGE fragment
+    OUTPUT "${ASHARIA_RENDERER_BASIC_SELECTION_MASK_FRAG_SPV}"
+    METADATA_OUTPUT "${ASHARIA_RENDERER_BASIC_SELECTION_MASK_FRAG_METADATA}"
+    REFLECTION_OUTPUT "${ASHARIA_RENDERER_BASIC_SELECTION_MASK_FRAG_REFLECTION}"
+    DEPENDS "${ASHARIA_RENDERER_BASIC_SELECTION_MASK_SHADER_MANIFEST}"
+)
+
+asharia_add_slang_shader(asharia-renderer-basic-selection-outline-vert
+    SOURCE "${ASHARIA_RENDERER_BASIC_SELECTION_OUTLINE_VERTEX_SHADER_SOURCE}"
+    ENTRY selectionOutlineVertexMain
+    STAGE vertex
+    OUTPUT "${ASHARIA_RENDERER_BASIC_SELECTION_OUTLINE_VERT_SPV}"
+    METADATA_OUTPUT "${ASHARIA_RENDERER_BASIC_SELECTION_OUTLINE_VERT_METADATA}"
+    REFLECTION_OUTPUT "${ASHARIA_RENDERER_BASIC_SELECTION_OUTLINE_VERT_REFLECTION}"
+    DEPENDS "${ASHARIA_RENDERER_BASIC_SELECTION_OUTLINE_VERTEX_SHADER_MANIFEST}"
+)
+
+asharia_add_slang_shader(asharia-renderer-basic-selection-outline-frag
+    SOURCE "${ASHARIA_RENDERER_BASIC_SELECTION_OUTLINE_SHADER_SOURCE}"
+    ENTRY selectionOutlineFragmentMain
+    STAGE fragment
+    OUTPUT "${ASHARIA_RENDERER_BASIC_SELECTION_OUTLINE_FRAG_SPV}"
+    METADATA_OUTPUT "${ASHARIA_RENDERER_BASIC_SELECTION_OUTLINE_FRAG_METADATA}"
+    REFLECTION_OUTPUT "${ASHARIA_RENDERER_BASIC_SELECTION_OUTLINE_FRAG_REFLECTION}"
+    DEPENDS "${ASHARIA_RENDERER_BASIC_SELECTION_OUTLINE_SHADER_MANIFEST}"
+)
+
 add_custom_target(asharia-renderer-basic-shaders
     DEPENDS
         asharia-renderer-basic-triangle-vert
@@ -353,6 +428,9 @@ add_custom_target(asharia-renderer-basic-shaders
         asharia-renderer-basic-world-grid-vert
         asharia-renderer-basic-world-grid-frag
         asharia-renderer-basic-compute-comp
+        asharia-renderer-basic-selection-mask-frag
+        asharia-renderer-basic-selection-outline-vert
+        asharia-renderer-basic-selection-outline-frag
 )
 
 target_include_directories(asharia-renderer-basic

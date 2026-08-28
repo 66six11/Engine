@@ -564,6 +564,94 @@
         }
 
         [[nodiscard]] Result<ShaderResourceSignature>
+        validateSelectionOutlineReflection(const std::filesystem::path& shaderDirectory) {
+            auto maskFragment =
+                readShaderReflection(shaderDirectory / "selection_mask.frag.reflection.json");
+            if (!maskFragment) {
+                return std::unexpected{std::move(maskFragment.error())};
+            }
+            auto outlineVertex =
+                readShaderReflection(shaderDirectory / "selection_outline.vert.reflection.json");
+            if (!outlineVertex) {
+                return std::unexpected{std::move(outlineVertex.error())};
+            }
+            auto outlineFragment =
+                readShaderReflection(shaderDirectory / "selection_outline.frag.reflection.json");
+            if (!outlineFragment) {
+                return std::unexpected{std::move(outlineFragment.error())};
+            }
+
+            auto maskEntry = expectString(maskFragment->entry, "selectionMaskFragmentMain",
+                                          "Selection mask fragment reflection entry");
+            if (!maskEntry) {
+                return std::unexpected{std::move(maskEntry.error())};
+            }
+            auto maskStage = expectString(maskFragment->stage, "fragment",
+                                          "Selection mask fragment reflection stage");
+            if (!maskStage) {
+                return std::unexpected{std::move(maskStage.error())};
+            }
+            auto maskResources =
+                validateNoResourceBindings(*maskFragment, "Selection mask fragment shader");
+            if (!maskResources) {
+                return std::unexpected{std::move(maskResources.error())};
+            }
+
+            auto vertexEntry = expectString(outlineVertex->entry, "selectionOutlineVertexMain",
+                                            "Selection outline vertex reflection entry");
+            if (!vertexEntry) {
+                return std::unexpected{std::move(vertexEntry.error())};
+            }
+            auto vertexStage = expectString(outlineVertex->stage, "vertex",
+                                            "Selection outline vertex reflection stage");
+            if (!vertexStage) {
+                return std::unexpected{std::move(vertexStage.error())};
+            }
+            auto vertexInputs =
+                expectUint(static_cast<std::uint32_t>(outlineVertex->vertexInputs.size()), 0,
+                           "Selection outline vertex input count");
+            if (!vertexInputs) {
+                return std::unexpected{std::move(vertexInputs.error())};
+            }
+            auto vertexResources =
+                validateNoResourceBindings(*outlineVertex, "Selection outline vertex shader");
+            if (!vertexResources) {
+                return std::unexpected{std::move(vertexResources.error())};
+            }
+
+            auto fragmentEntry = expectString(
+                outlineFragment->entry, "selectionOutlineFragmentMain",
+                "Selection outline fragment reflection entry");
+            if (!fragmentEntry) {
+                return std::unexpected{std::move(fragmentEntry.error())};
+            }
+            auto fragmentStage = expectString(outlineFragment->stage, "fragment",
+                                              "Selection outline fragment reflection stage");
+            if (!fragmentStage) {
+                return std::unexpected{std::move(fragmentStage.error())};
+            }
+
+            const std::array shaderReflections{*outlineVertex, *outlineFragment};
+            ShaderResourceSignature signature = shaderResourceSignature(shaderReflections);
+            auto descriptorCount = expectUint(signature.descriptorBindingCount, 1,
+                                              "Selection outline descriptor binding count");
+            if (!descriptorCount) {
+                return std::unexpected{std::move(descriptorCount.error())};
+            }
+            auto pushConstantCount = expectUint(signature.pushConstantCount, 0,
+                                                "Selection outline push constant count");
+            if (!pushConstantCount) {
+                return std::unexpected{std::move(pushConstantCount.error())};
+            }
+            auto maskBinding = validateDescriptorBinding(signature, 0, 0, "texture",
+                                                         "Selection outline mask texture");
+            if (!maskBinding) {
+                return std::unexpected{std::move(maskBinding.error())};
+            }
+            return signature;
+        }
+
+        [[nodiscard]] Result<ShaderResourceSignature>
         validateBasicComputeReflection(const std::filesystem::path& shaderDirectory) {
             auto computeReflection =
                 readShaderReflection(shaderDirectory / "basic_compute.comp.reflection.json");

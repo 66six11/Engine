@@ -86,6 +86,49 @@ public sealed class ViewportBridgeTests
     }
 
     [Fact]
+    public void V7_stream_maps_scene_selection_and_echoes_its_view_state_revision()
+    {
+        var objectId = Guid.NewGuid();
+        var document = new SceneDocumentSnapshot(
+            Guid.NewGuid(),
+            "C:\\Projects\\Sample\\Assets\\Scenes\\Default.asharia.scene.json",
+            revision: 3,
+            savedRevision: 1,
+            [
+                new SceneEntitySnapshot(
+                    objectId,
+                    new EntityId(2, 1),
+                    "SelectedMesh",
+                    TransformValue.Identity,
+                    SceneMeshReference.DirectionalWedgeValidation),
+            ]);
+        var session = new ViewportSession(
+            ViewportSessionId.Create(),
+            ViewportRenderKind.Scene,
+            document,
+            ViewportCameraSnapshot.DefaultScene);
+        session.SetSelection(viewStateRevision: 7, objectId);
+        Assert.True(session.TryPublishLatest(
+            new ViewportRenderSize(new ViewportExtent(640, 360), new ViewportExtent(640, 360)),
+            out var request));
+        var api = new StubViewportNativeApi();
+        var stream = new ViewportBridge(api)
+            .OpenStream(ViewportDeviceCompatibility.VulkanOpaqueNt).Stream!;
+
+        Assert.True(stream.SubmitLatest(request).Succeeded);
+        Assert.Equal(
+            (uint)(ViewportNativePresentRequestV7Flags.HasLogicalExtent |
+                   ViewportNativePresentRequestV7Flags.HasSelectionOutline),
+            api.Request.Flags);
+        Assert.Equal(objectId, api.Request.SelectedObjectId.ToGuid());
+        Assert.Equal(7UL, api.Request.ViewStateRevision);
+
+        var lease = Assert.IsType<ViewportFrameLease>(stream.TryTakeReady().Lease);
+        Assert.Equal(7UL, lease.ViewStateRevision);
+        lease.Dispose();
+    }
+
+    [Fact]
     public void V7_stream_rejects_unsupported_wireframe_before_native_submit_and_recovers_to_solid()
     {
         var document = new SceneDocumentSnapshot(
@@ -286,8 +329,8 @@ public sealed class ViewportBridgeTests
             (nint)48,
             Marshal.OffsetOf<ViewportNativeAuthoredMeshSnapshotV7>(
                 "<Transform>k__BackingField"));
-        Assert.Equal(168, Marshal.SizeOf<ViewportNativePresentRequestV7>());
-        Assert.Equal(248, Marshal.SizeOf<ViewportNativeReadyFrameV7>());
+        Assert.Equal(192, Marshal.SizeOf<ViewportNativePresentRequestV7>());
+        Assert.Equal(256, Marshal.SizeOf<ViewportNativeReadyFrameV7>());
         Assert.Equal(64, Marshal.SizeOf<ViewportNativeStreamPollV7>());
         Assert.Equal(
             (nint)88,
@@ -308,6 +351,18 @@ public sealed class ViewportBridgeTests
             (nint)164,
             Marshal.OffsetOf<ViewportNativePresentRequestV7>(
                 "<SceneRasterMode>k__BackingField"));
+        Assert.Equal(
+            (nint)168,
+            Marshal.OffsetOf<ViewportNativePresentRequestV7>(
+                "<SelectedObjectId>k__BackingField"));
+        Assert.Equal(
+            (nint)184,
+            Marshal.OffsetOf<ViewportNativePresentRequestV7>(
+                "<ViewStateRevision>k__BackingField"));
+        Assert.Equal(
+            (nint)248,
+            Marshal.OffsetOf<ViewportNativeReadyFrameV7>(
+                "<ViewStateRevision>k__BackingField"));
     }
 
     [Fact]
@@ -513,7 +568,8 @@ public sealed class ViewportBridgeTests
                     0,
                     0,
                     0,
-                    hasFrame ? Request.TargetRevision : 0));
+                    hasFrame ? Request.TargetRevision : 0),
+                hasFrame ? Request.ViewStateRevision : 0);
             readySequence_ = 0;
             return Status;
         }

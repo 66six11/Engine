@@ -31,6 +31,14 @@ namespace asharia {
     inline constexpr char kBasicRenderViewSceneMeshPassType[] = "builtin.render-view-scene-mesh";
     inline constexpr char kBasicRenderViewSceneMeshParamsType[] =
         "builtin.render-view-scene-mesh.params";
+    inline constexpr char kBasicRenderViewSelectionMaskPassType[] =
+        "builtin.render-view-selection-mask";
+    inline constexpr char kBasicRenderViewSelectionMaskParamsType[] =
+        "builtin.render-view-selection-mask.params";
+    inline constexpr char kBasicRenderViewSelectionOutlinePassType[] =
+        "builtin.render-view-selection-outline";
+    inline constexpr char kBasicRenderViewSelectionOutlineParamsType[] =
+        "builtin.render-view-selection-outline.params";
     inline constexpr char kBasicRenderViewOverlayPassType[] = "builtin.render-view-overlay";
     inline constexpr char kBasicRenderViewOverlayParamsType[] =
         "builtin.render-view-overlay.params";
@@ -79,6 +87,20 @@ namespace asharia {
         std::uint32_t viewKind{};
         std::uint32_t rasterMode{};
         std::uint32_t indexedDrawCount{};
+    };
+
+    struct BasicRenderViewSelectionMaskParams {
+        std::uint32_t drawItemCount{};
+        std::uint32_t viewKind{};
+        std::uint32_t indexedDrawCount{};
+        std::uint32_t reserved{};
+    };
+
+    struct BasicRenderViewSelectionOutlineParams {
+        std::uint32_t widthPixels{2U};
+        std::uint32_t viewKind{};
+        std::uint32_t enabled{};
+        std::uint32_t reserved{};
     };
 
     struct BasicDrawListParams {
@@ -329,6 +351,75 @@ namespace asharia {
         });
     }
 
+    inline void registerBasicRenderViewSelectionMaskSchema(RenderGraphSchemaRegistry& schemas) {
+        schemas.registerSchema(RenderGraphPassSchema{
+            .type = kBasicRenderViewSelectionMaskPassType,
+            .paramsType = kBasicRenderViewSelectionMaskParamsType,
+            .resourceSlots =
+                {
+                    RenderGraphResourceSlotSchema{
+                        .name = "target",
+                        .access = RenderGraphSlotAccess::ColorWrite,
+                        .shaderStage = RenderGraphShaderStage::None,
+                        .optional = false,
+                    },
+                    RenderGraphResourceSlotSchema{
+                        .name = "depth",
+                        .access = RenderGraphSlotAccess::DepthAttachmentWrite,
+                        .shaderStage = RenderGraphShaderStage::None,
+                        .optional = false,
+                    },
+                    RenderGraphResourceSlotSchema{
+                        .name = "vertices",
+                        .access = RenderGraphSlotAccess::BufferVertexRead,
+                        .shaderStage = RenderGraphShaderStage::None,
+                        .optional = false,
+                    },
+                    RenderGraphResourceSlotSchema{
+                        .name = "indices",
+                        .access = RenderGraphSlotAccess::BufferIndexRead,
+                        .shaderStage = RenderGraphShaderStage::None,
+                        .optional = false,
+                    },
+                },
+            .allowedCommands =
+                {
+                    RenderGraphCommandKind::SetShader,
+                    RenderGraphCommandKind::SetInt,
+                    RenderGraphCommandKind::DrawIndexed,
+                },
+        });
+    }
+
+    inline void registerBasicRenderViewSelectionOutlineSchema(RenderGraphSchemaRegistry& schemas) {
+        schemas.registerSchema(RenderGraphPassSchema{
+            .type = kBasicRenderViewSelectionOutlinePassType,
+            .paramsType = kBasicRenderViewSelectionOutlineParamsType,
+            .resourceSlots =
+                {
+                    RenderGraphResourceSlotSchema{
+                        .name = "mask",
+                        .access = RenderGraphSlotAccess::ShaderRead,
+                        .shaderStage = RenderGraphShaderStage::Fragment,
+                        .optional = false,
+                    },
+                    RenderGraphResourceSlotSchema{
+                        .name = "target",
+                        .access = RenderGraphSlotAccess::ColorReadWrite,
+                        .shaderStage = RenderGraphShaderStage::None,
+                        .optional = false,
+                    },
+                },
+            .allowedCommands =
+                {
+                    RenderGraphCommandKind::SetShader,
+                    RenderGraphCommandKind::SetTexture,
+                    RenderGraphCommandKind::SetInt,
+                    RenderGraphCommandKind::DrawFullscreenTriangle,
+                },
+        });
+    }
+
     inline void registerBasicRenderViewOverlaySchema(RenderGraphSchemaRegistry& schemas) {
         schemas.registerSchema(RenderGraphPassSchema{
             .type = kBasicRenderViewOverlayPassType,
@@ -493,6 +584,8 @@ namespace asharia {
         registerBasicRasterFullscreenSchema(schemas);
         registerBasicRenderViewWorldGridSchema(schemas);
         registerBasicRenderViewSceneMeshSchema(schemas);
+        registerBasicRenderViewSelectionMaskSchema(schemas);
+        registerBasicRenderViewSelectionOutlineSchema(schemas);
         registerBasicRenderViewOverlaySchema(schemas);
         registerBasicRasterDrawListSchema(schemas);
         registerBasicTransferFillBufferSchema(schemas);

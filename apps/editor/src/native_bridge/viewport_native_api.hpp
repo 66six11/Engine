@@ -62,6 +62,7 @@ enum EditorViewportNativePresentRequestV7Flags : std::uint32_t {
     EditorViewportNativePresentRequestV7Flags_HasLogicalExtent = 1U << 0U,
     EditorViewportNativePresentRequestV7Flags_FlashSentinelCorners = 1U << 1U,
     EditorViewportNativePresentRequestV7Flags_CaptureSceneMeshEvidence = 1U << 2U,
+    EditorViewportNativePresentRequestV7Flags_HasSelectionOutline = 1U << 3U,
 };
 
 enum EditorViewportNativePresentCompletionKind : std::uint32_t {
@@ -187,15 +188,19 @@ struct EditorViewportNativePresentRequestV7 {
     const EditorViewportNativeAuthoredMeshSnapshotV7* authoredMeshes;
     std::uint32_t authoredMeshCount;
     std::uint32_t sceneRasterMode;
+    std::uint8_t selectedObjectId[16];
+    std::uint64_t viewStateRevision;
 };
 
-static_assert(sizeof(EditorViewportNativePresentRequestV7) == 168U);
+static_assert(sizeof(EditorViewportNativePresentRequestV7) == 192U);
 static_assert(offsetof(EditorViewportNativePresentRequestV7, camera) == 88U);
 static_assert(offsetof(EditorViewportNativePresentRequestV7, logicalWidthPixels) == 140U);
 static_assert(offsetof(EditorViewportNativePresentRequestV7, logicalHeightPixels) == 144U);
 static_assert(offsetof(EditorViewportNativePresentRequestV7, authoredMeshes) == 152U);
 static_assert(offsetof(EditorViewportNativePresentRequestV7, authoredMeshCount) == 160U);
 static_assert(offsetof(EditorViewportNativePresentRequestV7, sceneRasterMode) == 164U);
+static_assert(offsetof(EditorViewportNativePresentRequestV7, selectedObjectId) == 168U);
+static_assert(offsetof(EditorViewportNativePresentRequestV7, viewStateRevision) == 184U);
 
 struct EditorViewportNativeSceneMeshReceiptV7 {
     std::uint32_t inputCount;
@@ -240,9 +245,11 @@ struct EditorViewportNativeReadyFrameV7 {
     std::uint32_t logicalWidthPixels;
     std::uint32_t logicalHeightPixels;
     EditorViewportNativeSceneMeshReceiptV7 sceneMeshReceipt;
+    std::uint64_t viewStateRevision;
 };
 
-static_assert(sizeof(EditorViewportNativeReadyFrameV7) == 248U);
+static_assert(sizeof(EditorViewportNativeReadyFrameV7) == 256U);
+static_assert(offsetof(EditorViewportNativeReadyFrameV7, viewStateRevision) == 248U);
 
 struct EditorViewportNativeStreamPollV7 {
     EditorViewportNativeAbiHeader header;

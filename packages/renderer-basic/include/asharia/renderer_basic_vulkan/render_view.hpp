@@ -118,6 +118,10 @@ namespace asharia {
         std::array<float, 4> color{0.36F, 0.39F, 0.44F, 1.0F};
     };
 
+    struct BasicRenderViewSelectionOutlineDesc {
+        std::span<const BasicDrawListItem> drawItems{};
+    };
+
     struct BasicRenderViewOverlayDesc {
         bool enabled{};
         BasicRenderViewOverlayColorLoadOp colorLoadOp{
@@ -125,6 +129,7 @@ namespace asharia {
         BasicRenderViewOverlayColorStoreOp colorStoreOp{BasicRenderViewOverlayColorStoreOp::Store};
         BasicRenderViewOverlayBlendMode blendMode{BasicRenderViewOverlayBlendMode::AlphaBlend};
         BasicRenderViewWorldGridDesc worldGrid;
+        BasicRenderViewSelectionOutlineDesc selectionOutline;
         std::span<const std::string_view> sourceOverlayIds{};
         std::span<const BasicDebugWorldLine> debugWorldLines{};
     };
@@ -137,6 +142,8 @@ namespace asharia {
         BasicRenderViewOverlayBlendMode blendMode{BasicRenderViewOverlayBlendMode::AlphaBlend};
         bool worldGridEnabled{};
         BasicRenderViewWorldGridDesc worldGrid;
+        bool selectionOutlineEnabled{};
+        std::uint64_t selectionOutlineDrawItemCount{};
         std::uint64_t debugWorldLineCount{};
         std::vector<std::string> sourceOverlayIds;
     };

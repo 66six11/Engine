@@ -325,6 +325,43 @@ public sealed class ViewportSessionTests
     }
 
     [Fact]
+    public void Selection_change_is_versioned_and_rejects_the_previous_view_state()
+    {
+        var document = Document(revision: 1, entityCount: 1);
+        var session = new ViewportSession(
+            ViewportSessionId.Create(),
+            ViewportRenderKind.Scene,
+            document,
+            ViewportCameraSnapshot.DefaultScene);
+        var extent = new ViewportExtent(640, 360);
+        var size = new ViewportRenderSize(extent, extent);
+        Assert.True(session.TryPublishLatest(size, out var stale));
+
+        var selectedObjectId = document.Entities.Single().ObjectId;
+        session.SetSelection(viewStateRevision: 1, selectedObjectId);
+
+        Assert.False(session.CanPresentPublishedFrame(
+            stale.Sequence,
+            stale.TargetRevision,
+            stale.ViewStateRevision));
+        Assert.True(session.TryPublishLatest(size, out var selected));
+        Assert.Equal(1UL, selected.ViewStateRevision);
+        Assert.Equal(selectedObjectId, selected.SelectedObjectId);
+        Assert.True(selected.Reasons.HasFlag(ViewportInvalidationReason.SelectionChanged));
+        Assert.True(session.CanPresentPublishedFrame(
+            selected.Sequence,
+            selected.TargetRevision,
+            selected.ViewStateRevision));
+
+        session.SetSelection(viewStateRevision: 2, selectedObjectId: null);
+        Assert.True(session.TryPublishLatest(size, out var cleared));
+        Assert.Equal(2UL, cleared.ViewStateRevision);
+        Assert.Null(cleared.SelectedObjectId);
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            session.SetSelection(viewStateRevision: 1, selectedObjectId));
+    }
+
+    [Fact]
     public void Refresh_request_is_coalesced_until_the_latest_state_is_published()
     {
         var session = new ViewportSession(
