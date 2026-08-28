@@ -13,6 +13,7 @@ using Asharia.Studio.Presentation.Avalonia.Diagnostics;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Platform;
+using Avalonia.Rendering;
 using Avalonia.Rendering.Composition;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
@@ -100,7 +101,7 @@ internal readonly record struct ViewportPresentedInteractionContext(
     ViewportExtent Extent,
     double RenderScaling);
 
-public sealed class ViewportCompositionControl : Control
+public sealed class ViewportCompositionControl : Control, ICustomHitTest
 {
     private enum CompositionCommitResult
     {
@@ -446,6 +447,10 @@ public sealed class ViewportCompositionControl : Control
         testHooks_ = testHooks;
         ClipToBounds = true;
     }
+
+    // The compositor child visual has no Avalonia draw list of its own, so declare the viewport's
+    // local bounds as the routed-input surface without adding a second visual layer.
+    bool ICustomHitTest.HitTest(Point point) => new Rect(Bounds.Size).Contains(point);
 
     public ViewportSession? Session
     {
