@@ -45,7 +45,9 @@ public sealed record ObservationDiagnosticEvent(
     ImmutableArray<ObservationSafeAttribute> Attributes,
     string Fingerprint,
     int RepeatCount,
-    bool WasTruncated);
+    bool WasTruncated,
+    string? ProblemId = null,
+    string? ProblemTransition = null);
 
 public sealed record ObservationLogEvent(
     long Sequence,

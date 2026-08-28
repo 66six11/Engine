@@ -143,7 +143,9 @@ internal sealed class StudioDiagnosticObservationSource
             MapAttributes(record.Attributes),
             record.Fingerprint,
             record.RepeatCount,
-            record.WasTruncated);
+            record.WasTruncated,
+            record.ProblemId?.Value,
+            ProblemTransition(record.ProblemTransition));
 
     private ObservationLogEvent MapLog(StudioLogRecord record) =>
         new(
@@ -204,6 +206,15 @@ internal sealed class StudioDiagnosticObservationSource
     {
         StudioDiagnosticChannel.Debug => "debug",
         StudioDiagnosticChannel.Problem => "problem",
+        _ => throw new ArgumentOutOfRangeException(nameof(value)),
+    };
+
+    private static string? ProblemTransition(StudioProblemTransition? value) => value switch
+    {
+        null => null,
+        StudioProblemTransition.Active => "active",
+        StudioProblemTransition.Resolved => "resolved",
+        StudioProblemTransition.Stale => "stale",
         _ => throw new ArgumentOutOfRangeException(nameof(value)),
     };
 

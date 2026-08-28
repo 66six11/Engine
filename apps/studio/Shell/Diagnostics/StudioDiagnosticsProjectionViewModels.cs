@@ -742,7 +742,7 @@ internal sealed class StudioProblemRowViewModel
         Source = first.Source;
         Message = first.Message;
         Remediation = first.Remediation ?? string.Empty;
-        StateText = first.ProblemTransition?.ToString() ?? "Incident";
+        StateText = StudioDiagnosticsProjectionText.FormatProblemState(first.ProblemTransition);
         RepeatCount = repeatCount;
         WasTruncated = wasTruncated ?? (first.WasTruncated || last.WasTruncated);
         CollapseKey = StudioDiagnosticsProjectionText.CreateProblemCollapseKey(first);
@@ -795,6 +795,15 @@ internal sealed class StudioProblemRowViewModel
 
 internal static class StudioDiagnosticsProjectionText
 {
+    public static string FormatProblemState(StudioProblemTransition? transition) => transition switch
+    {
+        null => "Incident",
+        StudioProblemTransition.Active => "Active",
+        StudioProblemTransition.Resolved => "Resolved",
+        StudioProblemTransition.Stale => "Stale",
+        _ => throw new ArgumentOutOfRangeException(nameof(transition)),
+    };
+
     public static IReadOnlyList<string> CreateSourceOptions(IEnumerable<string> sources) =>
         new[] { StudioConsoleProjectionViewModel.AllSources }
             .Concat(sources.Distinct(StringComparer.Ordinal).OrderBy(static value => value, StringComparer.Ordinal))

@@ -201,6 +201,78 @@ public sealed class ObservationProtocolGoldenTests
     }
 
     [Fact]
+    public void Diagnostic_lifecycle_response_matches_schema_2_golden_json_and_legacy_fields_are_optional()
+    {
+        var response = new ObservationResponse<ObservationCursorWindow<ObservationDiagnosticEvent>>(
+            ObservationProtocolVersion.Current,
+            RequestId,
+            InstanceId,
+            EndpointGeneration: 7,
+            ObservationOutcome.Complete,
+            new ObservationCursorWindow<ObservationDiagnosticEvent>(
+                OldestAvailableSequence: 4,
+                NextCursor: 4,
+                TotalDropped: 0,
+                CursorExpired: false,
+                Truncated: false,
+                Items:
+                [
+                    new ObservationDiagnosticEvent(
+                        Sequence: 4,
+                        TimestampUtc: DateTimeOffset.Parse("2026-08-02T01:02:03Z"),
+                        MonotonicTimestamp: 1234,
+                        Severity: "warning",
+                        Channel: "problem",
+                        Code: "studio.viewport.degraded",
+                        Category: "viewport",
+                        new ObservationRecordContext(
+                            Origin: "managed",
+                            Package: "asharia.presentation",
+                            Component: "viewport",
+                            new ObservationScopeReference(
+                                Kind: "viewport",
+                                OwnerScopeId: Guid.Parse("12345678-1234-1234-1234-123456789abc"),
+                                OwnerGeneration: 4,
+                                ProviderGeneration: 7),
+                            OperationId: null,
+                            CorrelationId: null,
+                            ParentCorrelationId: null,
+                            Sensitivity: "public"),
+                        Message: "Viewport presentation is degraded.",
+                        Remediation: "Inspect viewport diagnostics.",
+                        Attributes: [new ObservationSafeAttribute("state", "degraded")],
+                        Fingerprint: "fingerprint-4",
+                        RepeatCount: 1,
+                        WasTruncated: false,
+                        ProblemId: "viewport.problem.4",
+                        ProblemTransition: "active"),
+                ]));
+
+        var bytes = ObservationProtocolJson.WriteResponse(response);
+        var json = Encoding.UTF8.GetString(bytes);
+        var parsed = ObservationProtocolJson.ReadResponse<
+            ObservationCursorWindow<ObservationDiagnosticEvent>>(bytes);
+
+        Assert.Equal(
+            "{\"protocol\":{\"major\":1,\"minor\":0},\"requestId\":\"11111111-2222-3333-4444-555555555555\",\"studioInstanceId\":\"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee\",\"endpointGeneration\":7,\"outcome\":\"complete\",\"value\":{\"oldestAvailableSequence\":4,\"nextCursor\":4,\"totalDropped\":0,\"cursorExpired\":false,\"truncated\":false,\"items\":[{\"sequence\":4,\"timestampUtc\":\"2026-08-02T01:02:03+00:00\",\"monotonicTimestamp\":1234,\"severity\":\"warning\",\"channel\":\"problem\",\"code\":\"studio.viewport.degraded\",\"category\":\"viewport\",\"context\":{\"origin\":\"managed\",\"package\":\"asharia.presentation\",\"component\":\"viewport\",\"scope\":{\"kind\":\"viewport\",\"ownerScopeId\":\"12345678-1234-1234-1234-123456789abc\",\"ownerGeneration\":4,\"providerGeneration\":7},\"sensitivity\":\"public\"},\"message\":\"Viewport presentation is degraded.\",\"remediation\":\"Inspect viewport diagnostics.\",\"attributes\":[{\"name\":\"state\",\"value\":\"degraded\"}],\"fingerprint\":\"fingerprint-4\",\"repeatCount\":1,\"wasTruncated\":false,\"problemId\":\"viewport.problem.4\",\"problemTransition\":\"active\"}]}}",
+            json);
+        Assert.True(parsed.Succeeded);
+        var item = Assert.Single(parsed.Value!.Value!.Items);
+        Assert.Equal("viewport.problem.4", item.ProblemId);
+        Assert.Equal("active", item.ProblemTransition);
+
+        var legacyBytes = Encoding.UTF8.GetBytes(json.Replace(
+            ",\"problemId\":\"viewport.problem.4\",\"problemTransition\":\"active\"",
+            string.Empty,
+            StringComparison.Ordinal));
+        var legacy = ObservationProtocolJson.ReadResponse<
+            ObservationCursorWindow<ObservationDiagnosticEvent>>(legacyBytes);
+        var legacyItem = Assert.Single(legacy.Value!.Value!.Items);
+        Assert.Null(legacyItem.ProblemId);
+        Assert.Null(legacyItem.ProblemTransition);
+    }
+
+    [Fact]
     public void Ui_list_windows_request_and_response_match_v1_golden_json()
     {
         var request = new ObservationRequest<UiListWindowsParameters>(

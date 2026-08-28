@@ -503,6 +503,10 @@ BufferState
   CountCapacity/PayloadByteCapacity/ResidentCount/EstimatedResidentPayloadBytes/TotalDropped
 ```
 
+`diagnostics.read` capability schema 2 adds optional `problemId` and lowercase
+`active`/`resolved`/`stale` `problemTransition` tokens. Schema 1 records without these fields remain valid;
+`logs.read` stays at schema 1.
+
 diagnostic 是可行动事实；log 是高容量时间序列。客户端传 `after/max/wait`；落后于 ring 时必须看见 expired/drop。
 每条diagnostic由stable code、scope、component与截断后的有序attributes生成fingerprint；hub中的canonical
 `RepeatCount`仍恒为1。Console默认不折叠；启用Collapse时只合并时间流中相邻且完整语义key相同的run，不能把
