@@ -65,6 +65,33 @@ public sealed class ViewportSession
         }
     }
 
+    public bool TryCapturePickSnapshot(
+        ViewportSessionId expectedSessionId,
+        Guid expectedTargetId,
+        ulong expectedTargetRevision,
+        out ViewportPickSnapshot snapshot)
+    {
+        lock (gate_)
+        {
+            snapshot = null!;
+            if (isClosed_ || kind_ != ViewportRenderKind.Scene ||
+                expectedSessionId != sessionId_ || expectedTargetId != targetId_ ||
+                expectedTargetRevision != targetRevision_)
+            {
+                return false;
+            }
+
+            snapshot = new ViewportPickSnapshot(
+                sessionId_,
+                targetId_,
+                targetRevision_,
+                camera_,
+                debugProxies_,
+                totalDebugProxyCount_);
+            return true;
+        }
+    }
+
     public void SynchronizeDocument(SceneDocumentSnapshot document)
     {
         ArgumentNullException.ThrowIfNull(document);

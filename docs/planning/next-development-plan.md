@@ -1,6 +1,6 @@
 # 整体路线图
 
-更新日期：2026-08-14
+更新日期：2026-08-28
 
 本文是全项目下一阶段的唯一**功能阶段路线图**；目标系统框架、package/target 收敛方向、跨系统契约和架构迁移门禁见 `docs/planning/system-architecture-roadmap.md`，Kernel、Host Runtime、Foundation Systems、scope/activation 和基础门禁见 `docs/architecture/foundation-framework.md`；每项能力的最早/最迟接入窗口、Integration Gates 和 Owner Card 见 `docs/workflow/architecture-health.md`。RenderGraph 当前语义见 `docs/rendergraph/mvp.md` 与 `docs/rendergraph/rhi-boundary.md`，可编程管线边界见 `docs/rendergraph/programmable-pipeline.md`；Editor 当前事实见 `docs/architecture/editor.md`；资产系统见 `docs/systems/asset-architecture.md`；shader/material authoring 见 `docs/systems/shader-material-authoring.md` 及 V2 specs。实际 Slice 顺序、状态、阻塞和 Done evidence 维护在 GitHub Issues / Project，不在本文重复。
 
@@ -10,7 +10,7 @@
 
 - 已有 package-first 基线：`rendergraph` 后端无关，`rhi-vulkan` 不依赖 RenderGraph，Vulkan/RG 翻译在 `rhi_vulkan_rendergraph`，`renderer_basic` 不暴露 Vulkan。
 - Vulkan 主路径已覆盖 dynamic rendering、synchronization2 barrier、descriptor/pipeline wrapper、transient image pool、buffer upload、compute dispatch、offscreen RenderView、Frame Debug replay、editor viewport sampled texture，以及真实 RenderView indexed scene-mesh pass。后者使用 Color/Depth + VertexRead/IndexRead、`DrawIndexed` 和 draw packet context，并支持 per-view Solid/Wireframe。
-- native Dear ImGui Editor 已具备 production workbench shell、Scene View camera/grid/debug-line、Live RG View、Frame Debugger、Asset Browser snapshot-backed catalog 和多项 smoke。Avalonia Studio 已完成 R0 硬切；#352 建立真实 ProjectSession，#353 已接通 `SceneDocument -> EditWorld -> Hierarchy/Inspector -> dirty/save/reopen`，#359 建立 UI-neutral `ViewportSession`/EngineBridge typed frame lease，#385 以共享 `editor-content` query 接入只读 catalog-backed Resource Browser，#388 再以Application-owned typed selection把资产只读详情接入统一Inspector。当前 Viewport V7、Document ABI v3、Catalog ABI v1 与 Scene schema v2 均为硬切合同；最近项目、模板、Studio 对 cooked model product/runtime CPU lease 的消费、GPU 闭环、thumbnail、多 viewport/input/preview 与 Play Mode 尚未接入。
+- native Dear ImGui Editor 已具备 production workbench shell、Scene View camera/grid/debug-line、Live RG View、Frame Debugger、Asset Browser snapshot-backed catalog 和多项 smoke。Avalonia Studio 已完成 R0 硬切；#352 建立真实 ProjectSession，#353 已接通 `SceneDocument -> EditWorld -> Hierarchy/Inspector -> dirty/save/reopen`，#359 建立 UI-neutral `ViewportSession`/EngineBridge typed frame lease，#385 以共享 `editor-content` query 接入只读 catalog-backed Resource Browser，#388 再以Application-owned typed selection把资产只读详情接入统一Inspector，#398让当前已呈现的Transform proxies可被确定性点击并进入同一typed selection。当前 Viewport V7、Document ABI v3、Catalog ABI v1 与 Scene schema v2 均为硬切合同；最近项目、模板、Studio 对 cooked model product/runtime CPU lease 的消费、GPU 闭环、thumbnail、多 viewport、camera navigation/gizmo/outline、preview 与 Play Mode 尚未接入。
 - `asset-core` / `asset-pipeline` / `project-core` / `material-core` / `scene-core` 已是 CPU/headless 数据模型或 baseline package。#367 已闭合 authored typed mesh GUID -> backend-neutral extraction -> validation product binding -> indexed scene raster -> Frame Debug source revision 的受限路径；#386 已把通用 mesh product/受限 source import 闭合到 artifact reader，runtime GPU resource、reload/deferred deletion、material authoring仍未完成。
 - #386 已冻结 canonical Mesh Product v1、受限 `.glb` static importer、真实 artifact/manifest 与 bounded
   reader；#394 已完成 verified artifact 与 generation-safe RuntimeResource typed CPU lease。这仍不等于 GPU mesh、
@@ -64,10 +64,10 @@
 | Renderer / RenderView | 已有 Scene/Game/Preview keyed request、world grid、debug line、offscreen sampled target、多 view diagnostics、真实 validation scene-mesh pass、draw packet context 和 per-view Solid/Wireframe | 把 validation product 升级为 asset/runtime resource-backed mesh/material，再扩 lighting/postprocess feature |
 | Asset / Project | 已有 project descriptor、source scan、metadata discovery、product manifest、dry-run/execute asset-processor baseline、texture product upload smoke、Mesh Product v1 + 受限 `.glb` importer/reader、verified artifact 与 generation-safe typed CPU mesh lease | renderer GPU mesh owner、dependency invalidation、Scene View/thumbnail consumer 收敛 |
 | Material | 已有 CPU-only signature、descriptor contract、pipeline key hash smoke、renderer binding smoke、shader reflection adapter、CPU-only `.ashader` parser/document diagnostics、generated Slang skeleton、generated Slang compile/reflection smoke、generated entry manifest、CPU-only `.amat` minimal IO、#156 deterministic `.amat` product blob 和 #158 deterministic `.ashader` generated Slang product blob | #163 Slang compile/reflection product、material product dependency invalidation、renderer material product 消费和 editor preview |
-| Scene / Editor | 已有 SceneDocument-owned EditWorld、默认场景持久化、Hierarchy/Inspector、逻辑 dirty/savepoint、Transform Undo/Redo、production workbench shell 与 viewport foundation | 继续补 selection outline/gizmo，并把 typed history 扩到后续 mutation |
+| Scene / Editor | 已有 SceneDocument-owned EditWorld、默认场景持久化、Hierarchy/Inspector、逻辑 dirty/savepoint、Transform Undo/Redo、production workbench shell、可见Scene View与Transform proxy typed selection | 继续补 selection feedback/outline、gizmo与camera navigation，并把 typed history 扩到后续 mutation |
 | Workflow / Project | Project fields 完整；#20 是 roadmap/docs sync 入口 | 重复 Project item 候选需单独审查，计划变更后同步 #20 |
 
-## 当前执行优先级（2026-08-10）
+## 当前执行优先级（2026-08-28）
 
 ### P0：可复用 Viewport foundation 与首个可见 Scene View
 
@@ -77,12 +77,16 @@
 - 每个 session 单 in-flight、dirty-only invalidation 合并与 stale revision completion 拒绝；
 - 最多 256 个 Scene Transform debug proxies，超过上限显式 truncated；
 - EngineBridge exact-once `ViewportFrameLease`，raw handles 不进入 Application/ViewModel；
-- native V4 request 与真实 Vulkan 双 session/slot、Scene/Game/Preview smoke。
+- native V7 request 与真实 Vulkan多stream/持久slot、Scene/Game/Preview smoke。
 
-当前 #361 的直接 Slice 是单个可见 Scene View：绑定 `ViewportPresentation`、Avalonia composition capability/import、
-surface generation、resize/detach/drain，并把当前 SceneDocument Transform 轴线呈现在 Studio。该 presentation 必须保留
+#361 已闭合单个可见 Scene View：绑定 `ViewportPresentation`、Avalonia composition capability/import、
+surface generation、resize/detach/drain，并把当前 SceneDocument Transform 轴线呈现在 Studio。该 presentation 保留
 session 与 panel/dock 解耦，因此以后增加第二 Scene View、Game View、材质预览和动画预览时不复制 renderer 路径；材质/
 动画预览都是 `Preview` render kind + 独立 preview target/world，而不是新的 renderer kind。
+
+#398在这个既有边界上只增加最小input闭环：以current presented front为门禁，对V7同源的有界Transform axes执行managed
+screen-space picking，再发布`SceneObjectSelectionTarget`。它明确不引入PhysicsWorld、asset/runtime/GPU资源、native ABI、
+selection outline、gizmo或通用viewport input framework；后续优先项是selection feedback/gizmo与camera navigation的独立Slice。
 
 Code-first authoring 试点继续保留，但排在首个可见 Scene View 之后；它不阻塞 viewport 或场景闭环。
 

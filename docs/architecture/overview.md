@@ -120,7 +120,8 @@ Asharia Engine 当前目标仍是先做一个小而完整的 Vulkan renderer，�
   command，也不拥有 native handle/GPU resource；Resource Browser 不执行 importer、不创建 runtime/GPU resource。
   #386 已实现并冻结 Mesh Product v1 与受限 `.glb` importer，#394 已把 published artifact 接入 generation-safe
   ResourceRuntime typed CPU mesh lease；renderer GPU mesh、Studio Scene View 消费、缩略图、Play Mode、第二 Viewport
-  与 viewport input 尚未接入。
+  仍未接入。Scene View 已能对当前可见Transform proxies做managed CPU picking并发布typed scene selection；camera
+  navigation、gizmo、selection outline和mesh geometry picking尚未接入。
 
   <details>
   <summary>Retired Studio Project Code / viewport 设计记录（非当前产品事实）</summary>
@@ -207,7 +208,8 @@ Asharia Engine 当前目标仍是先做一个小而完整的 Vulkan renderer，�
   `EditorViewportCoordinator` 才把 keyed request 转换成 sampled RenderView target、keyed diagnostics snapshot
   和 ImGui texture publication。
 - `Asharia.Studio.Application.Viewports.ViewportSession` 拥有 UI-neutral session/target/camera/sequence/invalidation
-  状态；它发布 latest immutable request，document revision 在途推进时旧 completion 不成为 current。
+  状态；它发布 latest immutable request，document revision 在途推进时旧 completion 不成为 current。#398让它在同一锁内
+  捕获scene/camera/有界Transform proxy pick snapshot；纯CPU picker匹配producer的screen-space轴线投影并只返回stable object identity。
 - `Asharia.Studio.Presentation.Avalonia.Viewports.ViewportPresentationTransactionCoordinator` 以
   每个 participant 的 `SessionId + EndpointEpoch + TransactionId` 编排 Proposal→Preparing→Prepared→Validated→Published→Rendered→Retiring→
   Completed/Aborted/Quarantined。同一 Avalonia compositor scope 可 group all-or-nothing visible publish；跨 compositor 明确不原子。
@@ -221,7 +223,8 @@ Asharia Engine 当前目标仍是先做一个小而完整的 Vulkan renderer，�
   adapter，不拥有 endpoint surface/stream。这些 transient editor layout state 不进入 `SceneDocument` 或 runtime。
 - `Asharia.Studio.Presentation.Avalonia.Viewports.ViewportCompositionControl` 是 endpoint owner，拥有 Avalonia compositor capability
   probe、external image/semaphore import、front/candidate drawing surfaces、prepared publish receipt、geometry/content gate、quarantine
-  与面板 presentation state；它通过
+  与面板 presentation state；只有Ready、非degraded、exact extent且仍current的front才暴露最小interaction context。control不引用
+  selection或执行domain picking；它通过
   `ViewportSession`/EngineBridge 消费 frame lease，不拥有 Vulkan resource，也不把 native handle 交给 Shell/ViewModel。
 - `Asharia.Studio.EngineBridge.Viewports.ViewportBridge` 是 managed V7 stream ABI 边界；它复制 view-local FOV axis 与最多 256 个
   `{objectId, Transform}` debug proxies，异步 submit latest / take ready，并以

@@ -19,7 +19,11 @@
             Session="{Binding Session}"
             RevisionToken="{Binding ViewportRevision}"
             Lifetime="{Binding PresentationLifetime}"
-            IsRealtime="{Binding IsRealtime}" />
+            IsRealtime="{Binding IsRealtime}"
+            PointerPressed="OnSceneViewportPointerPressed"
+            PointerMoved="OnSceneViewportPointerMoved"
+            PointerReleased="OnSceneViewportPointerReleased"
+            PointerCaptureLost="OnSceneViewportPointerCaptureLost" />
 
         <Border Margin="12"
                 Padding="12"

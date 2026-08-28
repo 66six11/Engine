@@ -24,10 +24,13 @@
 > [ADR-0015](../adr/0015-typed-editor-selection-and-asset-inspector.md) 建立 project-scoped typed selection，
 > 让 Resource Browser 选择以稳定 `AssetSelectionKey` 驱动同一个 Inspector 的只读 asset presentation。
 > 该路径只显示 catalog facts，不执行 import、runtime load、preview 或 hot reload。
+>
+> 2026-08-28：#398 让 Scene View 对当前已呈现的 Transform XYZ 轴代理执行确定性 picking，并把稳定
+> `SceneObjectSelectionTarget` 发布到同一 Application selection；它不引入 Physics、资产、native ABI 或日志改造。
 
-更新日期：2026-08-13
+更新日期：2026-08-28
 
-跟踪：GitHub Epic #119；设计 Slice #337；首个实现 Slice #338；Hierarchy 第一纵切 #363；Transform Undo/Redo #373；Diagnostics #381；Resource Browser #385；typed selection / Asset Inspector #388
+跟踪：GitHub Epic #119；设计 Slice #337；首个实现 Slice #338；Hierarchy 第一纵切 #363；Transform Undo/Redo #373；Diagnostics #381；Resource Browser #385；typed selection / Asset Inspector #388；Scene View Transform proxy picking #398
 
 ## 1. 目的
 
@@ -67,7 +70,7 @@ find -> inspect -> select -> edit -> preview -> validate -> commit/undo
 
 ## 3. 当前实现事实与缺口
 
-2026-08-13 的 production 源码与运行态事实：
+2026-08-28 的 production 源码与运行态事实：
 
 - `Editor.csproj` 使用 Avalonia、compiled binding 与 CommunityToolkit.Mvvm；
 - Shell拥有当前自研Dock与单SceneDocument编辑面；它没有恢复旧Workbench/Feature框架；
@@ -77,6 +80,8 @@ find -> inspect -> select -> edit -> preview -> validate -> commit/undo
 - Create Entity、Save、dirty 标记与关闭重开恢复经过 Application/EngineBridge/native Document 真实链；
 - scene/asset selection 由 Application project scope 的 typed immutable snapshot 协调；scene identity 来自
   authoritative document stable object ID，asset identity 使用 GUID-first `AssetSelectionKey`，二者都不成为 engine truth；
+- 首个可见 Scene View 已通过 Avalonia composition 接通 native renderer；左键点击当前已呈现的 Transform proxy会发布
+  typed scene selection，空白点击清除selection，stale/degraded/not-ready画面不改变selection；
 - Dock已恢复当前production实现；#381在一个Diagnostics tool panel中提供Console/Problems两个tab，读取同一
   bounded hub。#385 已提供只读 catalog-backed Resource Browser，#388 让 Asset Inspector 显示同一 snapshot 的
   identity/import/product/sub-asset/diagnostic facts；asset mutation、thumbnail/preview、Command Palette、多文档、
@@ -88,7 +93,8 @@ find -> inspect -> select -> edit -> preview -> validate -> commit/undo
    与 runtime resource 尚未接入。
 2. Inspector 的 asset presentation 只读；scene Transform 已接入 document Undo/Redo，component reflection、asset
    import-settings Apply/Revert、其他 mutation Undo 与 multi-selection 未实现。
-3. Scene View、render lane、工具栏和 overlay 未实现。
+3. Scene View 已有render lane、Realtime/Wireframe toolbar与Transform proxy picking；camera navigation、selection
+   feedback/outline、hover、gizmo和通用viewport tools未实现。
 4. Diagnostics已接入有界projection；持久Editor log、problem report/crash artifact、typed source/target导航仍需各自owner。
 5. 多文档、Play 和viewport tools只有相应owner/command落地后才能启用。
 6. 当前 `SceneEntitySnapshot` 只有 `ObjectId`、`Name` 与 `Transform`；Scene ABI 尚无 `ParentId`、entity kind、
@@ -309,7 +315,15 @@ Viewport backend 不可用时：
 - 提供 `Open Problems`、`Retry` 或明确的不可用原因（只显示实际支持的动作）；
 - 同一 structured diagnostic id 由 Scene View、Problems/Console 和 Status 引用，不生成三份独立错误。
 
-Scene View 不直接执行 engine mutation。picking 产生 selection intent；gizmo drag 产生有明确 begin/update/commit/cancel 的 transaction intent。
+Scene View 不直接执行 engine mutation。当前左键click只对已呈现front中的Transform XYZ轴代理做screen-space picking：
+
+- control仅提供Ready、非degraded、exact extent且仍current的presented frame identity；resize/stale/closed时fail closed；
+- View只拥有pointer gesture、4 DIP drag threshold与DIP→physical pixel转换；toolbar、modified click、右/中键、视区外release不产生intent；
+- Application picker只消费一致的camera/proxy snapshot，结果以stable `ObjectId`进入project/scene-scoped typed selection；
+- 空白点击清空selection；selection不推进document revision、dirty/savepoint或Undo/Redo。
+
+后续gizmo drag才产生有明确begin/update/commit/cancel的transaction intent。PhysicsWorld、mesh triangle/GPU ID picking、
+outline、hover、camera navigation、多选和通用input framework均不是当前路径的隐式前置。
 
 ## 10. Feedback 层级
 
@@ -433,7 +447,7 @@ lifecycle 合同见 [Studio 前端硬切架构](studio-frontend-hard-cut.md)。
 
 不做：
 
-- 新 Dock、响应式布局 DSL、真实 Play、gizmo、selection picking；
+- 新 Dock、响应式布局 DSL、真实 Play、gizmo；当时尚未实现的selection picking已由后续#398独立闭合；
 - 可写 Inspector、scene save/load、asset mutation；
 - 新的全局 service locator 或通用前端框架。
 
@@ -458,8 +472,8 @@ launch Studio
 4. #381已用同一Diagnostics面板接入Console时序日志与Problems结构化诊断；按稳定typed source替换和导航仍待source/target合同；
 5. Inspector 已区分 scene/asset/empty；scene Transform 是首个 transaction-backed writable field，asset import settings
    仍等待独立 Apply/Revert command 与 processor owner；
-6. Scene View toolbar/overlay 与 diagnostic deduplication；
-7. Scene picking、gizmo transaction 和 Scene Authoring MVP；
+6. Scene View基础toolbar已存在；overlay与diagnostic deduplication仍后置；
+7. #398已闭合Transform proxy picking；gizmo transaction、selection feedback与Scene Authoring MVP仍独立跟踪；
 8. Play/Game View 与运行态 session。
 
 每项独立跟踪，不把后续能力并入 Slice A。

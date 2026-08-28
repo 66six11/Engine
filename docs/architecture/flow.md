@@ -34,7 +34,7 @@ flowchart TD
     ProjectNative["packages/project-core<br/>asharia::project_native C ABI"]
     ProjectBootstrap["packages/project-bootstrap<br/>reader + ProcessApplicationV1 provider"]
     Studio["apps/studio<br/>Avalonia Shell + composition"]
-    StudioApplication["Studio.Application<br/>ProjectSession + SceneDocument + Catalog + Selection"]
+    StudioApplication["Studio.Application<br/>ProjectSession + SceneDocument + Catalog + Selection + Viewport picking"]
     StudioBridge["Studio.EngineBridge<br/>project + scene + catalog adapters"]
     AssetCore["packages/asset-core"]
     AssetCoreIo["packages/asset-core<br/>asharia::asset_core_io"]
@@ -241,6 +241,9 @@ flowchart TD
   `App/Shell -> Application ProjectSession -> EngineBridge project + scene adapters -> project/scene native ABI`；Scene View
   产品链为 `StudioScenePanelView -> ViewportCompositionControl -> Application ViewportSession -> EngineBridge V7 stream
   -> editor_native bounded scheduler -> process-level viewport RenderThread -> shared viewport producer -> renderer_basic_vulkan`。
+  Scene View选择链反向停在managed owner边界：`presented front identity + DIP/physical extent -> Application Transform proxy
+  picker -> IEditorSelectionService -> Hierarchy/Inspector`；Presentation不引用selection，picker不引用Avalonia、EngineBridge、
+  Physics或native ABI，selection也不写回SceneDocument/V7 request。
   V1–V6 frame exports 已硬切删除；Vulkan context、producer、queue submit、retirement 与 shutdown 只由 native owner thread
   执行。Shell 只选择路径、发命令和投影 snapshot；
   ViewModel、Dock 与 Application 不解析 descriptor/scene JSON，也不持有 native/GPU handle。Windows composition root 优先
@@ -253,8 +256,8 @@ flowchart TD
   Vulkan SDK 或 validation layer。当前已有单 SceneDocument、Hierarchy、名称/local Transform Inspector、Create Entity、
   Save/Undo/Redo/dirty、一个可见 Scene View、只读 catalog-backed Resource Browser，以及由 typed selection 驱动的只读
   Asset Inspector；Content 层已有 Mesh Product v1/受限 `.glb` cooked artifact 与 generation-safe runtime CPU mesh
-  lease，但 Studio 尚未消费它，仍无 GPU mesh resource、thumbnail/preview service、Play Mode、第二 Viewport、通用 fair scheduler 或完整
-  camera/input consumer。
+  lease，但 Studio 尚未消费它，仍无 GPU mesh resource、thumbnail/preview service、Play Mode、第二 Viewport、通用 fair scheduler、
+  camera navigation、gizmo、selection outline或mesh geometry picking；当前input consumer仅限已呈现Transform proxy click selection。
 - Editor panels 仍由 `EditorPanelRegistry::drawPanels(EditorFrameContext)` 适配每帧能力，但内置
   panel 的 `draw()` 实现会先收敛为 panel-local context，再把最小能力传给 helper。Scene View panel
   不创建 Vulkan objects、不注册 descriptor、不录 command buffer。

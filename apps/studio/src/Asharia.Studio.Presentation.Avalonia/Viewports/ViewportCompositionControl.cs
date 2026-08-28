@@ -93,6 +93,13 @@ public sealed class ViewportPreparedPresentation : IAsyncDisposable
         completion_.TrySetResult(result);
 }
 
+internal readonly record struct ViewportPresentedInteractionContext(
+    ViewportSessionId SessionId,
+    Guid TargetId,
+    ulong TargetRevision,
+    ViewportExtent Extent,
+    double RenderScaling);
+
 public sealed class ViewportCompositionControl : Control
 {
     private enum CompositionCommitResult
@@ -403,6 +410,7 @@ public sealed class ViewportCompositionControl : Control
     private PendingCompositionCommit? pendingCompositionCommit_;
     private ViewportRenderSize lastPresentedSize_;
     private ViewportExtent lastPresentedPanelExtent_;
+    private ViewportPresentationFrame lastPresentedFrame_;
     private ulong exactExtentPresentedFrames_;
     private ulong rejectedNonExactCandidates_;
     private ulong queuedFrameTicket_;
@@ -473,6 +481,33 @@ public sealed class ViewportCompositionControl : Control
         geometryState_.CurrentGeneration,
         geometryState_.SurfaceGeneration,
         geometryState_.HasExactSurface);
+
+    internal bool TryCapturePresentedInteractionContext(
+        out ViewportPresentedInteractionContext context)
+    {
+        Dispatcher.UIThread.VerifyAccess();
+        context = default;
+        var renderScaling = topLevel_?.RenderScaling ?? 0;
+        if (!isAttached_ || State != ViewportPresentationState.Ready || IsDegraded ||
+            Session is not { } session || !lastPresentedFrame_.SessionId.IsValid ||
+            !session.CanPresentPublishedFrame(
+                lastPresentedFrame_.Sequence,
+                lastPresentedFrame_.TargetRevision) ||
+            !TryGetRenderSize(out var currentSize) ||
+            currentSize.LogicalExtent != lastPresentedSize_.LogicalExtent ||
+            currentSize.LogicalExtent != lastPresentedPanelExtent_ || renderScaling <= 0)
+        {
+            return false;
+        }
+
+        context = new ViewportPresentedInteractionContext(
+            lastPresentedFrame_.SessionId,
+            lastPresentedFrame_.TargetId,
+            lastPresentedFrame_.TargetRevision,
+            currentSize.LogicalExtent,
+            renderScaling);
+        return true;
+    }
 
     public ViewportResizeMeasurementToken BeginResizeMeasurement() =>
         geometryDiagnostics_.BeginMeasurement(
@@ -786,6 +821,7 @@ public sealed class ViewportCompositionControl : Control
         cadenceTracker_.Reset();
         lastPresentedSize_ = default;
         lastPresentedPanelExtent_ = default;
+        lastPresentedFrame_ = default;
         exactExtentPresentedFrames_ = 0;
         rejectedNonExactCandidates_ = 0;
         _ = AttachAsync(generation, detachTask_);
@@ -1013,6 +1049,7 @@ public sealed class ViewportCompositionControl : Control
         if (resetPresentationEpoch)
         {
             presentationState_.Reset(++generation_);
+            lastPresentedFrame_ = default;
             geometryState_.InvalidateSurface();
             geometryDiagnostics_.RecordGeneration(
                 geometryState_.CurrentGeneration,
@@ -2341,6 +2378,7 @@ public sealed class ViewportCompositionControl : Control
             // PublishCompositionCommit admitted this frame only while the panel had this exact
             // extent. Consumer completion may arrive after Bounds has already advanced again.
             lastPresentedPanelExtent_ = lease.LogicalExtent;
+            lastPresentedFrame_ = PresentationFrame(lease);
             exactExtentPresentedFrames_++;
             var presentedAt = Stopwatch.GetTimestamp();
             cadenceTracker_.Record(presentedAt);
@@ -2666,6 +2704,7 @@ public sealed class ViewportCompositionControl : Control
 
         lastPresentedSize_ = operation.RenderSize;
         lastPresentedPanelExtent_ = operation.Handle.TargetExtent;
+        lastPresentedFrame_ = operation.Frame;
         preparedPresentation_ = null;
         operation.DisposeCancellation();
         receipt.IsFinalized = true;

@@ -4,6 +4,8 @@ using Asharia.Runtime;
 using Asharia.Studio.Application.Projects;
 using Asharia.Studio.Application.Scenes;
 using Asharia.Studio.Application.Selection;
+using Asharia.Studio.Application.Viewports;
+using Asharia.Studio.Presentation.Avalonia.Viewports;
 using Asharia.Studio.TestSupport;
 using Avalonia.Headless.XUnit;
 using Avalonia.Threading;
@@ -15,6 +17,150 @@ namespace Asharia.Studio.Headless.Tests;
 
 public sealed class StudioScenePanelViewModelTests
 {
+    [AvaloniaFact]
+    public void Presented_transform_proxy_pick_updates_typed_selection_without_editing_document()
+    {
+        var projectSessionId = ProjectSessionId.CreateNew();
+        var sceneId = Guid.NewGuid();
+        var entity = Entity("Pick Target", new EntityId(1, 1), Float3.Zero);
+        var projectSnapshot = Ready(
+            projectSessionId,
+            Guid.NewGuid(),
+            sceneId,
+            revision: 3,
+            entity);
+        var projectSession = new TestProjectSession();
+        projectSession.Publish(projectSnapshot);
+        var selection = new TestEditorSelectionService();
+        using var shell = new StudioShellViewModel(
+            projectSession,
+            new TestProjectDialogService(),
+            StudioShellTestFactory.CreateDocumentTransitions(projectSession),
+            StudioShellTestFactory.CreateDiagnosticWriter(),
+            StudioShellTestFactory.CreateProjectAssetCatalog(),
+            selection);
+        using var panel = new StudioScenePanelViewModel(shell);
+        var session = Assert.IsType<ViewportSession>(panel.Session);
+        var extent = new ViewportExtent(800, 600);
+        var context = new ViewportPresentedInteractionContext(
+            session.Current.SessionId,
+            sceneId,
+            TargetRevision: 3,
+            extent,
+            RenderScaling: 1.0);
+
+        Assert.True(panel.TryApplyViewportPick(
+            context,
+            new ViewportPickRequest(
+                extent,
+                new ViewportPickPoint(400, 300),
+                tolerancePixels: 6)));
+
+        var target = Assert.IsType<SceneObjectSelectionTarget>(selection.Current.Primary);
+        Assert.Equal(projectSessionId, target.SessionId);
+        Assert.Equal(sceneId, target.SceneId);
+        Assert.Equal(entity.ObjectId, target.ObjectId);
+        Assert.Same(entity, shell.SelectedEntity);
+        Assert.True(shell.IsSceneSelectionPrimary);
+        Assert.Equal("Pick Target", shell.InspectorName);
+        Assert.Same(projectSnapshot, projectSession.Current);
+        Assert.False(projectSession.Current.IsDirty);
+        Assert.False(projectSession.Current.CanUndo);
+        Assert.False(projectSession.Current.CanRedo);
+    }
+
+    [AvaloniaFact]
+    public void Presented_blank_pick_clears_selection()
+    {
+        var projectSessionId = ProjectSessionId.CreateNew();
+        var sceneId = Guid.NewGuid();
+        var entity = Entity("Pick Target", new EntityId(1, 1), Float3.Zero);
+        var projectSession = new TestProjectSession();
+        projectSession.Publish(Ready(
+            projectSessionId,
+            Guid.NewGuid(),
+            sceneId,
+            revision: 1,
+            entity));
+        var selection = new TestEditorSelectionService();
+        Assert.True(selection.Replace(new SceneObjectSelectionTarget(
+            projectSessionId,
+            sceneId,
+            entity.ObjectId)));
+        using var shell = new StudioShellViewModel(
+            projectSession,
+            new TestProjectDialogService(),
+            StudioShellTestFactory.CreateDocumentTransitions(projectSession),
+            StudioShellTestFactory.CreateDiagnosticWriter(),
+            StudioShellTestFactory.CreateProjectAssetCatalog(),
+            selection);
+        using var panel = new StudioScenePanelViewModel(shell);
+        var session = Assert.IsType<ViewportSession>(panel.Session);
+        var extent = new ViewportExtent(800, 600);
+
+        Assert.True(panel.TryApplyViewportPick(
+            new ViewportPresentedInteractionContext(
+                session.Current.SessionId,
+                sceneId,
+                TargetRevision: 1,
+                extent,
+                RenderScaling: 1.0),
+            new ViewportPickRequest(
+                extent,
+                new ViewportPickPoint(24, 24),
+                tolerancePixels: 6)));
+
+        Assert.Null(selection.Current.Primary);
+        Assert.Equal(EditorSelectionChangeReason.User, selection.Current.Reason);
+        Assert.Null(shell.SelectedEntity);
+        Assert.False(shell.IsSceneSelectionPrimary);
+    }
+
+    [AvaloniaFact]
+    public void Stale_presented_identity_is_rejected_without_changing_selection()
+    {
+        var projectSessionId = ProjectSessionId.CreateNew();
+        var sceneId = Guid.NewGuid();
+        var entity = Entity("Pick Target", new EntityId(1, 1), Float3.Zero);
+        var projectSession = new TestProjectSession();
+        projectSession.Publish(Ready(
+            projectSessionId,
+            Guid.NewGuid(),
+            sceneId,
+            revision: 2,
+            entity));
+        var selection = new TestEditorSelectionService();
+        Assert.True(selection.Replace(new SceneObjectSelectionTarget(
+            projectSessionId,
+            sceneId,
+            entity.ObjectId)));
+        var selectionBeforePick = selection.Current;
+        using var shell = new StudioShellViewModel(
+            projectSession,
+            new TestProjectDialogService(),
+            StudioShellTestFactory.CreateDocumentTransitions(projectSession),
+            StudioShellTestFactory.CreateDiagnosticWriter(),
+            StudioShellTestFactory.CreateProjectAssetCatalog(),
+            selection);
+        using var panel = new StudioScenePanelViewModel(shell);
+        var session = Assert.IsType<ViewportSession>(panel.Session);
+        var extent = new ViewportExtent(800, 600);
+
+        Assert.False(panel.TryApplyViewportPick(
+            new ViewportPresentedInteractionContext(
+                session.Current.SessionId,
+                sceneId,
+                TargetRevision: 1,
+                extent,
+                RenderScaling: 1.0),
+            new ViewportPickRequest(
+                extent,
+                new ViewportPickPoint(24, 24),
+                tolerancePixels: 6)));
+
+        Assert.Same(selectionBeforePick, selection.Current);
+    }
+
     [AvaloniaFact]
     public async Task Project_snapshot_reconciles_scene_target_published_for_the_new_scope_first()
     {
