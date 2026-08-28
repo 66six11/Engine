@@ -32,6 +32,8 @@ public sealed class StudioDiagnosticObservationSourceTests
             item => Assert.Equal("studio.test.two", item.Code),
             item => Assert.Equal("studio.test.three", item.Code));
         Assert.All(result.Value.Items, item => Assert.Equal(7, item.Context.Scope.ProviderGeneration));
+        Assert.All(result.Value.Items, item => Assert.Null(item.ProblemId));
+        Assert.All(result.Value.Items, item => Assert.Null(item.ProblemTransition));
     }
 
     [Fact]
@@ -57,7 +59,9 @@ public sealed class StudioDiagnosticObservationSourceTests
                 Sensitivity: StudioDataSensitivity.ProjectPath),
             "Problem message.",
             "Inspect the source.",
-            [new StudioDiagnosticAttribute("kind", "structured")]));
+            [new StudioDiagnosticAttribute("kind", "structured")],
+            ProblemId: new StudioProblemId("studio.test.problem.1"),
+            ProblemTransition: StudioProblemTransition.Active));
 
         var result = source.ReadDiagnostics(new DiagnosticsReadParameters(
             AfterSequence: 0,
@@ -73,6 +77,8 @@ public sealed class StudioDiagnosticObservationSourceTests
         Assert.Equal(correlationId, record.Context.CorrelationId);
         Assert.Equal("projectPath", record.Context.Sensitivity);
         Assert.Equal("structured", Assert.Single(record.Attributes).Value);
+        Assert.Equal("studio.test.problem.1", record.ProblemId);
+        Assert.Equal("active", record.ProblemTransition);
         Assert.Equal(hub.ProcessIdentity.Value, record.Context.Scope.OwnerScopeId);
         Assert.Equal(1, record.Context.Scope.OwnerGeneration);
         Assert.Equal(3, record.Context.Scope.ProviderGeneration);

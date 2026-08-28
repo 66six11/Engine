@@ -149,7 +149,7 @@ internal sealed class DevelopmentObservationSession
                 bounds));
         capabilities.Add(new ObservationCapabilityDescriptor(
                 "diagnostics.read",
-                SchemaVersion: 1,
+                SchemaVersion: 2,
                 Access: "observe",
                 Cost: "boundedPage",
                 Availability: "available",

@@ -48,6 +48,14 @@ public sealed class StudioDevelopmentHostTests
                 Assert.Equal("available", capability.Availability);
                 Assert.Equal(ObservationProtocolLimits.MaxPageSize, capability.Limits.MaxPageSize);
             });
+        Assert.Equal(
+            2,
+            response.Value.Capabilities.Single(static capability =>
+                capability.CapabilityId == "diagnostics.read").SchemaVersion);
+        Assert.Equal(
+            1,
+            response.Value.Capabilities.Single(static capability =>
+                capability.CapabilityId == "logs.read").SchemaVersion);
 
         var encoded = ObservationProtocolJson.WriteResponse(response);
         var decoded = ObservationProtocolJson.ReadResponse<ToolSessionDescriptor>(encoded);
