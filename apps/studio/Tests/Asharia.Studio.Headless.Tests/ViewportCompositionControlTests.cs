@@ -6,7 +6,9 @@ using Asharia.Studio.Application.Viewports;
 using Asharia.Studio.Presentation.Avalonia.Viewports;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
+using Avalonia.Input;
 using Avalonia.Threading;
 using Xunit;
 
@@ -20,6 +22,55 @@ public sealed class ViewportCompositionControlTests
         var control = new ViewportCompositionControl();
 
         Assert.False(control.TryCapturePresentedInteractionContext(out _));
+    }
+
+    [AvaloniaFact]
+    public void Composition_control_routes_pointer_input_across_its_bounds()
+    {
+        var pointerPresses = 0;
+        var control = new ViewportCompositionControl
+        {
+            Width = 100,
+            Height = 100,
+        };
+        control.PointerPressed += (_, _) => pointerPresses++;
+        var window = new Window
+        {
+            Width = 300,
+            Height = 200,
+            Content = control,
+        };
+
+        try
+        {
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+
+            window.MouseDown(
+                new Point(150, 100),
+                MouseButton.Left,
+                RawInputModifiers.None);
+            window.MouseUp(
+                new Point(150, 100),
+                MouseButton.Left,
+                RawInputModifiers.None);
+
+            window.MouseDown(
+                new Point(25, 25),
+                MouseButton.Left,
+                RawInputModifiers.None);
+            window.MouseUp(
+                new Point(25, 25),
+                MouseButton.Left,
+                RawInputModifiers.None);
+
+            Assert.Equal(1, pointerPresses);
+        }
+        finally
+        {
+            window.Close();
+            Dispatcher.UIThread.RunJobs();
+        }
     }
 
     [Fact]
