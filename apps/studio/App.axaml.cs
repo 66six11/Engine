@@ -105,6 +105,12 @@ public partial class App : Application,
                 base.OnFrameworkInitializationCompleted();
                 return;
             }
+            if (StudioViewportCadenceSmoke.IsCameraNavigationRequested(commandLine))
+            {
+                startupTask_ = StudioViewportCadenceSmoke.RunCameraNavigationAsync(desktop);
+                base.OnFrameworkInitializationCompleted();
+                return;
+            }
             if (StudioViewportCadenceSmoke.IsRequested(commandLine))
             {
                 startupTask_ = StudioViewportCadenceSmoke.RunAsync(desktop);

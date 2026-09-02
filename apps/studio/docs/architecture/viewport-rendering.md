@@ -367,8 +367,11 @@ gizmo 的普通 LMB 路线。
 Avalonia code-behind 只拥有 pointer button/modifier、logical surface position、focus 与 capture lifetime。它把 delta 除以当前
 logical width/height，并把 normalized delta + aspect ratio 交给不引用 Avalonia 的 Application
 `ViewportSceneCameraNavigation`；相机数学生成新的 immutable `ViewportCameraSnapshot`，panel ViewModel 再调用既有
-`ViewportSession.SetCamera`。`CameraChanged` 会推进 `MinimumPresentableSequence` 并让旧相机像素失效，后续 V7/native/
-renderer 路径不需要新增 ABI 或 pass。
+`ViewportSession.SetCamera`。`CameraChanged` 只合并进既有 latest-wins desired request，不再按每个 pointer sample 推进
+`MinimumPresentableSequence`：target/selection/exposed 仍是必须拒绝旧内容的 hard fence，相机连续输入则允许已经完成的旧相机帧
+按 sequence 单调显示，避免输入频率高于 render/present cadence 时让所有 in-flight frame 永远 stale。发出首个包含当前相机的
+request 时，session 记录 `minimumInteractiveCameraSequence`；只有 presented sequence 达到该边界，画面才可进入 picking。
+因此旧画面与当前相机不匹配时只能继续显示，不能把当前相机用于旧像素反投影；后续 V7/native/renderer 路径不新增 ABI 或 pass。
 
 - orbit 保持 Target 与距离，只改变 Position，并把 pitch 限制在 ±89°，避免跨极点翻转；
 - pan 对 Position/Target 施加同一 view-plane translation，保持方向与距离；
@@ -383,6 +386,15 @@ selection bounds、platform input 或 Physics 合同，应作为独立 Slice。�
 [Unreal Viewport Controls](https://dev.epicgames.com/documentation/unreal-engine/viewport-controls-in-unreal-engine)、
 [O3DE Editor Tour](https://docs.o3de.org/docs/welcome-guide/tours/editor-tour/)、
 [Godot EditorSettings navigation scheme](https://docs.godotengine.org/en/latest/classes/class_editorsettings.html)。
+
+#407 进一步采用 Unreal 将 editor viewport camera/input、invalidate/redraw 与 hit-proxy invalidation 放在 viewport client 边界的
+公开合同，并采用 Godot 把 render-target 更新频率留给 viewport update mode 的所有权方向；Asharia 的对应实现继续由现有
+Avalonia composition cadence admission 驱动，不增加 `Update(dt)`、UI timer 或 Physics。Unreal `FSceneView` 的反投影显式消费该
+view 的 inverse view/projection matrix，因此 Asharia 不采用“旧像素 + 当前 camera”拾取，也不为消除视觉延迟而伪造 camera：
+display admission 与 interaction admission 分开，后者 fail closed 直到当前相机 request 被呈现。参考：
+[Unreal FEditorViewportClient](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Editor/UnrealEd/FEditorViewportClient)、
+[Unreal FSceneView](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/Engine/FSceneView)、
+[Godot SubViewport update mode](https://docs.godotengine.org/en/stable/classes/class_subviewport.html)。
 
 ## Close 与 quarantine
 
@@ -413,6 +425,11 @@ stats 继续暴露 frame epochs、external image pool、renderer creation、owne
 `Editor.exe --smoke-studio-viewport-cadence` 只定义前台静态 Scene 的 Realtime 稳态基线：预热后使用独立 5 秒窗口，门控 exact
 surface-update `>=60 FPS`、p95 `<=25 ms` 和 max `<=100 ms`。cadence 不注入 resize、过载、fault、supersede 或 multi-endpoint，
 避免一个长 smoke 的失败原因与指标窗口互相污染。
+
+`Editor.exe --smoke-studio-camera-navigation-cadence` 复用同一真实 Studio/Avalonia/Vulkan 边界，但在独立 5 秒窗口以
+240 Hz 写入 1200 个 orbit camera samples；它使用相同 FPS/p95/max/exact gate，并在输入停止后要求 presented interaction context
+已经追上当前 camera sequence。它证明 camera-only invalidation 不会饿死 surface update，仍然只是 application/Avalonia
+surface-update completion 证据，不是 DWM 或 physical display 证据。
 
 以下独立 Studio GPU smoke family 已在 2026-08-09 落地。入口各自启动真实 Studio、Avalonia compositor 与 Vulkan
 shared-viewport，不再由一个长 cadence smoke 混合所有窗口；这些应用内入口的成功边界止于 `Rendered`。表末另列的 Windows-only

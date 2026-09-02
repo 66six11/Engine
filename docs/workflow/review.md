@@ -559,6 +559,18 @@ snapshot 的 revision 非零且精确相等。Scene/Game 可共享 authored mesh
 至少两个不同高度下验证 Scene 顶点像素间距误差 `<=1 px`，并确认 camera position/target/canonical FOV 不变。Studio
 `--smoke-viewport-multi-endpoint --viewport-multi-mode=scene-game` 必须从实际发布的 request 断言两个 endpoint 的策略互不串扰。
 不得用 resize-time camera dolly、auto-focus、FOV interpolation 或 release 后二次 mutation 掩盖构图变化。
+涉及 Studio Scene View camera navigation、camera invalidation 或 picking/presented-frame identity 时，还必须运行真实
+240 Hz camera cadence gate：
+
+```powershell
+$env:ASHARIA_RUN_STUDIO_GPU_ACCEPTANCE = "1"
+dotnet test apps\studio\Tests\Editor.Tests\Editor.Tests.csproj -c Release --no-build `
+    --filter "FullyQualifiedName~Camera_navigation_does_not_starve_scene_view_surface_updates"
+```
+
+该 gate 必须保持 exact surface-update `>=60 FPS`、p95 `<=25 ms`、max `<=100 ms`，并在输入停止后证明最终 camera request
+已经成为可交互的 presented frame。它不提供 DWM/physical display evidence，也不能用通用 `Update(dt)`、UI timer 或 Physics
+替代既有 composition cadence owner。
 真实 Studio/Vulkan 验收还必须运行固定宽度的 height-only Window lane：
 
 ```powershell

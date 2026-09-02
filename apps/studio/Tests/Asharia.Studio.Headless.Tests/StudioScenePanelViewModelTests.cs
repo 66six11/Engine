@@ -55,12 +55,16 @@ public sealed class StudioScenePanelViewModelTests
             0.1f,
             1000.0f));
         var extent = new ViewportExtent(800, 600);
+        Assert.True(session.TryPublishLatest(
+            new ViewportRenderSize(extent, extent),
+            out var presented));
 
         Assert.True(panel.TryApplyViewportPick(
             new ViewportPresentedInteractionContext(
                 session.Current.SessionId,
                 sceneId,
                 TargetRevision: 3,
+                FrameSequence: presented.Sequence,
                 extent,
                 RenderScaling: 1.0),
             new ViewportPickRequest(
@@ -103,10 +107,14 @@ public sealed class StudioScenePanelViewModelTests
         using var panel = new StudioScenePanelViewModel(shell);
         var session = Assert.IsType<ViewportSession>(panel.Session);
         var extent = new ViewportExtent(800, 600);
+        Assert.True(session.TryPublishLatest(
+            new ViewportRenderSize(extent, extent),
+            out var presented));
         var context = new ViewportPresentedInteractionContext(
             session.Current.SessionId,
             sceneId,
             TargetRevision: 3,
+            FrameSequence: presented.Sequence,
             extent,
             RenderScaling: 1.0);
 
@@ -158,12 +166,16 @@ public sealed class StudioScenePanelViewModelTests
         using var panel = new StudioScenePanelViewModel(shell);
         var session = Assert.IsType<ViewportSession>(panel.Session);
         var extent = new ViewportExtent(800, 600);
+        Assert.True(session.TryPublishLatest(
+            new ViewportRenderSize(extent, extent),
+            out var presented));
 
         Assert.True(panel.TryApplyViewportPick(
             new ViewportPresentedInteractionContext(
                 session.Current.SessionId,
                 sceneId,
                 TargetRevision: 1,
+                FrameSequence: presented.Sequence,
                 extent,
                 RenderScaling: 1.0),
             new ViewportPickRequest(
@@ -206,12 +218,16 @@ public sealed class StudioScenePanelViewModelTests
         using var panel = new StudioScenePanelViewModel(shell);
         var session = Assert.IsType<ViewportSession>(panel.Session);
         var extent = new ViewportExtent(800, 600);
+        Assert.True(session.TryPublishLatest(
+            new ViewportRenderSize(extent, extent),
+            out var presented));
 
         Assert.False(panel.TryApplyViewportPick(
             new ViewportPresentedInteractionContext(
                 session.Current.SessionId,
                 sceneId,
                 TargetRevision: 1,
+                FrameSequence: presented.Sequence,
                 extent,
                 RenderScaling: 1.0),
             new ViewportPickRequest(

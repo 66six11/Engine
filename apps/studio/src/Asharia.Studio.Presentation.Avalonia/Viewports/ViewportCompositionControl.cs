@@ -98,6 +98,7 @@ internal readonly record struct ViewportPresentedInteractionContext(
     ViewportSessionId SessionId,
     Guid TargetId,
     ulong TargetRevision,
+    ulong FrameSequence,
     ViewportExtent Extent,
     double RenderScaling);
 
@@ -495,7 +496,7 @@ public sealed class ViewportCompositionControl : Control, ICustomHitTest
         var renderScaling = topLevel_?.RenderScaling ?? 0;
         if (!isAttached_ || State != ViewportPresentationState.Ready || IsDegraded ||
             Session is not { } session || !lastPresentedFrame_.SessionId.IsValid ||
-            !session.CanPresentPublishedFrame(
+            !session.CanUsePublishedFrameForInteraction(
                 lastPresentedFrame_.Sequence,
                 lastPresentedFrame_.TargetRevision,
                 lastPresentedFrame_.ViewStateRevision) ||
@@ -510,6 +511,7 @@ public sealed class ViewportCompositionControl : Control, ICustomHitTest
             lastPresentedFrame_.SessionId,
             lastPresentedFrame_.TargetId,
             lastPresentedFrame_.TargetRevision,
+            lastPresentedFrame_.Sequence,
             currentSize.LogicalExtent,
             renderScaling);
         return true;
