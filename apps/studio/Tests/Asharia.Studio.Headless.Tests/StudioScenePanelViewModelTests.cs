@@ -223,6 +223,74 @@ public sealed class StudioScenePanelViewModelTests
     }
 
     [AvaloniaFact]
+    public void Camera_navigation_updates_only_transient_viewport_state()
+    {
+        var projectSessionId = ProjectSessionId.CreateNew();
+        var sceneId = Guid.NewGuid();
+        var entity = Entity("Selected", new EntityId(1, 1), Float3.Zero);
+        var projectSnapshot = Ready(
+            projectSessionId,
+            Guid.NewGuid(),
+            sceneId,
+            revision: 3,
+            entity);
+        var projectSession = new TestProjectSession();
+        projectSession.Publish(projectSnapshot);
+        var selection = new TestEditorSelectionService();
+        Assert.True(selection.Replace(new SceneObjectSelectionTarget(
+            projectSessionId,
+            sceneId,
+            entity.ObjectId)));
+        var selectionBefore = selection.Current;
+        using var shell = new StudioShellViewModel(
+            projectSession,
+            new TestProjectDialogService(),
+            StudioShellTestFactory.CreateDocumentTransitions(projectSession),
+            StudioShellTestFactory.CreateDiagnosticWriter(),
+            StudioShellTestFactory.CreateProjectAssetCatalog(),
+            selection);
+        using var panel = new StudioScenePanelViewModel(shell);
+        var session = Assert.IsType<ViewportSession>(panel.Session);
+        var cameraBefore = session.Camera;
+
+        Assert.True(panel.TryApplyCameraNavigation(new ViewportCameraNavigationDelta(
+            ViewportCameraNavigationMode.Orbit,
+            horizontalFraction: 0.25f,
+            verticalFraction: 0.10f,
+            aspectRatio: 4.0f / 3.0f)));
+
+        Assert.NotSame(cameraBefore, session.Camera);
+        Assert.NotEqual(cameraBefore.Position, session.Camera.Position);
+        Assert.Same(projectSnapshot, projectSession.Current);
+        Assert.Equal((ulong)3, projectSession.Current.Document!.Revision);
+        Assert.False(projectSession.Current.IsDirty);
+        Assert.False(projectSession.Current.CanUndo);
+        Assert.False(projectSession.Current.CanRedo);
+        Assert.Same(selectionBefore, selection.Current);
+        Assert.True((session.Current.PendingReasons & ViewportInvalidationReason.CameraChanged) != 0);
+    }
+
+    [AvaloniaFact]
+    public void Camera_navigation_without_a_scene_session_is_rejected()
+    {
+        var projectSession = new TestProjectSession();
+        using var shell = new StudioShellViewModel(
+            projectSession,
+            new TestProjectDialogService(),
+            StudioShellTestFactory.CreateDocumentTransitions(projectSession),
+            StudioShellTestFactory.CreateDiagnosticWriter(),
+            StudioShellTestFactory.CreateProjectAssetCatalog(),
+            StudioShellTestFactory.CreateEditorSelectionService());
+        using var panel = new StudioScenePanelViewModel(shell);
+
+        Assert.False(panel.TryApplyCameraNavigation(new ViewportCameraNavigationDelta(
+            ViewportCameraNavigationMode.Dolly,
+            horizontalFraction: 0,
+            verticalFraction: -0.12f,
+            aspectRatio: 1.0f)));
+    }
+
+    [AvaloniaFact]
     public async Task Project_snapshot_reconciles_scene_target_published_for_the_new_scope_first()
     {
         var oldEntity = Entity("Old Entity", new EntityId(1, 1), Float3.Zero);

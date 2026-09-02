@@ -389,6 +389,12 @@ public sealed class StudioLayeringTests
             "Asharia.Studio.Application",
             "Viewports",
             "ViewportPicking.cs"));
+        var viewportCameraNavigationSource = File.ReadAllText(Path.Combine(
+            root,
+            "src",
+            "Asharia.Studio.Application",
+            "Viewports",
+            "ViewportCameraNavigation.cs"));
         var viewportControlSource = File.ReadAllText(Path.Combine(
             root,
             "src",
@@ -482,6 +488,11 @@ public sealed class StudioLayeringTests
             scenePanelXaml,
             StringComparison.Ordinal);
         Assert.Contains(
+            "PointerWheelChanged=\"OnSceneViewportPointerWheelChanged\"",
+            scenePanelXaml,
+            StringComparison.Ordinal);
+        Assert.Contains("LostFocus=\"OnSceneViewportLostFocus\"", scenePanelXaml);
+        Assert.Contains(
             "TryCapturePresentedInteractionContext",
             viewportControlSource,
             StringComparison.Ordinal);
@@ -507,6 +518,12 @@ public sealed class StudioLayeringTests
             StringComparison.Ordinal);
         Assert.DoesNotContain("Avalonia", viewportPickerSource, StringComparison.Ordinal);
         Assert.DoesNotContain("EngineBridge", viewportPickerSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("Avalonia", viewportCameraNavigationSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("EngineBridge", viewportCameraNavigationSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("Physics", viewportCameraNavigationSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("SceneDocument", viewportCameraNavigationSource, StringComparison.Ordinal);
+        Assert.Contains("TryApplyCameraNavigation", scenePanelViewModelSource, StringComparison.Ordinal);
+        Assert.Contains("session.SetCamera(nextCamera)", scenePanelViewModelSource, StringComparison.Ordinal);
         Assert.Contains(
             "AutomationProperties.ControlTypeOverride=\"Group\"",
             scenePanelXaml,
