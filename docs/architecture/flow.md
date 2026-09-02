@@ -241,9 +241,12 @@ flowchart TD
   `App/Shell -> Application ProjectSession -> EngineBridge project + scene adapters -> project/scene native ABI`；Scene View
   产品链为 `StudioScenePanelView -> ViewportCompositionControl -> Application ViewportSession -> EngineBridge V7 stream
   -> editor_native bounded scheduler -> process-level viewport RenderThread -> shared viewport producer -> renderer_basic_vulkan`。
-  Scene View选择链反向停在managed owner边界：`presented front identity + DIP/physical extent -> Application Transform proxy
-  picker -> IEditorSelectionService -> Hierarchy/Inspector`；Presentation不引用selection，picker不引用Avalonia、EngineBridge、
-  Physics或native ABI，selection也不写回SceneDocument/V7 request。
+  Scene View 选择输入链反向停在 managed owner 边界：`presented front identity + DIP/physical extent -> Application
+  presented-model bounds picker -> Transform proxy fallback -> IEditorSelectionService -> Hierarchy/Inspector`；picker 不引用
+  Avalonia、EngineBridge、Physics 或 native ABI。selection truth 不写回 SceneDocument、dirty 或 Undo/Redo；其渲染投影是独立
+  的前向 view state：`Scene panel selection projection -> ViewportSession.SetSelection(ViewStateRevision, ObjectId) -> EngineBridge
+  V7 canonical UUID -> selected draw packet -> Selection Mask -> Outline Composite`。Avalonia content gate 同时核对 target、view-state
+  与 request revision，拒绝选择切换前返回的旧像素。
   V1–V6 frame exports 已硬切删除；Vulkan context、producer、queue submit、retirement 与 shutdown 只由 native owner thread
   执行。Shell 只选择路径、发命令和投影 snapshot；
   ViewModel、Dock 与 Application 不解析 descriptor/scene JSON，也不持有 native/GPU handle。Windows composition root 优先
@@ -257,7 +260,8 @@ flowchart TD
   Save/Undo/Redo/dirty、一个可见 Scene View、只读 catalog-backed Resource Browser，以及由 typed selection 驱动的只读
   Asset Inspector；Content 层已有 Mesh Product v1/受限 `.glb` cooked artifact 与 generation-safe runtime CPU mesh
   lease，但 Studio 尚未消费它，仍无 GPU mesh resource、thumbnail/preview service、Play Mode、第二 Viewport、通用 fair scheduler、
-  camera navigation、gizmo、selection outline或mesh geometry picking；当前input consumer仅限已呈现Transform proxy click selection。
+  camera navigation、gizmo、GPU ID-buffer/triangle geometry picking。当前 input consumer 已覆盖实际呈现 validation model 的
+  bounds picking 与无模型实体的 Transform proxy 回退；单个可见选中 mesh 已有固定橙色 2 px outline，但无 x-ray、hover 或多选。
 - Editor panels 仍由 `EditorPanelRegistry::drawPanels(EditorFrameContext)` 适配每帧能力，但内置
   panel 的 `draw()` 实现会先收敛为 panel-local context，再把最小能力传给 helper。Scene View panel
   不创建 Vulkan objects、不注册 descriptor、不录 command buffer。
@@ -1037,8 +1041,9 @@ release-stop 是 Asharia 的 package-first/cross-platform 推论，不是外部�
   后续都组合 Preview world/target，不新增 renderer kind。
 - Application request 不含 Avalonia、OS/Vulkan handle 或 mutable World pointer；进入 native mailbox 前，借用的
   string/span/proxy 字段会复制为 owning immutable `RenderFramePacket`。Transform proxy array 是当前 Scene View 的
-  有界调试表示，不是最终 mesh/material render snapshot。
-- native V7 request/ready frame 是 self-described、owning ABI packet，并携 view-local FOV axis；V1–V6 frame
+  有界调试表示，不是最终 mesh/material render snapshot；selected ObjectId 也是瞬态 view state，不属于 scene/material 数据。
+- native V7 request/ready frame 是 self-described、owning ABI packet，并携 view-local FOV axis、selected canonical UUID/
+  presence 与 `ViewStateRevision`；V1–V6 frame
   exports 与 managed fallback 均已删除。V7 smoke 覆盖 burst request 只留下最新 sequence、ready 被占用时不覆盖、
   steady-state 最多三个 distinct full slots，第四个请求等待 slot 回收。ABI 保留 logical/allocation 双 extent；Studio
   Scene exact request 对 logical/allocation 使用相同 panel `PixelSize`，并在 surface commit 前再次复验相等；Game fit 与 Frame Debug
