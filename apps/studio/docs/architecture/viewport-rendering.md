@@ -136,7 +136,7 @@ triangle/BVH、GPU ID buffer/readback。
 
 Presentation不引用Selection；Application不引用Avalonia/EngineBridge/native；code-behind只桥接pointer transient state。
 document/camera/extent改变会让旧front identity或minimum presentable sequence失效，click必须fail closed并保留selection。
-该路径不产生document mutation。selection outline、hover、gizmo、camera navigation、multi-select、triangle-precise picking、
+该路径不产生document mutation。selection outline、hover、gizmo、multi-select、triangle-precise picking、
 通用asset bounds与GPU ID/readback均deferred。
 
 ## 帧与槽状态
@@ -356,6 +356,33 @@ selection outline 的 owner boundary，以及 O3DE `SelectedEntityState` 的 ent
 [Unreal `WantsSelectionOutline`](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/Engine/FPrimitiveSceneProxy/WantsSelectionOutline)、
 [Unreal `SetSelection_GameThread`](https://dev.epicgames.com/documentation/unreal-engine/API/Runtime/Engine/FPrimitiveSceneProxy/SetSelection_GameThread?lang=en-US)、
 [O3DE `SelectedEntityState`](https://www.docs.o3de.org/docs/api/gems/atomlyintegration/class_a_z_1_1_render_1_1_selected_entity_state)。
+
+## Scene camera navigation MVP
+
+#405 只为 Avalonia Studio Scene View 增加 mouse-only perspective camera navigation：`Alt+LMB` 围绕当前
+`ViewportCameraSnapshot.Target` orbit，`Alt+MMB` 沿 camera right/up 平面 pan，`Alt+RMB` 垂直拖动 dolly，
+无修饰 mouse wheel 分级 dolly。无修饰 LMB 仍只进入上述 picking；navigation gesture 不发布 selection，也不预占未来
+gizmo 的普通 LMB 路线。
+
+Avalonia code-behind 只拥有 pointer button/modifier、logical surface position、focus 与 capture lifetime。它把 delta 除以当前
+logical width/height，并把 normalized delta + aspect ratio 交给不引用 Avalonia 的 Application
+`ViewportSceneCameraNavigation`；相机数学生成新的 immutable `ViewportCameraSnapshot`，panel ViewModel 再调用既有
+`ViewportSession.SetCamera`。`CameraChanged` 会推进 `MinimumPresentableSequence` 并让旧相机像素失效，后续 V7/native/
+renderer 路径不需要新增 ABI 或 pass。
+
+- orbit 保持 Target 与距离，只改变 Position，并把 pitch 限制在 ±89°，避免跨极点翻转；
+- pan 对 Position/Target 施加同一 view-plane translation，保持方向与距离；
+- dolly 保持 Target，以指数距离缩放提供与当前距离成比例的手感，并限制在 near/far 派生的安全范围；
+- capture/focus loss 立即取消 gesture；wrong pointer、无 session、无效 surface 或不匹配 modifier/button 均不改变相机；
+- camera 仍是 panel/session transient view state，不写 `SceneDocument`，不进入 dirty、Undo/Redo、save、selection 或 Physics。
+
+采用 Unreal 与 O3DE 共同公开的 `Alt+LMB/MMB/RMB` orbit/track/dolly 组合，因为它不与当前 LMB selection 冲突；采用
+Godot 各 navigation scheme 均支持 wheel zoom 的行为。当前拒绝同时引入 RMB+WASD/QE fly、movement speed/preferences、
+focus selected、orthographic、cursor warp/lock、inertia、touch/pen 或 camera collision；这些分别需要 keyboard/shortcut owner、
+selection bounds、platform input 或 Physics 合同，应作为独立 Slice。参考：
+[Unreal Viewport Controls](https://dev.epicgames.com/documentation/unreal-engine/viewport-controls-in-unreal-engine)、
+[O3DE Editor Tour](https://docs.o3de.org/docs/welcome-guide/tours/editor-tour/)、
+[Godot EditorSettings navigation scheme](https://docs.godotengine.org/en/latest/classes/class_editorsettings.html)。
 
 ## Close 与 quarantine
 

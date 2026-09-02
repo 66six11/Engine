@@ -130,6 +130,24 @@ internal sealed class StudioScenePanelViewModel :
         return true;
     }
 
+    public bool TryApplyCameraNavigation(ViewportCameraNavigationDelta delta)
+    {
+        if (isDisposed_ || session_ is not { } session)
+        {
+            return false;
+        }
+
+        var camera = session.Camera;
+        var nextCamera = ViewportSceneCameraNavigation.Apply(camera, delta);
+        if (ReferenceEquals(camera, nextCamera))
+        {
+            return false;
+        }
+
+        session.SetCamera(nextCamera);
+        return true;
+    }
+
     public void Dispose()
     {
         if (isDisposed_)

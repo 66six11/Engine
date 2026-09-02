@@ -105,4 +105,149 @@ public sealed class SceneViewportClickGestureTests
             new Size(100, 80),
             KeyModifiers.None));
     }
+
+    [Theory]
+    [InlineData(true, false, false, ViewportCameraNavigationMode.Orbit)]
+    [InlineData(false, true, false, ViewportCameraNavigationMode.Pan)]
+    [InlineData(false, false, true, ViewportCameraNavigationMode.Dolly)]
+    public void Alt_modified_single_button_begins_camera_navigation(
+        bool left,
+        bool middle,
+        bool right,
+        ViewportCameraNavigationMode expectedMode)
+    {
+        var gesture = new SceneViewportCameraGesture();
+
+        Assert.True(gesture.TryBegin(
+            9,
+            new Point(100, 60),
+            left,
+            middle,
+            right,
+            KeyModifiers.Alt));
+        Assert.True(gesture.Update(
+            9,
+            new Point(120, 45),
+            new Size(800, 400),
+            out var delta));
+        var value = Assert.IsType<ViewportCameraNavigationDelta>(delta);
+        Assert.Equal(expectedMode, value.Mode);
+        Assert.Equal(0.025f, value.HorizontalFraction);
+        Assert.Equal(-0.0375f, value.VerticalFraction);
+        Assert.Equal(2.0f, value.AspectRatio);
+        Assert.True(gesture.Complete(9));
+    }
+
+    [Theory]
+    [InlineData(KeyModifiers.None)]
+    [InlineData(KeyModifiers.Control | KeyModifiers.Alt)]
+    [InlineData(KeyModifiers.Shift | KeyModifiers.Alt)]
+    public void Camera_navigation_requires_exact_alt_modifier(KeyModifiers modifiers)
+    {
+        var gesture = new SceneViewportCameraGesture();
+
+        Assert.False(gesture.TryBegin(
+            1,
+            new Point(10, 10),
+            isLeftButtonPressed: true,
+            isMiddleButtonPressed: false,
+            isRightButtonPressed: false,
+            modifiers));
+    }
+
+    [Fact]
+    public void Wrong_pointer_and_capture_cancel_do_not_emit_navigation()
+    {
+        var gesture = new SceneViewportCameraGesture();
+        Assert.True(gesture.TryBegin(
+            4,
+            new Point(10, 10),
+            isLeftButtonPressed: true,
+            isMiddleButtonPressed: false,
+            isRightButtonPressed: false,
+            KeyModifiers.Alt));
+
+        Assert.False(gesture.Update(
+            5,
+            new Point(20, 20),
+            new Size(100, 100),
+            out _));
+        gesture.Cancel(4);
+        Assert.False(gesture.Complete(4));
+    }
+
+    [Fact]
+    public void Focus_cancel_ends_the_active_navigation_gesture()
+    {
+        var gesture = new SceneViewportCameraGesture();
+        Assert.True(gesture.TryBegin(
+            4,
+            new Point(10, 10),
+            isLeftButtonPressed: false,
+            isMiddleButtonPressed: true,
+            isRightButtonPressed: false,
+            KeyModifiers.Alt));
+
+        gesture.Cancel();
+
+        Assert.False(gesture.Update(
+            4,
+            new Point(20, 20),
+            new Size(100, 100),
+            out _));
+        Assert.False(gesture.Complete(4));
+    }
+
+    [Fact]
+    public void Relative_drag_is_stable_across_surface_size_and_dpi_scale()
+    {
+        var logical = new SceneViewportCameraGesture();
+        Assert.True(logical.TryBegin(
+            1,
+            new Point(100, 100),
+            isLeftButtonPressed: true,
+            isMiddleButtonPressed: false,
+            isRightButtonPressed: false,
+            KeyModifiers.Alt));
+        Assert.True(logical.Update(
+            1,
+            new Point(140, 120),
+            new Size(800, 400),
+            out var logicalDelta));
+
+        var scaled = new SceneViewportCameraGesture();
+        Assert.True(scaled.TryBegin(
+            2,
+            new Point(200, 200),
+            isLeftButtonPressed: true,
+            isMiddleButtonPressed: false,
+            isRightButtonPressed: false,
+            KeyModifiers.Alt));
+        Assert.True(scaled.Update(
+            2,
+            new Point(280, 240),
+            new Size(1600, 800),
+            out var scaledDelta));
+
+        Assert.Equal(logicalDelta, scaledDelta);
+    }
+
+    [Fact]
+    public void Wheel_maps_to_dpi_independent_dolly_fraction()
+    {
+        Assert.True(SceneViewportCameraGesture.TryCreateWheelDelta(
+            wheelDeltaY: 1,
+            new Size(800, 400),
+            KeyModifiers.None,
+            out var delta));
+
+        Assert.Equal(ViewportCameraNavigationMode.Dolly, delta.Mode);
+        Assert.Equal(-SceneViewportCameraGesture.WheelDollyFraction, delta.VerticalFraction);
+        Assert.Equal(2.0f, delta.AspectRatio);
+        Assert.False(SceneViewportCameraGesture.TryCreateWheelDelta(
+            wheelDeltaY: 1,
+            new Size(1600, 800),
+            KeyModifiers.Control,
+            out _));
+    }
 }

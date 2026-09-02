@@ -10,7 +10,7 @@
 
 - 已有 package-first 基线：`rendergraph` 后端无关，`rhi-vulkan` 不依赖 RenderGraph，Vulkan/RG 翻译在 `rhi_vulkan_rendergraph`，`renderer_basic` 不暴露 Vulkan。
 - Vulkan 主路径已覆盖 dynamic rendering、synchronization2 barrier、descriptor/pipeline wrapper、transient image pool、buffer upload、compute dispatch、offscreen RenderView、Frame Debug replay、editor viewport sampled texture，以及真实 RenderView indexed scene-mesh pass。后者使用 Color/Depth + VertexRead/IndexRead、`DrawIndexed` 和 draw packet context，并支持 per-view Solid/Wireframe。
-- native Dear ImGui Editor 已具备 production workbench shell、Scene View camera/grid/debug-line、Live RG View、Frame Debugger、Asset Browser snapshot-backed catalog 和多项 smoke。Avalonia Studio 已完成 R0 硬切；#352 建立真实 ProjectSession，#353 已接通 `SceneDocument -> EditWorld -> Hierarchy/Inspector -> dirty/save/reopen`，#359 建立 UI-neutral `ViewportSession`/EngineBridge typed frame lease，#385 以共享 `editor-content` query 接入只读 catalog-backed Resource Browser，#388 再以 Application-owned typed selection 把资产只读详情接入统一 Inspector，#398 让已呈现的 Transform proxies 可被确定性点击，#402 把实际呈现的 validation model bounds 接入同一 typed selection，#404 再把单个可见选中 mesh 投影为固定 2 px 橙色描边。当前 Viewport V7、Document ABI v3、Catalog ABI v1 与 Scene schema v2 均为硬切合同；最近项目、模板、Studio 对 cooked model product/runtime CPU lease 的消费、GPU 闭环、thumbnail、多 viewport、camera navigation/gizmo、preview 与 Play Mode 尚未接入。
+- native Dear ImGui Editor 已具备 production workbench shell、Scene View camera/grid/debug-line、Live RG View、Frame Debugger、Asset Browser snapshot-backed catalog 和多项 smoke。Avalonia Studio 已完成 R0 硬切；#352 建立真实 ProjectSession，#353 已接通 `SceneDocument -> EditWorld -> Hierarchy/Inspector -> dirty/save/reopen`，#359 建立 UI-neutral `ViewportSession`/EngineBridge typed frame lease，#385 以共享 `editor-content` query 接入只读 catalog-backed Resource Browser，#388 再以 Application-owned typed selection 把资产只读详情接入统一 Inspector，#398 让已呈现的 Transform proxies 可被确定性点击，#402 把实际呈现的 validation model bounds 接入同一 typed selection，#404 把单个可见选中 mesh 投影为固定 2 px 橙色描边，#405 再以 Alt-modified orbit/pan/drag-dolly 与 wheel dolly 建立 mouse-only Scene camera navigation。当前 Viewport V7、Document ABI v3、Catalog ABI v1 与 Scene schema v2 均为硬切合同；最近项目、模板、Studio 对 cooked model product/runtime CPU lease 的消费、GPU 闭环、thumbnail、多 viewport、gizmo、preview 与 Play Mode 尚未接入。
 - `asset-core` / `asset-pipeline` / `project-core` / `material-core` / `scene-core` 已是 CPU/headless 数据模型或 baseline package。#367 已闭合 authored typed mesh GUID -> backend-neutral extraction -> validation product binding -> indexed scene raster -> Frame Debug source revision 的受限路径；#386 已把通用 mesh product/受限 source import 闭合到 artifact reader，runtime GPU resource、reload/deferred deletion、material authoring仍未完成。
 - #386 已冻结 canonical Mesh Product v1、受限 `.glb` static importer、真实 artifact/manifest 与 bounded
   reader；#394 已完成 verified artifact 与 generation-safe RuntimeResource typed CPU lease。这仍不等于 GPU mesh、
@@ -64,7 +64,7 @@
 | Renderer / RenderView | 已有 Scene/Game/Preview keyed request、world grid、debug line、offscreen sampled target、多 view diagnostics、真实 validation scene-mesh pass、draw packet context 和 per-view Solid/Wireframe | 把 validation product 升级为 asset/runtime resource-backed mesh/material，再扩 lighting/postprocess feature |
 | Asset / Project | 已有 project descriptor、source scan、metadata discovery、product manifest、dry-run/execute asset-processor baseline、texture product upload smoke、Mesh Product v1 + 受限 `.glb` importer/reader、verified artifact 与 generation-safe typed CPU mesh lease | renderer GPU mesh owner、dependency invalidation、Scene View/thumbnail consumer 收敛 |
 | Material | 已有 CPU-only signature、descriptor contract、pipeline key hash smoke、renderer binding smoke、shader reflection adapter、CPU-only `.ashader` parser/document diagnostics、generated Slang skeleton、generated Slang compile/reflection smoke、generated entry manifest、CPU-only `.amat` minimal IO、#156 deterministic `.amat` product blob 和 #158 deterministic `.ashader` generated Slang product blob | #163 Slang compile/reflection product、material product dependency invalidation、renderer material product 消费和 editor preview |
-| Scene / Editor | 已有 SceneDocument-owned EditWorld、默认场景持久化、Hierarchy/Inspector、逻辑 dirty/savepoint、Transform Undo/Redo、production workbench shell、可见 Scene View、presented-model typed selection 与固定 2 px selected-mesh outline | 先补 camera navigation，再推进 gizmo interaction，并把 typed history 扩到后续 mutation |
+| Scene / Editor | 已有 SceneDocument-owned EditWorld、默认场景持久化、Hierarchy/Inspector、逻辑 dirty/savepoint、Transform Undo/Redo、production workbench shell、可见 Scene View、presented-model typed selection、固定 2 px selected-mesh outline 与 mouse-only orbit/pan/dolly | 推进 gizmo interaction，并把 typed history 扩到后续 mutation；WASD fly、focus-selected 与 navigation preferences 按独立需求再接入 |
 | Workflow / Project | Project fields 完整；#20 是 roadmap/docs sync 入口 | 重复 Project item 候选需单独审查，计划变更后同步 #20 |
 
 ## 当前执行优先级（2026-09-02）
@@ -92,7 +92,10 @@ asset/runtime GPU owner 或通用 viewport input framework。
 #404 已把 Application-owned 单选状态以独立 `ViewStateRevision + ObjectId` 投影到 V7 request；native renderer 只给匹配的
 当前可见 draw packet 生成 `Selection Mask -> Outline Composite`，输出固定橙色 2 px 描边。selection 仍不写回
 `SceneDocument`、dirty、Undo/Redo 或 save，也没有引入 x-ray、hover、多选、Physics 或通用 post-effect/overlay framework。
-完成这条反馈闭环后，下一独立 Slice 优先做 camera navigation，再在稳定 viewport input/camera 语义上推进 gizmo interaction。
+完成这条反馈闭环后，#405 以 `Alt+LMB/MMB/RMB + wheel` 建立 mouse-only orbit/pan/dolly：Avalonia 只桥接 focus/capture
+和 logical surface-normalized delta，Application 生成 immutable camera snapshot，再复用 `ViewportSession.SetCamera` 与既有 V7
+camera packet。它不写 document/selection，不引入 Physics/native ABI、WASD fly、focus-selected 或 settings framework；下一独立
+Slice 可在这个稳定 viewport input/camera 语义上推进 gizmo interaction。
 
 Code-first authoring 试点继续保留，但排在首个可见 Scene View 之后；它不阻塞 viewport 或场景闭环。
 

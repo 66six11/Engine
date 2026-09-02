@@ -247,6 +247,10 @@ flowchart TD
   的前向 view state：`Scene panel selection projection -> ViewportSession.SetSelection(ViewStateRevision, ObjectId) -> EngineBridge
   V7 canonical UUID -> selected draw packet -> Selection Mask -> Outline Composite`。Avalonia content gate 同时核对 target、view-state
   与 request revision，拒绝选择切换前返回的旧像素。
+  Scene View 相机导航走另一条瞬态输入链：`Avalonia pointer button/modifier + focus/capture -> logical surface-normalized
+  orbit/pan/dolly delta -> Application ViewportSceneCameraNavigation -> ViewportSession.SetCamera -> CameraChanged invalidation ->
+  existing V7 camera packet`。Application 数学不引用 Avalonia，gesture 不写 selection/document；native ABI、renderer 与 RenderGraph
+  无新增相机导航分支。
   V1–V6 frame exports 已硬切删除；Vulkan context、producer、queue submit、retirement 与 shutdown 只由 native owner thread
   执行。Shell 只选择路径、发命令和投影 snapshot；
   ViewModel、Dock 与 Application 不解析 descriptor/scene JSON，也不持有 native/GPU handle。Windows composition root 优先
@@ -260,8 +264,9 @@ flowchart TD
   Save/Undo/Redo/dirty、一个可见 Scene View、只读 catalog-backed Resource Browser，以及由 typed selection 驱动的只读
   Asset Inspector；Content 层已有 Mesh Product v1/受限 `.glb` cooked artifact 与 generation-safe runtime CPU mesh
   lease，但 Studio 尚未消费它，仍无 GPU mesh resource、thumbnail/preview service、Play Mode、第二 Viewport、通用 fair scheduler、
-  camera navigation、gizmo、GPU ID-buffer/triangle geometry picking。当前 input consumer 已覆盖实际呈现 validation model 的
-  bounds picking 与无模型实体的 Transform proxy 回退；单个可见选中 mesh 已有固定橙色 2 px outline，但无 x-ray、hover 或多选。
+  gizmo、GPU ID-buffer/triangle geometry picking。当前 input consumer 已覆盖实际呈现 validation model 的 bounds picking、无模型实体的
+  Transform proxy 回退，以及 Alt-modified orbit/pan/drag-dolly 与 wheel dolly；单个可见选中 mesh 已有固定橙色 2 px outline，但无
+  x-ray、hover、多选、WASD fly、focus-selected 或 camera collision。
 - Editor panels 仍由 `EditorPanelRegistry::drawPanels(EditorFrameContext)` 适配每帧能力，但内置
   panel 的 `draw()` 实现会先收敛为 panel-local context，再把最小能力传给 helper。Scene View panel
   不创建 Vulkan objects、不注册 descriptor、不录 command buffer。

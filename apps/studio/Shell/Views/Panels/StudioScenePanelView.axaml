@@ -20,10 +20,13 @@
             RevisionToken="{Binding ViewportRevision}"
             Lifetime="{Binding PresentationLifetime}"
             IsRealtime="{Binding IsRealtime}"
+            Focusable="True"
             PointerPressed="OnSceneViewportPointerPressed"
             PointerMoved="OnSceneViewportPointerMoved"
             PointerReleased="OnSceneViewportPointerReleased"
-            PointerCaptureLost="OnSceneViewportPointerCaptureLost" />
+            PointerWheelChanged="OnSceneViewportPointerWheelChanged"
+            PointerCaptureLost="OnSceneViewportPointerCaptureLost"
+            LostFocus="OnSceneViewportLostFocus" />
 
         <Border Margin="12"
                 Padding="12"

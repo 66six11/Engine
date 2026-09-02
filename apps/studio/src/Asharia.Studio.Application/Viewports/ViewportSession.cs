@@ -74,6 +74,17 @@ public sealed class ViewportSession
         }
     }
 
+    public ViewportCameraSnapshot Camera
+    {
+        get
+        {
+            lock (gate_)
+            {
+                return camera_;
+            }
+        }
+    }
+
     public bool TryCapturePickSnapshot(
         ViewportSessionId expectedSessionId,
         Guid expectedTargetId,

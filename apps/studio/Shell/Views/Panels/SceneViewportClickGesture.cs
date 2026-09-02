@@ -68,6 +68,8 @@ internal sealed class SceneViewportClickGesture
         }
     }
 
+    public void Cancel() => Reset();
+
     private void Reset()
     {
         pointerId_ = null;
