@@ -18,6 +18,7 @@ public sealed class SceneViewportClickGestureTests
             ViewportSessionId.Create(),
             Guid.NewGuid(),
             TargetRevision: 2,
+            FrameSequence: 3,
             extent,
             RenderScaling: 1.5);
 

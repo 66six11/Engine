@@ -29,6 +29,7 @@ public sealed class ViewportSession
     private ViewportInvalidationReason pendingReasons_ = ViewportInvalidationReason.InitialFrame;
     private ulong lastSequence_;
     private ulong minimumPresentableSequence_ = 1;
+    private ulong minimumInteractiveCameraSequence_;
     private ulong inFlightSequence_;
     private ulong inFlightTargetRevision_;
     private ViewportInvalidationReason inFlightReasons_;
@@ -113,6 +114,38 @@ public sealed class ViewportSession
         }
     }
 
+    public bool TryCapturePickSnapshot(
+        ViewportSessionId expectedSessionId,
+        Guid expectedTargetId,
+        ulong expectedTargetRevision,
+        ulong expectedPresentedSequence,
+        out ViewportPickSnapshot snapshot)
+    {
+        lock (gate_)
+        {
+            snapshot = null!;
+            if (isClosed_ || kind_ != ViewportRenderKind.Scene ||
+                expectedSessionId != sessionId_ || expectedTargetId != targetId_ ||
+                expectedTargetRevision != targetRevision_ ||
+                !CanUsePublishedFrameForInteractionLocked(
+                    expectedPresentedSequence,
+                    expectedTargetRevision))
+            {
+                return false;
+            }
+
+            snapshot = new ViewportPickSnapshot(
+                sessionId_,
+                targetId_,
+                targetRevision_,
+                camera_,
+                modelPickProxies_,
+                debugProxies_,
+                totalDebugProxyCount_);
+            return true;
+        }
+    }
+
     public void SynchronizeDocument(SceneDocumentSnapshot document)
     {
         ArgumentNullException.ThrowIfNull(document);
@@ -165,9 +198,10 @@ public sealed class ViewportSession
             }
 
             camera_ = camera;
+            minimumInteractiveCameraSequence_ = 0;
             requestRefresh = InvalidateLocked(
                 ViewportInvalidationReason.CameraChanged,
-                advancePresentationFence: true);
+                advancePresentationFence: false);
         }
         RaiseRefreshRequested(requestRefresh);
     }
@@ -251,6 +285,10 @@ public sealed class ViewportSession
         lock (gate_)
         {
             ThrowIfClosed();
+            if (reasons.HasFlag(ViewportInvalidationReason.CameraChanged))
+            {
+                minimumInteractiveCameraSequence_ = 0;
+            }
             requestRefresh = InvalidateLocked(
                 reasons,
                 advancePresentationFence:
@@ -287,6 +325,7 @@ public sealed class ViewportSession
             }
 
             var sequence = checked(++lastSequence_);
+            MarkCameraPublishedLocked(sequence);
             var reasons = pendingReasons_;
             pendingReasons_ = ViewportInvalidationReason.None;
             inFlightSequence_ = sequence;
@@ -339,6 +378,7 @@ public sealed class ViewportSession
             }
 
             var sequence = checked(++lastSequence_);
+            MarkCameraPublishedLocked(sequence);
             var reasons = pendingReasons_;
             pendingReasons_ = ViewportInvalidationReason.None;
             request = new ViewportRenderRequest(
@@ -377,6 +417,18 @@ public sealed class ViewportSession
         lock (gate_)
         {
             return CanPresentPublishedFrameLocked(sequence, targetRevision) &&
+                viewStateRevision == viewStateRevision_;
+        }
+    }
+
+    public bool CanUsePublishedFrameForInteraction(
+        ulong sequence,
+        ulong targetRevision,
+        ulong viewStateRevision)
+    {
+        lock (gate_)
+        {
+            return CanUsePublishedFrameForInteractionLocked(sequence, targetRevision) &&
                 viewStateRevision == viewStateRevision_;
         }
     }
@@ -464,7 +516,6 @@ public sealed class ViewportSession
 
     private static readonly ViewportInvalidationReason PresentationInvalidationReasons =
         ViewportInvalidationReason.TargetChanged |
-        ViewportInvalidationReason.CameraChanged |
         ViewportInvalidationReason.Exposed |
         ViewportInvalidationReason.SelectionChanged;
 
@@ -539,6 +590,21 @@ public sealed class ViewportSession
     private bool CanPresentPublishedFrameLocked(ulong sequence, ulong targetRevision) =>
         !isClosed_ && sequence >= minimumPresentableSequence_ &&
         sequence <= lastSequence_ && targetRevision == targetRevision_;
+
+    private bool CanUsePublishedFrameForInteractionLocked(
+        ulong sequence,
+        ulong targetRevision) =>
+        minimumInteractiveCameraSequence_ != 0 &&
+        sequence >= minimumInteractiveCameraSequence_ &&
+        CanPresentPublishedFrameLocked(sequence, targetRevision);
+
+    private void MarkCameraPublishedLocked(ulong sequence)
+    {
+        if (minimumInteractiveCameraSequence_ == 0)
+        {
+            minimumInteractiveCameraSequence_ = sequence;
+        }
+    }
 
     private void RaiseRefreshRequested(bool requestRefresh)
     {

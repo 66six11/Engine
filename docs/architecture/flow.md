@@ -1101,9 +1101,13 @@ release-stop 是 Asharia 的 package-first/cross-platform 推论，不是外部�
   不被旧流退役绑在同一个全局 task 上。plain `GridSplitter.ShowsPreview` 和 drag-end debounce 都不能维持交互期间每秒至少 60 个
   unique committed geometry generations，因此明确不采用。
 - `IsRealtime=true` 即使 scene/camera 静止也由 `RequestCompositionUpdate` 每个 commit 最多重挂一次，目标 exact surface-update
-  `>=60 FPS`；`false` 不自动重挂，只消费 dirty invalidation。`RequestSequence`/`MinimumPresentableSequence` 拒绝 camera/target/exposed
-  之后的旧内容帧；extent 只由 geometry generation 裁决，Realtime/extent 都不推进内容 fence。两种模式都不使用 UI timer。
-- `--smoke-studio-viewport-cadence` 只采集前台静态 Scene 的 5 秒 Realtime 稳态；`--smoke-viewport-transaction-resize`、
+  `>=60 FPS`；`false` 不自动重挂，只消费 dirty invalidation。`MinimumPresentableSequence` 继续拒绝 target/selection/exposed
+  之后的旧内容帧；camera-only input 不推进 hard fence，而是记录首个携带当前 camera 的 request sequence。旧 camera frame 可按
+  sequence 单调显示，但 picking 只有在 presented sequence 达到该 camera sequence 后才开放。extent 仍由 geometry generation
+  独占裁决，Realtime/extent 也不推进内容 fence。两种模式都不使用 UI timer。
+- `--smoke-studio-viewport-cadence` 只采集前台静态 Scene 的 5 秒 Realtime 稳态；
+  `--smoke-studio-camera-navigation-cadence` 独立以 240 Hz 连续修改 camera，并门控同一 surface cadence 与最终 presented-camera
+  interaction acknowledgement；`--smoke-viewport-transaction-resize`、
   `--smoke-viewport-transaction-overload`、`--smoke-viewport-transaction-faults`、
   `--smoke-viewport-transaction-supersede` 与 `--smoke-viewport-multi-endpoint` 已拆成独立真实 Studio/Avalonia/Vulkan smoke，
   `--smoke-viewport-transaction-flash` 再记录每个成功

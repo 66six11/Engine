@@ -165,6 +165,16 @@ public sealed class StudioProcessAcceptanceTests
 
     [StudioGpuFact]
     [Trait("Category", "StudioGpuAcceptance")]
+    public void Camera_navigation_does_not_starve_scene_view_surface_updates()
+    {
+        RunGpuSmoke(
+            "camera-navigation-cadence",
+            timeoutMilliseconds: 35_000,
+            StudioViewportCadenceSmoke.CameraNavigationCommandLineSwitch);
+    }
+
+    [StudioGpuFact]
+    [Trait("Category", "StudioGpuAcceptance")]
     public void Scene_mesh_closes_from_v2_document_to_presented_wireframe_draw()
     {
         RunGpuSmoke(
@@ -364,6 +374,10 @@ public sealed class StudioProcessAcceptanceTests
             arguments[0],
             StudioSceneMeshSmoke.CommandLineSwitch,
             StringComparison.Ordinal);
+        var isCameraNavigationCadence = arguments.Length == 1 && string.Equals(
+            arguments[0],
+            StudioViewportCadenceSmoke.CameraNavigationCommandLineSwitch,
+            StringComparison.Ordinal);
         if (transactionContract is not null)
         {
             Assert.Equal(transactionContract.CaseScenario, scenario);
@@ -371,6 +385,10 @@ public sealed class StudioProcessAcceptanceTests
         else if (isSceneMeshSmoke)
         {
             Assert.Equal("scene-mesh-closure", scenario);
+        }
+        else if (isCameraNavigationCadence)
+        {
+            Assert.Equal("camera-navigation-cadence", scenario);
         }
         else
         {
@@ -444,6 +462,13 @@ public sealed class StudioProcessAcceptanceTests
         {
             Assert.Contains(StudioSceneMeshSmoke.PassMarker, output, StringComparison.Ordinal);
             AssertStructuredSceneMeshEvidence(output);
+        }
+        else if (isCameraNavigationCadence)
+        {
+            Assert.Contains(
+                "Studio viewport camera-navigation surface-update cadence PASS:",
+                output,
+                StringComparison.Ordinal);
         }
         else
         {

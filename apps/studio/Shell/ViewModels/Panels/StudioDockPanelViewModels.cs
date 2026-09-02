@@ -109,6 +109,7 @@ internal sealed class StudioScenePanelViewModel :
                 context.SessionId,
                 context.TargetId,
                 context.TargetRevision,
+                context.FrameSequence,
                 out var snapshot))
         {
             return false;

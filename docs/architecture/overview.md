@@ -348,12 +348,15 @@ Studio Avalonia `Viewport Presentation Transaction` 的当前路径：
 7. typed `Backpressure` 在下一次 composition cadence 重试；Unavailable/device failure 显式降级。`IsRealtime=true` 即使静止也每个
    commit 重挂下一帧并以 exact surface-update `>=60 FPS` 为最低门槛；candidate commit 后才恢复 steady 预填充。`false` 只响应
    dirty invalidation。hidden dock tab/lifetime pause 停止 admission，ancestor visible、新 surface attach 或 lifetime
-   replacement/resume 以 `Exposed` 恢复一帧；closed session 不再接受 UI invalidation。camera/target/exposed 通过 request-sequence
-   content fence 拒绝旧内容帧，extent 仍由 geometry generation 独占门控。
+   replacement/resume 以 `Exposed` 恢复一帧；closed session 不再接受 UI invalidation。target/selection/exposed 通过 request-sequence
+   hard fence 拒绝旧内容帧；camera-only input 保留 latest-wins request，并允许已经完成的旧 camera frame 单调显示，直到首个携带
+   当前 camera 的 sequence 呈现后才重新开放 picking。extent 仍由 geometry generation 独占门控。
 8. 每轮 frame 通过 `editor_viewport_complete_frame_v7(stream, slot, completionKind)` exact-once 完成；compositor submission 前拒绝
    用 `NotSubmittedToConsumer`，update 完成后使用 `ConsumerAccessed`。submission、disposal 或 completion 结果歧义时对应资源进入
    process-lifetime quarantine。control detach 停止 admission 并等待所有 front/candidate frame/surface cleanup；process shutdown
    再 drain native RenderThread 与 Vulkan owner。`--smoke-studio-viewport-cadence` 只保留前台静态 Scene 的 5 秒 Realtime 稳态基线；
+   `--smoke-studio-camera-navigation-cadence` 则以 240 Hz camera samples 验证连续导航不会造成 presentation starvation，并要求
+   最终 presented sequence 与当前 camera 的 interaction gate 对齐；
    `--smoke-viewport-transaction-resize`、`--smoke-viewport-transaction-overload`、`--smoke-viewport-transaction-faults`、
    `--smoke-viewport-transaction-supersede` 与 `--smoke-viewport-multi-endpoint` 已拆成独立真实 Studio GPU smoke，
    `--smoke-viewport-transaction-flash` 再做 transaction-batch 结构边界，

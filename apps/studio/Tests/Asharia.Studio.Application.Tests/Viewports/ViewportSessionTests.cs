@@ -301,7 +301,7 @@ public sealed class ViewportSessionTests
     }
 
     [Fact]
-    public void Camera_change_rejects_a_frame_published_before_the_change()
+    public void Camera_change_keeps_an_older_frame_presentable_until_the_latest_camera_is_published()
     {
         var session = new ViewportSession(
             ViewportSessionId.Create(),
@@ -315,13 +315,72 @@ public sealed class ViewportSessionTests
         var movedCamera = CameraAt(3);
         session.SetCamera(movedCamera);
 
-        Assert.Equal(stale.Sequence + 1U, session.Current.MinimumPresentableSequence);
-        Assert.False(session.CanPresentPublishedFrame(stale.Sequence, stale.TargetRevision));
-        Assert.False(session.MarkPublishedFramePresented(stale.Sequence, stale.TargetRevision));
+        Assert.Equal(stale.Sequence, session.Current.MinimumPresentableSequence);
+        Assert.True(session.CanPresentPublishedFrame(stale.Sequence, stale.TargetRevision));
+        Assert.True(session.MarkPublishedFramePresented(stale.Sequence, stale.TargetRevision));
+        Assert.False(session.CanUsePublishedFrameForInteraction(
+            stale.Sequence,
+            stale.TargetRevision,
+            stale.ViewStateRevision));
+        Assert.False(session.TryCapturePickSnapshot(
+            stale.SessionId,
+            stale.TargetId,
+            stale.TargetRevision,
+            stale.Sequence,
+            out _));
         Assert.True(session.TryPublishLatest(size, out var current));
         Assert.Equal(movedCamera, current.Camera);
         Assert.True(session.CanPresentPublishedFrame(current.Sequence, current.TargetRevision));
         Assert.True(session.MarkPublishedFramePresented(current.Sequence, current.TargetRevision));
+        Assert.True(session.CanUsePublishedFrameForInteraction(
+            current.Sequence,
+            current.TargetRevision,
+            current.ViewStateRevision));
+        Assert.True(session.TryCapturePickSnapshot(
+            current.SessionId,
+            current.TargetId,
+            current.TargetRevision,
+            current.Sequence,
+            out var pickSnapshot));
+        Assert.Equal(movedCamera, pickSnapshot.Camera);
+    }
+
+    [Fact]
+    public void Continuous_camera_changes_do_not_starve_every_published_frame()
+    {
+        var session = new ViewportSession(
+            ViewportSessionId.Create(),
+            ViewportRenderKind.Scene,
+            Document(revision: 1, entityCount: 0),
+            ViewportCameraSnapshot.DefaultScene);
+        var extent = new ViewportExtent(640, 360);
+        var size = new ViewportRenderSize(extent, extent);
+        Assert.True(session.TryPublishLatest(size, out var published));
+        var presentationFence = session.Current.MinimumPresentableSequence;
+
+        for (var inputIndex = 1; inputIndex <= 240; inputIndex++)
+        {
+            session.SetCamera(CameraAt(inputIndex));
+
+            Assert.Equal(presentationFence, session.Current.MinimumPresentableSequence);
+            Assert.True(session.CanPresentPublishedFrame(
+                published.Sequence,
+                published.TargetRevision));
+            Assert.False(session.CanUsePublishedFrameForInteraction(
+                published.Sequence,
+                published.TargetRevision,
+                published.ViewStateRevision));
+            Assert.True(session.TryPublishLatest(size, out published));
+        }
+
+        Assert.Equal(CameraAt(240), published.Camera);
+        Assert.True(session.CanPresentPublishedFrame(
+            published.Sequence,
+            published.TargetRevision));
+        Assert.True(session.CanUsePublishedFrameForInteraction(
+            published.Sequence,
+            published.TargetRevision,
+            published.ViewStateRevision));
     }
 
     [Fact]
