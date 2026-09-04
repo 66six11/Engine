@@ -3,6 +3,9 @@
 状态：Accepted / Implemented
 日期：2026-08-12
 
+历史状态说明（2026-09-03）：本 ADR 保留当时 V6→V7 的 FOV 设计与验证记录；production stream
+已由 #409 的 typed Translate Gizmo packet 硬切至 V8，本文决定的 projection/FOV 语义未改变。
+
 ## 背景
 
 旧 camera contract 只携 60° `VerticalFovRadians`。Scene View 宽度不变、只增加 dock 高度时，固定垂直 FOV 会扩大物体的

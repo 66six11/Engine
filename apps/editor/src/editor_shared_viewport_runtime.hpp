@@ -231,6 +231,13 @@ namespace asharia::editor {
             bool flashSentinelCorners{};
             bool hasSelectionOutline{};
             std::array<std::uint8_t, 16> selectedObjectId{};
+            bool hasTranslateGizmo{};
+            std::array<std::uint64_t, 2> translateGizmoObjectId{};
+            std::array<float, 3> translateGizmoPosition{};
+            EditorSharedViewportGizmoAxis translateGizmoHoveredAxis{
+                EditorSharedViewportGizmoAxis::None};
+            EditorSharedViewportGizmoAxis translateGizmoActiveAxis{
+                EditorSharedViewportGizmoAxis::None};
 
             [[nodiscard]] static RenderFramePacket copyOf(EditorSharedViewportPresentDesc desc);
             [[nodiscard]] EditorSharedViewportPresentDesc view() const;

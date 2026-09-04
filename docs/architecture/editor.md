@@ -292,7 +292,7 @@ raw final by 0–1 candidate, and diagnostics must report both values plus pixel
 `SetWindowPos` removes that additional grow-gap/shrink-crop transition, but does not make drag-time USER32/DWM and Avalonia commits
 physically atomic.
 
-The V7 native stream still keeps at most one executing request, one latest pending replacement and one ready frame per
+The V8 native stream still keeps at most one executing request, one latest pending replacement and one ready frame per
 viewport, with at most three persistent full presentation slots. Each slot keeps its external image, producer/consumer
 semaphores, command resources and retirement proof together across frames. The old three-slot steady front plus the one-frame
 candidate stay within the process-wide four-resource cap; Realtime prefill resumes only after the prepared switch. Snap,
@@ -331,9 +331,10 @@ and blend policy, plus a data-only debug world-line span. It does not use `Edito
 `EditorViewportOverlayFlags`, ImGui ids or Vulkan handles from panels. Grid, gizmo and debug draw passes must consume this
 contract in later slices instead of reading editor panel state directly.
 
-The Studio V7 request carries a view-local FOV axis but does not yet carry selection or mutable overlay intent. Those features require an explicit immutable
-view-state snapshot/revision before they can participate in the content fence; document revision or a managed invalidation bit
-must not be used as a substitute.
+The Studio V8 request carries the view-local FOV axis, selected canonical UUID/`ViewStateRevision` and an optional typed
+Translate Gizmo packet. Selection participates in the hard content fence; high-frequency Gizmo preview instead uses a
+non-fencing latest-wins invalidation so input cannot starve every in-flight frame. Neither state is written into the scene/material
+schema, and the renderer consumes only immutable per-view inputs.
 
 ## 生命周期
 
@@ -679,7 +680,7 @@ ImGui/GLFW 状态。
 space、pivot mode、snap enabled、overlay flags、view mode 和 edit/play preview state，并通过 frame-local
 `ViewportToolStateChanged` 事件进入 Log / Console diagnostics。
 
-当前只有 View/Grid 这类 shell-level 状态可用；Select、Move、Rotate、Scale、Gizmo 和 selection outline 仍是 pending
+当前 native Dear ImGui editor 只有 View/Grid 这类 shell-level 状态可用；Select、Move、Rotate、Scale、Gizmo 和 selection outline 仍是 pending
 provider/render bridge 状态。尝试激活 pending transform / selection tool 不会改变 active tool revision，只会产生 no-op warning
 event。Scene View panel 只消费 snapshot 并把 overlay strip 的受限切换写回该 owner，不再持久保存自己的 overlay flag 副本。
 
@@ -829,13 +830,13 @@ records only the debug replay/copy path, and displays the resulting sampled prev
   event metadata for diagnostics. Real scene hierarchy, picking, transaction-backed writable fields, dirty
   persistence/autosave, writable asset operations and richer asset browser workflows are still blocked on
   scene/asset/schema ownership becoming concrete enough.
-- The Unity-like workbench UI baseline is visual and presentational only. It adds the `Unity 6 Dark` default theme,
+- The native Dear ImGui Unity-like workbench UI baseline is visual and presentational only. It adds the `Unity 6 Dark` default theme,
   compact toolbar/status/panel metrics, Hierarchy/Project/Console visible labels, a Scene View header, a Project split
   navigation/content layout, a gray workbench shell behind darker rounded panel content blocks and disabled/pending controls
   for play, search, Console filters, Inspector lock/pin and not-yet-wired authoring affordances. It does not implement
   writable Inspector fields, scene hierarchy mutation, picking, transform gizmos, selection outlines or a new
   `editor_domain` target.
-- World-space transform gizmo, wire, selection outline, debug overlay and debug gizmo passes are still pending
+- For the native Dear ImGui editor, world-space transform gizmo, wire, selection outline, debug overlay and debug gizmo passes are still pending
   renderer-side view pass work. Gizmo and Select controls stay disabled/pending in Scene View until real provider/render
   bridge support exists. Grid now has a renderer-owned fullscreen world-grid pass, RenderView policy for
   camera-height LOD/fade, source overlay diagnostics, Frame Debug replay preservation and a `sceneGrid` settings bridge

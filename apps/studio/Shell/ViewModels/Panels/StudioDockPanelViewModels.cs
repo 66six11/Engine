@@ -4,6 +4,7 @@ using System.ComponentModel;
 using System.Globalization;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Threading.Tasks;
 using Asharia.Studio.Application.Assets;
 using Asharia.Studio.Application.Projects;
 using Asharia.Studio.Application.Selection;
@@ -37,6 +38,9 @@ internal sealed class StudioScenePanelViewModel :
     private ulong selectionSourceRevision_;
     private ulong viewStateRevision_;
     private Guid? selectedObjectId_;
+    private ViewportTranslateGizmoInteraction? translateGizmoInteraction_;
+    private ViewportGizmoAxis hoveredGizmoAxis_;
+    private bool isTranslateGizmoCommitPending_;
     private bool isRealtime_ = true;
     private bool isWireframe_;
     private bool isDisposed_;
@@ -149,6 +153,183 @@ internal sealed class StudioScenePanelViewModel :
         return true;
     }
 
+    public bool TryBeginTranslateGizmo(
+        ViewportPresentedInteractionContext context,
+        ViewportPickRequest request)
+    {
+        if (isDisposed_ || isTranslateGizmoCommitPending_ ||
+            translateGizmoInteraction_ is not null ||
+            session_ is not { } session || request.Extent != context.Extent)
+        {
+            return false;
+        }
+
+        var project = projectSession_.Current;
+        if (project.Document is not { } document ||
+            document.SceneId != context.TargetId ||
+            document.Revision != context.TargetRevision ||
+            !session.TryCaptureTranslateGizmoSnapshot(
+                context.SessionId,
+                context.TargetId,
+                context.TargetRevision,
+                context.FrameSequence,
+                out var snapshot) ||
+            !ViewportTranslateGizmoManipulator.TryBegin(
+                snapshot,
+                request,
+                out var interaction))
+        {
+            return false;
+        }
+
+        translateGizmoInteraction_ = interaction;
+        hoveredGizmoAxis_ = interaction.Axis;
+        session.SetTranslateGizmo(new ViewportTranslateGizmoState(
+            interaction.ObjectId,
+            interaction.CurrentTransform,
+            interaction.Axis,
+            interaction.Axis));
+        return true;
+    }
+
+    public bool TryUpdateTranslateGizmo(ViewportPickPoint point)
+    {
+        if (isDisposed_ || translateGizmoInteraction_ is not { } interaction ||
+            session_ is not { } session || !interaction.TryUpdate(point, out var transform))
+        {
+            return false;
+        }
+
+        session.SetTranslateGizmo(new ViewportTranslateGizmoState(
+            interaction.ObjectId,
+            transform,
+            interaction.Axis,
+            interaction.Axis));
+        return true;
+    }
+
+    public bool TryUpdateTranslateGizmoHover(
+        ViewportPresentedInteractionContext context,
+        ViewportPickRequest request)
+    {
+        if (isDisposed_ || isTranslateGizmoCommitPending_ ||
+            translateGizmoInteraction_ is not null ||
+            session_ is not { } session || request.Extent != context.Extent ||
+            !session.TryCaptureTranslateGizmoSnapshot(
+                context.SessionId,
+                context.TargetId,
+                context.TargetRevision,
+                context.FrameSequence,
+                out var snapshot))
+        {
+            return false;
+        }
+
+        var axis = ViewportTranslateGizmoManipulator.HitTest(snapshot, request);
+        if (hoveredGizmoAxis_ == axis)
+        {
+            return true;
+        }
+
+        hoveredGizmoAxis_ = axis;
+        session.SetTranslateGizmo(new ViewportTranslateGizmoState(
+            snapshot.ObjectId,
+            snapshot.Transform,
+            axis));
+        return true;
+    }
+
+    public async ValueTask<bool> CompleteTranslateGizmoAsync()
+    {
+        if (isDisposed_ || translateGizmoInteraction_ is not { } interaction ||
+            session_ is not { } session)
+        {
+            return false;
+        }
+
+        translateGizmoInteraction_ = null;
+        hoveredGizmoAxis_ = ViewportGizmoAxis.None;
+        if (!interaction.HasChanged)
+        {
+            session.ResetTranslateGizmo();
+            return true;
+        }
+
+        var current = projectSession_.Current;
+        if (current.Document is not { } document ||
+            document.SceneId != session.Current.TargetId ||
+            document.Revision != interaction.ExpectedRevision ||
+            selectedObjectId_ != interaction.ObjectId)
+        {
+            session.ResetTranslateGizmo();
+            return false;
+        }
+
+        isTranslateGizmoCommitPending_ = true;
+        session.SetTranslateGizmo(new ViewportTranslateGizmoState(
+            interaction.ObjectId,
+            interaction.CurrentTransform));
+        var editId = ProjectEditId.CreateNew();
+        try
+        {
+            var result = await projectSession_.SetEntityTransformAsync(
+                interaction.ObjectId,
+                interaction.CurrentTransform,
+                new ProjectSessionEditContext(editId, interaction.ExpectedRevision));
+            if (isDisposed_)
+            {
+                return result.Succeeded;
+            }
+
+            ApplyProjectSnapshot(result.Current);
+            if (!result.Succeeded)
+            {
+                session_?.ResetTranslateGizmo();
+            }
+            Shell.PresentProjectOperationMessage(result.Message);
+            return result.Succeeded;
+        }
+        catch (Exception exception)
+        {
+            if (!isDisposed_)
+            {
+                session_?.ResetTranslateGizmo();
+                Shell.PresentProjectOperationMessage(
+                    $"Could not move the selected entity. {exception.Message}");
+            }
+            return false;
+        }
+        finally
+        {
+            isTranslateGizmoCommitPending_ = false;
+        }
+    }
+
+    public void CancelTranslateGizmo()
+    {
+        if (isDisposed_ || translateGizmoInteraction_ is null)
+        {
+            return;
+        }
+
+        translateGizmoInteraction_ = null;
+        hoveredGizmoAxis_ = ViewportGizmoAxis.None;
+        session_?.ResetTranslateGizmo();
+    }
+
+    public void ClearTranslateGizmoHover()
+    {
+        if (isDisposed_ || isTranslateGizmoCommitPending_ ||
+            translateGizmoInteraction_ is not null ||
+            hoveredGizmoAxis_ == ViewportGizmoAxis.None)
+        {
+            return;
+        }
+
+        hoveredGizmoAxis_ = ViewportGizmoAxis.None;
+        session_?.ResetTranslateGizmo();
+    }
+
     public void Dispose()
     {
         if (isDisposed_)
@@ -157,6 +338,7 @@ internal sealed class StudioScenePanelViewModel :
         }
 
         isDisposed_ = true;
+        translateGizmoInteraction_ = null;
         projectSession_.SnapshotChanged -= OnProjectSnapshotChanged;
         selection_.Changed -= OnSelectionChanged;
         session_?.Close();
@@ -188,12 +370,16 @@ internal sealed class StudioScenePanelViewModel :
         var document = snapshot.Document;
         if (document is null)
         {
+            translateGizmoInteraction_ = null;
+            hoveredGizmoAxis_ = ViewportGizmoAxis.None;
             ReplaceSession(null);
             return;
         }
 
         if (session_ is { } session && session.Current.TargetId == document.SceneId)
         {
+            translateGizmoInteraction_ = null;
+            hoveredGizmoAxis_ = ViewportGizmoAxis.None;
             session.SynchronizeDocument(document);
             ApplySelection(selection_.Current, snapshot);
             viewportRevision_ = document.Revision;
@@ -254,6 +440,8 @@ internal sealed class StudioScenePanelViewModel :
         selectionSourceRevision_ = selection.Revision;
         if (selectedObjectId_ != selectedObjectId)
         {
+            translateGizmoInteraction_ = null;
+            hoveredGizmoAxis_ = ViewportGizmoAxis.None;
             selectedObjectId_ = selectedObjectId;
             viewStateRevision_ = checked(viewStateRevision_ + 1);
         }

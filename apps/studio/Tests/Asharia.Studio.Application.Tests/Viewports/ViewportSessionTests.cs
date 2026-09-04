@@ -421,6 +421,90 @@ public sealed class ViewportSessionTests
     }
 
     [Fact]
+    public void Translate_gizmo_preview_is_non_fencing_and_uses_latest_transform()
+    {
+        var document = Document(revision: 1, entityCount: 1);
+        var selectedObjectId = document.Entities.Single().ObjectId;
+        var session = new ViewportSession(
+            ViewportSessionId.Create(),
+            ViewportRenderKind.Scene,
+            document,
+            ViewportCameraSnapshot.DefaultScene);
+        var extent = new ViewportExtent(640, 360);
+        var size = new ViewportRenderSize(extent, extent);
+        session.SetSelection(viewStateRevision: 1, selectedObjectId);
+        Assert.True(session.TryPublishLatest(size, out var published));
+        var presentationFence = session.Current.MinimumPresentableSequence;
+
+        for (var inputIndex = 1; inputIndex <= 240; inputIndex++)
+        {
+            var preview = new TransformValue(
+                new Float3(inputIndex, 2, 3),
+                Quaternion.Identity,
+                Float3.One);
+            session.SetTranslateGizmo(new ViewportTranslateGizmoState(
+                selectedObjectId,
+                preview,
+                ViewportGizmoAxis.X,
+                ViewportGizmoAxis.X));
+
+            Assert.Equal(presentationFence, session.Current.MinimumPresentableSequence);
+            Assert.True(session.CanPresentPublishedFrame(
+                published.Sequence,
+                published.TargetRevision));
+            Assert.True(session.TryPublishLatest(size, out published));
+            Assert.Equal(preview, Assert.IsType<ViewportTranslateGizmoState>(
+                published.TranslateGizmo).Transform);
+            Assert.True(published.Reasons.HasFlag(ViewportInvalidationReason.GizmoChanged));
+        }
+
+        Assert.Equal(new Float3(240, 2, 3), published.TranslateGizmo!.Transform.Position);
+    }
+
+    [Fact]
+    public void Document_synchronization_restores_authoritative_gizmo_transform()
+    {
+        var document = Document(revision: 1, entityCount: 1);
+        var entity = document.Entities.Single();
+        var session = new ViewportSession(
+            ViewportSessionId.Create(),
+            ViewportRenderKind.Scene,
+            document,
+            ViewportCameraSnapshot.DefaultScene);
+        var extent = new ViewportExtent(640, 360);
+        var size = new ViewportRenderSize(extent, extent);
+        session.SetSelection(viewStateRevision: 1, entity.ObjectId);
+        Assert.True(session.TryPublishLatest(size, out _));
+        session.SetTranslateGizmo(new ViewportTranslateGizmoState(
+            entity.ObjectId,
+            new TransformValue(new Float3(9, 8, 7), Quaternion.Identity, Float3.One),
+            ViewportGizmoAxis.X,
+            ViewportGizmoAxis.X));
+
+        var authoritative = new TransformValue(
+            new Float3(4, 5, 6),
+            Quaternion.Identity,
+            Float3.One);
+        session.SynchronizeDocument(new SceneDocumentSnapshot(
+            document.SceneId,
+            document.Path,
+            revision: 2,
+            savedRevision: 1,
+            [
+                new SceneEntitySnapshot(
+                    entity.ObjectId,
+                    entity.RuntimeEntityId,
+                    entity.Name,
+                    authoritative),
+            ]));
+
+        Assert.True(session.TryPublishLatest(size, out var synchronized));
+        Assert.Equal(authoritative, synchronized.TranslateGizmo!.Transform);
+        Assert.Equal(ViewportGizmoAxis.None, synchronized.TranslateGizmo.HoveredAxis);
+        Assert.Equal(ViewportGizmoAxis.None, synchronized.TranslateGizmo.ActiveAxis);
+    }
+
+    [Fact]
     public void Refresh_request_is_coalesced_until_the_latest_state_is_published()
     {
         var session = new ViewportSession(

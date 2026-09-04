@@ -1,6 +1,6 @@
 # Studio viewport rendering
 
-最近更新：2026-08-29
+最近更新：2026-09-03
 
 ## 当前 production 链路
 
@@ -13,7 +13,7 @@ Viewport presentation proposal (Scene exact / Game fit / Frame Debug immutable c
   -> workspace host keeps one active request + one queued latest; committed layout/front stay visible
   -> ViewportPresentationTransactionCoordinator
   -> ViewportSession.TryPublishLatest immutable snapshot
-  -> EngineBridge ViewportRenderStream (V7)
+  -> EngineBridge ViewportRenderStream (V8)
   -> editor_native per-stream pending-latest
   -> process-level EditorSharedViewportRuntime RenderThread
   -> renderer_basic_vulkan offscreen external image
@@ -24,7 +24,9 @@ Viewport presentation proposal (Scene exact / Game fit / Frame Debug immutable c
   -> explicit frame completion
 ```
 
-Studio Scene View 渲染深灰背景、analytic XZ world grid、原点 XYZ 轴和每个 debug proxy 的 XYZ 轴。它还会把同一
+Studio Scene View 渲染深灰背景、analytic XZ world grid、原点 XYZ 轴和每个 debug proxy 的 XYZ 轴。单选实体另有
+renderer-owned、按相机深度保持约 84 physical pixels 的世界空间 Translate Gizmo；hover/active 轴由显式 packet 着色，
+选中实体原有 proxy 轴被替换而不是叠画。它还会把同一
 `SceneDocumentSnapshot` revision 中显式 authored mesh 引用交给 `scene-rendering` 做 immutable extraction，并通过
 `BasicRenderViewSceneDesc::drawItems` 记录真实 indexed Scene draw。当前唯一 Ready product binding 是 #366 的 directional-wedge
 validation mesh；未知或未就绪 asset 逐项 no-draw，不能替换成默认几何，也不代表通用 mesh importer/runtime resolver 已完成。
@@ -42,7 +44,7 @@ Inspector 不直接暴露 quaternion XYZW；它显示三个 degree 字段，并�
 来源及成功/失败均可识别的 project edit。自身成功回执和同姿态 snapshot 不重新分解或改写文本；no-op 成功允许保持
 base revision，失败回执清理 pending 并将草稿重基，Apply 期间继续修改的轴由 per-axis edit version 防止旧回执覆盖。真正外部的不同 quaternion 才在
 重组验证姿态等价后选择最接近 hint 的 YXZ 表示，`q` / `-q` 视为同一姿态，奇异区也由 hint 选择连续解。该
-presentation 不增加 runtime scene 字段、viewport ABI 字段或第二个 rotation truth；hint 的跨会话持久化、gizmo、snapping、
+presentation 不增加 runtime scene 字段或第二个 rotation truth；hint 的跨会话持久化、rotate/scale gizmo、snapping、
 multi-selection、连续多圈 animation history 与可配置 Euler order 仍 deferred。
 
 ## 模块职责
@@ -51,7 +53,7 @@ multi-selection、连续多圈 animation history 与可配置 Euler order 仍 de
 | --- | --- | --- |
 | `ViewportSession` | document/camera/extent/exposed invalidation；coalesced refresh signal；发布 immutable request；维护内容呈现序列下界 | 持有 native/GPU handle；等待 frame completion 才允许新 request；把 geometry revision 冒充内容 revision |
 | `ViewportScenePicker` | 捕获一致的scene/camera/model-bounds/有界debug-proxy snapshot；先做纯CPU ray-OBB model hit，再为无可呈现模型的entity做screen-space Transform-axis fallback；返回stable object identity | 引用Avalonia/EngineBridge/Physics；声称triangle/GPU-ID或通用asset-bounds picking；修改selection或document |
-| `ViewportBridge` / `ViewportRenderStream` | V7 ABI 映射、typed status、view-local FOV axis、authored-mesh snapshot、slot/frame lease 与 request-correlated mesh receipt | 调 Vulkan；猜测 stale native metadata；把 asset GUID 替换成 backend resource key |
+| `ViewportBridge` / `ViewportRenderStream` | V8 ABI 映射、typed status、view-local FOV axis、authored-mesh/Translate Gizmo snapshot、slot/frame lease 与 request-correlated mesh receipt | 调 Vulkan；猜测 stale native metadata；把 asset GUID 替换成 backend resource key |
 | `ViewportPresentationTransactionCoordinator` | 以 `SessionId + EndpointEpoch + TransactionId` 协调 Proposal→Completed/Aborted/Quarantined；同 compositor group barrier | 假定跨 compositor 原子；拥有 endpoint surface/stream；把 dock policy 写进通用状态机 |
 | `EditorDockStagedGridSplitter` / `EditorDockSplitResizePolicy` / `EditorDockSplitResizeCoordinator` | latest splitter layout proposal、min/max/layout-rounding、同步 probe、requested/committed `GridLength`；作为 transaction adapter | 直接写 GPU handle；拥有 transaction/resource lifetime；把 drag event 变成 FIFO；只在 drag-end resize |
 | `EditorDockPresentationLayoutHost` / `Asharia.Studio.Presentation.Avalonia.Windowing` capability | Main/Floating Window 共用 workspace layout owner；以 `IInteractiveTopLevelResizeAdapterProvider`、`IInteractiveTopLevelResizeAdapterFactory`、`IInteractiveTopLevelResizeAttachment`、`IInteractiveTopLevelResizeSink`、`IInteractiveTopLevelResizeCommit` 与 `InteractiveTopLevelResizeProjection` 接收可选 outer-layout proposal，并以 active + queued-latest 驱动 workspace transaction | 引用 HWND、WM message、USER32 或 P/Invoke；拥有 native hook；假定每个平台都有 precommit seam |
@@ -60,26 +62,28 @@ multi-selection、连续多圈 animation history 与可配置 Euler order 仍 de
 | `EditorSharedViewportRuntime` | stream registry、latest/ready/slot scheduler、唯一 owner thread、retirement | 引用 managed/SceneDocument object |
 | `EditorSharedViewportRenderProducer` | full slot Vulkan resources、显式 product binding、scene-mesh extraction、record/submit、grid/debug overlay | composition API；UI layout policy；从 source path 或 Avalonia 猜 mesh product |
 
-## V7 ABI
+## V8 ABI
 
 Frame path 只使用：
 
 ```text
-open_stream_v7(compatibility) -> streamId
-submit_latest_v7(streamId, owning request snapshot)
-try_take_ready_v7(streamId) -> optional self-describing frame
-complete_frame_v7(streamId, slotId, completionKind)
-release_slot_import_v7(streamId, slotId)
-close_stream_v7(streamId)
-poll_stream_v7(streamId)
-destroy_stream_v7(streamId)
+open_stream_v8(compatibility) -> streamId
+submit_latest_v8(streamId, owning request snapshot)
+try_take_ready_v8(streamId) -> optional self-describing frame
+complete_frame_v8(streamId, slotId, completionKind)
+release_slot_import_v8(streamId, slotId)
+close_stream_v8(streamId)
+poll_stream_v8(streamId)
+destroy_stream_v8(streamId)
 ```
 
-V1–V6 frame symbols 不导出，也没有 managed fallback。`query_composition_compatibility` 是一次性 device/handle control plane；
+V1–V7 frame symbols 不导出，也没有 managed fallback。`query_composition_compatibility` 是一次性 device/handle control plane；
 `query_runtime_stats_*` 是 diagnostics，不属于 frame ownership。
 
 request 复制：session id、target id/revision、sequence、kind、logical/allocation extent、camera、最多 256 个 debug proxy、
-有界 authored mesh snapshots 与 per-view Scene raster mode。每个 authored mesh 只携 canonical object/asset UUID、transient
+有界 authored mesh snapshots、per-view Scene raster mode 与可选 typed Translate Gizmo。Gizmo packet 只携 stable object identity、
+world position 和 hover/active axis；缺少 Scene selection、非法 axis、non-finite position、flag/payload 不一致时整帧 fail closed。
+每个 authored mesh 只携 canonical object/asset UUID、transient
 runtime `EntityId`、expected Mesh type 与 Transform；managed pointer、SceneDocument/World pointer 和 GPU resource key 都不跨 ABI。
 ready frame 除 session/target/revision/sequence、kind、extent、slot、external handles、format、memory size 与 native frame index 外，
 还携 request-correlated Scene mesh receipt。只有显式 diagnostic flag 才收集 indexed draw evidence；receipt 的 scene revision、
@@ -122,7 +126,7 @@ physical extent构造ray，再通过inverse local TRS做ray-OBB slab hit；rotat
 fail closed。重叠model先按更小camera depth、再按stable `ObjectId`排序。
 
 只有model没有命中时才检查debug axes，并跳过已经拥有model proxy的entity，使model body成为主入口、Transform proxy只为
-空entity/当前不可呈现mesh提供诚实回退。fallback只遍历与V7 request相同的最多256个Transform debug proxies，并保留
+空entity/当前不可呈现mesh提供诚实回退。fallback只遍历与V8 request相同的最多256个Transform debug proxies，并保留
 `TotalDebugProxyCount`/`DebugProxiesTruncated`证据；因此被截断、未绘制的axis不可命中。投影复用现有FOV axis、view basis与
 quaternion旋转。native `basicDebugLineVertices`只拒绝non-finite或`clipW <= epsilon`端点，随后直接写NDC line vertices，
 不按camera near/far裁切；fallback遵循这条当前可见overlay合同。重叠axis依次按更小camera depth、更小screen distance、
@@ -136,8 +140,8 @@ triangle/BVH、GPU ID buffer/readback。
 
 Presentation不引用Selection；Application不引用Avalonia/EngineBridge/native；code-behind只桥接pointer transient state。
 document/camera/extent改变会让旧front identity或minimum presentable sequence失效，click必须fail closed并保留selection。
-该路径不产生document mutation。selection outline、hover、gizmo、multi-select、triangle-precise picking、
-通用asset bounds与GPU ID/readback均deferred。
+选择路径本身不产生document mutation。单选 outline 与 Translate Gizmo 已由独立 view state 投影；hover outline、multi-select、
+triangle-precise picking、通用asset bounds与GPU ID/readback均deferred。
 
 ## 帧与槽状态
 
@@ -213,7 +217,7 @@ proposal adapter：它提供同步 layout probe 和可回滚 layout mutation，s
 ## Scene exact resize policy
 
 control 以 `ceil(Bounds * RenderScaling)` 采样当前 panel `PixelSize`，并把同一个 extent 同时写入 request 的 logical/allocation
-字段。V7 保留双字段以维持自描述 ABI，但 Studio surface presentation 的硬约束是：
+字段。V8 保留双字段以维持自描述 ABI，但 Studio surface presentation 的硬约束是：
 
 ```text
 external-image allocation == frame logical extent == commit-time panel PixelSize
@@ -343,7 +347,7 @@ hook 留在独立 integration assembly、而非 shared transaction owner，是 p
 
 typed selection 仍由 Application 拥有，不写回 `SceneDocument`，也不进入 dirty/undo/redo。Scene panel 把当前 scope 内的单个
 `ObjectId` 投影为独立 view state；selection/source scope 改变时推进 `ViewStateRevision`、写入 `SelectionChanged` 并推进
-`MinimumPresentableSequence`。V7 immutable request 显式携带 revision、selected canonical UUID 与 presence flag；native ready frame
+`MinimumPresentableSequence`。V8 immutable request 显式携带 revision、selected canonical UUID 与 presence flag；native ready frame
 回显同一 revision，Avalonia content gate 同时核对 `TargetRevision`、`ViewStateRevision` 与 `RequestSequence`，因此选择切换后的旧像素
 不能重新出现。非 Scene viewport、asset selection、无 mesh 或尚未 resolved 的选中实体不生成描边 draw packet。
 
@@ -371,7 +375,7 @@ logical width/height，并把 normalized delta + aspect ratio 交给不引用 Av
 `MinimumPresentableSequence`：target/selection/exposed 仍是必须拒绝旧内容的 hard fence，相机连续输入则允许已经完成的旧相机帧
 按 sequence 单调显示，避免输入频率高于 render/present cadence 时让所有 in-flight frame 永远 stale。发出首个包含当前相机的
 request 时，session 记录 `minimumInteractiveCameraSequence`；只有 presented sequence 达到该边界，画面才可进入 picking。
-因此旧画面与当前相机不匹配时只能继续显示，不能把当前相机用于旧像素反投影；后续 V7/native/renderer 路径不新增 ABI 或 pass。
+因此旧画面与当前相机不匹配时只能继续显示，不能把当前相机用于旧像素反投影；相机导航本身不新增 native/renderer 分支。
 
 - orbit 保持 Target 与距离，只改变 Position，并把 pitch 限制在 ±89°，避免跨极点翻转；
 - pan 对 Position/Target 施加同一 view-plane translation，保持方向与距离；
@@ -395,6 +399,42 @@ display admission 与 interaction admission 分开，后者 fail closed 直到�
 [Unreal FEditorViewportClient](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Editor/UnrealEd/FEditorViewportClient)、
 [Unreal FSceneView](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/Engine/FSceneView)、
 [Godot SubViewport update mode](https://docs.godotengine.org/en/stable/classes/class_subviewport.html)。
+
+## 世界轴 Translate Gizmo MVP
+
+#409 在上述 presented-frame 与 selection 门禁上增加单选、世界 X/Y/Z 轴平移，不引入 Physics 或通用工具框架。输入优先级固定为
+`Alt` 相机导航 → 无修饰 LMB Gizmo → 普通 click selection。Application 捕获 stable `ObjectId`、起始 document revision、
+authoritative Transform 与同帧 camera；screen-space 轴命中和 ray/plane 求交均为 UI-neutral 纯数学。视线平行轴、中心歧义、
+stale frame/selection/document 或 non-finite 结果都 fail closed。
+
+```text
+presented interaction identity + selection
+  -> hit one world axis
+  -> pointer capture + transient latest-wins Transform preview
+  -> V8 typed Gizmo packet + matching proxy/mesh preview Transform
+  -> renderer-owned depth-scaled world lines
+  -> release: one ProjectSession.SetEntityTransformAsync(ObjectId, Transform,
+       ProjectEditId, start revision)
+```
+
+pointer move 只设置 `GizmoChanged`，不推进 `MinimumPresentableSequence`，所以 240 Hz 输入不会把较慢 render/present cadence 的
+每一帧都饿死；它也不逐 sample 写 `SceneDocument` 或制造数百条 Undo。松手前同步结束 active gesture，随后只提交一次 project edit；
+no-op、Escape、capture/focus loss、selection/document drift 不提交，revision conflict 或 mutation failure 把预览恢复到 authoritative
+snapshot。提交已开始后不因 UI capture loss 取消，以免产生“后端已写入、前端误判取消”的歧义。
+
+V8 request 对匹配 object 的 debug proxy 与 authored mesh 使用同一预览 Transform，并携显式
+`objectId + position + hoveredAxis + activeAxis`。native 只验证/copy owning packet；renderer producer 把 Gizmo 转成已有
+`BasicDebugWorldLine`，按相机 depth 与垂直投影尺度保持约 84 physical pixels，普通 RGB、hover 黄色、active 白色；匹配对象原有
+局部 proxy 轴被抑制。该 Slice 不新增 Vulkan resource、descriptor、pipeline、RenderGraph pass、barrier 或同步分支。
+
+采用 Unreal `UTransformGizmo` 把 gizmo 与被变换 target/transaction 分离、由 editor viewport 路由输入的 owner boundary；采用
+O3DE 3D Viewport 对 transform manipulator 的世界/局部 reference space 区分。本地第一片只选择 world translate，因为当前需求只证明
+单选平移和一次性 ProjectSession history；拒绝复制 rotate/scale/plane handles、local/pivot modes、snapping、多选、通用 gizmo registry、
+Avalonia 伪 overlay、Physics/collider picking 或 `Update(dt)`/UI timer。参考：
+[Unreal UTransformGizmo](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Editor/EditorInteractiveToolsFramework/BaseGizmos/UTransformGizmo)、
+[Unreal Viewport Controls](https://dev.epicgames.com/documentation/unreal-engine/viewport-controls-in-unreal-engine)、
+[O3DE 3D Viewport](https://www.docs.o3de.org/docs/user-guide/editor/viewport/)、
+[O3DE Reference Spaces](https://www.docs.o3de.org/docs/user-guide/editor/viewport/reference-spaces/)。
 
 ## Close 与 quarantine
 
@@ -442,7 +482,7 @@ WGC observer 才提供 DWM-composited pixel evidence，但同样不能冒充物�
 | `--smoke-viewport-transaction-faults` | 13 个真实阶段覆盖 surface/stream/create-submit、lease 后取消、partial import、surface update 已提交、prepare/publish/finalize/Rendered/retirement；pre-publish 保留旧 front，post-publish 只 quarantine，不错误 rollback，`RetirementCompletion` 单独给出最终资源 receipt。 |
 | `--smoke-viewport-transaction-supersede` | A 已 Published 未 Rendered 时接收 B；B failure/cancel 后以最新 Published A 为 committed baseline；A→B→A 使用新 transaction/generation/surface，不复活旧 bitmap。 |
 | `--smoke-viewport-multi-endpoint` | 同 compositor 两 endpoint：同文档双 Scene 与 Scene+Game ownership；从实际发布的 immutable request 断言 Scene `MaintainHorizontal`、Game `MaintainVertical`，防止 endpoint policy 串扰；覆盖 all-prepared→同 batch publish、validation reject 的 0 publish、post-publish finalize ambiguity 的整组 quarantine。3–4 endpoint steady、不同速率公平、单 endpoint slow/fault/detach 后其他 endpoint 继续推进，以及 slow-consumer queue 隔离尚未通过，见下文 native blocker。 |
-| `--smoke-viewport-transaction-flash` | typed V7 diagnostic flag 把四色 corner sentinel 写入同一 native Scene external image；逐个成功 transaction 的共享 group composition batch 输出 Bounds/front/candidate/visual/surface/opacity/全部 identity，并拒绝结构上的 out-of-bounds、blank、stretch、crop、extent mismatch。它不是“每个物理显示帧”的采样，也尚未为 Win32 outer-Window precommit 提供逐帧像素证据；当前明确输出 `pixelEvidenceAvailable=false`。 |
+| `--smoke-viewport-transaction-flash` | typed V8 diagnostic flag 把四色 corner sentinel 写入同一 native Scene external image；逐个成功 transaction 的共享 group composition batch 输出 Bounds/front/candidate/visual/surface/opacity/全部 identity，并拒绝结构上的 out-of-bounds、blank、stretch、crop、extent mismatch。它不是“每个物理显示帧”的采样，也尚未为 Win32 outer-Window precommit 提供逐帧像素证据；当前明确输出 `pixelEvidenceAvailable=false`。 |
 | `--smoke-viewport-transaction-window-resize` | 真实 Win32 HWND、Avalonia compositor 与 Vulkan external surface；以 `WM_SIZING` 驱动 last-accepted RECT precommit。`--viewport-window-evidence=performance` 不启动连续 batch recorder，以 first `Proposed`→final exact `Rendered` 计算 unique rate；`continuous` 连续采样 outer/client/workspace/panel/front/surface composition batches 并拒绝 blank/stretch/crop/gap/mismatch。`--viewport-window-pattern=height-aba` 是 Scene projection 验收：outer/client/Scene/surface 宽度固定，至少两个 exact rendered 高度，把实际 request、native lease、呈现 sequence、extent/revision、90° `MaintainHorizontal` 与推导的 x/y pixel scale 写入 JSON，要求 scale drift `<=1 px`。release policy 在 `WM_EXITSIZEMOVE` 关闭 epoch，不追赶 stale raw final；height lane 还要求 final exact projection request 唯一、最终呈现 sequence 匹配，且 release 后 request/camera/projection mutation 均为 0。所有通道都输出 `pixelEvidenceAvailable=false` 与 `physicalDisplayedEvidenceAvailable=false`，不能关闭 WGC pixel gate。 |
 | `Asharia.Studio.WindowsCapture.Tests` | Windows-only、显式 opt-in 的外部像素 observer；设置 `ASHARIA_RUN_STUDIO_WGC_DWM_ACCEPTANCE=1` 后启动真实 Editor/Vulkan Window smoke。drag 样本继续分类 blank/stretch/crop/gap/spill；release handshake 从 interaction epoch 关闭起要求每个 WGC-delivered sample 都与 child 报告的 accepted/Published exact extent 一致，不允许 release gap/crop/stretch/blank/spill。该 gate 不覆盖 WGC 未交付的 DWM refresh，也不证明 LCD scanout。 |
 
@@ -507,7 +547,7 @@ display cadence；exact panel generation 由应用侧 unique gate 证明。后�
 
 ## 后续边界
 
-- 用 authoritative asset catalog/resource runtime 替换当前 validation-only product binding，并补 imported mesh hot-reload；V7 presentation ownership 不变；
+- 用 authoritative asset catalog/resource runtime 替换当前 validation-only product binding，并补 imported mesh hot-reload；V8 presentation ownership 不变；
 - selection outline/gizmo 继续作为 per-view editor feedback 独立接线，不写入 Scene schema 或 mesh material；
 - 多 Scene/Game/Preview/Frame Debugger endpoint 共用 runtime 与 transaction contract；stable round-robin 已成立，但 global cap 4
   只够四 cold first slots，3–4 realtime 的 slot/context/显存预算仍须单独设计和实测；

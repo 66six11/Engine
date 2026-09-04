@@ -48,7 +48,7 @@ internal enum ViewportNativeFieldOfViewAxis : uint
 }
 
 [Flags]
-internal enum ViewportNativeStreamCapabilitiesV7 : uint
+internal enum ViewportNativeStreamCapabilitiesV8 : uint
 {
     None = 0,
     Wireframe = 1U << 0,
@@ -69,13 +69,14 @@ internal enum ViewportNativeStreamLifecycle : uint
 }
 
 [Flags]
-internal enum ViewportNativePresentRequestV7Flags : uint
+internal enum ViewportNativePresentRequestV8Flags : uint
 {
     None = 0,
     HasLogicalExtent = 1U << 0,
     FlashSentinelCorners = 1U << 1,
     CaptureSceneMeshEvidence = 1U << 2,
     HasSelectionOutline = 1U << 3,
+    HasTranslateGizmo = 1U << 4,
 }
 
 [StructLayout(LayoutKind.Sequential)]
@@ -175,6 +176,13 @@ internal readonly record struct ViewportNativeDebugProxy(
     TransformValue Transform);
 
 [StructLayout(LayoutKind.Sequential)]
+internal readonly record struct ViewportNativeTranslateGizmoV8(
+    ViewportNativeId ObjectId,
+    Float3 Position,
+    uint HoveredAxis,
+    uint ActiveAxis);
+
+[StructLayout(LayoutKind.Sequential)]
 internal readonly record struct ViewportNativeCanonicalUuid(ulong FirstBytes, ulong LastBytes)
 {
     public static ViewportNativeCanonicalUuid FromGuid(Guid value)
@@ -199,7 +207,7 @@ internal readonly record struct ViewportNativeCanonicalUuid(ulong FirstBytes, ul
 }
 
 [StructLayout(LayoutKind.Sequential)]
-internal readonly record struct ViewportNativeAuthoredMeshSnapshotV7(
+internal readonly record struct ViewportNativeAuthoredMeshSnapshotV8(
     ViewportNativeCanonicalUuid ObjectId,
     uint RuntimeEntityIndex,
     uint RuntimeEntityGeneration,
@@ -208,7 +216,7 @@ internal readonly record struct ViewportNativeAuthoredMeshSnapshotV7(
     TransformValue Transform);
 
 [StructLayout(LayoutKind.Sequential)]
-internal readonly record struct ViewportNativeSceneMeshReceiptV7(
+internal readonly record struct ViewportNativeSceneMeshReceiptV8(
     uint InputCount,
     uint ResolvedCount,
     uint RejectedCount,
@@ -225,14 +233,14 @@ internal readonly record struct ViewportNativeSceneMeshReceiptV7(
     ulong SceneRevision);
 
 [StructLayout(LayoutKind.Sequential)]
-internal readonly record struct ViewportNativeStreamHandleV7(
+internal readonly record struct ViewportNativeStreamHandleV8(
     ViewportNativeAbiHeader Header,
     uint Status,
     uint Capabilities,
     ulong StreamId);
 
 [StructLayout(LayoutKind.Sequential)]
-internal readonly record struct ViewportNativePresentRequestV7(
+internal readonly record struct ViewportNativePresentRequestV8(
     ViewportNativeAbiHeader Header,
     ViewportNativeId SessionId,
     ViewportNativeId TargetId,
@@ -252,10 +260,11 @@ internal readonly record struct ViewportNativePresentRequestV7(
     uint AuthoredMeshCount,
     uint SceneRasterMode,
     ViewportNativeCanonicalUuid SelectedObjectId,
-    ulong ViewStateRevision);
+    ulong ViewStateRevision,
+    ViewportNativeTranslateGizmoV8 TranslateGizmo);
 
 [StructLayout(LayoutKind.Sequential)]
-internal readonly record struct ViewportNativeReadyFrameV7(
+internal readonly record struct ViewportNativeReadyFrameV8(
     ViewportNativeAbiHeader Header,
     uint Status,
     uint HasFrame,
@@ -278,11 +287,11 @@ internal readonly record struct ViewportNativeReadyFrameV7(
     uint TargetKind,
     uint LogicalWidthPixels,
     uint LogicalHeightPixels,
-    ViewportNativeSceneMeshReceiptV7 SceneMeshReceipt,
+    ViewportNativeSceneMeshReceiptV8 SceneMeshReceipt,
     ulong ViewStateRevision);
 
 [StructLayout(LayoutKind.Sequential)]
-internal readonly record struct ViewportNativeStreamPollV7(
+internal readonly record struct ViewportNativeStreamPollV8(
     ViewportNativeAbiHeader Header,
     uint Status,
     uint Lifecycle,

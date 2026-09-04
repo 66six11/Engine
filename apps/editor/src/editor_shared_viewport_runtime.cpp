@@ -113,6 +113,11 @@ namespace asharia::editor {
             .flashSentinelCorners = desc.flashSentinelCorners,
             .hasSelectionOutline = desc.hasSelectionOutline,
             .selectedObjectId = desc.selectedObjectId,
+            .hasTranslateGizmo = desc.hasTranslateGizmo,
+            .translateGizmoObjectId = desc.translateGizmoObjectId,
+            .translateGizmoPosition = desc.translateGizmoPosition,
+            .translateGizmoHoveredAxis = desc.translateGizmoHoveredAxis,
+            .translateGizmoActiveAxis = desc.translateGizmoActiveAxis,
         };
         if (!desc.debugProxies.empty()) {
             packet.debugProxies.assign(desc.debugProxies.begin(), desc.debugProxies.end());
@@ -145,6 +150,11 @@ namespace asharia::editor {
             .flashSentinelCorners = flashSentinelCorners,
             .hasSelectionOutline = hasSelectionOutline,
             .selectedObjectId = selectedObjectId,
+            .hasTranslateGizmo = hasTranslateGizmo,
+            .translateGizmoObjectId = translateGizmoObjectId,
+            .translateGizmoPosition = translateGizmoPosition,
+            .translateGizmoHoveredAxis = translateGizmoHoveredAxis,
+            .translateGizmoActiveAxis = translateGizmoActiveAxis,
         };
     }
 

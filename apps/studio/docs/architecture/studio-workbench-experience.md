@@ -452,7 +452,8 @@ lifecycle 合同见 [Studio 前端硬切架构](studio-frontend-hard-cut.md)。
 
 不做：
 
-- 新 Dock、响应式布局 DSL、真实 Play、gizmo；当时尚未实现的selection picking已由后续#398独立闭合；
+- 新 Dock、响应式布局 DSL、真实 Play、gizmo；当时尚未实现的 selection picking 已由后续 #398
+  独立闭合，世界轴 Translate Gizmo MVP 已由 #409 独立闭合；
 - 可写 Inspector、scene save/load、asset mutation；
 - 新的全局 service locator 或通用前端框架。
 

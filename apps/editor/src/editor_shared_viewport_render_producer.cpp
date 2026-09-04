@@ -6,6 +6,7 @@
 #define NOMINMAX
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <exception>
 #include <filesystem>
 #include <memory>
@@ -75,6 +76,11 @@ namespace asharia::editor {
             return {lhs[0] + rhs[0], lhs[1] + rhs[1], lhs[2] + rhs[2]};
         }
 
+        [[nodiscard]] constexpr std::array<float, 3> subtract(std::array<float, 3> lhs,
+                                                              std::array<float, 3> rhs) {
+            return {lhs[0] - rhs[0], lhs[1] - rhs[1], lhs[2] - rhs[2]};
+        }
+
         [[nodiscard]] constexpr std::array<float, 3> multiply(std::array<float, 3> value,
                                                               float scalar) {
             return {value[0] * scalar, value[1] * scalar, value[2] * scalar};
@@ -87,6 +93,20 @@ namespace asharia::editor {
                 (lhs[2] * rhs[0]) - (lhs[0] * rhs[2]),
                 (lhs[0] * rhs[1]) - (lhs[1] * rhs[0]),
             };
+        }
+
+        [[nodiscard]] constexpr float dot(std::array<float, 3> lhs,
+                                          std::array<float, 3> rhs) {
+            return (lhs[0] * rhs[0]) + (lhs[1] * rhs[1]) + (lhs[2] * rhs[2]);
+        }
+
+        [[nodiscard]] std::optional<std::array<float, 3>>
+        normalized(std::array<float, 3> value) {
+            const float lengthSquared = dot(value, value);
+            if (!std::isfinite(lengthSquared) || lengthSquared <= 1.0e-8F) {
+                return std::nullopt;
+            }
+            return multiply(value, 1.0F / std::sqrt(lengthSquared));
         }
 
         [[nodiscard]] constexpr std::array<float, 3> rotate(std::array<float, 4> rotation,
@@ -115,6 +135,78 @@ namespace asharia::editor {
                                  {0.24F, 0.82F, 0.32F, 1.0F});
             appendDebugProxyAxis(lines, proxy, {0.0F, 0.0F, 1.0F}, proxy.scale[2],
                                  {0.22F, 0.42F, 0.94F, 1.0F});
+        }
+
+        [[nodiscard]] std::array<float, 4>
+        translateGizmoAxisColor(EditorSharedViewportGizmoAxis axis,
+                                const EditorSharedViewportPresentDesc& desc) {
+            if (axis == desc.translateGizmoActiveAxis) {
+                return {1.0F, 1.0F, 1.0F, 1.0F};
+            }
+            if (axis == desc.translateGizmoHoveredAxis) {
+                return {1.0F, 0.76F, 0.12F, 1.0F};
+            }
+            switch (axis) {
+            case EditorSharedViewportGizmoAxis::X:
+                return {0.92F, 0.18F, 0.18F, 1.0F};
+            case EditorSharedViewportGizmoAxis::Y:
+                return {0.24F, 0.82F, 0.32F, 1.0F};
+            case EditorSharedViewportGizmoAxis::Z:
+                return {0.22F, 0.42F, 0.94F, 1.0F};
+            case EditorSharedViewportGizmoAxis::None:
+                break;
+            }
+            return {1.0F, 1.0F, 1.0F, 1.0F};
+        }
+
+        [[nodiscard]] std::optional<float>
+        translateGizmoWorldLength(EditorSharedViewportPresentDesc desc,
+                                  const EditorViewportCamera& camera) {
+            constexpr float kGizmoLengthPixels = 84.0F;
+            const auto forward = normalized(subtract(camera.target, camera.position));
+            if (!desc.hasTranslateGizmo || !forward || desc.logicalExtent.height == 0U) {
+                return std::nullopt;
+            }
+            const float depth = dot(*forward, subtract(desc.translateGizmoPosition,
+                                                       camera.position));
+            const float focalLength = 1.0F / std::tan(camera.fieldOfViewRadians * 0.5F);
+            const float verticalScale =
+                camera.fieldOfViewAxis == EditorViewportFieldOfViewAxis::MaintainHorizontal
+                    ? focalLength * camera.aspectRatio
+                    : focalLength;
+            const float worldLength = 2.0F * depth * kGizmoLengthPixels /
+                                      (verticalScale *
+                                       static_cast<float>(desc.logicalExtent.height));
+            if (!std::isfinite(worldLength) || worldLength <= 1.0e-6F) {
+                return std::nullopt;
+            }
+            return worldLength;
+        }
+
+        void appendTranslateGizmoAxes(std::vector<BasicDebugWorldLine>& lines,
+                                      EditorSharedViewportPresentDesc desc,
+                                      const EditorViewportCamera& camera) {
+            const std::optional<float> worldLength = translateGizmoWorldLength(desc, camera);
+            if (!worldLength) {
+                return;
+            }
+            const std::array axes{
+                std::pair{EditorSharedViewportGizmoAxis::X,
+                          std::array{1.0F, 0.0F, 0.0F}},
+                std::pair{EditorSharedViewportGizmoAxis::Y,
+                          std::array{0.0F, 1.0F, 0.0F}},
+                std::pair{EditorSharedViewportGizmoAxis::Z,
+                          std::array{0.0F, 0.0F, 1.0F}},
+            };
+            for (const auto& [axis, direction] : axes) {
+                lines.push_back(BasicDebugWorldLine{
+                    .start = desc.translateGizmoPosition,
+                    .end = add(desc.translateGizmoPosition,
+                               multiply(direction, *worldLength)),
+                    .color = translateGizmoAxisColor(
+                        axis, desc),
+                });
+            }
         }
 
         [[nodiscard]] bool hasFlashSentinel(EditorSharedViewportPresentDesc desc) {
@@ -271,9 +363,7 @@ namespace asharia::editor {
             stats.lastRenderKind = desc.kind;
             stats.lastRenderExtent = state.renderExtent;
             stats.lastDebugProxyCount = static_cast<std::uint32_t>(desc.debugProxies.size());
-            stats.lastDebugWorldLineCount = desc.hasScene && desc.kind == EditorViewportKind::Scene
-                                                ? 3U + (desc.debugProxies.size() * 3U)
-                                                : 0U;
+            stats.lastDebugWorldLineCount = state.debugWorldLineCount;
             stats.lastWorldGridEnabled = desc.hasScene && desc.kind == EditorViewportKind::Scene;
         }
 
@@ -542,10 +632,15 @@ namespace asharia::editor {
             };
             if (desc.kind == EditorViewportKind::Scene) {
                 debugLines.assign(kMinimalSceneAxes.begin(), kMinimalSceneAxes.end());
-                debugLines.reserve(debugLines.size() + (desc.debugProxies.size() * 3U));
+                debugLines.reserve(debugLines.size() + (desc.debugProxies.size() * 3U) + 3U);
                 for (const EditorSharedViewportDebugProxy& proxy : desc.debugProxies) {
+                    if (desc.hasTranslateGizmo &&
+                        proxy.objectId == desc.translateGizmoObjectId) {
+                        continue;
+                    }
                     appendDebugProxyAxes(debugLines, proxy);
                 }
+                appendTranslateGizmoAxes(debugLines, desc, camera);
             }
             view.overlay = BasicRenderViewOverlayDesc{
                 .enabled = desc.kind == EditorViewportKind::Scene,
@@ -637,6 +732,7 @@ namespace asharia::editor {
             };
             std::vector<BasicDebugWorldLine> debugLines;
             configureSceneCameraAndOverlay(desc, view, debugLines);
+            state.debugWorldLineCount = debugLines.size();
             view.overlay.selectionOutline = BasicRenderViewSelectionOutlineDesc{
                 .drawItems = selectedDrawItems,
             };

@@ -40,6 +40,13 @@ namespace asharia::editor {
         Wireframe,
     };
 
+    enum class EditorSharedViewportGizmoAxis : std::uint32_t {
+        None,
+        X,
+        Y,
+        Z,
+    };
+
     struct EditorSharedViewportAuthoredMeshSnapshot {
         std::array<std::uint8_t, 16> objectId{};
         std::uint32_t runtimeEntityIndex{};
@@ -74,6 +81,13 @@ namespace asharia::editor {
         bool flashSentinelCorners{};
         bool hasSelectionOutline{};
         std::array<std::uint8_t, 16> selectedObjectId{};
+        bool hasTranslateGizmo{};
+        std::array<std::uint64_t, 2> translateGizmoObjectId{};
+        std::array<float, 3> translateGizmoPosition{};
+        EditorSharedViewportGizmoAxis translateGizmoHoveredAxis{
+            EditorSharedViewportGizmoAxis::None};
+        EditorSharedViewportGizmoAxis translateGizmoActiveAxis{
+            EditorSharedViewportGizmoAxis::None};
     };
 
     struct EditorSharedViewportPresentPacket {
@@ -172,6 +186,7 @@ namespace asharia::editor {
         void* signalSemaphoreHandle{};
         std::uint64_t frameIndex{};
         VkExtent2D renderExtent{};
+        std::uint64_t debugWorldLineCount{};
         EditorSharedViewportSceneMeshReceipt sceneMeshReceipt;
     };
 

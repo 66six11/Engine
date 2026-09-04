@@ -23,10 +23,12 @@
             Focusable="True"
             PointerPressed="OnSceneViewportPointerPressed"
             PointerMoved="OnSceneViewportPointerMoved"
+            PointerExited="OnSceneViewportPointerExited"
             PointerReleased="OnSceneViewportPointerReleased"
             PointerWheelChanged="OnSceneViewportPointerWheelChanged"
             PointerCaptureLost="OnSceneViewportPointerCaptureLost"
-            LostFocus="OnSceneViewportLostFocus" />
+            LostFocus="OnSceneViewportLostFocus"
+            KeyDown="OnSceneViewportKeyDown" />
 
         <Border Margin="12"
                 Padding="12"
