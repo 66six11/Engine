@@ -38,7 +38,7 @@ public partial class StudioScenePanelView : UserControl
             SceneViewport.Focus(NavigationMethod.Pointer);
             if (DataContext is StudioScenePanelViewModel cameraViewModel)
             {
-                cameraViewModel.ClearTranslateGizmoHover();
+                cameraViewModel.ClearTransformGizmoHover();
             }
             e.Pointer.Capture(SceneViewport);
             e.Handled = true;
@@ -53,7 +53,7 @@ public partial class StudioScenePanelView : UserControl
             SceneViewport.TryCapturePresentedInteractionContext(out var context) &&
             gizmoGesture_.TryBegin(e.Pointer.Id, context))
         {
-            if (viewModel.TryBeginTranslateGizmo(
+            if (viewModel.TryBeginTransformGizmo(
                     context,
                     CreateGizmoPickRequest(context, current.Position)))
             {
@@ -106,7 +106,7 @@ public partial class StudioScenePanelView : UserControl
             e.Handled = true;
             if (DataContext is StudioScenePanelViewModel viewModel)
             {
-                _ = viewModel.TryUpdateTranslateGizmo(gizmoPoint);
+                _ = viewModel.TryUpdateTransformGizmo(gizmoPoint);
             }
             return;
         }
@@ -122,7 +122,7 @@ public partial class StudioScenePanelView : UserControl
             DataContext is StudioScenePanelViewModel hoverViewModel &&
             SceneViewport.TryCapturePresentedInteractionContext(out var context))
         {
-            _ = hoverViewModel.TryUpdateTranslateGizmoHover(
+            _ = hoverViewModel.TryUpdateTransformGizmoHover(
                 context,
                 CreateGizmoPickRequest(context, current.Position));
             return;
@@ -130,7 +130,7 @@ public partial class StudioScenePanelView : UserControl
 
         if (DataContext is StudioScenePanelViewModel clearHoverViewModel)
         {
-            clearHoverViewModel.ClearTranslateGizmoHover();
+            clearHoverViewModel.ClearTransformGizmoHover();
         }
     }
 
@@ -138,7 +138,7 @@ public partial class StudioScenePanelView : UserControl
     {
         if (DataContext is StudioScenePanelViewModel viewModel)
         {
-            viewModel.ClearTranslateGizmoHover();
+            viewModel.ClearTransformGizmoHover();
         }
     }
 
@@ -156,7 +156,7 @@ public partial class StudioScenePanelView : UserControl
             gizmoPointer_ = null;
             if (DataContext is StudioScenePanelViewModel gizmoViewModel)
             {
-                _ = gizmoViewModel.CompleteTranslateGizmoAsync();
+                _ = gizmoViewModel.CompleteTransformGizmoAsync();
             }
             e.Pointer.Capture(null);
             e.Handled = true;
@@ -199,7 +199,7 @@ public partial class StudioScenePanelView : UserControl
         }
 
         SceneViewport.Focus(NavigationMethod.Pointer);
-        viewModel.ClearTranslateGizmoHover();
+        viewModel.ClearTransformGizmoHover();
         e.Handled = true;
     }
 
@@ -234,7 +234,7 @@ public partial class StudioScenePanelView : UserControl
             gizmoPointer_ = null;
             if (DataContext is StudioScenePanelViewModel viewModel)
             {
-                viewModel.CancelTranslateGizmo();
+                viewModel.CancelTransformGizmo();
             }
         }
     }
@@ -243,24 +243,47 @@ public partial class StudioScenePanelView : UserControl
     {
         clickGesture_.Cancel();
         cameraGesture_.Cancel();
-        CancelTranslateGizmo();
+        CancelTransformGizmo();
         if (DataContext is StudioScenePanelViewModel viewModel)
         {
-            viewModel.ClearTranslateGizmoHover();
+            viewModel.ClearTransformGizmoHover();
         }
     }
 
     private void OnSceneViewportKeyDown(object? sender, KeyEventArgs e)
     {
-        if (e.Key != Key.Escape || !CancelTranslateGizmo())
+        if (e.Key == Key.Escape)
+        {
+            if (CancelTransformGizmo())
+            {
+                e.Handled = true;
+            }
+            return;
+        }
+
+        if (e.KeyModifiers != KeyModifiers.None ||
+            DataContext is not StudioScenePanelViewModel viewModel)
         {
             return;
         }
 
+        var mode = e.Key switch
+        {
+            Key.W => ViewportTransformGizmoKind.Translate,
+            Key.E => ViewportTransformGizmoKind.Rotate,
+            _ => (ViewportTransformGizmoKind?)null,
+        };
+        if (mode is null)
+        {
+            return;
+        }
+
+        _ = CancelTransformGizmo();
+        viewModel.SetTransformGizmoMode(mode.Value);
         e.Handled = true;
     }
 
-    private bool CancelTranslateGizmo()
+    private bool CancelTransformGizmo()
     {
         if (!gizmoGesture_.Cancel())
         {
@@ -271,7 +294,7 @@ public partial class StudioScenePanelView : UserControl
         gizmoPointer_ = null;
         if (DataContext is StudioScenePanelViewModel viewModel)
         {
-            viewModel.CancelTranslateGizmo();
+            viewModel.CancelTransformGizmo();
         }
         pointer?.Capture(null);
         return true;

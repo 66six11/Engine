@@ -61,6 +61,7 @@ public enum ViewportInvalidationReason : uint
     Realtime = 1U << 5,
     SelectionChanged = 1U << 6,
     GizmoChanged = 1U << 7,
+    GizmoModeChanged = 1U << 8,
 }
 
 public readonly record struct ViewportExtent
@@ -270,7 +271,7 @@ public sealed record ViewportRenderRequest
         ViewportSceneRasterMode sceneRasterMode,
         ulong viewStateRevision,
         Guid? selectedObjectId,
-        ViewportTranslateGizmoState? translateGizmo)
+        ViewportTransformGizmoState? transformGizmo)
     {
         SessionId = sessionId;
         Sequence = sequence;
@@ -289,7 +290,7 @@ public sealed record ViewportRenderRequest
         SceneRasterMode = sceneRasterMode;
         ViewStateRevision = viewStateRevision;
         SelectedObjectId = selectedObjectId;
-        TranslateGizmo = translateGizmo;
+        TransformGizmo = transformGizmo;
     }
 
     public ViewportSessionId SessionId { get; }
@@ -328,7 +329,7 @@ public sealed record ViewportRenderRequest
 
     public Guid? SelectedObjectId { get; }
 
-    public ViewportTranslateGizmoState? TranslateGizmo { get; }
+    public ViewportTransformGizmoState? TransformGizmo { get; }
 }
 
 public sealed record ViewportSessionSnapshot(

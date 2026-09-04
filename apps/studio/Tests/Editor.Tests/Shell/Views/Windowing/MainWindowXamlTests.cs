@@ -80,6 +80,12 @@ public sealed class MainWindowXamlTests
             "commands:StudioActionButton.ActionId=\"{x:Static actions:StudioShellActionIds.CreateMeshEntity}\"",
             scenePanelXaml);
         Assert.Contains("IsChecked=\"{Binding IsWireframe, Mode=TwoWay}\"", scenePanelXaml);
+        Assert.Contains(
+            "IsChecked=\"{Binding IsTranslateGizmoMode, Mode=TwoWay}\"",
+            scenePanelXaml);
+        Assert.Contains(
+            "IsChecked=\"{Binding IsRotateGizmoMode, Mode=TwoWay}\"",
+            scenePanelXaml);
     }
 
     [Fact]

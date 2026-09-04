@@ -492,6 +492,12 @@ public sealed class StudioLayeringTests
             scenePanelXaml,
             StringComparison.Ordinal);
         Assert.Contains("LostFocus=\"OnSceneViewportLostFocus\"", scenePanelXaml);
+        Assert.Contains("Key.W", scenePanelCodeBehind, StringComparison.Ordinal);
+        Assert.Contains("Key.E", scenePanelCodeBehind, StringComparison.Ordinal);
+        Assert.Contains(
+            "SetTransformGizmoMode",
+            scenePanelCodeBehind,
+            StringComparison.Ordinal);
         Assert.Contains(
             "TryCapturePresentedInteractionContext",
             viewportControlSource,

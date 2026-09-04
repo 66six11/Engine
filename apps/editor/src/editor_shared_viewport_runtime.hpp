@@ -177,9 +177,9 @@ namespace asharia::editor {
         [[nodiscard]] asharia::Result<EditorSharedViewportDeviceSnapshot> ensureDeviceSnapshot();
         [[nodiscard]] asharia::Result<EditorSharedViewportStreamId>
         openStream(bool supportsWireframe);
-        [[nodiscard]] asharia::Result<void> validateSceneRasterMode(
-            EditorSharedViewportStreamId streamId,
-            EditorSharedViewportSceneRasterMode rasterMode);
+        [[nodiscard]] asharia::Result<void>
+        validateSceneRasterMode(EditorSharedViewportStreamId streamId,
+                                EditorSharedViewportSceneRasterMode rasterMode);
         [[nodiscard]] asharia::Result<void> submitLatest(EditorSharedViewportStreamId streamId,
                                                          EditorSharedViewportPresentDesc desc);
         [[nodiscard]] asharia::Result<std::optional<EditorSharedViewportReadyFrame>>
@@ -231,12 +231,14 @@ namespace asharia::editor {
             bool flashSentinelCorners{};
             bool hasSelectionOutline{};
             std::array<std::uint8_t, 16> selectedObjectId{};
-            bool hasTranslateGizmo{};
-            std::array<std::uint64_t, 2> translateGizmoObjectId{};
-            std::array<float, 3> translateGizmoPosition{};
-            EditorSharedViewportGizmoAxis translateGizmoHoveredAxis{
+            bool hasTransformGizmo{};
+            EditorSharedViewportTransformGizmoKind transformGizmoKind{
+                EditorSharedViewportTransformGizmoKind::Translate};
+            std::array<std::uint64_t, 2> transformGizmoObjectId{};
+            std::array<float, 3> transformGizmoPosition{};
+            EditorSharedViewportGizmoAxis transformGizmoHoveredAxis{
                 EditorSharedViewportGizmoAxis::None};
-            EditorSharedViewportGizmoAxis translateGizmoActiveAxis{
+            EditorSharedViewportGizmoAxis transformGizmoActiveAxis{
                 EditorSharedViewportGizmoAxis::None};
 
             [[nodiscard]] static RenderFramePacket copyOf(EditorSharedViewportPresentDesc desc);

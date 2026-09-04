@@ -1,8 +1,8 @@
-# ADR-0006：Viewport Presentation Transaction 与 V8 多槽呈现
+# ADR-0006：Viewport Presentation Transaction 与 V9 多槽呈现
 
 状态：Accepted / Implemented（platform-neutral capability + Windows integration；physical scanout acceptance pending）
 日期：2026-08-08
-最近修订：2026-08-12（V8 view-local FOV axis 硬切）
+最近修订：2026-08-12（V9 view-local FOV axis 硬切）
 
 ## 背景
 
@@ -63,22 +63,22 @@ host/transaction，以及跨 compositor 或 native Window geometry 的伪原子 
 
 ## 决策
 
-### 1. V8 是 production 硬切 ABI
+### 1. V9 是 production 硬切 ABI
 
 Studio 只调用以下 viewport frame 生命周期入口：
 
 ```text
-editor_viewport_open_stream_v8
-editor_viewport_submit_latest_v8
-editor_viewport_try_take_ready_v8
-editor_viewport_complete_frame_v8
-editor_viewport_release_slot_import_v8
-editor_viewport_close_stream_v8
-editor_viewport_poll_stream_v8
-editor_viewport_destroy_stream_v8
+editor_viewport_open_stream_v9
+editor_viewport_submit_latest_v9
+editor_viewport_try_take_ready_v9
+editor_viewport_complete_frame_v9
+editor_viewport_release_slot_import_v9
+editor_viewport_close_stream_v9
+editor_viewport_poll_stream_v9
+editor_viewport_destroy_stream_v9
 ```
 
-V1–V7 stream symbols 不导出，managed 没有 fallback。兼容性 query、runtime stats 和 shutdown 是独立控制面，
+V1–V8 stream symbols 不导出，managed 没有 fallback。兼容性 query、runtime stats 和 shutdown 是独立控制面，
 不构成旧 frame path。
 
 ### 2. 每个 stream 的队列严格有界
@@ -124,7 +124,7 @@ scanout 时间。下一次复用同一 slot 的 producer submit 等待 consumer-
 `NotSubmittedToConsumer` 明确清除这次 consumer wait，因为对应 signal 永远不会发生。
 
 managed imported wrappers 只在 slot 首次出现时创建，后续 frame 验证 handles 不变并复用 wrapper。stream close 前先 dispose
-wrapper，再调用 `release_slot_import_v8`；native 只有在 import release 和 GPU completion 都成立后才销毁 slot。
+wrapper，再调用 `release_slot_import_v9`；native 只有在 import release 和 GPU completion 都成立后才销毁 slot。
 
 ### 4. Viewport Presentation Transaction 是通用可见提交合同
 
@@ -164,7 +164,7 @@ capture identity 不与实时 Scene/Game front 共用可变 presentation state�
 ### 5. Scene exact policy、dock 与 Window layout adapter
 
 `ViewportCompositionControl` 以 `ceil(Bounds * RenderScaling)` 计算 commit-time panel `PixelSize`。Studio 提交给 native 的
-`logical extent` 与 `allocation extent` 都等于这个物理像素尺寸；V8 ABI 仍保留两个字段，但 Studio presentation 不使用
+`logical extent` 与 `allocation extent` 都等于这个物理像素尺寸；V9 ABI 仍保留两个字段，但 Studio presentation 不使用
 allocation padding。每次成功进入 `CompositionDrawingSurface` 的 frame 必须满足：
 
 ```text
@@ -373,7 +373,7 @@ panel 使用相同 pixel extent，不以 padding/crop 改变网格世界间距�
 
 - native smoke 覆盖：ready/pending latest coalescing、三槽上限、第四请求 backpressure、invalid completion 不消费所有权、
   slot reuse、import release、close/destroy、四 cold stream round-robin 以及 completion/close-before-render；
-- managed tests 覆盖：V8 ABI layout、view-local FOV axis、authored-mesh deep copy、自描述 ready frame/mesh receipt、exact-once completion、persistent slot identity、stream close；
+- managed tests 覆盖：V9 ABI layout、view-local FOV axis、authored-mesh deep copy、自描述 ready frame/mesh receipt、exact-once completion、persistent slot identity、stream close；
 - managed 行为测试覆盖：transaction phase/exact-once publish、atomic-scope mismatch、pre-publish abort、post-publish quarantine、
   render/retirement barrier、exact extent admission、A→B→A generation 不复活旧 surface、同 extent 不新增 generation、旧流退役不阻止新流 pump、pump 同步重入、
   close failure quarantine、content sequence fence、coalesced OnDemand wake、ancestor re-exposure、clean session replacement、
@@ -393,7 +393,7 @@ panel 使用相同 pixel extent，不以 padding/crop 改变网格世界间距�
   `--smoke-viewport-multi-endpoint` 当前覆盖同 compositor 两 endpoint 的同文档双 Scene、Scene+Game ownership，以及实际 immutable
   request 中 Scene `MaintainHorizontal` / Game `MaintainVertical` 的 projection policy 隔离、validation reject
   和 post-publish group quarantine。3–4 realtime endpoint、公平资源预算与 slow-consumer 隔离仍是明确 blocker，不属于当前通过范围；
-- `--smoke-viewport-transaction-flash` 另以 typed V8 diagnostic flag 在 native Scene surface 写四色 corner sentinel，逐 batch 检查
+- `--smoke-viewport-transaction-flash` 另以 typed V9 diagnostic flag 在 native Scene surface 写四色 corner sentinel，逐 batch 检查
   Bounds/front/candidate/visual/surface/opacity/identity 以及 blank/out-of-bounds/stretch/crop；当前没有可靠 window pixel capture，输出
   `pixelEvidenceAvailable=false`，不声称 PhysicalDisplayed；
 - `--smoke-viewport-transaction-window-resize` 使用真实 Win32 HWND、真实 Avalonia compositor 与 Vulkan external surface 驱动
@@ -420,7 +420,7 @@ panel 使用相同 pixel extent，不以 padding/crop 改变网格世界间距�
   只允许 59.94 Hz/QPC 的小于 0.5 ms 采样容差（`<=25.5 ms`），max `<=100 ms`；
 - 各 smoke 分层报告 native producer/resource、transaction phase/identity、Avalonia surface/`Rendered` 与 physical display 指标，禁止把
   surface completion 当作 scanout。物理层另用 PresentMon/ETW 验证，不能从 `UpdateWithSemaphoresAsync` 推断；
-- distribution 要求全部 V8 frame exports；V1–V7 stream exports 缺失是预期硬切结果。
+- distribution 要求全部 V9 frame exports；V1–V8 stream exports 缺失是预期硬切结果。
 
 2026-08-09 的 RTX 4060 / 200 Hz exact-extent 实测中，中间版本因旧 active stream 占住三个全局 lane，只完成 29 个 exact frame / 0.75 s
 （38.72 FPS，p95 32 ms，15 个 stale candidate reject）。旧的“全部 exact frame”计数还能被同一 generation 的第二、第三帧抬高，

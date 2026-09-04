@@ -56,6 +56,14 @@
                 Background="#B0181A1F"
                 CornerRadius="3">
             <StackPanel Orientation="Horizontal" Spacing="8">
+                <RadioButton AutomationProperties.Name="Use move gizmo"
+                             Content="Move (W)"
+                             GroupName="SceneTransformGizmoMode"
+                             IsChecked="{Binding IsTranslateGizmoMode, Mode=TwoWay}" />
+                <RadioButton AutomationProperties.Name="Use rotate gizmo"
+                             Content="Rotate (E)"
+                             GroupName="SceneTransformGizmoMode"
+                             IsChecked="{Binding IsRotateGizmoMode, Mode=TwoWay}" />
                 <ToggleButton AutomationProperties.Name="Toggle realtime scene refresh"
                               Content="Realtime"
                               IsChecked="{Binding IsRealtime, Mode=TwoWay}" />

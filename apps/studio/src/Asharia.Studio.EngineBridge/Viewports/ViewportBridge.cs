@@ -8,8 +8,8 @@ namespace Asharia.Studio.EngineBridge.Viewports;
 
 public sealed class ViewportBridge
 {
-    private const ViewportNativeStreamCapabilitiesV8 KnownStreamCapabilities =
-        ViewportNativeStreamCapabilitiesV8.Wireframe;
+    private const ViewportNativeStreamCapabilitiesV9 KnownStreamCapabilities =
+        ViewportNativeStreamCapabilitiesV9.Wireframe;
     private readonly IViewportNativeApi nativeApi_;
 
     public ViewportBridge()
@@ -27,11 +27,11 @@ public sealed class ViewportBridge
     {
         ArgumentNullException.ThrowIfNull(compatibility);
         ViewportNativeStatus status;
-        ViewportNativeStreamHandleV8 nativeStream;
+        ViewportNativeStreamHandleV9 nativeStream;
         try
         {
             var nativeCompatibility = CreateCompatibilityRequest(compatibility);
-            status = nativeApi_.OpenStreamV8(in nativeCompatibility, out nativeStream);
+            status = nativeApi_.OpenStreamV9(in nativeCompatibility, out nativeStream);
         }
         catch (Exception exception) when (IsNativeBindingFailure(exception))
         {
@@ -48,7 +48,7 @@ public sealed class ViewportBridge
 
         if (status != ViewportNativeStatus.Success ||
             nativeStream.Header.AbiVersion != ViewportNativeAbiHeader.CurrentAbiVersion ||
-            nativeStream.Header.StructSize < Marshal.SizeOf<ViewportNativeStreamHandleV8>() ||
+            nativeStream.Header.StructSize < Marshal.SizeOf<ViewportNativeStreamHandleV9>() ||
             nativeStream.Status != (uint)ViewportNativeStatus.Success ||
             (nativeStream.Capabilities & ~(uint)KnownStreamCapabilities) != 0 ||
             nativeStream.StreamId == 0)
@@ -67,7 +67,7 @@ public sealed class ViewportBridge
                 this,
                 nativeStream.StreamId,
                 (nativeStream.Capabilities &
-                 (uint)ViewportNativeStreamCapabilitiesV8.Wireframe) != 0),
+                 (uint)ViewportNativeStreamCapabilitiesV9.Wireframe) != 0),
             null);
     }
 
@@ -76,7 +76,7 @@ public sealed class ViewportBridge
         ViewportRenderRequest request,
         ViewportRenderDiagnosticOverlay diagnosticOverlay)
     {
-        var gizmo = request.TranslateGizmo;
+        var gizmo = request.TransformGizmo;
         var proxies = request.DebugProxies
             .Select(proxy => new ViewportNativeDebugProxy(
                 ViewportNativeId.FromGuid(proxy.ObjectId),
@@ -85,7 +85,7 @@ public sealed class ViewportBridge
                     : proxy.Transform))
             .ToArray();
         var meshes = request.AuthoredMeshes
-            .Select(mesh => new ViewportNativeAuthoredMeshSnapshotV8(
+            .Select(mesh => new ViewportNativeAuthoredMeshSnapshotV9(
                 ViewportNativeCanonicalUuid.FromGuid(mesh.ObjectId),
                 mesh.RuntimeEntityId.Index,
                 mesh.RuntimeEntityId.Generation,
@@ -96,27 +96,27 @@ public sealed class ViewportBridge
                     : mesh.Transform))
             .ToArray();
         fixed (ViewportNativeDebugProxy* proxyPointer = proxies)
-        fixed (ViewportNativeAuthoredMeshSnapshotV8* meshPointer = meshes)
+        fixed (ViewportNativeAuthoredMeshSnapshotV9* meshPointer = meshes)
         {
-            var nativeFlags = ViewportNativePresentRequestV8Flags.HasLogicalExtent;
+            var nativeFlags = ViewportNativePresentRequestV9Flags.HasLogicalExtent;
             if ((diagnosticOverlay & ViewportRenderDiagnosticOverlay.FlashSentinelCorners) != 0)
             {
-                nativeFlags |= ViewportNativePresentRequestV8Flags.FlashSentinelCorners;
+                nativeFlags |= ViewportNativePresentRequestV9Flags.FlashSentinelCorners;
             }
             if ((diagnosticOverlay & ViewportRenderDiagnosticOverlay.CaptureSceneMeshEvidence) != 0)
             {
-                nativeFlags |= ViewportNativePresentRequestV8Flags.CaptureSceneMeshEvidence;
+                nativeFlags |= ViewportNativePresentRequestV9Flags.CaptureSceneMeshEvidence;
             }
             if (request.SelectedObjectId is not null)
             {
-                nativeFlags |= ViewportNativePresentRequestV8Flags.HasSelectionOutline;
+                nativeFlags |= ViewportNativePresentRequestV9Flags.HasSelectionOutline;
             }
             if (gizmo is not null)
             {
-                nativeFlags |= ViewportNativePresentRequestV8Flags.HasTranslateGizmo;
+                nativeFlags |= ViewportNativePresentRequestV9Flags.HasTransformGizmo;
             }
-            var nativeRequest = new ViewportNativePresentRequestV8(
-                ViewportNativeAbiHeader.Current<ViewportNativePresentRequestV8>(),
+            var nativeRequest = new ViewportNativePresentRequestV9(
+                ViewportNativeAbiHeader.Current<ViewportNativePresentRequestV9>(),
                 ViewportNativeId.FromGuid(request.SessionId.Value),
                 ViewportNativeId.FromGuid(request.TargetId),
                 request.TargetRevision,
@@ -144,15 +144,23 @@ public sealed class ViewportBridge
                     : default,
                 request.ViewStateRevision,
                 gizmo is not null
-                    ? new ViewportNativeTranslateGizmoV8(
+                    ? new ViewportNativeTransformGizmoV9(
                         ViewportNativeId.FromGuid(gizmo.ObjectId),
                         gizmo.Transform.Position,
+                        gizmo.Kind switch
+                        {
+                            ViewportTransformGizmoKind.Translate =>
+                                (uint)ViewportNativeTransformGizmoKind.Translate,
+                            ViewportTransformGizmoKind.Rotate =>
+                                (uint)ViewportNativeTransformGizmoKind.Rotate,
+                            _ => throw new ArgumentOutOfRangeException(nameof(request)),
+                        },
                         (uint)gizmo.HoveredAxis,
                         (uint)gizmo.ActiveAxis)
                     : default);
             try
             {
-                var status = nativeApi_.SubmitLatestV8(streamId, in nativeRequest);
+                var status = nativeApi_.SubmitLatestV9(streamId, in nativeRequest);
                 return status == ViewportNativeStatus.Success
                     ? ViewportSubmitResult.Success
                     : new ViewportSubmitResult(new ViewportFrameFailure(
@@ -177,10 +185,10 @@ public sealed class ViewportBridge
     internal ViewportFrameTakeResult TryTakeReady(ViewportRenderStream stream)
     {
         ViewportNativeStatus status;
-        ViewportNativeReadyFrameV8 frame;
+        ViewportNativeReadyFrameV9 frame;
         try
         {
-            status = nativeApi_.TryTakeReadyV8(stream.StreamId, out frame);
+            status = nativeApi_.TryTakeReadyV9(stream.StreamId, out frame);
         }
         catch (Exception exception) when (IsNativeBindingFailure(exception))
         {
@@ -202,13 +210,13 @@ public sealed class ViewportBridge
                 $"Native viewport ready-frame query failed with {status}.");
         }
         if (frame.Header.AbiVersion != ViewportNativeAbiHeader.CurrentAbiVersion ||
-            frame.Header.StructSize < Marshal.SizeOf<ViewportNativeReadyFrameV8>() ||
+            frame.Header.StructSize < Marshal.SizeOf<ViewportNativeReadyFrameV9>() ||
             frame.Status != (uint)ViewportNativeStatus.Success || frame.Reserved != 0 ||
             frame.StreamId is not 0 && frame.StreamId != stream.StreamId || frame.HasFrame > 1)
         {
             return FailedTake(
                 ViewportFrameFailureKind.InternalError,
-                "Native viewport returned an invalid V8 ready-frame header.");
+                "Native viewport returned an invalid V9 ready-frame header.");
         }
         if (frame.HasFrame == 0)
         {
@@ -237,14 +245,14 @@ public sealed class ViewportBridge
         {
             if (frame.NativeSlot != 0)
             {
-                nativeApi_.CompleteFrameV8(
+                nativeApi_.CompleteFrameV9(
                     stream.StreamId,
                     frame.NativeSlot,
                     ViewportNativePresentCompletionKind.NotSubmittedToConsumer);
             }
             return FailedTake(
                 ViewportFrameFailureKind.InternalError,
-                "Native viewport returned an invalid V8 ready frame.");
+                "Native viewport returned an invalid V9 ready frame.");
         }
 
         return new ViewportFrameTakeResult(
@@ -256,23 +264,23 @@ public sealed class ViewportBridge
         ViewportRenderStream stream,
         nint nativeSlot,
         ViewportFrameCompletionKind completionKind) =>
-        nativeApi_.CompleteFrameV8(
+        nativeApi_.CompleteFrameV9(
             stream.StreamId,
             nativeSlot,
             ToNativeCompletionKind(completionKind));
 
     internal void ReleaseSlotImport(ViewportRenderStream stream, nint nativeSlot) =>
-        nativeApi_.ReleaseSlotImportV8(stream.StreamId, nativeSlot);
+        nativeApi_.ReleaseSlotImportV9(stream.StreamId, nativeSlot);
 
     internal void RequestClose(ViewportRenderStream stream) =>
-        nativeApi_.CloseStreamV8(stream.StreamId);
+        nativeApi_.CloseStreamV9(stream.StreamId);
 
     internal ViewportRenderStreamSnapshot Poll(ViewportRenderStream stream)
     {
-        var status = nativeApi_.PollStreamV8(stream.StreamId, out var poll);
+        var status = nativeApi_.PollStreamV9(stream.StreamId, out var poll);
         if (status != ViewportNativeStatus.Success ||
             poll.Header.AbiVersion != ViewportNativeAbiHeader.CurrentAbiVersion ||
-            poll.Header.StructSize < Marshal.SizeOf<ViewportNativeStreamPollV8>() ||
+            poll.Header.StructSize < Marshal.SizeOf<ViewportNativeStreamPollV9>() ||
             poll.Status != (uint)ViewportNativeStatus.Success || poll.Reserved != 0 ||
             poll.HasPendingLatest > 1 || poll.HasReadyFrame > 1 ||
             poll.RenderExecuting > 1 ||
@@ -294,7 +302,7 @@ public sealed class ViewportBridge
     }
 
     internal void DestroyClosed(ViewportRenderStream stream) =>
-        nativeApi_.DestroyStreamV8(stream.StreamId);
+        nativeApi_.DestroyStreamV9(stream.StreamId);
 
     private static ViewportNativeCompatibilityRequest CreateCompatibilityRequest(
         ViewportDeviceCompatibility compatibility) => new(
@@ -338,7 +346,7 @@ public sealed class ViewportBridge
     };
 
     private static bool ValidSceneMeshReceipt(
-        ViewportNativeSceneMeshReceiptV8 receipt,
+        ViewportNativeSceneMeshReceiptV9 receipt,
         ulong targetRevision) =>
         receipt.EvidenceAvailable <= 1 &&
         receipt.ResolvedCount <= receipt.InputCount &&

@@ -47,6 +47,11 @@ namespace asharia::editor {
         Z,
     };
 
+    enum class EditorSharedViewportTransformGizmoKind : std::uint32_t {
+        Translate,
+        Rotate,
+    };
+
     struct EditorSharedViewportAuthoredMeshSnapshot {
         std::array<std::uint8_t, 16> objectId{};
         std::uint32_t runtimeEntityIndex{};
@@ -81,13 +86,14 @@ namespace asharia::editor {
         bool flashSentinelCorners{};
         bool hasSelectionOutline{};
         std::array<std::uint8_t, 16> selectedObjectId{};
-        bool hasTranslateGizmo{};
-        std::array<std::uint64_t, 2> translateGizmoObjectId{};
-        std::array<float, 3> translateGizmoPosition{};
-        EditorSharedViewportGizmoAxis translateGizmoHoveredAxis{
+        bool hasTransformGizmo{};
+        EditorSharedViewportTransformGizmoKind transformGizmoKind{
+            EditorSharedViewportTransformGizmoKind::Translate};
+        std::array<std::uint64_t, 2> transformGizmoObjectId{};
+        std::array<float, 3> transformGizmoPosition{};
+        EditorSharedViewportGizmoAxis transformGizmoHoveredAxis{
             EditorSharedViewportGizmoAxis::None};
-        EditorSharedViewportGizmoAxis translateGizmoActiveAxis{
-            EditorSharedViewportGizmoAxis::None};
+        EditorSharedViewportGizmoAxis transformGizmoActiveAxis{EditorSharedViewportGizmoAxis::None};
     };
 
     struct EditorSharedViewportPresentPacket {
@@ -106,8 +112,7 @@ namespace asharia::editor {
         std::uint32_t resolvedCount{};
         std::uint32_t rejectedCount{};
         std::uint32_t indexedDrawCount{};
-        EditorSharedViewportSceneRasterMode rasterMode{
-            EditorSharedViewportSceneRasterMode::Solid};
+        EditorSharedViewportSceneRasterMode rasterMode{EditorSharedViewportSceneRasterMode::Solid};
         std::uint32_t representativeSourceEntityIndex{};
         std::uint32_t representativeSourceEntityGeneration{};
         bool hasResolved{};

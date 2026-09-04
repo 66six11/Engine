@@ -1,6 +1,6 @@
 # Studio native boundary 审查
 
-状态：Current audit（SceneDocument ABI v3、catalog query ABI v1 consumer 与 V8 async viewport stream 已建立；device epoch/recovery 仍开放）
+状态：Current audit（SceneDocument ABI v3、catalog query ABI v1 consumer 与 V9 async viewport stream 已建立；device epoch/recovery 仍开放）
 
 更新日期：2026-09-03
 
@@ -20,10 +20,10 @@ process singleton
 + C ABI failure/size/ownership contract 不完整
 ```
 
-V8 ABI 现在承担 production presentation consumer：显式 stream handle、immutable latest request、bounded full-slot
+V9 ABI 现在承担 production presentation consumer：显式 stream handle、immutable latest request、bounded full-slot
 lease、异步 ready acquire 与 close/poll/destroy，并携带 authored mesh snapshots、per-view raster mode、Scene mesh receipt
-与 optional typed Translate Gizmo packet。
-V1–V7 stream exports 均不导出，不提供 managed 或 deployment fallback；历史 runtime-stats diagnostics 版本链不是 stream
+与 optional discriminated Transform Gizmo packet。
+V1–V8 stream exports 均不导出，不提供 managed 或 deployment fallback；历史 runtime-stats diagnostics 版本链不是 stream
 compatibility surface。
 后续多 Viewport fairness 与 device recovery 仍需引入 device epoch 和统一 recovery contract。
 
@@ -31,7 +31,7 @@ R0 Studio 删除了旧 App/composition/publish viewport consumer 与 deployment 
 `ViewportSession`；#361 已让 App/Shell/Release publish 成为真实 consumer，
 部署 `editor_native.dll` 与 renderer-basic shader closure，并通过专用 `ViewportCompositionControl` 和
 process-owned `ViewportPresentationLifetime` 完成 Avalonia import/presentation/drain。native
-`EditorSharedViewportRuntime` 现在拥有一条 process-level RenderThread 和 V8 bounded latest-wins scheduler；每个 stream
+`EditorSharedViewportRuntime` 现在拥有一条 process-level RenderThread 和 V9 bounded latest-wins scheduler；每个 stream
 最多一个 executing、一个 pending latest、一个 ready frame 与三个持久 full slots。这关闭了“同步 caller 等帧”、
 “每帧重建 presentation resource”和“caller 线程直接拥有 Vulkan”三个旧事实，但尚未解决 process singleton、
 device epoch/recovery 或跨 stream weighted fairness。
@@ -45,23 +45,23 @@ native-first 重建。随后 `editor_native.dll` 以 `CopyToOutputDirectory="Alw
 `ViewportNativeRuntimeContract`，后者只加载并检查最终 `$(TargetDir)\editor_native.dll` 的 exports，不启动 Avalonia 或
 Viewport runtime。
 
-当前普通 build 与 Release Editor Image 共同要求以下 V8 production exports：
+当前普通 build 与 Release Editor Image 共同要求以下 V9 production exports：
 
 ```text
 editor_viewport_query_composition_compatibility
 editor_viewport_release_compatibility_result
-editor_viewport_open_stream_v8
-editor_viewport_submit_latest_v8
-editor_viewport_try_take_ready_v8
-editor_viewport_complete_frame_v8
-editor_viewport_release_slot_import_v8
-editor_viewport_close_stream_v8
-editor_viewport_poll_stream_v8
-editor_viewport_destroy_stream_v8
+editor_viewport_open_stream_v9
+editor_viewport_submit_latest_v9
+editor_viewport_try_take_ready_v9
+editor_viewport_complete_frame_v9
+editor_viewport_release_slot_import_v9
+editor_viewport_close_stream_v9
+editor_viewport_poll_stream_v9
+editor_viewport_destroy_stream_v9
 editor_viewport_shutdown
 ```
 
-并共同拒绝以下 legacy V1--V7 entry-point set：
+并共同拒绝以下 legacy V1--V8 entry-point set：
 
 ```text
 editor_viewport_acquire_present_packet
@@ -97,7 +97,7 @@ editor_viewport_destroy_stream_v7
 ```
 
 这不是兼容探测或 fallback：任一 required export 缺失、任一 legacy export 存在、DLL 无法加载或架构不匹配，都使普通 build
-失败。`msvc-debug-tests` 可以额外导出 `editor_viewport_open_stream_v8_for_test`，只用于显式 GPU/fault-injection 验收；普通本地
+失败。`msvc-debug-tests` 可以额外导出 `editor_viewport_open_stream_v9_for_test`，只用于显式 GPU/fault-injection 验收；普通本地
 admission 允许这个当前版本的 test-only 扩展，但不把它当 production dependency。发行资格由
 `StudioEditorImageProducer` 对全新 publish tree 执行静态 PE identity、required/forbidden exports、固定位置与 closed-tree 检查，且明确
 拒绝该 test-only export。两道门禁不能互相替代。
@@ -274,7 +274,7 @@ process-exit quarantine 只是可诊断终极回退。
 - panel ID/kind 在 native bridge 硬编码；
 - shared viewport producer 使用默认相机与固定轴。
 
-#359 后续由 V8 保留的当前事实：request 携 session/target/revision/sequence、真实 camera snapshot、view-local FOV axis 与最多 256 个来自
+#359 后续由 V9 保留的当前事实：request 携 session/target/revision/sequence、真实 camera snapshot、view-local FOV axis 与最多 256 个来自
 `SceneDocumentSnapshot` 的 `{objectId, Transform}` debug proxies；native producer 将 Scene/Game/Preview 映射到同一
 RenderView path，Scene View 使用这些 Transform 生成调试轴，且双 session/slot smoke 验证 metadata 真被消费。
 
@@ -340,7 +340,7 @@ native size/offset static assertions 与 managed layout tests；Release producer
 
 owner-thread Slice 已把 Vulkan context create、record/queue submit、fence polling、retirement 与析构移出
 mutex。`queueMutex_` 只保护有界 render/control/release mailbox 与 lifecycle condition；单一
-RenderThread 仍是 Vulkan queue 的唯一 consumer。V8 已按 stream 提供 pending-latest 覆盖和 ready-frame acquire；
+RenderThread 仍是 Vulkan queue 的唯一 consumer。V9 已按 stream 提供 pending-latest 覆盖和 ready-frame acquire；
 当前缺口是多个 active stream 之间没有 deadline、weight 或 round-robin fairness 合同。未来多 Viewport 应在同一
 owner thread 内增加有界 cross-stream admission/scheduling，不应直接并行操作 Vulkan queue。
 
@@ -445,13 +445,13 @@ ErrorInfo {
 
 ## 7. 实施顺序与门禁
 
-1. **Managed Project Shell（已建立）**：Project 使用 dedicated ABI v2，Scene 使用 package-owned Document ABI v3；Viewport 使用 V8 async
+1. **Managed Project Shell（已建立）**：Project 使用 dedicated ABI v2，Scene 使用 package-owned Document ABI v3；Viewport 使用 V9 async
    stream，不保留旧 frame compatibility path。
 2. **ABI foundation**：真正 C header、session/handle/error；C include、双端 size/offset、catch-all、
    bad-alloc/fault injection、duplicate/stale handle smoke。
 3. **Scene slice（首个编辑闭环已建立）**：dedicated owner lane、generation-safe document handle、expected
    revision、immutable bulk snapshot 与 save/reopen 已接通；后续真实 undo 需求再引入 atomic mutation batch/change set/savepoint。
-4. **Viewport slice（V8 当前基线）**：`SceneDocument -> UI-neutral session -> camera/FOV axis/bounded Transform proxies
+4. **Viewport slice（V9 当前基线）**：`SceneDocument -> UI-neutral session -> camera/FOV axis/bounded Transform proxies
    -> submit latest / take ready -> persistent full-slot lease -> Avalonia composition` 已形成可见闭环；native Vulkan owner
    thread、三槽上限、exact geometry generation、尺寸变化立即逐流 retire 与 exact close 已接入。下一次 contract Slice 集中在 device epoch/recovery、
    cross-stream fairness，并补多 viewport、device lost 与真实交互 resize profiling。
@@ -460,7 +460,7 @@ ErrorInfo {
 关键验收项：
 
 - 普通 Studio build 必须先重建所选 `StudioNativeBuildPreset` 的 `editor-native`，再由
-  `ValidateStudioViewportNativeRuntimeContract` 对最终 `TargetDir` sibling 验证完整 V8 required exports 与 legacy V1--V7
+  `ValidateStudioViewportNativeRuntimeContract` 对最终 `TargetDir` sibling 验证完整 V9 required exports 与 legacy V1--V8
   forbidden exports；不得自动构建 native、回退 V6 或从历史输出猜选 DLL；
 - `ViewportNativeRuntimeContractTests` 必须逐项覆盖每个缺失 required export、每个出现的 legacy export 与 probe failure；
   Release Editor Image 继续以独立静态 PE inspector 复验同一 export policy；

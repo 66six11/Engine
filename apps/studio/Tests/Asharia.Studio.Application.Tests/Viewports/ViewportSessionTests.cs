@@ -442,7 +442,8 @@ public sealed class ViewportSessionTests
                 new Float3(inputIndex, 2, 3),
                 Quaternion.Identity,
                 Float3.One);
-            session.SetTranslateGizmo(new ViewportTranslateGizmoState(
+            session.SetTransformGizmo(new ViewportTransformGizmoState(
+                ViewportTransformGizmoKind.Translate,
                 selectedObjectId,
                 preview,
                 ViewportGizmoAxis.X,
@@ -453,12 +454,12 @@ public sealed class ViewportSessionTests
                 published.Sequence,
                 published.TargetRevision));
             Assert.True(session.TryPublishLatest(size, out published));
-            Assert.Equal(preview, Assert.IsType<ViewportTranslateGizmoState>(
-                published.TranslateGizmo).Transform);
+            Assert.Equal(preview, Assert.IsType<ViewportTransformGizmoState>(
+                published.TransformGizmo).Transform);
             Assert.True(published.Reasons.HasFlag(ViewportInvalidationReason.GizmoChanged));
         }
 
-        Assert.Equal(new Float3(240, 2, 3), published.TranslateGizmo!.Transform.Position);
+        Assert.Equal(new Float3(240, 2, 3), published.TransformGizmo!.Transform.Position);
     }
 
     [Fact]
@@ -475,7 +476,8 @@ public sealed class ViewportSessionTests
         var size = new ViewportRenderSize(extent, extent);
         session.SetSelection(viewStateRevision: 1, entity.ObjectId);
         Assert.True(session.TryPublishLatest(size, out _));
-        session.SetTranslateGizmo(new ViewportTranslateGizmoState(
+        session.SetTransformGizmo(new ViewportTransformGizmoState(
+            ViewportTransformGizmoKind.Translate,
             entity.ObjectId,
             new TransformValue(new Float3(9, 8, 7), Quaternion.Identity, Float3.One),
             ViewportGizmoAxis.X,
@@ -499,9 +501,35 @@ public sealed class ViewportSessionTests
             ]));
 
         Assert.True(session.TryPublishLatest(size, out var synchronized));
-        Assert.Equal(authoritative, synchronized.TranslateGizmo!.Transform);
-        Assert.Equal(ViewportGizmoAxis.None, synchronized.TranslateGizmo.HoveredAxis);
-        Assert.Equal(ViewportGizmoAxis.None, synchronized.TranslateGizmo.ActiveAxis);
+        Assert.Equal(authoritative, synchronized.TransformGizmo!.Transform);
+        Assert.Equal(ViewportGizmoAxis.None, synchronized.TransformGizmo.HoveredAxis);
+        Assert.Equal(ViewportGizmoAxis.None, synchronized.TransformGizmo.ActiveAxis);
+    }
+
+    [Fact]
+    public void Transform_gizmo_mode_change_rebuilds_state_and_advances_presentation_fence()
+    {
+        var document = Document(revision: 1, entityCount: 1);
+        var selectedObjectId = document.Entities.Single().ObjectId;
+        var session = new ViewportSession(
+            ViewportSessionId.Create(),
+            ViewportRenderKind.Scene,
+            document,
+            ViewportCameraSnapshot.DefaultScene);
+        var extent = new ViewportExtent(640, 360);
+        var size = new ViewportRenderSize(extent, extent);
+        session.SetSelection(viewStateRevision: 1, selectedObjectId);
+        Assert.True(session.TryPublishLatest(size, out var translate));
+
+        session.SetTransformGizmoKind(ViewportTransformGizmoKind.Rotate);
+
+        Assert.True(session.Current.MinimumPresentableSequence > translate.Sequence);
+        Assert.False(session.CanPresentPublishedFrame(
+            translate.Sequence,
+            translate.TargetRevision));
+        Assert.True(session.TryPublishLatest(size, out var rotate));
+        Assert.Equal(ViewportTransformGizmoKind.Rotate, rotate.TransformGizmo!.Kind);
+        Assert.True(rotate.Reasons.HasFlag(ViewportInvalidationReason.GizmoModeChanged));
     }
 
     [Fact]
