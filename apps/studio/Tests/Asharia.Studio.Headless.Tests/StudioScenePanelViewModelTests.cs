@@ -307,6 +307,241 @@ public sealed class StudioScenePanelViewModelTests
     }
 
     [AvaloniaFact]
+    public async Task Translate_gizmo_previews_transiently_and_commits_one_project_edit_on_release()
+    {
+        var projectSessionId = ProjectSessionId.CreateNew();
+        var sceneId = Guid.NewGuid();
+        var entity = Entity("Selected", new EntityId(1, 1), Float3.Zero);
+        var original = Ready(
+            projectSessionId,
+            Guid.NewGuid(),
+            sceneId,
+            revision: 3,
+            entity);
+        var selection = new TestEditorSelectionService();
+        Assert.True(selection.Replace(new SceneObjectSelectionTarget(
+            projectSessionId,
+            sceneId,
+            entity.ObjectId)));
+        var projectSession = new TestProjectSession();
+        projectSession.Publish(original);
+        var callCount = 0;
+        ProjectSessionEditContext capturedContext = default;
+        TransformValue capturedTransform = default;
+        projectSession.SetTransformHandler = (objectId, transform, context, _) =>
+        {
+            callCount++;
+            Assert.Equal(entity.ObjectId, objectId);
+            capturedContext = context;
+            capturedTransform = transform;
+            var movedEntity = new SceneEntitySnapshot(
+                entity.ObjectId,
+                entity.RuntimeEntityId,
+                entity.Name,
+                transform);
+            return ValueTask.FromResult(ProjectSessionOperationResult.Success(
+                Ready(projectSessionId, original.Project!.ProjectId, sceneId, 4, movedEntity),
+                "Moved selected entity.",
+                originatingEditId: context.EditId));
+        };
+        using var shell = new StudioShellViewModel(
+            projectSession,
+            new TestProjectDialogService(),
+            StudioShellTestFactory.CreateDocumentTransitions(projectSession),
+            StudioShellTestFactory.CreateDiagnosticWriter(),
+            StudioShellTestFactory.CreateProjectAssetCatalog(),
+            selection);
+        using var panel = new StudioScenePanelViewModel(shell);
+        var session = Assert.IsType<ViewportSession>(panel.Session);
+        session.SetCamera(GizmoCamera());
+        var extent = new ViewportExtent(800, 600);
+        Assert.True(session.TryPublishLatest(
+            new ViewportRenderSize(extent, extent),
+            out var presented));
+        var context = PresentedContext(session, sceneId, revision: 3, presented, extent);
+
+        Assert.True(panel.TryBeginTranslateGizmo(
+            context,
+            new ViewportPickRequest(extent, new ViewportPickPoint(460, 300), 8)));
+        Assert.True(panel.TryUpdateTranslateGizmo(new ViewportPickPoint(500, 300)));
+        Assert.Equal(0, callCount);
+        Assert.Same(original, projectSession.Current);
+        Assert.True(session.TryPublishLatest(
+            new ViewportRenderSize(extent, extent),
+            out var preview));
+        Assert.InRange(preview.TranslateGizmo!.Transform.Position.X, 0.9999f, 1.0001f);
+
+        Assert.True(await panel.CompleteTranslateGizmoAsync());
+
+        Assert.Equal(1, callCount);
+        Assert.Equal((ulong)3, capturedContext.ExpectedRevision);
+        Assert.True(capturedContext.EditId.IsValid);
+        Assert.InRange(capturedTransform.Position.X, 0.9999f, 1.0001f);
+        Assert.Equal("Moved selected entity.", shell.ProjectOperationMessage);
+        Assert.Equal((ulong)4, panel.Session!.Current.TargetRevision);
+    }
+
+    [AvaloniaFact]
+    public async Task Translate_gizmo_noop_and_cancel_do_not_mutate_the_project()
+    {
+        var projectSessionId = ProjectSessionId.CreateNew();
+        var sceneId = Guid.NewGuid();
+        var entity = Entity("Selected", new EntityId(1, 1), Float3.Zero);
+        var original = Ready(
+            projectSessionId,
+            Guid.NewGuid(),
+            sceneId,
+            revision: 3,
+            entity);
+        var selection = new TestEditorSelectionService();
+        Assert.True(selection.Replace(new SceneObjectSelectionTarget(
+            projectSessionId,
+            sceneId,
+            entity.ObjectId)));
+        var projectSession = new TestProjectSession();
+        projectSession.Publish(original);
+        var callCount = 0;
+        projectSession.SetTransformHandler = (_, _, _, _) =>
+        {
+            callCount++;
+            return ValueTask.FromResult(ProjectSessionOperationResult.Success(
+                original,
+                "Unexpected mutation."));
+        };
+        using var shell = new StudioShellViewModel(
+            projectSession,
+            new TestProjectDialogService(),
+            StudioShellTestFactory.CreateDocumentTransitions(projectSession),
+            StudioShellTestFactory.CreateDiagnosticWriter(),
+            StudioShellTestFactory.CreateProjectAssetCatalog(),
+            selection);
+        using var panel = new StudioScenePanelViewModel(shell);
+        var session = Assert.IsType<ViewportSession>(panel.Session);
+        session.SetCamera(GizmoCamera());
+        var extent = new ViewportExtent(800, 600);
+        var size = new ViewportRenderSize(extent, extent);
+        Assert.True(session.TryPublishLatest(size, out var first));
+
+        Assert.True(panel.TryBeginTranslateGizmo(
+            PresentedContext(session, sceneId, 3, first, extent),
+            new ViewportPickRequest(extent, new ViewportPickPoint(460, 300), 8)));
+        Assert.True(await panel.CompleteTranslateGizmoAsync());
+        Assert.Equal(0, callCount);
+
+        Assert.True(session.TryPublishLatest(size, out var second));
+        Assert.True(panel.TryBeginTranslateGizmo(
+            PresentedContext(session, sceneId, 3, second, extent),
+            new ViewportPickRequest(extent, new ViewportPickPoint(460, 300), 8)));
+        Assert.True(panel.TryUpdateTranslateGizmo(new ViewportPickPoint(500, 300)));
+        panel.CancelTranslateGizmo();
+
+        Assert.Equal(0, callCount);
+        Assert.True(session.TryPublishLatest(size, out var cancelled));
+        Assert.Equal(TransformValue.Identity, cancelled.TranslateGizmo!.Transform);
+        Assert.Equal(ViewportGizmoAxis.None, cancelled.TranslateGizmo.ActiveAxis);
+    }
+
+    [AvaloniaFact]
+    public async Task Failed_translate_gizmo_commit_rolls_preview_back_to_authoritative_state()
+    {
+        var projectSessionId = ProjectSessionId.CreateNew();
+        var sceneId = Guid.NewGuid();
+        var entity = Entity("Selected", new EntityId(1, 1), Float3.Zero);
+        var original = Ready(
+            projectSessionId,
+            Guid.NewGuid(),
+            sceneId,
+            revision: 3,
+            entity);
+        var selection = new TestEditorSelectionService();
+        Assert.True(selection.Replace(new SceneObjectSelectionTarget(
+            projectSessionId,
+            sceneId,
+            entity.ObjectId)));
+        var projectSession = new TestProjectSession();
+        projectSession.Publish(original);
+        projectSession.SetTransformHandler = (_, _, context, _) =>
+            ValueTask.FromResult(ProjectSessionOperationResult.Failed(
+                original,
+                ProjectSessionFailureKind.RevisionConflict,
+                "Scene changed before the move could be committed.",
+                context.EditId));
+        using var shell = new StudioShellViewModel(
+            projectSession,
+            new TestProjectDialogService(),
+            StudioShellTestFactory.CreateDocumentTransitions(projectSession),
+            StudioShellTestFactory.CreateDiagnosticWriter(),
+            StudioShellTestFactory.CreateProjectAssetCatalog(),
+            selection);
+        using var panel = new StudioScenePanelViewModel(shell);
+        var session = Assert.IsType<ViewportSession>(panel.Session);
+        session.SetCamera(GizmoCamera());
+        var extent = new ViewportExtent(800, 600);
+        var size = new ViewportRenderSize(extent, extent);
+        Assert.True(session.TryPublishLatest(size, out var presented));
+        Assert.True(panel.TryBeginTranslateGizmo(
+            PresentedContext(session, sceneId, 3, presented, extent),
+            new ViewportPickRequest(extent, new ViewportPickPoint(460, 300), 8)));
+        Assert.True(panel.TryUpdateTranslateGizmo(new ViewportPickPoint(500, 300)));
+
+        Assert.False(await panel.CompleteTranslateGizmoAsync());
+
+        Assert.Equal("Scene changed before the move could be committed.",
+            shell.ProjectOperationMessage);
+        Assert.True(session.TryPublishLatest(size, out var rolledBack));
+        Assert.Equal(TransformValue.Identity, rolledBack.TranslateGizmo!.Transform);
+    }
+
+    [AvaloniaFact]
+    public async Task Document_drift_cancels_translate_gizmo_without_committing_an_edit()
+    {
+        var projectSessionId = ProjectSessionId.CreateNew();
+        var projectId = Guid.NewGuid();
+        var sceneId = Guid.NewGuid();
+        var entity = Entity("Selected", new EntityId(1, 1), Float3.Zero);
+        var original = Ready(projectSessionId, projectId, sceneId, revision: 3, entity);
+        var selection = new TestEditorSelectionService();
+        Assert.True(selection.Replace(new SceneObjectSelectionTarget(
+            projectSessionId,
+            sceneId,
+            entity.ObjectId)));
+        var projectSession = new TestProjectSession();
+        projectSession.Publish(original);
+        var callCount = 0;
+        projectSession.SetTransformHandler = (_, _, _, _) =>
+        {
+            callCount++;
+            return ValueTask.FromResult(ProjectSessionOperationResult.Success(
+                original,
+                "Unexpected mutation."));
+        };
+        using var shell = new StudioShellViewModel(
+            projectSession,
+            new TestProjectDialogService(),
+            StudioShellTestFactory.CreateDocumentTransitions(projectSession),
+            StudioShellTestFactory.CreateDiagnosticWriter(),
+            StudioShellTestFactory.CreateProjectAssetCatalog(),
+            selection);
+        using var panel = new StudioScenePanelViewModel(shell);
+        var session = Assert.IsType<ViewportSession>(panel.Session);
+        session.SetCamera(GizmoCamera());
+        var extent = new ViewportExtent(800, 600);
+        var size = new ViewportRenderSize(extent, extent);
+        Assert.True(session.TryPublishLatest(size, out var presented));
+        Assert.True(panel.TryBeginTranslateGizmo(
+            PresentedContext(session, sceneId, 3, presented, extent),
+            new ViewportPickRequest(extent, new ViewportPickPoint(460, 300), 8)));
+        Assert.True(panel.TryUpdateTranslateGizmo(new ViewportPickPoint(500, 300)));
+
+        projectSession.Publish(Ready(projectSessionId, projectId, sceneId, revision: 4, entity));
+
+        Assert.False(await panel.CompleteTranslateGizmoAsync());
+        Assert.Equal(0, callCount);
+        Assert.True(session.TryPublishLatest(size, out var synchronized));
+        Assert.Equal(TransformValue.Identity, synchronized.TranslateGizmo!.Transform);
+    }
+
+    [AvaloniaFact]
     public async Task Project_snapshot_reconciles_scene_target_published_for_the_new_scope_first()
     {
         var oldEntity = Entity("Old Entity", new EntityId(1, 1), Float3.Zero);
@@ -473,4 +708,27 @@ public sealed class StudioScenePanelViewModelTests
             runtimeId,
             name,
             new TransformValue(position, Quaternion.Identity, Float3.One));
+
+    private static ViewportCameraSnapshot GizmoCamera() => new(
+        new Float3(0, 0, -10),
+        Float3.Zero,
+        new Float3(0, 1, 0),
+        MathF.PI / 2,
+        ViewportFieldOfViewAxis.MaintainHorizontal,
+        0.1f,
+        1000.0f);
+
+    private static ViewportPresentedInteractionContext PresentedContext(
+        ViewportSession session,
+        Guid sceneId,
+        ulong revision,
+        ViewportRenderRequest presented,
+        ViewportExtent extent) =>
+        new(
+            session.Current.SessionId,
+            sceneId,
+            revision,
+            presented.Sequence,
+            extent,
+            RenderScaling: 1.0);
 }

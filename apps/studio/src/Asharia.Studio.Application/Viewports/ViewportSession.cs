@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using Asharia.Runtime;
 using Asharia.Studio.Application.Scenes;
@@ -22,9 +23,11 @@ public sealed class ViewportSession
     private int totalDebugProxyCount_;
     private ViewportModelPickProxySnapshot[] modelPickProxies_;
     private ViewportAuthoredMeshSnapshot[] authoredMeshes_;
+    private Dictionary<Guid, TransformValue> entityTransforms_;
     private ViewportSceneRasterMode sceneRasterMode_ = ViewportSceneRasterMode.Solid;
     private ulong viewStateRevision_;
     private Guid? selectedObjectId_;
+    private ViewportTranslateGizmoState? translateGizmo_;
     private ViewportRenderSize? lastRenderSize_;
     private ViewportInvalidationReason pendingReasons_ = ViewportInvalidationReason.InitialFrame;
     private ulong lastSequence_;
@@ -62,6 +65,7 @@ public sealed class ViewportSession
         (debugProxies_, totalDebugProxyCount_) = CaptureDebugProxies(document);
         modelPickProxies_ = CaptureModelPickProxies(document);
         authoredMeshes_ = CaptureAuthoredMeshes(document);
+        entityTransforms_ = CaptureEntityTransforms(document);
     }
 
     public ViewportSessionSnapshot Current
@@ -110,6 +114,36 @@ public sealed class ViewportSession
                 modelPickProxies_,
                 debugProxies_,
                 totalDebugProxyCount_);
+            return true;
+        }
+    }
+
+    public bool TryCaptureTranslateGizmoSnapshot(
+        ViewportSessionId expectedSessionId,
+        Guid expectedTargetId,
+        ulong expectedTargetRevision,
+        ulong expectedPresentedSequence,
+        out ViewportTranslateGizmoSnapshot snapshot)
+    {
+        lock (gate_)
+        {
+            snapshot = null!;
+            if (isClosed_ || kind_ != ViewportRenderKind.Scene ||
+                expectedSessionId != sessionId_ || expectedTargetId != targetId_ ||
+                expectedTargetRevision != targetRevision_ ||
+                !CanUsePublishedFrameForInteractionLocked(
+                    expectedPresentedSequence,
+                    expectedTargetRevision) ||
+                translateGizmo_ is not { } gizmo)
+            {
+                return false;
+            }
+
+            snapshot = new ViewportTranslateGizmoSnapshot(
+                gizmo.ObjectId,
+                targetRevision_,
+                camera_,
+                gizmo.Transform);
             return true;
         }
     }
@@ -173,11 +207,14 @@ public sealed class ViewportSession
             var (nextDebugProxies, nextTotalDebugProxyCount) = CaptureDebugProxies(document);
             var nextModelPickProxies = CaptureModelPickProxies(document);
             var nextAuthoredMeshes = CaptureAuthoredMeshes(document);
+            var nextEntityTransforms = CaptureEntityTransforms(document);
             targetRevision_ = document.Revision;
             debugProxies_ = nextDebugProxies;
             totalDebugProxyCount_ = nextTotalDebugProxyCount;
             modelPickProxies_ = nextModelPickProxies;
             authoredMeshes_ = nextAuthoredMeshes;
+            entityTransforms_ = nextEntityTransforms;
+            translateGizmo_ = CreateTranslateGizmoLocked(selectedObjectId_);
             requestRefresh = InvalidateLocked(
                 ViewportInvalidationReason.TargetChanged,
                 advancePresentationFence: true);
@@ -266,9 +303,57 @@ public sealed class ViewportSession
 
             viewStateRevision_ = viewStateRevision;
             selectedObjectId_ = selectedObjectId;
+            translateGizmo_ = CreateTranslateGizmoLocked(selectedObjectId);
             requestRefresh = InvalidateLocked(
                 ViewportInvalidationReason.SelectionChanged,
                 advancePresentationFence: true);
+        }
+        RaiseRefreshRequested(requestRefresh);
+    }
+
+    public void SetTranslateGizmo(ViewportTranslateGizmoState gizmo)
+    {
+        ArgumentNullException.ThrowIfNull(gizmo);
+        var requestRefresh = false;
+        lock (gate_)
+        {
+            ThrowIfClosed();
+            if (kind_ != ViewportRenderKind.Scene ||
+                selectedObjectId_ != gizmo.ObjectId ||
+                !entityTransforms_.ContainsKey(gizmo.ObjectId))
+            {
+                throw new InvalidOperationException(
+                    "Translate Gizmo state must target the current Scene selection.");
+            }
+            if (translateGizmo_ == gizmo)
+            {
+                return;
+            }
+
+            translateGizmo_ = gizmo;
+            requestRefresh = InvalidateLocked(
+                ViewportInvalidationReason.GizmoChanged,
+                advancePresentationFence: false);
+        }
+        RaiseRefreshRequested(requestRefresh);
+    }
+
+    public void ResetTranslateGizmo()
+    {
+        var requestRefresh = false;
+        lock (gate_)
+        {
+            ThrowIfClosed();
+            var reset = CreateTranslateGizmoLocked(selectedObjectId_);
+            if (translateGizmo_ == reset)
+            {
+                return;
+            }
+
+            translateGizmo_ = reset;
+            requestRefresh = InvalidateLocked(
+                ViewportInvalidationReason.GizmoChanged,
+                advancePresentationFence: false);
         }
         RaiseRefreshRequested(requestRefresh);
     }
@@ -346,7 +431,8 @@ public sealed class ViewportSession
                 authoredMeshes_,
                 sceneRasterMode_,
                 viewStateRevision_,
-                selectedObjectId_);
+                selectedObjectId_,
+                translateGizmo_);
             return true;
         }
     }
@@ -396,7 +482,8 @@ public sealed class ViewportSession
                 authoredMeshes_,
                 sceneRasterMode_,
                 viewStateRevision_,
-                selectedObjectId_);
+                selectedObjectId_,
+                translateGizmo_);
             return true;
         }
     }
@@ -502,6 +589,7 @@ public sealed class ViewportSession
             inFlightSequence_ = 0;
             inFlightTargetRevision_ = 0;
             inFlightReasons_ = ViewportInvalidationReason.None;
+            translateGizmo_ = null;
         }
     }
 
@@ -512,7 +600,8 @@ public sealed class ViewportSession
         ViewportInvalidationReason.ExtentChanged |
         ViewportInvalidationReason.Exposed |
         ViewportInvalidationReason.Realtime |
-        ViewportInvalidationReason.SelectionChanged;
+        ViewportInvalidationReason.SelectionChanged |
+        ViewportInvalidationReason.GizmoChanged;
 
     private static readonly ViewportInvalidationReason PresentationInvalidationReasons =
         ViewportInvalidationReason.TargetChanged |
@@ -559,6 +648,16 @@ public sealed class ViewportSession
         }
         return meshes;
     }
+
+    private static Dictionary<Guid, TransformValue> CaptureEntityTransforms(
+        SceneDocumentSnapshot document) =>
+        document.Entities.ToDictionary(entity => entity.ObjectId, entity => entity.Transform);
+
+    private ViewportTranslateGizmoState? CreateTranslateGizmoLocked(Guid? objectId) =>
+        kind_ == ViewportRenderKind.Scene && objectId is { } selected &&
+        entityTransforms_.TryGetValue(selected, out var transform)
+            ? new ViewportTranslateGizmoState(selected, transform)
+            : null;
 
     private ViewportSessionSnapshot SnapshotLocked() => new(
         sessionId_,

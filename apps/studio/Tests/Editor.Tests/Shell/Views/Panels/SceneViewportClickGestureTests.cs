@@ -33,6 +33,46 @@ public sealed class SceneViewportClickGestureTests
     }
 
     [Fact]
+    public void Gizmo_request_uses_the_larger_physical_hit_tolerance()
+    {
+        var context = new ViewportPresentedInteractionContext(
+            ViewportSessionId.Create(),
+            Guid.NewGuid(),
+            TargetRevision: 2,
+            FrameSequence: 3,
+            new ViewportExtent(1200, 900),
+            RenderScaling: 1.5);
+
+        var request = StudioScenePanelView.CreateGizmoPickRequest(
+            context,
+            new Point(400, 300));
+
+        Assert.Equal(new ViewportPickPoint(600, 450), request.Point);
+        Assert.Equal(12, request.TolerancePixels);
+    }
+
+    [Fact]
+    public void Gizmo_gesture_keeps_the_pressed_pointer_and_initial_dpi_mapping()
+    {
+        var context = new ViewportPresentedInteractionContext(
+            ViewportSessionId.Create(),
+            Guid.NewGuid(),
+            TargetRevision: 2,
+            FrameSequence: 3,
+            new ViewportExtent(1200, 900),
+            RenderScaling: 1.5);
+        var gesture = new SceneViewportGizmoGesture();
+
+        Assert.True(gesture.TryBegin(4, context));
+        Assert.False(gesture.TryBegin(5, context));
+        Assert.False(gesture.TryMapPoint(5, new Point(20, 30), out _));
+        Assert.True(gesture.TryMapPoint(4, new Point(20, 30), out var point));
+        Assert.Equal(new ViewportPickPoint(30, 45), point);
+        Assert.True(gesture.Cancel(4));
+        Assert.False(gesture.Complete(4));
+    }
+
+    [Fact]
     public void Primary_unmodified_pointer_completes_inside_the_viewport()
     {
         var gesture = new SceneViewportClickGesture();

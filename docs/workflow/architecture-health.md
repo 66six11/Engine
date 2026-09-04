@@ -52,7 +52,7 @@ python -m unittest discover -s tools/tests -p "test_*.py"
 | 保留 | package manifests/resolver/lock/composition、ProcessScope、RenderGraph/RHI/Vulkan 硬边界、CPU/headless data/content/world baseline | 已有明确 owner 与自动化证据 |
 | 保留并执行 | manifest 与 configured CMake direct graph 对证；Studio R0/R0.5只读基线 | 28 manifests / 76 targets / 149 direct edges 已由 tests-on codemodel 证明；Studio owner/diagnostics/Host/Pipe/CLI/MCP已有真实纵向证据 |
 | 修复 | managed evaluated ProjectReference/public-consumer closure、Platform/Foundation services、runtime resource ownership | 合同方向正确，但 current 实现或门禁不完整；Studio bounded diagnostics的并发commit/cursor修正已关闭 |
-| 无兼容硬切 | Studio legacy composition、同步 async lifecycle、editor-side closure transaction、native viewport V1–V6 raw-token compatibility contract | V1–V6 frame exports 已硬切删除；不得为 V7 production consumer 恢复旧入口或兼容层 |
+| 无兼容硬切 | Studio legacy composition、同步 async lifecycle、editor-side closure transaction、native viewport V1–V7 raw-token compatibility contract | V1–V7 frame exports 已硬切删除；不得为 V8 production consumer 恢复旧入口或兼容层 |
 | 延期 | dynamic native unload、managed generation reload、通用插件 SDK、全面 ECS、通用 runtime RenderThread/RHIThread 与 large job graph、bindless/多队列、外部 registry | 尚无稳定 owner、真实第二 consumer 或性能证据；Studio viewport 已有作用域受限的 native owner thread，不代表通用 runtime threading 已成立 |
 
 ### 2.2 当前 Findings
@@ -166,7 +166,7 @@ undo/redo → savepoint。
 
 - `EditorSharedViewportRuntime::instance()` 仍通过永久分配实现 process singleton；第一次 device/render/release
   请求可启动唯一 RenderThread，`editor_viewport_shutdown()` 之后 runtime 永久进入 draining/terminal 状态；
-- Vulkan context、producer、outstanding/retiring packet 与析构只由 RenderThread 访问。V7 stream 请求复制 owning
+- Vulkan context、producer、outstanding/retiring packet 与析构只由 RenderThread 访问。V8 stream 请求复制 owning
   packet 进入有界 render/control/release mailbox；ABI 已有显式 stream lifecycle，但仍没有 process-level native
   session handle、generation 或 device epoch；
 - `stats()` 现在只读取 owner 发布的 diagnostic snapshot，加上有界 live queue/lifecycle/atomic counter；它不
@@ -174,8 +174,8 @@ undo/redo → savepoint。
   `apps/editor/src/editor_shared_viewport_runtime.cpp:397-421`；
 - exported ABI 直接进入可能分配、加锁和构造 C++ error/string 的实现，没有统一 `noexcept`/catch 边界；异常不能跨 C ABI。
 
-结论：owner thread、V7 stream lifecycle 与 bounded mailbox 基线已经成立；下一次 contract hard-cut 目标是显式
-`NativeSessionHandle + epoch + bounded lease`。查询继续保持只读 snapshot；V1–V6 frame exports 已删除，
+结论：owner thread、V8 stream lifecycle 与 bounded mailbox 基线已经成立；下一次 contract hard-cut 目标是显式
+`NativeSessionHandle + epoch + bounded lease`。查询继续保持只读 snapshot；V1–V7 frame exports 已删除，
 不得重新建立 compatibility path。
 
 #### P1：两个 Editor host 仍同时进入默认构建

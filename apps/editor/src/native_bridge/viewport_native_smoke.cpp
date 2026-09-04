@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstdint>
 #include <numbers>
+#include <span>
 #include <thread>
 
 #include "asharia/core/log.hpp"
@@ -41,6 +42,29 @@ namespace asharia::editor {
             DispatchProbeKind kind{DispatchProbeKind::Render};
         };
 
+        [[nodiscard]] EditorViewportNativeId
+        nativeIdForCanonicalUuid(std::span<const std::uint8_t, 16> value) noexcept {
+            const std::array<std::uint8_t, 16> guidBytes{
+                value[3], value[2], value[1], value[0], value[5], value[4], value[7], value[6],
+                value[8], value[9], value[10], value[11], value[12], value[13], value[14],
+                value[15],
+            };
+            const auto readLittleEndian = [](std::span<const std::uint8_t, 8> bytes) {
+                return static_cast<std::uint64_t>(bytes[0]) |
+                       (static_cast<std::uint64_t>(bytes[1]) << 8U) |
+                       (static_cast<std::uint64_t>(bytes[2]) << 16U) |
+                       (static_cast<std::uint64_t>(bytes[3]) << 24U) |
+                       (static_cast<std::uint64_t>(bytes[4]) << 32U) |
+                       (static_cast<std::uint64_t>(bytes[5]) << 40U) |
+                       (static_cast<std::uint64_t>(bytes[6]) << 48U) |
+                       (static_cast<std::uint64_t>(bytes[7]) << 56U);
+            };
+            return EditorViewportNativeId{
+                .low = readLittleEndian(std::span{guidBytes}.first<8>()),
+                .high = readLittleEndian(std::span{guidBytes}.last<8>()),
+            };
+        }
+
         [[nodiscard]] EditorViewportNativeCompatibilityRequest makeCompatibilityRequest() {
             return EditorViewportNativeCompatibilityRequest{
                 .header =
@@ -60,14 +84,14 @@ namespace asharia::editor {
             };
         }
 
-        [[nodiscard]] EditorViewportNativePresentRequestV7
+        [[nodiscard]] EditorViewportNativePresentRequestV8
         makeFrameRequest(std::uint64_t requestSequence) {
-            return EditorViewportNativePresentRequestV7{
+            return EditorViewportNativePresentRequestV8{
                 .header =
                     EditorViewportNativeAbiHeader{
                         .abiVersion = EDITOR_NATIVE_ABI_VERSION,
                         .structSize = static_cast<std::uint32_t>(
-                            sizeof(EditorViewportNativePresentRequestV7)),
+                            sizeof(EditorViewportNativePresentRequestV8)),
                     },
                 .sessionId = EditorViewportNativeId{.low = 11U, .high = 12U},
                 .targetId = EditorViewportNativeId{.low = 21U, .high = 22U},
@@ -79,7 +103,7 @@ namespace asharia::editor {
                 .targetKind = EditorViewportNativeTargetKind_DocumentScene,
                 .widthPixels = 384U,
                 .heightPixels = 224U,
-                .flags = EditorViewportNativePresentRequestV7Flags_HasLogicalExtent,
+                .flags = EditorViewportNativePresentRequestV8Flags_HasLogicalExtent,
                 .camera =
                     EditorViewportNativeCamera{
                         .position = {0.0F, 2.0F, -6.0F},
@@ -92,14 +116,20 @@ namespace asharia::editor {
                     },
                 .logicalWidthPixels = 377U,
                 .logicalHeightPixels = 219U,
+                .authoredMeshes = nullptr,
+                .authoredMeshCount = 0U,
+                .sceneRasterMode = EditorViewportNativeSceneRasterMode_Solid,
+                .selectedObjectId = {},
+                .viewStateRevision = 0U,
+                .translateGizmo = {},
             };
         }
 
         [[nodiscard]] bool waitForReadyFrame(std::uint64_t streamId,
-                                             EditorViewportNativeReadyFrameV7& frame) {
+                                             EditorViewportNativeReadyFrameV8& frame) {
             const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
             while (std::chrono::steady_clock::now() < deadline) {
-                if (editor_viewport_try_take_ready_v7(streamId, &frame) !=
+                if (editor_viewport_try_take_ready_v8(streamId, &frame) !=
                     EditorViewportNativeStatus_Success) {
                     return false;
                 }
@@ -112,11 +142,11 @@ namespace asharia::editor {
         }
 
         [[nodiscard]] bool waitForPoll(std::uint64_t streamId,
-                                       EditorViewportNativeStreamPollV7& poll,
+                                       EditorViewportNativeStreamPollV8& poll,
                                        std::uint32_t lifecycle) {
             const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
             while (std::chrono::steady_clock::now() < deadline) {
-                if (editor_viewport_poll_stream_v7(streamId, &poll) !=
+                if (editor_viewport_poll_stream_v8(streamId, &poll) !=
                     EditorViewportNativeStatus_Success) {
                     return false;
                 }
@@ -129,10 +159,10 @@ namespace asharia::editor {
         }
 
         [[nodiscard]] bool waitForReadyPoll(std::uint64_t streamId,
-                                            EditorViewportNativeStreamPollV7& poll) {
+                                            EditorViewportNativeStreamPollV8& poll) {
             const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
             while (std::chrono::steady_clock::now() < deadline) {
-                if (editor_viewport_poll_stream_v7(streamId, &poll) !=
+                if (editor_viewport_poll_stream_v8(streamId, &poll) !=
                     EditorViewportNativeStatus_Success) {
                     return false;
                 }
@@ -321,14 +351,14 @@ namespace asharia::editor {
         }
 
         [[nodiscard]] bool completeNotSubmitted(std::uint64_t streamId, void* nativeSlot) {
-            return editor_viewport_complete_frame_v7(
+            return editor_viewport_complete_frame_v8(
                        streamId, nativeSlot,
                        EditorViewportNativePresentCompletionKind_NotSubmittedToConsumer) ==
                    EditorViewportNativeStatus_Success;
         }
 
         [[nodiscard]] bool completeConsumerAccessed(std::uint64_t streamId, void* nativeSlot) {
-            return editor_viewport_complete_frame_v7(
+            return editor_viewport_complete_frame_v8(
                        streamId, nativeSlot,
                        EditorViewportNativePresentCompletionKind_ConsumerAccessed) ==
                    EditorViewportNativeStatus_Success;
@@ -337,57 +367,57 @@ namespace asharia::editor {
 #if defined(ASHARIA_EDITOR_NATIVE_TESTING)
         [[nodiscard]] bool smokeUnsupportedWireframeRecovery() {
             EditorViewportNativeCompatibilityRequest compatibility = makeCompatibilityRequest();
-            EditorViewportNativeStreamHandleV7 stream{};
-            if (editor_viewport_open_stream_v7_for_test(
-                    &compatibility, EditorViewportNativeStreamCapabilitiesV7_None, &stream) !=
+            EditorViewportNativeStreamHandleV8 stream{};
+            if (editor_viewport_open_stream_v8_for_test(
+                    &compatibility, EditorViewportNativeStreamCapabilitiesV8_None, &stream) !=
                     EditorViewportNativeStatus_Success ||
                 stream.status != EditorViewportNativeStatus_Success || stream.streamId == 0U ||
-                stream.capabilities != EditorViewportNativeStreamCapabilitiesV7_None) {
-                logError("Viewport V7 unsupported-wireframe smoke could not open a stream.");
+                stream.capabilities != EditorViewportNativeStreamCapabilitiesV8_None) {
+                logError("Viewport V8 unsupported-wireframe smoke could not open a stream.");
                 return false;
             }
             const std::uint64_t streamId = stream.streamId;
 
-            EditorViewportNativePresentRequestV7 wireframeRequest = makeFrameRequest(901U);
+            EditorViewportNativePresentRequestV8 wireframeRequest = makeFrameRequest(901U);
             wireframeRequest.sceneRasterMode = EditorViewportNativeSceneRasterMode_Wireframe;
-            if (editor_viewport_submit_latest_v7(streamId, &wireframeRequest) !=
+            if (editor_viewport_submit_latest_v8(streamId, &wireframeRequest) !=
                 EditorViewportNativeStatus_FeatureUnavailable) {
-                logError("Viewport V7 did not reject unsupported wireframe precisely.");
+                logError("Viewport V8 did not reject unsupported wireframe precisely.");
                 return false;
             }
 
-            EditorViewportNativeStreamPollV7 rejectedPoll{};
-            if (editor_viewport_poll_stream_v7(streamId, &rejectedPoll) !=
+            EditorViewportNativeStreamPollV8 rejectedPoll{};
+            if (editor_viewport_poll_stream_v8(streamId, &rejectedPoll) !=
                     EditorViewportNativeStatus_Success ||
                 rejectedPoll.lifecycle != EditorViewportNativeStreamLifecycle_Open ||
                 rejectedPoll.hasPendingLatest != 0U || rejectedPoll.hasReadyFrame != 0U ||
                 rejectedPoll.renderExecuting != 0U || rejectedPoll.submittedRequests != 0U ||
                 rejectedPoll.coalescedRequests != 0U || rejectedPoll.renderedFrames != 0U) {
-                logError("Unsupported wireframe mutated or faulted the V7 stream.");
+                logError("Unsupported wireframe mutated or faulted the V8 stream.");
                 return false;
             }
 
-            EditorViewportNativePresentRequestV7 solidRequest = makeFrameRequest(902U);
-            if (editor_viewport_submit_latest_v7(streamId, &solidRequest) !=
+            EditorViewportNativePresentRequestV8 solidRequest = makeFrameRequest(902U);
+            if (editor_viewport_submit_latest_v8(streamId, &solidRequest) !=
                 EditorViewportNativeStatus_Success) {
-                logError("Viewport V7 did not recover from wireframe rejection with Solid.");
+                logError("Viewport V8 did not recover from wireframe rejection with Solid.");
                 return false;
             }
-            EditorViewportNativeReadyFrameV7 solidFrame{};
+            EditorViewportNativeReadyFrameV8 solidFrame{};
             if (!waitForReadyFrame(streamId, solidFrame) ||
                 solidFrame.requestSequence != solidRequest.requestSequence ||
                 !completeNotSubmitted(streamId, solidFrame.nativeSlot) ||
-                editor_viewport_release_slot_import_v7(streamId, solidFrame.nativeSlot) !=
+                editor_viewport_release_slot_import_v8(streamId, solidFrame.nativeSlot) !=
                     EditorViewportNativeStatus_Success ||
-                editor_viewport_close_stream_v7(streamId) != EditorViewportNativeStatus_Success) {
-                logError("Viewport V7 Solid recovery did not complete cleanly.");
+                editor_viewport_close_stream_v8(streamId) != EditorViewportNativeStatus_Success) {
+                logError("Viewport V8 Solid recovery did not complete cleanly.");
                 return false;
             }
-            EditorViewportNativeStreamPollV7 closedPoll{};
+            EditorViewportNativeStreamPollV8 closedPoll{};
             if (!waitForPoll(streamId, closedPoll, EditorViewportNativeStreamLifecycle_Closed) ||
                 closedPoll.submittedRequests != 1U || closedPoll.renderedFrames != 1U ||
-                editor_viewport_destroy_stream_v7(streamId) != EditorViewportNativeStatus_Success) {
-                logError("Viewport V7 Solid recovery stream did not close cleanly.");
+                editor_viewport_destroy_stream_v8(streamId) != EditorViewportNativeStatus_Success) {
+                logError("Viewport V8 Solid recovery stream did not close cleanly.");
                 return false;
             }
             return true;
@@ -412,37 +442,56 @@ namespace asharia::editor {
             return false;
         }
 
+        [[nodiscard]] bool waitForGizmoRenderEvidence(std::uint64_t requestSequence) {
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
+            while (std::chrono::steady_clock::now() < deadline) {
+                EditorViewportNativeRuntimeStatsV8 stats{};
+                if (editor_viewport_query_runtime_stats_v8(&stats) !=
+                    EditorViewportNativeStatus_Success) {
+                    return false;
+                }
+                if (stats.lastRequestSequence >= requestSequence) {
+                    // Base origin axes plus three renderer-owned Gizmo axes. The selected
+                    // debug proxy's ordinary axes are deliberately suppressed.
+                    return stats.lastDebugProxyCount == 1U &&
+                           stats.lastDebugWorldLineCount == 6U;
+                }
+                std::this_thread::yield();
+            }
+            return false;
+        }
+
         // This end-to-end state-machine smoke intentionally keeps the complete
         // submit/take/complete/close timeline visible in one function.
         // NOLINTNEXTLINE(readability-function-cognitive-complexity)
         [[nodiscard]] bool smokeBoundedLatestWinsStream() {
             EditorViewportNativeCompatibilityRequest compatibility = makeCompatibilityRequest();
-            EditorViewportNativeStreamHandleV7 stream{};
-            if (editor_viewport_open_stream_v7(&compatibility, &stream) !=
+            EditorViewportNativeStreamHandleV8 stream{};
+            if (editor_viewport_open_stream_v8(&compatibility, &stream) !=
                     EditorViewportNativeStatus_Success ||
                 stream.status != EditorViewportNativeStatus_Success || stream.streamId == 0U) {
-                logError("Viewport V7 smoke could not open a stream.");
+                logError("Viewport V8 smoke could not open a stream.");
                 return false;
             }
 
-            EditorViewportNativePresentRequestV7 firstRequest = makeFrameRequest(1U);
-            EditorViewportNativePresentRequestV7 invalidAxisRequest = firstRequest;
+            EditorViewportNativePresentRequestV8 firstRequest = makeFrameRequest(1U);
+            EditorViewportNativePresentRequestV8 invalidAxisRequest = firstRequest;
             invalidAxisRequest.camera.fieldOfViewAxis = 2U;
-            EditorViewportNativePresentRequestV7 zeroFieldOfViewRequest = firstRequest;
+            EditorViewportNativePresentRequestV8 zeroFieldOfViewRequest = firstRequest;
             zeroFieldOfViewRequest.camera.fieldOfViewRadians = 0.0F;
-            EditorViewportNativePresentRequestV7 excessiveFieldOfViewRequest = firstRequest;
+            EditorViewportNativePresentRequestV8 excessiveFieldOfViewRequest = firstRequest;
             excessiveFieldOfViewRequest.camera.fieldOfViewRadians = std::numbers::pi_v<float>;
-            if (editor_viewport_submit_latest_v7(stream.streamId, &invalidAxisRequest) !=
+            if (editor_viewport_submit_latest_v8(stream.streamId, &invalidAxisRequest) !=
                     EditorViewportNativeStatus_InvalidArgument ||
-                editor_viewport_submit_latest_v7(stream.streamId, &zeroFieldOfViewRequest) !=
+                editor_viewport_submit_latest_v8(stream.streamId, &zeroFieldOfViewRequest) !=
                     EditorViewportNativeStatus_InvalidArgument ||
-                editor_viewport_submit_latest_v7(stream.streamId, &excessiveFieldOfViewRequest) !=
+                editor_viewport_submit_latest_v8(stream.streamId, &excessiveFieldOfViewRequest) !=
                     EditorViewportNativeStatus_InvalidArgument) {
-                logError("Viewport V7 smoke accepted an invalid camera projection contract.");
+                logError("Viewport V8 smoke accepted an invalid camera projection contract.");
                 return false;
             }
-            const std::array<EditorViewportNativeAuthoredMeshSnapshotV7, 1> authoredMeshes{
-                EditorViewportNativeAuthoredMeshSnapshotV7{
+            const std::array<EditorViewportNativeAuthoredMeshSnapshotV8, 1> authoredMeshes{
+                EditorViewportNativeAuthoredMeshSnapshotV8{
                     .objectId = {0x4aU, 0x1fU, 0x9bU, 0x72U, 0x10U, 0x52U, 0x4bU, 0x6cU, 0x83U,
                                  0x5dU, 0x38U, 0x86U, 0x9dU, 0x24U, 0x7fU, 0x4eU},
                     .runtimeEntityIndex = 9U,
@@ -457,25 +506,67 @@ namespace asharia::editor {
             };
             firstRequest.authoredMeshes = authoredMeshes.data();
             firstRequest.authoredMeshCount = static_cast<std::uint32_t>(authoredMeshes.size());
+            const std::array<EditorViewportNativeDebugProxy, 1> debugProxies{
+                EditorViewportNativeDebugProxy{
+                    .objectId = nativeIdForCanonicalUuid(authoredMeshes.front().objectId),
+                    .position = {0.75F, 0.5F, 2.0F},
+                    .rotation = {0.0F, 0.0F, 0.0F, 1.0F},
+                    .scale = {1.0F, 1.0F, 1.0F},
+                },
+            };
+            firstRequest.debugProxies = debugProxies.data();
+            firstRequest.debugProxyCount = static_cast<std::uint32_t>(debugProxies.size());
             firstRequest.flags |=
-                EditorViewportNativePresentRequestV7Flags_CaptureSceneMeshEvidence;
+                EditorViewportNativePresentRequestV8Flags_CaptureSceneMeshEvidence;
             firstRequest.flags |=
-                EditorViewportNativePresentRequestV7Flags_HasSelectionOutline;
+                EditorViewportNativePresentRequestV8Flags_HasSelectionOutline;
+            firstRequest.flags |=
+                EditorViewportNativePresentRequestV8Flags_HasTranslateGizmo;
             std::ranges::copy(authoredMeshes.front().objectId, firstRequest.selectedObjectId);
             firstRequest.viewStateRevision = 71U;
+            firstRequest.translateGizmo = EditorViewportNativeTranslateGizmoV8{
+                .objectId = debugProxies.front().objectId,
+                .position = {0.75F, 0.5F, 2.0F},
+                .hoveredAxis = EditorViewportNativeGizmoAxis_X,
+                .activeAxis = EditorViewportNativeGizmoAxis_X,
+            };
+
+            EditorViewportNativePresentRequestV8 invalidGizmoAxisRequest = firstRequest;
+            invalidGizmoAxisRequest.translateGizmo.activeAxis = 4U;
+            EditorViewportNativePresentRequestV8 mismatchedGizmoSelectionRequest = firstRequest;
+            mismatchedGizmoSelectionRequest.translateGizmo.objectId.high += 1U;
+            EditorViewportNativePresentRequestV8 unflaggedGizmoRequest = firstRequest;
+            unflaggedGizmoRequest.flags &=
+                ~EditorViewportNativePresentRequestV8Flags_HasTranslateGizmo;
+            EditorViewportNativePresentRequestV8 orphanGizmoRequest = makeFrameRequest(1U);
+            orphanGizmoRequest.flags |=
+                EditorViewportNativePresentRequestV8Flags_HasTranslateGizmo;
+            orphanGizmoRequest.translateGizmo = firstRequest.translateGizmo;
+            if (editor_viewport_submit_latest_v8(stream.streamId, &invalidGizmoAxisRequest) !=
+                    EditorViewportNativeStatus_InvalidArgument ||
+                editor_viewport_submit_latest_v8(stream.streamId,
+                                                 &mismatchedGizmoSelectionRequest) !=
+                    EditorViewportNativeStatus_InvalidArgument ||
+                editor_viewport_submit_latest_v8(stream.streamId, &unflaggedGizmoRequest) !=
+                    EditorViewportNativeStatus_InvalidArgument ||
+                editor_viewport_submit_latest_v8(stream.streamId, &orphanGizmoRequest) !=
+                    EditorViewportNativeStatus_InvalidArgument) {
+                logError("Viewport V8 smoke accepted an invalid Translate Gizmo contract.");
+                return false;
+            }
 
             auto duplicateObjectMeshes = std::array{
                 authoredMeshes.front(),
                 authoredMeshes.front(),
             };
             duplicateObjectMeshes[1].runtimeEntityIndex = 10U;
-            EditorViewportNativePresentRequestV7 duplicateObjectRequest = firstRequest;
+            EditorViewportNativePresentRequestV8 duplicateObjectRequest = firstRequest;
             duplicateObjectRequest.authoredMeshes = duplicateObjectMeshes.data();
             duplicateObjectRequest.authoredMeshCount =
                 static_cast<std::uint32_t>(duplicateObjectMeshes.size());
-            if (editor_viewport_submit_latest_v7(stream.streamId, &duplicateObjectRequest) !=
+            if (editor_viewport_submit_latest_v8(stream.streamId, &duplicateObjectRequest) !=
                 EditorViewportNativeStatus_InvalidArgument) {
-                logError("Viewport V7 smoke accepted duplicate scene object mesh identities.");
+                logError("Viewport V8 smoke accepted duplicate scene object mesh identities.");
                 return false;
             }
 
@@ -483,36 +574,36 @@ namespace asharia::editor {
             duplicateEntityMeshes[1].objectId[0] ^= 0x01U;
             duplicateEntityMeshes[1].runtimeEntityIndex =
                 duplicateEntityMeshes[0].runtimeEntityIndex;
-            EditorViewportNativePresentRequestV7 duplicateEntityRequest = firstRequest;
+            EditorViewportNativePresentRequestV8 duplicateEntityRequest = firstRequest;
             duplicateEntityRequest.authoredMeshes = duplicateEntityMeshes.data();
             duplicateEntityRequest.authoredMeshCount =
                 static_cast<std::uint32_t>(duplicateEntityMeshes.size());
-            if (editor_viewport_submit_latest_v7(stream.streamId, &duplicateEntityRequest) !=
+            if (editor_viewport_submit_latest_v8(stream.streamId, &duplicateEntityRequest) !=
                 EditorViewportNativeStatus_InvalidArgument) {
-                logError("Viewport V7 smoke accepted duplicate runtime entity mesh identities.");
+                logError("Viewport V8 smoke accepted duplicate runtime entity mesh identities.");
                 return false;
             }
 
-            EditorViewportNativeStreamPollV7 rejectedIdentityPoll{};
-            if (editor_viewport_poll_stream_v7(stream.streamId, &rejectedIdentityPoll) !=
+            EditorViewportNativeStreamPollV8 rejectedIdentityPoll{};
+            if (editor_viewport_poll_stream_v8(stream.streamId, &rejectedIdentityPoll) !=
                     EditorViewportNativeStatus_Success ||
                 rejectedIdentityPoll.submittedRequests != 0U ||
                 rejectedIdentityPoll.coalescedRequests != 0U ||
                 rejectedIdentityPoll.hasPendingLatest != 0U ||
                 rejectedIdentityPoll.renderExecuting != 0U) {
-                logError("Rejected V7 requests mutated the stream state.");
+                logError("Rejected V8 requests mutated the stream state.");
                 return false;
             }
 
-            if (editor_viewport_submit_latest_v7(stream.streamId, &firstRequest) !=
+            if (editor_viewport_submit_latest_v8(stream.streamId, &firstRequest) !=
                 EditorViewportNativeStatus_Success) {
                 return false;
             }
             const auto firstReadyDeadline =
                 std::chrono::steady_clock::now() + std::chrono::seconds{5};
-            EditorViewportNativeStreamPollV7 firstReadyPoll{};
+            EditorViewportNativeStreamPollV8 firstReadyPoll{};
             while (std::chrono::steady_clock::now() < firstReadyDeadline) {
-                if (editor_viewport_poll_stream_v7(stream.streamId, &firstReadyPoll) !=
+                if (editor_viewport_poll_stream_v8(stream.streamId, &firstReadyPoll) !=
                     EditorViewportNativeStatus_Success) {
                     return false;
                 }
@@ -522,24 +613,24 @@ namespace asharia::editor {
                 std::this_thread::yield();
             }
             if (firstReadyPoll.hasReadyFrame == 0U) {
-                logError("Viewport V7 smoke did not render its first ready frame.");
+                logError("Viewport V8 smoke did not render its first ready frame.");
                 return false;
             }
 
             // A ready frame blocks another ready publication. Every submit in
             // this burst therefore targets the single pending-latest cell.
             for (std::uint64_t sequence = 2U; sequence <= 32U; ++sequence) {
-                EditorViewportNativePresentRequestV7 request = makeFrameRequest(sequence);
-                if (editor_viewport_submit_latest_v7(stream.streamId, &request) !=
+                EditorViewportNativePresentRequestV8 request = makeFrameRequest(sequence);
+                if (editor_viewport_submit_latest_v8(stream.streamId, &request) !=
                     EditorViewportNativeStatus_Success) {
                     return false;
                 }
             }
-            EditorViewportNativeStreamPollV7 burstPoll{};
-            if (editor_viewport_poll_stream_v7(stream.streamId, &burstPoll) !=
+            EditorViewportNativeStreamPollV8 burstPoll{};
+            if (editor_viewport_poll_stream_v8(stream.streamId, &burstPoll) !=
                     EditorViewportNativeStatus_Success ||
                 burstPoll.hasPendingLatest == 0U || burstPoll.coalescedRequests < 30U) {
-                logError("Viewport V7 smoke did not coalesce its pending-latest burst.");
+                logError("Viewport V8 smoke did not coalesce its pending-latest burst.");
                 return false;
             }
 
@@ -548,13 +639,14 @@ namespace asharia::editor {
             // poll or another resize submission to rescue the pending-latest request.
             std::this_thread::sleep_for(std::chrono::milliseconds{100});
 
-            EditorViewportNativeReadyFrameV7 firstFrame{};
+            EditorViewportNativeReadyFrameV8 firstFrame{};
             if (!waitForReadyFrame(stream.streamId, firstFrame) ||
-                firstFrame.requestSequence != 1U || firstFrame.viewStateRevision != 71U) {
-                logError("Viewport V7 smoke did not receive its first frame.");
+                firstFrame.requestSequence != 1U || firstFrame.viewStateRevision != 71U ||
+                !waitForGizmoRenderEvidence(1U)) {
+                logError("Viewport V8 smoke did not receive its first frame.");
                 return false;
             }
-            const EditorViewportNativeSceneMeshReceiptV7& receipt = firstFrame.sceneMeshReceipt;
+            const EditorViewportNativeSceneMeshReceiptV8& receipt = firstFrame.sceneMeshReceipt;
             if (receipt.inputCount != 1U || receipt.resolvedCount != 1U ||
                 receipt.rejectedCount != 0U || receipt.evidenceAvailable != 1U ||
                 receipt.indexedDrawCount != 1U ||
@@ -570,11 +662,11 @@ namespace asharia::editor {
                 !std::equal(std::begin(receipt.representativeAssetId),
                             std::end(receipt.representativeAssetId),
                             std::begin(authoredMeshes[0].assetId))) {
-                logError("Viewport V7 smoke did not publish the authored scene mesh receipt.");
+                logError("Viewport V8 smoke did not publish the authored scene mesh receipt.");
                 return false;
             }
 
-            EditorViewportNativeReadyFrameV7 secondFrame{};
+            EditorViewportNativeReadyFrameV8 secondFrame{};
             if (!waitForReadyFrame(stream.streamId, secondFrame) ||
                 secondFrame.requestSequence != 32U ||
                 secondFrame.nativeSlot == firstFrame.nativeSlot ||
@@ -582,59 +674,59 @@ namespace asharia::editor {
                 secondFrame.logicalWidthPixels != 377U || secondFrame.logicalHeightPixels != 219U ||
                 !waitForLogicalRenderExtent(32U,
                                             ExpectedRenderExtent{.width = 377U, .height = 219U})) {
-                logError("Viewport V7 smoke did not publish the latest burst request on slot 2.");
+                logError("Viewport V8 smoke did not publish the latest burst request on slot 2.");
                 return false;
             }
 
-            EditorViewportNativePresentRequestV7 thirdRequest = makeFrameRequest(33U);
-            if (editor_viewport_submit_latest_v7(stream.streamId, &thirdRequest) !=
+            EditorViewportNativePresentRequestV8 thirdRequest = makeFrameRequest(33U);
+            if (editor_viewport_submit_latest_v8(stream.streamId, &thirdRequest) !=
                 EditorViewportNativeStatus_Success) {
                 return false;
             }
-            EditorViewportNativeReadyFrameV7 thirdFrame{};
+            EditorViewportNativeReadyFrameV8 thirdFrame{};
             if (!waitForReadyFrame(stream.streamId, thirdFrame) ||
                 thirdFrame.requestSequence != 33U ||
                 thirdFrame.nativeSlot == firstFrame.nativeSlot ||
                 thirdFrame.nativeSlot == secondFrame.nativeSlot) {
-                logError("Viewport V7 smoke did not allocate its third bounded slot.");
+                logError("Viewport V8 smoke did not allocate its third bounded slot.");
                 return false;
             }
 
-            EditorViewportNativePresentRequestV7 fourthRequest = makeFrameRequest(34U);
-            if (editor_viewport_submit_latest_v7(stream.streamId, &fourthRequest) !=
+            EditorViewportNativePresentRequestV8 fourthRequest = makeFrameRequest(34U);
+            if (editor_viewport_submit_latest_v8(stream.streamId, &fourthRequest) !=
                 EditorViewportNativeStatus_Success) {
                 return false;
             }
-            EditorViewportNativeStreamPollV7 boundedPoll{};
-            if (editor_viewport_poll_stream_v7(stream.streamId, &boundedPoll) !=
+            EditorViewportNativeStreamPollV8 boundedPoll{};
+            if (editor_viewport_poll_stream_v8(stream.streamId, &boundedPoll) !=
                     EditorViewportNativeStatus_Success ||
                 boundedPoll.slotCount != 3U || boundedPoll.hasPendingLatest == 0U ||
                 boundedPoll.hasReadyFrame != 0U) {
-                logError("Viewport V7 smoke exceeded or bypassed its three-slot bound.");
+                logError("Viewport V8 smoke exceeded or bypassed its three-slot bound.");
                 return false;
             }
 
-            if (editor_viewport_complete_frame_v7(stream.streamId, firstFrame.nativeSlot, 99U) !=
+            if (editor_viewport_complete_frame_v8(stream.streamId, firstFrame.nativeSlot, 99U) !=
                     EditorViewportNativeStatus_InvalidArgument ||
                 !completeNotSubmitted(stream.streamId, firstFrame.nativeSlot)) {
-                logError("Viewport V7 smoke did not preserve ownership after invalid completion.");
+                logError("Viewport V8 smoke did not preserve ownership after invalid completion.");
                 return false;
             }
-            EditorViewportNativeStreamPollV7 retainedPoll{};
-            if (editor_viewport_poll_stream_v7(stream.streamId, &retainedPoll) !=
+            EditorViewportNativeStreamPollV8 retainedPoll{};
+            if (editor_viewport_poll_stream_v8(stream.streamId, &retainedPoll) !=
                     EditorViewportNativeStatus_Success ||
                 retainedPoll.hasPendingLatest == 0U || retainedPoll.hasReadyFrame != 0U) {
-                logError("Viewport V7 smoke reused the compositor's sole available slot.");
+                logError("Viewport V8 smoke reused the compositor's sole available slot.");
                 return false;
             }
             if (!completeNotSubmitted(stream.streamId, secondFrame.nativeSlot)) {
                 return false;
             }
-            EditorViewportNativeReadyFrameV7 fourthFrame{};
+            EditorViewportNativeReadyFrameV8 fourthFrame{};
             if (!waitForReadyFrame(stream.streamId, fourthFrame) ||
                 fourthFrame.requestSequence != 34U ||
                 fourthFrame.nativeSlot != firstFrame.nativeSlot) {
-                logError("Viewport V7 smoke did not reuse the completed persistent slot.");
+                logError("Viewport V8 smoke did not reuse the completed persistent slot.");
                 return false;
             }
 
@@ -648,23 +740,23 @@ namespace asharia::editor {
                 thirdFrame.nativeSlot,
             };
             for (void* nativeSlot : importedSlots) {
-                if (editor_viewport_release_slot_import_v7(stream.streamId, nativeSlot) !=
+                if (editor_viewport_release_slot_import_v8(stream.streamId, nativeSlot) !=
                     EditorViewportNativeStatus_Success) {
                     return false;
                 }
             }
-            if (editor_viewport_close_stream_v7(stream.streamId) !=
+            if (editor_viewport_close_stream_v8(stream.streamId) !=
                 EditorViewportNativeStatus_Success) {
                 return false;
             }
-            EditorViewportNativeStreamPollV7 closedPoll{};
+            EditorViewportNativeStreamPollV8 closedPoll{};
             if (!waitForPoll(stream.streamId, closedPoll,
                              EditorViewportNativeStreamLifecycle_Closed) ||
                 closedPoll.slotCount != 3U || closedPoll.submittedRequests != 34U ||
                 closedPoll.renderedFrames != 4U ||
-                editor_viewport_destroy_stream_v7(stream.streamId) !=
+                editor_viewport_destroy_stream_v8(stream.streamId) !=
                     EditorViewportNativeStatus_Success) {
-                logError("Viewport V7 smoke did not close and destroy its stream.");
+                logError("Viewport V8 smoke did not close and destroy its stream.");
                 return false;
             }
             return true;
@@ -677,10 +769,10 @@ namespace asharia::editor {
         [[nodiscard]] bool smokeFourStreamColdStartFairness() {
             constexpr std::size_t kStreamCount = 4U;
             constexpr std::uint64_t kRealtimeFirstSequence = 1'000U;
-            std::array<EditorViewportNativeStreamHandleV7, kStreamCount> streams{};
+            std::array<EditorViewportNativeStreamHandleV8, kStreamCount> streams{};
             EditorViewportNativeCompatibilityRequest compatibility = makeCompatibilityRequest();
-            for (EditorViewportNativeStreamHandleV7& stream : streams) {
-                if (editor_viewport_open_stream_v7(&compatibility, &stream) !=
+            for (EditorViewportNativeStreamHandleV8& stream : streams) {
+                if (editor_viewport_open_stream_v8(&compatibility, &stream) !=
                         EditorViewportNativeStatus_Success ||
                     stream.status != EditorViewportNativeStatus_Success || stream.streamId == 0U) {
                     logError("Viewport fairness smoke could not open four streams.");
@@ -688,12 +780,12 @@ namespace asharia::editor {
                 }
             }
 
-            EditorViewportNativePresentRequestV7 first = makeFrameRequest(kRealtimeFirstSequence);
-            if (editor_viewport_submit_latest_v7(streams.at(0).streamId, &first) !=
+            EditorViewportNativePresentRequestV8 first = makeFrameRequest(kRealtimeFirstSequence);
+            if (editor_viewport_submit_latest_v8(streams.at(0).streamId, &first) !=
                 EditorViewportNativeStatus_Success) {
                 return false;
             }
-            EditorViewportNativeStreamPollV7 realtimeReady{};
+            EditorViewportNativeStreamPollV8 realtimeReady{};
             if (!waitForReadyPoll(streams.at(0).streamId, realtimeReady)) {
                 logError("Viewport fairness smoke did not prepare the realtime stream.");
                 return false;
@@ -701,8 +793,8 @@ namespace asharia::editor {
 
             for (std::uint64_t sequence = kRealtimeFirstSequence + 1U;
                  sequence <= kRealtimeFirstSequence + 8U; ++sequence) {
-                EditorViewportNativePresentRequestV7 request = makeFrameRequest(sequence);
-                if (editor_viewport_submit_latest_v7(streams.at(0).streamId, &request) !=
+                EditorViewportNativePresentRequestV8 request = makeFrameRequest(sequence);
+                if (editor_viewport_submit_latest_v8(streams.at(0).streamId, &request) !=
                     EditorViewportNativeStatus_Success) {
                     return false;
                 }
@@ -714,25 +806,25 @@ namespace asharia::editor {
                 2'003U,
             };
             for (std::size_t index = 1U; index < streams.size(); ++index) {
-                EditorViewportNativePresentRequestV7 request =
+                EditorViewportNativePresentRequestV8 request =
                     makeFrameRequest(expectedSequences.at(index));
                 request.targetId.low += static_cast<std::uint64_t>(index);
-                if (editor_viewport_submit_latest_v7(streams.at(index).streamId, &request) !=
+                if (editor_viewport_submit_latest_v8(streams.at(index).streamId, &request) !=
                     EditorViewportNativeStatus_Success) {
                     return false;
                 }
             }
 
             for (std::size_t index = 1U; index < streams.size(); ++index) {
-                EditorViewportNativeStreamPollV7 poll{};
+                EditorViewportNativeStreamPollV8 poll{};
                 if (!waitForReadyPoll(streams.at(index).streamId, poll) ||
                     poll.renderedFrames != 1U) {
                     logError("Viewport fairness smoke starved a cold stream first frame.");
                     return false;
                 }
             }
-            EditorViewportNativeStreamPollV7 realtimePoll{};
-            if (editor_viewport_poll_stream_v7(streams.at(0).streamId, &realtimePoll) !=
+            EditorViewportNativeStreamPollV8 realtimePoll{};
+            if (editor_viewport_poll_stream_v8(streams.at(0).streamId, &realtimePoll) !=
                     EditorViewportNativeStatus_Success ||
                 realtimePoll.renderedFrames != 1U || realtimePoll.hasReadyFrame == 0U ||
                 realtimePoll.hasPendingLatest == 0U || realtimePoll.coalescedRequests < 7U) {
@@ -741,11 +833,11 @@ namespace asharia::editor {
             }
 
             for (std::size_t index = 0U; index < streams.size(); ++index) {
-                EditorViewportNativeReadyFrameV7 frame{};
+                EditorViewportNativeReadyFrameV8 frame{};
                 if (!waitForReadyFrame(streams.at(index).streamId, frame) ||
                     frame.requestSequence != expectedSequences.at(index) ||
                     !completeNotSubmitted(streams.at(index).streamId, frame.nativeSlot) ||
-                    editor_viewport_release_slot_import_v7(streams.at(index).streamId,
+                    editor_viewport_release_slot_import_v8(streams.at(index).streamId,
                                                            frame.nativeSlot) !=
                         EditorViewportNativeStatus_Success) {
                     logError("Viewport fairness smoke could not release a cold stream frame.");
@@ -756,31 +848,31 @@ namespace asharia::editor {
             // complete and close. Lifecycle work must make progress before
             // the newly freed capacity can be used for another render.
             for (std::size_t index = 1U; index < streams.size(); ++index) {
-                if (editor_viewport_close_stream_v7(streams.at(index).streamId) !=
+                if (editor_viewport_close_stream_v8(streams.at(index).streamId) !=
                     EditorViewportNativeStatus_Success) {
                     return false;
                 }
             }
             for (std::size_t index = 1U; index < streams.size(); ++index) {
-                EditorViewportNativeStreamPollV7 closedPoll{};
+                EditorViewportNativeStreamPollV8 closedPoll{};
                 if (!waitForPoll(streams.at(index).streamId, closedPoll,
                                  EditorViewportNativeStreamLifecycle_Closed) ||
                     closedPoll.renderedFrames != 1U ||
-                    editor_viewport_destroy_stream_v7(streams.at(index).streamId) !=
+                    editor_viewport_destroy_stream_v8(streams.at(index).streamId) !=
                         EditorViewportNativeStatus_Success) {
                     logError("Viewport fairness smoke let pending render work starve close.");
                     return false;
                 }
             }
-            if (editor_viewport_close_stream_v7(streams.at(0).streamId) !=
+            if (editor_viewport_close_stream_v8(streams.at(0).streamId) !=
                 EditorViewportNativeStatus_Success) {
                 return false;
             }
-            EditorViewportNativeStreamPollV7 realtimeClosedPoll{};
+            EditorViewportNativeStreamPollV8 realtimeClosedPoll{};
             if (!waitForPoll(streams.at(0).streamId, realtimeClosedPoll,
                              EditorViewportNativeStreamLifecycle_Closed) ||
                 realtimeClosedPoll.renderedFrames < 1U || realtimeClosedPoll.renderedFrames > 2U ||
-                editor_viewport_destroy_stream_v7(streams.at(0).streamId) !=
+                editor_viewport_destroy_stream_v8(streams.at(0).streamId) !=
                     EditorViewportNativeStatus_Success) {
                 logError("Viewport fairness smoke did not close the realtime stream.");
                 return false;
@@ -813,7 +905,7 @@ namespace asharia::editor {
                 EditorViewportNativeStatus_Success ||
             stats.lifecycle != EditorViewportNativeRuntimeLifecycle_Stopped ||
             stats.renderThreadRunning != 0U || stats.renderThreadJoined == 0U) {
-            logError("Viewport V7 smoke did not stop and join its native render thread.");
+            logError("Viewport V8 smoke did not stop and join its native render thread.");
             return false;
         }
         return true;
