@@ -27,7 +27,9 @@ public sealed class ViewportSession
     private ViewportSceneRasterMode sceneRasterMode_ = ViewportSceneRasterMode.Solid;
     private ulong viewStateRevision_;
     private Guid? selectedObjectId_;
-    private ViewportTranslateGizmoState? translateGizmo_;
+    private ViewportTransformGizmoKind transformGizmoKind_ =
+        ViewportTransformGizmoKind.Translate;
+    private ViewportTransformGizmoState? transformGizmo_;
     private ViewportRenderSize? lastRenderSize_;
     private ViewportInvalidationReason pendingReasons_ = ViewportInvalidationReason.InitialFrame;
     private ulong lastSequence_;
@@ -118,12 +120,23 @@ public sealed class ViewportSession
         }
     }
 
-    public bool TryCaptureTranslateGizmoSnapshot(
+    public ViewportTransformGizmoKind TransformGizmoKind
+    {
+        get
+        {
+            lock (gate_)
+            {
+                return transformGizmoKind_;
+            }
+        }
+    }
+
+    public bool TryCaptureTransformGizmoSnapshot(
         ViewportSessionId expectedSessionId,
         Guid expectedTargetId,
         ulong expectedTargetRevision,
         ulong expectedPresentedSequence,
-        out ViewportTranslateGizmoSnapshot snapshot)
+        out ViewportTransformGizmoSnapshot snapshot)
     {
         lock (gate_)
         {
@@ -134,12 +147,13 @@ public sealed class ViewportSession
                 !CanUsePublishedFrameForInteractionLocked(
                     expectedPresentedSequence,
                     expectedTargetRevision) ||
-                translateGizmo_ is not { } gizmo)
+                transformGizmo_ is not { } gizmo)
             {
                 return false;
             }
 
-            snapshot = new ViewportTranslateGizmoSnapshot(
+            snapshot = new ViewportTransformGizmoSnapshot(
+                gizmo.Kind,
                 gizmo.ObjectId,
                 targetRevision_,
                 camera_,
@@ -214,7 +228,7 @@ public sealed class ViewportSession
             modelPickProxies_ = nextModelPickProxies;
             authoredMeshes_ = nextAuthoredMeshes;
             entityTransforms_ = nextEntityTransforms;
-            translateGizmo_ = CreateTranslateGizmoLocked(selectedObjectId_);
+            transformGizmo_ = CreateTransformGizmoLocked(selectedObjectId_);
             requestRefresh = InvalidateLocked(
                 ViewportInvalidationReason.TargetChanged,
                 advancePresentationFence: true);
@@ -303,7 +317,7 @@ public sealed class ViewportSession
 
             viewStateRevision_ = viewStateRevision;
             selectedObjectId_ = selectedObjectId;
-            translateGizmo_ = CreateTranslateGizmoLocked(selectedObjectId);
+            transformGizmo_ = CreateTransformGizmoLocked(selectedObjectId);
             requestRefresh = InvalidateLocked(
                 ViewportInvalidationReason.SelectionChanged,
                 advancePresentationFence: true);
@@ -311,7 +325,37 @@ public sealed class ViewportSession
         RaiseRefreshRequested(requestRefresh);
     }
 
-    public void SetTranslateGizmo(ViewportTranslateGizmoState gizmo)
+    public void SetTransformGizmoKind(ViewportTransformGizmoKind kind)
+    {
+        if (!Enum.IsDefined(kind))
+        {
+            throw new ArgumentOutOfRangeException(nameof(kind), kind, null);
+        }
+
+        var requestRefresh = false;
+        lock (gate_)
+        {
+            ThrowIfClosed();
+            if (kind_ != ViewportRenderKind.Scene)
+            {
+                throw new InvalidOperationException(
+                    "Only Scene viewports can change Transform Gizmo mode.");
+            }
+            if (transformGizmoKind_ == kind)
+            {
+                return;
+            }
+
+            transformGizmoKind_ = kind;
+            transformGizmo_ = CreateTransformGizmoLocked(selectedObjectId_);
+            requestRefresh = InvalidateLocked(
+                ViewportInvalidationReason.GizmoModeChanged,
+                advancePresentationFence: true);
+        }
+        RaiseRefreshRequested(requestRefresh);
+    }
+
+    public void SetTransformGizmo(ViewportTransformGizmoState gizmo)
     {
         ArgumentNullException.ThrowIfNull(gizmo);
         var requestRefresh = false;
@@ -319,18 +363,18 @@ public sealed class ViewportSession
         {
             ThrowIfClosed();
             if (kind_ != ViewportRenderKind.Scene ||
-                selectedObjectId_ != gizmo.ObjectId ||
+                transformGizmoKind_ != gizmo.Kind || selectedObjectId_ != gizmo.ObjectId ||
                 !entityTransforms_.ContainsKey(gizmo.ObjectId))
             {
                 throw new InvalidOperationException(
-                    "Translate Gizmo state must target the current Scene selection.");
+                    "Transform Gizmo state must match the current Scene selection and mode.");
             }
-            if (translateGizmo_ == gizmo)
+            if (transformGizmo_ == gizmo)
             {
                 return;
             }
 
-            translateGizmo_ = gizmo;
+            transformGizmo_ = gizmo;
             requestRefresh = InvalidateLocked(
                 ViewportInvalidationReason.GizmoChanged,
                 advancePresentationFence: false);
@@ -338,19 +382,19 @@ public sealed class ViewportSession
         RaiseRefreshRequested(requestRefresh);
     }
 
-    public void ResetTranslateGizmo()
+    public void ResetTransformGizmo()
     {
         var requestRefresh = false;
         lock (gate_)
         {
             ThrowIfClosed();
-            var reset = CreateTranslateGizmoLocked(selectedObjectId_);
-            if (translateGizmo_ == reset)
+            var reset = CreateTransformGizmoLocked(selectedObjectId_);
+            if (transformGizmo_ == reset)
             {
                 return;
             }
 
-            translateGizmo_ = reset;
+            transformGizmo_ = reset;
             requestRefresh = InvalidateLocked(
                 ViewportInvalidationReason.GizmoChanged,
                 advancePresentationFence: false);
@@ -432,7 +476,7 @@ public sealed class ViewportSession
                 sceneRasterMode_,
                 viewStateRevision_,
                 selectedObjectId_,
-                translateGizmo_);
+                transformGizmo_);
             return true;
         }
     }
@@ -483,7 +527,7 @@ public sealed class ViewportSession
                 sceneRasterMode_,
                 viewStateRevision_,
                 selectedObjectId_,
-                translateGizmo_);
+                transformGizmo_);
             return true;
         }
     }
@@ -589,7 +633,7 @@ public sealed class ViewportSession
             inFlightSequence_ = 0;
             inFlightTargetRevision_ = 0;
             inFlightReasons_ = ViewportInvalidationReason.None;
-            translateGizmo_ = null;
+            transformGizmo_ = null;
         }
     }
 
@@ -601,12 +645,14 @@ public sealed class ViewportSession
         ViewportInvalidationReason.Exposed |
         ViewportInvalidationReason.Realtime |
         ViewportInvalidationReason.SelectionChanged |
-        ViewportInvalidationReason.GizmoChanged;
+        ViewportInvalidationReason.GizmoChanged |
+        ViewportInvalidationReason.GizmoModeChanged;
 
     private static readonly ViewportInvalidationReason PresentationInvalidationReasons =
         ViewportInvalidationReason.TargetChanged |
         ViewportInvalidationReason.Exposed |
-        ViewportInvalidationReason.SelectionChanged;
+        ViewportInvalidationReason.SelectionChanged |
+        ViewportInvalidationReason.GizmoModeChanged;
 
     private static (ViewportDebugProxySnapshot[] Proxies, int TotalCount)
         CaptureDebugProxies(SceneDocumentSnapshot document)
@@ -653,10 +699,10 @@ public sealed class ViewportSession
         SceneDocumentSnapshot document) =>
         document.Entities.ToDictionary(entity => entity.ObjectId, entity => entity.Transform);
 
-    private ViewportTranslateGizmoState? CreateTranslateGizmoLocked(Guid? objectId) =>
+    private ViewportTransformGizmoState? CreateTransformGizmoLocked(Guid? objectId) =>
         kind_ == ViewportRenderKind.Scene && objectId is { } selected &&
         entityTransforms_.TryGetValue(selected, out var transform)
-            ? new ViewportTranslateGizmoState(selected, transform)
+            ? new ViewportTransformGizmoState(transformGizmoKind_, selected, transform)
             : null;
 
     private ViewportSessionSnapshot SnapshotLocked() => new(

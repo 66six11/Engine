@@ -83,6 +83,82 @@ public sealed class StudioScenePanelViewModelTests
     }
 
     [AvaloniaFact]
+    public async Task Rotate_gizmo_mode_previews_and_commits_one_normalized_rotation()
+    {
+        var projectSessionId = ProjectSessionId.CreateNew();
+        var sceneId = Guid.NewGuid();
+        var entity = Entity("Selected", new EntityId(1, 1), Float3.Zero);
+        var original = Ready(
+            projectSessionId,
+            Guid.NewGuid(),
+            sceneId,
+            revision: 3,
+            entity);
+        var selection = new TestEditorSelectionService();
+        Assert.True(selection.Replace(new SceneObjectSelectionTarget(
+            projectSessionId,
+            sceneId,
+            entity.ObjectId)));
+        var projectSession = new TestProjectSession();
+        projectSession.Publish(original);
+        var callCount = 0;
+        TransformValue capturedTransform = default;
+        projectSession.SetTransformHandler = (_, transform, context, _) =>
+        {
+            callCount++;
+            capturedTransform = transform;
+            var rotatedEntity = new SceneEntitySnapshot(
+                entity.ObjectId,
+                entity.RuntimeEntityId,
+                entity.Name,
+                transform);
+            return ValueTask.FromResult(ProjectSessionOperationResult.Success(
+                Ready(projectSessionId, original.Project!.ProjectId, sceneId, 4, rotatedEntity),
+                "Rotated selected entity.",
+                originatingEditId: context.EditId));
+        };
+        using var shell = new StudioShellViewModel(
+            projectSession,
+            new TestProjectDialogService(),
+            StudioShellTestFactory.CreateDocumentTransitions(projectSession),
+            StudioShellTestFactory.CreateDiagnosticWriter(),
+            StudioShellTestFactory.CreateProjectAssetCatalog(),
+            selection);
+        using var panel = new StudioScenePanelViewModel(shell);
+        var session = Assert.IsType<ViewportSession>(panel.Session);
+        session.SetCamera(GizmoCamera());
+        panel.SetTransformGizmoMode(ViewportTransformGizmoKind.Rotate);
+        Assert.False(panel.IsTranslateGizmoMode);
+        Assert.True(panel.IsRotateGizmoMode);
+        var extent = new ViewportExtent(800, 600);
+        var size = new ViewportRenderSize(extent, extent);
+        Assert.True(session.TryPublishLatest(size, out var presented));
+        var context = PresentedContext(session, sceneId, revision: 3, presented, extent);
+
+        Assert.True(panel.TryBeginTransformGizmo(
+            context,
+            new ViewportPickRequest(
+                extent,
+                new ViewportPickPoint(459.4f, 240.6f),
+                8)));
+        Assert.True(panel.TryUpdateTransformGizmo(new ViewportPickPoint(459.4f, 359.4f)));
+        Assert.True(session.TryPublishLatest(size, out var preview));
+        Assert.Equal(ViewportTransformGizmoKind.Rotate, preview.TransformGizmo!.Kind);
+        Assert.InRange(MathF.Abs(preview.TransformGizmo.Transform.Rotation.Z), 0.70f, 0.72f);
+
+        Assert.True(await panel.CompleteTransformGizmoAsync());
+
+        Assert.Equal(1, callCount);
+        Assert.Equal(Float3.Zero, capturedTransform.Position);
+        Assert.Equal(Float3.One, capturedTransform.Scale);
+        Assert.InRange(
+            QuaternionLengthSquared(capturedTransform.Rotation),
+            0.9999f,
+            1.0001f);
+        Assert.Equal("Rotated selected entity.", shell.ProjectOperationMessage);
+    }
+
+    [AvaloniaFact]
     public void Presented_transform_proxy_pick_updates_typed_selection_without_editing_document()
     {
         var projectSessionId = ProjectSessionId.CreateNew();
@@ -360,18 +436,18 @@ public sealed class StudioScenePanelViewModelTests
             out var presented));
         var context = PresentedContext(session, sceneId, revision: 3, presented, extent);
 
-        Assert.True(panel.TryBeginTranslateGizmo(
+        Assert.True(panel.TryBeginTransformGizmo(
             context,
             new ViewportPickRequest(extent, new ViewportPickPoint(460, 300), 8)));
-        Assert.True(panel.TryUpdateTranslateGizmo(new ViewportPickPoint(500, 300)));
+        Assert.True(panel.TryUpdateTransformGizmo(new ViewportPickPoint(500, 300)));
         Assert.Equal(0, callCount);
         Assert.Same(original, projectSession.Current);
         Assert.True(session.TryPublishLatest(
             new ViewportRenderSize(extent, extent),
             out var preview));
-        Assert.InRange(preview.TranslateGizmo!.Transform.Position.X, 0.9999f, 1.0001f);
+        Assert.InRange(preview.TransformGizmo!.Transform.Position.X, 0.9999f, 1.0001f);
 
-        Assert.True(await panel.CompleteTranslateGizmoAsync());
+        Assert.True(await panel.CompleteTransformGizmoAsync());
 
         Assert.Equal(1, callCount);
         Assert.Equal((ulong)3, capturedContext.ExpectedRevision);
@@ -422,23 +498,36 @@ public sealed class StudioScenePanelViewModelTests
         var size = new ViewportRenderSize(extent, extent);
         Assert.True(session.TryPublishLatest(size, out var first));
 
-        Assert.True(panel.TryBeginTranslateGizmo(
+        Assert.True(panel.TryBeginTransformGizmo(
             PresentedContext(session, sceneId, 3, first, extent),
             new ViewportPickRequest(extent, new ViewportPickPoint(460, 300), 8)));
-        Assert.True(await panel.CompleteTranslateGizmoAsync());
+        Assert.True(await panel.CompleteTransformGizmoAsync());
         Assert.Equal(0, callCount);
 
         Assert.True(session.TryPublishLatest(size, out var second));
-        Assert.True(panel.TryBeginTranslateGizmo(
+        Assert.True(panel.TryBeginTransformGizmo(
             PresentedContext(session, sceneId, 3, second, extent),
             new ViewportPickRequest(extent, new ViewportPickPoint(460, 300), 8)));
-        Assert.True(panel.TryUpdateTranslateGizmo(new ViewportPickPoint(500, 300)));
-        panel.CancelTranslateGizmo();
+        Assert.True(panel.TryUpdateTransformGizmo(new ViewportPickPoint(500, 300)));
+        panel.CancelTransformGizmo();
 
         Assert.Equal(0, callCount);
         Assert.True(session.TryPublishLatest(size, out var cancelled));
-        Assert.Equal(TransformValue.Identity, cancelled.TranslateGizmo!.Transform);
-        Assert.Equal(ViewportGizmoAxis.None, cancelled.TranslateGizmo.ActiveAxis);
+        Assert.Equal(TransformValue.Identity, cancelled.TransformGizmo!.Transform);
+        Assert.Equal(ViewportGizmoAxis.None, cancelled.TransformGizmo.ActiveAxis);
+
+        Assert.True(panel.TryBeginTransformGizmo(
+            PresentedContext(session, sceneId, 3, cancelled, extent),
+            new ViewportPickRequest(extent, new ViewportPickPoint(460, 300), 8)));
+        Assert.True(panel.TryUpdateTransformGizmo(new ViewportPickPoint(500, 300)));
+        panel.SetTransformGizmoMode(ViewportTransformGizmoKind.Rotate);
+
+        Assert.False(await panel.CompleteTransformGizmoAsync());
+        Assert.Equal(0, callCount);
+        Assert.True(session.TryPublishLatest(size, out var modeChanged));
+        Assert.Equal(ViewportTransformGizmoKind.Rotate, modeChanged.TransformGizmo!.Kind);
+        Assert.Equal(TransformValue.Identity, modeChanged.TransformGizmo.Transform);
+        Assert.True(modeChanged.Reasons.HasFlag(ViewportInvalidationReason.GizmoModeChanged));
     }
 
     [AvaloniaFact]
@@ -479,17 +568,17 @@ public sealed class StudioScenePanelViewModelTests
         var extent = new ViewportExtent(800, 600);
         var size = new ViewportRenderSize(extent, extent);
         Assert.True(session.TryPublishLatest(size, out var presented));
-        Assert.True(panel.TryBeginTranslateGizmo(
+        Assert.True(panel.TryBeginTransformGizmo(
             PresentedContext(session, sceneId, 3, presented, extent),
             new ViewportPickRequest(extent, new ViewportPickPoint(460, 300), 8)));
-        Assert.True(panel.TryUpdateTranslateGizmo(new ViewportPickPoint(500, 300)));
+        Assert.True(panel.TryUpdateTransformGizmo(new ViewportPickPoint(500, 300)));
 
-        Assert.False(await panel.CompleteTranslateGizmoAsync());
+        Assert.False(await panel.CompleteTransformGizmoAsync());
 
         Assert.Equal("Scene changed before the move could be committed.",
             shell.ProjectOperationMessage);
         Assert.True(session.TryPublishLatest(size, out var rolledBack));
-        Assert.Equal(TransformValue.Identity, rolledBack.TranslateGizmo!.Transform);
+        Assert.Equal(TransformValue.Identity, rolledBack.TransformGizmo!.Transform);
     }
 
     [AvaloniaFact]
@@ -528,17 +617,17 @@ public sealed class StudioScenePanelViewModelTests
         var extent = new ViewportExtent(800, 600);
         var size = new ViewportRenderSize(extent, extent);
         Assert.True(session.TryPublishLatest(size, out var presented));
-        Assert.True(panel.TryBeginTranslateGizmo(
+        Assert.True(panel.TryBeginTransformGizmo(
             PresentedContext(session, sceneId, 3, presented, extent),
             new ViewportPickRequest(extent, new ViewportPickPoint(460, 300), 8)));
-        Assert.True(panel.TryUpdateTranslateGizmo(new ViewportPickPoint(500, 300)));
+        Assert.True(panel.TryUpdateTransformGizmo(new ViewportPickPoint(500, 300)));
 
         projectSession.Publish(Ready(projectSessionId, projectId, sceneId, revision: 4, entity));
 
-        Assert.False(await panel.CompleteTranslateGizmoAsync());
+        Assert.False(await panel.CompleteTransformGizmoAsync());
         Assert.Equal(0, callCount);
         Assert.True(session.TryPublishLatest(size, out var synchronized));
-        Assert.Equal(TransformValue.Identity, synchronized.TranslateGizmo!.Transform);
+        Assert.Equal(TransformValue.Identity, synchronized.TransformGizmo!.Transform);
     }
 
     [AvaloniaFact]
@@ -717,6 +806,10 @@ public sealed class StudioScenePanelViewModelTests
         ViewportFieldOfViewAxis.MaintainHorizontal,
         0.1f,
         1000.0f);
+
+    private static float QuaternionLengthSquared(Quaternion value) =>
+        value.X * value.X + value.Y * value.Y +
+        value.Z * value.Z + value.W * value.W;
 
     private static ViewportPresentedInteractionContext PresentedContext(
         ViewportSession session,

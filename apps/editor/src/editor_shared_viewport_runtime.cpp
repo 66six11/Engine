@@ -113,11 +113,12 @@ namespace asharia::editor {
             .flashSentinelCorners = desc.flashSentinelCorners,
             .hasSelectionOutline = desc.hasSelectionOutline,
             .selectedObjectId = desc.selectedObjectId,
-            .hasTranslateGizmo = desc.hasTranslateGizmo,
-            .translateGizmoObjectId = desc.translateGizmoObjectId,
-            .translateGizmoPosition = desc.translateGizmoPosition,
-            .translateGizmoHoveredAxis = desc.translateGizmoHoveredAxis,
-            .translateGizmoActiveAxis = desc.translateGizmoActiveAxis,
+            .hasTransformGizmo = desc.hasTransformGizmo,
+            .transformGizmoKind = desc.transformGizmoKind,
+            .transformGizmoObjectId = desc.transformGizmoObjectId,
+            .transformGizmoPosition = desc.transformGizmoPosition,
+            .transformGizmoHoveredAxis = desc.transformGizmoHoveredAxis,
+            .transformGizmoActiveAxis = desc.transformGizmoActiveAxis,
         };
         if (!desc.debugProxies.empty()) {
             packet.debugProxies.assign(desc.debugProxies.begin(), desc.debugProxies.end());
@@ -150,11 +151,12 @@ namespace asharia::editor {
             .flashSentinelCorners = flashSentinelCorners,
             .hasSelectionOutline = hasSelectionOutline,
             .selectedObjectId = selectedObjectId,
-            .hasTranslateGizmo = hasTranslateGizmo,
-            .translateGizmoObjectId = translateGizmoObjectId,
-            .translateGizmoPosition = translateGizmoPosition,
-            .translateGizmoHoveredAxis = translateGizmoHoveredAxis,
-            .translateGizmoActiveAxis = translateGizmoActiveAxis,
+            .hasTransformGizmo = hasTransformGizmo,
+            .transformGizmoKind = transformGizmoKind,
+            .transformGizmoObjectId = transformGizmoObjectId,
+            .transformGizmoPosition = transformGizmoPosition,
+            .transformGizmoHoveredAxis = transformGizmoHoveredAxis,
+            .transformGizmoActiveAxis = transformGizmoActiveAxis,
         };
     }
 
@@ -210,10 +212,8 @@ namespace asharia::editor {
         }
     }
 
-    asharia::Result<void>
-    EditorSharedViewportRuntime::validateSceneRasterMode(
-        EditorSharedViewportStreamId streamId,
-        EditorSharedViewportSceneRasterMode rasterMode) {
+    asharia::Result<void> EditorSharedViewportRuntime::validateSceneRasterMode(
+        EditorSharedViewportStreamId streamId, EditorSharedViewportSceneRasterMode rasterMode) {
         auto stream = findStream(streamId);
         if (!stream) {
             return std::unexpected{vulkanError("Shared viewport stream does not exist")};
@@ -221,8 +221,7 @@ namespace asharia::editor {
 
         std::lock_guard lock{stream->mutex};
         if (stream->closeRequested || stream->closed || stream->faulted) {
-            return std::unexpected{
-                vulkanError("Shared viewport stream is not accepting frames")};
+            return std::unexpected{vulkanError("Shared viewport stream is not accepting frames")};
         }
         if (rasterMode == EditorSharedViewportSceneRasterMode::Wireframe &&
             !stream->supportsWireframe) {
@@ -1342,8 +1341,9 @@ namespace asharia::editor {
                     .viewStateRevision = packet->viewStateRevision,
                     .kind = packet->kind,
                     .logicalExtent = packet->logicalExtent,
-                    .sceneMeshReceipt = static_cast<EditorSharedViewportPacketState*>(
-                        rendered->nativePacket)->sceneMeshReceipt,
+                    .sceneMeshReceipt =
+                        static_cast<EditorSharedViewportPacketState*>(rendered->nativePacket)
+                            ->sceneMeshReceipt,
                 },
         };
         ++stream.renderedFrames;

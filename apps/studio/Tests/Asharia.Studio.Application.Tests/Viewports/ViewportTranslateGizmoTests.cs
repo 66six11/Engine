@@ -74,7 +74,8 @@ public sealed class ViewportTranslateGizmoTests
             out _));
     }
 
-    private static ViewportTranslateGizmoSnapshot Snapshot() => new(
+    private static ViewportTransformGizmoSnapshot Snapshot() => new(
+        ViewportTransformGizmoKind.Translate,
         Guid.NewGuid(),
         targetRevision: 7,
         Camera,

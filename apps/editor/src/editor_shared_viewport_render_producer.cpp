@@ -10,6 +10,7 @@
 #include <exception>
 #include <filesystem>
 #include <memory>
+#include <numbers>
 #include <span>
 #include <string_view>
 #include <utility>
@@ -95,13 +96,11 @@ namespace asharia::editor {
             };
         }
 
-        [[nodiscard]] constexpr float dot(std::array<float, 3> lhs,
-                                          std::array<float, 3> rhs) {
+        [[nodiscard]] constexpr float dot(std::array<float, 3> lhs, std::array<float, 3> rhs) {
             return (lhs[0] * rhs[0]) + (lhs[1] * rhs[1]) + (lhs[2] * rhs[2]);
         }
 
-        [[nodiscard]] std::optional<std::array<float, 3>>
-        normalized(std::array<float, 3> value) {
+        [[nodiscard]] std::optional<std::array<float, 3>> normalized(std::array<float, 3> value) {
             const float lengthSquared = dot(value, value);
             if (!std::isfinite(lengthSquared) || lengthSquared <= 1.0e-8F) {
                 return std::nullopt;
@@ -138,12 +137,12 @@ namespace asharia::editor {
         }
 
         [[nodiscard]] std::array<float, 4>
-        translateGizmoAxisColor(EditorSharedViewportGizmoAxis axis,
+        transformGizmoAxisColor(EditorSharedViewportGizmoAxis axis,
                                 const EditorSharedViewportPresentDesc& desc) {
-            if (axis == desc.translateGizmoActiveAxis) {
+            if (axis == desc.transformGizmoActiveAxis) {
                 return {1.0F, 1.0F, 1.0F, 1.0F};
             }
-            if (axis == desc.translateGizmoHoveredAxis) {
+            if (axis == desc.transformGizmoHoveredAxis) {
                 return {1.0F, 0.76F, 0.12F, 1.0F};
             }
             switch (axis) {
@@ -160,23 +159,23 @@ namespace asharia::editor {
         }
 
         [[nodiscard]] std::optional<float>
-        translateGizmoWorldLength(EditorSharedViewportPresentDesc desc,
+        transformGizmoWorldLength(EditorSharedViewportPresentDesc desc,
                                   const EditorViewportCamera& camera) {
             constexpr float kGizmoLengthPixels = 84.0F;
             const auto forward = normalized(subtract(camera.target, camera.position));
-            if (!desc.hasTranslateGizmo || !forward || desc.logicalExtent.height == 0U) {
+            if (!desc.hasTransformGizmo || !forward || desc.logicalExtent.height == 0U) {
                 return std::nullopt;
             }
-            const float depth = dot(*forward, subtract(desc.translateGizmoPosition,
-                                                       camera.position));
+            const float depth =
+                dot(*forward, subtract(desc.transformGizmoPosition, camera.position));
             const float focalLength = 1.0F / std::tan(camera.fieldOfViewRadians * 0.5F);
             const float verticalScale =
                 camera.fieldOfViewAxis == EditorViewportFieldOfViewAxis::MaintainHorizontal
                     ? focalLength * camera.aspectRatio
                     : focalLength;
-            const float worldLength = 2.0F * depth * kGizmoLengthPixels /
-                                      (verticalScale *
-                                       static_cast<float>(desc.logicalExtent.height));
+            const float worldLength =
+                2.0F * depth * kGizmoLengthPixels /
+                (verticalScale * static_cast<float>(desc.logicalExtent.height));
             if (!std::isfinite(worldLength) || worldLength <= 1.0e-6F) {
                 return std::nullopt;
             }
@@ -186,26 +185,83 @@ namespace asharia::editor {
         void appendTranslateGizmoAxes(std::vector<BasicDebugWorldLine>& lines,
                                       EditorSharedViewportPresentDesc desc,
                                       const EditorViewportCamera& camera) {
-            const std::optional<float> worldLength = translateGizmoWorldLength(desc, camera);
+            const std::optional<float> worldLength = transformGizmoWorldLength(desc, camera);
             if (!worldLength) {
                 return;
             }
             const std::array axes{
-                std::pair{EditorSharedViewportGizmoAxis::X,
-                          std::array{1.0F, 0.0F, 0.0F}},
-                std::pair{EditorSharedViewportGizmoAxis::Y,
-                          std::array{0.0F, 1.0F, 0.0F}},
-                std::pair{EditorSharedViewportGizmoAxis::Z,
-                          std::array{0.0F, 0.0F, 1.0F}},
+                std::pair{EditorSharedViewportGizmoAxis::X, std::array{1.0F, 0.0F, 0.0F}},
+                std::pair{EditorSharedViewportGizmoAxis::Y, std::array{0.0F, 1.0F, 0.0F}},
+                std::pair{EditorSharedViewportGizmoAxis::Z, std::array{0.0F, 0.0F, 1.0F}},
             };
             for (const auto& [axis, direction] : axes) {
                 lines.push_back(BasicDebugWorldLine{
-                    .start = desc.translateGizmoPosition,
-                    .end = add(desc.translateGizmoPosition,
-                               multiply(direction, *worldLength)),
-                    .color = translateGizmoAxisColor(
-                        axis, desc),
+                    .start = desc.transformGizmoPosition,
+                    .end = add(desc.transformGizmoPosition, multiply(direction, *worldLength)),
+                    .color = transformGizmoAxisColor(axis, desc),
                 });
+            }
+        }
+
+        void appendRotateGizmoRings(std::vector<BasicDebugWorldLine>& lines,
+                                    EditorSharedViewportPresentDesc desc,
+                                    const EditorViewportCamera& camera) {
+            constexpr std::uint32_t kRingSegmentCount = 64U;
+            const std::optional<float> radius = transformGizmoWorldLength(desc, camera);
+            if (!radius) {
+                return;
+            }
+
+            struct RingBasis {
+                EditorSharedViewportGizmoAxis axis;
+                std::array<float, 3> u;
+                std::array<float, 3> v;
+            };
+            constexpr std::array rings{
+                RingBasis{.axis = EditorSharedViewportGizmoAxis::X,
+                          .u = {0.0F, 1.0F, 0.0F},
+                          .v = {0.0F, 0.0F, 1.0F}},
+                RingBasis{.axis = EditorSharedViewportGizmoAxis::Y,
+                          .u = {0.0F, 0.0F, 1.0F},
+                          .v = {1.0F, 0.0F, 0.0F}},
+                RingBasis{.axis = EditorSharedViewportGizmoAxis::Z,
+                          .u = {1.0F, 0.0F, 0.0F},
+                          .v = {0.0F, 1.0F, 0.0F}},
+            };
+            constexpr float kTau = 2.0F * std::numbers::pi_v<float>;
+            for (const RingBasis& ring : rings) {
+                for (std::uint32_t segment = 0U; segment < kRingSegmentCount; ++segment) {
+                    const float angle0 =
+                        kTau * static_cast<float>(segment) / static_cast<float>(kRingSegmentCount);
+                    const float angle1 = kTau * static_cast<float>(segment + 1U) /
+                                         static_cast<float>(kRingSegmentCount);
+                    const auto radial = [&ring](float angle) {
+                        return add(multiply(ring.u, std::cos(angle)),
+                                   multiply(ring.v, std::sin(angle)));
+                    };
+                    lines.push_back(BasicDebugWorldLine{
+                        .start =
+                            add(desc.transformGizmoPosition, multiply(radial(angle0), *radius)),
+                        .end = add(desc.transformGizmoPosition, multiply(radial(angle1), *radius)),
+                        .color = transformGizmoAxisColor(ring.axis, desc),
+                    });
+                }
+            }
+        }
+
+        void appendTransformGizmo(std::vector<BasicDebugWorldLine>& lines,
+                                  EditorSharedViewportPresentDesc desc,
+                                  const EditorViewportCamera& camera) {
+            if (!desc.hasTransformGizmo) {
+                return;
+            }
+            switch (desc.transformGizmoKind) {
+            case EditorSharedViewportTransformGizmoKind::Translate:
+                appendTranslateGizmoAxes(lines, desc, camera);
+                return;
+            case EditorSharedViewportTransformGizmoKind::Rotate:
+                appendRotateGizmoRings(lines, desc, camera);
+                return;
             }
         }
 
@@ -550,9 +606,9 @@ namespace asharia::editor {
                 });
         }
 
-        [[nodiscard]] std::vector<BasicDrawListItem> selectionOutlineDrawItems(
-            EditorSharedViewportPresentDesc desc,
-            const scene_rendering::SceneMeshExtraction& extraction) {
+        [[nodiscard]] std::vector<BasicDrawListItem>
+        selectionOutlineDrawItems(EditorSharedViewportPresentDesc desc,
+                                  const scene_rendering::SceneMeshExtraction& extraction) {
             if (!desc.hasSelectionOutline || desc.kind != EditorViewportKind::Scene) {
                 return {};
             }
@@ -632,15 +688,21 @@ namespace asharia::editor {
             };
             if (desc.kind == EditorViewportKind::Scene) {
                 debugLines.assign(kMinimalSceneAxes.begin(), kMinimalSceneAxes.end());
-                debugLines.reserve(debugLines.size() + (desc.debugProxies.size() * 3U) + 3U);
+                constexpr std::size_t kRotateGizmoLineCount = std::size_t{3U} * 64U;
+                const std::size_t gizmoLineCount =
+                    desc.hasTransformGizmo && desc.transformGizmoKind ==
+                                                  EditorSharedViewportTransformGizmoKind::Rotate
+                        ? kRotateGizmoLineCount
+                        : 3U;
+                debugLines.reserve(debugLines.size() + (desc.debugProxies.size() * 3U) +
+                                   gizmoLineCount);
                 for (const EditorSharedViewportDebugProxy& proxy : desc.debugProxies) {
-                    if (desc.hasTranslateGizmo &&
-                        proxy.objectId == desc.translateGizmoObjectId) {
+                    if (desc.hasTransformGizmo && proxy.objectId == desc.transformGizmoObjectId) {
                         continue;
                     }
                     appendDebugProxyAxes(debugLines, proxy);
                 }
-                appendTranslateGizmoAxes(debugLines, desc, camera);
+                appendTransformGizmo(debugLines, desc, camera);
             }
             view.overlay = BasicRenderViewOverlayDesc{
                 .enabled = desc.kind == EditorViewportKind::Scene,

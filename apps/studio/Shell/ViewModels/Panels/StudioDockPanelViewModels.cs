@@ -38,9 +38,11 @@ internal sealed class StudioScenePanelViewModel :
     private ulong selectionSourceRevision_;
     private ulong viewStateRevision_;
     private Guid? selectedObjectId_;
-    private ViewportTranslateGizmoInteraction? translateGizmoInteraction_;
+    private IViewportTransformGizmoInteraction? transformGizmoInteraction_;
+    private ViewportTransformGizmoKind transformGizmoKind_ =
+        ViewportTransformGizmoKind.Translate;
     private ViewportGizmoAxis hoveredGizmoAxis_;
-    private bool isTranslateGizmoCommitPending_;
+    private bool isTransformGizmoCommitPending_;
     private bool isRealtime_ = true;
     private bool isWireframe_;
     private bool isDisposed_;
@@ -90,6 +92,30 @@ internal sealed class StudioScenePanelViewModel :
                     ? ViewportSceneRasterMode.Wireframe
                     : ViewportSceneRasterMode.Solid);
             OnPropertyChanged();
+        }
+    }
+
+    public bool IsTranslateGizmoMode
+    {
+        get => transformGizmoKind_ == ViewportTransformGizmoKind.Translate;
+        set
+        {
+            if (value)
+            {
+                SetTransformGizmoMode(ViewportTransformGizmoKind.Translate);
+            }
+        }
+    }
+
+    public bool IsRotateGizmoMode
+    {
+        get => transformGizmoKind_ == ViewportTransformGizmoKind.Rotate;
+        set
+        {
+            if (value)
+            {
+                SetTransformGizmoMode(ViewportTransformGizmoKind.Rotate);
+            }
         }
     }
 
@@ -153,12 +179,32 @@ internal sealed class StudioScenePanelViewModel :
         return true;
     }
 
-    public bool TryBeginTranslateGizmo(
+    public void SetTransformGizmoMode(ViewportTransformGizmoKind kind)
+    {
+        if (!Enum.IsDefined(kind))
+        {
+            throw new ArgumentOutOfRangeException(nameof(kind), kind, null);
+        }
+        if (isDisposed_ || isTransformGizmoCommitPending_ ||
+            transformGizmoKind_ == kind)
+        {
+            return;
+        }
+
+        transformGizmoInteraction_ = null;
+        hoveredGizmoAxis_ = ViewportGizmoAxis.None;
+        transformGizmoKind_ = kind;
+        session_?.SetTransformGizmoKind(kind);
+        OnPropertyChanged(nameof(IsTranslateGizmoMode));
+        OnPropertyChanged(nameof(IsRotateGizmoMode));
+    }
+
+    public bool TryBeginTransformGizmo(
         ViewportPresentedInteractionContext context,
         ViewportPickRequest request)
     {
-        if (isDisposed_ || isTranslateGizmoCommitPending_ ||
-            translateGizmoInteraction_ is not null ||
+        if (isDisposed_ || isTransformGizmoCommitPending_ ||
+            transformGizmoInteraction_ is not null ||
             session_ is not { } session || request.Extent != context.Extent)
         {
             return false;
@@ -168,23 +214,21 @@ internal sealed class StudioScenePanelViewModel :
         if (project.Document is not { } document ||
             document.SceneId != context.TargetId ||
             document.Revision != context.TargetRevision ||
-            !session.TryCaptureTranslateGizmoSnapshot(
+            !session.TryCaptureTransformGizmoSnapshot(
                 context.SessionId,
                 context.TargetId,
                 context.TargetRevision,
                 context.FrameSequence,
                 out var snapshot) ||
-            !ViewportTranslateGizmoManipulator.TryBegin(
-                snapshot,
-                request,
-                out var interaction))
+            !TryBeginTransformGizmo(snapshot, request, out var interaction))
         {
             return false;
         }
 
-        translateGizmoInteraction_ = interaction;
+        transformGizmoInteraction_ = interaction;
         hoveredGizmoAxis_ = interaction.Axis;
-        session.SetTranslateGizmo(new ViewportTranslateGizmoState(
+        session.SetTransformGizmo(new ViewportTransformGizmoState(
+            snapshot.Kind,
             interaction.ObjectId,
             interaction.CurrentTransform,
             interaction.Axis,
@@ -192,15 +236,16 @@ internal sealed class StudioScenePanelViewModel :
         return true;
     }
 
-    public bool TryUpdateTranslateGizmo(ViewportPickPoint point)
+    public bool TryUpdateTransformGizmo(ViewportPickPoint point)
     {
-        if (isDisposed_ || translateGizmoInteraction_ is not { } interaction ||
+        if (isDisposed_ || transformGizmoInteraction_ is not { } interaction ||
             session_ is not { } session || !interaction.TryUpdate(point, out var transform))
         {
             return false;
         }
 
-        session.SetTranslateGizmo(new ViewportTranslateGizmoState(
+        session.SetTransformGizmo(new ViewportTransformGizmoState(
+            transformGizmoKind_,
             interaction.ObjectId,
             transform,
             interaction.Axis,
@@ -208,14 +253,14 @@ internal sealed class StudioScenePanelViewModel :
         return true;
     }
 
-    public bool TryUpdateTranslateGizmoHover(
+    public bool TryUpdateTransformGizmoHover(
         ViewportPresentedInteractionContext context,
         ViewportPickRequest request)
     {
-        if (isDisposed_ || isTranslateGizmoCommitPending_ ||
-            translateGizmoInteraction_ is not null ||
+        if (isDisposed_ || isTransformGizmoCommitPending_ ||
+            transformGizmoInteraction_ is not null ||
             session_ is not { } session || request.Extent != context.Extent ||
-            !session.TryCaptureTranslateGizmoSnapshot(
+            !session.TryCaptureTransformGizmoSnapshot(
                 context.SessionId,
                 context.TargetId,
                 context.TargetRevision,
@@ -225,33 +270,34 @@ internal sealed class StudioScenePanelViewModel :
             return false;
         }
 
-        var axis = ViewportTranslateGizmoManipulator.HitTest(snapshot, request);
+        var axis = HitTestTransformGizmo(snapshot, request);
         if (hoveredGizmoAxis_ == axis)
         {
             return true;
         }
 
         hoveredGizmoAxis_ = axis;
-        session.SetTranslateGizmo(new ViewportTranslateGizmoState(
+        session.SetTransformGizmo(new ViewportTransformGizmoState(
+            snapshot.Kind,
             snapshot.ObjectId,
             snapshot.Transform,
             axis));
         return true;
     }
 
-    public async ValueTask<bool> CompleteTranslateGizmoAsync()
+    public async ValueTask<bool> CompleteTransformGizmoAsync()
     {
-        if (isDisposed_ || translateGizmoInteraction_ is not { } interaction ||
+        if (isDisposed_ || transformGizmoInteraction_ is not { } interaction ||
             session_ is not { } session)
         {
             return false;
         }
 
-        translateGizmoInteraction_ = null;
+        transformGizmoInteraction_ = null;
         hoveredGizmoAxis_ = ViewportGizmoAxis.None;
         if (!interaction.HasChanged)
         {
-            session.ResetTranslateGizmo();
+            session.ResetTransformGizmo();
             return true;
         }
 
@@ -261,12 +307,13 @@ internal sealed class StudioScenePanelViewModel :
             document.Revision != interaction.ExpectedRevision ||
             selectedObjectId_ != interaction.ObjectId)
         {
-            session.ResetTranslateGizmo();
+            session.ResetTransformGizmo();
             return false;
         }
 
-        isTranslateGizmoCommitPending_ = true;
-        session.SetTranslateGizmo(new ViewportTranslateGizmoState(
+        isTransformGizmoCommitPending_ = true;
+        session.SetTransformGizmo(new ViewportTransformGizmoState(
+            transformGizmoKind_,
             interaction.ObjectId,
             interaction.CurrentTransform));
         var editId = ProjectEditId.CreateNew();
@@ -284,7 +331,7 @@ internal sealed class StudioScenePanelViewModel :
             ApplyProjectSnapshot(result.Current);
             if (!result.Succeeded)
             {
-                session_?.ResetTranslateGizmo();
+                session_?.ResetTransformGizmo();
             }
             Shell.PresentProjectOperationMessage(result.Message);
             return result.Succeeded;
@@ -293,42 +340,80 @@ internal sealed class StudioScenePanelViewModel :
         {
             if (!isDisposed_)
             {
-                session_?.ResetTranslateGizmo();
+                session_?.ResetTransformGizmo();
                 Shell.PresentProjectOperationMessage(
-                    $"Could not move the selected entity. {exception.Message}");
+                    $"Could not transform the selected entity. {exception.Message}");
             }
             return false;
         }
         finally
         {
-            isTranslateGizmoCommitPending_ = false;
+            isTransformGizmoCommitPending_ = false;
         }
     }
 
-    public void CancelTranslateGizmo()
+    public void CancelTransformGizmo()
     {
-        if (isDisposed_ || translateGizmoInteraction_ is null)
+        if (isDisposed_ || transformGizmoInteraction_ is null)
         {
             return;
         }
 
-        translateGizmoInteraction_ = null;
+        transformGizmoInteraction_ = null;
         hoveredGizmoAxis_ = ViewportGizmoAxis.None;
-        session_?.ResetTranslateGizmo();
+        session_?.ResetTransformGizmo();
     }
 
-    public void ClearTranslateGizmoHover()
+    public void ClearTransformGizmoHover()
     {
-        if (isDisposed_ || isTranslateGizmoCommitPending_ ||
-            translateGizmoInteraction_ is not null ||
+        if (isDisposed_ || isTransformGizmoCommitPending_ ||
+            transformGizmoInteraction_ is not null ||
             hoveredGizmoAxis_ == ViewportGizmoAxis.None)
         {
             return;
         }
 
         hoveredGizmoAxis_ = ViewportGizmoAxis.None;
-        session_?.ResetTranslateGizmo();
+        session_?.ResetTransformGizmo();
     }
+
+    private static bool TryBeginTransformGizmo(
+        ViewportTransformGizmoSnapshot snapshot,
+        ViewportPickRequest request,
+        out IViewportTransformGizmoInteraction interaction)
+    {
+        interaction = null!;
+        switch (snapshot.Kind)
+        {
+            case ViewportTransformGizmoKind.Translate
+                when ViewportTranslateGizmoManipulator.TryBegin(
+                    snapshot,
+                    request,
+                    out var translate):
+                interaction = translate;
+                return true;
+            case ViewportTransformGizmoKind.Rotate
+                when ViewportRotateGizmoManipulator.TryBegin(
+                    snapshot,
+                    request,
+                    out var rotate):
+                interaction = rotate;
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private static ViewportGizmoAxis HitTestTransformGizmo(
+        ViewportTransformGizmoSnapshot snapshot,
+        ViewportPickRequest request) => snapshot.Kind switch
+        {
+            ViewportTransformGizmoKind.Translate =>
+                ViewportTranslateGizmoManipulator.HitTest(snapshot, request),
+            ViewportTransformGizmoKind.Rotate =>
+                ViewportRotateGizmoManipulator.HitTest(snapshot, request),
+            _ => ViewportGizmoAxis.None,
+        };
 
     public void Dispose()
     {
@@ -338,7 +423,7 @@ internal sealed class StudioScenePanelViewModel :
         }
 
         isDisposed_ = true;
-        translateGizmoInteraction_ = null;
+        transformGizmoInteraction_ = null;
         projectSession_.SnapshotChanged -= OnProjectSnapshotChanged;
         selection_.Changed -= OnSelectionChanged;
         session_?.Close();
@@ -370,7 +455,7 @@ internal sealed class StudioScenePanelViewModel :
         var document = snapshot.Document;
         if (document is null)
         {
-            translateGizmoInteraction_ = null;
+            transformGizmoInteraction_ = null;
             hoveredGizmoAxis_ = ViewportGizmoAxis.None;
             ReplaceSession(null);
             return;
@@ -378,7 +463,7 @@ internal sealed class StudioScenePanelViewModel :
 
         if (session_ is { } session && session.Current.TargetId == document.SceneId)
         {
-            translateGizmoInteraction_ = null;
+            transformGizmoInteraction_ = null;
             hoveredGizmoAxis_ = ViewportGizmoAxis.None;
             session.SynchronizeDocument(document);
             ApplySelection(selection_.Current, snapshot);
@@ -392,6 +477,7 @@ internal sealed class StudioScenePanelViewModel :
             ViewportRenderKind.Scene,
             document,
             ViewportCameraSnapshot.DefaultScene);
+        replacement.SetTransformGizmoKind(transformGizmoKind_);
         replacement.SetSceneRasterMode(
             isWireframe_
                 ? ViewportSceneRasterMode.Wireframe
@@ -440,7 +526,7 @@ internal sealed class StudioScenePanelViewModel :
         selectionSourceRevision_ = selection.Revision;
         if (selectedObjectId_ != selectedObjectId)
         {
-            translateGizmoInteraction_ = null;
+            transformGizmoInteraction_ = null;
             hoveredGizmoAxis_ = ViewportGizmoAxis.None;
             selectedObjectId_ = selectedObjectId;
             viewStateRevision_ = checked(viewStateRevision_ + 1);
