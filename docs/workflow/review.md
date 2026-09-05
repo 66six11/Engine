@@ -795,3 +795,8 @@ pixels on the same mesh, shared program identity, typed layout/stale/budget/thre
 frame-completion retirement after all host binding references are released. Run on MSVC and ClangCL
 with the validation environment above, checking logs as well as exit status. Generated-reflection
 CTest also uses nonzero set 3 to catch internal descriptor-set index versus Vulkan binding-space errors.
+
+
+涉及 cooked Shader 读取时，`asharia-shader-resource-tests` 必须通过（生产 cook/Slang/spirv-val/reflection、跨输出根
+一致性、错误身份/预算/损坏/配对校验）。File API target truth 应确认 resource_runtime 只链接 asset_product_reader，
+import execution/asharia-slang-reflect 仅为 tool/test 依赖。运行时不得写临时 reflection 文件。

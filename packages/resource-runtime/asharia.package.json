@@ -14,24 +14,38 @@
     "com.asharia.core",
     "com.asharia.asset-artifact",
     "com.asharia.asset-core",
-    "com.asharia.mesh-product"
+    "com.asharia.mesh-product",
+    "com.asharia.asset-pipeline",
+    "com.asharia.shader-slang"
   ],
-  "targets": ["asharia-resource-runtime"],
-  "testTargets": ["asharia-resource-runtime-smoke-tests"],
+  "targets": [
+    "asharia-resource-runtime"
+  ],
+  "testTargets": [
+    "asharia-resource-runtime-smoke-tests",
+    "asharia-shader-resource-tests"
+  ],
   "targetRoles": {
     "asharia-resource-runtime": "runtime",
-    "asharia-resource-runtime-smoke-tests": "test"
+    "asharia-resource-runtime-smoke-tests": "test",
+    "asharia-shader-resource-tests": "test"
   },
   "targetDependencies": {
     "asharia-resource-runtime": [
       "asharia-core",
       "asharia-asset-artifact",
       "asharia-asset-core",
-      "asharia-mesh-product"
+      "asharia-mesh-product",
+      "asharia-asset-product-reader",
+      "asharia-shader-slang"
     ],
     "asharia-resource-runtime-smoke-tests": [
       "asharia-resource-runtime",
       "asharia-mesh-product-writer"
+    ],
+    "asharia-shader-resource-tests": [
+      "asharia-resource-runtime",
+      "asharia-asset-pipeline"
     ]
   }
 }

@@ -106,7 +106,7 @@ namespace asharia::asset {
         constexpr std::uint32_t kShaderAuthoringImporterVersion = 2;
         constexpr std::string_view kShaderCompileReflectionImporterName =
             "com.asharia.importer.shader-compile-reflection";
-        constexpr std::uint32_t kShaderCompileReflectionImporterVersion = 1;
+        constexpr std::uint32_t kShaderCompileReflectionImporterVersion = 2;
         constexpr std::string_view kShaderAuthoringProductPathSettingKey =
             "shader.authoringProductPath";
         constexpr std::string_view kSlangProfile = "glsl_450";
@@ -976,7 +976,7 @@ namespace asharia::asset {
                 quotePath(toolPaths.slangcPath) + " " + quotePath(workPaths.generatedSourcePath) +
                 " -profile " + std::string{kSlangProfile} + " -target " +
                 std::string{kSlangTarget} + " -entry " + entry.compileEntryName + " -stage " +
-                entry.stage + " -reflection-json " + quotePath(reflectionPath) + " -o " +
+                entry.stage + " -o " +
                 quotePath(spirvPath);
             auto compiled = runToolCommand("slangc " + entry.stage, compileCommand, workPaths,
                                            slangcStdoutPath, slangcStderrPath);
@@ -990,6 +990,19 @@ namespace asharia::asset {
                                workPaths, spirvValStdoutPath, spirvValStderrPath);
             if (!validated) {
                 return std::unexpected{std::move(validated.error())};
+            }
+
+            const std::string reflectCommand =
+                quotePath(std::filesystem::path{ASHARIA_SHADER_REFLECT_EXECUTABLE}) +
+                " --source " + quotePath(workPaths.generatedSourcePath) +
+                " --source-name generated-authoring.slang --entry " + entry.compileEntryName +
+                " --stage " + entry.stage + " --profile " + std::string{kSlangProfile} +
+                " --target " + std::string{kSlangTarget} + " --output " + quotePath(reflectionPath);
+            auto reflected = runToolCommand("shader reflection " + entry.stage, reflectCommand,
+                workPaths, workPaths.workDir / (entryFileStem + ".reflect.stdout.txt"),
+                workPaths.workDir / (entryFileStem + ".reflect.stderr.txt"));
+            if (!reflected) {
+                return std::unexpected{std::move(reflected.error())};
             }
 
             auto spirvBytes = detail::readShaderToolBinary(spirvPath, "SPIR-V");
@@ -1099,7 +1112,7 @@ namespace asharia::asset {
             std::span<const AssetShaderCompileReflectionProductEntry> compiledEntries) {
             std::vector<std::uint8_t> bytes;
             bytes.reserve(4096);
-            appendLine(bytes, "schema=com.asharia.asset.shader-compile-reflection-product.v1");
+            appendLine(bytes, "schema=com.asharia.asset.shader-compile-reflection-product.v2");
             appendLine(bytes, "guid=" + formatAssetGuid(request.source.guid));
             appendLine(bytes, "sourcePath=" + request.source.sourcePath);
             appendLine(bytes, "assetType=" + request.source.assetTypeName);

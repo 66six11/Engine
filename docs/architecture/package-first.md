@@ -718,3 +718,14 @@ app integration 层，不能为了方便把 package/private 实现直接并进 a
 
 这些资料验证的是发行单元、内部模块和确定性依赖图的共同模式；`source-boundary`、`plannedOwnershipRoot`、Host Profiles
 及最小 `engine/` 分层是 Asharia 为当前静态 C++23/CMake 仓库选择的具体约束，不声称是行业统一 schema。
+
+### Cooked reader target boundary (#436)
+
+`asharia::asset_product_reader` reuses the existing asset-pipeline blob sources, separately linked from
+`asharia::asset_pipeline` import execution. It depends on CPU core/asset-core/material-instance only.
+`asharia::resource_runtime` privately consumes the reader and publicly consumes `asharia::shader_slang`
+reflection types. Source-boundary package dependencies include asset-pipeline, but runtime must not link its
+import-execution target, fastgltf, Slang executable/API library, renderer or editor. Only shader-resource tests
+link import execution to generate real cooked inputs. This follows mesh_product / mesh_product_writer target
+separation without moving directories or adding a package. Existing package configure may still locate SDK/tools;
+the target split concerns runtime linkage/execution and does not promise SDK-free standalone configuration.

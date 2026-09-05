@@ -451,3 +451,32 @@ Preview service 服务三种入口：
 - [standards/naming.md](../standards/naming.md)
 - [planning/next-development-plan.md](../planning/next-development-plan.md)
 - [planning/system-architecture-roadmap.md](../planning/system-architecture-roadmap.md)
+
+## Cooked Shader runtime entry（#436）
+
+当前 `readShaderResource` 从 host 已选择的 product record 与期望 GUID/type/target、stable type id、pass/stage/profile
+读取 Shader。asset-artifact 先有界读取并验证 size/hash，asset_product_reader 复用已有 blob parser，shader_slang 从
+内存解析 reflection，resource_runtime 返回拥有型 SPIR-V words/reflection。没有共享可变状态或自动 GPU 发布；worker
+可以执行 IO，host 决定如何把成功结果交给已有 renderer owner。失败不会改变已返回的资源。
+
+默认预算：product 64 MiB、64 entries、所选 entry SPIR-V/reflection 各 4 MiB；解析临时数据受 product 总量上限约束。
+拒绝错误 GUID/type/key/target/profile、missing/ambiguous pass-stage、失败 compiler/validator 状态、损坏 SPIR-V header
+与 reflection entry/stage/target/profile 不一致。hash 用于损坏/陈旧检测，不是安全签名；输入来自 host 管理的可信 cook
+管线，runtime 不运行 Slang/spirv-val 重新验证任意字节码的语义。
+
+原 cook 输出 raw Slang JSON，renderer 则消费项目反射格式；本切片统一使用 `asharia-slang-reflect`，并升级为
+compiled importer 2 / `shader-compile-reflection-product.v2`。旧产物必须重新 cook。工具新增可选 `--source-name`，
+仅控制反射标签；cook 使用固定 `generated-authoring.slang`，避免临时绝对路径进入产物 hash。原 CMake 用法保持不变。
+
+Foundation prerequisite: asset-artifact、已有 compiled blob reader、#432 GPU consumer；Integration Gate: CPU product
+到 renderer 输入的前置验证，最迟在 Studio authored material 消费前完成。本切片不建立 catalog GUID lookup、resource
+store/reload、自动 GPU publish、Studio packet、材质编辑器或图编译。生产 cook -> verified runtime entry 与错误拒绝由
+`asharia-shader-resource-tests` 验证，另一个输出根应得到相同 product hash。
+
+采用 [Unreal FShaderCodeLibrary](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/RenderCore/FShaderCodeLibrary)
+的 cooked code 与渲染资源分工，并交叉核对 [O3DE runtime assets](https://www.docs.o3de.org/docs/user-guide/assets/runtime/)
+及 [asset cache](https://docs.o3de.org/docs/user-guide/assets/pipeline/asset-cache/) 的已构建产物消费。
+当前没有共享 registry/reload 需求，不照搬全局 library、AssetBus 或 asset processor 回调；只实现显式有界读取。
+
+当前 offline cook 的反射工具由 CMake 构建并绑定到该 build tree；可重定位的已安装工具查找/打包不在 #436 范围。
+该限制只涉及 tool-side cook，不涉及 runtime reader。工具链变化仍需进入 host 的 ToolVersion/importer version 缓存输入。

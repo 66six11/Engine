@@ -75,10 +75,11 @@ Asharia Engine 当前目标仍是先做一个小而完整的 Vulkan renderer，�
 - `packages/asset-pipeline`：除既有 metadata/plan/product execution 与 texture 路径外，当前以私有 fastgltf
   实现 `com.asharia.importer.mesh.glb-static` v1，只把受限 `.glb` default-scene static geometry cook 为
   Mesh Product v1；不拥有 ResourceRuntime、GPU resource、thumbnail 或 watcher。
-- `packages/resource-runtime`：`asharia::resource_runtime` 只消费 `asset-core`、`asset-artifact` 与 runtime-safe
+- `packages/resource-runtime`：`asharia::resource_runtime` 消费 `asset-core`、`asset-artifact` 与 runtime-safe
   `mesh-product`，把 exact Mesh Product v1 record 变成 generation-safe typed CPU lease。Store 分离 slot/request
   generation 与 active/candidate；IO/parse worker 只产生 owning completion，owner thread 才 publish；reload 失败
-  保留旧 active。它不依赖 `asset-pipeline`、RenderGraph、renderer、RHI、editor 或 Vulkan。
+  保留旧 active。#436 另提供 selected cooked Shader entry 读取：私有依赖独立 `asset_product_reader`，公开依赖
+  `shader_slang` CPU reflection；不链接 `asset_pipeline` import execution、RenderGraph、renderer、RHI、editor 或 Vulkan。
 - `packages/editor-content`：editor-owned、UI-neutral 的 project asset catalog query source boundary。
   `asharia::editor_content` 只读组合 project descriptor、source scan/discovery/snapshot/import planning、product manifest
   与 `AssetCatalogView`；`asharia::editor_content_native` 以严格有界 C ABI/JSON 向 Studio 投影 immutable snapshot。

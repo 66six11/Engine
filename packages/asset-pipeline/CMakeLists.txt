@@ -19,13 +19,25 @@ asharia_require_package_target(asharia::asset_core_io packages/asset-core)
 asharia_require_package_target(asharia::material_instance packages/material-instance)
 asharia_require_package_target(asharia::mesh_product_writer packages/mesh-product)
 asharia_require_package_target(asharia::shader_authoring packages/shader-authoring)
+asharia_require_package_target(asharia::shader_slang packages/shader-slang)
+
+# Cooked readers are usable without linking import execution or its third-party importers.
+add_library(asharia-asset-product-reader STATIC
+    src/asset_product_blob.cpp
+    src/asset_product_blob_limits.cpp
+)
+add_library(asharia::asset_product_reader ALIAS asharia-asset-product-reader)
+target_include_directories(asharia-asset-product-reader PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_link_libraries(asharia-asset-product-reader
+    PUBLIC asharia::asset_core asharia::core
+    PRIVATE asharia::material_instance
+)
+asharia_configure_target(asharia-asset-product-reader)
 
 add_library(asharia-asset-pipeline STATIC
     src/asset_glb_import.cpp
     src/asset_import_planning.cpp
     src/asset_tool_fingerprint.cpp
-    src/asset_product_blob.cpp
-    src/asset_product_blob_limits.cpp
     src/asset_product_execution.cpp
     src/asset_product_publication.cpp
     src/asset_product_manifest_io.cpp
@@ -46,6 +58,7 @@ target_include_directories(asharia-asset-pipeline
 
 target_link_libraries(asharia-asset-pipeline
     PUBLIC
+        asharia::asset_product_reader
         asharia::asset_core
         asharia::core
         asharia::mesh_product_writer
@@ -59,6 +72,9 @@ target_link_libraries(asharia-asset-pipeline
         stb::stb
 )
 
+add_dependencies(asharia-asset-pipeline asharia-slang-reflect)
+target_compile_definitions(asharia-asset-pipeline PRIVATE
+    ASHARIA_SHADER_REFLECT_EXECUTABLE="$<TARGET_FILE:asharia-slang-reflect>")
 asharia_configure_target(asharia-asset-pipeline)
 
 if(ASHARIA_BUILD_TESTS)

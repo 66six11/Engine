@@ -32,7 +32,7 @@ namespace asharia::asset {
         constexpr std::string_view kShaderAuthoringProductSchema =
             "com.asharia.asset.shader-authoring-product.v2";
         constexpr std::string_view kShaderCompileReflectionProductSchema =
-            "com.asharia.asset.shader-compile-reflection-product.v1";
+            "com.asharia.asset.shader-compile-reflection-product.v2";
 
         [[nodiscard]] constexpr std::uint64_t hashByte(std::uint64_t hash,
                                                        std::uint8_t byte) noexcept {

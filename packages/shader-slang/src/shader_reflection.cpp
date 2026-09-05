@@ -509,28 +509,36 @@ namespace asharia {
                                                    path.string() + "': " + text.error().message)};
         }
 
-        auto source = parseStringProperty(*text, "source");
+        return parseShaderReflectionJson(*text, options);
+    }
+
+    Result<ShaderReflection> parseShaderReflectionJson(std::string_view json,
+                                                       ShaderReflectionFileOptions limits) {
+        if (json.empty() || limits.maxBytes == 0 || json.size() > limits.maxBytes) {
+            return std::unexpected{reflectionError("Shader reflection JSON is empty or exceeds byte budget")};
+        }
+        auto source = parseStringProperty(json, "source");
         if (!source) {
             return std::unexpected{std::move(source.error())};
         }
-        auto entry = parseStringProperty(*text, "entry");
+        auto entry = parseStringProperty(json, "entry");
         if (!entry) {
             return std::unexpected{std::move(entry.error())};
         }
-        auto stage = parseStringProperty(*text, "stage");
+        auto stage = parseStringProperty(json, "stage");
         if (!stage) {
             return std::unexpected{std::move(stage.error())};
         }
-        auto profile = parseStringProperty(*text, "profile");
+        auto profile = parseStringProperty(json, "profile");
         if (!profile) {
             return std::unexpected{std::move(profile.error())};
         }
-        auto target = parseStringProperty(*text, "target");
+        auto target = parseStringProperty(json, "target");
         if (!target) {
             return std::unexpected{std::move(target.error())};
         }
 
-        auto vertexInputArray = parseArrayProperty(*text, "vertexInputs");
+        auto vertexInputArray = parseArrayProperty(json, "vertexInputs");
         if (!vertexInputArray) {
             return std::unexpected{std::move(vertexInputArray.error())};
         }
@@ -550,7 +558,7 @@ namespace asharia {
             vertexInputs.push_back(std::move(*vertexInput));
         }
 
-        auto descriptorArray = parseArrayProperty(*text, "descriptorBindings");
+        auto descriptorArray = parseArrayProperty(json, "descriptorBindings");
         if (!descriptorArray) {
             return std::unexpected{std::move(descriptorArray.error())};
         }
@@ -570,7 +578,7 @@ namespace asharia {
             descriptorBindings.push_back(std::move(*descriptorBinding));
         }
 
-        auto pushConstantArray = parseArrayProperty(*text, "pushConstants");
+        auto pushConstantArray = parseArrayProperty(json, "pushConstants");
         if (!pushConstantArray) {
             return std::unexpected{std::move(pushConstantArray.error())};
         }

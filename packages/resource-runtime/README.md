@@ -1,6 +1,6 @@
 # Resource Runtime
 
-状态：Current（#394）。本文件描述当前 `asharia::resource_runtime` 的真实合同；未来 ArtifactId、通用资源类型、GPU upload 与自动 reimport 均明确标为后继工作。
+状态：Current（#394 / #436）。本文件描述当前 `asharia::resource_runtime` 的真实合同；未来 ArtifactId、通用资源类型、GPU upload 与自动 reimport 均明确标为后继工作。
 
 ## 目的
 
@@ -26,7 +26,9 @@ AssetProductRecord
 - `asharia::mesh_product`：runtime-safe Mesh Product v1 reader 与 immutable payload；
 - `asharia::core`：`Result`/`Error`。
 
-它禁止依赖 `asset-pipeline`、fastgltf、editor、RenderGraph、renderer、RHI 或 Vulkan。Importer 与 writer 仍在 tool side；GPU owner 属于后继 renderer-specific Slice。
+它禁止链接 `asharia::asset_pipeline` import execution、fastgltf、editor、RenderGraph、renderer、RHI 或 Vulkan。
+公开增加 shader_slang CPU reflection 类型依赖，私有增加独立 asset_product_reader target。物理 package 依赖包含
+asset-pipeline，但 runtime 链接闭包只包含只读解析，不包含 importer/tool；GPU owner 留在 renderer Vulkan backend。
 
 ## Artifact v1 兼容边界
 
@@ -115,3 +117,24 @@ sequenceDiagram
 - `asharia-asset-processor --smoke-mesh-resource`：真实 restricted GLB → product/manifest → verified artifact → `MeshResourceStore` → lease，并验证 11 vertices、9 indices、3 submeshes、3 material slots 与 bounds。
 
 完整门禁见 [`docs/workflow/review.md`](../../docs/workflow/review.md)，长期决策见 [`adr-mesh-resource-store-v1.md`](../../docs/architecture/adr-mesh-resource-store-v1.md)。
+
+## Cooked Shader runtime entry（#436）
+
+当前 `readShaderResource` 从 host 已选择的 product record 与期望 GUID/type/target、stable type id、pass/stage/profile
+读取 Shader。asset-artifact 先有界读取并验证 size/hash，asset_product_reader 复用已有 blob parser，shader_slang 从
+内存解析 reflection，resource_runtime 返回拥有型 SPIR-V words/reflection。没有共享可变状态或自动 GPU 发布；worker
+可以执行 IO，host 决定如何把成功结果交给已有 renderer owner。失败不会改变已返回的资源。
+
+默认预算：product 64 MiB、64 entries、所选 entry SPIR-V/reflection 各 4 MiB；解析临时数据受 product 总量上限约束。
+拒绝错误 GUID/type/key/target/profile、missing/ambiguous pass-stage、失败 compiler/validator 状态、损坏 SPIR-V header
+与 reflection entry/stage/target/profile 不一致。hash 用于损坏/陈旧检测，不是安全签名；输入来自 host 管理的可信 cook
+管线，runtime 不运行 Slang/spirv-val 重新验证任意字节码的语义。
+
+原 cook 输出 raw Slang JSON，renderer 则消费项目反射格式；本切片统一使用 `asharia-slang-reflect`，并升级为
+compiled importer 2 / `shader-compile-reflection-product.v2`。旧产物必须重新 cook。工具新增可选 `--source-name`，
+仅控制反射标签；cook 使用固定 `generated-authoring.slang`，避免临时绝对路径进入产物 hash。原 CMake 用法保持不变。
+
+Foundation prerequisite: asset-artifact、已有 compiled blob reader、#432 GPU consumer；Integration Gate: CPU product
+到 renderer 输入的前置验证，最迟在 Studio authored material 消费前完成。本切片不建立 catalog GUID lookup、resource
+store/reload、自动 GPU publish、Studio packet、材质编辑器或图编译。生产 cook -> verified runtime entry 与错误拒绝由
+`asharia-shader-resource-tests` 验证，另一个输出根应得到相同 product hash。

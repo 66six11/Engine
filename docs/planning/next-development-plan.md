@@ -496,3 +496,9 @@ System Package 的 `asharia.packages.json`、`asharia.packages.lock.json`、reso
 - 不做 bindless、async compute、多 queue、transient aliasing、graph template cache。
 - 不做完整 Play Mode、physics/audio/network integration。
 - 不把 editor UI 状态、source asset path、import settings、Vulkan handle 或 scene mutable pointer 传进 renderer hot path。
+
+### Shader 产物接入补充（#436）
+
+已有 selected cooked Shader entry 的 bounded CPU reader，统一 cook/build-time reflection；不再安排第二套
+runtime reflection JSON parser 或让运行时写临时文件。尚需 host 的 catalog GUID -> product record 选择、材质与 Mesh
+引用解析、Scene/Studio packet 到 GPU owner 的消费。公共函数目录仍是独立 CPU/编译路线，这不代表 Studio UI 已接入。

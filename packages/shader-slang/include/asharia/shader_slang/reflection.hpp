@@ -5,6 +5,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "asharia/core/result.hpp"
@@ -82,6 +83,10 @@ namespace asharia {
         std::uint32_t pushConstantCount{};
         std::optional<Error> error;
     };
+
+    // Parses an already loaded product payload without filesystem IO.
+    [[nodiscard]] Result<ShaderReflection>
+    parseShaderReflectionJson(std::string_view json, ShaderReflectionFileOptions limits = {});
 
     [[nodiscard]] Result<ShaderReflection>
     readShaderReflection(const std::filesystem::path& path,
