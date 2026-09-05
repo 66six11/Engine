@@ -37,9 +37,20 @@ existing behavior. Reference: [Khronos swapchain synchronization examples](https
 material-instance::packAmatParameters -> owned little-endian bytes + existing warnings`.
 The call selects overrides/defaults, rejects invalid values/layouts and zeroes padding within a
 256-property/64-KiB bound. It performs no IO, reflection extraction, GPU binding or resource ownership.
-Future compiler-reflection adaptation must prove member layout and product identity before renderer
-consumption; existing descriptor signatures do not contain member offsets. See
+The reflected adapter below supplies compiler member facts; product identity must still be retained
+before renderer consumption. Descriptor signatures do not contain member offsets. See
 [the material packing boundary](../systems/shader-material-authoring.md#numeric-parameter-packing-boundary).
+
+### Reflected numeric material layout flow
+
+`Slang constant-buffer element layout -> asharia-slang-reflect parameterMembers/parameterBlockSize ->
+ShaderDescriptorBindingReflection.parameterBlock -> shader-material-adapter::packReflectedMaterialParameters
+-> material-instance packing -> owned layout + bytes`.
+The adapter now publicly depends on `material-instance`; `shader-slang` remains independent of material
+authoring and GPU state. Cross-stage merge checks exact member-layout agreement. Legacy or unsupported
+aggregate layouts are readable but cannot enter this numeric packing path. Descriptor hashes are still
+descriptor-only; the consumer must retain compiled shader identity with the returned member layout.
+This path proves CPU compiler-layout compatibility, not runtime GPU binding or product activation.
 
 ## 维护规则
 

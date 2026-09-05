@@ -263,6 +263,47 @@ namespace {
         out << "\n  ],\n";
     }
 
+    void writeParameterBlock(std::ostream& out, slang::TypeLayoutReflection* container) {
+        if (container->getKind() != slang::TypeReflection::Kind::ConstantBuffer) {
+            return;
+        }
+        auto* element = container->getElementVarLayout();
+        if (element == nullptr) {
+            return;
+        }
+        auto* layout = element->getTypeLayout();
+        if (layout == nullptr || layout->getKind() != slang::TypeReflection::Kind::Struct ||
+            layout->getFieldCount() > 256 ||
+            layout->getSize(slang::ParameterCategory::Uniform) > 65536) {
+            return;
+        }
+        for (unsigned index = 0; index < layout->getFieldCount(); ++index) {
+            const auto kind = layout->getFieldByIndex(index)->getTypeLayout()->getKind();
+            if (kind != slang::TypeReflection::Kind::Scalar &&
+                kind != slang::TypeReflection::Kind::Vector) {
+                return;
+            }
+        }
+        out << ",\n      \"parameterBlockSize\": "
+            << layout->getSize(slang::ParameterCategory::Uniform);
+        out << ",\n      \"parameterMembers\": [";
+        for (unsigned index = 0; index < layout->getFieldCount(); ++index) {
+            auto* field = layout->getFieldByIndex(index);
+            auto* type = field->getTypeLayout();
+            if (index != 0) {
+                out << ',';
+            }
+            out << "\n        {\"name\": \"" << jsonEscape(field->getName())
+                << "\", \"scalarType\": \"" << scalarTypeName(type->getScalarType())
+                << "\", \"componentCount\": "
+                << (type->getKind() == slang::TypeReflection::Kind::Scalar ? 1
+                                                                           : type->getColumnCount())
+                << ", \"offset\": " << field->getOffset(slang::ParameterCategory::Uniform)
+                << ", \"size\": " << type->getSize(slang::ParameterCategory::Uniform) << '}';
+        }
+        out << "\n      ]";
+    }
+
     void writeDescriptorBindings(std::ostream& out, slang::ProgramLayout* layout) {
         out << "  \"descriptorBindings\": [\n";
         bool first = true;
@@ -298,7 +339,9 @@ namespace {
                 out << "      \"count\": " << typeLayout->getBindingRangeBindingCount(rangeIndex)
                     << ",\n";
                 out << "      \"category\": \""
-                    << jsonEscape(parameterCategoryName(parameter->getCategory())) << "\"\n";
+                    << jsonEscape(parameterCategoryName(parameter->getCategory())) << "\"";
+                writeParameterBlock(out, typeLayout);
+                out << '\n';
                 out << "    }";
             }
         }

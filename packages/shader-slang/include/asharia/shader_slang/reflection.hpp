@@ -27,6 +27,23 @@ namespace asharia {
         std::uint32_t columnCount{};
     };
 
+    struct ShaderParameterMemberReflection {
+        std::string name;
+        std::string scalarType;
+        std::uint32_t componentCount{};
+        std::uint32_t offset{};
+        std::uint32_t size{};
+        friend bool operator==(const ShaderParameterMemberReflection&,
+                               const ShaderParameterMemberReflection&) = default;
+    };
+
+    struct ShaderParameterBlockReflection {
+        std::uint32_t size{};
+        std::vector<ShaderParameterMemberReflection> members;
+        friend bool operator==(const ShaderParameterBlockReflection&,
+                               const ShaderParameterBlockReflection&) = default;
+    };
+
     struct ShaderDescriptorBindingReflection {
         std::string name;
         std::uint32_t set{};
@@ -35,6 +52,7 @@ namespace asharia {
         std::uint32_t count{};
         std::string category;
         std::string stageVisibility;
+        std::optional<ShaderParameterBlockReflection> parameterBlock;
     };
 
     struct ShaderPushConstantReflection {

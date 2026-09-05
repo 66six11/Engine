@@ -55,6 +55,41 @@ namespace {
         return true;
     }
 
+    bool smokeParameterBlockReader() {
+        const std::filesystem::path path =
+            std::filesystem::temp_directory_path() / "asharia-parameter-reflection.json";
+        const std::string prefix = R"({"source":"p.slang","entry":"main","stage":"fragment",
+"profile":"glsl_450","target":"spirv","vertexInputs":[],"pushConstants":[],
+"descriptorBindings":[{"name":"Material","set":1,"binding":0,"kind":"constantBuffer",
+"count":1,"category":"other")";
+        const std::string fields = R"(,"parameterBlockSize":16,"parameterMembers":[
+{"name":"gain","scalarType":"float32","componentCount":1,"offset":0,"size":4}])";
+        auto read = [&](const std::string& extension) {
+            {
+                std::ofstream file{path, std::ios::binary | std::ios::trunc};
+                file << prefix << extension << "}]}";
+            }
+            return asharia::readShaderReflection(path);
+        };
+        const auto legacy = read("");
+        const auto valid = read(fields);
+        const auto missingMembers = read(R"(,"parameterBlockSize":16)");
+        const auto missingSize = read(R"(,"parameterMembers":[])");
+        const auto excessive = read(R"(,"parameterBlockSize":65537,"parameterMembers":[])");
+        auto fractional = fields;
+        fractional.replace(fractional.find("\"offset\":0"), 10, "\"offset\":0.5");
+        const auto invalidInteger = read(fractional);
+        std::error_code ignored;
+        std::filesystem::remove(path, ignored);
+        if (!legacy || !valid) {
+            return false;
+        }
+        const auto& block = valid->descriptorBindings[0].parameterBlock;
+        return !legacy->descriptorBindings[0].parameterBlock && block &&
+               block->members.size() == 1 && block->members[0].name == "gain" && !missingMembers &&
+               !missingSize && !excessive && !invalidInteger;
+    }
+
     [[nodiscard]] bool messageContains(std::string_view message, std::string_view token) {
         return message.find(token) != std::string_view::npos;
     }
@@ -235,8 +270,9 @@ namespace {
 // NOLINTNEXTLINE(bugprone-exception-escape)
 int main() {
     try {
-        if (!smokeReflectionReadLimit() || !smokeCompatibleDescriptorsMergeVisibility() ||
-            !smokeDescriptorConflictsFail() || !smokePushConstantConflictsFail()) {
+        if (!smokeReflectionReadLimit() || !smokeParameterBlockReader() ||
+            !smokeCompatibleDescriptorsMergeVisibility() || !smokeDescriptorConflictsFail() ||
+            !smokePushConstantConflictsFail()) {
             return EXIT_FAILURE;
         }
     } catch (const std::exception& exception) {

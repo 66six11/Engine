@@ -43,11 +43,34 @@ minimal `.agraph` IR、Hybrid Slang function node discovery 和完整 Material E
 
 ## 核心决定
 
+### Reflected numeric layout adapter
+
+Current evidence: the Slang tool can query constant-buffer element fields, but the exported reflection
+previously discarded them. Owner / lifetime / thread: `shader-slang` owns compiler facts and file IO;
+`shader-material-adapter` synchronously validates numeric member facts against authoring and calls
+`material-instance` packing. All results own CPU data; no GPU or live compiler objects cross APIs.
+Data / error / budget / diagnostics: export optional flat numeric constant-buffer size and named member
+scalar type/component count/offset/size, bounded to the packing API's 256 fields and 64 KiB. Unsupported
+nested/array/matrix layouts remain absent, not guessed; old reflection files remain readable but cannot
+be used by the new packing adapter. Cross-stage descriptor merging must reject different layouts.
+Foundation prerequisite: #424 CPU packing; no renderer/RHI dependencies. Integration Gate: reflected
+member compatibility before GPU binding, earliest now/latest before authored parameter GPU use.
+Non-goals: GPU binding, SPIR-V product ownership/hot reload, textures, recursive aggregate packing or
+source property renaming. Exit evidence: real generated Slang compile/reflect/read/pack round-trip,
+byte oracle and missing/drifted/type-mismatched reflection rejection. Resource signature hashes remain
+descriptor-only; callers retain the returned layout facts alongside the compiled shader identity.
+
+Adopt explicit member metadata from [Unreal shader parameters](https://dev.epicgames.com/documentation/unreal-engine/API/Runtime/RenderCore/FShaderParametersMetadata)
+and byte offset/count mapping from [O3DE constant descriptors](https://www.docs.o3de.org/docs/api/gems/atom/class_a_z_1_1_r_h_i_1_1_shader_input_constant_descriptor.html).
+Use [Slang variable layouts](https://docs.shader-slang.org/en/stable/external/slang/docs/user-guide/09-reflection.html)
+for container-relative Uniform offsets and element sizes. Reject inferred host-struct packing and a
+general shader cursor framework: the current consumer only requires one flat numeric block.
+
 ### Numeric parameter packing boundary
 
-Current evidence: `AmatResolveResult` contains override diffs/diagnostics, not parameter bytes.
-`ShaderReflection` and `MaterialResourceSignature` describe resource bindings but do not yet expose
-constant-buffer member offsets. `material-instance::packAmatParameters` now resolves numeric defaults
+Original packing-slice evidence: `AmatResolveResult` contains override diffs/diagnostics, not parameter bytes.
+At that point reflection did not expose member offsets; the reflected adapter above now supplies them,
+while `MaterialResourceSignature` remains descriptor-only. `material-instance::packAmatParameters` resolves numeric defaults
 and overrides against a caller-supplied property/type/byte-offset layout and block size. This is a CPU
 packing boundary, not evidence of shader-layout compatibility or a GPU binding packet.
 
@@ -77,8 +100,8 @@ Adopt parameter overrides from [Unreal material instances](https://dev.epicgames
 and typed property-to-shader mapping from [O3DE material types](https://www.docs.o3de.org/docs/atom-guide/look-dev/materials/material-type-file-spec/).
 [Slang reflection](https://docs.shader-slang.org/en/stable/external/slang/docs/user-guide/09-reflection.html)
 owns target-specific member offsets and sizes. Accordingly this API consumes explicit offsets rather
-than inventing a C++ struct or std140 packing rule. Before GPU consumption, the next adapter must verify
-these facts against the compiled shader and retain layout/product identity; a descriptor signature hash
+than inventing a C++ struct or std140 packing rule. The reflected adapter above verifies numeric member
+facts; before GPU consumption the host must still retain layout/product identity. A descriptor signature hash
 alone cannot detect member-layout drift. The explicit CPU layout input is Asharia's bounded adapter
 boundary, not a replacement shader ABI or a copy of another engine's object/service system.
 

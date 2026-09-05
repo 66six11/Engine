@@ -123,6 +123,13 @@ namespace asharia {
                     "Invalid integer property in shader reflection JSON: " + std::string{name})};
             }
 
+            if (endOffset < json.size() && json[endOffset] != ',' && json[endOffset] != '}' &&
+                json[endOffset] != ' ' && json[endOffset] != '\n' && json[endOffset] != '\r' &&
+                json[endOffset] != '\t') {
+                return std::unexpected{
+                    reflectionError("Invalid integer token: " + std::string{name})};
+            }
+
             std::uint32_t value{};
             const auto* begin = json.data() + *valueOffset;
             const auto* end = json.data() + endOffset;
@@ -274,6 +281,43 @@ namespace asharia {
             };
         }
 
+        [[nodiscard]] Result<std::optional<ShaderParameterBlockReflection>>
+        parseParameterBlock(std::string_view json) {
+            const bool hasSize =
+                findPropertyValue({.json = json, .name = "parameterBlockSize"}).has_value();
+            const bool hasMembers =
+                findPropertyValue({.json = json, .name = "parameterMembers"}).has_value();
+            if (!hasSize && !hasMembers) {
+                return std::nullopt;
+            }
+            auto size = parseUintProperty(json, "parameterBlockSize");
+            auto members = parseArrayProperty(json, "parameterMembers");
+            if (!size || !members || *size > 65536) {
+                return std::unexpected{reflectionError("Invalid parameter block size or members")};
+            }
+            auto objects = splitObjectArray({.arrayJson = *members, .name = "parameterMembers"});
+            if (!objects || objects->size() > 256) {
+                return std::unexpected{reflectionError("Invalid parameter member array or count")};
+            }
+            ShaderParameterBlockReflection block{.size = *size};
+            for (auto object : *objects) {
+                auto name = parseStringProperty(object, "name");
+                auto scalar = parseStringProperty(object, "scalarType");
+                auto count = parseUintProperty(object, "componentCount");
+                auto offset = parseUintProperty(object, "offset");
+                auto memberSize = parseUintProperty(object, "size");
+                if (!name || !scalar || !count || !offset || !memberSize) {
+                    return std::unexpected{reflectionError("Invalid parameter member fields")};
+                }
+                block.members.push_back({.name = std::move(*name),
+                                         .scalarType = std::move(*scalar),
+                                         .componentCount = *count,
+                                         .offset = *offset,
+                                         .size = *memberSize});
+            }
+            return block;
+        }
+
         [[nodiscard]] Result<ShaderDescriptorBindingReflection>
         parseDescriptorBinding(DescriptorBindingParseQuery query) {
             auto name = parseStringProperty(query.json, "name");
@@ -300,6 +344,10 @@ namespace asharia {
             if (!category) {
                 return std::unexpected{std::move(category.error())};
             }
+            auto parameterBlock = parseParameterBlock(query.json);
+            if (!parameterBlock) {
+                return std::unexpected{std::move(parameterBlock.error())};
+            }
 
             return ShaderDescriptorBindingReflection{
                 .name = std::move(*name),
@@ -309,6 +357,7 @@ namespace asharia {
                 .count = *count,
                 .category = std::move(*category),
                 .stageVisibility = std::string{query.stageVisibility},
+                .parameterBlock = std::move(*parameterBlock),
             };
         }
 
@@ -375,7 +424,8 @@ namespace asharia {
         [[nodiscard]] bool sameDescriptorContract(const ShaderDescriptorBindingReflection& left,
                                                   const ShaderDescriptorBindingReflection& right) {
             return left.name == right.name && left.kind == right.kind &&
-                   left.count == right.count && left.category == right.category;
+                   left.count == right.count && left.category == right.category &&
+                   left.parameterBlock == right.parameterBlock;
         }
 
         [[nodiscard]] std::string
@@ -394,7 +444,8 @@ namespace asharia {
                             "Shader reflection descriptor binding conflict at " +
                             descriptorBindingContext(binding) + ": existing " +
                             descriptorContractSummary(existing) + " differs from incoming " +
-                            descriptorContractSummary(binding) + ".")};
+                            descriptorContractSummary(binding) +
+                            " (including parameter block member layout).")};
                     }
                     mergeStageVisibility(existing.stageVisibility, binding.stageVisibility);
                     return {};
