@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 2,
+  "materialType": {
+    "assetGuid": "11111111-1111-1111-1111-111111111111",
+    "stableTypeId": "fixture.numeric-unlit",
+    "expectedTypeHash": "00000000000000aa"
+  },
+  "properties": {},
+  "import": { "lastCookedSignatureHash": "00000000000000bb" }
+}

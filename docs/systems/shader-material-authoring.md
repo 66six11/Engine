@@ -43,6 +43,38 @@ V2 的当前主线是 code-first MVP：先跑通 `.ashader + .slang/raw slang + 
 
 ## 核心决定
 
+### Authored numeric GPU binding（#432）
+
+Current evidence: `.mat` packing 与反射已接入 GPU Mesh 的 authored material binding；数值参数驱动真实像素。
+Owner / lifetime / thread: renderer Vulkan backend 拥有不可变 program（shader/layout/pipeline）与参数版本
+（VMA host-upload buffer/descriptor pool/set）。一个 render-thread owner 发布单调 revision；失败不替换 active。
+同一 program 被参数版本共享，record 时 frame completion callback 保留版本，禁止原地修改在途 descriptor/buffer。
+Host 在 device/allocator teardown 前 drain 并释放全部 owner/lease。不新增队列或运行时服务。
+
+Data / error / budget / diagnostics: 上游提供编译器验证的配对 SPIR-V/reflection 与已打包字节；renderer 不读取源文件。
+首轮固定已有 mesh vertex/push-constant ABI、Solid、现有深度格式和一个 fragment constant buffer，显式采用
+set 1/binding 0（set 0 空 layout），不更改生成器兼容默认值。每 Shader 最多 4 MiB、GPU 参数最多 16 KiB/256 fields，
+resident version 有界；布局/大小/设备/格式/版本错误显式拒绝。draw packet 带 material revision；参数 buffer 通过
+RenderGraph Fragment ShaderRead 声明。纯数值更新复用 program，不重新编译或建立 pipeline。
+
+Foundation prerequisite: #419/#424/#426；Integration Gate: 真实 RenderView consumer 的资源与在途生命周期验证。
+Earliest safe / latest required: 当前开始，在图/材质编辑器主线前完成。
+Non-goals / exit evidence: 不做纹理、任意 vertex ABI、Wireframe authored material、通用热更新或图编辑器；
+native smoke 从 `.ashader` 生成并编译 fragment，用 `.mat` 两个参数值完成 GPU Mesh 像素 readback，验证失败保留、
+stale 拒绝、共享 program 与 fence 后退役。默认材质原有模式保持原合同。
+
+实施发现：旧生成器会对 entry 发出零参数 wrapper 调用，因此本切片使用无输入 fragment；带参数 entry 的
+wrapper 修正另行收敛，不以特殊默认参数伪装已支持。当前 smoke 由 build-time parser/emitter 编译 fixture，
+renderer 接收已验证的成对字节/反射，不代表 Studio GUID 解析、通用 cooked material loader 或自定义 vertex 已完成。
+另修正 Slang 反射工具对非零 set 的读取：使用变量 DescriptorTableSlot binding space；内部 range descriptor-set
+索引不是 Vulkan set。真实 generated shader set 3 回归与 set 1 GPU draw 同时验证该差异。
+
+采用 [Unreal material uniform cache](https://dev.epicgames.com/documentation/unreal-engine/API/Runtime/Engine/FMaterialRenderProxy/CacheUniformExpressions_GameThre-)
+的渲染状态所有权和 [O3DE SRG data](https://www.docs.o3de.org/docs/api/gems/atom/class_a_z_1_1_r_h_i_1_1_shader_resource_group_data)
+的参数/资源分组；不照搬 proxy/service 或引入通用 cache 框架，当前只证明单 program 多参数版本的复用。
+遵循 [Vulkan descriptor 生命周期](https://docs.vulkan.org/spec/latest/chapters/descriptorsets.html)：在途绑定不原地更新，
+新版本用独立 buffer/set，复用既有 frame completion retention；Host 写入/flush 完成后才允许提交使用。
+
 ### 三种创作方式与公共函数自动注册（已确认目标，尚未实现）
 
 2026-09-06 用户确认：同一个 Shader 资产体系支持纯手写、代码与图混合、纯图三种平等创作方式；

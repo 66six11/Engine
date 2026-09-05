@@ -133,10 +133,11 @@ void setBasicRenderViewDiagnostics(const BasicRenderViewDesc& view, const Render
                     hasSceneMesh && view.scene.rasterMode == BasicSceneRasterMode::Wireframe
                         ? BasicSceneWireframePath::PolygonLine
                         : BasicSceneWireframePath::NotRequested,
-                .meshResource =
-                    hasSceneMesh ? kBasicValidationMeshResourceKey : BasicDrawResourceKey{},
-                .materialResource =
-                    hasSceneMesh ? kBasicDefaultUnlitMaterialResourceKey : BasicDrawResourceKey{},
+                .meshResource = hasSceneMesh ? view.scene.drawItems.front().context.meshResource
+                                             : BasicDrawResourceKey{},
+                .materialResource = hasSceneMesh
+                                        ? view.scene.drawItems.front().context.materialResource
+                                        : BasicDrawResourceKey{},
                 .drawPacketContexts = std::move(drawPacketContexts),
             },
         .overlay =

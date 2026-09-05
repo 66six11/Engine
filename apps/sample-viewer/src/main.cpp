@@ -7926,6 +7926,8 @@ namespace {
             SmokeCommand{.option = "--smoke-compute-dispatch", .run = runSmokeComputeDispatch},
             SmokeCommand{.option = "--smoke-gpu-mesh-resource",
                          .run = asharia::sample_viewer::runSmokeGpuMeshResource},
+            SmokeCommand{.option = "--smoke-gpu-material-resource",
+                         .run = asharia::sample_viewer::runSmokeGpuMaterialResource},
             SmokeCommand{.option = "--smoke-buffer-upload", .run = runSmokeBufferUpload},
             SmokeCommand{.option = "--smoke-texture-upload", .run = runSmokeTextureUpload},
             SmokeCommand{.option = "--smoke-renderer-format-contract",

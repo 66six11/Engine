@@ -107,7 +107,7 @@ consumer 起就要定义；第 5 步闭合跨资源传播。公共 IO、Tasks、
 
 ### Shader 三种创作方式的接入评估（2026-09-06）
 
-依据主线 `9cc04a6e` 的代码审计，当前适合继续资源消费闭环，暂不开始三种创作方式的整体实现。
+初次评估依据主线 `9cc04a6e`；#432 随后实现了首个 authored numeric GPU binding。当前继续资源消费与编译工具基础设施，暂不开始三种创作方式的整体实现。
 用户确认的目标与取舍已记录在[Shader authoring 架构](../systems/shader-material-authoring.md#三种创作方式与公共函数自动注册已确认目标尚未实现)。
 本段是候选顺序及实施入口条件；实际执行任务与 Done evidence 仍由 GitHub Issues 管理，不提前创建不稳定的远期 Slice。
 
@@ -116,10 +116,10 @@ consumer 起就要定义；第 5 步闭合跨资源传播。公共 IO、Tasks、
 | 文档与生成 | `shader-authoring` 有 parser、raw Slang、引用和源码映射；graph reference 不等于 graph lowering |
 | 编译与反射 | `shader-slang` 已有编译和资源/参数布局反射；尚无公共模块函数目录或签名自动发现 |
 | 材质参数 | #424/#426 已完成 `.mat` numeric packing 与真实 Slang 布局验证；这是 CPU 字节与兼容性证据 |
-| GPU Mesh | #419 已完成 owner，但 `BasicGpuMesh::validate` 仍只接受固定默认无光照材质 key |
-| 真实绘制 | RenderView scene mesh 仍检查 `Hidden/RenderViewSceneMesh` / `DefaultUnlit`；未形成 authored Shader/material GPU 消费闭环 |
+| GPU Mesh | #419 的 owner 已复用；#432 允许已解析的 immutable material key/revision，并验证 draw 与绑定一致 |
+| 真实绘制 | #432 新增 `AuthoredUnlit` 路径；真实 `.ashader` 编译/反射与 `.mat` packing 驱动 indexed draw，颜色 readback、共享 program 与帧完成退役已验证 |
 
-下一步候选切片：**在现有无光照 Mesh/RenderView 路径消费已验证的 Shader 产物及 `.mat` 数值参数**。
+首个执行切片 #432：**在现有无光照 Mesh/RenderView 路径消费已验证的 Shader 产物及 `.mat` 数值参数**。以下保留验收边界，提交、PR 与最终门禁证据见 Issue。
 
 - 先核对已有 product reader/运行时输入是否能组成完整的已验证 Shader binding；若缺最小产物读取/身份合同，
   先以该合同为首个 PR 出口，不在同一 PR 扩成通用材质资源管理器。
@@ -131,6 +131,11 @@ consumer 起就要定义；第 5 步闭合跨资源传播。公共 IO、Tasks、
   布局错误与过期结果被拒绝；候选失败保留有效旧绑定，在途帧完成后才释放被替换资源。
 - 门禁：参数/布局失败用例、真实 compile/reflection、spirv-val、RenderView 像素 readback、Vulkan validation、
   相关双编译器和 frame-loop smoke；最终执行范围以新 Slice 验收为准。先不扩 textures、PBR、通用热更新或 Material Editor。
+
+#432 的范围是固定 mesh vertex ABI、零输入 authored fragment、set 1/binding 0 数值块和 Solid 模式。
+fixture 走真实 parser/emitter/Slang/spirv-val；调用方提供成对的已验证 SPIR-V/reflection，尚未接通通用
+cooked Shader GUID reader 或 Studio consumer。现有生成入口仍不转发参数，带输入的 fragment/vertex authoring
+需要独立扩展入口合同，不能把此闭环视为任意手写 Shader 已受支持。
 
 该闭环之后，优先以独立 CPU/编译工具切片验证 **公共模块公开函数 → 自动签名目录 → 生成函数调用 → Slang 编译**；
 包括未被入口引用的公开函数、internal 排除、重名/不支持签名、依赖变化与诊断。它在技术上可以现在独立验证，

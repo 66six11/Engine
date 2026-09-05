@@ -12,7 +12,25 @@ See Studio ADR-0011 and ADR-0006 for ownership and scheduling evidence.
 Material override validation: mutable CPU `.mat` document → shared `validateMatDocument`
 (identity, duplicate IDs, value kind/width and finite scalar/vector values) → shader override comparison.
 Invalid documents return an `InvalidOverride` diagnostic without usable diffs. IO serialization and
-resolution share the same validator; renderer/material GPU binding remains a subsequent consumer.
+resolution share the same validator.
+
+## Authored numeric material native consumption (#432)
+
+`.ashader` parser/emitter (explicit material set 1) → build-time Slang/SPIR-V validation and reflection →
+`.mat` IO + reflected numeric packing → renderer-owned immutable `BasicGpuMaterialProgram` and
+`BasicGpuMaterialOwner::update` → revisioned binding on `BasicRenderViewSceneDesc` → existing GPU Mesh
+draw with a Fragment ShaderRead parameter buffer and descriptor set 1 → frame completion retention.
+Parameter changes allocate a new immutable buffer/set and reuse the program/pipeline. Failed or stale
+updates preserve active; old references expire after their final GPU use. Backend receives paired
+validated bytes/reflection, never source paths, a compiler session, live World or Avalonia objects.
+
+The first native boundary is Solid/unlit, one material per GPU Mesh batch, fixed mesh vertex ABI and
+one numeric fragment constant buffer (16 KiB/256 fields maximum). The sample fixture runs production
+parser/emitter and packing code; it does not implement a Studio GUID resolver or generic cooked shader
+loader. Zero-argument generated entry wrappers remain a separately recorded limitation.
+`renderer_basic_vulkan` exposes its existing `shader_slang` dependency publicly because its material
+creation input includes reflection types; `renderer_basic` remains backend-independent. Sample host
+adds explicit authoring/adapter/instance dependencies and a build-only shader fixture adapter.
 
 ## GPU Mesh native consumption (#419)
 

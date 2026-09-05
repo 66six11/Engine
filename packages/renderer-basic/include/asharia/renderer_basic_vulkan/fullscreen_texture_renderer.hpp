@@ -10,6 +10,7 @@
 #include "asharia/core/result.hpp"
 #include "asharia/renderer_basic_vulkan/basic_renderer_descs.hpp"
 #include "asharia/renderer_basic_vulkan/basic_renderer_stats.hpp"
+#include "asharia/renderer_basic_vulkan/gpu_material_resource.hpp"
 #include "asharia/renderer_basic_vulkan/gpu_mesh_resource.hpp"
 #include "asharia/renderer_basic_vulkan/render_view.hpp"
 #include "asharia/rhi_vulkan/vulkan_buffer.hpp"

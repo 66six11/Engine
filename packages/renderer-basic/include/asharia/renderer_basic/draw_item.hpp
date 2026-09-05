@@ -73,6 +73,7 @@ namespace asharia {
         BasicDrawResourceKey meshResource{};
         BasicDrawResourceKey materialResource{};
         std::uint64_t meshRevision{};
+        std::uint64_t materialRevision{};
     };
 
     struct BasicDrawListItem {

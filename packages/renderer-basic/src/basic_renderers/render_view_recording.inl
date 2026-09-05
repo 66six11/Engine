@@ -19,6 +19,8 @@
     BasicRenderViewOverlayColorStoreOp colorStoreOp{BasicRenderViewOverlayColorStoreOp::Store};
     BasicRenderViewExecutionEventRecorder& eventRecorder;
     VkIndexType sceneIndexType{VK_INDEX_TYPE_UINT16};
+    RenderGraphBufferHandle materialParameters{};
+    VkDescriptorSet materialDescriptor{VK_NULL_HANDLE};
 };
 
 void addBasicRenderViewSelectionMaskPass(const BasicRenderViewPassRecordingContext& context,
@@ -110,15 +112,23 @@ void addBasicRenderViewWorldGridPass(const BasicRenderViewPassRecordingContext& 
 void addBasicRenderViewSceneMeshPass(const BasicRenderViewPassRecordingContext& context,
                                      VkPipeline sceneMeshPipeline,
                                      VkPipelineLayout sceneMeshPipelineLayout) {
-    context.graph.addPass("RenderViewSceneMesh", kBasicRenderViewSceneMeshPassType)
-        .setParams(kBasicRenderViewSceneMeshParamsType, context.policy.sceneMeshParams)
+    auto pass = context.graph.addPass("RenderViewSceneMesh", kBasicRenderViewSceneMeshPassType);
+    if (context.materialDescriptor != VK_NULL_HANDLE) {
+        pass.readBuffer("materialParameters", context.materialParameters,
+                        RenderGraphShaderStage::Fragment);
+    }
+    pass.setParams(kBasicRenderViewSceneMeshParamsType, context.policy.sceneMeshParams)
         .readWriteColor("target", context.renderTarget)
         .writeDepth("depth", context.sceneDepth)
         .readVertexBuffer("vertices", context.sceneVertices)
         .readIndexBuffer("indices", context.sceneIndices)
         .recordCommands([sceneMeshParams = context.policy.sceneMeshParams,
-                         drawItems = context.sceneDrawItems](RenderGraphCommandList& commands) {
-            commands.setShader("Hidden/RenderViewSceneMesh", "DefaultUnlit")
+                         drawItems = context.sceneDrawItems,
+                         authored = context.materialDescriptor !=
+                                    VK_NULL_HANDLE](RenderGraphCommandList& commands) {
+            commands
+                .setShader("Hidden/RenderViewSceneMesh",
+                           authored ? "AuthoredUnlit" : "DefaultUnlit")
                 .setInt("SceneDrawItemCount", static_cast<int>(sceneMeshParams.drawItemCount))
                 .setInt("SceneRasterMode", static_cast<int>(sceneMeshParams.rasterMode));
             for (const BasicDrawListItem& item : drawItems) {
@@ -127,16 +137,18 @@ void addBasicRenderViewSceneMeshPass(const BasicRenderViewPassRecordingContext& 
                                      item.drawItem.firstInstance);
             }
         })
-        .execute([&frame = context.frame, &bindings = context.bindings,
-                  &bufferBindings = context.bufferBindings, viewTarget = context.viewTarget,
-                  camera = context.camera, rasterMode = context.sceneRasterMode, sceneMeshPipeline,
-                  sceneMeshPipelineLayout, drawItems = context.sceneDrawItems,
-                  indexType = context.sceneIndexType, &eventRecorder = context.eventRecorder](
-                     RenderGraphPassContext pass) -> Result<void> {
-            return executeBasicRenderViewSceneMeshPass(
-                frame, pass, bindings, bufferBindings, viewTarget.extent, camera, rasterMode,
-                sceneMeshPipeline, sceneMeshPipelineLayout, drawItems, &eventRecorder, indexType);
-        });
+        .execute(
+            [&frame = context.frame, &bindings = context.bindings,
+             &bufferBindings = context.bufferBindings, viewTarget = context.viewTarget,
+             camera = context.camera, rasterMode = context.sceneRasterMode, sceneMeshPipeline,
+             sceneMeshPipelineLayout, drawItems = context.sceneDrawItems,
+             indexType = context.sceneIndexType, materialDescriptor = context.materialDescriptor,
+             &eventRecorder = context.eventRecorder](RenderGraphPassContext pass) -> Result<void> {
+                return executeBasicRenderViewSceneMeshPass(
+                    frame, pass, bindings, bufferBindings, viewTarget.extent, camera, rasterMode,
+                    sceneMeshPipeline, sceneMeshPipelineLayout, drawItems, &eventRecorder,
+                    indexType, materialDescriptor);
+            });
 }
 
 void addBasicRenderViewOverlayPass(const BasicRenderViewPassRecordingContext& context,
