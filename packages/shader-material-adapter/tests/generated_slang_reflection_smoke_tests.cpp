@@ -11,7 +11,7 @@
 #include <string>
 #include <string_view>
 
-#include "asharia/material_instance/amat_io.hpp"
+#include "asharia/material_instance/mat_io.hpp"
 #include "asharia/shader_authoring/ashader_generated_slang.hpp"
 #include "asharia/shader_authoring/ashader_parser.hpp"
 #include "asharia/shader_material_adapter/reflected_parameters.hpp"
@@ -361,7 +361,7 @@ shader "asharia.material.numeric" {
         }
         auto reflection =
             readShaderReflection(options.workDir / "fragmentMain.fragment.reflection.json");
-        auto document = material_instance::readAmatText(R"({"schemaVersion":2,
+        auto document = material_instance::readMatText(R"({"schemaVersion":2,
 "materialType":{"assetGuid":"11111111-1111-1111-1111-111111111111",
 "stableTypeId":"asharia.material.numeric","expectedTypeHash":"00000000000000aa"},
 "properties":{},"import":{"lastCookedSignatureHash":"00000000000000bb"}})");
@@ -446,8 +446,7 @@ shader "asharia.material.numeric" {
         document->properties.push_back(
             {.propertyId = "gain",
              .type = shader_authoring::AshaderPropertyType::Float,
-             .value = {.kind = material_instance::AmatPropertyValueKind::Number,
-                       .numberValue = 3}});
+             .value = {.kind = material_instance::MatPropertyValueKind::Number, .numberValue = 3}});
         const auto overridden =
             shader_material::packReflectedMaterialParameters(*document, *shader.document, binding);
         auto expectedOverride = packed->parameters.bytes;

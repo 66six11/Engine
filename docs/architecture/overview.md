@@ -84,7 +84,7 @@ Asharia Engine 当前目标仍是先做一个小而完整的 Vulkan renderer，�
   与 `AssetCatalogView`；`asharia::editor_content_native` 以严格有界 C ABI/JSON 向 Studio 投影 immutable snapshot。
   它不拥有 Avalonia/ImGui presentation、import execution、watcher、`ResourceRuntime`、renderer 或 GPU resource。
 - `packages/material-core`：material resource signature、descriptor contract、shader/signature compatibility
-  validation 和 pipeline key hash 的 CPU 数据模型；不拥有 `.amat` IO、GPU resource、Vulkan pipeline/cache
+  validation 和 pipeline key hash 的 CPU 数据模型；不拥有 `.mat` IO、GPU resource、Vulkan pipeline/cache
   或 editor UI。
 - `packages/reflection` / `packages/serialization`：过渡兼容 package，不再承载新 editor、script、asset 或
   migration 语义。

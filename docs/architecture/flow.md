@@ -9,7 +9,7 @@ the existing take/lease path; notification is not GPU completion. Candidate prep
 on UI and retains staged consumer completion and atomic publication.
 See Studio ADR-0011 and ADR-0006 for ownership and scheduling evidence.
 
-Material override validation: mutable CPU `.amat` document → shared `validateAmatDocument`
+Material override validation: mutable CPU `.mat` document → shared `validateMatDocument`
 (identity, duplicate IDs, value kind/width and finite scalar/vector values) → shader override comparison.
 Invalid documents return an `InvalidOverride` diagnostic without usable diffs. IO serialization and
 resolution share the same validator; renderer/material GPU binding remains a subsequent consumer.
@@ -33,8 +33,8 @@ existing behavior. Reference: [Khronos swapchain synchronization examples](https
 
 ### Numeric material parameter CPU flow
 
-`AmatDocument + AshaderDocument + explicit numeric member offsets/block size ->
-material-instance::packAmatParameters -> owned little-endian bytes + existing warnings`.
+`MatDocument + AshaderDocument + explicit numeric member offsets/block size ->
+material-instance::packMatParameters -> owned little-endian bytes + existing warnings`.
 The call selects overrides/defaults, rejects invalid values/layouts and zeroes padding within a
 256-property/64-KiB bound. It performs no IO, reflection extraction, GPU binding or resource ownership.
 The reflected adapter below supplies compiler member facts; product identity must still be retained
@@ -276,7 +276,7 @@ flowchart TD
   `asharia::editor_content_native` 只增加自有 strict bounded JSON writer 和 caller-owned C ABI。两个 target 都不依赖
   Avalonia、ImGui、`resource-runtime`、renderer、RHI 或 Vulkan，也不执行 importer、watcher 或 product write。
 - `material-core` 当前只做 CPU-only material resource signature、shader/signature compatibility validation 和
-  material pipeline key hash；它不做 `.amat` IO、asset import、GPU upload、Vulkan descriptor/pipeline cache、
+  material pipeline key hash；它不做 `.mat` IO、asset import、GPU upload、Vulkan descriptor/pipeline cache、
   RenderGraph/RHI changes 或 editor UI。
 - `sample-viewer` 当前同时承担 app host 和 smoke harness，所以会直接创建 `VulkanContext` /
   `VulkanFrameLoop`。这是当前 MVP 事实，不是目标产品边界；后续应收敛到 runtime/engine host。
@@ -1951,7 +1951,7 @@ flowchart TD
 - `--smoke-material-binding` 已验证 `MaterialResourceSignature` 能在 `renderer_basic_vulkan` 中驱动同一类
   set 0 / binding 0-2 descriptor set layout、pipeline layout、descriptor allocation 和 buffer/image/sampler
   write；它还覆盖 material/signature kind mismatch、pipeline key resource signature hash 过期和 visibility
-  缺失的负向诊断。这个 smoke 不是通用 Slang reflection adapter，也不引入 `.amat`、asset cache 或 editor
+  缺失的负向诊断。这个 smoke 不是通用 Slang reflection adapter，也不引入 `.mat`、asset cache 或 editor
   材质路径。
 - `--smoke-fullscreen-texture` 已验证 draw call 中的 descriptor set 绑定、fullscreen pipeline 绑定和
   transient source texture 采样；`BasicFullscreenTextureRenderer::recordFrame()` 现在是

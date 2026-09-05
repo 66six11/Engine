@@ -54,20 +54,25 @@ com.asharia.scene.TransformComponent.scale
 
 ## 文件后缀
 
-文件后缀使用短前缀 `a`，不把完整 `ash` 塞进后缀。完整品牌名写在 schema 中。
+文件后缀表达文件类型，不要求附加品牌前缀。材质实例统一使用 `.mat`；其他已有后缀按下表保留。
+品牌识别写在 schema 中。
 
 | 文件类型 | 后缀 |
 | --- | --- |
 | Scene | `.ascene` |
 | Prefab | `.aprefab` |
 | Asset metadata | `.ameta` |
-| Material | `.amat` |
+| Material | `.mat` |
 | Shader/material authoring root | `.ashader` |
 | RenderGraph / tool / material graph | `.agraph` |
 | World | `.aworld` |
 
 后缀职责是表达文件类型并减少冲突；品牌识别由 `Asharia Engine`、`Asharia Editor` 和 `com.asharia.*`
 schema 承担。
+
+材质实例的代码名与 `.mat` 对应：类型使用 `MatDocument` 等 `Mat*` 名称，方法使用
+`readMatText`、`resolveMatOverrides`、`packMatParameters`，头文件和源文件使用 `mat_*.hpp/.cpp`。
+既有 material-instance product v1 的序列化字段与分隔标记保持原合同，代码重命名不迁移缓存格式。
 
 ## 当前代码命名规则
 

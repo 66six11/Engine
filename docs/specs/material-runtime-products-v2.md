@@ -2,17 +2,17 @@
 
 更新日期：2026-06-14
 
-状态：计划中的 V2 runtime product 合同。V1 `.amat`、product manifest 和 binding layout 文档已弃用，不再新增
+状态：计划中的 V2 runtime product 合同。V1 `.mat`、product manifest 和 binding layout 文档已弃用，不再新增
 `amat-v1.md`、`material-product-v1.md` 或 `binding-layout-v1.md`。
 
-本文定义 `.amat` 材质实例、binding layout、generated product manifest、diagnostics 和 renderer 消费边界。
+本文定义 `.mat` 材质实例、binding layout、generated product manifest、diagnostics 和 renderer 消费边界。
 `.ashader` / `.agraph` authoring contract 见 [`ashader-v2.md`](ashader-v2.md)。
 
-## `.amat` V2
+## `.mat` V2
 
-`.amat` 是材质实例，不是 shader 文件，也不是 GPU 状态文件。
+`.mat` 是材质实例，不是 shader 文件，也不是 GPU 状态文件。
 
-`.amat` 保存：
+`.mat` 保存：
 
 ```text
 material type asset GUID
@@ -26,7 +26,7 @@ last cooked signature hash
 schema version
 ```
 
-`.amat` 不保存：
+`.mat` 不保存：
 
 ```text
 Vulkan descriptor set
@@ -40,7 +40,7 @@ graph nodes
 shader source copy
 ```
 
-## `.amat` Schema
+## `.mat` Schema
 
 ```json
 {
@@ -72,7 +72,7 @@ shader source copy
 }
 ```
 
-`.amat` resolver 必须能检查：
+`.mat` resolver 必须能检查：
 
 - material type asset GUID 是否存在。
 - stable shader type id 是否匹配。
@@ -183,7 +183,7 @@ marker，因此不存在 marker-style unterminated payload；reader 现在已有
 `entry.0.reflectionJsonHex` 会产生 deterministic `InvalidProductBlob` diagnostic。坏 payload 仍由
 SPIR-V/reflection/diagnostic size/hash mismatch 覆盖。
 
-`.amat` import 输出：
+`.mat` import 输出：
 
 ```text
 resolved material instance
@@ -192,9 +192,9 @@ material-instance-product.v1 blob
 diagnostics
 ```
 
-当前 #156 的最小 product blob 只规范化 `.amat` material instance source bytes，并记录 material type
+当前 #156 的最小 product blob 只规范化 `.mat` material instance source bytes，并记录 material type
 asset GUID、stable type id、expected type hash、last cooked signature hash、product key/hash 和 canonical
-`.amat` payload。它不解析 `.ashader`，不生成 shader product，也不做 cross-asset dependency invalidation。
+`.mat` payload。它不解析 `.ashader`，不生成 shader product，也不做 cross-asset dependency invalidation。
 
 ## Product Manifest Schema
 
@@ -246,7 +246,7 @@ Editor 可以读：
 ```text
 .ashader
 .agraph
-.amat
+.mat
 product diagnostics
 preview product
 ```
@@ -271,7 +271,7 @@ enum class DiagnosticSource {
     Ashader,
     Slang,
     Graph,
-    Amat,
+    Mat,
     Reflection,
     MaterialSignature,
     AssetPipeline,
@@ -305,7 +305,7 @@ Diagnostics 必须支持定位到：
 .ashader pass
 raw Slang line
 external .slang line
-.amat property override
+.mat property override
 graph node
 graph pin
 reflection binding
@@ -320,7 +320,7 @@ Preview 失败时保留上一次成功画面，diagnostics 附着到 node、pin�
 - 修改 `.ashader` 会重新 cook shader product。
 - 修改 `.slang` 会重新 cook shader product。
 - 修改 `.agraph` 会重新 lower 并 cook shader product。
-- 修改 `.amat` 只重新 resolve material instance。
+- 修改 `.mat` 只重新 resolve material instance。
 - 删除 texture asset 必须产生 diagnostics。
 - property rename 必须产生 stale/incompatible diagnostics。
 - Cache hit 必须稳定，不能依赖绝对 source path。

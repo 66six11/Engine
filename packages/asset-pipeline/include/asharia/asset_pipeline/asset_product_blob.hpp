@@ -69,7 +69,7 @@ namespace asharia::asset {
         std::string stableTypeId;
         std::uint64_t expectedTypeHash{};
         std::uint64_t lastCookedSignatureHash{};
-        std::string canonicalAmatText;
+        std::string canonicalMatText;
 
         [[nodiscard]] friend bool operator==(const AssetMaterialInstanceProductPayload&,
                                              const AssetMaterialInstanceProductPayload&) = default;

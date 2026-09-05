@@ -1,4 +1,4 @@
-﻿#include "asharia/material_instance/amat_io.hpp"
+﻿#include "asharia/material_instance/mat_io.hpp"
 
 #include <algorithm>
 #include <array>
@@ -31,7 +31,7 @@ namespace asharia::material_instance {
             std::string_view context;
         };
 
-        [[nodiscard]] Error amatIoError(std::string message) {
+        [[nodiscard]] Error matIoError(std::string message) {
             return Error{ErrorDomain::Material, 2, std::move(message)};
         }
 
@@ -46,12 +46,12 @@ namespace asharia::material_instance {
                               std::span<const std::string_view> allowedMembers) {
             if (value.kind != ArchiveValueKind::Object) {
                 return std::unexpected{
-                    amatIoError(std::string{context} + " must be a JSON object.")};
+                    matIoError(std::string{context} + " must be a JSON object.")};
             }
 
             for (const ArchiveMember& member : value.objectValue) {
                 if (!containsName(allowedMembers, member.key)) {
-                    return std::unexpected{amatIoError(
+                    return std::unexpected{matIoError(
                         std::string{context} + " contains unknown member '" + member.key + "'.")};
                 }
             }
@@ -65,15 +65,15 @@ namespace asharia::material_instance {
                                                                  std::string_view context) {
             const ArchiveValue* value = object.findMemberValue(memberName);
             if (value == nullptr) {
-                return std::unexpected{amatIoError(std::string{context} +
-                                                   " is missing required member '" +
-                                                   std::string{memberName} + "'.")};
+                return std::unexpected{matIoError(std::string{context} +
+                                                  " is missing required member '" +
+                                                  std::string{memberName} + "'.")};
             }
 
             if (value->kind != expectedKind) {
-                return std::unexpected{amatIoError(std::string{context} + " member '" +
-                                                   std::string{memberName} +
-                                                   "' has an unexpected type.")};
+                return std::unexpected{matIoError(std::string{context} + " member '" +
+                                                  std::string{memberName} +
+                                                  "' has an unexpected type.")};
             }
 
             return value;
@@ -100,9 +100,9 @@ namespace asharia::material_instance {
             if ((*value)->integerValue <= 0 ||
                 (*value)->integerValue >
                     static_cast<std::int64_t>(std::numeric_limits<std::uint32_t>::max())) {
-                return std::unexpected{amatIoError(std::string{context} + " member '" +
-                                                   std::string{memberName} +
-                                                   "' must be a positive uint32 value.")};
+                return std::unexpected{matIoError(std::string{context} + " member '" +
+                                                  std::string{memberName} +
+                                                  "' must be a positive uint32 value.")};
             }
 
             return static_cast<std::uint32_t>((*value)->integerValue);
@@ -121,8 +121,8 @@ namespace asharia::material_instance {
                 return static_cast<double>((*value)->integerValue);
             }
 
-            return std::unexpected{amatIoError(std::string{context} + " member '" +
-                                               std::string{memberName} + "' must be a number.")};
+            return std::unexpected{matIoError(std::string{context} + " member '" +
+                                              std::string{memberName} + "' must be a number.")};
         }
 
         [[nodiscard]] std::string formatHash64(std::uint64_t value) {
@@ -147,26 +147,26 @@ namespace asharia::material_instance {
 
         [[nodiscard]] Result<std::uint64_t> parseHash64(const HashTextField& field) {
             if (field.text.size() != 16) {
-                return std::unexpected{amatIoError(std::string{field.context} + " member '" +
-                                                   std::string{field.fieldName} +
-                                                   "' must be a 16-digit lowercase hex string.")};
+                return std::unexpected{matIoError(std::string{field.context} + " member '" +
+                                                  std::string{field.fieldName} +
+                                                  "' must be a 16-digit lowercase hex string.")};
             }
 
             std::uint64_t value{};
             for (const char character : field.text) {
                 const int digit = lowercaseHexValue(character);
                 if (digit < 0) {
-                    return std::unexpected{amatIoError(std::string{field.context} + " member '" +
-                                                       std::string{field.fieldName} +
-                                                       "' must use lowercase hex.")};
+                    return std::unexpected{matIoError(std::string{field.context} + " member '" +
+                                                      std::string{field.fieldName} +
+                                                      "' must use lowercase hex.")};
                 }
                 value = (value << 4U) | static_cast<std::uint64_t>(digit);
             }
 
             if (value == 0) {
-                return std::unexpected{amatIoError(std::string{field.context} + " member '" +
-                                                   std::string{field.fieldName} +
-                                                   "' cannot be zero.")};
+                return std::unexpected{matIoError(std::string{field.context} + " member '" +
+                                                  std::string{field.fieldName} +
+                                                  "' cannot be zero.")};
             }
 
             return value;
@@ -219,8 +219,8 @@ namespace asharia::material_instance {
                 return AshaderPropertyType::Sampler;
             }
 
-            return std::unexpected{amatIoError(std::string{context} + " has unknown type '" +
-                                               std::string{text} + "'.")};
+            return std::unexpected{matIoError(std::string{context} + " has unknown type '" +
+                                              std::string{text} + "'.")};
         }
 
         [[nodiscard]] std::size_t vectorWidth(AshaderPropertyType type) noexcept {
@@ -250,57 +250,57 @@ namespace asharia::material_instance {
             }
             auto guid = asset::parseAssetGuid(*text);
             if (!guid) {
-                return std::unexpected{amatIoError(std::string{context} + " member '" +
-                                                   std::string{memberName} +
-                                                   "' is invalid: " + guid.error().message)};
+                return std::unexpected{matIoError(std::string{context} + " member '" +
+                                                  std::string{memberName} +
+                                                  "' is invalid: " + guid.error().message)};
             }
             return *guid;
         }
 
-        [[nodiscard]] AmatPropertyValue makeNumberValue(double value) {
-            AmatPropertyValue propertyValue{};
-            propertyValue.kind = AmatPropertyValueKind::Number;
+        [[nodiscard]] MatPropertyValue makeNumberValue(double value) {
+            MatPropertyValue propertyValue{};
+            propertyValue.kind = MatPropertyValueKind::Number;
             propertyValue.numberValue = value;
             return propertyValue;
         }
 
-        [[nodiscard]] AmatPropertyValue makeVectorValue(std::vector<double> values) {
-            AmatPropertyValue propertyValue{};
-            propertyValue.kind = AmatPropertyValueKind::Vector;
+        [[nodiscard]] MatPropertyValue makeVectorValue(std::vector<double> values) {
+            MatPropertyValue propertyValue{};
+            propertyValue.kind = MatPropertyValueKind::Vector;
             propertyValue.vectorValue = std::move(values);
             return propertyValue;
         }
 
-        [[nodiscard]] AmatPropertyValue makeIntegerValue(std::int64_t value) {
-            AmatPropertyValue propertyValue{};
-            propertyValue.kind = AmatPropertyValueKind::Integer;
+        [[nodiscard]] MatPropertyValue makeIntegerValue(std::int64_t value) {
+            MatPropertyValue propertyValue{};
+            propertyValue.kind = MatPropertyValueKind::Integer;
             propertyValue.integerValue = value;
             return propertyValue;
         }
 
-        [[nodiscard]] AmatPropertyValue makeUnsignedIntegerValue(std::uint64_t value) {
-            AmatPropertyValue propertyValue{};
-            propertyValue.kind = AmatPropertyValueKind::UnsignedInteger;
+        [[nodiscard]] MatPropertyValue makeUnsignedIntegerValue(std::uint64_t value) {
+            MatPropertyValue propertyValue{};
+            propertyValue.kind = MatPropertyValueKind::UnsignedInteger;
             propertyValue.unsignedIntegerValue = value;
             return propertyValue;
         }
 
-        [[nodiscard]] AmatPropertyValue makeBooleanValue(bool value) {
-            AmatPropertyValue propertyValue{};
-            propertyValue.kind = AmatPropertyValueKind::Boolean;
+        [[nodiscard]] MatPropertyValue makeBooleanValue(bool value) {
+            MatPropertyValue propertyValue{};
+            propertyValue.kind = MatPropertyValueKind::Boolean;
             propertyValue.boolValue = value;
             return propertyValue;
         }
 
-        [[nodiscard]] AmatPropertyValue makeAssetGuidValue(asset::AssetGuid value) {
-            AmatPropertyValue propertyValue{};
-            propertyValue.kind = AmatPropertyValueKind::AssetGuid;
+        [[nodiscard]] MatPropertyValue makeAssetGuidValue(asset::AssetGuid value) {
+            MatPropertyValue propertyValue{};
+            propertyValue.kind = MatPropertyValueKind::AssetGuid;
             propertyValue.assetGuid = value;
             return propertyValue;
         }
 
-        [[nodiscard]] Result<AmatPropertyValue> readNumberPropertyValue(const ArchiveValue& object,
-                                                                        std::string_view context) {
+        [[nodiscard]] Result<MatPropertyValue> readNumberPropertyValue(const ArchiveValue& object,
+                                                                       std::string_view context) {
             auto value = requiredNumberValue(object, "value", context);
             if (!value) {
                 return std::unexpected{std::move(value.error())};
@@ -308,17 +308,17 @@ namespace asharia::material_instance {
             return makeNumberValue(*value);
         }
 
-        [[nodiscard]] Result<AmatPropertyValue> readVectorPropertyValue(const ArchiveValue& object,
-                                                                        std::size_t width,
-                                                                        std::string_view context) {
+        [[nodiscard]] Result<MatPropertyValue> readVectorPropertyValue(const ArchiveValue& object,
+                                                                       std::size_t width,
+                                                                       std::string_view context) {
             auto value = requiredMember(object, "value", ArchiveValueKind::Array, context);
             if (!value) {
                 return std::unexpected{std::move(value.error())};
             }
             if ((*value)->arrayValue.size() != width) {
-                return std::unexpected{amatIoError(std::string{context} +
-                                                   " member 'value' must have " +
-                                                   std::to_string(width) + " elements.")};
+                return std::unexpected{matIoError(std::string{context} +
+                                                  " member 'value' must have " +
+                                                  std::to_string(width) + " elements.")};
             }
 
             std::vector<double> elements;
@@ -333,15 +333,15 @@ namespace asharia::material_instance {
                     elements.push_back(static_cast<double>(element.integerValue));
                     continue;
                 }
-                return std::unexpected{amatIoError(std::string{context} +
-                                                   " member 'value' element[" +
-                                                   std::to_string(index) + "] must be a number.")};
+                return std::unexpected{matIoError(std::string{context} +
+                                                  " member 'value' element[" +
+                                                  std::to_string(index) + "] must be a number.")};
             }
             return makeVectorValue(std::move(elements));
         }
 
-        [[nodiscard]] Result<AmatPropertyValue> readIntegerPropertyValue(const ArchiveValue& object,
-                                                                         std::string_view context) {
+        [[nodiscard]] Result<MatPropertyValue> readIntegerPropertyValue(const ArchiveValue& object,
+                                                                        std::string_view context) {
             auto value = requiredMember(object, "value", ArchiveValueKind::Integer, context);
             if (!value) {
                 return std::unexpected{std::move(value.error())};
@@ -349,7 +349,7 @@ namespace asharia::material_instance {
             return makeIntegerValue((*value)->integerValue);
         }
 
-        [[nodiscard]] Result<AmatPropertyValue>
+        [[nodiscard]] Result<MatPropertyValue>
         readUnsignedIntegerPropertyValue(const ArchiveValue& object, std::string_view context) {
             auto value = requiredMember(object, "value", ArchiveValueKind::Integer, context);
             if (!value) {
@@ -357,13 +357,13 @@ namespace asharia::material_instance {
             }
             if ((*value)->integerValue < 0) {
                 return std::unexpected{
-                    amatIoError(std::string{context} + " member 'value' must be non-negative.")};
+                    matIoError(std::string{context} + " member 'value' must be non-negative.")};
             }
             return makeUnsignedIntegerValue(static_cast<std::uint64_t>((*value)->integerValue));
         }
 
-        [[nodiscard]] Result<AmatPropertyValue> readBooleanPropertyValue(const ArchiveValue& object,
-                                                                         std::string_view context) {
+        [[nodiscard]] Result<MatPropertyValue> readBooleanPropertyValue(const ArchiveValue& object,
+                                                                        std::string_view context) {
             auto value = requiredMember(object, "value", ArchiveValueKind::Bool, context);
             if (!value) {
                 return std::unexpected{std::move(value.error())};
@@ -371,8 +371,8 @@ namespace asharia::material_instance {
             return makeBooleanValue((*value)->boolValue);
         }
 
-        [[nodiscard]] Result<AmatPropertyValue> readAssetPropertyValue(const ArchiveValue& object,
-                                                                       std::string_view context) {
+        [[nodiscard]] Result<MatPropertyValue> readAssetPropertyValue(const ArchiveValue& object,
+                                                                      std::string_view context) {
             auto guid = requiredAssetGuid(object, "assetGuid", context);
             if (!guid) {
                 return std::unexpected{std::move(guid.error())};
@@ -380,9 +380,9 @@ namespace asharia::material_instance {
             return makeAssetGuidValue(*guid);
         }
 
-        [[nodiscard]] Result<AmatPropertyValue> readPropertyValue(const ArchiveValue& object,
-                                                                  AshaderPropertyType type,
-                                                                  std::string_view context) {
+        [[nodiscard]] Result<MatPropertyValue> readPropertyValue(const ArchiveValue& object,
+                                                                 AshaderPropertyType type,
+                                                                 std::string_view context) {
             switch (type) {
             case AshaderPropertyType::Float:
                 return readNumberPropertyValue(object, context);
@@ -402,60 +402,60 @@ namespace asharia::material_instance {
                 return readAssetPropertyValue(object, context);
             }
             return std::unexpected{
-                amatIoError(std::string{context} + " has unsupported value type.")};
+                matIoError(std::string{context} + " has unsupported value type.")};
         }
 
-        [[nodiscard]] Result<AmatMaterialTypeReference>
+        [[nodiscard]] Result<MatMaterialTypeReference>
         readMaterialTypeReference(const ArchiveValue& root) {
             auto value =
-                requiredMember(root, "materialType", ArchiveValueKind::Object, ".amat root");
+                requiredMember(root, "materialType", ArchiveValueKind::Object, ".mat root");
             if (!value) {
                 return std::unexpected{std::move(value.error())};
             }
             constexpr std::array materialTypeMembers{"assetGuid"sv, "stableTypeId"sv,
                                                      "expectedTypeHash"sv};
             if (auto valid =
-                    validateObjectMembers(**value, ".amat materialType", materialTypeMembers);
+                    validateObjectMembers(**value, ".mat materialType", materialTypeMembers);
                 !valid) {
                 return std::unexpected{std::move(valid.error())};
             }
 
-            auto assetGuid = requiredAssetGuid(**value, "assetGuid", ".amat materialType");
+            auto assetGuid = requiredAssetGuid(**value, "assetGuid", ".mat materialType");
             if (!assetGuid) {
                 return std::unexpected{std::move(assetGuid.error())};
             }
-            auto stableTypeId = requiredString(**value, "stableTypeId", ".amat materialType");
+            auto stableTypeId = requiredString(**value, "stableTypeId", ".mat materialType");
             if (!stableTypeId) {
                 return std::unexpected{std::move(stableTypeId.error())};
             }
             if (stableTypeId->empty()) {
                 return std::unexpected{
-                    amatIoError(".amat materialType member 'stableTypeId' cannot be empty.")};
+                    matIoError(".mat materialType member 'stableTypeId' cannot be empty.")};
             }
             auto expectedTypeHash =
-                requiredHash64(**value, "expectedTypeHash", ".amat materialType");
+                requiredHash64(**value, "expectedTypeHash", ".mat materialType");
             if (!expectedTypeHash) {
                 return std::unexpected{std::move(expectedTypeHash.error())};
             }
 
-            return AmatMaterialTypeReference{
+            return MatMaterialTypeReference{
                 .assetGuid = *assetGuid,
                 .stableTypeId = std::move(*stableTypeId),
                 .expectedTypeHash = *expectedTypeHash,
             };
         }
 
-        [[nodiscard]] Result<std::vector<AmatPropertyOverride>>
+        [[nodiscard]] Result<std::vector<MatPropertyOverride>>
         readPropertyOverrides(const ArchiveValue& root) {
-            auto value = requiredMember(root, "properties", ArchiveValueKind::Object, ".amat root");
+            auto value = requiredMember(root, "properties", ArchiveValueKind::Object, ".mat root");
             if (!value) {
                 return std::unexpected{std::move(value.error())};
             }
 
-            std::vector<AmatPropertyOverride> overrides;
+            std::vector<MatPropertyOverride> overrides;
             overrides.reserve((*value)->objectValue.size());
             for (const ArchiveMember& member : (*value)->objectValue) {
-                const std::string context = ".amat properties." + member.key;
+                const std::string context = ".mat properties." + member.key;
                 constexpr std::array propertyMembers{"propertyId"sv, "type"sv, "value"sv,
                                                      "assetGuid"sv};
                 if (auto valid = validateObjectMembers(member.value, context, propertyMembers);
@@ -468,9 +468,8 @@ namespace asharia::material_instance {
                     return std::unexpected{std::move(propertyId.error())};
                 }
                 if (*propertyId != member.key) {
-                    return std::unexpected{amatIoError(context +
-                                                       " member 'propertyId' must match " +
-                                                       "the properties object key.")};
+                    return std::unexpected{matIoError(context + " member 'propertyId' must match " +
+                                                      "the properties object key.")};
                 }
 
                 auto typeName = requiredString(member.value, "type", context);
@@ -486,11 +485,11 @@ namespace asharia::material_instance {
                 const bool hasAssetGuid = member.value.findMemberValue("assetGuid") != nullptr;
                 if (isAssetValue(*type) && hasValue) {
                     return std::unexpected{
-                        amatIoError(context + " must use 'assetGuid', not 'value'.")};
+                        matIoError(context + " must use 'assetGuid', not 'value'.")};
                 }
                 if (!isAssetValue(*type) && hasAssetGuid) {
                     return std::unexpected{
-                        amatIoError(context + " must use 'value', not 'assetGuid'.")};
+                        matIoError(context + " must use 'value', not 'assetGuid'.")};
                 }
 
                 auto propertyValue = readPropertyValue(member.value, *type, context);
@@ -498,7 +497,7 @@ namespace asharia::material_instance {
                     return std::unexpected{std::move(propertyValue.error())};
                 }
 
-                overrides.push_back(AmatPropertyOverride{
+                overrides.push_back(MatPropertyOverride{
                     .propertyId = std::move(*propertyId),
                     .type = *type,
                     .value = std::move(*propertyValue),
@@ -507,19 +506,18 @@ namespace asharia::material_instance {
             return overrides;
         }
 
-        [[nodiscard]] Result<AmatImportMetadata> readImportMetadata(const ArchiveValue& root) {
-            auto value = requiredMember(root, "import", ArchiveValueKind::Object, ".amat root");
+        [[nodiscard]] Result<MatImportMetadata> readImportMetadata(const ArchiveValue& root) {
+            auto value = requiredMember(root, "import", ArchiveValueKind::Object, ".mat root");
             if (!value) {
                 return std::unexpected{std::move(value.error())};
             }
             constexpr std::array importMembers{"lastCookedSignatureHash"sv, "lastCookedAt"sv};
-            if (auto valid = validateObjectMembers(**value, ".amat import", importMembers);
-                !valid) {
+            if (auto valid = validateObjectMembers(**value, ".mat import", importMembers); !valid) {
                 return std::unexpected{std::move(valid.error())};
             }
 
             auto lastCookedSignatureHash =
-                requiredHash64(**value, "lastCookedSignatureHash", ".amat import");
+                requiredHash64(**value, "lastCookedSignatureHash", ".mat import");
             if (!lastCookedSignatureHash) {
                 return std::unexpected{std::move(lastCookedSignatureHash.error())};
             }
@@ -529,37 +527,37 @@ namespace asharia::material_instance {
                 lastCookedAtValue != nullptr) {
                 if (lastCookedAtValue->kind != ArchiveValueKind::String) {
                     return std::unexpected{
-                        amatIoError(".amat import member 'lastCookedAt' has an unexpected type.")};
+                        matIoError(".mat import member 'lastCookedAt' has an unexpected type.")};
                 }
                 lastCookedAt = lastCookedAtValue->stringValue;
             }
 
-            return AmatImportMetadata{
+            return MatImportMetadata{
                 .lastCookedSignatureHash = *lastCookedSignatureHash,
                 .lastCookedAt = std::move(lastCookedAt),
             };
         }
 
-        [[nodiscard]] Result<AmatDocument> readAmatArchive(const ArchiveValue& archive) {
+        [[nodiscard]] Result<MatDocument> readMatArchive(const ArchiveValue& archive) {
             constexpr std::array rootMembers{"schemaVersion"sv, "materialType"sv, "variant"sv,
                                              "properties"sv, "import"sv};
-            if (auto validRoot = validateObjectMembers(archive, ".amat root", rootMembers);
+            if (auto validRoot = validateObjectMembers(archive, ".mat root", rootMembers);
                 !validRoot) {
                 return std::unexpected{std::move(validRoot.error())};
             }
 
-            auto schemaVersion = requiredUint32(archive, "schemaVersion", ".amat root");
+            auto schemaVersion = requiredUint32(archive, "schemaVersion", ".mat root");
             if (!schemaVersion) {
                 return std::unexpected{std::move(schemaVersion.error())};
             }
-            if (*schemaVersion != kAmatSchemaVersion) {
-                return std::unexpected{amatIoError(".amat root has unsupported schemaVersion '" +
-                                                   std::to_string(*schemaVersion) + "'.")};
+            if (*schemaVersion != kMatSchemaVersion) {
+                return std::unexpected{matIoError(".mat root has unsupported schemaVersion '" +
+                                                  std::to_string(*schemaVersion) + "'.")};
             }
 
             if (const ArchiveValue* variant = archive.findMemberValue("variant");
                 variant != nullptr && variant->kind != ArchiveValueKind::Object) {
-                return std::unexpected{amatIoError(".amat variant must be a JSON object.")};
+                return std::unexpected{matIoError(".mat variant must be a JSON object.")};
             }
 
             auto materialType = readMaterialTypeReference(archive);
@@ -575,30 +573,30 @@ namespace asharia::material_instance {
                 return std::unexpected{std::move(import.error())};
             }
 
-            AmatDocument document{
+            MatDocument document{
                 .schemaVersion = *schemaVersion,
                 .materialType = std::move(*materialType),
                 .properties = std::move(*properties),
                 .import = std::move(*import),
             };
-            if (auto validDocument = validateAmatDocument(document); !validDocument) {
+            if (auto validDocument = validateMatDocument(document); !validDocument) {
                 return std::unexpected{std::move(validDocument.error())};
             }
             return document;
         }
 
-        [[nodiscard]] ArchiveValue valueArchiveValue(const AmatPropertyOverride& property) {
+        [[nodiscard]] ArchiveValue valueArchiveValue(const MatPropertyOverride& property) {
             switch (property.value.kind) {
-            case AmatPropertyValueKind::Number:
+            case MatPropertyValueKind::Number:
                 return ArchiveValue::floating(property.value.numberValue);
-            case AmatPropertyValueKind::Integer:
+            case MatPropertyValueKind::Integer:
                 return ArchiveValue::integer(property.value.integerValue);
-            case AmatPropertyValueKind::UnsignedInteger:
+            case MatPropertyValueKind::UnsignedInteger:
                 return ArchiveValue::integer(
                     static_cast<std::int64_t>(property.value.unsignedIntegerValue));
-            case AmatPropertyValueKind::Boolean:
+            case MatPropertyValueKind::Boolean:
                 return ArchiveValue::boolean(property.value.boolValue);
-            case AmatPropertyValueKind::Vector: {
+            case MatPropertyValueKind::Vector: {
                 std::vector<ArchiveValue> values;
                 values.reserve(property.value.vectorValue.size());
                 for (const double element : property.value.vectorValue) {
@@ -606,13 +604,13 @@ namespace asharia::material_instance {
                 }
                 return ArchiveValue::array(std::move(values));
             }
-            case AmatPropertyValueKind::AssetGuid:
+            case MatPropertyValueKind::AssetGuid:
                 return ArchiveValue::string(asset::formatAssetGuid(property.value.assetGuid));
             }
             return ArchiveValue::null();
         }
 
-        [[nodiscard]] ArchiveValue propertyArchiveValue(const AmatPropertyOverride& property) {
+        [[nodiscard]] ArchiveValue propertyArchiveValue(const MatPropertyOverride& property) {
             std::vector<ArchiveMember> members{
                 ArchiveMember{
                     .key = "propertyId",
@@ -640,13 +638,13 @@ namespace asharia::material_instance {
             return ArchiveValue::object(std::move(members));
         }
 
-        [[nodiscard]] ArchiveValue documentArchiveValue(const AmatDocument& document) {
-            std::vector<AmatPropertyOverride> sortedProperties = document.properties;
-            std::ranges::sort(sortedProperties, {}, &AmatPropertyOverride::propertyId);
+        [[nodiscard]] ArchiveValue documentArchiveValue(const MatDocument& document) {
+            std::vector<MatPropertyOverride> sortedProperties = document.properties;
+            std::ranges::sort(sortedProperties, {}, &MatPropertyOverride::propertyId);
 
             std::vector<ArchiveMember> properties;
             properties.reserve(sortedProperties.size());
-            for (const AmatPropertyOverride& property : sortedProperties) {
+            for (const MatPropertyOverride& property : sortedProperties) {
                 properties.push_back(ArchiveMember{
                     .key = property.propertyId,
                     .value = propertyArchiveValue(property),
@@ -670,7 +668,7 @@ namespace asharia::material_instance {
             return ArchiveValue::object({
                 ArchiveMember{
                     .key = "schemaVersion",
-                    .value = ArchiveValue::integer(kAmatSchemaVersion),
+                    .value = ArchiveValue::integer(kMatSchemaVersion),
                 },
                 ArchiveMember{
                     .key = "materialType",
@@ -711,83 +709,82 @@ namespace asharia::material_instance {
             });
         }
 
-        [[nodiscard]] VoidResult validatePropertyIds(const AmatDocument& document) {
+        [[nodiscard]] VoidResult validatePropertyIds(const MatDocument& document) {
             for (std::size_t index = 0; index < document.properties.size(); ++index) {
-                const AmatPropertyOverride& property = document.properties[index];
+                const MatPropertyOverride& property = document.properties[index];
                 if (property.propertyId.empty()) {
-                    return std::unexpected{amatIoError("Amat property[" + std::to_string(index) +
-                                                       "] has an empty propertyId.")};
+                    return std::unexpected{matIoError("Mat property[" + std::to_string(index) +
+                                                      "] has an empty propertyId.")};
                 }
                 for (std::size_t otherIndex = index + 1; otherIndex < document.properties.size();
                      ++otherIndex) {
                     if (property.propertyId == document.properties[otherIndex].propertyId) {
-                        return std::unexpected{amatIoError("Amat property '" + property.propertyId +
-                                                           "' is duplicated.")};
+                        return std::unexpected{matIoError("Mat property '" + property.propertyId +
+                                                          "' is duplicated.")};
                     }
                 }
             }
             return {};
         }
 
-        [[nodiscard]] VoidResult validateAssetPropertyValue(const AmatPropertyOverride& property) {
-            if (property.value.kind == AmatPropertyValueKind::AssetGuid &&
+        [[nodiscard]] VoidResult validateAssetPropertyValue(const MatPropertyOverride& property) {
+            if (property.value.kind == MatPropertyValueKind::AssetGuid &&
                 static_cast<bool>(property.value.assetGuid)) {
                 return {};
             }
-            return std::unexpected{amatIoError("Amat property '" + property.propertyId +
-                                               "' must carry an asset GUID value.")};
+            return std::unexpected{matIoError("Mat property '" + property.propertyId +
+                                              "' must carry an asset GUID value.")};
         }
 
-        [[nodiscard]] VoidResult
-        validateNumericPropertyValue(const AmatPropertyOverride& property) {
+        [[nodiscard]] VoidResult validateNumericPropertyValue(const MatPropertyOverride& property) {
             const std::size_t width = vectorWidth(property.type);
             if (property.type == AshaderPropertyType::Float) {
-                if (property.value.kind == AmatPropertyValueKind::Number &&
+                if (property.value.kind == MatPropertyValueKind::Number &&
                     std::isfinite(property.value.numberValue)) {
                     return {};
                 }
-                return std::unexpected{amatIoError("Amat property '" + property.propertyId +
-                                                   "' must carry a finite number value.")};
+                return std::unexpected{matIoError("Mat property '" + property.propertyId +
+                                                  "' must carry a finite number value.")};
             }
             if (width != 0) {
-                if (property.value.kind == AmatPropertyValueKind::Vector &&
+                if (property.value.kind == MatPropertyValueKind::Vector &&
                     property.value.vectorValue.size() == width &&
                     std::ranges::all_of(property.value.vectorValue,
                                         [](double value) { return std::isfinite(value); })) {
                     return {};
                 }
                 return std::unexpected{
-                    amatIoError("Amat property '" + property.propertyId +
-                                "' must carry a finite vector of the declared width.")};
+                    matIoError("Mat property '" + property.propertyId +
+                               "' must carry a finite vector of the declared width.")};
             }
             if (property.type == AshaderPropertyType::Int) {
-                if (property.value.kind == AmatPropertyValueKind::Integer) {
+                if (property.value.kind == MatPropertyValueKind::Integer) {
                     return {};
                 }
-                return std::unexpected{amatIoError("Amat property '" + property.propertyId +
-                                                   "' must carry an integer value.")};
+                return std::unexpected{matIoError("Mat property '" + property.propertyId +
+                                                  "' must carry an integer value.")};
             }
             if (property.type == AshaderPropertyType::UInt) {
-                if (property.value.kind == AmatPropertyValueKind::UnsignedInteger &&
+                if (property.value.kind == MatPropertyValueKind::UnsignedInteger &&
                     property.value.unsignedIntegerValue <=
                         static_cast<std::uint64_t>(std::numeric_limits<std::uint32_t>::max())) {
                     return {};
                 }
-                return std::unexpected{amatIoError("Amat property '" + property.propertyId +
-                                                   "' must carry a uint32 value.")};
+                return std::unexpected{matIoError("Mat property '" + property.propertyId +
+                                                  "' must carry a uint32 value.")};
             }
             if (property.type == AshaderPropertyType::Bool) {
-                if (property.value.kind == AmatPropertyValueKind::Boolean) {
+                if (property.value.kind == MatPropertyValueKind::Boolean) {
                     return {};
                 }
-                return std::unexpected{amatIoError("Amat property '" + property.propertyId +
-                                                   "' must carry a bool value.")};
+                return std::unexpected{matIoError("Mat property '" + property.propertyId +
+                                                  "' must carry a bool value.")};
             }
-            return std::unexpected{amatIoError("Amat property '" + property.propertyId +
-                                               "' has unsupported value type.")};
+            return std::unexpected{matIoError("Mat property '" + property.propertyId +
+                                              "' has unsupported value type.")};
         }
 
-        [[nodiscard]] VoidResult validatePropertyValue(const AmatPropertyOverride& property) {
+        [[nodiscard]] VoidResult validatePropertyValue(const MatPropertyOverride& property) {
             if (isAssetValue(property.type)) {
                 return validateAssetPropertyValue(property);
             }
@@ -796,40 +793,40 @@ namespace asharia::material_instance {
 
     } // namespace
 
-    std::string_view toString(AmatPropertyValueKind kind) noexcept {
+    std::string_view toString(MatPropertyValueKind kind) noexcept {
         switch (kind) {
-        case AmatPropertyValueKind::Number:
+        case MatPropertyValueKind::Number:
             return "number";
-        case AmatPropertyValueKind::Integer:
+        case MatPropertyValueKind::Integer:
             return "integer";
-        case AmatPropertyValueKind::UnsignedInteger:
+        case MatPropertyValueKind::UnsignedInteger:
             return "uint";
-        case AmatPropertyValueKind::Boolean:
+        case MatPropertyValueKind::Boolean:
             return "bool";
-        case AmatPropertyValueKind::Vector:
+        case MatPropertyValueKind::Vector:
             return "vector";
-        case AmatPropertyValueKind::AssetGuid:
+        case MatPropertyValueKind::AssetGuid:
             return "assetGuid";
         }
         return "unknown";
     }
 
-    VoidResult validateAmatDocument(const AmatDocument& document) {
-        if (document.schemaVersion != kAmatSchemaVersion) {
-            return std::unexpected{amatIoError("Amat document has unsupported schemaVersion '" +
-                                               std::to_string(document.schemaVersion) + "'.")};
+    VoidResult validateMatDocument(const MatDocument& document) {
+        if (document.schemaVersion != kMatSchemaVersion) {
+            return std::unexpected{matIoError("Mat document has unsupported schemaVersion '" +
+                                              std::to_string(document.schemaVersion) + "'.")};
         }
         if (!document.materialType) {
-            return std::unexpected{amatIoError("Amat document has an incomplete materialType.")};
+            return std::unexpected{matIoError("Mat document has an incomplete materialType.")};
         }
         if (document.import.lastCookedSignatureHash == 0) {
             return std::unexpected{
-                amatIoError("Amat document is missing import.lastCookedSignatureHash.")};
+                matIoError("Mat document is missing import.lastCookedSignatureHash.")};
         }
         if (auto validPropertyIds = validatePropertyIds(document); !validPropertyIds) {
             return std::unexpected{std::move(validPropertyIds.error())};
         }
-        for (const AmatPropertyOverride& property : document.properties) {
+        for (const MatPropertyOverride& property : document.properties) {
             if (auto validValue = validatePropertyValue(property); !validValue) {
                 return std::unexpected{std::move(validValue.error())};
             }
@@ -838,54 +835,54 @@ namespace asharia::material_instance {
         return {};
     }
 
-    Result<AmatDocument> readAmatText(std::string_view text) {
+    Result<MatDocument> readMatText(std::string_view text) {
         auto parsedArchive = archive::readJsonArchive(text);
         if (!parsedArchive) {
             return std::unexpected{
-                amatIoError("Failed to read .amat JSON: " + parsedArchive.error().message)};
+                matIoError("Failed to read .mat JSON: " + parsedArchive.error().message)};
         }
 
-        return readAmatArchive(*parsedArchive);
+        return readMatArchive(*parsedArchive);
     }
 
-    Result<AmatDocument> readAmatFile(const std::filesystem::path& path) {
+    Result<MatDocument> readMatFile(const std::filesystem::path& path) {
         auto archive = archive::readJsonArchiveFile(path, {.maxBytes = kMaxMaterialInstanceBytes});
         if (!archive) {
-            return std::unexpected{amatIoError("Failed to parse .amat file '" + path.string() +
-                                               "': " + archive.error().message)};
+            return std::unexpected{matIoError("Failed to parse .mat file '" + path.string() +
+                                              "': " + archive.error().message)};
         }
 
-        auto document = readAmatArchive(*archive);
+        auto document = readMatArchive(*archive);
         if (!document) {
-            return std::unexpected{amatIoError("Failed to validate .amat file '" + path.string() +
-                                               "': " + document.error().message)};
+            return std::unexpected{matIoError("Failed to validate .mat file '" + path.string() +
+                                              "': " + document.error().message)};
         }
         return document;
     }
 
-    Result<std::string> writeAmatText(const AmatDocument& document) {
-        if (auto validDocument = validateAmatDocument(document); !validDocument) {
+    Result<std::string> writeMatText(const MatDocument& document) {
+        if (auto validDocument = validateMatDocument(document); !validDocument) {
             return std::unexpected{std::move(validDocument.error())};
         }
 
         auto text = archive::writeJsonArchive(documentArchiveValue(document));
         if (!text) {
             return std::unexpected{
-                amatIoError("Failed to write .amat JSON: " + text.error().message)};
+                matIoError("Failed to write .mat JSON: " + text.error().message)};
         }
 
         return *text;
     }
 
-    VoidResult writeAmatFile(const std::filesystem::path& path, const AmatDocument& document) {
-        if (auto validDocument = validateAmatDocument(document); !validDocument) {
+    VoidResult writeMatFile(const std::filesystem::path& path, const MatDocument& document) {
+        if (auto validDocument = validateMatDocument(document); !validDocument) {
             return std::unexpected{std::move(validDocument.error())};
         }
 
         auto written = archive::writeJsonArchiveFile(path, documentArchiveValue(document));
         if (!written) {
-            return std::unexpected{amatIoError("Failed to write .amat file '" + path.string() +
-                                               "': " + written.error().message)};
+            return std::unexpected{matIoError("Failed to write .mat file '" + path.string() +
+                                              "': " + written.error().message)};
         }
         return {};
     }

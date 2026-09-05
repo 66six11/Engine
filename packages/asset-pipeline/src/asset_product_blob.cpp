@@ -17,7 +17,7 @@
 #include "asharia/asset_core/asset_guid.hpp"
 #include "asharia/core/error.hpp"
 #include "asharia/core/file_io.hpp"
-#include "asharia/material_instance/amat_io.hpp"
+#include "asharia/material_instance/mat_io.hpp"
 
 #include "asset_product_blob_limits.hpp"
 
@@ -602,8 +602,8 @@ namespace asharia::asset {
             std::string stableTypeId;
             std::uint64_t expectedTypeHash{};
             std::uint64_t lastCookedSignatureHash{};
-            std::uint64_t amatSize{};
-            std::uint64_t amatHash{};
+            std::uint64_t matSize{};
+            std::uint64_t matHash{};
         };
 
         [[nodiscard]] Result<MaterialInstanceProductHeaderFields>
@@ -623,8 +623,8 @@ namespace asharia::asset {
                 requireHexUint64Field(header, "materialType.expectedTypeHash", relativeProductPath);
             auto lastCookedSignatureHash = requireHexUint64Field(
                 header, "import.lastCookedSignatureHash", relativeProductPath);
-            auto amatSize = requireUint64Field(header, "amat.size", relativeProductPath);
-            auto amatHash = requireHexUint64Field(header, "amatHash", relativeProductPath);
+            auto matSize = requireUint64Field(header, "amat.size", relativeProductPath);
+            auto matHash = requireHexUint64Field(header, "amatHash", relativeProductPath);
             if (!sourcePath) {
                 return std::unexpected{std::move(sourcePath.error())};
             }
@@ -640,11 +640,11 @@ namespace asharia::asset {
             if (!lastCookedSignatureHash) {
                 return std::unexpected{std::move(lastCookedSignatureHash.error())};
             }
-            if (!amatSize) {
-                return std::unexpected{std::move(amatSize.error())};
+            if (!matSize) {
+                return std::unexpected{std::move(matSize.error())};
             }
-            if (!amatHash) {
-                return std::unexpected{std::move(amatHash.error())};
+            if (!matHash) {
+                return std::unexpected{std::move(matHash.error())};
             }
             if (stableTypeId->empty()) {
                 return std::unexpected{blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
@@ -658,8 +658,8 @@ namespace asharia::asset {
                 .stableTypeId = std::move(*stableTypeId),
                 .expectedTypeHash = *expectedTypeHash,
                 .lastCookedSignatureHash = *lastCookedSignatureHash,
-                .amatSize = *amatSize,
-                .amatHash = *amatHash,
+                .matSize = *matSize,
+                .matHash = *matHash,
             };
         }
 
@@ -1503,44 +1503,44 @@ namespace asharia::asset {
         if (!header) {
             return std::unexpected{std::move(header.error())};
         }
-        if (header->amatSize > SIZE_MAX || payloadBegin > productBytes.size() ||
-            header->amatSize > productBytes.size() - payloadBegin) {
+        if (header->matSize > SIZE_MAX || payloadBegin > productBytes.size() ||
+            header->matSize > productBytes.size() - payloadBegin) {
             return std::unexpected{blobError(AssetProductBlobDiagnosticCode::UnterminatedPayload,
                                              std::string{relativeProductPath},
-                                             "has an unterminated .amat payload")};
+                                             "has an unterminated .mat payload")};
         }
 
-        const auto payloadByteCount = static_cast<std::size_t>(header->amatSize);
+        const auto payloadByteCount = static_cast<std::size_t>(header->matSize);
         const std::size_t payloadEnd = payloadBegin + payloadByteCount;
         if (payloadEnd > productBytes.size() || kEnd.size() > productBytes.size() - payloadEnd ||
             productText.substr(payloadEnd, kEnd.size()) != kEnd) {
             return std::unexpected{blobError(AssetProductBlobDiagnosticCode::UnterminatedPayload,
                                              std::string{relativeProductPath},
-                                             "has an unterminated .amat payload")};
+                                             "has an unterminated .mat payload")};
         }
 
         const std::span<const std::uint8_t> payloadBytes{
             productBytes.data() + payloadBegin,
             payloadByteCount,
         };
-        if (hashBytes(payloadBytes) != header->amatHash) {
+        if (hashBytes(payloadBytes) != header->matHash) {
             return std::unexpected{blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
                                              std::string{relativeProductPath},
-                                             "has an .amat payload hash mismatch")};
+                                             "has an .mat payload hash mismatch")};
         }
 
-        std::string canonicalAmatText;
-        canonicalAmatText.reserve(payloadByteCount);
+        std::string canonicalMatText;
+        canonicalMatText.reserve(payloadByteCount);
         for (const std::uint8_t byte : payloadBytes) {
-            canonicalAmatText.push_back(static_cast<char>(byte));
+            canonicalMatText.push_back(static_cast<char>(byte));
         }
 
-        auto document = material_instance::readAmatText(canonicalAmatText);
+        auto document = material_instance::readMatText(canonicalMatText);
         if (!document) {
             return std::unexpected{
                 blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
                           std::string{relativeProductPath},
-                          "contains invalid canonical .amat payload: " + document.error().message)};
+                          "contains invalid canonical .mat payload: " + document.error().message)};
         }
         if (document->materialType.assetGuid != header->materialTypeAssetGuid ||
             document->materialType.stableTypeId != header->stableTypeId ||
@@ -1557,7 +1557,7 @@ namespace asharia::asset {
             .stableTypeId = std::move(header->stableTypeId),
             .expectedTypeHash = header->expectedTypeHash,
             .lastCookedSignatureHash = header->lastCookedSignatureHash,
-            .canonicalAmatText = std::move(canonicalAmatText),
+            .canonicalMatText = std::move(canonicalMatText),
         };
     }
 

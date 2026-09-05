@@ -5,9 +5,9 @@
 #include <string>
 #include <string_view>
 
-#include "asharia/material_instance/amat_io.hpp"
-#include "asharia/material_instance/amat_parameters.hpp"
-#include "asharia/material_instance/amat_resolver.hpp"
+#include "asharia/material_instance/mat_io.hpp"
+#include "asharia/material_instance/mat_parameters.hpp"
+#include "asharia/material_instance/mat_resolver.hpp"
 #include "asharia/shader_authoring/ashader_parser.hpp"
 
 namespace {
@@ -48,24 +48,24 @@ shader "asharia.material.unlit" {
         return *parsed.document;
     }
 
-    bool hasDiagnostic(const asharia::material_instance::AmatResolveResult& result,
-                       asharia::material_instance::AmatDiagnosticCode code,
+    bool hasDiagnostic(const asharia::material_instance::MatResolveResult& result,
+                       asharia::material_instance::MatDiagnosticCode code,
                        std::optional<std::string_view> propertyId = std::nullopt) {
         return std::ranges::any_of(result.diagnostics, [&](const auto& diagnostic) {
             return diagnostic.code == code && (!propertyId || diagnostic.propertyId == *propertyId);
         });
     }
 
-    bool hasDiff(const asharia::material_instance::AmatResolveResult& result,
+    bool hasDiff(const asharia::material_instance::MatResolveResult& result,
                  std::string_view propertyId,
-                 asharia::material_instance::AmatOverrideDiffKind kind) {
+                 asharia::material_instance::MatOverrideDiffKind kind) {
         return std::ranges::any_of(result.overrides, [&](const auto& diff) {
             return diff.propertyId == propertyId && diff.kind == kind;
         });
     }
 
     bool smokeReadWriteResolve() {
-        constexpr std::string_view kAmat = R"json(
+        constexpr std::string_view kMat = R"json(
 {
   "schemaVersion": 2,
   "materialType": {
@@ -100,7 +100,7 @@ shader "asharia.material.unlit" {
 }
 )json";
 
-        auto document = asharia::material_instance::readAmatText(kAmat);
+        auto document = asharia::material_instance::readMatText(kMat);
         if (!document) {
             logFailure(document.error().message);
             return false;
@@ -109,11 +109,11 @@ shader "asharia.material.unlit" {
             document->materialType.stableTypeId != "asharia.material.unlit" ||
             document->materialType.expectedTypeHash != kTypeHash ||
             document->import.lastCookedSignatureHash != kSignatureHash) {
-            logFailure("read .amat document did not preserve expected fields.");
+            logFailure("read .mat document did not preserve expected fields.");
             return false;
         }
 
-        auto written = asharia::material_instance::writeAmatText(*document);
+        auto written = asharia::material_instance::writeMatText(*document);
         if (!written) {
             logFailure(written.error().message);
             return false;
@@ -121,35 +121,35 @@ shader "asharia.material.unlit" {
         if (written->find(R"("baseColor")") == std::string::npos ||
             written->find(R"("lastCookedSignatureHash": "00000000000000bb")") ==
                 std::string::npos) {
-            logFailure("written .amat text is missing stable fields.");
+            logFailure("written .mat text is missing stable fields.");
             return false;
         }
-        auto roundTrip = asharia::material_instance::readAmatText(*written);
+        auto roundTrip = asharia::material_instance::readMatText(*written);
         if (!roundTrip || roundTrip->properties.size() != document->properties.size() ||
             roundTrip->materialType != document->materialType ||
             roundTrip->import != document->import) {
-            logFailure("written .amat text did not round-trip.");
+            logFailure("written .mat text did not round-trip.");
             return false;
         }
 
         const auto shader = makeShaderDocument();
-        auto result = asharia::material_instance::resolveAmatOverrides(
+        auto result = asharia::material_instance::resolveMatOverrides(
             *document, shader,
-            asharia::material_instance::AmatResolveOptions{
+            asharia::material_instance::MatResolveOptions{
                 .currentMaterialTypeHash = kTypeHash,
                 .currentSignatureHash = kSignatureHash,
             });
         if (asharia::material_instance::hasErrors(result.diagnostics) ||
             result.overrides.size() != 4 ||
             !hasDiff(result, "baseColor",
-                     asharia::material_instance::AmatOverrideDiffKind::Overridden) ||
+                     asharia::material_instance::MatOverrideDiffKind::Overridden) ||
             !hasDiff(result, "roughness",
-                     asharia::material_instance::AmatOverrideDiffKind::Overridden) ||
+                     asharia::material_instance::MatOverrideDiffKind::Overridden) ||
             !hasDiff(result, "albedoMap",
-                     asharia::material_instance::AmatOverrideDiffKind::Overridden) ||
+                     asharia::material_instance::MatOverrideDiffKind::Overridden) ||
             !hasDiff(result, "useAlpha",
-                     asharia::material_instance::AmatOverrideDiffKind::Defaulted)) {
-            logFailure("valid .amat overrides did not resolve deterministically.");
+                     asharia::material_instance::MatOverrideDiffKind::Defaulted)) {
+            logFailure("valid .mat overrides did not resolve deterministically.");
             return false;
         }
 
@@ -157,7 +157,7 @@ shader "asharia.material.unlit" {
     }
 
     bool smokeDiagnostics() {
-        constexpr std::string_view kAmat = R"json(
+        constexpr std::string_view kMat = R"json(
 {
   "schemaVersion": 2,
   "materialType": {
@@ -186,42 +186,42 @@ shader "asharia.material.unlit" {
 }
 )json";
 
-        auto document = asharia::material_instance::readAmatText(kAmat);
+        auto document = asharia::material_instance::readMatText(kMat);
         if (!document) {
             logFailure(document.error().message);
             return false;
         }
 
         const auto shader = makeShaderDocument();
-        auto result = asharia::material_instance::resolveAmatOverrides(
+        auto result = asharia::material_instance::resolveMatOverrides(
             *document, shader,
-            asharia::material_instance::AmatResolveOptions{
+            asharia::material_instance::MatResolveOptions{
                 .currentMaterialTypeHash = 0x00000000000000CCULL,
                 .currentSignatureHash = 0x00000000000000DDULL,
             });
         if (!asharia::material_instance::hasErrors(result.diagnostics) ||
             !hasDiagnostic(result,
-                           asharia::material_instance::AmatDiagnosticCode::PropertyTypeMismatch,
+                           asharia::material_instance::MatDiagnosticCode::PropertyTypeMismatch,
                            "roughness") ||
-            !hasDiagnostic(result, asharia::material_instance::AmatDiagnosticCode::UnknownProperty,
+            !hasDiagnostic(result, asharia::material_instance::MatDiagnosticCode::UnknownProperty,
                            "missingProperty") ||
             !hasDiagnostic(result,
-                           asharia::material_instance::AmatDiagnosticCode::StaleMaterialTypeHash) ||
+                           asharia::material_instance::MatDiagnosticCode::StaleMaterialTypeHash) ||
             !hasDiagnostic(result,
-                           asharia::material_instance::AmatDiagnosticCode::StaleSignatureHash) ||
+                           asharia::material_instance::MatDiagnosticCode::StaleSignatureHash) ||
             !hasDiff(result, "roughness",
-                     asharia::material_instance::AmatOverrideDiffKind::Invalid)) {
-            logFailure("invalid .amat fixture did not produce deterministic diagnostics.");
+                     asharia::material_instance::MatOverrideDiffKind::Invalid)) {
+            logFailure("invalid .mat fixture did not produce deterministic diagnostics.");
             return false;
         }
 
-        auto malformed = asharia::material_instance::readAmatText("{");
+        auto malformed = asharia::material_instance::readMatText("{");
         if (malformed) {
             logFailure("malformed JSON unexpectedly parsed.");
             return false;
         }
 
-        auto unsupportedSchema = asharia::material_instance::readAmatText(R"json({
+        auto unsupportedSchema = asharia::material_instance::readMatText(R"json({
   "schemaVersion": 3,
   "materialType": {
     "assetGuid": "11111111-1111-1111-1111-111111111111",
@@ -244,7 +244,7 @@ shader "asharia.material.unlit" {
     bool smokeProgrammaticValueValidation() {
         using namespace asharia::material_instance;
         using asharia::shader_authoring::AshaderPropertyType;
-        AmatDocument valid;
+        MatDocument valid;
         valid.materialType.assetGuid.bytes[0] = 1;
         valid.materialType.stableTypeId = "asharia.material.unlit";
         valid.materialType.expectedTypeHash = kTypeHash;
@@ -252,22 +252,22 @@ shader "asharia.material.unlit" {
         valid.properties.push_back(
             {.propertyId = "roughness",
              .type = AshaderPropertyType::Float,
-             .value = {.kind = AmatPropertyValueKind::Number, .numberValue = 0.25}});
+             .value = {.kind = MatPropertyValueKind::Number, .numberValue = 0.25}});
         const auto shader = makeShaderDocument();
-        if (!validateAmatDocument(valid) ||
-            hasErrors(resolveAmatOverrides(valid, shader).diagnostics)) {
+        if (!validateMatDocument(valid) ||
+            hasErrors(resolveMatOverrides(valid, shader).diagnostics)) {
             logFailure("valid programmatic material was rejected");
             return false;
         }
-        const auto rejected = [&](const AmatDocument& document) {
-            const auto resolved = resolveAmatOverrides(document, shader);
-            if (validateAmatDocument(document) || writeAmatText(document) ||
-                !hasDiagnostic(resolved, AmatDiagnosticCode::InvalidOverride) ||
+        const auto rejected = [&](const MatDocument& document) {
+            const auto resolved = resolveMatOverrides(document, shader);
+            if (validateMatDocument(document) || writeMatText(document) ||
+                !hasDiagnostic(resolved, MatDiagnosticCode::InvalidOverride) ||
                 !hasErrors(resolved.diagnostics) || !resolved.overrides.empty()) {
                 logFailure("malformed programmatic material escaped a public validation boundary");
                 return false;
             }
-            const auto repeated = resolveAmatOverrides(document, shader);
+            const auto repeated = resolveMatOverrides(document, shader);
             return resolved.diagnostics.front().message == repeated.diagnostics.front().message;
         };
         for (double number :
@@ -283,9 +283,9 @@ shader "asharia.material.unlit" {
         vector.properties[0] = {
             .propertyId = "baseColor",
             .type = AshaderPropertyType::Color,
-            .value = {.kind = AmatPropertyValueKind::Vector, .vectorValue = {1, 0, 0, 1}}};
-        if (!validateAmatDocument(vector) ||
-            hasErrors(resolveAmatOverrides(vector, shader).diagnostics)) {
+            .value = {.kind = MatPropertyValueKind::Vector, .vectorValue = {1, 0, 0, 1}}};
+        if (!validateMatDocument(vector) ||
+            hasErrors(resolveMatOverrides(vector, shader).diagnostics)) {
             logFailure("valid color override was rejected");
             return false;
         }
@@ -298,7 +298,7 @@ shader "asharia.material.unlit" {
             return false;
         }
         auto wrongKind = valid;
-        wrongKind.properties[0].value.kind = AmatPropertyValueKind::Boolean;
+        wrongKind.properties[0].value.kind = MatPropertyValueKind::Boolean;
         if (!rejected(wrongKind)) {
             return false;
         }
@@ -313,16 +313,16 @@ shader "asharia.material.unlit" {
     }
 
     bool checkParameterFailures(
-        const asharia::material_instance::AmatDocument& document,
+        const asharia::material_instance::MatDocument& document,
         const asharia::shader_authoring::AshaderDocument& shader,
-        const std::vector<asharia::material_instance::AmatParameterMember>& members) {
+        const std::vector<asharia::material_instance::MatParameterMember>& members) {
         using namespace asharia::material_instance;
         using namespace asharia::shader_authoring;
-        auto rejected = [&](const AmatDocument& input, const AshaderDocument& type,
-                            const std::vector<AmatParameterMember>& layout, std::uint32_t size,
-                            AmatParameterError code) {
-            auto first = packAmatParameters(input, type, layout, size);
-            auto second = packAmatParameters(input, type, layout, size);
+        auto rejected = [&](const MatDocument& input, const AshaderDocument& type,
+                            const std::vector<MatParameterMember>& layout, std::uint32_t size,
+                            MatParameterError code) {
+            auto first = packMatParameters(input, type, layout, size);
+            auto second = packMatParameters(input, type, layout, size);
             if (first || second || first.error().domain != asharia::ErrorDomain::Material ||
                 first.error().code != static_cast<int>(code) ||
                 first.error().message != second.error().message) {
@@ -333,95 +333,95 @@ shader "asharia.material.unlit" {
         };
         auto invalidLayout = members;
         invalidLayout[0].byteOffset = 32;
-        if (!rejected(document, shader, invalidLayout, 48, AmatParameterError::InvalidLayout)) {
+        if (!rejected(document, shader, invalidLayout, 48, MatParameterError::InvalidLayout)) {
             return false;
         }
         for (auto offset : {1U, 48U, std::numeric_limits<std::uint32_t>::max()}) {
             invalidLayout = members;
             invalidLayout[0].byteOffset = offset;
-            if (!rejected(document, shader, invalidLayout, 48, AmatParameterError::InvalidLayout)) {
+            if (!rejected(document, shader, invalidLayout, 48, MatParameterError::InvalidLayout)) {
                 return false;
             }
         }
         invalidLayout = members;
         invalidLayout[0] = invalidLayout[1];
-        if (!rejected(document, shader, invalidLayout, 48, AmatParameterError::InvalidLayout)) {
+        if (!rejected(document, shader, invalidLayout, 48, MatParameterError::InvalidLayout)) {
             return false;
         }
         invalidLayout = members;
         invalidLayout[0].type = AshaderPropertyType::Float;
-        if (!rejected(document, shader, invalidLayout, 48, AmatParameterError::InvalidLayout)) {
+        if (!rejected(document, shader, invalidLayout, 48, MatParameterError::InvalidLayout)) {
             return false;
         }
         invalidLayout.pop_back();
-        if (!rejected(document, shader, invalidLayout, 48, AmatParameterError::InvalidLayout)) {
+        if (!rejected(document, shader, invalidLayout, 48, MatParameterError::InvalidLayout)) {
             return false;
         }
-        if (!rejected(document, shader, members, kMaxAmatParameterBytes + 4,
-                      AmatParameterError::BudgetExceeded)) {
+        if (!rejected(document, shader, members, kMaxMatParameterBytes + 4,
+                      MatParameterError::BudgetExceeded)) {
             return false;
         }
         for (double value :
              {std::numeric_limits<double>::max(), std::numeric_limits<double>::denorm_min()}) {
             auto invalid = document;
             invalid.properties[0].value.numberValue = value;
-            if (!rejected(invalid, shader, members, 48, AmatParameterError::InvalidValue)) {
+            if (!rejected(invalid, shader, members, 48, MatParameterError::InvalidValue)) {
                 return false;
             }
         }
         auto invalid = document;
         invalid.properties[0].value.numberValue = std::numeric_limits<double>::infinity();
-        if (!rejected(invalid, shader, members, 48, AmatParameterError::InvalidInput)) {
+        if (!rejected(invalid, shader, members, 48, MatParameterError::InvalidInput)) {
             return false;
         }
         auto badShader = shader;
         badShader.properties[0].defaultValue.elements = {"1", "2"};
-        if (!rejected(document, badShader, members, 48, AmatParameterError::InvalidValue)) {
+        if (!rejected(document, badShader, members, 48, MatParameterError::InvalidValue)) {
             return false;
         }
         badShader = shader;
         badShader.properties[2].defaultValue.text = "2147483648";
-        if (!rejected(document, badShader, members, 48, AmatParameterError::InvalidValue)) {
+        if (!rejected(document, badShader, members, 48, MatParameterError::InvalidValue)) {
             return false;
         }
         badShader = shader;
         badShader.properties[3].defaultValue.text = "4294967296";
-        if (!rejected(document, badShader, members, 48, AmatParameterError::InvalidValue)) {
+        if (!rejected(document, badShader, members, 48, MatParameterError::InvalidValue)) {
             return false;
         }
         badShader = shader;
         badShader.properties[0].defaultValue = {};
-        if (!rejected(document, badShader, members, 48, AmatParameterError::InvalidValue)) {
+        if (!rejected(document, badShader, members, 48, MatParameterError::InvalidValue)) {
             return false;
         }
         badShader.properties[0].type = AshaderPropertyType::Texture2D;
-        if (!rejected(document, badShader, members, 48, AmatParameterError::UnsupportedType)) {
+        if (!rejected(document, badShader, members, 48, MatParameterError::UnsupportedType)) {
             return false;
         }
         badShader = shader;
         badShader.properties[1].name = badShader.properties[0].name;
-        return rejected(document, badShader, members, 48, AmatParameterError::InvalidInput);
+        return rejected(document, badShader, members, 48, MatParameterError::InvalidInput);
     }
 
-    bool checkParameterNumericBoundaries(asharia::material_instance::AmatDocument document,
+    bool checkParameterNumericBoundaries(asharia::material_instance::MatDocument document,
                                          asharia::shader_authoring::AshaderDocument shader) {
         using namespace asharia::material_instance;
         using namespace asharia::shader_authoring;
         shader.properties = {shader.properties[1]};
-        const std::vector<AmatParameterMember> scalar{
+        const std::vector<MatParameterMember> scalar{
             {.propertyId = "gain", .type = AshaderPropertyType::Float, .byteOffset = 0}};
         for (double value :
              {static_cast<double>(std::numeric_limits<float>::max()),
               -static_cast<double>(std::numeric_limits<float>::max()),
               static_cast<double>(std::numeric_limits<float>::denorm_min()), 0.1, -0.0}) {
             document.properties[0].value.numberValue = value;
-            if (!packAmatParameters(document, shader, scalar, 4)) {
+            if (!packMatParameters(document, shader, scalar, 4)) {
                 logFailure("representable float or ordinary rounding rejected");
                 return false;
             }
         }
         document.properties.clear();
-        auto defaulted = packAmatParameters(document, shader, scalar, 4);
+        auto defaulted = packMatParameters(document, shader, scalar, 4);
         if (!defaulted ||
             defaulted->bytes !=
                 std::vector<std::byte>{std::byte{0}, std::byte{0}, std::byte{128}, std::byte{62}}) {
@@ -435,19 +435,19 @@ shader "asharia.material.unlit" {
             ++width;
             property.defaultValue = {.kind = AshaderPropertyDefaultKind::Vector,
                                      .elements = std::vector<std::string>(width, "1")};
-            const std::vector<AmatParameterMember> layout{
+            const std::vector<MatParameterMember> layout{
                 {.propertyId = "gain", .type = type, .byteOffset = 0}};
-            auto vector = packAmatParameters(document, shader, layout, 16);
+            auto vector = packMatParameters(document, shader, layout, 16);
             if (!vector || vector->bytes[(width * 4) - 1] != std::byte{63}) {
                 return false;
             }
             property.defaultValue.elements[0] = "nan";
-            if (packAmatParameters(document, shader, layout, 16)) {
+            if (packMatParameters(document, shader, layout, 16)) {
                 return false;
             }
         }
         shader.properties.clear();
-        auto empty = packAmatParameters(document, shader, {}, 0);
+        auto empty = packMatParameters(document, shader, {}, 0);
         return empty && empty->bytes.empty();
     }
 
@@ -466,7 +466,7 @@ shader "asharia.material.unlit" {
  }
  pass "Forward" { vertex vertexMain fragment fragmentMain slang "Unlit.slang" }
 })");
-        auto document = readAmatText(R"({"schemaVersion":2,"materialType":{
+        auto document = readMatText(R"({"schemaVersion":2,"materialType":{
 "assetGuid":"11111111-1111-1111-1111-111111111111",
 "stableTypeId":"asharia.material.unlit","expectedTypeHash":"00000000000000aa"},
 "properties":{"gain":{"propertyId":"gain","type":"float","value":2.0}},
@@ -479,14 +479,14 @@ shader "asharia.material.unlit" {
         if (!checkParameterNumericBoundaries(*document, shader)) {
             return false;
         }
-        std::vector<AmatParameterMember> members{
+        std::vector<MatParameterMember> members{
             {.propertyId = "gain", .type = AshaderPropertyType::Float, .byteOffset = 0},
             {.propertyId = "tint", .type = AshaderPropertyType::Color, .byteOffset = 16},
             {.propertyId = "mode", .type = AshaderPropertyType::Int, .byteOffset = 32},
             {.propertyId = "mask", .type = AshaderPropertyType::UInt, .byteOffset = 36},
             {.propertyId = "enabled", .type = AshaderPropertyType::Bool, .byteOffset = 40}};
-        const auto original = AmatDocument{*document};
-        auto block = packAmatParameters(*document, shader, members, 48);
+        const auto original = MatDocument{*document};
+        auto block = packMatParameters(*document, shader, members, 48);
         // Explicit byte oracle: float 2, padding, float4(1,.5,0,1), -2, UINT_MAX, bool32(1).
         const std::vector<unsigned char> expected{
             0,   0,   0,   64,  0,   0,   0,   0,   0, 0, 0, 0, 0, 0, 0,   0,
@@ -500,7 +500,7 @@ shader "asharia.material.unlit" {
             return false;
         }
         std::ranges::reverse(members);
-        auto repeated = packAmatParameters(*document, shader, members, 48);
+        auto repeated = packMatParameters(*document, shader, members, 48);
         if (!repeated || repeated->bytes != block->bytes) {
             return false;
         }
@@ -508,7 +508,7 @@ shader "asharia.material.unlit" {
             return false;
         }
         const auto stale =
-            packAmatParameters(*document, shader, members, 48, {.currentMaterialTypeHash = 123});
+            packMatParameters(*document, shader, members, 48, {.currentMaterialTypeHash = 123});
         return stale && stale->bytes == block->bytes && !stale->diagnostics.empty();
     }
 

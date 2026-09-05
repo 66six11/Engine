@@ -4313,7 +4313,7 @@ namespace {
                    "decode-failed");
     }
 
-    [[nodiscard]] std::string validAmatText() {
+    [[nodiscard]] std::string validMatText() {
         return R"json({
   "schemaVersion": 2,
   "materialType": {
@@ -4352,7 +4352,7 @@ namespace {
             .guid = guid ? *guid : asharia::asset::AssetGuid{},
             .assetType = asharia::asset::makeAssetTypeId(kMaterialTypeName),
             .assetTypeName = std::string{kMaterialTypeName},
-            .sourcePath = "Content/Materials/Red.amat",
+            .sourcePath = "Content/Materials/Red.mat",
             .importerId = asharia::asset::makeImporterId(kImporterName),
             .importerName = std::string{kImporterName},
             .importerVersion = asharia::asset::ImporterVersion{1},
@@ -4543,7 +4543,7 @@ shader "asharia.material.compile_reflection" {
         };
     }
 
-    [[nodiscard]] bool smokeProductExecutionWritesAmatMaterialProduct() {
+    [[nodiscard]] bool smokeProductExecutionWritesMatMaterialProduct() {
         const std::filesystem::path root =
             smokeRoot("asharia-asset-pipeline-smoke-amat-material-product");
         if (root.empty() || !prepareWorkspace(root)) {
@@ -4556,7 +4556,7 @@ shader "asharia.material.compile_reflection" {
                 .value = "material-instance-v1",
             },
         };
-        const std::vector<std::uint8_t> sourceBytes = bytesFromText(validAmatText());
+        const std::vector<std::uint8_t> sourceBytes = bytesFromText(validMatText());
         const asharia::asset::SourceAssetRecord source =
             makeMaterialInstanceRecord(sourceBytes, settings);
         const std::filesystem::path outputRoot = root / "ProductCache";
@@ -4587,7 +4587,7 @@ shader "asharia.material.compile_reflection" {
             *firstText != *secondText ||
             first.writtenProducts.front().product.productHash !=
                 second.writtenProducts.front().product.productHash) {
-            logFailure("Asset product execution smoke failed .amat material product write.");
+            logFailure("Asset product execution smoke failed .mat material product write.");
             return false;
         }
 
@@ -4601,15 +4601,15 @@ shader "asharia.material.compile_reflection" {
             payload->stableTypeId != "asharia.material.unlit" ||
             payload->expectedTypeHash != 0x00000000000000AAULL ||
             payload->lastCookedSignatureHash != 0x00000000000000BBULL ||
-            payload->canonicalAmatText.find(R"("baseColor")") == std::string::npos) {
-            logFailure("Asset product execution smoke could not read .amat material product.");
+            payload->canonicalMatText.find(R"("baseColor")") == std::string::npos) {
+            logFailure("Asset product execution smoke could not read .mat material product.");
             return false;
         }
 
         return true;
     }
 
-    [[nodiscard]] bool smokeProductExecutionAmatDiagnostics() {
+    [[nodiscard]] bool smokeProductExecutionMatDiagnostics() {
         const std::vector<asharia::asset::AssetImportSetting> settings{
             asharia::asset::AssetImportSetting{
                 .key = "material.product",
@@ -5668,7 +5668,7 @@ shader "asharia.material.compile_reflection" {
         const auto oversizedTexture = makeBoundedTextureProduct(1U, 1U, 1U, maxCount);
         const auto oversizedMaterial =
             bytesFromText("schema=com.asharia.asset.material-instance-product.v1\n"
-                          "sourcePath=Content/Materials/Bounded.amat\n"
+                          "sourcePath=Content/Materials/Bounded.mat\n"
                           "materialType.assetGuid=11111111-1111-1111-1111-111111111111\n"
                           "materialType.stableTypeId=asharia.material.bounded\n"
                           "materialType.expectedTypeHash=0000000000000001\n"
@@ -5694,7 +5694,7 @@ shader "asharia.material.compile_reflection" {
                         "bounded/oversized-material.product", limits);
                 },
                 asharia::asset::AssetProductBlobDiagnosticCode::UnterminatedPayload,
-                ".amat payload") ||
+                ".mat payload") ||
             !expectProductBlobErrorWithoutException(
                 [&] {
                     return asharia::asset::readShaderAuthoringProductPayload(
@@ -5794,20 +5794,20 @@ shader "asharia.material.compile_reflection" {
             return false;
         }
 
-        const std::vector<std::uint8_t> noAmatPayload =
+        const std::vector<std::uint8_t> noMatPayload =
             bytesFromText("schema=com.asharia.asset.material-instance-product.v1\n");
-        auto missingAmatPayload = asharia::asset::readMaterialInstanceProductPayload(
-            std::span<const std::uint8_t>{noAmatPayload.data(), noAmatPayload.size()},
+        auto missingMatPayload = asharia::asset::readMaterialInstanceProductPayload(
+            std::span<const std::uint8_t>{noMatPayload.data(), noMatPayload.size()},
             "materials/no-amat.product");
-        if (!expectProductBlobError(missingAmatPayload,
+        if (!expectProductBlobError(missingMatPayload,
                                     asharia::asset::AssetProductBlobDiagnosticCode::MissingPayload,
                                     "amat.begin")) {
             return false;
         }
 
-        const std::vector<std::uint8_t> unterminatedAmatPayload =
+        const std::vector<std::uint8_t> unterminatedMatPayload =
             bytesFromText("schema=com.asharia.asset.material-instance-product.v1\n"
-                          "sourcePath=Content/Materials/Red.amat\n"
+                          "sourcePath=Content/Materials/Red.mat\n"
                           "materialType.assetGuid=11111111-1111-1111-1111-111111111111\n"
                           "materialType.stableTypeId=asharia.material.unlit\n"
                           "materialType.expectedTypeHash=00000000000000aa\n"
@@ -5816,14 +5816,14 @@ shader "asharia.material.compile_reflection" {
                           "amatHash=0000000000000001\n"
                           "amat.begin\n"
                           "{}");
-        auto unterminatedAmat = asharia::asset::readMaterialInstanceProductPayload(
-            std::span<const std::uint8_t>{unterminatedAmatPayload.data(),
-                                          unterminatedAmatPayload.size()},
+        auto unterminatedMat = asharia::asset::readMaterialInstanceProductPayload(
+            std::span<const std::uint8_t>{unterminatedMatPayload.data(),
+                                          unterminatedMatPayload.size()},
             "materials/unterminated-amat.product");
         if (!expectProductBlobError(
-                unterminatedAmat,
+                unterminatedMat,
                 asharia::asset::AssetProductBlobDiagnosticCode::UnterminatedPayload,
-                "unterminated .amat payload")) {
+                "unterminated .mat payload")) {
             return false;
         }
 
@@ -6695,8 +6695,8 @@ int main() noexcept {
             smokeProductExecutionPreservesPublicationOutcome() &&
             smokeProductExecutionWritesPngTextureProduct() &&
             smokeProductExecutionPngTextureDiagnostics() &&
-            smokeProductExecutionWritesAmatMaterialProduct() &&
-            smokeProductExecutionAmatDiagnostics() &&
+            smokeProductExecutionWritesMatMaterialProduct() &&
+            smokeProductExecutionMatDiagnostics() &&
             smokeProductExecutionWritesAshaderShaderProduct() &&
             smokeProductExecutionAshaderDiagnostics() &&
             smokeProductExecutionWritesShaderCompileReflectionProduct() &&

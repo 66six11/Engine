@@ -5,12 +5,12 @@
 状态：计划中的 V2 格式合同。V1 `.ashader` / `.agraph` 规格已弃用，不再新增 `ashader-v1.md`
 或把 V1 schema 作为兼容目标。
 
-本文定义材质类型 authoring contract 和后续 graph authoring IR。Runtime product、`.amat`、binding layout
+本文定义材质类型 authoring contract 和后续 graph authoring IR。Runtime product、`.mat`、binding layout
 和 diagnostics schema 见 [`material-runtime-products-v2.md`](material-runtime-products-v2.md)。
 
 ## 目标
 
-V2 第一阶段只要求 code-first 材质类型可导入、可生成 Slang、可编译、可反射并能被 `.amat` 实例绑定。
+V2 第一阶段只要求 code-first 材质类型可导入、可生成 Slang、可编译、可反射并能被 `.mat` 实例绑定。
 
 `.ashader` 负责：
 

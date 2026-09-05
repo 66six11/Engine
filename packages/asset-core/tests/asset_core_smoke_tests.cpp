@@ -799,7 +799,7 @@ namespace {
         const asharia::asset::SourceAssetRecord materialRecord =
             makeRecord(CatalogViewSourceFixture{.guidText = kMaterialGuidText,
                                                 .typeName = kMaterialTypeName,
-                                                .sourcePath = "Content/Materials/Brushed.amat",
+                                                .sourcePath = "Content/Materials/Brushed.mat",
                                                 .importerName = "com.asharia.importer.material",
                                                 .sourceHash = 0x1100ULL,
                                                 .settingsHash = 0x1200ULL});
@@ -930,7 +930,7 @@ namespace {
         }
 
         if (view.entries[0].guidText != kMaterialGuidText ||
-            view.entries[0].displayName != "Brushed.amat" || view.entries[0].extension != ".amat" ||
+            view.entries[0].displayName != "Brushed.mat" || view.entries[0].extension != ".mat" ||
             view.entries[2].displayName != "Grid.slang" || view.entries[2].extension != ".slang") {
             logFailure("Asset catalog view smoke produced invalid display name or extension.");
             return false;

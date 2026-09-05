@@ -39,7 +39,7 @@ namespace asharia::editor {
         constexpr std::string_view kGuidText = "5d3cdcbf-7396-40d0-b497-4fa2fe54f92a";
         constexpr std::string_view kAssetTypeName = "com.asharia.asset.Material";
         constexpr std::string_view kImporterName = "asharia.material";
-        constexpr std::string_view kSourcePath = "Assets/Materials/brushed.amat";
+        constexpr std::string_view kSourcePath = "Assets/Materials/brushed.mat";
         constexpr std::string_view kTextureSourcePath = "Assets/Textures/checker.png";
         constexpr std::string_view kDefaultAssetTypeName = "com.asharia.asset.DefaultAsset";
         constexpr std::string_view kDefaultAssetRoleName = "com.asharia.asset.DefaultAsset";
@@ -178,7 +178,7 @@ namespace asharia::editor {
                 .assetTypeName = kAssetTypeName,
                 .importerName = kImporterName,
                 .sourcePath = kSourcePath,
-                .relativePath = "Materials/brushed.amat",
+                .relativePath = "Materials/brushed.mat",
                 .text = "smoke material source\n",
             };
             return sourceRecordFor(desc, sourceHash, settings);
@@ -619,7 +619,7 @@ namespace asharia::editor {
                 !expectArchiveStringMember(assetNode, "kind", ExpectedArchiveString{"asset"}) ||
                 !expectArchiveStringMember(
                     assetNode, "key",
-                    ExpectedArchiveString{"asset:Assets/Materials/brushed.amat"}) ||
+                    ExpectedArchiveString{"asset:Assets/Materials/brushed.mat"}) ||
                 !expectArchiveStringMember(assetNode, "parentKey",
                                            ExpectedArchiveString{"folder:Assets/Materials"}) ||
                 !expectArchiveStringMember(assetNode, "sourcePath",
@@ -708,7 +708,7 @@ namespace asharia::editor {
                                               .minimumSubAssetCount = {},
                                               .assetTypeContains = "material",
                                               .importerIdContains = {},
-                                              .extension = ".amat",
+                                              .extension = ".mat",
                                               .sourcePathContains = {},
                                               .displayNameContains = {},
                                               .guidText = {},
@@ -763,7 +763,7 @@ namespace asharia::editor {
             std::filesystem::path expectedSourceRoot = projectFile.parent_path() / "Content";
             expectedSourceRoot.make_preferred();
             std::filesystem::path expectedSourceFile =
-                expectedSourceRoot / "Materials" / "brushed.amat";
+                expectedSourceRoot / "Materials" / "brushed.mat";
             expectedSourceFile.make_preferred();
             std::filesystem::path expectedMetadataFile =
                 std::filesystem::path{expectedSourceFile.string() +
@@ -893,7 +893,7 @@ namespace asharia::editor {
             const std::filesystem::path projectRoot = root / "Project";
             const std::filesystem::path contentRoot = projectRoot / "Content";
             const std::filesystem::path materialDirectory = contentRoot / "Materials";
-            const std::filesystem::path sourceFile = materialDirectory / "brushed.amat";
+            const std::filesystem::path sourceFile = materialDirectory / "brushed.mat";
             std::error_code error;
             if (!prepareDirectory(root)) {
                 return std::nullopt;
@@ -1005,7 +1005,7 @@ namespace asharia::editor {
                     .assetTypeName = kAssetTypeName,
                     .importerName = kImporterName,
                     .sourcePath = kSourcePath,
-                    .relativePath = "Materials/brushed.amat",
+                    .relativePath = "Materials/brushed.mat",
                     .text = "determinism material source\n",
                 },
                 CatalogSourceFixtureDesc{
@@ -1074,7 +1074,7 @@ namespace asharia::editor {
             }
 
             const std::array expectedSourcePaths{
-                std::string_view{"Assets/Materials/brushed.amat"},
+                std::string_view{"Assets/Materials/brushed.mat"},
                 kTextureSourcePath,
                 std::string_view{"SharedAssets/Shaders/grid.slang"},
             };
