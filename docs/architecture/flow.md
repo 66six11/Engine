@@ -2258,3 +2258,20 @@ flowchart TD
     锁住无 producer transient read、缺失 schema 和 builtin pass schema mismatch 的编译期失败路径；显式 culling 已能移除 unused
     transient writer 并保留 side-effect pass。下一步补循环诊断细节、更多非法依赖错误报告和更细的
     culling 策略。
+
+## Scene mesh section handoff
+
+`SceneMeshProductBinding` owns one mesh resource plus an ordered `sections` list. Each
+`SceneMeshSectionBinding` retains material slot, resolved material resource and indexed draw
+range. Extraction validates the entire binding before emitting one draw per section; any invalid
+section rejects that instance with one diagnostic, and duplicate bindings for the same asset
+are rejected rather than chosen by order. Draws retain the same instance transform/source identity.
+Viewport selection outlines collect every section; receipt `resolvedCount` counts instances,
+while draw counts count draws. Target dependencies are unchanged.
+
+This adopts [Unreal mesh sections](https://dev.epicgames.com/documentation/unreal-engine/API/Runtime/Engine/FStaticMeshSection)
+and [Godot mesh surfaces](https://docs.godotengine.org/en/stable/classes/class_arraymesh.html):
+a mesh may need multiple material/range draws. Asharia uses resolved backend-neutral resource
+keys rather than engine-specific material objects. This corrects extraction cardinality only;
+the fixed validation mesh remains the current viewport producer, and real resource/GPU upload
+integration remains a separate product slice.

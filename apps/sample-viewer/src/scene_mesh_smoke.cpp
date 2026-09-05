@@ -305,8 +305,9 @@ namespace asharia::sample_viewer {
                 .productHash = kBasicValidationMeshResourceKey.value,
                 .productGeneration = kValidationProductGeneration,
                 .meshResource = kBasicValidationMeshResourceKey,
-                .materialResource = kBasicDefaultUnlitMaterialResourceKey,
-                .drawItem = basicValidationMeshDrawItem(),
+                .sections = {{.materialSlot = 0U,
+                              .materialResource = kBasicDefaultUnlitMaterialResourceKey,
+                              .drawItem = basicValidationMeshDrawItem()}},
             };
             const scene_rendering::SceneMeshExtraction extraction =
                 scene_rendering::extractSceneMeshDrawList({
