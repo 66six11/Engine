@@ -43,6 +43,45 @@ minimal `.agraph` IR、Hybrid Slang function node discovery 和完整 Material E
 
 ## 核心决定
 
+### Numeric parameter packing boundary
+
+Current evidence: `AmatResolveResult` contains override diffs/diagnostics, not parameter bytes.
+`ShaderReflection` and `MaterialResourceSignature` describe resource bindings but do not yet expose
+constant-buffer member offsets. `material-instance::packAmatParameters` now resolves numeric defaults
+and overrides against a caller-supplied property/type/byte-offset layout and block size. This is a CPU
+packing boundary, not evidence of shader-layout compatibility or a GPU binding packet.
+
+Owner / lifetime / thread: `material-instance` synchronously borrows const documents and layout; it owns
+only the returned bytes/diagnostics. Calls have no shared mutable state, IO or GPU lifetime. The caller
+must not mutate borrowed inputs during a call. No new package or dependency is introduced.
+
+Data / error / budget / diagnostics: at most 256 properties and 64 KiB output. Every declared property
+must have exactly one matching member; offsets are 4-byte aligned, non-overlapping and in bounds.
+Only float/float2/float3/float4/color, int, uint and bool are supported. An override wins over its default;
+an unoverridden property requires a valid explicit default, with no implicit zero/default resource.
+Only the selected value is evaluated. Numeric text is parsed locale-independently. Float values must
+be finite and fit float32; nonzero values that convert to zero are rejected, while representable
+subnormals and ordinary float32 rounding are allowed. Integers must fit signed/unsigned 32-bit;
+bool occupies one 32-bit word with value 0 or 1. Words are little-endian, vector components contiguous,
+and all padding zero. No color-space conversion occurs. Input/layout/value/type/budget errors return
+`ErrorDomain::Material` with `AmatParameterError` and property context, without a partial block.
+Existing stale-hash warnings are preserved; successful CPU packing does not authorize stale GPU use.
+
+Foundation prerequisite: existing document validation, resolver and standard numeric conversion.
+Integration Gate: material CPU data before renderer consumption; earliest safe now, latest required
+before binding authored numeric values. Non-goals: resources/textures, automatic reflection extraction,
+layout inference, cook format, pipeline or GPU ownership. Exit evidence: byte-oracle defaults/overrides,
+padding/order determinism, malformed layout/default/input and conversion boundary tests.
+
+Adopt parameter overrides from [Unreal material instances](https://dev.epicgames.com/documentation/unreal-engine/instanced-materials-in-unreal-engine)
+and typed property-to-shader mapping from [O3DE material types](https://www.docs.o3de.org/docs/atom-guide/look-dev/materials/material-type-file-spec/).
+[Slang reflection](https://docs.shader-slang.org/en/stable/external/slang/docs/user-guide/09-reflection.html)
+owns target-specific member offsets and sizes. Accordingly this API consumes explicit offsets rather
+than inventing a C++ struct or std140 packing rule. Before GPU consumption, the next adapter must verify
+these facts against the compiled shader and retain layout/product identity; a descriptor signature hash
+alone cannot detect member-layout drift. The explicit CPU layout input is Asharia's bounded adapter
+boundary, not a replacement shader ABI or a copy of another engine's object/service system.
+
 ### Material override validation boundary
 
 Current evidence: IO already validates `.amat` identity, duplicate property IDs, value kinds and vector

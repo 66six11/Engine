@@ -6,6 +6,7 @@
 #include <string_view>
 
 #include "asharia/material_instance/amat_io.hpp"
+#include "asharia/material_instance/amat_parameters.hpp"
 #include "asharia/material_instance/amat_resolver.hpp"
 #include "asharia/shader_authoring/ashader_parser.hpp"
 
@@ -311,6 +312,206 @@ shader "asharia.material.unlit" {
         return rejected(missingIdentity);
     }
 
+    bool checkParameterFailures(
+        const asharia::material_instance::AmatDocument& document,
+        const asharia::shader_authoring::AshaderDocument& shader,
+        const std::vector<asharia::material_instance::AmatParameterMember>& members) {
+        using namespace asharia::material_instance;
+        using namespace asharia::shader_authoring;
+        auto rejected = [&](const AmatDocument& input, const AshaderDocument& type,
+                            const std::vector<AmatParameterMember>& layout, std::uint32_t size,
+                            AmatParameterError code) {
+            auto first = packAmatParameters(input, type, layout, size);
+            auto second = packAmatParameters(input, type, layout, size);
+            if (first || second || first.error().domain != asharia::ErrorDomain::Material ||
+                first.error().code != static_cast<int>(code) ||
+                first.error().message != second.error().message) {
+                logFailure("expected deterministic parameter failure");
+                return false;
+            }
+            return true;
+        };
+        auto invalidLayout = members;
+        invalidLayout[0].byteOffset = 32;
+        if (!rejected(document, shader, invalidLayout, 48, AmatParameterError::InvalidLayout)) {
+            return false;
+        }
+        for (auto offset : {1U, 48U, std::numeric_limits<std::uint32_t>::max()}) {
+            invalidLayout = members;
+            invalidLayout[0].byteOffset = offset;
+            if (!rejected(document, shader, invalidLayout, 48, AmatParameterError::InvalidLayout)) {
+                return false;
+            }
+        }
+        invalidLayout = members;
+        invalidLayout[0] = invalidLayout[1];
+        if (!rejected(document, shader, invalidLayout, 48, AmatParameterError::InvalidLayout)) {
+            return false;
+        }
+        invalidLayout = members;
+        invalidLayout[0].type = AshaderPropertyType::Float;
+        if (!rejected(document, shader, invalidLayout, 48, AmatParameterError::InvalidLayout)) {
+            return false;
+        }
+        invalidLayout.pop_back();
+        if (!rejected(document, shader, invalidLayout, 48, AmatParameterError::InvalidLayout)) {
+            return false;
+        }
+        if (!rejected(document, shader, members, kMaxAmatParameterBytes + 4,
+                      AmatParameterError::BudgetExceeded)) {
+            return false;
+        }
+        for (double value :
+             {std::numeric_limits<double>::max(), std::numeric_limits<double>::denorm_min()}) {
+            auto invalid = document;
+            invalid.properties[0].value.numberValue = value;
+            if (!rejected(invalid, shader, members, 48, AmatParameterError::InvalidValue)) {
+                return false;
+            }
+        }
+        auto invalid = document;
+        invalid.properties[0].value.numberValue = std::numeric_limits<double>::infinity();
+        if (!rejected(invalid, shader, members, 48, AmatParameterError::InvalidInput)) {
+            return false;
+        }
+        auto badShader = shader;
+        badShader.properties[0].defaultValue.elements = {"1", "2"};
+        if (!rejected(document, badShader, members, 48, AmatParameterError::InvalidValue)) {
+            return false;
+        }
+        badShader = shader;
+        badShader.properties[2].defaultValue.text = "2147483648";
+        if (!rejected(document, badShader, members, 48, AmatParameterError::InvalidValue)) {
+            return false;
+        }
+        badShader = shader;
+        badShader.properties[3].defaultValue.text = "4294967296";
+        if (!rejected(document, badShader, members, 48, AmatParameterError::InvalidValue)) {
+            return false;
+        }
+        badShader = shader;
+        badShader.properties[0].defaultValue = {};
+        if (!rejected(document, badShader, members, 48, AmatParameterError::InvalidValue)) {
+            return false;
+        }
+        badShader.properties[0].type = AshaderPropertyType::Texture2D;
+        if (!rejected(document, badShader, members, 48, AmatParameterError::UnsupportedType)) {
+            return false;
+        }
+        badShader = shader;
+        badShader.properties[1].name = badShader.properties[0].name;
+        return rejected(document, badShader, members, 48, AmatParameterError::InvalidInput);
+    }
+
+    bool checkParameterNumericBoundaries(asharia::material_instance::AmatDocument document,
+                                         asharia::shader_authoring::AshaderDocument shader) {
+        using namespace asharia::material_instance;
+        using namespace asharia::shader_authoring;
+        shader.properties = {shader.properties[1]};
+        const std::vector<AmatParameterMember> scalar{
+            {.propertyId = "gain", .type = AshaderPropertyType::Float, .byteOffset = 0}};
+        for (double value :
+             {static_cast<double>(std::numeric_limits<float>::max()),
+              -static_cast<double>(std::numeric_limits<float>::max()),
+              static_cast<double>(std::numeric_limits<float>::denorm_min()), 0.1, -0.0}) {
+            document.properties[0].value.numberValue = value;
+            if (!packAmatParameters(document, shader, scalar, 4)) {
+                logFailure("representable float or ordinary rounding rejected");
+                return false;
+            }
+        }
+        document.properties.clear();
+        auto defaulted = packAmatParameters(document, shader, scalar, 4);
+        if (!defaulted ||
+            defaulted->bytes !=
+                std::vector<std::byte>{std::byte{0}, std::byte{0}, std::byte{128}, std::byte{62}}) {
+            return false;
+        }
+        std::size_t width = 1;
+        for (auto type : {AshaderPropertyType::Float2, AshaderPropertyType::Float3,
+                          AshaderPropertyType::Float4}) {
+            auto& property = shader.properties[0];
+            property.type = type;
+            ++width;
+            property.defaultValue = {.kind = AshaderPropertyDefaultKind::Vector,
+                                     .elements = std::vector<std::string>(width, "1")};
+            const std::vector<AmatParameterMember> layout{
+                {.propertyId = "gain", .type = type, .byteOffset = 0}};
+            auto vector = packAmatParameters(document, shader, layout, 16);
+            if (!vector || vector->bytes[(width * 4) - 1] != std::byte{63}) {
+                return false;
+            }
+            property.defaultValue.elements[0] = "nan";
+            if (packAmatParameters(document, shader, layout, 16)) {
+                return false;
+            }
+        }
+        shader.properties.clear();
+        auto empty = packAmatParameters(document, shader, {}, 0);
+        return empty && empty->bytes.empty();
+    }
+
+    bool smokeParameterPacking() {
+        using namespace asharia::material_instance;
+        using namespace asharia::shader_authoring;
+        auto parsed = parseAshaderDocument(R"(
+schema 2
+shader "asharia.material.unlit" {
+ properties {
+  color tint = [1, 0.5, 0, 1]
+  float gain = 0.25
+  int mode = -2
+  uint mask = 4294967295
+  bool enabled = true
+ }
+ pass "Forward" { vertex vertexMain fragment fragmentMain slang "Unlit.slang" }
+})");
+        auto document = readAmatText(R"({"schemaVersion":2,"materialType":{
+"assetGuid":"11111111-1111-1111-1111-111111111111",
+"stableTypeId":"asharia.material.unlit","expectedTypeHash":"00000000000000aa"},
+"properties":{"gain":{"propertyId":"gain","type":"float","value":2.0}},
+"import":{"lastCookedSignatureHash":"00000000000000bb"}})");
+        if (!parsed.document || !document) {
+            logFailure("parameter fixture parse failed");
+            return false;
+        }
+        auto shader = *parsed.document;
+        if (!checkParameterNumericBoundaries(*document, shader)) {
+            return false;
+        }
+        std::vector<AmatParameterMember> members{
+            {.propertyId = "gain", .type = AshaderPropertyType::Float, .byteOffset = 0},
+            {.propertyId = "tint", .type = AshaderPropertyType::Color, .byteOffset = 16},
+            {.propertyId = "mode", .type = AshaderPropertyType::Int, .byteOffset = 32},
+            {.propertyId = "mask", .type = AshaderPropertyType::UInt, .byteOffset = 36},
+            {.propertyId = "enabled", .type = AshaderPropertyType::Bool, .byteOffset = 40}};
+        const auto original = AmatDocument{*document};
+        auto block = packAmatParameters(*document, shader, members, 48);
+        // Explicit byte oracle: float 2, padding, float4(1,.5,0,1), -2, UINT_MAX, bool32(1).
+        const std::vector<unsigned char> expected{
+            0,   0,   0,   64,  0,   0,   0,   0,   0, 0, 0, 0, 0, 0, 0,   0,
+            0,   0,   128, 63,  0,   0,   0,   63,  0, 0, 0, 0, 0, 0, 128, 63,
+            254, 255, 255, 255, 255, 255, 255, 255, 1, 0, 0, 0, 0, 0, 0,   0};
+        if (!block || *document != original ||
+            !std::ranges::equal(block->bytes, expected, {}, [](std::byte byte) {
+                return std::to_integer<unsigned char>(byte);
+            })) {
+            logFailure("parameter bytes/defaults/padding differ from oracle");
+            return false;
+        }
+        std::ranges::reverse(members);
+        auto repeated = packAmatParameters(*document, shader, members, 48);
+        if (!repeated || repeated->bytes != block->bytes) {
+            return false;
+        }
+        if (!checkParameterFailures(*document, shader, members)) {
+            return false;
+        }
+        const auto stale =
+            packAmatParameters(*document, shader, members, 48, {.currentMaterialTypeHash = 123});
+        return stale && stale->bytes == block->bytes && !stale->diagnostics.empty();
+    }
+
 } // namespace
 
 int main() noexcept {
@@ -319,6 +520,7 @@ int main() noexcept {
         testsPassed = smokeReadWriteResolve() && testsPassed;
         testsPassed = smokeDiagnostics() && testsPassed;
         testsPassed = smokeProgrammaticValueValidation() && testsPassed;
+        testsPassed = smokeParameterPacking() && testsPassed;
         return testsPassed ? 0 : 1;
     } catch (...) {
         return 1;
