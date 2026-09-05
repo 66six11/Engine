@@ -8,32 +8,32 @@ internal interface IViewportNativeApi
 
     void ReleaseCompatibilityResult(ViewportNativeCompatibilityResult result);
 
-    ViewportNativeStatus OpenStreamV9(
+    ViewportNativeStatus OpenStreamV10(
         in ViewportNativeCompatibilityRequest compatibility,
-        out ViewportNativeStreamHandleV9 stream);
+        out ViewportNativeStreamHandleV10 stream);
 
-    ViewportNativeStatus SubmitLatestV9(
+    ViewportNativeStatus SubmitLatestV10(
         ulong streamId,
-        in ViewportNativePresentRequestV9 request);
+        in ViewportNativePresentRequestV10 request);
 
-    ViewportNativeStatus TryTakeReadyV9(
+    ViewportNativeStatus TryTakeReadyV10(
         ulong streamId,
-        out ViewportNativeReadyFrameV9 frame);
+        out ViewportNativeReadyFrameV10 frame);
 
-    void CompleteFrameV9(
+    void CompleteFrameV10(
         ulong streamId,
         nint nativeSlot,
         ViewportNativePresentCompletionKind completionKind);
 
-    void ReleaseSlotImportV9(ulong streamId, nint nativeSlot);
+    void ReleaseSlotImportV10(ulong streamId, nint nativeSlot);
 
-    void CloseStreamV9(ulong streamId);
+    void CloseStreamV10(ulong streamId);
 
-    ViewportNativeStatus PollStreamV9(
+    ViewportNativeStatus PollStreamV10(
         ulong streamId,
-        out ViewportNativeStreamPollV9 poll);
+        out ViewportNativeStreamPollV10 poll);
 
-    void DestroyStreamV9(ulong streamId);
+    void DestroyStreamV10(ulong streamId);
 
     void Shutdown();
 }

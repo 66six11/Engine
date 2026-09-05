@@ -117,6 +117,7 @@ namespace asharia::editor {
             .transformGizmoKind = desc.transformGizmoKind,
             .transformGizmoObjectId = desc.transformGizmoObjectId,
             .transformGizmoPosition = desc.transformGizmoPosition,
+            .transformGizmoRotation = desc.transformGizmoRotation,
             .transformGizmoHoveredAxis = desc.transformGizmoHoveredAxis,
             .transformGizmoActiveAxis = desc.transformGizmoActiveAxis,
         };
@@ -155,6 +156,7 @@ namespace asharia::editor {
             .transformGizmoKind = transformGizmoKind,
             .transformGizmoObjectId = transformGizmoObjectId,
             .transformGizmoPosition = transformGizmoPosition,
+            .transformGizmoRotation = transformGizmoRotation,
             .transformGizmoHoveredAxis = transformGizmoHoveredAxis,
             .transformGizmoActiveAxis = transformGizmoActiveAxis,
         };

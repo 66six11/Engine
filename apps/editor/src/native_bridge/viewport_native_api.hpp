@@ -49,26 +49,27 @@ enum EditorViewportNativeFieldOfViewAxis : std::uint32_t {
     EditorViewportNativeFieldOfViewAxis_MaintainVertical = 1U,
 };
 
-enum EditorViewportNativeStreamCapabilitiesV9 : std::uint32_t {
-    EditorViewportNativeStreamCapabilitiesV9_None = 0U,
-    EditorViewportNativeStreamCapabilitiesV9_Wireframe = 1U << 0U,
+enum EditorViewportNativeStreamCapabilitiesV10 : std::uint32_t {
+    EditorViewportNativeStreamCapabilitiesV10_None = 0U,
+    EditorViewportNativeStreamCapabilitiesV10_Wireframe = 1U << 0U,
 };
 
 enum EditorViewportNativeTargetKind : std::uint32_t {
     EditorViewportNativeTargetKind_DocumentScene = 0U,
 };
 
-enum EditorViewportNativePresentRequestV9Flags : std::uint32_t {
-    EditorViewportNativePresentRequestV9Flags_HasLogicalExtent = 1U << 0U,
-    EditorViewportNativePresentRequestV9Flags_FlashSentinelCorners = 1U << 1U,
-    EditorViewportNativePresentRequestV9Flags_CaptureSceneMeshEvidence = 1U << 2U,
-    EditorViewportNativePresentRequestV9Flags_HasSelectionOutline = 1U << 3U,
-    EditorViewportNativePresentRequestV9Flags_HasTransformGizmo = 1U << 4U,
+enum EditorViewportNativePresentRequestV10Flags : std::uint32_t {
+    EditorViewportNativePresentRequestV10Flags_HasLogicalExtent = 1U << 0U,
+    EditorViewportNativePresentRequestV10Flags_FlashSentinelCorners = 1U << 1U,
+    EditorViewportNativePresentRequestV10Flags_CaptureSceneMeshEvidence = 1U << 2U,
+    EditorViewportNativePresentRequestV10Flags_HasSelectionOutline = 1U << 3U,
+    EditorViewportNativePresentRequestV10Flags_HasTransformGizmo = 1U << 4U,
 };
 
 enum EditorViewportNativeTransformGizmoKind : std::uint32_t {
     EditorViewportNativeTransformGizmoKind_Translate = 0U,
     EditorViewportNativeTransformGizmoKind_Rotate = 1U,
+    EditorViewportNativeTransformGizmoKind_Scale = 2U,
 };
 
 enum EditorViewportNativeGizmoAxis : std::uint32_t {
@@ -149,25 +150,27 @@ struct EditorViewportNativeDebugProxy {
     float scale[3];
 };
 
-struct EditorViewportNativeTransformGizmoV9 {
+struct EditorViewportNativeTransformGizmoV10 {
     EditorViewportNativeId objectId;
     float position[3];
+    float rotation[4];
     std::uint32_t kind;
     std::uint32_t hoveredAxis;
     std::uint32_t activeAxis;
 };
 
-static_assert(sizeof(EditorViewportNativeTransformGizmoV9) == 40U);
-static_assert(offsetof(EditorViewportNativeTransformGizmoV9, objectId) == 0U);
-static_assert(offsetof(EditorViewportNativeTransformGizmoV9, position) == 16U);
-static_assert(offsetof(EditorViewportNativeTransformGizmoV9, kind) == 28U);
-static_assert(offsetof(EditorViewportNativeTransformGizmoV9, hoveredAxis) == 32U);
-static_assert(offsetof(EditorViewportNativeTransformGizmoV9, activeAxis) == 36U);
+static_assert(sizeof(EditorViewportNativeTransformGizmoV10) == 56U);
+static_assert(offsetof(EditorViewportNativeTransformGizmoV10, objectId) == 0U);
+static_assert(offsetof(EditorViewportNativeTransformGizmoV10, position) == 16U);
+static_assert(offsetof(EditorViewportNativeTransformGizmoV10, rotation) == 28U);
+static_assert(offsetof(EditorViewportNativeTransformGizmoV10, kind) == 44U);
+static_assert(offsetof(EditorViewportNativeTransformGizmoV10, hoveredAxis) == 48U);
+static_assert(offsetof(EditorViewportNativeTransformGizmoV10, activeAxis) == 52U);
 
 // UUIDs in this ABI use the RFC 4122/network (big-endian) byte order.  They are
 // deliberately not EditorViewportNativeId because that legacy representation is
 // retained only for session/target echo fields.
-struct EditorViewportNativeAuthoredMeshSnapshotV9 {
+struct EditorViewportNativeAuthoredMeshSnapshotV10 {
     std::uint8_t objectId[16];
     std::uint32_t runtimeEntityIndex;
     std::uint32_t runtimeEntityGeneration;
@@ -178,26 +181,27 @@ struct EditorViewportNativeAuthoredMeshSnapshotV9 {
     float scale[3];
 };
 
-static_assert(sizeof(EditorViewportNativeAuthoredMeshSnapshotV9) == 88U);
-static_assert(offsetof(EditorViewportNativeAuthoredMeshSnapshotV9, objectId) == 0U);
-static_assert(offsetof(EditorViewportNativeAuthoredMeshSnapshotV9, runtimeEntityIndex) == 16U);
-static_assert(offsetof(EditorViewportNativeAuthoredMeshSnapshotV9, runtimeEntityGeneration) == 20U);
-static_assert(offsetof(EditorViewportNativeAuthoredMeshSnapshotV9, assetId) == 24U);
-static_assert(offsetof(EditorViewportNativeAuthoredMeshSnapshotV9, expectedMeshType) == 40U);
-static_assert(offsetof(EditorViewportNativeAuthoredMeshSnapshotV9, position) == 48U);
-static_assert(offsetof(EditorViewportNativeAuthoredMeshSnapshotV9, rotation) == 60U);
-static_assert(offsetof(EditorViewportNativeAuthoredMeshSnapshotV9, scale) == 76U);
+static_assert(sizeof(EditorViewportNativeAuthoredMeshSnapshotV10) == 88U);
+static_assert(offsetof(EditorViewportNativeAuthoredMeshSnapshotV10, objectId) == 0U);
+static_assert(offsetof(EditorViewportNativeAuthoredMeshSnapshotV10, runtimeEntityIndex) == 16U);
+static_assert(offsetof(EditorViewportNativeAuthoredMeshSnapshotV10, runtimeEntityGeneration) ==
+              20U);
+static_assert(offsetof(EditorViewportNativeAuthoredMeshSnapshotV10, assetId) == 24U);
+static_assert(offsetof(EditorViewportNativeAuthoredMeshSnapshotV10, expectedMeshType) == 40U);
+static_assert(offsetof(EditorViewportNativeAuthoredMeshSnapshotV10, position) == 48U);
+static_assert(offsetof(EditorViewportNativeAuthoredMeshSnapshotV10, rotation) == 60U);
+static_assert(offsetof(EditorViewportNativeAuthoredMeshSnapshotV10, scale) == 76U);
 
-struct EditorViewportNativeStreamHandleV9 {
+struct EditorViewportNativeStreamHandleV10 {
     EditorViewportNativeAbiHeader header;
     std::uint32_t status;
     std::uint32_t capabilities;
     std::uint64_t streamId;
 };
 
-static_assert(sizeof(EditorViewportNativeStreamHandleV9) == 24U);
+static_assert(sizeof(EditorViewportNativeStreamHandleV10) == 24U);
 
-struct EditorViewportNativePresentRequestV9 {
+struct EditorViewportNativePresentRequestV10 {
     EditorViewportNativeAbiHeader header;
     EditorViewportNativeId sessionId;
     EditorViewportNativeId targetId;
@@ -213,26 +217,26 @@ struct EditorViewportNativePresentRequestV9 {
     EditorViewportNativeCamera camera;
     std::uint32_t logicalWidthPixels;
     std::uint32_t logicalHeightPixels;
-    const EditorViewportNativeAuthoredMeshSnapshotV9* authoredMeshes;
+    const EditorViewportNativeAuthoredMeshSnapshotV10* authoredMeshes;
     std::uint32_t authoredMeshCount;
     std::uint32_t sceneRasterMode;
     std::uint8_t selectedObjectId[16];
     std::uint64_t viewStateRevision;
-    EditorViewportNativeTransformGizmoV9 transformGizmo;
+    EditorViewportNativeTransformGizmoV10 transformGizmo;
 };
 
-static_assert(sizeof(EditorViewportNativePresentRequestV9) == 232U);
-static_assert(offsetof(EditorViewportNativePresentRequestV9, camera) == 88U);
-static_assert(offsetof(EditorViewportNativePresentRequestV9, logicalWidthPixels) == 140U);
-static_assert(offsetof(EditorViewportNativePresentRequestV9, logicalHeightPixels) == 144U);
-static_assert(offsetof(EditorViewportNativePresentRequestV9, authoredMeshes) == 152U);
-static_assert(offsetof(EditorViewportNativePresentRequestV9, authoredMeshCount) == 160U);
-static_assert(offsetof(EditorViewportNativePresentRequestV9, sceneRasterMode) == 164U);
-static_assert(offsetof(EditorViewportNativePresentRequestV9, selectedObjectId) == 168U);
-static_assert(offsetof(EditorViewportNativePresentRequestV9, viewStateRevision) == 184U);
-static_assert(offsetof(EditorViewportNativePresentRequestV9, transformGizmo) == 192U);
+static_assert(sizeof(EditorViewportNativePresentRequestV10) == 248U);
+static_assert(offsetof(EditorViewportNativePresentRequestV10, camera) == 88U);
+static_assert(offsetof(EditorViewportNativePresentRequestV10, logicalWidthPixels) == 140U);
+static_assert(offsetof(EditorViewportNativePresentRequestV10, logicalHeightPixels) == 144U);
+static_assert(offsetof(EditorViewportNativePresentRequestV10, authoredMeshes) == 152U);
+static_assert(offsetof(EditorViewportNativePresentRequestV10, authoredMeshCount) == 160U);
+static_assert(offsetof(EditorViewportNativePresentRequestV10, sceneRasterMode) == 164U);
+static_assert(offsetof(EditorViewportNativePresentRequestV10, selectedObjectId) == 168U);
+static_assert(offsetof(EditorViewportNativePresentRequestV10, viewStateRevision) == 184U);
+static_assert(offsetof(EditorViewportNativePresentRequestV10, transformGizmo) == 192U);
 
-struct EditorViewportNativeSceneMeshReceiptV9 {
+struct EditorViewportNativeSceneMeshReceiptV10 {
     std::uint32_t inputCount;
     std::uint32_t resolvedCount;
     std::uint32_t rejectedCount;
@@ -249,9 +253,9 @@ struct EditorViewportNativeSceneMeshReceiptV9 {
     std::uint64_t sceneRevision;
 };
 
-static_assert(sizeof(EditorViewportNativeSceneMeshReceiptV9) == 96U);
+static_assert(sizeof(EditorViewportNativeSceneMeshReceiptV10) == 96U);
 
-struct EditorViewportNativeReadyFrameV9 {
+struct EditorViewportNativeReadyFrameV10 {
     EditorViewportNativeAbiHeader header;
     std::uint32_t status;
     std::uint32_t hasFrame;
@@ -274,14 +278,14 @@ struct EditorViewportNativeReadyFrameV9 {
     std::uint32_t targetKind;
     std::uint32_t logicalWidthPixels;
     std::uint32_t logicalHeightPixels;
-    EditorViewportNativeSceneMeshReceiptV9 sceneMeshReceipt;
+    EditorViewportNativeSceneMeshReceiptV10 sceneMeshReceipt;
     std::uint64_t viewStateRevision;
 };
 
-static_assert(sizeof(EditorViewportNativeReadyFrameV9) == 256U);
-static_assert(offsetof(EditorViewportNativeReadyFrameV9, viewStateRevision) == 248U);
+static_assert(sizeof(EditorViewportNativeReadyFrameV10) == 256U);
+static_assert(offsetof(EditorViewportNativeReadyFrameV10, viewStateRevision) == 248U);
 
-struct EditorViewportNativeStreamPollV9 {
+struct EditorViewportNativeStreamPollV10 {
     EditorViewportNativeAbiHeader header;
     std::uint32_t status;
     std::uint32_t lifecycle;
@@ -296,7 +300,7 @@ struct EditorViewportNativeStreamPollV9 {
     std::uint64_t renderedFrames;
 };
 
-static_assert(sizeof(EditorViewportNativeStreamPollV9) == 64U);
+static_assert(sizeof(EditorViewportNativeStreamPollV10) == 64U);
 
 struct EditorViewportNativeRuntimeStats {
     EditorViewportNativeAbiHeader header;
@@ -449,7 +453,7 @@ struct EditorViewportNativeRuntimeStatsV7 {
     std::uint32_t shutdownRequested;
 };
 
-struct EditorViewportNativeRuntimeStatsV9 {
+struct EditorViewportNativeRuntimeStatsV10 {
     EditorViewportNativeAbiHeader header;
     std::uint64_t framesRendered;
     std::uint64_t producersCreated;
@@ -485,7 +489,7 @@ struct EditorViewportNativeRuntimeStatsV9 {
     std::uint32_t lastRenderHeightPixels;
 };
 
-static_assert(sizeof(EditorViewportNativeRuntimeStatsV9) == 248U);
+static_assert(sizeof(EditorViewportNativeRuntimeStatsV10) == 248U);
 
 enum EditorViewportNativeRuntimeLifecycle : std::uint32_t {
     EditorViewportNativeRuntimeLifecycle_Starting = 0,
@@ -523,35 +527,35 @@ EDITOR_NATIVE_API void EDITOR_NATIVE_CALL
 editor_viewport_release_compatibility_result(EditorViewportNativeCompatibilityResult result);
 
 EDITOR_NATIVE_API std::uint32_t EDITOR_NATIVE_CALL
-editor_viewport_open_stream_v9(const EditorViewportNativeCompatibilityRequest* compatibility,
-                               EditorViewportNativeStreamHandleV9* stream);
+editor_viewport_open_stream_v10(const EditorViewportNativeCompatibilityRequest* compatibility,
+                                EditorViewportNativeStreamHandleV10* stream);
 
 #if defined(ASHARIA_EDITOR_NATIVE_TESTING)
-EDITOR_NATIVE_API std::uint32_t EDITOR_NATIVE_CALL editor_viewport_open_stream_v9_for_test(
+EDITOR_NATIVE_API std::uint32_t EDITOR_NATIVE_CALL editor_viewport_open_stream_v10_for_test(
     const EditorViewportNativeCompatibilityRequest* compatibility, std::uint32_t capabilities,
-    EditorViewportNativeStreamHandleV9* stream);
+    EditorViewportNativeStreamHandleV10* stream);
 #endif
 
-EDITOR_NATIVE_API std::uint32_t EDITOR_NATIVE_CALL editor_viewport_submit_latest_v9(
-    std::uint64_t streamId, const EditorViewportNativePresentRequestV9* request);
+EDITOR_NATIVE_API std::uint32_t EDITOR_NATIVE_CALL editor_viewport_submit_latest_v10(
+    std::uint64_t streamId, const EditorViewportNativePresentRequestV10* request);
 
-EDITOR_NATIVE_API std::uint32_t EDITOR_NATIVE_CALL
-editor_viewport_try_take_ready_v9(std::uint64_t streamId, EditorViewportNativeReadyFrameV9* frame);
+EDITOR_NATIVE_API std::uint32_t EDITOR_NATIVE_CALL editor_viewport_try_take_ready_v10(
+    std::uint64_t streamId, EditorViewportNativeReadyFrameV10* frame);
 
-EDITOR_NATIVE_API std::uint32_t EDITOR_NATIVE_CALL editor_viewport_complete_frame_v9(
+EDITOR_NATIVE_API std::uint32_t EDITOR_NATIVE_CALL editor_viewport_complete_frame_v10(
     std::uint64_t streamId, void* nativeSlot, std::uint32_t completionKind);
 
 EDITOR_NATIVE_API std::uint32_t EDITOR_NATIVE_CALL
-editor_viewport_release_slot_import_v9(std::uint64_t streamId, void* nativeSlot);
+editor_viewport_release_slot_import_v10(std::uint64_t streamId, void* nativeSlot);
 
 EDITOR_NATIVE_API std::uint32_t EDITOR_NATIVE_CALL
-editor_viewport_close_stream_v9(std::uint64_t streamId);
+editor_viewport_close_stream_v10(std::uint64_t streamId);
 
 EDITOR_NATIVE_API std::uint32_t EDITOR_NATIVE_CALL
-editor_viewport_poll_stream_v9(std::uint64_t streamId, EditorViewportNativeStreamPollV9* poll);
+editor_viewport_poll_stream_v10(std::uint64_t streamId, EditorViewportNativeStreamPollV10* poll);
 
 EDITOR_NATIVE_API std::uint32_t EDITOR_NATIVE_CALL
-editor_viewport_destroy_stream_v9(std::uint64_t streamId);
+editor_viewport_destroy_stream_v10(std::uint64_t streamId);
 
 EDITOR_NATIVE_API std::uint32_t EDITOR_NATIVE_CALL
 editor_viewport_query_runtime_stats(EditorViewportNativeRuntimeStats* stats);
@@ -575,7 +579,7 @@ EDITOR_NATIVE_API std::uint32_t EDITOR_NATIVE_CALL
 editor_viewport_query_runtime_stats_v7(EditorViewportNativeRuntimeStatsV7* stats);
 
 EDITOR_NATIVE_API std::uint32_t EDITOR_NATIVE_CALL
-editor_viewport_query_runtime_stats_v9(EditorViewportNativeRuntimeStatsV9* stats);
+editor_viewport_query_runtime_stats_v10(EditorViewportNativeRuntimeStatsV10* stats);
 
 EDITOR_NATIVE_API std::uint32_t EDITOR_NATIVE_CALL
 editor_viewport_query_render_thread_stats(EditorViewportNativeRenderThreadStats* stats);

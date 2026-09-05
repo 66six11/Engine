@@ -144,7 +144,7 @@ Scene View、Game View、Preview View 和未来 ReflectionProbe 都应走同一�
   显式 product binding 产生 owning immutable draw list，row-major matrix 固定为 `T * R * S`。它不是 importer、runtime
   resource registry 或 backend adapter。
 - item binding 缺失、wrong-kind、stale 或 invalid 时，只拒绝该 item 并保留 scene object/asset/revision diagnostics；空输入
-  产生零 draw。V9 packet malformed 则在 ABI 边界拒绝整帧，不能以逐项容错掩盖 packet corruption。
+  产生零 draw。V10 packet malformed 则在 ABI 边界拒绝整帧，不能以逐项容错掩盖 packet corruption。
 
 当前状态：`BasicRenderViewDesc` 已有 `camera` 字段，`EditorViewportCoordinator` 会把 Scene View request
 桥接到 `BasicRenderViewCamera`；`BasicFullscreenTextureRenderer::recordViewFrame()` 现在会在存在
@@ -343,7 +343,7 @@ flowchart LR
   scheduler seam 验证被检查 world 的 frame/game/script safe point 不推进；后续真实 runtime/script scheduler 必须接到同一 gate。
 - Frame Debug 和 Frame Debug RG View 是同一面板的两个 tab，不是两个独立数据源。
 - RenderView diagnostics 必须回显输入 `sourceRevision`；capture 冻结该值，JSON 与 panel 回显同一个 revision。绑定
-  authoritative scene snapshot 的 V9 路径必须为非零；尚未绑定 SceneDocument 的旧 ImGui viewport 以 `0` 明确表示
+  authoritative scene snapshot 的 V10 路径必须为非零；尚未绑定 SceneDocument 的旧 ImGui viewport 以 `0` 明确表示
   unavailable，不能伪造 revision。该证据使调试输出能关联到当时的 immutable scene snapshot，而不保存或访问 live World。
 - Frame view 以 pass / execution event 列表驱动右侧详情和图形预览。
 - BeginPass / EndPass 等结构事件只提供上下文，不作为 preview source；UI 以 disabled 展示，replay 选择时必须返回 unavailable。

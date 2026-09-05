@@ -86,6 +86,9 @@ public sealed class MainWindowXamlTests
         Assert.Contains(
             "IsChecked=\"{Binding IsRotateGizmoMode, Mode=TwoWay}\"",
             scenePanelXaml);
+        Assert.Contains(
+            "IsChecked=\"{Binding IsScaleGizmoMode, Mode=TwoWay}\"",
+            scenePanelXaml);
     }
 
     [Fact]

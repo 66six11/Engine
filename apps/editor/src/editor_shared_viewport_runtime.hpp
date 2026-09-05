@@ -236,6 +236,7 @@ namespace asharia::editor {
                 EditorSharedViewportTransformGizmoKind::Translate};
             std::array<std::uint64_t, 2> transformGizmoObjectId{};
             std::array<float, 3> transformGizmoPosition{};
+            std::array<float, 4> transformGizmoRotation{0.0F, 0.0F, 0.0F, 1.0F};
             EditorSharedViewportGizmoAxis transformGizmoHoveredAxis{
                 EditorSharedViewportGizmoAxis::None};
             EditorSharedViewportGizmoAxis transformGizmoActiveAxis{

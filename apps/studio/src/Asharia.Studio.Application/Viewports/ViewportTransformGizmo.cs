@@ -7,6 +7,7 @@ public enum ViewportTransformGizmoKind : uint
 {
     Translate = 0,
     Rotate = 1,
+    Scale = 2,
 }
 
 public enum ViewportGizmoAxis : uint
@@ -308,6 +309,17 @@ internal static class ViewportGizmoMath
         ViewportGizmoAxis.Z => new Float3(0, 0, 1),
         _ => throw new ArgumentOutOfRangeException(nameof(axis), axis, null),
     };
+
+    internal static Float3 Rotate(Quaternion rotation, Float3 value)
+    {
+        var imaginary = new Float3(rotation.X, rotation.Y, rotation.Z);
+        var twiceCross = Scale(Cross(imaginary, value), 2.0f);
+        return Add(
+            value,
+            Add(
+                Scale(twiceCross, rotation.W),
+                Cross(imaginary, twiceCross)));
+    }
 
     internal static (Float3 U, Float3 V) RingBasis(ViewportGizmoAxis axis) => axis switch
     {

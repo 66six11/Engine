@@ -64,6 +64,10 @@
                              Content="Rotate (E)"
                              GroupName="SceneTransformGizmoMode"
                              IsChecked="{Binding IsRotateGizmoMode, Mode=TwoWay}" />
+                <RadioButton AutomationProperties.Name="Use scale gizmo"
+                             Content="Scale (R)"
+                             GroupName="SceneTransformGizmoMode"
+                             IsChecked="{Binding IsScaleGizmoMode, Mode=TwoWay}" />
                 <ToggleButton AutomationProperties.Name="Toggle realtime scene refresh"
                               Content="Realtime"
                               IsChecked="{Binding IsRealtime, Mode=TwoWay}" />

@@ -63,14 +63,14 @@ internal static class ViewportNativeRuntimeContract
     [
         ViewportNativeEntryPoints.QueryCompositionCompatibilityExport,
         ViewportNativeEntryPoints.ReleaseCompatibilityResultExport,
-        ViewportNativeEntryPoints.OpenStreamV9Export,
-        ViewportNativeEntryPoints.SubmitLatestV9Export,
-        ViewportNativeEntryPoints.TryTakeReadyV9Export,
-        ViewportNativeEntryPoints.CompleteFrameV9Export,
-        ViewportNativeEntryPoints.ReleaseSlotImportV9Export,
-        ViewportNativeEntryPoints.CloseStreamV9Export,
-        ViewportNativeEntryPoints.PollStreamV9Export,
-        ViewportNativeEntryPoints.DestroyStreamV9Export,
+        ViewportNativeEntryPoints.OpenStreamV10Export,
+        ViewportNativeEntryPoints.SubmitLatestV10Export,
+        ViewportNativeEntryPoints.TryTakeReadyV10Export,
+        ViewportNativeEntryPoints.CompleteFrameV10Export,
+        ViewportNativeEntryPoints.ReleaseSlotImportV10Export,
+        ViewportNativeEntryPoints.CloseStreamV10Export,
+        ViewportNativeEntryPoints.PollStreamV10Export,
+        ViewportNativeEntryPoints.DestroyStreamV10Export,
         ViewportNativeEntryPoints.ShutdownExport,
     ];
 
@@ -114,6 +114,14 @@ internal static class ViewportNativeRuntimeContract
         "editor_viewport_close_stream_v8",
         "editor_viewport_poll_stream_v8",
         "editor_viewport_destroy_stream_v8",
+        "editor_viewport_open_stream_v9",
+        "editor_viewport_submit_latest_v9",
+        "editor_viewport_try_take_ready_v9",
+        "editor_viewport_complete_frame_v9",
+        "editor_viewport_release_slot_import_v9",
+        "editor_viewport_close_stream_v9",
+        "editor_viewport_poll_stream_v9",
+        "editor_viewport_destroy_stream_v9",
     ];
 
     private static readonly IReadOnlyList<string> InspectedExports =

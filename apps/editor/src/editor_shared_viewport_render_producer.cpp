@@ -249,6 +249,58 @@ namespace asharia::editor {
             }
         }
 
+        void appendScaleGizmoAxes(std::vector<BasicDebugWorldLine>& lines,
+                                  EditorSharedViewportPresentDesc desc,
+                                  const EditorViewportCamera& camera) {
+            constexpr float kHandleHalfExtentRatio = 5.0F / 84.0F;
+            constexpr std::array<std::array<std::uint32_t, 2>, 12> kCubeEdges{
+                std::array{0U, 1U}, std::array{0U, 2U}, std::array{0U, 4U}, std::array{1U, 3U},
+                std::array{1U, 5U}, std::array{2U, 3U}, std::array{2U, 6U}, std::array{3U, 7U},
+                std::array{4U, 5U}, std::array{4U, 6U}, std::array{5U, 7U}, std::array{6U, 7U},
+            };
+            const std::optional<float> worldLength = transformGizmoWorldLength(desc, camera);
+            if (!worldLength) {
+                return;
+            }
+
+            const std::array axes{
+                std::pair{EditorSharedViewportGizmoAxis::X, std::array{1.0F, 0.0F, 0.0F}},
+                std::pair{EditorSharedViewportGizmoAxis::Y, std::array{0.0F, 1.0F, 0.0F}},
+                std::pair{EditorSharedViewportGizmoAxis::Z, std::array{0.0F, 0.0F, 1.0F}},
+            };
+            const float halfExtent = *worldLength * kHandleHalfExtentRatio;
+            for (const auto& [axis, canonicalDirection] : axes) {
+                const std::array<float, 3> direction =
+                    rotate(desc.transformGizmoRotation, canonicalDirection);
+                const std::array<float, 3> endpoint =
+                    add(desc.transformGizmoPosition, multiply(direction, *worldLength));
+                const std::array<float, 4> color = transformGizmoAxisColor(axis, desc);
+                lines.push_back(BasicDebugWorldLine{
+                    .start = desc.transformGizmoPosition,
+                    .end = endpoint,
+                    .color = color,
+                });
+
+                std::array<std::array<float, 3>, 8> corners{};
+                for (std::uint32_t corner = 0U; corner < corners.size(); ++corner) {
+                    const std::array<float, 3> localOffset{
+                        (corner & 1U) != 0U ? halfExtent : -halfExtent,
+                        (corner & 2U) != 0U ? halfExtent : -halfExtent,
+                        (corner & 4U) != 0U ? halfExtent : -halfExtent,
+                    };
+                    corners.at(corner) =
+                        add(endpoint, rotate(desc.transformGizmoRotation, localOffset));
+                }
+                for (const auto& edge : kCubeEdges) {
+                    lines.push_back(BasicDebugWorldLine{
+                        .start = corners.at(edge.at(0)),
+                        .end = corners.at(edge.at(1)),
+                        .color = color,
+                    });
+                }
+            }
+        }
+
         void appendTransformGizmo(std::vector<BasicDebugWorldLine>& lines,
                                   EditorSharedViewportPresentDesc desc,
                                   const EditorViewportCamera& camera) {
@@ -261,6 +313,9 @@ namespace asharia::editor {
                 return;
             case EditorSharedViewportTransformGizmoKind::Rotate:
                 appendRotateGizmoRings(lines, desc, camera);
+                return;
+            case EditorSharedViewportTransformGizmoKind::Scale:
+                appendScaleGizmoAxes(lines, desc, camera);
                 return;
             }
         }
@@ -689,11 +744,20 @@ namespace asharia::editor {
             if (desc.kind == EditorViewportKind::Scene) {
                 debugLines.assign(kMinimalSceneAxes.begin(), kMinimalSceneAxes.end());
                 constexpr std::size_t kRotateGizmoLineCount = std::size_t{3U} * 64U;
-                const std::size_t gizmoLineCount =
-                    desc.hasTransformGizmo && desc.transformGizmoKind ==
-                                                  EditorSharedViewportTransformGizmoKind::Rotate
-                        ? kRotateGizmoLineCount
-                        : 3U;
+                constexpr std::size_t kScaleGizmoLineCount = std::size_t{3U} * 13U;
+                std::size_t gizmoLineCount = 3U;
+                if (desc.hasTransformGizmo) {
+                    switch (desc.transformGizmoKind) {
+                    case EditorSharedViewportTransformGizmoKind::Translate:
+                        break;
+                    case EditorSharedViewportTransformGizmoKind::Rotate:
+                        gizmoLineCount = kRotateGizmoLineCount;
+                        break;
+                    case EditorSharedViewportTransformGizmoKind::Scale:
+                        gizmoLineCount = kScaleGizmoLineCount;
+                        break;
+                    }
+                }
                 debugLines.reserve(debugLines.size() + (desc.debugProxies.size() * 3U) +
                                    gizmoLineCount);
                 for (const EditorSharedViewportDebugProxy& proxy : desc.debugProxies) {
