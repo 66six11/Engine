@@ -34,7 +34,7 @@
 | Asset 与 runtime resource | [systems/asset-architecture.md](systems/asset-architecture.md)、[Mesh Product v1 与受限 GLB](systems/mesh-product-v1.md)、[resource-runtime package 设计](../packages/resource-runtime/README.md) |
 | Scene / World | [systems/scene-world.md](systems/scene-world.md) |
 | Schema、反射与持久化 | [systems/reflection-serialization.md](systems/reflection-serialization.md) |
-| Shader / Material | [systems/shader-material-authoring.md](systems/shader-material-authoring.md)、[specs/ashader-v2.md](specs/ashader-v2.md)、[specs/material-runtime-products-v2.md](specs/material-runtime-products-v2.md) |
+| Shader / Material | [systems/shader-material-authoring.md](systems/shader-material-authoring.md)、[specs/shader-v2.md](specs/shader-v2.md)、[specs/material-runtime-products-v2.md](specs/material-runtime-products-v2.md) |
 | Scripting 与 graph authoring | [systems/scripting.md](systems/scripting.md)、[systems/graph-csharp-blueprint.md](systems/graph-csharp-blueprint.md) |
 | Profiling | [systems/performance-profiling.md](systems/performance-profiling.md) |
 | 技术栈与独立 package 构建 | [workflow/technical-stack.md](workflow/technical-stack.md)、[workflow/package-standalone-build.md](workflow/package-standalone-build.md) |

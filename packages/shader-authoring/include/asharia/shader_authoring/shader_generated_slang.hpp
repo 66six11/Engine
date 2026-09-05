@@ -5,7 +5,7 @@
 #include <string_view>
 #include <vector>
 
-#include "asharia/shader_authoring/ashader_document.hpp"
+#include "asharia/shader_authoring/shader_document.hpp"
 
 namespace asharia::shader_authoring {
 
@@ -36,7 +36,7 @@ namespace asharia::shader_authoring {
 
     struct GeneratedSlangBinding {
         std::string name;
-        AshaderPropertyType type{AshaderPropertyType::Float};
+        ShaderPropertyType type{ShaderPropertyType::Float};
         std::uint32_t set{0};
         std::uint32_t binding{0};
         bool inMaterialParameterBlock{false};
@@ -52,8 +52,8 @@ namespace asharia::shader_authoring {
     };
 
     struct GeneratedSlangOptions {
-        std::string sourceName{"<ashader>"};
-        std::string generatedName{"<generated-ashader>"};
+        std::string sourceName{"<shader>"};
+        std::string generatedName{"<generated-shader>"};
         std::string materialParameterStructName{"__AshariaMaterialParams"};
         std::string materialParameterBindingName{"__ashariaMaterial"};
         std::uint32_t materialSet{0};
@@ -66,12 +66,12 @@ namespace asharia::shader_authoring {
         std::vector<GeneratedSlangLineMapEntry> lineMap;
         std::vector<GeneratedSlangBinding> bindings;
         std::vector<GeneratedSlangEntryPoint> entryPoints;
-        std::vector<AshaderDiagnostic> diagnostics;
+        std::vector<ShaderDiagnostic> diagnostics;
     };
 
     std::string_view toString(GeneratedSlangSection section);
     std::string_view toString(GeneratedSlangStage stage);
-    GeneratedSlangResult buildGeneratedSlang(const AshaderDocument& document,
+    GeneratedSlangResult buildGeneratedSlang(const ShaderDocument& document,
                                              const GeneratedSlangOptions& options = {});
 
 } // namespace asharia::shader_authoring

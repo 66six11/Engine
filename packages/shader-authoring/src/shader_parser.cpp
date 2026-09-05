@@ -1,4 +1,4 @@
-﻿#include "asharia/shader_authoring/ashader_parser.hpp"
+﻿#include "asharia/shader_authoring/shader_parser.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -333,53 +333,53 @@ namespace asharia::shader_authoring {
             SourcePosition position_{};
         };
 
-        std::optional<AshaderPropertyType> propertyTypeFromName(std::string_view name) {
+        std::optional<ShaderPropertyType> propertyTypeFromName(std::string_view name) {
             if (name == "float") {
-                return AshaderPropertyType::Float;
+                return ShaderPropertyType::Float;
             }
             if (name == "float2") {
-                return AshaderPropertyType::Float2;
+                return ShaderPropertyType::Float2;
             }
             if (name == "float3") {
-                return AshaderPropertyType::Float3;
+                return ShaderPropertyType::Float3;
             }
             if (name == "float4") {
-                return AshaderPropertyType::Float4;
+                return ShaderPropertyType::Float4;
             }
             if (name == "color") {
-                return AshaderPropertyType::Color;
+                return ShaderPropertyType::Color;
             }
             if (name == "int") {
-                return AshaderPropertyType::Int;
+                return ShaderPropertyType::Int;
             }
             if (name == "uint") {
-                return AshaderPropertyType::UInt;
+                return ShaderPropertyType::UInt;
             }
             if (name == "bool") {
-                return AshaderPropertyType::Bool;
+                return ShaderPropertyType::Bool;
             }
             if (name == "texture2D") {
-                return AshaderPropertyType::Texture2D;
+                return ShaderPropertyType::Texture2D;
             }
             if (name == "sampler") {
-                return AshaderPropertyType::Sampler;
+                return ShaderPropertyType::Sampler;
             }
             return std::nullopt;
         }
 
-        bool isVectorType(AshaderPropertyType type) {
-            return type == AshaderPropertyType::Float2 || type == AshaderPropertyType::Float3 ||
-                   type == AshaderPropertyType::Float4 || type == AshaderPropertyType::Color;
+        bool isVectorType(ShaderPropertyType type) {
+            return type == ShaderPropertyType::Float2 || type == ShaderPropertyType::Float3 ||
+                   type == ShaderPropertyType::Float4 || type == ShaderPropertyType::Color;
         }
 
-        std::size_t expectedVectorSize(AshaderPropertyType type) {
+        std::size_t expectedVectorSize(ShaderPropertyType type) {
             switch (type) {
-            case AshaderPropertyType::Float2:
+            case ShaderPropertyType::Float2:
                 return 2;
-            case AshaderPropertyType::Float3:
+            case ShaderPropertyType::Float3:
                 return 3;
-            case AshaderPropertyType::Float4:
-            case AshaderPropertyType::Color:
+            case ShaderPropertyType::Float4:
+            case ShaderPropertyType::Color:
                 return 4;
             default:
                 return 0;
@@ -461,13 +461,13 @@ namespace asharia::shader_authoring {
 
         class Parser {
         public:
-            Parser(std::string_view source, const AshaderParseOptions& /*options*/)
+            Parser(std::string_view source, const ShaderParseOptions& /*options*/)
                 : lexer_(source) {
                 advance();
             }
 
-            AshaderParseResult parse() {
-                AshaderDocument document{};
+            ShaderParseResult parse() {
+                ShaderDocument document{};
                 document.fullSpan.begin = current_.span.begin;
 
                 parseSchema(document);
@@ -475,13 +475,13 @@ namespace asharia::shader_authoring {
 
                 if (!document.rawSlang && document.slangFiles.empty()) {
                     addDiagnostic(
-                        AshaderDiagnosticCode::MissingSlangReference,
-                        AshaderDiagnosticTarget::SlangReference, document.fullSpan,
+                        ShaderDiagnosticCode::MissingSlangReference,
+                        ShaderDiagnosticTarget::SlangReference, document.fullSpan,
                         "shader document requires a slang file reference or raw slang block");
                 }
 
                 document.fullSpan.end = current_.span.end;
-                return AshaderParseResult{.document = std::move(document),
+                return ShaderParseResult{.document = std::move(document),
                                           .diagnostics = std::move(diagnostics_)};
             }
 
@@ -502,21 +502,21 @@ namespace asharia::shader_authoring {
                 return true;
             }
 
-            bool expectIdentifier(std::string_view text, AshaderDiagnosticTarget target) {
+            bool expectIdentifier(std::string_view text, ShaderDiagnosticTarget target) {
                 if (consumeIdentifier(text)) {
                     return true;
                 }
-                addDiagnostic(AshaderDiagnosticCode::ExpectedToken, target, current_.span,
+                addDiagnostic(ShaderDiagnosticCode::ExpectedToken, target, current_.span,
                               std::string{"expected '"} + std::string{text} + "'");
                 return false;
             }
 
-            bool expect(TokenKind kind, std::string_view text, AshaderDiagnosticTarget target) {
+            bool expect(TokenKind kind, std::string_view text, ShaderDiagnosticTarget target) {
                 if (current_.kind == kind) {
                     advance();
                     return true;
                 }
-                addDiagnostic(AshaderDiagnosticCode::ExpectedToken, target, current_.span,
+                addDiagnostic(ShaderDiagnosticCode::ExpectedToken, target, current_.span,
                               std::string{"expected "} + std::string{text});
                 return false;
             }
@@ -530,10 +530,10 @@ namespace asharia::shader_authoring {
                 return token;
             }
 
-            void addDiagnostic(AshaderDiagnosticCode code, AshaderDiagnosticTarget target,
+            void addDiagnostic(ShaderDiagnosticCode code, ShaderDiagnosticTarget target,
                                SourceSpan span, std::string message) {
-                diagnostics_.push_back(AshaderDiagnostic{
-                    .severity = AshaderDiagnosticSeverity::Error,
+                diagnostics_.push_back(ShaderDiagnostic{
+                    .severity = ShaderDiagnosticSeverity::Error,
                     .code = code,
                     .target = target,
                     .span = span,
@@ -541,47 +541,47 @@ namespace asharia::shader_authoring {
                 });
             }
 
-            void parseSchema(AshaderDocument& document) {
-                if (!expectIdentifier("schema", AshaderDiagnosticTarget::File)) {
+            void parseSchema(ShaderDocument& document) {
+                if (!expectIdentifier("schema", ShaderDiagnosticTarget::File)) {
                     return;
                 }
                 const auto versionToken = consume(TokenKind::Number);
                 if (!versionToken) {
-                    addDiagnostic(AshaderDiagnosticCode::ExpectedToken,
-                                  AshaderDiagnosticTarget::File, current_.span,
+                    addDiagnostic(ShaderDiagnosticCode::ExpectedToken,
+                                  ShaderDiagnosticTarget::File, current_.span,
                                   "expected schema version number");
                     return;
                 }
                 const auto version = parseUnsigned(versionToken->text);
                 if (!version) {
-                    addDiagnostic(AshaderDiagnosticCode::UnsupportedSchema,
-                                  AshaderDiagnosticTarget::File, versionToken->span,
+                    addDiagnostic(ShaderDiagnosticCode::UnsupportedSchema,
+                                  ShaderDiagnosticTarget::File, versionToken->span,
                                   "schema version must be an unsigned integer");
                     return;
                 }
                 document.schemaVersion = *version;
                 if (*version != 2U) {
-                    addDiagnostic(AshaderDiagnosticCode::UnsupportedSchema,
-                                  AshaderDiagnosticTarget::File, versionToken->span,
-                                  "only .ashader schema 2 is supported");
+                    addDiagnostic(ShaderDiagnosticCode::UnsupportedSchema,
+                                  ShaderDiagnosticTarget::File, versionToken->span,
+                                  "only .shader schema 2 is supported");
                 }
             }
 
-            void parseShader(AshaderDocument& document) {
-                if (!expectIdentifier("shader", AshaderDiagnosticTarget::Shader)) {
+            void parseShader(ShaderDocument& document) {
+                if (!expectIdentifier("shader", ShaderDiagnosticTarget::Shader)) {
                     synchronizeToBlock();
                     return;
                 }
                 const auto shaderName = consume(TokenKind::String);
                 if (!shaderName) {
-                    addDiagnostic(AshaderDiagnosticCode::ExpectedToken,
-                                  AshaderDiagnosticTarget::Shader, current_.span,
+                    addDiagnostic(ShaderDiagnosticCode::ExpectedToken,
+                                  ShaderDiagnosticTarget::Shader, current_.span,
                                   "expected shader stable type id string");
                 } else {
                     document.shaderTypeId = std::string{shaderName->text};
                 }
 
-                if (!expect(TokenKind::LBrace, "'{'", AshaderDiagnosticTarget::Shader)) {
+                if (!expect(TokenKind::LBrace, "'{'", ShaderDiagnosticTarget::Shader)) {
                     return;
                 }
 
@@ -595,18 +595,18 @@ namespace asharia::shader_authoring {
                     } else if (isIdentifier("graph")) {
                         parseGraphReference(document, nullptr);
                     } else {
-                        addDiagnostic(AshaderDiagnosticCode::UnexpectedToken,
-                                      AshaderDiagnosticTarget::Shader, current_.span,
+                        addDiagnostic(ShaderDiagnosticCode::UnexpectedToken,
+                                      ShaderDiagnosticTarget::Shader, current_.span,
                                       "unexpected token in shader block");
                         advance();
                     }
                 }
 
-                expect(TokenKind::RBrace, "'}'", AshaderDiagnosticTarget::Shader);
+                expect(TokenKind::RBrace, "'}'", ShaderDiagnosticTarget::Shader);
             }
 
-            void parseProperties(AshaderDocument& document) {
-                if (!expect(TokenKind::LBrace, "'{'", AshaderDiagnosticTarget::Property)) {
+            void parseProperties(ShaderDocument& document) {
+                if (!expect(TokenKind::LBrace, "'{'", ShaderDiagnosticTarget::Property)) {
                     return;
                 }
 
@@ -614,14 +614,14 @@ namespace asharia::shader_authoring {
                     parseProperty(document);
                 }
 
-                expect(TokenKind::RBrace, "'}'", AshaderDiagnosticTarget::Property);
+                expect(TokenKind::RBrace, "'}'", ShaderDiagnosticTarget::Property);
             }
 
-            void parseProperty(AshaderDocument& document) {
+            void parseProperty(ShaderDocument& document) {
                 const auto typeToken = consume(TokenKind::Identifier);
                 if (!typeToken) {
-                    addDiagnostic(AshaderDiagnosticCode::ExpectedToken,
-                                  AshaderDiagnosticTarget::Property, current_.span,
+                    addDiagnostic(ShaderDiagnosticCode::ExpectedToken,
+                                  ShaderDiagnosticTarget::Property, current_.span,
                                   "expected property type");
                     advance();
                     return;
@@ -629,21 +629,21 @@ namespace asharia::shader_authoring {
 
                 const auto propertyType = propertyTypeFromName(typeToken->text);
                 if (!propertyType) {
-                    addDiagnostic(AshaderDiagnosticCode::UnknownPropertyType,
-                                  AshaderDiagnosticTarget::Property, typeToken->span,
+                    addDiagnostic(ShaderDiagnosticCode::UnknownPropertyType,
+                                  ShaderDiagnosticTarget::Property, typeToken->span,
                                   std::string{"unknown property type '"} +
                                       std::string{typeToken->text} + "'");
                 }
 
                 const auto nameToken = consume(TokenKind::Identifier);
                 if (!nameToken) {
-                    addDiagnostic(AshaderDiagnosticCode::ExpectedToken,
-                                  AshaderDiagnosticTarget::Property, current_.span,
+                    addDiagnostic(ShaderDiagnosticCode::ExpectedToken,
+                                  ShaderDiagnosticTarget::Property, current_.span,
                                   "expected property name");
                     return;
                 }
 
-                AshaderPropertyDefault defaultValue{};
+                ShaderPropertyDefault defaultValue{};
                 if (current_.kind == TokenKind::Equal) {
                     advance();
                     defaultValue = parsePropertyDefault();
@@ -654,20 +654,20 @@ namespace asharia::shader_authoring {
                 }
 
                 if (!propertyNames_.insert(std::string{nameToken->text}).second) {
-                    addDiagnostic(AshaderDiagnosticCode::DuplicateProperty,
-                                  AshaderDiagnosticTarget::Property, nameToken->span,
+                    addDiagnostic(ShaderDiagnosticCode::DuplicateProperty,
+                                  ShaderDiagnosticTarget::Property, nameToken->span,
                                   std::string{"duplicate property '"} +
                                       std::string{nameToken->text} + "'");
                 }
 
                 if (!validateDefault(*propertyType, defaultValue)) {
-                    addDiagnostic(AshaderDiagnosticCode::InvalidDefaultValue,
-                                  AshaderDiagnosticTarget::Property, defaultValue.span,
+                    addDiagnostic(ShaderDiagnosticCode::InvalidDefaultValue,
+                                  ShaderDiagnosticTarget::Property, defaultValue.span,
                                   std::string{"invalid default value for property '"} +
                                       std::string{nameToken->text} + "'");
                 }
 
-                document.properties.push_back(AshaderPropertyDecl{
+                document.properties.push_back(ShaderPropertyDecl{
                     .type = *propertyType,
                     .typeName = std::string{typeToken->text},
                     .name = std::string{nameToken->text},
@@ -678,16 +678,16 @@ namespace asharia::shader_authoring {
                 });
             }
 
-            AshaderPropertyDefault parsePropertyDefault() {
+            ShaderPropertyDefault parsePropertyDefault() {
                 if (const auto vectorDefault = parseVectorDefault()) {
                     return *vectorDefault;
                 }
 
                 if (const auto number = consume(TokenKind::Number)) {
-                    const AshaderPropertyDefaultKind kind =
-                        isIntegerText(number->text, true) ? AshaderPropertyDefaultKind::Integer
-                                                          : AshaderPropertyDefaultKind::Number;
-                    return AshaderPropertyDefault{
+                    const ShaderPropertyDefaultKind kind =
+                        isIntegerText(number->text, true) ? ShaderPropertyDefaultKind::Integer
+                                                          : ShaderPropertyDefaultKind::Number;
+                    return ShaderPropertyDefault{
                         .kind = kind,
                         .text = std::string{number->text},
                         .elements = {std::string{number->text}},
@@ -697,15 +697,15 @@ namespace asharia::shader_authoring {
 
                 if (const auto identifier = consume(TokenKind::Identifier)) {
                     if (identifier->text == "true" || identifier->text == "false") {
-                        return AshaderPropertyDefault{
-                            .kind = AshaderPropertyDefaultKind::Boolean,
+                        return ShaderPropertyDefault{
+                            .kind = ShaderPropertyDefaultKind::Boolean,
                             .text = std::string{identifier->text},
                             .elements = {std::string{identifier->text}},
                             .span = identifier->span,
                         };
                     }
-                    return AshaderPropertyDefault{
-                        .kind = AshaderPropertyDefaultKind::None,
+                    return ShaderPropertyDefault{
+                        .kind = ShaderPropertyDefaultKind::None,
                         .text = std::string{identifier->text},
                         .elements = {},
                         .span = identifier->span,
@@ -716,10 +716,10 @@ namespace asharia::shader_authoring {
                 if (current_.kind != TokenKind::End && current_.kind != TokenKind::RBrace) {
                     advance();
                 }
-                return AshaderPropertyDefault{.text = {}, .elements = {}, .span = span};
+                return ShaderPropertyDefault{.text = {}, .elements = {}, .span = span};
             }
 
-            std::optional<AshaderPropertyDefault> parseVectorDefault() {
+            std::optional<ShaderPropertyDefault> parseVectorDefault() {
                 const auto open = consume(TokenKind::LBracket);
                 if (!open) {
                     return std::nullopt;
@@ -731,8 +731,8 @@ namespace asharia::shader_authoring {
                     const auto value = consume(TokenKind::Number);
                     if (!value) {
                         span.end = current_.span.end;
-                        addDiagnostic(AshaderDiagnosticCode::InvalidDefaultValue,
-                                      AshaderDiagnosticTarget::Property, current_.span,
+                        addDiagnostic(ShaderDiagnosticCode::InvalidDefaultValue,
+                                      ShaderDiagnosticTarget::Property, current_.span,
                                       "vector default requires numeric elements");
                         advance();
                         continue;
@@ -747,8 +747,8 @@ namespace asharia::shader_authoring {
                 if (const auto close = consume(TokenKind::RBracket)) {
                     span.end = close->span.end;
                 } else {
-                    addDiagnostic(AshaderDiagnosticCode::ExpectedToken,
-                                  AshaderDiagnosticTarget::Property, current_.span,
+                    addDiagnostic(ShaderDiagnosticCode::ExpectedToken,
+                                  ShaderDiagnosticTarget::Property, current_.span,
                                   "expected ']' after vector default");
                 }
 
@@ -760,23 +760,23 @@ namespace asharia::shader_authoring {
                     text += elements[index];
                 }
                 text += "]";
-                return AshaderPropertyDefault{
-                    .kind = AshaderPropertyDefaultKind::Vector,
+                return ShaderPropertyDefault{
+                    .kind = ShaderPropertyDefaultKind::Vector,
                     .text = std::move(text),
                     .elements = std::move(elements),
                     .span = span,
                 };
             }
 
-            [[nodiscard]] static bool validateDefault(AshaderPropertyType type,
-                                                      const AshaderPropertyDefault& defaultValue) {
-                if (defaultValue.kind == AshaderPropertyDefaultKind::None &&
+            [[nodiscard]] static bool validateDefault(ShaderPropertyType type,
+                                                      const ShaderPropertyDefault& defaultValue) {
+                if (defaultValue.kind == ShaderPropertyDefaultKind::None &&
                     defaultValue.text.empty()) {
                     return true;
                 }
 
                 if (isVectorType(type)) {
-                    return defaultValue.kind == AshaderPropertyDefaultKind::Vector &&
+                    return defaultValue.kind == ShaderPropertyDefaultKind::Vector &&
                            defaultValue.elements.size() == expectedVectorSize(type) &&
                            std::ranges::all_of(defaultValue.elements, [](const std::string& text) {
                                return isNumberText(text);
@@ -784,90 +784,90 @@ namespace asharia::shader_authoring {
                 }
 
                 switch (type) {
-                case AshaderPropertyType::Float:
-                    return (defaultValue.kind == AshaderPropertyDefaultKind::Number ||
-                            defaultValue.kind == AshaderPropertyDefaultKind::Integer) &&
+                case ShaderPropertyType::Float:
+                    return (defaultValue.kind == ShaderPropertyDefaultKind::Number ||
+                            defaultValue.kind == ShaderPropertyDefaultKind::Integer) &&
                            isNumberText(defaultValue.text);
-                case AshaderPropertyType::Int:
-                    return defaultValue.kind == AshaderPropertyDefaultKind::Integer &&
+                case ShaderPropertyType::Int:
+                    return defaultValue.kind == ShaderPropertyDefaultKind::Integer &&
                            isIntegerText(defaultValue.text, true);
-                case AshaderPropertyType::UInt:
-                    return defaultValue.kind == AshaderPropertyDefaultKind::Integer &&
+                case ShaderPropertyType::UInt:
+                    return defaultValue.kind == ShaderPropertyDefaultKind::Integer &&
                            isIntegerText(defaultValue.text, false);
-                case AshaderPropertyType::Bool:
-                    return defaultValue.kind == AshaderPropertyDefaultKind::Boolean;
-                case AshaderPropertyType::Texture2D:
-                case AshaderPropertyType::Sampler:
+                case ShaderPropertyType::Bool:
+                    return defaultValue.kind == ShaderPropertyDefaultKind::Boolean;
+                case ShaderPropertyType::Texture2D:
+                case ShaderPropertyType::Sampler:
                     return false;
-                case AshaderPropertyType::Float2:
-                case AshaderPropertyType::Float3:
-                case AshaderPropertyType::Float4:
-                case AshaderPropertyType::Color:
+                case ShaderPropertyType::Float2:
+                case ShaderPropertyType::Float3:
+                case ShaderPropertyType::Float4:
+                case ShaderPropertyType::Color:
                     break;
                 }
                 return false;
             }
 
-            void parsePass(AshaderDocument& document) {
-                AshaderPassDecl pass{};
+            void parsePass(ShaderDocument& document) {
+                ShaderPassDecl pass{};
                 const SourceSpan passBegin = current_.span;
                 const auto name = consume(TokenKind::String);
                 if (!name) {
-                    addDiagnostic(AshaderDiagnosticCode::ExpectedToken,
-                                  AshaderDiagnosticTarget::Pass, current_.span,
+                    addDiagnostic(ShaderDiagnosticCode::ExpectedToken,
+                                  ShaderDiagnosticTarget::Pass, current_.span,
                                   "expected pass name string");
                 } else {
                     pass.name = std::string{name->text};
                     pass.nameSpan = name->span;
                 }
 
-                if (!expect(TokenKind::LBrace, "'{'", AshaderDiagnosticTarget::Pass)) {
+                if (!expect(TokenKind::LBrace, "'{'", ShaderDiagnosticTarget::Pass)) {
                     return;
                 }
 
                 while (current_.kind != TokenKind::End && current_.kind != TokenKind::RBrace) {
                     if (consumeIdentifier("tag")) {
-                        pass.tag = parseStringValue(AshaderDiagnosticTarget::Pass, "pass tag");
+                        pass.tag = parseStringValue(ShaderDiagnosticTarget::Pass, "pass tag");
                     } else if (consumeIdentifier("vertex")) {
                         pass.vertexEntry =
-                            parseIdentifierValue(AshaderDiagnosticTarget::Pass, "vertex entry");
+                            parseIdentifierValue(ShaderDiagnosticTarget::Pass, "vertex entry");
                     } else if (consumeIdentifier("fragment")) {
                         pass.fragmentEntry =
-                            parseIdentifierValue(AshaderDiagnosticTarget::Pass, "fragment entry");
+                            parseIdentifierValue(ShaderDiagnosticTarget::Pass, "fragment entry");
                     } else if (consumeIdentifier("compute")) {
                         pass.computeEntry =
-                            parseIdentifierValue(AshaderDiagnosticTarget::Pass, "compute entry");
+                            parseIdentifierValue(ShaderDiagnosticTarget::Pass, "compute entry");
                     } else if (consumeIdentifier("cull")) {
                         pass.cullMode =
-                            parseIdentifierValue(AshaderDiagnosticTarget::Pass, "cull mode");
+                            parseIdentifierValue(ShaderDiagnosticTarget::Pass, "cull mode");
                     } else if (consumeIdentifier("depthTest")) {
                         pass.depthTest =
-                            parseIdentifierValue(AshaderDiagnosticTarget::Pass, "depth test");
+                            parseIdentifierValue(ShaderDiagnosticTarget::Pass, "depth test");
                     } else if (consumeIdentifier("depthWrite")) {
                         pass.depthWrite =
-                            parseBoolValue(AshaderDiagnosticTarget::Pass, "depth write flag");
+                            parseBoolValue(ShaderDiagnosticTarget::Pass, "depth write flag");
                     } else if (consumeIdentifier("blend")) {
                         pass.blendMode =
-                            parseIdentifierValue(AshaderDiagnosticTarget::Pass, "blend mode");
+                            parseIdentifierValue(ShaderDiagnosticTarget::Pass, "blend mode");
                     } else if (isIdentifier("slang")) {
                         parseSlangReference(document, &pass);
                     } else if (isIdentifier("graph")) {
                         parseGraphReference(document, &pass);
                     } else {
-                        addDiagnostic(AshaderDiagnosticCode::UnexpectedToken,
-                                      AshaderDiagnosticTarget::Pass, current_.span,
+                        addDiagnostic(ShaderDiagnosticCode::UnexpectedToken,
+                                      ShaderDiagnosticTarget::Pass, current_.span,
                                       "unexpected token in pass block");
                         advance();
                     }
                 }
 
                 const SourceSpan closeSpan = current_.span;
-                expect(TokenKind::RBrace, "'}'", AshaderDiagnosticTarget::Pass);
+                expect(TokenKind::RBrace, "'}'", ShaderDiagnosticTarget::Pass);
                 pass.span = SourceSpan{.begin = passBegin.begin, .end = closeSpan.end};
 
                 if (!pass.vertexEntry && !pass.fragmentEntry && !pass.computeEntry) {
-                    addDiagnostic(AshaderDiagnosticCode::MissingPassEntry,
-                                  AshaderDiagnosticTarget::Pass, pass.span,
+                    addDiagnostic(ShaderDiagnosticCode::MissingPassEntry,
+                                  ShaderDiagnosticTarget::Pass, pass.span,
                                   std::string{"pass '"} + pass.name +
                                       "' requires vertex, fragment, or compute entry");
                 }
@@ -875,33 +875,33 @@ namespace asharia::shader_authoring {
                 document.passes.push_back(std::move(pass));
             }
 
-            std::optional<std::string> parseStringValue(AshaderDiagnosticTarget target,
+            std::optional<std::string> parseStringValue(ShaderDiagnosticTarget target,
                                                         std::string_view label) {
                 const auto token = consume(TokenKind::String);
                 if (!token) {
-                    addDiagnostic(AshaderDiagnosticCode::ExpectedToken, target, current_.span,
+                    addDiagnostic(ShaderDiagnosticCode::ExpectedToken, target, current_.span,
                                   std::string{"expected "} + std::string{label} + " string");
                     return std::nullopt;
                 }
                 return std::string{token->text};
             }
 
-            std::optional<std::string> parseIdentifierValue(AshaderDiagnosticTarget target,
+            std::optional<std::string> parseIdentifierValue(ShaderDiagnosticTarget target,
                                                             std::string_view label) {
                 const auto token = consume(TokenKind::Identifier);
                 if (!token) {
-                    addDiagnostic(AshaderDiagnosticCode::ExpectedToken, target, current_.span,
+                    addDiagnostic(ShaderDiagnosticCode::ExpectedToken, target, current_.span,
                                   std::string{"expected "} + std::string{label} + " identifier");
                     return std::nullopt;
                 }
                 return std::string{token->text};
             }
 
-            std::optional<bool> parseBoolValue(AshaderDiagnosticTarget target,
+            std::optional<bool> parseBoolValue(ShaderDiagnosticTarget target,
                                                std::string_view label) {
                 const auto token = consume(TokenKind::Identifier);
                 if (!token || (token->text != "true" && token->text != "false")) {
-                    addDiagnostic(AshaderDiagnosticCode::ExpectedToken, target,
+                    addDiagnostic(ShaderDiagnosticCode::ExpectedToken, target,
                                   token ? token->span : current_.span,
                                   std::string{"expected "} + std::string{label} + " boolean");
                     return std::nullopt;
@@ -909,11 +909,11 @@ namespace asharia::shader_authoring {
                 return token->text == "true";
             }
 
-            void parseSlangReference(AshaderDocument& document, AshaderPassDecl* pass) {
+            void parseSlangReference(ShaderDocument& document, ShaderPassDecl* pass) {
                 const SourceSpan keywordSpan = current_.span;
                 advance();
                 if (const auto path = consume(TokenKind::String)) {
-                    AshaderSourceReference reference{.path = std::string{path->text},
+                    ShaderSourceReference reference{.path = std::string{path->text},
                                                      .span = path->span};
                     document.slangFiles.push_back(reference);
                     if (pass != nullptr) {
@@ -925,21 +925,21 @@ namespace asharia::shader_authoring {
                     parseRawSlangBlock(document);
                     return;
                 }
-                addDiagnostic(AshaderDiagnosticCode::ExpectedToken,
-                              AshaderDiagnosticTarget::SlangReference, keywordSpan,
+                addDiagnostic(ShaderDiagnosticCode::ExpectedToken,
+                              ShaderDiagnosticTarget::SlangReference, keywordSpan,
                               "expected slang file string or raw slang block");
             }
 
-            void parseGraphReference(AshaderDocument& document, AshaderPassDecl* pass) {
+            void parseGraphReference(ShaderDocument& document, ShaderPassDecl* pass) {
                 advance();
                 const auto path = consume(TokenKind::String);
                 if (!path) {
-                    addDiagnostic(AshaderDiagnosticCode::ExpectedToken,
-                                  AshaderDiagnosticTarget::GraphReference, current_.span,
+                    addDiagnostic(ShaderDiagnosticCode::ExpectedToken,
+                                  ShaderDiagnosticTarget::GraphReference, current_.span,
                                   "expected graph file string");
                     return;
                 }
-                AshaderSourceReference reference{.path = std::string{path->text},
+                ShaderSourceReference reference{.path = std::string{path->text},
                                                  .span = path->span};
                 document.graphFiles.push_back(reference);
                 if (pass != nullptr) {
@@ -947,12 +947,12 @@ namespace asharia::shader_authoring {
                 }
             }
 
-            void parseRawSlangBlock(AshaderDocument& document) {
+            void parseRawSlangBlock(ShaderDocument& document) {
                 const std::size_t openOffset = current_.span.begin.offset;
                 const auto match = findRawBlockClose(lexer_.source(), openOffset);
                 if (!match) {
-                    addDiagnostic(AshaderDiagnosticCode::UnbalancedRawSlangBlock,
-                                  AshaderDiagnosticTarget::RawSlangBlock, current_.span,
+                    addDiagnostic(ShaderDiagnosticCode::UnbalancedRawSlangBlock,
+                                  ShaderDiagnosticTarget::RawSlangBlock, current_.span,
                                   "raw slang block has unbalanced braces");
                     lexer_.setOffset(lexer_.source().size());
                     advance();
@@ -969,11 +969,11 @@ namespace asharia::shader_authoring {
                     .end = lexer_.positionAt(match->closeOffset),
                 };
                 if (document.rawSlang) {
-                    addDiagnostic(AshaderDiagnosticCode::UnexpectedToken,
-                                  AshaderDiagnosticTarget::RawSlangBlock, rawSpan,
+                    addDiagnostic(ShaderDiagnosticCode::UnexpectedToken,
+                                  ShaderDiagnosticTarget::RawSlangBlock, rawSpan,
                                   "only one raw slang block is supported in this slice");
                 } else {
-                    document.rawSlang = AshaderRawSlangBlock{
+                    document.rawSlang = ShaderRawSlangBlock{
                         .text = std::string{lexer_.source().substr(bodyOffset, match->closeOffset -
                                                                                    bodyOffset)},
                         .span = rawSpan,
@@ -993,82 +993,82 @@ namespace asharia::shader_authoring {
 
             Lexer lexer_;
             Token current_{};
-            std::vector<AshaderDiagnostic> diagnostics_;
+            std::vector<ShaderDiagnostic> diagnostics_;
             std::unordered_set<std::string> propertyNames_;
         };
 
     } // namespace
 
-    std::string_view toString(AshaderDiagnosticSeverity severity) {
+    std::string_view toString(ShaderDiagnosticSeverity severity) {
         switch (severity) {
-        case AshaderDiagnosticSeverity::Warning:
+        case ShaderDiagnosticSeverity::Warning:
             return "warning";
-        case AshaderDiagnosticSeverity::Error:
+        case ShaderDiagnosticSeverity::Error:
             return "error";
         }
         return "unknown";
     }
 
-    std::string_view toString(AshaderDiagnosticCode code) {
+    std::string_view toString(ShaderDiagnosticCode code) {
         switch (code) {
-        case AshaderDiagnosticCode::ExpectedToken:
+        case ShaderDiagnosticCode::ExpectedToken:
             return "expected-token";
-        case AshaderDiagnosticCode::UnexpectedToken:
+        case ShaderDiagnosticCode::UnexpectedToken:
             return "unexpected-token";
-        case AshaderDiagnosticCode::UnsupportedSchema:
+        case ShaderDiagnosticCode::UnsupportedSchema:
             return "unsupported-schema";
-        case AshaderDiagnosticCode::DuplicateProperty:
+        case ShaderDiagnosticCode::DuplicateProperty:
             return "duplicate-property";
-        case AshaderDiagnosticCode::UnknownPropertyType:
+        case ShaderDiagnosticCode::UnknownPropertyType:
             return "unknown-property-type";
-        case AshaderDiagnosticCode::InvalidDefaultValue:
+        case ShaderDiagnosticCode::InvalidDefaultValue:
             return "invalid-default-value";
-        case AshaderDiagnosticCode::MissingPassEntry:
+        case ShaderDiagnosticCode::MissingPassEntry:
             return "missing-pass-entry";
-        case AshaderDiagnosticCode::MissingSlangReference:
+        case ShaderDiagnosticCode::MissingSlangReference:
             return "missing-slang-reference";
-        case AshaderDiagnosticCode::UnbalancedRawSlangBlock:
+        case ShaderDiagnosticCode::UnbalancedRawSlangBlock:
             return "unbalanced-raw-slang-block";
-        case AshaderDiagnosticCode::GeneratedSlangUnsupportedInput:
+        case ShaderDiagnosticCode::GeneratedSlangUnsupportedInput:
             return "generated-slang-unsupported-input";
         }
         return "unknown";
     }
 
-    std::string_view toString(AshaderPropertyType type) {
+    std::string_view toString(ShaderPropertyType type) {
         switch (type) {
-        case AshaderPropertyType::Float:
+        case ShaderPropertyType::Float:
             return "float";
-        case AshaderPropertyType::Float2:
+        case ShaderPropertyType::Float2:
             return "float2";
-        case AshaderPropertyType::Float3:
+        case ShaderPropertyType::Float3:
             return "float3";
-        case AshaderPropertyType::Float4:
+        case ShaderPropertyType::Float4:
             return "float4";
-        case AshaderPropertyType::Color:
+        case ShaderPropertyType::Color:
             return "color";
-        case AshaderPropertyType::Int:
+        case ShaderPropertyType::Int:
             return "int";
-        case AshaderPropertyType::UInt:
+        case ShaderPropertyType::UInt:
             return "uint";
-        case AshaderPropertyType::Bool:
+        case ShaderPropertyType::Bool:
             return "bool";
-        case AshaderPropertyType::Texture2D:
+        case ShaderPropertyType::Texture2D:
             return "texture2D";
-        case AshaderPropertyType::Sampler:
+        case ShaderPropertyType::Sampler:
             return "sampler";
         }
         return "unknown";
     }
 
-    bool hasErrors(const std::vector<AshaderDiagnostic>& diagnostics) {
+    bool hasErrors(const std::vector<ShaderDiagnostic>& diagnostics) {
         return std::ranges::any_of(diagnostics, [](const auto& diagnostic) {
-            return diagnostic.severity == AshaderDiagnosticSeverity::Error;
+            return diagnostic.severity == ShaderDiagnosticSeverity::Error;
         });
     }
 
-    AshaderParseResult parseAshaderDocument(std::string_view source,
-                                            const AshaderParseOptions& options) {
+    ShaderParseResult parseShaderDocument(std::string_view source,
+                                            const ShaderParseOptions& options) {
         Parser parser{source, options};
         return parser.parse();
     }

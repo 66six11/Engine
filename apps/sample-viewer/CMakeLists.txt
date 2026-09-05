@@ -32,8 +32,8 @@ add_custom_command(
     OUTPUT "${material_generated_dir}/numeric-unlit.slang"
     COMMAND "${CMAKE_COMMAND}" -E make_directory "${material_generated_dir}"
     COMMAND "$<TARGET_FILE:asharia-material-shader-fixture>"
-        "${material_fixture_dir}/numeric-unlit.ashader" "${material_generated_dir}/numeric-unlit.slang"
-    DEPENDS asharia-material-shader-fixture "${material_fixture_dir}/numeric-unlit.ashader"
+        "${material_fixture_dir}/numeric-unlit.shader" "${material_generated_dir}/numeric-unlit.slang"
+    DEPENDS asharia-material-shader-fixture "${material_fixture_dir}/numeric-unlit.shader"
     VERBATIM
 )
 asharia_add_slang_shader(asharia-material-fixture-fragment

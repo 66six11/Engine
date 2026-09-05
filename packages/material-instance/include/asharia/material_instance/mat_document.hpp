@@ -7,7 +7,7 @@
 #include <vector>
 
 #include "asharia/asset_core/asset_guid.hpp"
-#include "asharia/shader_authoring/ashader_document.hpp"
+#include "asharia/shader_authoring/shader_document.hpp"
 
 namespace asharia::material_instance {
 
@@ -49,7 +49,7 @@ namespace asharia::material_instance {
 
     struct MatPropertyOverride {
         std::string propertyId;
-        shader_authoring::AshaderPropertyType type{shader_authoring::AshaderPropertyType::Float};
+        shader_authoring::ShaderPropertyType type{shader_authoring::ShaderPropertyType::Float};
         MatPropertyValue value;
 
         [[nodiscard]] friend bool operator==(const MatPropertyOverride&,

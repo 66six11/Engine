@@ -5,8 +5,8 @@
 #include <span>
 
 #include "asharia/core/file_io.hpp"
-#include "asharia/shader_authoring/ashader_generated_slang.hpp"
-#include "asharia/shader_authoring/ashader_parser.hpp"
+#include "asharia/shader_authoring/shader_generated_slang.hpp"
+#include "asharia/shader_authoring/shader_parser.hpp"
 
 // Build-only fixture adapter: exercise the production parser/emitter before slangc/spirv-val.
 int main(int argc, char** argv) try {
@@ -19,7 +19,7 @@ int main(int argc, char** argv) try {
         std::cerr << text.error().message;
         return EXIT_FAILURE;
     }
-    auto parsed = asharia::shader_authoring::parseAshaderDocument(*text);
+    auto parsed = asharia::shader_authoring::parseShaderDocument(*text);
     if (!parsed.document || asharia::shader_authoring::hasErrors(parsed.diagnostics)) {
         std::cerr << "Invalid material shader fixture";
         return EXIT_FAILURE;

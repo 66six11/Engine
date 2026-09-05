@@ -39,7 +39,7 @@
 #include "asharia/rhi_vulkan/vulkan_frame_loop.hpp"
 #include "asharia/rhi_vulkan/vulkan_image.hpp"
 #include "asharia/scene_rendering/scene_mesh_extraction.hpp"
-#include "asharia/shader_authoring/ashader_parser.hpp"
+#include "asharia/shader_authoring/shader_parser.hpp"
 #include "asharia/shader_material_adapter/reflected_parameters.hpp"
 #include "asharia/window_glfw/glfw_window.hpp"
 
@@ -2107,8 +2107,8 @@ namespace asharia::sample_viewer {
             wrongProgram.fragmentReflection = &wrongReflection;
             require(!BasicGpuMaterialProgram::create(wrongProgram), "wrong binding set accepted");
             auto program = take(BasicGpuMaterialProgram::create(programDesc));
-            auto parsed = shader_authoring::parseAshaderDocument(
-                take(core::readFileText(fixtures / "numeric-unlit.ashader", {.maxBytes = 65536})));
+            auto parsed = shader_authoring::parseShaderDocument(
+                take(core::readFileText(fixtures / "numeric-unlit.shader", {.maxBytes = 65536})));
             require(parsed.document.has_value(), "shader fixture parse failed");
             auto red = take(shader_material::packReflectedMaterialParameters(
                 take(material_instance::readMatFile(fixtures / "red.mat")), *parsed.document,

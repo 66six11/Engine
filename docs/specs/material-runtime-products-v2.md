@@ -6,7 +6,7 @@
 `amat-v1.md`、`material-product-v1.md` 或 `binding-layout-v1.md`。
 
 本文定义 `.mat` 材质实例、binding layout、generated product manifest、diagnostics 和 renderer 消费边界。
-`.ashader` / `.agraph` authoring contract 见 [`ashader-v2.md`](ashader-v2.md)。
+`.shader` / `.agraph` authoring contract 见 [`shader-v2.md`](shader-v2.md)。
 
 ## `.mat` V2
 
@@ -46,7 +46,7 @@ shader source copy
 {
   "schemaVersion": 2,
   "materialType": {
-    "assetGuid": "asset-guid-of-unlit-ashader",
+    "assetGuid": "asset-guid-of-unlit-shader",
     "stableTypeId": "asharia.material.unlit",
     "expectedTypeHash": "..."
   },
@@ -121,7 +121,7 @@ binding M+1..K: buffers
 .asharia/cache/shaders/<name>.product.json
 ```
 
-`.ashader` import 输出：
+`.shader` import 输出：
 
 ```text
 generated.slang
@@ -132,10 +132,10 @@ product.json
 diagnostics.json
 ```
 
-当前 #158 的最小 `.ashader` product blob 已生成 `shader-authoring-product.v1` generated Slang
+当前 #158 的最小 `.shader` product blob 已生成 `shader-authoring-product.v2` generated Slang
 payload，并记录 source/importer/product key/hash、shader stable type id、property/pass summary facts、
 generated binding facts 和 entry manifest facts。它不调用 `slangc`，不生成 SPIR-V、reflection JSON、
-signature JSON 或 final shader product manifest，也不做 `.ashader` / `.slang` cross-asset dependency
+signature JSON 或 final shader product manifest，也不做 `.shader` / `.slang` cross-asset dependency
 invalidation。#163 是后续 compile/reflection product 层，目标是从该 generated Slang payload 和 entry
 manifest facts 产出 deterministic SPIR-V/reflection facts，但仍不生成 material signature product 或 renderer
 binding packet。
@@ -146,7 +146,7 @@ compile/reflection cook 消费该输入契约，而不是从 cache 路径或 `de
 内容。
 
 同日的第二步新增 `com.asharia.importer.shader-compile-reflection` / `shader-compile-reflection-product.v1`：
-compile request 通过 `shader.authoringProductPath` 指向上游 `shader-authoring-product.v1`，读取其 generated
+compile request 通过 `shader.authoringProductPath` 指向上游 `shader-authoring-product.v2`，读取其 generated
 Slang payload 和 entry manifest facts，逐 entry 调用 `slangc -reflection-json` 生成 SPIR-V 与 reflection
 JSON，并用 `spirv-val` 验证 SPIR-V。产品 blob 记录 profile/target、上游 authoring product path/hash、
 generated Slang hash、entry manifest、SPIR-V bytes/hash/size 和 reflection JSON/hash/size；reader 会复核
@@ -167,7 +167,7 @@ reflection JSON/hash 和 diagnostic facts。该证据覆盖 #163 的 determinist
 验收点，但仍不把该 Slice 扩展到 material signature product 或 renderer/RHI 消费。
 
 同日第五步补齐 manifest-selected entry 的 negative evidence：asset-pipeline smoke 会构造一个 hash
-一致但 entry stage 不受支持的 `shader-authoring-product.v1` dependency bytes，并验证 compile/reflection
+一致但 entry stage 不受支持的 `shader-authoring-product.v2` dependency bytes，并验证 compile/reflection
 层在调用 shader tool 前产生 deterministic `ShaderCompileReflectionImportFailed` diagnostic 且不写 product
 manifest。该证据限定在 generated product contract validation，不把 stage 纠正、material signature 或
 renderer/RHI fallback 纳入 #163。
@@ -194,7 +194,7 @@ diagnostics
 
 当前 #156 的最小 product blob 只规范化 `.mat` material instance source bytes，并记录 material type
 asset GUID、stable type id、expected type hash、last cooked signature hash、product key/hash 和 canonical
-`.mat` payload。它不解析 `.ashader`，不生成 shader product，也不做 cross-asset dependency invalidation。
+`.mat` payload。它不解析 `.shader`，不生成 shader product，也不做 cross-asset dependency invalidation。
 
 ## Product Manifest Schema
 
@@ -203,12 +203,12 @@ asset GUID、stable type id、expected type hash、last cooked signature hash、
   "schemaVersion": 2,
   "bindingLayoutVersion": 2,
   "source": {
-    "ashader": "Assets/Shaders/Unlit/Unlit.ashader",
+    "shader": "Assets/Shaders/Unlit/Unlit.shader",
     "slang": ["Assets/Shaders/Unlit/Unlit.slang"],
     "agraph": null
   },
   "hashes": {
-    "ashader": "...",
+    "shader": "...",
     "slang": "...",
     "generatedSlang": "...",
     "reflection": "...",
@@ -231,7 +231,7 @@ asset GUID、stable type id、expected type hash、last cooked signature hash、
   },
   "diagnostics": [],
   "toolVersions": {
-    "ashaderImporter": "2",
+    "shaderImporter": "2",
     "shaderSlang": "..."
   }
 }
@@ -244,7 +244,7 @@ Runtime 只读 product，不读 authoring graph。
 Editor 可以读：
 
 ```text
-.ashader
+.shader
 .agraph
 .mat
 product diagnostics
@@ -268,7 +268,7 @@ draw packet
 
 ```cpp
 enum class DiagnosticSource {
-    Ashader,
+    Shader,
     Slang,
     Graph,
     Mat,
@@ -301,8 +301,8 @@ struct MaterialDiagnostic {
 Diagnostics 必须支持定位到：
 
 ```text
-.ashader property
-.ashader pass
+.shader property
+.shader pass
 raw Slang line
 external .slang line
 .mat property override
@@ -317,7 +317,7 @@ Preview 失败时保留上一次成功画面，diagnostics 附着到 node、pin�
 
 ## Import / Cook Rules
 
-- 修改 `.ashader` 会重新 cook shader product。
+- 修改 `.shader` 会重新 cook shader product。
 - 修改 `.slang` 会重新 cook shader product。
 - 修改 `.agraph` 会重新 lower 并 cook shader product。
 - 修改 `.mat` 只重新 resolve material instance。

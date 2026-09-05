@@ -63,7 +63,7 @@ com.asharia.scene.TransformComponent.scale
 | Prefab | `.aprefab` |
 | Asset metadata | `.ameta` |
 | Material | `.mat` |
-| Shader/material authoring root | `.ashader` |
+| Shader/material authoring root | `.shader` |
 | RenderGraph / tool / material graph | `.agraph` |
 | World | `.aworld` |
 

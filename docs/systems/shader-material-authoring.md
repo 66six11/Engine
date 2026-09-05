@@ -5,16 +5,16 @@
 状态：V2 设计合同。旧 V1 authoring 路线已弃用，不再作为实现或文档拆分依据。
 
 本文只保留 shader/material authoring 的系统边界、所有权、数据流和路线判断。具体格式合同见
-[`docs/specs/ashader-v2.md`](../specs/ashader-v2.md) 和
+[`docs/specs/shader-v2.md`](../specs/shader-v2.md) 和
 [`docs/specs/material-runtime-products-v2.md`](../specs/material-runtime-products-v2.md)。近期实施状态与
 Done evidence 只维护在 GitHub Issues / Project；本文不跟踪具体 PR。
 
 ## V1 弃用
 
-V1 文档中的“第一版 `.ashader` 范围”、graph-first 主路径、`ashader-v1.md`、`amat-v1.md` 和
+V1 文档中的“第一版 `.shader` 范围”、graph-first 主路径、`shader-v1.md`、`amat-v1.md` 和
 `material-product-v1.md` 拆分建议全部弃用。后续不新增 V1 spec 文件，也不把 V1 schema 当成兼容目标。
 
-V2 的当前主线是 code-first MVP：先跑通 `.ashader + .slang/raw slang + .mat` 到 renderer/preview 的闭环，再验证
+V2 的当前主线是 code-first MVP：先跑通 `.shader + .slang/raw slang + .mat` 到 renderer/preview 的闭环，再验证
 公共 Slang 函数自动发现、minimal `.agraph` IR 与 Hybrid 调用，最后做完整 Material Editor。
 
 ## 当前事实
@@ -27,18 +27,18 @@ V2 的当前主线是 code-first MVP：先跑通 `.ashader + .slang/raw slang + 
 - `packages/shader-material-adapter` 提供从 `shader-slang` reflection model 到
   `MaterialResourceSignature` / signature hash 的 CPU-only 适配层；它依赖 `shader-slang` 与
   `material-core`，但不引入 renderer、Vulkan、RenderGraph、asset-pipeline 或 editor 依赖。
-- `packages/shader-authoring` 提供 CPU-only `.ashader` document model、parser、source span、基础 diagnostics
+- `packages/shader-authoring` 提供 CPU-only `.shader` document model、parser、source span、基础 diagnostics
   和 generated Slang skeleton / line mapping / entry manifest；它只依赖 `core`，不调用 Slang compiler，
   不生成 SPIR-V，不读取 reflection，也不依赖 asset-pipeline、renderer、RHI 或 editor。
 - `packages/material-instance` 已通过 #154 接入 CPU-only `.mat` document IO、property override model
   和 material type reference validation；它不进入 renderer、RHI 或 editor。
 - `asset-core` / `asset-pipeline` 已有 source discovery、metadata、product manifest/cache 的基线；#156 已让
   `asset-pipeline` 私有复用 `material-instance`，把 `.mat` cook 成 deterministic material instance product blob；
-  #158 已让 `asset-pipeline` 私有复用 `shader-authoring`，把 `.ashader` cook 成 deterministic generated
+  #158 已让 `asset-pipeline` 私有复用 `shader-authoring`，把 `.shader` cook 成 deterministic generated
   Slang product blob；#163 继续把该 generated Slang payload 和 entry manifest facts cook 成 deterministic
   compile/reflection product facts。
 - editor 已有 Asset Browser / RenderView / Preview view request 等基础，但还没有完整 Material Editor、
-  `.agraph` lowering、`.mat` IO 或 `.ashader` editor workflow。
+  `.agraph` lowering、`.mat` IO 或 `.shader` editor workflow。
 - RenderGraph pass type 表达 execution model，不表达 material pass tag、LightMode、shader pass 名称或材质业务语义。
 
 ## 核心决定
@@ -60,7 +60,7 @@ RenderGraph Fragment ShaderRead 声明。纯数值更新复用 program，不重�
 Foundation prerequisite: #419/#424/#426；Integration Gate: 真实 RenderView consumer 的资源与在途生命周期验证。
 Earliest safe / latest required: 当前开始，在图/材质编辑器主线前完成。
 Non-goals / exit evidence: 不做纹理、任意 vertex ABI、Wireframe authored material、通用热更新或图编辑器；
-native smoke 从 `.ashader` 生成并编译 fragment，用 `.mat` 两个参数值完成 GPU Mesh 像素 readback，验证失败保留、
+native smoke 从 `.shader` 生成并编译 fragment，用 `.mat` 两个参数值完成 GPU Mesh 像素 readback，验证失败保留、
 stale 拒绝、共享 program 与 fence 后退役。默认材质原有模式保持原合同。
 
 实施发现：旧生成器会对 entry 发出零参数 wrapper 调用，因此本切片使用无输入 fragment；带参数 entry 的
@@ -84,7 +84,7 @@ renderer 接收已验证的成对字节/反射，不代表 Studio GUID 解析、
 - 混合：图连接表达式并调用手写函数；同一资产可同时包含代码阶段与图阶段。
 - 纯图：参数、Pass、渲染状态、阶段输入输出均可由编辑器维护，用户不必编写代码。
 - 三者共用 properties、Pass、编译/反射、runtime product、`.mat`、预览与诊断。
-- 统一资产不等于单物理文件；保留 `.ashader` 入口和显式 `.slang` / `.agraph` 依赖。
+- 统一资产不等于单物理文件；保留 `.shader` 入口和显式 `.slang` / `.agraph` 依赖。
 - 不承诺任意 Slang 与节点图双向转换。每个函数或阶段实现只有一个权威来源；生成的 Slang 是派生产物，
   不与图同时作为同一函数体的可编辑真相。未来代码调用图函数也必须使用明确接口，另行验证模块组合。
 
@@ -219,13 +219,13 @@ shared validation and explicit diagnostics.
 
 Asharia 不先做完整自定义 shader 语言，也不先复制 Unreal Material Graph 或 Unity Shader Graph。V2 的判断是：
 
-> Slang 是唯一 GPU 代码层；`.ashader` 是材质类型 authoring contract；`.mat` 是材质实例；
+> Slang 是唯一 GPU 代码层；`.shader` 是材质类型 authoring contract；`.mat` 是材质实例；
 > asset pipeline 生成 runtime product；renderer 只消费 product。
 
 第一阶段目标只解决一条链路：
 
 ```text
-.ashader + .slang/raw slang + .mat
+.shader + .slang/raw slang + .mat
     -> import/cook
     -> generated Slang
     -> SPIR-V + reflection
@@ -243,7 +243,7 @@ Slang AST 级重写、handwritten Slang -> graph 反编译、复杂 variant matr
 | 层 | 文件 / 产物 | 职责 | 不负责 |
 | --- | --- | --- | --- |
 | GPU 源码层 | `.slang` | 手写 shader 函数、entry point、高级 GPU 代码 | 材质实例值、editor layout |
-| 材质类型层 | `.ashader` | properties、pass、render state、graph/code 链接、tool contract | runtime handle、GPU descriptor |
+| 材质类型层 | `.shader` | properties、pass、render state、graph/code 链接、tool contract | runtime handle、GPU descriptor |
 | Graph 创作层 | `.agraph` | nodes、edges、pin values、layout、exposed property | runtime execution |
 | 材质实例层 | `.mat` | 材质类型引用、参数值、texture/asset handle、override | shader 代码、GPU object |
 | Runtime product 层 | generated products | generated Slang、SPIR-V、reflection、signature、pipeline key、diagnostics | 用户编辑入口 |
@@ -251,7 +251,7 @@ Slang AST 级重写、handwritten Slang -> graph 反编译、复杂 variant matr
 推荐路径示例：
 
 ```text
-Assets/Shaders/Unlit/Unlit.ashader
+Assets/Shaders/Unlit/Unlit.shader
 Assets/Shaders/Unlit/Unlit.slang
 Assets/Shaders/Unlit/Unlit.agraph
 Assets/Materials/Red.mat
@@ -286,9 +286,9 @@ packages/
     signature hash normalization
 
   shader-authoring/
-    .ashader document model
-    .ashader parser
-    .ashader diagnostics
+    .shader document model
+    .shader parser
+    .shader diagnostics
     generated Slang skeleton / entry manifest
 
   material-instance/
@@ -298,7 +298,7 @@ packages/
     material type reference resolution
 
   asset-pipeline/
-    .ashader importer
+    .shader importer
     .mat importer
     dependency tracking
     generated product manifest
@@ -344,7 +344,7 @@ editor -> asset-pipeline / preview / renderer
 
 ```mermaid
 flowchart LR
-    Source[".ashader / .slang / .agraph / .mat"]
+    Source[".shader / .slang / .agraph / .mat"]
     Import["asset-pipeline import / cook"]
     Generated["generated Slang"]
     Slang["shader-slang compile / spirv-val / reflection"]
@@ -364,7 +364,7 @@ flowchart LR
     RG --> RHI
 ```
 
-Runtime 只读 product，不读 authoring graph。Editor 可以读 `.ashader`、`.agraph`、`.mat`、product diagnostics
+Runtime 只读 product，不读 authoring graph。Editor 可以读 `.shader`、`.agraph`、`.mat`、product diagnostics
 和 preview product。Renderer 只读 SPIR-V、`MaterialResourceSignature`、pipeline key inputs、material binding packet
 和 draw packet。
 
@@ -372,7 +372,7 @@ Runtime 只读 product，不读 authoring graph。Editor 可以读 `.ashader`、
 
 ### 1. Code-first MVP
 
-第一阶段的主路径是 code-first。用户提供 `.ashader`、外部 `.slang` 或 raw `slang {}` block，以及 `.mat`
+第一阶段的主路径是 code-first。用户提供 `.shader`、外部 `.slang` 或 raw `slang {}` block，以及 `.mat`
 实例。工具生成 material prelude、binding、parameter block 和 pass wrapper，再交给 `shader-slang` 编译。
 
 这个阶段证明材质类型、材质实例、shader 编译、reflection adapter、pipeline key、binding packet 和 preview/render
@@ -400,7 +400,7 @@ Preview service 服务三种入口：
 
 - node preview：临时生成只计算某个 node output 的 Slang。
 - code/function preview：用同一 material context 编译某个函数或 pass。
-- final material preview：使用 `.ashader` + `.mat` 的完整 product。
+- final material preview：使用 `.shader` + `.mat` 的完整 product。
 
 预览失败时保留上一次成功画面，diagnostics 附着到 node、pin、property 或 code line。Preview 复用 RenderView kind
 `Preview`，不复制独立 renderer 路径。
@@ -412,9 +412,9 @@ Preview service 服务三种入口：
 
 - Reflection adapter 会成为 shader 编译系统和 material-core 的 ABI。它必须独立成包，并用 golden tests 固定
   reflection -> signature 输出。
-- Binding layout 会同时影响 `.ashader`、generated Slang、reflection、renderer、descriptor allocation 和 pipeline key。
+- Binding layout 会同时影响 `.shader`、generated Slang、reflection、renderer、descriptor allocation 和 pipeline key。
   V2 必须冻结 binding layout version，用户 shader 不手写 `[[vk::binding]]`。
-- `.ashader` DSL 不能膨胀成 shader language。外层 DSL 只声明 contract，GPU 逻辑仍写 Slang 或 graph。
+- `.shader` DSL 不能膨胀成 shader language。外层 DSL 只声明 contract，GPU 逻辑仍写 Slang 或 graph。
 - Graph 不能过早拖慢闭环。先 code-first，再 minimal `.agraph` IR，最后完整 Material Editor。
 - Preview 不能分叉成第二条 renderer。Preview 复用 renderer material binding、RenderView 和 diagnostics model。
 
@@ -424,24 +424,24 @@ Preview service 服务三种入口：
 - `shader-slang` tests 覆盖 reflection JSON 的 descriptor、push constant、entry/stage、vertex input。
 - `shader-material-adapter` tests 覆盖 Slang reflection model -> `MaterialResourceSignature` 正反例、
   visibility 映射、descriptor kind 映射、hash stability 和 deterministic diagnostics；集成 smoke 覆盖
-  generated `.ashader` Slang source -> SPIR-V -> reflection JSON -> material signature 的最小正例、
+  generated `.shader` Slang source -> SPIR-V -> reflection JSON -> material signature 的最小正例、
   manifest 驱动的 compile/reflection entry 选择和 mismatch negative path。`asset-pipeline` smoke 覆盖
-  `shader-authoring-product.v1` dependency bytes 驱动的 compile/reflection product determinism，以及非法
+  `shader-authoring-product.v2` dependency bytes 驱动的 compile/reflection product determinism，以及非法
   manifest-selected entry stage 的 deterministic diagnostic；compile/reflection product reader 读回
   product key hash、target profile、entry compile facts、SPIR-V/reflection facts 和 diagnostic facts，并覆盖
   missing reflection JSON hex payload field 的 deterministic blob diagnostic。
-- `shader-authoring` tests 覆盖 `.ashader` parse 正例、raw Slang span、重复 property、未知类型、
+- `shader-authoring` tests 覆盖 `.shader` parse 正例、raw Slang span、重复 property、未知类型、
   非法默认值、缺少 pass entry、缺少 Slang 引用、raw block brace 平衡、generated Slang skeleton、
   deterministic binding declarations、entry manifest 和 line mapping。
 - `material-instance` tests 覆盖 `.mat` strict JSON read/write、schema/material type reference、
   property override type validation、deterministic override diff 和 stale signature diagnostics。
-- asset-pipeline tests 覆盖 `.ashader` lowering、generated product、dependency invalidation 和 stale diagnostics。
-- editor smoke 覆盖打开 `.ashader` / `.mat`、修改 property、preview 成功/失败和 diagnostics 定位。
+- asset-pipeline tests 覆盖 `.shader` lowering、generated product、dependency invalidation 和 stale diagnostics。
+- editor smoke 覆盖打开 `.shader` / `.mat`、修改 property、preview 成功/失败和 diagnostics 定位。
 - 文档和格式变更至少运行 `tools/check-text-encoding.ps1` 与 `git diff --check`。
 
 ## 相关文档
 
-- [specs/ashader-v2.md](../specs/ashader-v2.md)
+- [specs/shader-v2.md](../specs/shader-v2.md)
 - [specs/material-runtime-products-v2.md](../specs/material-runtime-products-v2.md)
 - [workflow/technical-stack.md](../workflow/technical-stack.md)
 - [architecture/overview.md](../architecture/overview.md)

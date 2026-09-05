@@ -189,7 +189,7 @@ package 用来承载可选能力：
   importer execution、watcher、`resource-runtime`、renderer/RHI 或 GPU resource。
 - `material-core` 提供 CPU-only material resource signature、descriptor contract 和 pipeline key 数据模型；
   当前只依赖 `core`，不拥有 `.mat` IO、asset import、GPU upload、Vulkan pipeline/cache 或 editor UI。
-- `shader-authoring` 提供 CPU-only `.ashader` document model、parser、source spans、authoring diagnostics、
+- `shader-authoring` 提供 CPU-only `.shader` document model、parser、source spans、authoring diagnostics、
   generated Slang skeleton 和 line mapping；它只依赖 `core`，不调用 Slang compiler，不生成 SPIR-V，
   不依赖 renderer、RHI、asset-pipeline 或 editor。`asset-pipeline` 可以作为 importer/cook glue 私有复用它。
 - `shader-material-adapter` 提供 Slang reflection JSON 到 material resource signature 的 CPU-only adapter；
@@ -704,7 +704,7 @@ app integration 层，不能为了方便把 package/private 实现直接并进 a
 - 性能数据底座位于 `packages/profiling`，不依赖 Vulkan、RenderGraph 或 editor UI。
 - render graph 位于 `packages/rendergraph`。
 - Slang shader 构建位于 `packages/shader-slang` 或 `tools/shader-build`。
-- `.ashader` authoring parser 与 generated Slang skeleton 位于 `packages/shader-authoring`，与 Slang 编译和
+- `.shader` authoring parser 与 generated Slang skeleton 位于 `packages/shader-authoring`，与 Slang 编译和
   material runtime model 分离。
 - 不出现 `src/engine_all.cpp` 这类聚合一切的巨型实现文件。
 

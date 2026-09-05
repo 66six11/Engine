@@ -1,4 +1,4 @@
-﻿#include "asharia/shader_authoring/ashader_generated_slang.hpp"
+﻿#include "asharia/shader_authoring/shader_generated_slang.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -11,44 +11,44 @@ namespace asharia::shader_authoring {
 
     namespace {
 
-        bool isMaterialParameter(AshaderPropertyType type) {
+        bool isMaterialParameter(ShaderPropertyType type) {
             switch (type) {
-            case AshaderPropertyType::Float:
-            case AshaderPropertyType::Float2:
-            case AshaderPropertyType::Float3:
-            case AshaderPropertyType::Float4:
-            case AshaderPropertyType::Color:
-            case AshaderPropertyType::Int:
-            case AshaderPropertyType::UInt:
-            case AshaderPropertyType::Bool:
+            case ShaderPropertyType::Float:
+            case ShaderPropertyType::Float2:
+            case ShaderPropertyType::Float3:
+            case ShaderPropertyType::Float4:
+            case ShaderPropertyType::Color:
+            case ShaderPropertyType::Int:
+            case ShaderPropertyType::UInt:
+            case ShaderPropertyType::Bool:
                 return true;
-            case AshaderPropertyType::Texture2D:
-            case AshaderPropertyType::Sampler:
+            case ShaderPropertyType::Texture2D:
+            case ShaderPropertyType::Sampler:
                 return false;
             }
             return false;
         }
 
-        std::string_view slangTypeName(AshaderPropertyType type) {
+        std::string_view slangTypeName(ShaderPropertyType type) {
             switch (type) {
-            case AshaderPropertyType::Float:
+            case ShaderPropertyType::Float:
                 return "float";
-            case AshaderPropertyType::Float2:
+            case ShaderPropertyType::Float2:
                 return "float2";
-            case AshaderPropertyType::Float3:
+            case ShaderPropertyType::Float3:
                 return "float3";
-            case AshaderPropertyType::Float4:
-            case AshaderPropertyType::Color:
+            case ShaderPropertyType::Float4:
+            case ShaderPropertyType::Color:
                 return "float4";
-            case AshaderPropertyType::Int:
+            case ShaderPropertyType::Int:
                 return "int";
-            case AshaderPropertyType::UInt:
+            case ShaderPropertyType::UInt:
                 return "uint";
-            case AshaderPropertyType::Bool:
+            case ShaderPropertyType::Bool:
                 return "bool";
-            case AshaderPropertyType::Texture2D:
+            case ShaderPropertyType::Texture2D:
                 return "Texture2D<float4>";
-            case AshaderPropertyType::Sampler:
+            case ShaderPropertyType::Sampler:
                 return "SamplerState";
             }
             return "unknown";
@@ -112,10 +112,10 @@ namespace asharia::shader_authoring {
             std::uint32_t nextLine_{1};
         };
 
-        void addDiagnostic(std::vector<AshaderDiagnostic>& diagnostics, AshaderDiagnosticCode code,
-                           AshaderDiagnosticTarget target, SourceSpan span, std::string message) {
-            diagnostics.push_back(AshaderDiagnostic{
-                .severity = AshaderDiagnosticSeverity::Error,
+        void addDiagnostic(std::vector<ShaderDiagnostic>& diagnostics, ShaderDiagnosticCode code,
+                           ShaderDiagnosticTarget target, SourceSpan span, std::string message) {
+            diagnostics.push_back(ShaderDiagnostic{
+                .severity = ShaderDiagnosticSeverity::Error,
                 .code = code,
                 .target = target,
                 .span = span,
@@ -136,12 +136,12 @@ namespace asharia::shader_authoring {
             });
         }
 
-        bool passHasEntry(const AshaderPassDecl& pass) {
+        bool passHasEntry(const ShaderPassDecl& pass) {
             return pass.vertexEntry.has_value() || pass.fragmentEntry.has_value() ||
                    pass.computeEntry.has_value();
         }
 
-        void addEntryPoint(GeneratedSlangResult& result, const AshaderPassDecl& pass,
+        void addEntryPoint(GeneratedSlangResult& result, const ShaderPassDecl& pass,
                            GeneratedSlangStage stage, std::string_view sourceEntryName,
                            std::string_view generatedWrapperName) {
             result.entryPoints.push_back(GeneratedSlangEntryPoint{
@@ -155,7 +155,7 @@ namespace asharia::shader_authoring {
         }
 
         void appendMaterialParameters(SlangEmitter& emitter, GeneratedSlangResult& result,
-                                      const AshaderDocument& document,
+                                      const ShaderDocument& document,
                                       const GeneratedSlangOptions& options) {
             const bool hasMaterialParameters =
                 std::ranges::any_of(document.properties, [](const auto& property) {
@@ -196,7 +196,7 @@ namespace asharia::shader_authoring {
         }
 
         void appendResourceDeclarations(SlangEmitter& emitter, GeneratedSlangResult& result,
-                                        const AshaderDocument& document,
+                                        const ShaderDocument& document,
                                         const GeneratedSlangOptions& options) {
             std::uint32_t nextBinding = options.firstResourceBinding;
             for (const auto& property : document.properties) {
@@ -226,7 +226,7 @@ namespace asharia::shader_authoring {
         }
 
         void appendMaterialAccessShim(SlangEmitter& emitter, GeneratedSlangResult& result,
-                                      const AshaderDocument& document,
+                                      const ShaderDocument& document,
                                       const GeneratedSlangOptions& options) {
             const bool hasMaterialParameters =
                 std::ranges::any_of(document.properties, [](const auto& property) {
@@ -246,7 +246,7 @@ namespace asharia::shader_authoring {
         }
 
         void appendExternalSlangReferences(SlangEmitter& emitter, GeneratedSlangResult& result,
-                                           const AshaderDocument& document,
+                                           const ShaderDocument& document,
                                            const GeneratedSlangOptions& options) {
             for (const auto& reference : document.slangFiles) {
                 const std::uint32_t beginLine = emitter.nextLine();
@@ -261,7 +261,7 @@ namespace asharia::shader_authoring {
         }
 
         void appendRawSlangBlock(SlangEmitter& emitter, GeneratedSlangResult& result,
-                                 const AshaderDocument& document,
+                                 const ShaderDocument& document,
                                  const GeneratedSlangOptions& options) {
             if (!document.rawSlang) {
                 return;
@@ -285,12 +285,12 @@ namespace asharia::shader_authoring {
         }
 
         void appendPassWrappers(SlangEmitter& emitter, GeneratedSlangResult& result,
-                                const AshaderDocument& document,
+                                const ShaderDocument& document,
                                 const GeneratedSlangOptions& options) {
             for (const auto& pass : document.passes) {
                 if (!passHasEntry(pass)) {
-                    addDiagnostic(result.diagnostics, AshaderDiagnosticCode::MissingPassEntry,
-                                  AshaderDiagnosticTarget::Pass, pass.span,
+                    addDiagnostic(result.diagnostics, ShaderDiagnosticCode::MissingPassEntry,
+                                  ShaderDiagnosticTarget::Pass, pass.span,
                                   std::string{"pass '"} + pass.name +
                                       "' requires vertex, fragment, or compute entry");
                     continue;
@@ -368,27 +368,27 @@ namespace asharia::shader_authoring {
         return "unknown";
     }
 
-    GeneratedSlangResult buildGeneratedSlang(const AshaderDocument& document,
+    GeneratedSlangResult buildGeneratedSlang(const ShaderDocument& document,
                                              const GeneratedSlangOptions& options) {
         GeneratedSlangResult result{};
         SlangEmitter emitter{};
 
         const std::uint32_t headerBeginLine = emitter.nextLine();
         emitter.appendLine("// Generated Slang skeleton for " + document.shaderTypeId);
-        emitter.appendLine("// This file is generated from .ashader authoring data.");
+        emitter.appendLine("// This file is generated from .shader authoring data.");
         const std::uint32_t headerEndLine = emitter.nextLine() - 1U;
         emitter.appendLine();
         addLineMap(result.lineMap, GeneratedSlangSection::Header, "generated-header",
                    headerBeginLine, headerEndLine, options.sourceName, document.fullSpan);
 
         if (document.schemaVersion != 2U) {
-            addDiagnostic(result.diagnostics, AshaderDiagnosticCode::UnsupportedSchema,
-                          AshaderDiagnosticTarget::File, document.fullSpan,
-                          "generated Slang skeleton requires .ashader schema 2");
+            addDiagnostic(result.diagnostics, ShaderDiagnosticCode::UnsupportedSchema,
+                          ShaderDiagnosticTarget::File, document.fullSpan,
+                          "generated Slang skeleton requires .shader schema 2");
         }
         if (document.shaderTypeId.empty()) {
-            addDiagnostic(result.diagnostics, AshaderDiagnosticCode::GeneratedSlangUnsupportedInput,
-                          AshaderDiagnosticTarget::Shader, document.fullSpan,
+            addDiagnostic(result.diagnostics, ShaderDiagnosticCode::GeneratedSlangUnsupportedInput,
+                          ShaderDiagnosticTarget::Shader, document.fullSpan,
                           "generated Slang skeleton requires a shader stable type id");
         }
 

@@ -6,7 +6,7 @@
 
 namespace asharia::shader_material {
     namespace {
-        using shader_authoring::AshaderPropertyType;
+        using shader_authoring::ShaderPropertyType;
 
         Error layoutError(std::string_view property, std::string_view reason) {
             return {ErrorDomain::Material,
@@ -15,29 +15,29 @@ namespace asharia::shader_material {
                         "': " + std::string{reason}};
         }
 
-        bool matchesType(AshaderPropertyType type, const ShaderParameterMemberReflection& member) {
+        bool matchesType(ShaderPropertyType type, const ShaderParameterMemberReflection& member) {
             std::string_view scalar = "float32";
             std::uint32_t count = 1;
             switch (type) {
-            case AshaderPropertyType::Float:
+            case ShaderPropertyType::Float:
                 break;
-            case AshaderPropertyType::Float2:
+            case ShaderPropertyType::Float2:
                 count = 2;
                 break;
-            case AshaderPropertyType::Float3:
+            case ShaderPropertyType::Float3:
                 count = 3;
                 break;
-            case AshaderPropertyType::Float4:
-            case AshaderPropertyType::Color:
+            case ShaderPropertyType::Float4:
+            case ShaderPropertyType::Color:
                 count = 4;
                 break;
-            case AshaderPropertyType::Int:
+            case ShaderPropertyType::Int:
                 scalar = "int32";
                 break;
-            case AshaderPropertyType::UInt:
+            case ShaderPropertyType::UInt:
                 scalar = "uint32";
                 break;
-            case AshaderPropertyType::Bool:
+            case ShaderPropertyType::Bool:
                 scalar = "bool";
                 break;
             default:
@@ -50,7 +50,7 @@ namespace asharia::shader_material {
 
     Result<ReflectedMaterialParameters>
     packReflectedMaterialParameters(const material_instance::MatDocument& document,
-                                    const shader_authoring::AshaderDocument& shader,
+                                    const shader_authoring::ShaderDocument& shader,
                                     const ShaderDescriptorBindingReflection& binding,
                                     const material_instance::MatResolveOptions& options) {
         if (binding.kind != "constantBuffer" || binding.count != 1 || !binding.parameterBlock) {
@@ -67,7 +67,7 @@ namespace asharia::shader_material {
         members.reserve(layout.members.size());
         for (const auto& member : layout.members) {
             const auto property = std::ranges::find(shader.properties, member.name,
-                                                    &shader_authoring::AshaderPropertyDecl::name);
+                                                    &shader_authoring::ShaderPropertyDecl::name);
             if (property == shader.properties.end() || !matchesType(property->type, member)) {
                 return std::unexpected{
                     layoutError(member.name, "missing property or scalar/width/size mismatch")};

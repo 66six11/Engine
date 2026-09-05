@@ -11,9 +11,9 @@
 
 namespace asharia::material_instance {
     namespace {
-        using shader_authoring::AshaderPropertyDecl;
-        using shader_authoring::AshaderPropertyDefaultKind;
-        using shader_authoring::AshaderPropertyType;
+        using shader_authoring::ShaderPropertyDecl;
+        using shader_authoring::ShaderPropertyDefaultKind;
+        using shader_authoring::ShaderPropertyType;
 
         Error parameterError(MatParameterError code, std::string_view property,
                              std::string_view message) {
@@ -21,19 +21,19 @@ namespace asharia::material_instance {
                     "Material parameter '" + std::string{property} + "': " + std::string{message}};
         }
 
-        std::uint32_t componentCount(AshaderPropertyType type) {
+        std::uint32_t componentCount(ShaderPropertyType type) {
             switch (type) {
-            case AshaderPropertyType::Float:
-            case AshaderPropertyType::Int:
-            case AshaderPropertyType::UInt:
-            case AshaderPropertyType::Bool:
+            case ShaderPropertyType::Float:
+            case ShaderPropertyType::Int:
+            case ShaderPropertyType::UInt:
+            case ShaderPropertyType::Bool:
                 return 1;
-            case AshaderPropertyType::Float2:
+            case ShaderPropertyType::Float2:
                 return 2;
-            case AshaderPropertyType::Float3:
+            case ShaderPropertyType::Float3:
                 return 3;
-            case AshaderPropertyType::Float4:
-            case AshaderPropertyType::Color:
+            case ShaderPropertyType::Float4:
+            case ShaderPropertyType::Color:
                 return 4;
             default:
                 return 0;
@@ -48,36 +48,36 @@ namespace asharia::material_instance {
             return parsed.ec == std::errc{} && parsed.ptr == text.data() + text.size();
         }
 
-        Result<MatPropertyValue> defaultValue(const AshaderPropertyDecl& property) {
+        Result<MatPropertyValue> defaultValue(const ShaderPropertyDecl& property) {
             const auto& source = property.defaultValue;
             MatPropertyValue result;
             bool valid = false;
             switch (property.type) {
-            case AshaderPropertyType::Float:
+            case ShaderPropertyType::Float:
                 result.kind = MatPropertyValueKind::Number;
-                valid = (source.kind == AshaderPropertyDefaultKind::Number ||
-                         source.kind == AshaderPropertyDefaultKind::Integer) &&
+                valid = (source.kind == ShaderPropertyDefaultKind::Number ||
+                         source.kind == ShaderPropertyDefaultKind::Integer) &&
                         parseNumber(source.text, result.numberValue);
                 break;
-            case AshaderPropertyType::Int:
+            case ShaderPropertyType::Int:
                 result.kind = MatPropertyValueKind::Integer;
-                valid = source.kind == AshaderPropertyDefaultKind::Integer &&
+                valid = source.kind == ShaderPropertyDefaultKind::Integer &&
                         parseNumber(source.text, result.integerValue);
                 break;
-            case AshaderPropertyType::UInt:
+            case ShaderPropertyType::UInt:
                 result.kind = MatPropertyValueKind::UnsignedInteger;
-                valid = source.kind == AshaderPropertyDefaultKind::Integer &&
+                valid = source.kind == ShaderPropertyDefaultKind::Integer &&
                         parseNumber(source.text, result.unsignedIntegerValue);
                 break;
-            case AshaderPropertyType::Bool:
+            case ShaderPropertyType::Bool:
                 result.kind = MatPropertyValueKind::Boolean;
-                valid = source.kind == AshaderPropertyDefaultKind::Boolean &&
+                valid = source.kind == ShaderPropertyDefaultKind::Boolean &&
                         (source.text == "true" || source.text == "false");
                 result.boolValue = source.text == "true";
                 break;
             default:
                 result.kind = MatPropertyValueKind::Vector;
-                valid = source.kind == AshaderPropertyDefaultKind::Vector &&
+                valid = source.kind == ShaderPropertyDefaultKind::Vector &&
                         source.elements.size() == componentCount(property.type);
                 if (valid) {
                     for (const auto& text : source.elements) {
@@ -178,7 +178,7 @@ namespace asharia::material_instance {
     } // namespace
 
     Result<MatParameterBlock> packMatParameters(const MatDocument& document,
-                                                const shader_authoring::AshaderDocument& shader,
+                                                const shader_authoring::ShaderDocument& shader,
                                                 std::span<const MatParameterMember> members,
                                                 std::uint32_t byteSize,
                                                 const MatResolveOptions& options) {
@@ -210,7 +210,7 @@ namespace asharia::material_instance {
         for (std::size_t index = 0; index < shader.properties.size(); ++index) {
             const auto& property = shader.properties[index];
             if (property.name.empty() || std::ranges::count(shader.properties, property.name,
-                                                            &AshaderPropertyDecl::name) != 1) {
+                                                            &ShaderPropertyDecl::name) != 1) {
                 return std::unexpected{parameterError(
                     MatParameterError::InvalidInput, property.name, "empty or duplicate property")};
             }

@@ -3,8 +3,8 @@
 #include <iostream>
 #include <string_view>
 
-#include "asharia/shader_authoring/ashader_generated_slang.hpp"
-#include "asharia/shader_authoring/ashader_parser.hpp"
+#include "asharia/shader_authoring/shader_generated_slang.hpp"
+#include "asharia/shader_authoring/shader_parser.hpp"
 
 namespace {
 
@@ -12,14 +12,14 @@ namespace {
         std::cerr << message << '\n';
     }
 
-    bool containsCode(const asharia::shader_authoring::AshaderParseResult& result,
-                      asharia::shader_authoring::AshaderDiagnosticCode code) {
+    bool containsCode(const asharia::shader_authoring::ShaderParseResult& result,
+                      asharia::shader_authoring::ShaderDiagnosticCode code) {
         return std::ranges::any_of(
             result.diagnostics, [code](const auto& diagnostic) { return diagnostic.code == code; });
     }
 
     bool generatedContainsCode(const asharia::shader_authoring::GeneratedSlangResult& result,
-                               asharia::shader_authoring::AshaderDiagnosticCode code) {
+                               asharia::shader_authoring::ShaderDiagnosticCode code) {
         return std::ranges::any_of(
             result.diagnostics, [code](const auto& diagnostic) { return diagnostic.code == code; });
     }
@@ -45,7 +45,7 @@ namespace {
         });
     }
 
-    bool expectNoErrors(const asharia::shader_authoring::AshaderParseResult& result,
+    bool expectNoErrors(const asharia::shader_authoring::ShaderParseResult& result,
                         std::string_view label) {
         if (!result.document) {
             logFailure(std::string{label} + " did not produce a document.");
@@ -62,9 +62,9 @@ namespace {
     }
 
     bool expectDiagnostic(std::string_view source,
-                          asharia::shader_authoring::AshaderDiagnosticCode code,
+                          asharia::shader_authoring::ShaderDiagnosticCode code,
                           std::string_view label) {
-        const auto result = asharia::shader_authoring::parseAshaderDocument(source);
+        const auto result = asharia::shader_authoring::parseShaderDocument(source);
         if (!containsCode(result, code)) {
             logFailure(std::string{label} + " did not produce expected diagnostic " +
                        std::string{asharia::shader_authoring::toString(code)} + ".");
@@ -74,7 +74,7 @@ namespace {
     }
 
     bool smokeUnlitDocument() {
-        constexpr std::string_view kSource = R"ashader(
+        constexpr std::string_view kSource = R"shader(
 schema 2
 
 shader "asharia.material.unlit" {
@@ -99,10 +99,10 @@ shader "asharia.material.unlit" {
     graph "Unlit.agraph"
   }
 }
-)ashader";
+)shader";
 
-        const auto result = asharia::shader_authoring::parseAshaderDocument(kSource);
-        if (!expectNoErrors(result, "unlit .ashader")) {
+        const auto result = asharia::shader_authoring::parseShaderDocument(kSource);
+        if (!expectNoErrors(result, "unlit .shader")) {
             return false;
         }
 
@@ -110,7 +110,7 @@ shader "asharia.material.unlit" {
         if (document.schemaVersion != 2 || document.shaderTypeId != "asharia.material.unlit" ||
             document.properties.size() != 6 || document.passes.size() != 1 ||
             document.slangFiles.size() != 1 || document.graphFiles.size() != 1) {
-            logFailure("unlit .ashader produced the wrong document shape.");
+            logFailure("unlit .shader produced the wrong document shape.");
             return false;
         }
 
@@ -121,25 +121,25 @@ shader "asharia.material.unlit" {
             pass.depthTest != "lessEqual" || pass.depthWrite != true ||
             pass.blendMode != "disabled" || pass.slangFiles.size() != 1 ||
             pass.graphFiles.size() != 1) {
-            logFailure("unlit .ashader pass facts were not captured.");
+            logFailure("unlit .shader pass facts were not captured.");
             return false;
         }
 
         if (document.properties.front().type !=
-                asharia::shader_authoring::AshaderPropertyType::Color ||
+                asharia::shader_authoring::ShaderPropertyType::Color ||
             document.properties.front().defaultValue.elements.size() != 4 ||
             document.properties[3].defaultValue.text != "0.5" ||
             document.properties[5].defaultValue.text != "true") {
-            logFailure("unlit .ashader property facts were not captured.");
+            logFailure("unlit .shader property facts were not captured.");
             return false;
         }
 
-        std::cout << "Parsed .ashader shader: " << document.shaderTypeId << '\n';
+        std::cout << "Parsed .shader shader: " << document.shaderTypeId << '\n';
         return true;
     }
 
     bool smokeGeneratedSlangSkeleton() {
-        constexpr std::string_view kSource = R"ashader(
+        constexpr std::string_view kSource = R"shader(
 schema 2
 
 shader "asharia.material.unlit" {
@@ -163,16 +163,16 @@ shader "asharia.material.unlit" {
     compute computeMain
   }
 }
-)ashader";
+)shader";
 
-        const auto parsed = asharia::shader_authoring::parseAshaderDocument(kSource);
-        if (!expectNoErrors(parsed, "generated slang .ashader")) {
+        const auto parsed = asharia::shader_authoring::parseShaderDocument(kSource);
+        if (!expectNoErrors(parsed, "generated slang .shader")) {
             return false;
         }
 
         const auto generated = asharia::shader_authoring::buildGeneratedSlang(
             *parsed.document, asharia::shader_authoring::GeneratedSlangOptions{
-                                  .sourceName = "Assets/Shaders/Unlit/Unlit.ashader",
+                                  .sourceName = "Assets/Shaders/Unlit/Unlit.shader",
                                   .generatedName = "Unlit.generated.slang",
                               });
 
@@ -241,7 +241,7 @@ shader "asharia.material.unlit" {
     }
 
     bool smokeRawSlangBlock() {
-        constexpr std::string_view kSource = R"ashader(
+        constexpr std::string_view kSource = R"shader(
 schema 2
 
 shader "asharia.material.debug_color" {
@@ -263,10 +263,10 @@ shader "asharia.material.debug_color" {
     }
   }
 }
-)ashader";
+)shader";
 
-        const auto result = asharia::shader_authoring::parseAshaderDocument(kSource);
-        if (!expectNoErrors(result, "raw slang .ashader")) {
+        const auto result = asharia::shader_authoring::parseShaderDocument(kSource);
+        if (!expectNoErrors(result, "raw slang .shader")) {
             return false;
         }
 
@@ -282,7 +282,7 @@ shader "asharia.material.debug_color" {
     }
 
     bool smokeGeneratedRawSlangMapping() {
-        constexpr std::string_view kSource = R"ashader(
+        constexpr std::string_view kSource = R"shader(
 schema 2
 
 shader "asharia.material.debug_color" {
@@ -301,16 +301,16 @@ shader "asharia.material.debug_color" {
     }
   }
 }
-)ashader";
+)shader";
 
-        const auto parsed = asharia::shader_authoring::parseAshaderDocument(kSource);
-        if (!expectNoErrors(parsed, "generated raw slang .ashader")) {
+        const auto parsed = asharia::shader_authoring::parseShaderDocument(kSource);
+        if (!expectNoErrors(parsed, "generated raw slang .shader")) {
             return false;
         }
 
         const auto generated = asharia::shader_authoring::buildGeneratedSlang(
             *parsed.document, asharia::shader_authoring::GeneratedSlangOptions{
-                                  .sourceName = "Debug.ashader",
+                                  .sourceName = "Debug.shader",
                                   .generatedName = "Debug.generated.slang",
                               });
 
@@ -327,7 +327,7 @@ shader "asharia.material.debug_color" {
     }
 
     bool smokeDiagnostics() {
-        constexpr std::string_view kDuplicateProperty = R"ashader(
+        constexpr std::string_view kDuplicateProperty = R"shader(
 schema 2
 shader "dup" {
   properties {
@@ -336,17 +336,17 @@ shader "dup" {
   }
   pass "Forward" { vertex vertexMain slang "Dup.slang" }
 }
-)ashader";
+)shader";
 
-        constexpr std::string_view kUnknownType = R"ashader(
+        constexpr std::string_view kUnknownType = R"shader(
 schema 2
 shader "bad.type" {
   properties { matrix4 model }
   pass "Forward" { vertex vertexMain slang "Bad.slang" }
 }
-)ashader";
+)shader";
 
-        constexpr std::string_view kInvalidDefaults = R"ashader(
+        constexpr std::string_view kInvalidDefaults = R"shader(
 schema 2
 shader "bad.defaults" {
   properties {
@@ -357,33 +357,33 @@ shader "bad.defaults" {
   }
   pass "Forward" { vertex vertexMain slang "Bad.slang" }
 }
-)ashader";
+)shader";
 
-        constexpr std::string_view kMissingEntry = R"ashader(
+        constexpr std::string_view kMissingEntry = R"shader(
 schema 2
 shader "missing.entry" {
   properties { float value = 1 }
   pass "Forward" { tag "SceneForward" slang "Missing.slang" }
 }
-)ashader";
+)shader";
 
-        constexpr std::string_view kUnsupportedSchema = R"ashader(
+        constexpr std::string_view kUnsupportedSchema = R"shader(
 schema 1
 shader "old" {
   properties { float value = 1 }
   pass "Forward" { vertex vertexMain slang "Old.slang" }
 }
-)ashader";
+)shader";
 
-        constexpr std::string_view kMissingSlang = R"ashader(
+        constexpr std::string_view kMissingSlang = R"shader(
 schema 2
 shader "missing.slang" {
   properties { float value = 1 }
   pass "Forward" { vertex vertexMain }
 }
-)ashader";
+)shader";
 
-        constexpr std::string_view kUnbalancedRaw = R"ashader(
+        constexpr std::string_view kUnbalancedRaw = R"shader(
 schema 2
 shader "raw.bad" {
   properties { float value = 1 }
@@ -391,45 +391,45 @@ shader "raw.bad" {
   slang {
     float4 shadeMaterial() {
       return float4(1, 1, 1, 1);
-)ashader";
+)shader";
 
         return expectDiagnostic(kDuplicateProperty,
-                                asharia::shader_authoring::AshaderDiagnosticCode::DuplicateProperty,
+                                asharia::shader_authoring::ShaderDiagnosticCode::DuplicateProperty,
                                 "duplicate property") &&
                expectDiagnostic(
                    kUnknownType,
-                   asharia::shader_authoring::AshaderDiagnosticCode::UnknownPropertyType,
+                   asharia::shader_authoring::ShaderDiagnosticCode::UnknownPropertyType,
                    "unknown type") &&
                expectDiagnostic(
                    kInvalidDefaults,
-                   asharia::shader_authoring::AshaderDiagnosticCode::InvalidDefaultValue,
+                   asharia::shader_authoring::ShaderDiagnosticCode::InvalidDefaultValue,
                    "invalid defaults") &&
                expectDiagnostic(kMissingEntry,
-                                asharia::shader_authoring::AshaderDiagnosticCode::MissingPassEntry,
+                                asharia::shader_authoring::ShaderDiagnosticCode::MissingPassEntry,
                                 "missing pass entry") &&
                expectDiagnostic(kUnsupportedSchema,
-                                asharia::shader_authoring::AshaderDiagnosticCode::UnsupportedSchema,
+                                asharia::shader_authoring::ShaderDiagnosticCode::UnsupportedSchema,
                                 "unsupported schema") &&
                expectDiagnostic(
                    kMissingSlang,
-                   asharia::shader_authoring::AshaderDiagnosticCode::MissingSlangReference,
+                   asharia::shader_authoring::ShaderDiagnosticCode::MissingSlangReference,
                    "missing slang") &&
                expectDiagnostic(
                    kUnbalancedRaw,
-                   asharia::shader_authoring::AshaderDiagnosticCode::UnbalancedRawSlangBlock,
+                   asharia::shader_authoring::ShaderDiagnosticCode::UnbalancedRawSlangBlock,
                    "unbalanced raw slang");
     }
 
     bool smokeGeneratedSlangDiagnostics() {
-        constexpr std::string_view kSource = R"ashader(
+        constexpr std::string_view kSource = R"shader(
 schema 2
 shader "missing.entry" {
   properties { float value = 1 }
   pass "Forward" { tag "SceneForward" slang "Missing.slang" }
 }
-)ashader";
+)shader";
 
-        const auto parsed = asharia::shader_authoring::parseAshaderDocument(kSource);
+        const auto parsed = asharia::shader_authoring::parseShaderDocument(kSource);
         if (!parsed.document) {
             logFailure("generated Slang diagnostic fixture did not parse.");
             return false;
@@ -437,7 +437,7 @@ shader "missing.entry" {
 
         const auto generated = asharia::shader_authoring::buildGeneratedSlang(*parsed.document);
         if (!generatedContainsCode(
-                generated, asharia::shader_authoring::AshaderDiagnosticCode::MissingPassEntry)) {
+                generated, asharia::shader_authoring::ShaderDiagnosticCode::MissingPassEntry)) {
             logFailure("generated Slang builder did not report missing pass entry.");
             return false;
         }
