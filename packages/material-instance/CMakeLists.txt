@@ -17,6 +17,7 @@ asharia_require_package_target(asharia::shader_authoring packages/shader-authori
 add_library(asharia-material-instance STATIC
     src/amat_io.cpp
     src/amat_resolver.cpp
+    src/amat_parameters.cpp
 )
 
 add_library(asharia::material_instance ALIAS asharia-material-instance)

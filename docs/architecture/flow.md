@@ -31,6 +31,16 @@ the frame's semaphore wait to the transition. This applies to the raw frame clea
 explicit acquired-image graph binding; ordinary offscreen/transient Undefined transitions retain their
 existing behavior. Reference: [Khronos swapchain synchronization examples](https://docs.vulkan.org/guide/latest/synchronization_examples.html).
 
+### Numeric material parameter CPU flow
+
+`AmatDocument + AshaderDocument + explicit numeric member offsets/block size ->
+material-instance::packAmatParameters -> owned little-endian bytes + existing warnings`.
+The call selects overrides/defaults, rejects invalid values/layouts and zeroes padding within a
+256-property/64-KiB bound. It performs no IO, reflection extraction, GPU binding or resource ownership.
+Future compiler-reflection adaptation must prove member layout and product identity before renderer
+consumption; existing descriptor signatures do not contain member offsets. See
+[the material packing boundary](../systems/shader-material-authoring.md#numeric-parameter-packing-boundary).
+
 ## 维护规则
 
 - 代码改变了运行流程、包依赖、资源状态、同步路径或 smoke 命令时，必须更新本文档。
