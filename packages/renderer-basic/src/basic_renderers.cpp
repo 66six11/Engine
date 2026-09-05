@@ -322,6 +322,9 @@ namespace asharia {
             if (!rasterMode) {
                 return std::unexpected{std::move(rasterMode.error())};
             }
+            if (view.scene.mesh) {
+                return view.scene.mesh->validate(view.scene.drawItems);
+            }
             constexpr auto product = validation::directionalWedgeValidationMeshProduct();
             for (std::size_t itemIndex = 0; itemIndex < view.scene.drawItems.size(); ++itemIndex) {
                 auto item = validateBasicRenderViewSceneMeshItem(
@@ -1176,6 +1179,7 @@ namespace asharia {
             VkBuffer index{VK_NULL_HANDLE};
             VkDeviceSize vertexOffset{};
             VkDeviceSize indexOffset{};
+            VkIndexType indexType{VK_INDEX_TYPE_UINT16};
         };
 
         struct BasicRenderViewSceneMeshAttachments {
@@ -1299,7 +1303,7 @@ namespace asharia {
                                    &buffers.vertexOffset);
             if (drawItem.indexCount > 0) {
                 vkCmdBindIndexBuffer(frame.commandBuffer, buffers.index, buffers.indexOffset,
-                                     VK_INDEX_TYPE_UINT16);
+                                     buffers.indexType);
             }
             vkCmdSetViewport(frame.commandBuffer, 0, 1, &viewport);
             vkCmdSetScissor(frame.commandBuffer, 0, 1, &scissor);
@@ -1368,7 +1372,7 @@ namespace asharia {
             vkCmdBindVertexBuffers(frame.commandBuffer, 0, 1, &buffers.vertex,
                                    &buffers.vertexOffset);
             vkCmdBindIndexBuffer(frame.commandBuffer, buffers.index, buffers.indexOffset,
-                                 VK_INDEX_TYPE_UINT16);
+                                 buffers.indexType);
             vkCmdSetViewport(frame.commandBuffer, 0, 1, &viewport);
             vkCmdSetScissor(frame.commandBuffer, 0, 1, &scissor);
             vkCmdDrawIndexed(frame.commandBuffer, drawItem.indexCount, drawItem.instanceCount,
@@ -1424,7 +1428,7 @@ namespace asharia {
             vkCmdBindVertexBuffers(frame.commandBuffer, 0, 1, &buffers.vertex,
                                    &buffers.vertexOffset);
             vkCmdBindIndexBuffer(frame.commandBuffer, buffers.index, buffers.indexOffset,
-                                 VK_INDEX_TYPE_UINT16);
+                                 buffers.indexType);
             vkCmdSetViewport(frame.commandBuffer, 0, 1, &viewport);
             vkCmdSetScissor(frame.commandBuffer, 0, 1, &scissor);
 
@@ -1503,7 +1507,7 @@ namespace asharia {
             vkCmdBindVertexBuffers(frame.commandBuffer, 0, 1, &buffers.vertex,
                                    &buffers.vertexOffset);
             vkCmdBindIndexBuffer(frame.commandBuffer, buffers.index, buffers.indexOffset,
-                                 VK_INDEX_TYPE_UINT16);
+                                 buffers.indexType);
             vkCmdSetViewport(frame.commandBuffer, 0, 1, &viewport);
             vkCmdSetScissor(frame.commandBuffer, 0, 1, &scissor);
 
@@ -1961,7 +1965,7 @@ namespace asharia {
             const BasicRenderViewCamera& camera, BasicSceneRasterMode rasterMode,
             VkPipeline pipeline, VkPipelineLayout pipelineLayout,
             std::span<const BasicDrawListItem> drawItems,
-            BasicRenderViewExecutionEventRecorder* eventRecorder) {
+            BasicRenderViewExecutionEventRecorder* eventRecorder, VkIndexType indexType) {
             [[maybe_unused]] const auto timestamp = VulkanTimestampScope::begin(frame, pass.name);
             [[maybe_unused]] const auto debugLabel = VulkanDebugLabelScope::begin(
                 frame, renderGraphPassDebugLabel(pass, imageBindings, bufferBindings));
@@ -2037,6 +2041,7 @@ namespace asharia {
                 .index = indexBinding->vulkanBuffer,
                 .vertexOffset = vertexBinding->offset,
                 .indexOffset = indexBinding->offset,
+                .indexType = indexType,
             };
 
             recordBasicRenderViewSceneMeshDraw(frame,

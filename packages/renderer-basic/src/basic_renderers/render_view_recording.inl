@@ -18,6 +18,7 @@
         BasicRenderViewOverlayColorLoadOp::LoadSceneColor};
     BasicRenderViewOverlayColorStoreOp colorStoreOp{BasicRenderViewOverlayColorStoreOp::Store};
     BasicRenderViewExecutionEventRecorder& eventRecorder;
+    VkIndexType sceneIndexType{VK_INDEX_TYPE_UINT16};
 };
 
 void addBasicRenderViewSelectionMaskPass(const BasicRenderViewPassRecordingContext& context,
@@ -126,16 +127,16 @@ void addBasicRenderViewSceneMeshPass(const BasicRenderViewPassRecordingContext& 
                                      item.drawItem.firstInstance);
             }
         })
-        .execute(
-            [&frame = context.frame, &bindings = context.bindings,
-             &bufferBindings = context.bufferBindings, viewTarget = context.viewTarget,
-             camera = context.camera, rasterMode = context.sceneRasterMode, sceneMeshPipeline,
-             sceneMeshPipelineLayout, drawItems = context.sceneDrawItems,
-             &eventRecorder = context.eventRecorder](RenderGraphPassContext pass) -> Result<void> {
-                return executeBasicRenderViewSceneMeshPass(
-                    frame, pass, bindings, bufferBindings, viewTarget.extent, camera, rasterMode,
-                    sceneMeshPipeline, sceneMeshPipelineLayout, drawItems, &eventRecorder);
-            });
+        .execute([&frame = context.frame, &bindings = context.bindings,
+                  &bufferBindings = context.bufferBindings, viewTarget = context.viewTarget,
+                  camera = context.camera, rasterMode = context.sceneRasterMode, sceneMeshPipeline,
+                  sceneMeshPipelineLayout, drawItems = context.sceneDrawItems,
+                  indexType = context.sceneIndexType, &eventRecorder = context.eventRecorder](
+                     RenderGraphPassContext pass) -> Result<void> {
+            return executeBasicRenderViewSceneMeshPass(
+                frame, pass, bindings, bufferBindings, viewTarget.extent, camera, rasterMode,
+                sceneMeshPipeline, sceneMeshPipelineLayout, drawItems, &eventRecorder, indexType);
+        });
 }
 
 void addBasicRenderViewOverlayPass(const BasicRenderViewPassRecordingContext& context,

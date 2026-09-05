@@ -14,6 +14,23 @@ Material override validation: mutable CPU `.amat` document → shared `validateA
 Invalid documents return an `InvalidOverride` diagnostic without usable diffs. IO serialization and
 resolution share the same validator; renderer/material GPU binding remains a subsequent consumer.
 
+## GPU Mesh native consumption (#419)
+
+`MeshResourceStore` verified artifact → immutable CPU lease → `BasicGpuMeshOwner::queue` bounded
+position/color + uint32 staging/device buffers → RenderGraph CopyBuffer/final VertexRead and IndexRead →
+host confirms successful submission → completed frame epoch publishes candidate → immutable RenderView
+binding and revisioned DrawIndexed → frame-owned retained reference → fence retirement.
+A failed/cancelled candidate never mutates the active resource. Each owner and each view batch currently
+select one mesh; multiple submesh draws reuse it. Resident limits include staging and externally retained
+old versions. `renderer_basic_vulkan` now depends on `resource_runtime`; the backend-neutral target does not.
+Sample viewer uses tool-side `mesh_product_writer` only to prepare verified smoke artifacts. Studio continues
+using its existing validation mesh binding.
+
+The acquire-image first layout transition now includes its first-use stage in its source scope, connecting
+the frame's semaphore wait to the transition. This applies to the raw frame clear and the renderer's
+explicit acquired-image graph binding; ordinary offscreen/transient Undefined transitions retain their
+existing behavior. Reference: [Khronos swapchain synchronization examples](https://docs.vulkan.org/guide/latest/synchronization_examples.html).
+
 ## 维护规则
 
 - 代码改变了运行流程、包依赖、资源状态、同步路径或 smoke 命令时，必须更新本文档。
@@ -138,6 +155,7 @@ flowchart TD
     Renderer --> Core
     Renderer --> RG
     Renderer --> Shader
+    RendererVk --> ResourceRuntime
     RendererVk --> Renderer
     RendererVk --> RhiVk
     RendererVk --> RhiVkRG

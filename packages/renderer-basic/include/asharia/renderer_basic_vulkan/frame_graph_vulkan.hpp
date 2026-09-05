@@ -516,14 +516,21 @@ namespace asharia {
     [[nodiscard]] inline Result<void>
     recordRenderGraphImageBarrier(VkCommandBuffer commandBuffer,
                                   const RenderGraphImageTransition& transition,
-                                  std::span<const VulkanRenderGraphImageBinding> bindings) {
+                                  std::span<const VulkanRenderGraphImageBinding> bindings,
+                                  VkImage acquiredImage = VK_NULL_HANDLE) {
         auto image = findVulkanRenderGraphImage(transition.image, bindings);
         if (!image) {
             return std::unexpected{std::move(image.error())};
         }
 
-        const VkImageMemoryBarrier2 barrier =
+        VkImageMemoryBarrier2 barrier =
             vulkanImageBarrier(transition, image->vulkanImage, image->aspectMask);
+        if (image->vulkanImage == acquiredImage &&
+            transition.oldState == RenderGraphImageState::Undefined) {
+            // Chain the first acquired-image layout transition to the semaphore wait at its first
+            // use stage.
+            barrier.srcStageMask = barrier.dstStageMask;
+        }
         VkDependencyInfo dependencyInfo{};
         dependencyInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
         dependencyInfo.imageMemoryBarrierCount = 1;
@@ -559,8 +566,8 @@ namespace asharia {
             const std::string debugLabel = renderGraphTransitionDebugLabel(transition, bindings);
             [[maybe_unused]] const auto debugScope =
                 VulkanDebugLabelScope::begin(frame, debugLabel);
-            auto recorded =
-                recordRenderGraphImageBarrier(frame.commandBuffer, transition, bindings);
+            auto recorded = recordRenderGraphImageBarrier(frame.commandBuffer, transition, bindings,
+                                                          frame.image);
             if (!recorded) {
                 return std::unexpected{std::move(recorded.error())};
             }

@@ -21,9 +21,13 @@
     "com.asharia.scene-core",
     "com.asharia.scene-rendering",
     "com.asharia.serialization",
-    "com.asharia.renderer-basic"
+    "com.asharia.renderer-basic",
+    "com.asharia.mesh-product",
+    "com.asharia.resource-runtime"
   ],
-  "targets": ["asharia-sample-viewer"],
+  "targets": [
+    "asharia-sample-viewer"
+  ],
   "targetRoles": {
     "asharia-sample-viewer": "host"
   },
@@ -42,7 +46,9 @@
       "asharia-window-glfw",
       "asharia-renderer-basic",
       "asharia-renderer-basic-vulkan",
-      "asharia-renderer-basic-shaders"
+      "asharia-renderer-basic-shaders",
+      "asharia-mesh-product-writer",
+      "asharia-resource-runtime"
     ]
   }
 }

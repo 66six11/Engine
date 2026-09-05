@@ -16,15 +16,20 @@
 #include <numbers>
 #include <optional>
 #include <span>
+#include <stdexcept>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <utility>
 #include <vector>
 
+#include "asharia/core/file_io.hpp"
 #include "asharia/core/log.hpp"
+#include "asharia/mesh_product/mesh_product_writer_v1.hpp"
 #include "asharia/renderer_basic/render_graph_schemas.hpp"
 #include "asharia/renderer_basic_vulkan/basic_renderers.hpp"
 #include "asharia/renderer_basic_vulkan/clear_frame.hpp"
+#include "asharia/renderer_basic_vulkan/gpu_mesh_resource.hpp"
 #include "asharia/rhi_vulkan/vulkan_buffer.hpp"
 #include "asharia/rhi_vulkan/vulkan_context.hpp"
 #include "asharia/rhi_vulkan/vulkan_error.hpp"
@@ -1899,6 +1904,346 @@ namespace asharia::sample_viewer {
         printSceneMeshMetrics(metrics, state);
         window->requestClose();
         return EXIT_SUCCESS;
+    }
+
+    namespace {
+        void require(bool condition, std::string_view message) {
+            if (!condition) {
+                throw std::runtime_error(std::string{message});
+            }
+        }
+        template <typename T> T take(Result<T> value) {
+            if (!value) {
+                throw std::runtime_error(value.error().message);
+            }
+            return std::move(*value);
+        }
+        void check(VoidResult value) {
+            if (!value) {
+                throw std::runtime_error(value.error().message);
+            }
+        }
+        void verifyGpuSmokeAbortedUpload(BasicGpuMeshOwner& owner, VulkanFrameLoop& frameLoop) {
+            bool recorded = false;
+            auto aborted = frameLoop.renderFrame(
+                [&](const VulkanFrameRecordContext& frame) -> Result<VulkanFrameRecordResult> {
+                    auto upload = owner.recordUpload(frame);
+                    if (!upload) {
+                        return std::unexpected{std::move(upload.error())};
+                    }
+                    recorded = true;
+                    return std::unexpected{Error{ErrorDomain::RenderGraph, 0,
+                                                 "injected host abort before submission"}};
+                });
+            require(recorded && !aborted, "host abort did not reject the recorded upload frame");
+            require(!owner.confirmUploadSubmission(frameLoop),
+                    "unsubmitted candidate accepted confirmation");
+            check(owner.cancelUpload());
+            static_cast<void>(take(frameLoop.renderFrame(recordBasicClearFrame)));
+            static_cast<void>(take(frameLoop.renderFrame(recordBasicClearFrame)));
+            require(owner.stats().residentVersions == 0 && !owner.acquire(),
+                    "aborted upload leaked or published");
+        }
+
+        struct GpuSmokeProductDesc {
+            std::uint64_t sourceHash{};
+            float width{};
+            bool boundMaterial{};
+        };
+        resource::MeshResourceLease loadGpuSmokeMesh(resource::MeshResourceStore& store,
+                                                     const std::filesystem::path& root,
+                                                     GpuSmokeProductDesc desc) {
+            const auto [sourceHash, width, boundMaterial] = desc;
+            mesh::MeshProductBuildInputV1 input{
+                .vertices = {{.positionX = -width, .positionY = -0.6F, .positionZ = 0.5F},
+                             {.positionX = width, .positionY = -0.6F, .positionZ = 0.5F},
+                             {.positionX = width, .positionY = 0.6F, .positionZ = 0.5F},
+                             {.positionX = -width, .positionY = 0.6F, .positionZ = 0.5F}},
+                .indices = {0, 1, 2, 0, 2, 3},
+                .submeshes = {{.firstIndex = 0, .indexCount = 3, .materialSlot = 0},
+                              {.firstIndex = 3, .indexCount = 3, .materialSlot = 0}},
+                .materialSlots = {{}},
+                .bounds = {.minX = -width,
+                           .minY = -0.6F,
+                           .minZ = 0.5F,
+                           .maxX = width,
+                           .maxY = 0.6F,
+                           .maxZ = 0.5F}};
+            if (boundMaterial) {
+                input.materialSlots[0].materialAsset.bytes[0] = 9;
+            }
+            const auto bytes = take(mesh::writeMeshProductV1(input));
+            const std::string name = "mesh-" + std::to_string(sourceHash) + ".mesh";
+            check(core::writeFileBytesAtomically(root / name, bytes));
+            const asset::AssetGuid guid{.bytes = {0x41, 0x09}};
+            const asset::AssetProductKey key{
+                .guid = guid,
+                .assetType = asset::makeAssetTypeId(mesh::kMeshAssetTypeName),
+                .importerId = asset::makeImporterId("com.asharia.importer.mesh.smoke"),
+                .importerVersion = asset::ImporterVersion{1U},
+                .sourceHash = sourceHash,
+                .settingsHash = 1U,
+                .targetProfileHash = 1U};
+            const std::array records{
+                asset::AssetProductRecord{.key = key,
+                                          .relativeProductPath = name,
+                                          .productSizeBytes = bytes.size(),
+                                          .productHash = asset::hashAssetArtifactBytesV1(bytes)}};
+            auto request =
+                take(store.request({.guid = guid, .assetType = key.assetType}, key, records));
+            require(request.loadPlan.has_value(), "CPU product did not produce a load plan");
+            static_cast<void>(
+                take(store.publish(resource::loadMeshResourceCandidate(*request.loadPlan))));
+            return take(store.acquire(request.handle));
+        }
+        std::vector<BasicDrawListItem>
+        gpuSmokeDrawItems(const std::shared_ptr<const BasicGpuMesh>& meshResource) {
+            std::vector<BasicDrawListItem> items;
+            for (const auto& part : meshResource->product().submeshes()) {
+                items.push_back(
+                    {.drawItem = {.indexCount = part.indexCount, .firstIndex = part.firstIndex},
+                     .modelMatrix = basicIdentityTransform3D(),
+                     .context = {.sourceObject = {.index = 1, .generation = 1},
+                                 .meshResource = meshResource->key(),
+                                 .materialResource = kBasicDefaultUnlitMaterialResourceKey,
+                                 .meshRevision = meshResource->revision()}});
+            }
+            return items;
+        }
+        std::vector<std::byte>
+        captureGpuSmoke(VulkanFrameLoop& frameLoop, const VulkanContext& context,
+                        BasicFullscreenTextureRenderer& renderer, SceneMeshProbe& probe,
+                        const std::shared_ptr<const BasicGpuMesh>& meshResource) {
+            const auto items =
+                meshResource ? gpuSmokeDrawItems(meshResource) : std::vector<BasicDrawListItem>{};
+            static_cast<void>(take(frameLoop.renderFrame(
+                [&](const VulkanFrameRecordContext& frame) -> Result<VulkanFrameRecordResult> {
+                    auto ensured =
+                        probe.target.ensure(frame, {.device = context.device(),
+                                                    .allocator = context.allocator(),
+                                                    .format = kReadbackFormat,
+                                                    .extent = kReadbackExtent,
+                                                    .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                                                             VK_IMAGE_USAGE_SAMPLED_BIT |
+                                                             VK_IMAGE_USAGE_TRANSFER_SRC_BIT});
+                    if (!ensured) {
+                        return std::unexpected{std::move(ensured.error())};
+                    }
+                    const auto sampled = probe.target.sampledTextureView();
+                    BasicRenderViewDesc view{
+                        .target = {.image = sampled.image,
+                                   .imageView = sampled.imageView,
+                                   .format = sampled.format,
+                                   .extent = sampled.extent,
+                                   .finalUsage = BasicRenderViewTargetFinalUsage::SampledTexture},
+                        .scene = {.drawItems = items, .mesh = meshResource},
+                        .diagnostics = &probe.diagnostics};
+                    auto rendered = renderer.recordViewFrame(frame, view);
+                    if (!rendered) {
+                        return rendered;
+                    }
+                    // Reuse the existing diagnostic-only Scene mesh pixel readback probe.
+                    auto copied = recordReadbackCopy(frame, sampled.image, probe.readback.handle());
+                    if (!copied) {
+                        return std::unexpected{std::move(copied.error())};
+                    }
+                    return recordBasicClearFrame(frame);
+                })));
+            static_cast<void>(take(
+                frameLoop.renderFrame(recordBasicClearFrame))); // FrameLoop waits the prior fence;
+                                                                // no render-loop device idle.
+            check(probe.readback.read(probe.pixels));
+            return probe.pixels;
+        }
+    } // namespace
+
+    int runSmokeGpuMeshResource() {
+        try {
+            auto glfw = take(GlfwInstance::create());
+            auto extensions = take(glfwRequiredVulkanInstanceExtensions(glfw));
+            auto window = take(GlfwWindow::create(
+                glfw, WindowDesc{.title = "GPU mesh resource smoke", .visible = false}));
+            auto context = take(VulkanContext::create(
+                VulkanContextDesc{.applicationName = "GPU mesh resource smoke",
+                                  .requiredInstanceExtensions = extensions,
+                                  .createSurface =
+                                      [&window](VkInstance instance) {
+                                          return glfwCreateVulkanSurface(window, instance);
+                                      },
+                                  .debugLabels = VulkanDebugLabelMode::Required,
+                                  .externalInterop = {}}));
+            const auto extent = window.framebufferExtent();
+            auto frameLoop = take(
+                VulkanFrameLoop::create(context, {.width = extent.width, .height = extent.height}));
+            auto renderer = take(BasicFullscreenTextureRenderer::create(
+                {.device = context.device(),
+                 .allocator = context.allocator(),
+                 .shaderDirectory = std::filesystem::path{ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR},
+                 .deviceCapabilities = context.capabilities()}));
+            constexpr BasicDrawResourceKey kMeshKey{0x419U};
+            auto owner = take(BasicGpuMeshOwner::create({.device = context.device(),
+                                                         .allocator = context.allocator(),
+                                                         .key = kMeshKey,
+                                                         .maxResidentBytes = 4096U,
+                                                         .maxResidentVersions = 2U}));
+            auto probe = take(createProbe(context));
+            const auto root = std::filesystem::current_path() / "build" / "419-smoke-products";
+            std::filesystem::create_directories(root);
+            auto store = take(resource::MeshResourceStore::create({.artifactRoot = root}));
+            int exitCode = EXIT_SUCCESS;
+            try {
+                const auto clearFrame = [&]() {
+                    static_cast<void>(take(frameLoop.renderFrame(recordBasicClearFrame)));
+                };
+                const auto submitUpload = [&]() {
+                    RenderGraphDiagnosticsSnapshot diagnostics;
+                    bool recorded = false;
+                    static_cast<void>(
+                        take(frameLoop.renderFrame([&](const VulkanFrameRecordContext& frame)
+                                                       -> Result<VulkanFrameRecordResult> {
+                            auto clear = recordBasicClearFrame(frame);
+                            if (!clear) {
+                                return clear;
+                            }
+                            auto result = owner.recordUpload(frame, &diagnostics);
+                            if (!result) {
+                                return std::unexpected{std::move(result.error())};
+                            }
+                            recorded = true;
+                            return *clear;
+                        })));
+                    require(recorded, "upload frame was not recorded");
+                    check(owner.confirmUploadSubmission(frameLoop));
+                    require(diagnostics.commands.size() == 2 &&
+                                diagnostics.declaredBufferCount == 4,
+                            "upload graph must expose two copies and four buffers");
+                    require(!owner.publishCompleted(frameLoop),
+                            "candidate published before fence completion");
+                };
+                require(!owner.acquire(), "empty owner unexpectedly has a draw binding");
+                auto first = loadGpuSmokeMesh(store, root, {.sourceHash = 1, .width = 0.6F});
+                check(owner.queue(first));
+                require(!owner.confirmUploadSubmission(frameLoop),
+                        "unrecorded upload was confirmed");
+                require(!owner.recordUpload({}), "missing command context was accepted");
+                verifyGpuSmokeAbortedUpload(owner, frameLoop);
+                check(owner.queue(first));
+                submitUpload();
+                clearFrame();
+                check(owner.publishCompleted(frameLoop));
+                auto active = take(owner.acquire());
+                require(active->productHash() == first.productHash(), "product identity was lost");
+                const auto empty = captureGpuSmoke(frameLoop, context, renderer, probe, {});
+                const auto full = captureGpuSmoke(frameLoop, context, renderer, probe, active);
+                require(empty != full, "verified product did not change pixels");
+                require(probe.diagnostics.scene.indexedDrawCount == 2 &&
+                            owner.stats().residentVersions == 1,
+                        "two submeshes did not reuse one GPU allocation pair");
+                for (const auto& event : probe.diagnostics.executionEvents) {
+                    if (event.kind == BasicRenderViewExecutionEventKind::DrawIndexed) {
+                        require(event.drawPacketContext &&
+                                    event.drawPacketContext->meshResource == kMeshKey &&
+                                    event.drawPacketContext->meshRevision == first.revision(),
+                                "draw command lost product revision");
+                    }
+                }
+                auto bad = gpuSmokeDrawItems(active);
+                bad[0].drawItem.indexCount = 6;
+                require(!active->validate(bad), "non-submesh range accepted");
+                bad = gpuSmokeDrawItems(active);
+                bad[0].context.meshRevision++;
+                require(!active->validate(bad), "stale draw revision accepted");
+                bad = gpuSmokeDrawItems(active);
+                bad[0].context.materialResource = {};
+                require(!active->validate(bad), "missing material accepted");
+                bool wrongThreadRejected = false;
+                {
+                    std::jthread worker([&]() { wrongThreadRejected = !owner.acquire(); });
+                }
+                require(wrongThreadRejected, "owner accepted foreign thread");
+                auto second = loadGpuSmokeMesh(store, root, {.sourceHash = 2, .width = 0.3F});
+                check(owner.queue(second));
+                submitUpload();
+                require(take(owner.acquire()) == active,
+                        "candidate replaced last-known-good before completion");
+                clearFrame();
+                check(owner.publishCompleted(frameLoop));
+                auto replacement = take(owner.acquire());
+                require(!owner.queue(first), "old CPU revision was accepted after replacement");
+                require(captureGpuSmoke(frameLoop, context, renderer, probe, replacement) != full,
+                        "replacement geometry did not change pixels");
+                auto third = loadGpuSmokeMesh(store, root, {.sourceHash = 3, .width = 0.45F});
+                require(!owner.queue(third), "retained versions escaped resident budget");
+                require(take(owner.acquire()) == replacement,
+                        "budget failure replaced active mesh");
+                active.reset();
+                check(owner.queue(third));
+                submitUpload();
+                check(owner.cancelUpload());
+                require(owner.stats().residentVersions == 2,
+                        "cancel destroyed in-flight upload buffers");
+                clearFrame();
+                require(owner.stats().residentVersions == 1 && !owner.publishCompleted(frameLoop),
+                        "cancelled candidate survived or was published");
+                require(take(owner.acquire()) == replacement, "cancel replaced active mesh");
+                auto incompatible = loadGpuSmokeMesh(
+                    store, root, {.sourceHash = 4, .width = 0.4F, .boundMaterial = true});
+                require(!owner.queue(incompatible),
+                        "bound product material silently replaced with fixed unlit");
+                auto fourth = loadGpuSmokeMesh(store, root, {.sourceHash = 5, .width = 0.4F});
+                auto moved = std::move(fourth);
+                // Deliberately exercise the documented moved-from lease rejection.
+                // NOLINTNEXTLINE(bugprone-use-after-move)
+                require(!owner.queue(fourth), "moved-from CPU lease accepted");
+                check(owner.queue(moved));
+                check(owner.cancelUpload());
+                // Last draw pins buffers even when all host-visible references are released in its
+                // callback.
+                const auto finalItems = gpuSmokeDrawItems(replacement);
+                static_cast<void>(take(frameLoop.renderFrame(
+                    [&](const VulkanFrameRecordContext& frame) -> Result<VulkanFrameRecordResult> {
+                        BasicRenderViewDesc view{
+                            .target = {.image = frame.image,
+                                       .imageView = frame.imageView,
+                                       .format = frame.format,
+                                       .extent = frame.extent},
+                            .scene = {.drawItems = finalItems, .mesh = replacement}};
+                        auto result = renderer.recordViewFrame(frame, view);
+                        if (!result) {
+                            return result;
+                        }
+                        check(owner.clear());
+                        replacement.reset();
+                        view.scene.mesh.reset();
+                        require(owner.stats().residentVersions == 1,
+                                "last draw resource retired before submission");
+                        return result;
+                    })));
+                require(owner.stats().residentVersions == 1,
+                        "last draw resource retired before GPU completion");
+                clearFrame();
+                require(owner.stats().residentVersions == 0 && owner.stats().residentBytes == 0 &&
+                            !owner.stats().pending,
+                        "resource/lease/staging did not retire after final GPU use");
+                std::cout << "GPU mesh resource smoke passed: verified artifact, 2 indexed "
+                             "submeshes, pixel replacement, stale/material/budget/thread "
+                             "rejection, cancellation and zero-resident retirement\n";
+            } catch (const std::exception& error) {
+                logError(error.what());
+                exitCode = EXIT_FAILURE;
+            }
+            // Diagnostic smoke shutdown: drain before renderer, readback and owner destruction,
+            // including failure paths.
+            const VkResult drained = vkQueueWaitIdle(context.graphicsQueue());
+            if (drained != VK_SUCCESS) {
+                logError("GPU mesh smoke shutdown wait failed");
+                return EXIT_FAILURE;
+            }
+            return exitCode;
+        } catch (const std::exception& error) {
+            logError(error.what());
+            return EXIT_FAILURE;
+        }
     }
 
 } // namespace asharia::sample_viewer
