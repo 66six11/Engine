@@ -15,7 +15,7 @@ namespace asharia {
                 std::span<const RenderGraphImageDesc>{impl_->images_},
                 std::span<const RenderGraphBufferDesc>{impl_->buffers_},
                 std::span<const rendergraph_internal::Pass>{impl_->passes_},
-                impl_->mutationGeneration_);
+                impl_->mutationGeneration_, impl_->owner_.get());
         return rendergraph_internal::makeDiagnosticsSnapshot(declarations, compiled);
     }
 
@@ -25,7 +25,7 @@ namespace asharia {
                 std::span<const RenderGraphImageDesc>{impl_->images_},
                 std::span<const RenderGraphBufferDesc>{impl_->buffers_},
                 std::span<const rendergraph_internal::Pass>{impl_->passes_},
-                impl_->mutationGeneration_);
+                impl_->mutationGeneration_, impl_->owner_.get());
         return rendergraph_internal::formatDebugTables(declarations, compiled);
     }
 

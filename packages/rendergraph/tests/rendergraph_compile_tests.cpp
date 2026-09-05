@@ -388,8 +388,8 @@ namespace {
         return schemas;
     }
 
-    [[nodiscard]] bool compilesColorAttachmentWriteHazards(
-        const asharia::RenderGraphSchemaRegistry& schemas) {
+    [[nodiscard]] bool
+    compilesColorAttachmentWriteHazards(const asharia::RenderGraphSchemaRegistry& schemas) {
         asharia::RenderGraph graph;
         const auto color = graph.importImage(importedColorDesc("ColorHazardTarget"));
 
@@ -412,14 +412,13 @@ namespace {
             return false;
         }
 
-        const auto hasSingleTransition =
-            [](const asharia::RenderGraphCompiledPass& pass,
-               asharia::RenderGraphImageState oldState,
-               asharia::RenderGraphImageState newState) {
-                return pass.transitionsBefore.size() == 1 &&
-                       pass.transitionsBefore.front().oldState == oldState &&
-                       pass.transitionsBefore.front().newState == newState;
-            };
+        const auto hasSingleTransition = [](const asharia::RenderGraphCompiledPass& pass,
+                                            asharia::RenderGraphImageState oldState,
+                                            asharia::RenderGraphImageState newState) {
+            return pass.transitionsBefore.size() == 1 &&
+                   pass.transitionsBefore.front().oldState == oldState &&
+                   pass.transitionsBefore.front().newState == newState;
+        };
 
         if (!expect(hasSingleTransition(compiled->passes[1],
                                         asharia::RenderGraphImageState::ColorAttachment,
@@ -449,8 +448,7 @@ namespace {
         const asharia::RenderGraphDiagnosticsSnapshot snapshot =
             graph.diagnosticsSnapshot(*compiled);
         const bool hasColorReadWriteEdge = std::ranges::any_of(
-            snapshot.accessEdges,
-            [](const asharia::RenderGraphDiagnosticsAccessEdge& edge) {
+            snapshot.accessEdges, [](const asharia::RenderGraphDiagnosticsAccessEdge& edge) {
                 return edge.passName == "LoadColor" && edge.slotName == "target" &&
                        edge.access == asharia::RenderGraphSlotAccess::ColorReadWrite;
             });
@@ -472,8 +470,7 @@ namespace {
         const auto importedInitial =
             importedInitialGraph.importImage(std::move(importedInitialDesc));
         bool observedContext = false;
-        importedInitialGraph
-            .addPass("LoadImportedColor", std::string{kColorReadWritePass})
+        importedInitialGraph.addPass("LoadImportedColor", std::string{kColorReadWritePass})
             .readWriteColor("target", importedInitial)
             .execute([&observedContext](asharia::RenderGraphPassContext context) {
                 observedContext = context.colorReadWrites.size() == 1 &&
@@ -492,20 +489,21 @@ namespace {
                       "RenderGraph executor omitted the ColorReadWrite pass context contract.");
     }
 
-    [[nodiscard]] bool rejectsColorReadWriteWithoutProducer(
-        const asharia::RenderGraphSchemaRegistry& schemas) {
+    [[nodiscard]] bool
+    rejectsColorReadWriteWithoutProducer(const asharia::RenderGraphSchemaRegistry& schemas) {
         asharia::RenderGraph graph;
         const auto transient =
             graph.createTransientImage(transientColorDesc("UndefinedLoadTarget"));
         graph.addPass("LoadUndefinedColor", std::string{kColorReadWritePass})
             .readWriteColor("target", transient);
-        return expectCompileFailure(graph.compile(schemas),
-                                    "reads image '#0 UndefinedLoadTarget' before any pass writes it",
-                                    "ColorReadWrite from an undefined transient image");
+        return expectCompileFailure(
+            graph.compile(schemas),
+            "reads image '#0 UndefinedLoadTarget' before any pass writes it",
+            "ColorReadWrite from an undefined transient image");
     }
 
-    [[nodiscard]] bool compilesNonColorImageWriteHazards(
-        const asharia::RenderGraphSchemaRegistry& schemas) {
+    [[nodiscard]] bool
+    compilesNonColorImageWriteHazards(const asharia::RenderGraphSchemaRegistry& schemas) {
         const auto hasSameStateTransition = [](const asharia::RenderGraphCompiledPass& pass,
                                                asharia::RenderGraphImageState state) {
             return pass.transitionsBefore.size() == 1 &&
@@ -526,26 +524,25 @@ namespace {
         depthGraph.addPass("RepeatedDepthWrite", std::string{kDepthWritePass})
             .writeDepth("depth", depth);
         auto depthCompiled = depthGraph.compile(schemas);
-        if (!expect(depthCompiled.has_value() && depthCompiled->passes.size() == 2 &&
-                        hasSameStateTransition(depthCompiled->passes[1],
-                                               asharia::RenderGraphImageState::DepthAttachmentWrite),
-                    "RenderGraph omitted the repeated DepthAttachmentWrite WAW barrier.")) {
+        if (!expect(
+                depthCompiled.has_value() && depthCompiled->passes.size() == 2 &&
+                    hasSameStateTransition(depthCompiled->passes[1],
+                                           asharia::RenderGraphImageState::DepthAttachmentWrite),
+                "RenderGraph omitted the repeated DepthAttachmentWrite WAW barrier.")) {
             return false;
         }
 
         asharia::RenderGraph transferGraph;
-        const auto transfer =
-            transferGraph.importImage(importedColorDesc("TransferWriteHazard"));
+        const auto transfer = transferGraph.importImage(importedColorDesc("TransferWriteHazard"));
         transferGraph.addPass("InitialTransferWrite", std::string{kTransferWritePass})
             .writeTransfer("target", transfer);
         transferGraph.addPass("RepeatedTransferWrite", std::string{kTransferWritePass})
             .writeTransfer("target", transfer);
         auto transferCompiled = transferGraph.compile(schemas);
-        return expect(
-            transferCompiled.has_value() && transferCompiled->passes.size() == 2 &&
-                hasSameStateTransition(transferCompiled->passes[1],
-                                       asharia::RenderGraphImageState::TransferDst),
-            "RenderGraph omitted the repeated TransferDst WAW barrier.");
+        return expect(transferCompiled.has_value() && transferCompiled->passes.size() == 2 &&
+                          hasSameStateTransition(transferCompiled->passes[1],
+                                                 asharia::RenderGraphImageState::TransferDst),
+                      "RenderGraph omitted the repeated TransferDst WAW barrier.");
     }
 
     [[nodiscard]] bool
@@ -1790,10 +1787,44 @@ namespace {
                                     "buffer StorageReadWrite state with ShaderStage::None");
     }
 
+    [[nodiscard]] bool rejectsForeignCompiledGraph() {
+        asharia::RenderGraph first;
+        asharia::RenderGraph second;
+        bool called = false;
+        first.addPass("same").hasSideEffects().execute(
+            [](const asharia::RenderGraphPassContext&) -> asharia::Result<void> { return {}; });
+        second.addPass("same").hasSideEffects().execute(
+            [&called](const asharia::RenderGraphPassContext&) -> asharia::Result<void> {
+                called = true;
+                return {};
+            });
+        auto compiled = first.compile();
+        if (!expect(compiled && !second.execute(*compiled) && !called,
+                    "A foreign compiled graph executed a local callback.")) {
+            return false;
+        }
+        asharia::RenderGraph copied{first};
+        if (!expect(!copied.execute(*compiled), "A graph copy retained source identity.")) {
+            return false;
+        }
+        auto moved = std::move(first);
+        if (!expect(static_cast<bool>(moved.execute(*compiled)),
+                    "Graph move lost compiled identity.")) {
+            return false;
+        }
+        second = moved;
+        if (!expect(!second.execute(*compiled), "Copy assignment retained source identity.")) {
+            return false;
+        }
+        second = std::move(moved);
+        return expect(static_cast<bool>(second.execute(*compiled)),
+                      "Move assignment lost compiled identity.");
+    }
+
     [[nodiscard]] int runRenderGraphCompileTests() {
         const asharia::RenderGraphSchemaRegistry schemas = makeCompileTestSchemas();
         const bool passed =
-            compilesColorAttachmentWriteHazards(schemas) &&
+            rejectsForeignCompiledGraph() && compilesColorAttachmentWriteHazards(schemas) &&
             compilesNonColorImageWriteHazards(schemas) &&
             rejectsColorReadWriteWithoutProducer(schemas) &&
             cullsUnusedTransientButKeepsImportedWrites(schemas) &&
