@@ -48,6 +48,7 @@ public sealed class Win32InteractiveTopLevelResizeAdapterFactory :
 internal sealed partial class Win32InteractiveTopLevelResizeAdapter :
     IInteractiveTopLevelResizeAttachment
 {
+    private const uint kWindowMessagePaint = 0x000F;
     private const uint kWindowMessageSizing = 0x0214;
     private const uint kWindowMessageCancelMode = 0x001F;
     private const uint kWindowMessageWindowPositionChanging = 0x0046;
@@ -74,6 +75,7 @@ internal sealed partial class Win32InteractiveTopLevelResizeAdapter :
     private bool isApplyingWindowRect_;
     private bool isDisposed_;
     private bool isSizingInteractionActive_;
+    private ulong paintRevision_;
     private ulong nextSizingEpoch_;
     private ulong sizingEpoch_;
     private NativeRect acceptedRect_;
@@ -123,6 +125,10 @@ internal sealed partial class Win32InteractiveTopLevelResizeAdapter :
             return 0;
         }
 
+        if (message == kWindowMessagePaint)
+        {
+            paintRevision_ = checked(paintRevision_ + 1);
+        }
         if (isApplyingWindowRect_)
         {
             // SetWindowPos can synchronously dispatch WM_DPICHANGED. Avalonia must still process
@@ -506,6 +512,15 @@ internal sealed partial class Win32InteractiveTopLevelResizeAdapter :
         int height,
         uint flags);
 
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool GetUpdateRect(nint windowHandle, nint rectangle,
+        [MarshalAs(UnmanagedType.Bool)] bool erase);
+
+    [LibraryImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool ValidateRect(nint windowHandle, nint rectangle);
+
     [StructLayout(LayoutKind.Sequential)]
     private struct NativeRect
     {
@@ -557,6 +572,8 @@ internal sealed partial class Win32InteractiveTopLevelResizeAdapter :
     {
         private NativeRect rollbackRect_;
         private bool hasRollbackRect_;
+        private bool canAcknowledgePaint_;
+        private ulong precedingPaintRevision_;
 
         public void Apply()
         {
@@ -570,6 +587,13 @@ internal sealed partial class Win32InteractiveTopLevelResizeAdapter :
                 }
 
                 hasRollbackRect_ = true;
+                canAcknowledgePaint_ = !GetUpdateRect(owner.windowHandle_, 0, false);
+                var previousClientSize = owner.topLevel_.ClientSize;
+                precedingPaintRevision_ = owner.paintRevision_;
+                // Arm before SetWindowPos: nested message pumping must also revoke the
+                // permission, not only an await after Apply returns.
+                Dispatcher.UIThread.Post(
+                    () => canAcknowledgePaint_ = false, DispatcherPriority.Send);
                 owner.ApplyWindowRect(targetRect);
                 if (owner.ConsumePendingDpiCancellation())
                 {
@@ -581,6 +605,7 @@ internal sealed partial class Win32InteractiveTopLevelResizeAdapter :
                 // surface is published; a changed epoch falls back instead of looping strict
                 // proposals against stale physical extents.
                 owner.ValidateProjection(projection);
+                canAcknowledgePaint_ &= previousClientSize != owner.topLevel_.ClientSize;
             }
             catch (OperationCanceledException)
             {
@@ -599,13 +624,31 @@ internal sealed partial class Win32InteractiveTopLevelResizeAdapter :
 
         public void Rollback()
         {
+            canAcknowledgePaint_ = false;
             if (hasRollbackRect_ && !owner.isDisposed_)
             {
                 owner.ApplyWindowRect(rollbackRect_);
             }
         }
 
-        public void Accept() => owner.AcceptCommit(epoch, targetRect);
+        public void Accept(bool hasPublishedViewportBatch)
+        {
+            // Avalonia 12.1 serializes a changed CompositionTarget.Size as a full-target
+            // redraw. Only consume the resize paint while that update and the exact
+            // viewport publication still belong to the same UI turn. Ordinary/outer-only
+            // paints, rollback, DPI cancellation and yielded publications use WM_PAINT.
+            if (canAcknowledgePaint_ && hasPublishedViewportBatch &&
+                precedingPaintRevision_ == owner.paintRevision_ &&
+                !owner.isDisposed_ && epoch == owner.sizingEpoch_ &&
+                owner.isSizingInteractionActive_ &&
+                !ValidateRect(owner.windowHandle_, 0))
+            {
+                Trace.TraceError("Resize paint acknowledgment failed: {0}",
+                    Marshal.GetLastPInvokeError());
+            }
+            canAcknowledgePaint_ = false;
+            owner.AcceptCommit(epoch, targetRect);
+        }
 
         public bool IsCurrent()
         {

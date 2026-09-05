@@ -2,6 +2,41 @@
 
 ## #417: remaining resize latency investigation
 
+### Scoped acknowledgment after full-target resize publication
+
+The subsequent source check closes one missing premise: Avalonia 12.1.0 serializes a
+changed `CompositionTarget.Size`, and `ServerCompositionTarget.DeserializeChangesExtra`
+sets both redraw and full-redraw flags. An arbitrary viewport-only batch cannot replace
+an OS paint. Adopt the pinned-version target-size behavior at the Windows adapter boundary,
+following the existing Slate OS-paint owner and Godot UI/server separation references.
+
+The adapter acknowledges resize damage only when there was no pending OS update region,
+the logical client size changed, and the host published an exact viewport composition
+batch. Outer-only acceptance explicitly reports no such batch. A Send-priority revocation
+armed before SetWindowPos rejects later dispatcher turns, and a paint revision detects
+nested synchronous WM_PAINT. The sizing epoch must still be active and the attachment
+alive. Rollback revokes permission. Thus acknowledgment belongs to the same UI execution
+segment as the resize's queued full-target update.
+
+Subsequent invalidation, ordinary expose paints, pre-existing dirty regions, outer-only
+commits, yielded publication, cancellation and DPI fallback retain normal WM_PAINT handling.
+A failed ValidateRect is logged and leaves normal painting pending. No paint handler is
+suppressed, no timer resolution changes, and the publication/consumer barrier stays intact.
+Headless outer-only fixtures assert that the host cannot claim a viewport batch.
+
+This is a local adaptation of the checked 12.1.0 target-size serialization contract, not a
+general asynchronous redraw API. Recheck that implementation before upgrading Avalonia.
+Source: [Avalonia server target](https://github.com/AvaloniaUI/Avalonia/blob/12.1.0/src/Avalonia.Base/Rendering/Composition/Server/ServerCompositionTarget.cs).
+
+Final scoped implementation validation: Window/camera/steady GPU family 7/7; three
+height-ABA runs 18.92 / 10.05 / 10.95 ms; grow/shrink release WGC 2/2; managed tests
+945 passed / 6 opt-in skipped; native MSVC CTest 49/49. An earlier intermediate variant
+failed ABA at 34.18 ms; retain that failure rather than treating all experiments as passes.
+WGC final-frame selection now additionally requires compositor time at or after the
+completion marker: increasing delivery sequence alone can select a delayed pre-release
+frame. This strengthens the pixel evidence gate and does not claim physical scanout.
+Main and Scale final-HEAD comparison remains required before closing #417.
+
 ### Post-publication paint acknowledgment experiment (2026-09-05)
 
 A diagnostic `ValidateRect(hwnd, null)` in `WindowRectCommit.Accept` removed the

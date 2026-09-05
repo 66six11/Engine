@@ -1106,6 +1106,9 @@ release-stop 是 Asharia 的 package-first/cross-platform 推论，不是外部�
   退役 replaced stream/surface；publish 后结果歧义进入 Quarantined。Windows precommit publish 还会在同一 UI turn 经 shared outer
   commit 应用/复验实际 HWND/workspace layout，成功 `Published` 后才接受新 RECT。`WM_EXITSIZEMOVE` 使尚未接受的 commit stale 并丢弃
   queued successor；active GPU/consumer candidate 自然返回后按普通 abort/work fence 回收，Window 停在最后 Published exact RECT。
+  Windows paint acknowledgment additionally requires a changed client size, no pre-existing dirty region, an exact viewport
+  batch and no intervening dispatcher turn/native paint. Outer-only commits carry no batch claim. This relies on Avalonia
+  12.1 target-size serialization requesting a full-target redraw; all other paints retain the normal WM_PAINT path (ADR-0006).
   accepted final 相对 raw final 可落后 0–1 candidate，必须输出 lag。Snap、maximize/restore、程序化 Window/Bounds、DPI/跨屏 transition、
   没有 capability 的非 Windows top-level 与其他 geometry source 仍是 exact-only hidden fallback：边界不变，禁止 crop/stretch，但允许
   短暂空白，尚未达到零闪，且不能计入 owned precommit acceptance。

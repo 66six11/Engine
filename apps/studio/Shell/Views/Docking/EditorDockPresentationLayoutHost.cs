@@ -383,7 +383,7 @@ public sealed class EditorDockPresentationLayoutHost : Decorator,
                 return;
             }
 
-            request.OuterCommit?.Accept();
+            request.OuterCommit?.Accept(hasPublishedViewportBatch: false);
             publishedRequests_ = checked(publishedRequests_ + 1);
             return;
         }
@@ -427,7 +427,7 @@ public sealed class EditorDockPresentationLayoutHost : Decorator,
             return;
         }
 
-        request.OuterCommit?.Accept();
+        request.OuterCommit?.Accept(hasPublishedViewportBatch: true);
         publishedRequests_ = checked(publishedRequests_ + 1);
         _ = ObserveTransactionCompletionAsync(execution);
     }
