@@ -44,7 +44,7 @@ AssetProductRecord
 `MeshResourceStore` 是 mesh-specific owner，不是通用模板 ResourceManager。
 
 ```text
-MeshResourceHandle { slot, slotGeneration }
+MeshResourceHandle { slot, slotGeneration, owner }
 MeshResourceLoadTicket { handle, requestGeneration, expectedProductHash }
 ```
 
@@ -89,7 +89,7 @@ sequenceDiagram
     S-->>O: active swap or retained-old failure snapshot
 ```
 
-`MeshResourceStore` 记录创建线程，并拒绝其他线程的 `request()`、`publish()` 与 `unload()`。当前 store 不内置 thread pool、queue、mutex 或 callback dispatcher；host 负责调度与 safe point。
+`MeshResourceStore` 记录创建线程，并拒绝其他线程的 `request()`、`publish()`、`unload()`、`acquire()` 与 `inspect()`。当前 store 不内置 thread pool、queue、mutex 或 callback dispatcher；host 负责调度与 safe point。
 
 ## Lease 与重载
 

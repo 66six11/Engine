@@ -18,6 +18,8 @@
 
 namespace asharia::resource {
 
+    struct MeshResourceStoreIdentity;
+
     enum class MeshResourceDiagnosticCode : int {
         InvalidDescriptor = 1,
         WrongOwnerThread = 2,
@@ -31,6 +33,7 @@ namespace asharia::resource {
         ResourceNotPending = 10,
         InvalidCompletion = 11,
         NoActiveResource = 12,
+        StoreIdentityMismatch = 13,
     };
 
     enum class MeshResourceFailureReason : std::uint8_t {
@@ -76,10 +79,12 @@ namespace asharia::resource {
     struct MeshResourceHandle {
         std::uint32_t slot{};
         std::uint32_t slotGeneration{};
+        // Retains identity only, not the store or payload; never serialize a runtime handle.
+        std::shared_ptr<const MeshResourceStoreIdentity> owner;
 
         [[nodiscard]] friend bool operator==(MeshResourceHandle, MeshResourceHandle) = default;
         [[nodiscard]] explicit operator bool() const noexcept {
-            return slot != 0U && slotGeneration != 0U;
+            return slot != 0U && slotGeneration != 0U && static_cast<bool>(owner);
         }
     };
 
@@ -195,9 +200,10 @@ namespace asharia::resource {
 
         [[nodiscard]] Result<MeshResourceSnapshot> publish(MeshResourceLoadCompletion completion);
 
-        [[nodiscard]] Result<MeshResourceLease> acquire(MeshResourceHandle handle) const;
-        [[nodiscard]] Result<MeshResourceSnapshot> inspect(MeshResourceHandle handle) const;
-        [[nodiscard]] VoidResult unload(MeshResourceHandle handle);
+        // All store access is owner-thread-only. Transfer an acquired immutable lease to workers.
+        [[nodiscard]] Result<MeshResourceLease> acquire(const MeshResourceHandle& handle) const;
+        [[nodiscard]] Result<MeshResourceSnapshot> inspect(const MeshResourceHandle& handle) const;
+        [[nodiscard]] VoidResult unload(const MeshResourceHandle& handle);
 
     private:
         struct ActiveRevision {
@@ -226,12 +232,13 @@ namespace asharia::resource {
         explicit MeshResourceStore(MeshResourceStoreDesc desc);
 
         [[nodiscard]] VoidResult requireOwnerThread() const;
-        [[nodiscard]] Result<std::size_t> resolveSlotIndex(MeshResourceHandle handle) const;
+        [[nodiscard]] Result<std::size_t> resolveSlotIndex(const MeshResourceHandle& handle) const;
         [[nodiscard]] std::optional<std::size_t> findSlotIndex(MeshResourceKey key) const noexcept;
         [[nodiscard]] std::size_t allocateSlot(MeshResourceKey key);
         [[nodiscard]] MeshResourceSnapshot makeSnapshot(std::size_t slotIndex) const;
 
         MeshResourceStoreDesc desc_;
+        std::shared_ptr<const MeshResourceStoreIdentity> identity_;
         std::thread::id ownerThread_;
         std::vector<Slot> slots_;
         std::vector<std::size_t> freeSlots_;
