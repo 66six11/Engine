@@ -17,7 +17,7 @@ ResourceRuntime 或 renderer 成为 importer 的依赖。
 | publication | `asset-pipeline` | 发布前以内存 bounded reader 校验 product；staging 复读 size/hash 后原子替换，并发布 manifest record/hash |
 | artifact verification | runtime-safe `asharia::asset_artifact` | manifest-relative path/limit/size/V1 hash → owning verified bytes |
 | runtime CPU resource | `asharia::resource_runtime` | exact product selection → generation-safe `MeshResourceLease`；reload failure 保留旧 active |
-| GPU/preview | 后续 Slice | 当前不创建 GPU buffer、Scene View binding 或 thumbnail |
+| GPU consumption | `renderer_basic_vulkan` (#419) | CPU lease → bounded GPU owner → RenderView indexed submesh draw；Studio binding / thumbnail 仍待后继 Slice |
 
 `mesh-product` 不保存 source path、importer/settings、editor state、runtime generation、renderer key 或
 Vulkan object。artifact 内容身份与 publication 完整性由外层 manifest/product hash 负责，v1 不在容器内再定义

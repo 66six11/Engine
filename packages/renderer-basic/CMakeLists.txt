@@ -11,6 +11,7 @@ include("${ASHARIA_REPOSITORY_ROOT}/cmake/AshariaPackage.cmake")
 asharia_package_init()
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 asharia_require_package_target(asharia::core engine/core)
+asharia_require_package_target(asharia::resource_runtime packages/resource-runtime)
 asharia_require_package_target(asharia::material_core packages/material-core)
 asharia_require_package_target(asharia::rendergraph packages/rendergraph)
 asharia_require_package_target(asharia::shader_slang packages/shader-slang)
@@ -86,6 +87,7 @@ set_source_files_properties(
 )
 add_library(asharia-renderer-basic-vulkan
     src/basic_renderers.cpp
+    src/gpu_mesh_resource.cpp
     ${ASHARIA_RENDERER_BASIC_VULKAN_PRIVATE_PARTS}
 )
 add_library(asharia::renderer_basic_vulkan ALIAS asharia-renderer-basic-vulkan)
@@ -454,6 +456,7 @@ target_include_directories(asharia-renderer-basic-vulkan
 target_link_libraries(asharia-renderer-basic-vulkan
     PUBLIC
         asharia::renderer_basic
+        asharia::resource_runtime
         asharia::rhi_vulkan
         asharia::rhi_vulkan_rendergraph
     PRIVATE

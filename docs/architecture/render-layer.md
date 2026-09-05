@@ -4,6 +4,17 @@
 
 ## Package 边界
 
+### GPU Mesh lease consumption (#419)
+
+- Current evidence: CPU `MeshResourceLease` and graph buffer copy already exist; RenderView now accepts an explicit immutable GPU mesh binding alongside its existing validation mesh path.
+- Owner / lifetime / thread: `BasicGpuMeshOwner` owns one logical mesh on the render thread. Immutable published resources are shared by draws; frame deferred deletion pins each used version until its GPU fence completes. The host must drain frames and release leases before destroying the device/allocator.
+- Data / error / budget / diagnostics: verified CPU lease is converted to the existing position/color unlit vertex layout, with uint32 indices and exact submesh ranges. Material slots must be unbound for this explicit validation material. One candidate and bounded resident versions/bytes include staging and retired resources; typed errors preserve the active resource.
+- Foundation prerequisite: existing resource-runtime, RenderGraph buffer transitions/copy and VulkanFrameLoop epochs suffice. No new global IO/task/registry service.
+- Integration Gate: I3 native resource consumption; earliest safe now, latest required before Scene product bindings. No Studio/source-file dependency in renderer.
+- Submission contract: upload recording alone does not publish. Host explicitly confirms the immediately following successful submission; owner publishes only after that epoch completes. Cancelled or unsubmitted candidates cannot become active. Graph declares transfer writes and final vertex/index reads.
+- Non-goals / exit evidence: one logical mesh per owner and per RenderView batch, multiple draws reuse that allocation. General materials, mixed mesh batches, selection overlays for product meshes and Studio resolver are deferred. Exit evidence requires verified artifact draw/readback, failure/stale/cancel cases and retirement counts.
+- Adopt [Unreal threaded rendering](https://dev.epicgames.com/documentation/en-us/unreal-engine/threaded-rendering-in-unreal-engine) immutable handoff and explicit renderer ownership, cross-checked with [O3DE product identity](https://www.docs.o3de.org/docs/user-guide/assets/pipeline/asset-dependencies-and-identifiers/). Reject copied proxy/service APIs because this package needs only an explicit lease owner. GPU retirement follows [VUID-vkDestroyBuffer-buffer-00922](https://docs.vulkan.org/refpages/latest/refpages/source/vkDestroyBuffer.html): all submitted references complete before destruction.
+
 - `packages/rendergraph` 只拥有后端无关的 graph model：resource、pass、slot、params、diagnostics 和 command summary。这里不能出现 Vulkan layout、stage、access mask 或 command buffer。
 - `packages/rhi-vulkan` 拥有 Vulkan context、frame loop、swapchain、VMA resource、pipeline、descriptor、deferred deletion 和 command recording 基础设施。基础 target 不依赖 RenderGraph。
 - `asharia::rhi_vulkan_rendergraph` 是 RenderGraph 到 Vulkan 的适配 target，负责把抽象 state 翻译为 Vulkan barrier/layout/stage/access。
@@ -192,3 +203,23 @@
   不得持有 GPU handle、RenderGraph pass 或 Vulkan upload state。后续 mesh/texture upload 必须继续保留同样
   的 source/product/runtime resource 分层。
 - SRP 接入前必须先把 pipeline authoring 限定为 RenderGraph 声明和 renderer-owned pass input 的前端；脚本或 editor tool 不能在 execute / Vulkan command recording 阶段回调，也不能绕过现有 RenderView target、scene input 和 smoke gate。
+
+### Acquire transition correction discovered by #419
+
+Synchronization validation reproduced an acquire-to-first-layout WRITE_AFTER_READ hazard in both the new
+resource smoke and the pre-existing buffer-upload smoke. Undefined discards contents but does not remove
+the need to wait for image acquisition. The raw frame clear uses Transfer for the first barrier source;
+the renderer graph recording path supplies the acquired image identity and uses the first-use destination
+stage as its source scope for that image's Undefined transition. No change to abstract RenderGraph states
+or offscreen buffer/image state translation is required. The host still waits at the actual first-use stage.
+
+### #419 validation evidence (2026-09-05)
+
+MSVC native tests: 49/49. Python tools: 531 cases, 6 skipped, all remaining passed.
+MSVC and ClangCL each passed all 32 review smoke commands with synchronization validation and no reported
+validation errors. The new resource smoke was rerun on both compilers after adding the aborted-submission
+negative case and splitting its preparation/readback helpers. Changed clang-tidy (5 translation units),
+package topology/contracts, encoding, documentation sync and both Vulkan review helpers passed.
+Device-loss / hardware allocation exhaustion are not injected by this smoke; Vulkan errors propagate without
+publishing a candidate. Confirm-submission is an explicit host obligation: call it immediately after the
+successful upload frame, and cancel the candidate on any recording/submission failure before another frame.

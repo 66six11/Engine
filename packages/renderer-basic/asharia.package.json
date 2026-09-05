@@ -15,7 +15,8 @@
     "com.asharia.material-core",
     "com.asharia.rendergraph",
     "com.asharia.rhi-vulkan",
-    "com.asharia.shader-slang"
+    "com.asharia.shader-slang",
+    "com.asharia.resource-runtime"
   ],
   "targets": [
     "asharia-renderer-basic",
@@ -30,14 +31,18 @@
     "asharia-renderer-basic-shaders": "content-build"
   },
   "targetDependencies": {
-    "asharia-renderer-basic": ["asharia-core", "asharia-rendergraph"],
+    "asharia-renderer-basic": [
+      "asharia-core",
+      "asharia-rendergraph"
+    ],
     "asharia-renderer-basic-vulkan": [
       "asharia-renderer-basic",
       "asharia-renderer-basic-validation-mesh-product",
       "asharia-material-core",
       "asharia-rhi-vulkan",
       "asharia-rhi-vulkan-rendergraph",
-      "asharia-shader-slang"
+      "asharia-shader-slang",
+      "asharia-resource-runtime"
     ],
     "asharia-renderer-basic-validation-mesh-product": [],
     "asharia-renderer-basic-shaders": [

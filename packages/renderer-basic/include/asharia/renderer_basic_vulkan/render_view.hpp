@@ -5,6 +5,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <span>
 #include <string>
@@ -15,6 +16,8 @@
 #include "asharia/rendergraph/render_graph_diagnostics.hpp"
 
 namespace asharia {
+
+    class BasicGpuMesh;
 
     struct BasicOffscreenViewportTarget {
         VkImage image{VK_NULL_HANDLE};
@@ -79,6 +82,7 @@ namespace asharia {
         std::uint64_t sourceRevision{};
         std::span<const BasicDrawListItem> drawItems{};
         BasicSceneRasterMode rasterMode{BasicSceneRasterMode::Solid};
+        std::shared_ptr<const BasicGpuMesh> mesh;
     };
 
     struct BasicRenderViewSceneDiagnostics {
