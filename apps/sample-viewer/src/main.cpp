@@ -5119,6 +5119,15 @@ namespace {
             std::this_thread::sleep_for(16ms);
         }
 
+        // End-of-smoke drain: even a failed assertion must retire submitted GPU work.
+        const VkResult idleResult = vkQueueWaitIdle(context->graphicsQueue());
+        if (idleResult != VK_SUCCESS) {
+            asharia::logError(
+                "Failed to wait for Vulkan queue before fullscreen texture teardown: " +
+                asharia::vkResultName(idleResult));
+            return EXIT_FAILURE;
+        }
+
         if (!validateFullscreenTextureOverlayDiagnostics(smokeState.overlayDiagnostics,
                                                          smokeState.overlayDiagnosticsRecorded)) {
             return EXIT_FAILURE;
@@ -5138,7 +5147,7 @@ namespace {
             return EXIT_FAILURE;
         }
         if (!validateDescriptorAllocatorStats(renderer->descriptorAllocatorStats(),
-                                              "Fullscreen texture smoke", 32)) {
+                                              "Fullscreen texture smoke", 48)) {
             return EXIT_FAILURE;
         }
         if (!validateBufferUploadStats(renderer->bufferStats(), 4, "Fullscreen texture smoke")) {
@@ -5156,13 +5165,6 @@ namespace {
         const VkExtent2D extent = frameLoop->extent();
         std::cout << "Rendered fullscreen texture frames: " << extent.width << 'x' << extent.height
                   << '\n';
-        const VkResult idleResult = vkQueueWaitIdle(context->graphicsQueue());
-        if (idleResult != VK_SUCCESS) {
-            asharia::logError(
-                "Failed to wait for Vulkan queue before fullscreen texture teardown: " +
-                asharia::vkResultName(idleResult));
-            return EXIT_FAILURE;
-        }
 
         window->requestClose();
         return EXIT_SUCCESS;
@@ -5273,6 +5275,15 @@ namespace {
             std::this_thread::sleep_for(16ms);
         }
 
+        // End-of-smoke drain before assertions that may exit early.
+        const VkResult idleResult = vkQueueWaitIdle(context->graphicsQueue());
+        if (idleResult != VK_SUCCESS) {
+            asharia::logError(
+                "Failed to wait for Vulkan queue before offscreen viewport teardown: " +
+                asharia::vkResultName(idleResult));
+            return EXIT_FAILURE;
+        }
+
         if (!validatePipelineCacheStats(renderer->pipelineCacheStats(),
                                         "Offscreen viewport smoke")) {
             return EXIT_FAILURE;
@@ -5294,7 +5305,7 @@ namespace {
             return EXIT_FAILURE;
         }
         if (!validateDescriptorAllocatorStats(renderer->descriptorAllocatorStats(),
-                                              "Offscreen viewport smoke", 32)) {
+                                              "Offscreen viewport smoke", 48)) {
             return EXIT_FAILURE;
         }
         if (!validateBufferUploadStats(renderer->bufferStats(), 1, "Offscreen viewport smoke")) {
@@ -5313,13 +5324,6 @@ namespace {
         std::cout << "Rendered offscreen viewport frames: " << lastViewportExtent.width << 'x'
                   << lastViewportExtent.height << " inside swapchain " << swapchainExtent.width
                   << 'x' << swapchainExtent.height << '\n';
-        const VkResult idleResult = vkQueueWaitIdle(context->graphicsQueue());
-        if (idleResult != VK_SUCCESS) {
-            asharia::logError(
-                "Failed to wait for Vulkan queue before offscreen viewport teardown: " +
-                asharia::vkResultName(idleResult));
-            return EXIT_FAILURE;
-        }
 
         window->requestClose();
         return EXIT_SUCCESS;

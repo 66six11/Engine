@@ -129,3 +129,22 @@ Missing、stale 或 invalid exact product record 返回 `MeshResourceRequestResu
 3. 在真实第二种 typed resource 证明共性后，再评估共享 store primitives；
 4. 以独立 schema migration 引入 SHA-256 ArtifactId/runtime manifest snapshot；
 5. manual reload 闭环完成后再引入 watcher/debounce/automatic reimport 与 thumbnail consumer。
+
+## Store identity and read access correction
+
+All live Store operations, including `acquire` and `inspect`, require the creation thread.
+Acquire an immutable lease on that thread and transfer the lease to another thread; const
+access to the live slot vector is not synchronized. This follows the separate thread-owned
+state described by [Unreal threaded rendering](https://dev.epicgames.com/documentation/unreal-engine/threaded-rendering-in-unreal-engine)
+and [Godot thread-safe APIs](https://docs.godotengine.org/en/stable/tutorials/performance/thread_safe_apis.html).
+No mutex or worker pool is added to this package.
+
+`MeshResourceHandle` additionally retains an opaque Store identity token. Store checks reject
+foreign handles and completion tickets before slot lookup. The token retains no resource or
+Store state; unlike a reused address or local slot counter it cannot collide after Store
+reconstruction while an old handle survives. Move transfers identity, invalidates the source,
+and preserves existing handles; move assignment retires the destination identity.
+`slotGeneration` and `requestGeneration` continue to serve their existing, independent roles.
+Handles remain process-local values and are not a serialized ABI. This extends the existing
+Unreal handle/Bevy generation precedent for Asharia's explicitly independent Store instances,
+without adding a process-global resource registry or claiming arbitrary forged values are secure.

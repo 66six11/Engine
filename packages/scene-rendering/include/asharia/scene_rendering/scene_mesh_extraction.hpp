@@ -25,14 +25,19 @@ namespace asharia::scene_rendering {
         asset::AssetReference mesh{};
     };
 
+    struct SceneMeshSectionBinding {
+        std::uint32_t materialSlot{};
+        BasicDrawResourceKey materialResource{};
+        BasicDrawItem drawItem{};
+    };
+
     struct SceneMeshProductBinding {
         asset::AssetReference asset{};
         SceneMeshProductState state{SceneMeshProductState::Stale};
         std::uint64_t productHash{};
         std::uint64_t productGeneration{};
         BasicDrawResourceKey meshResource{};
-        BasicDrawResourceKey materialResource{};
-        BasicDrawItem drawItem{};
+        std::vector<SceneMeshSectionBinding> sections;
     };
 
     struct SceneMeshExtractionInput {

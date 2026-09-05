@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -95,6 +96,8 @@ namespace asharia {
     };
 
     struct RenderGraphCompileResult {
+        // Process-local declaration owner; never serialize this token.
+        std::shared_ptr<const std::byte> declarationOwner;
         std::size_t declarationGeneration{};
         std::size_t declaredPassCount{};
         std::size_t declaredImageCount{};

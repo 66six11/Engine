@@ -13,6 +13,33 @@ namespace Asharia.Studio.EngineBridge.Tests.Viewports;
 
 public sealed class ViewportBridgeTests
 {
+    [Theory]
+    [InlineData(2U, 3U, true)]
+    [InlineData(2U, 1U, false)]
+    [InlineData(0U, 1U, false)]
+    [InlineData(0U, 0U, true)]
+    public void Scene_receipt_counts_sections_independently_of_instances(
+        uint instances, uint draws, bool accepted)
+    {
+        var hasInstances = instances != 0;
+        var api = new StubViewportNativeApi
+        {
+            SceneReceipt = new ViewportNativeSceneMeshReceiptV9(
+                instances, instances, 0, draws, (uint)ViewportNativeSceneRasterMode.Solid,
+                hasInstances ? 1U : 0U, hasInstances ? 1U : 0U, 1,
+                hasInstances ? ViewportNativeCanonicalUuid.FromGuid(Guid.NewGuid()) : default,
+                hasInstances ? ViewportNativeCanonicalUuid.FromGuid(Guid.NewGuid()) : default,
+                hasInstances ? 1UL : 0UL, hasInstances ? 1UL : 0UL, hasInstances ? 1UL : 0UL, 8),
+        };
+        var stream = new ViewportBridge(api)
+            .OpenStream(ViewportDeviceCompatibility.VulkanOpaqueNt).Stream!;
+        Assert.True(stream.SubmitLatest(PublishRequest(ViewportRenderKind.Scene, revision: 8)).Succeeded);
+        var result = stream.TryTakeReady();
+        Assert.Equal(accepted, result.Succeeded);
+        result.Lease?.Dispose();
+        stream.Dispose();
+    }
+
     [Fact]
     public void V9_stream_maps_latest_request_and_returns_a_bound_frame()
     {
@@ -499,6 +526,8 @@ public sealed class ViewportBridgeTests
 
         public bool ReturnReadyFrame { get; set; } = true;
 
+        public ViewportNativeSceneMeshReceiptV9? SceneReceipt { get; set; }
+
         public ViewportNativePresentRequestV9 Request { get; private set; }
 
         public ViewportNativeDebugProxy[] DebugProxies { get; private set; } = [];
@@ -589,7 +618,7 @@ public sealed class ViewportBridgeTests
                 hasFrame ? Request.TargetKind : 0,
                 hasFrame ? Request.LogicalWidthPixels : 0,
                 hasFrame ? Request.LogicalHeightPixels : 0,
-                new ViewportNativeSceneMeshReceiptV9(
+                SceneReceipt ?? new ViewportNativeSceneMeshReceiptV9(
                     0,
                     0,
                     0,

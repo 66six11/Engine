@@ -113,3 +113,18 @@ graph.addPass("Triangle")
 ```
 
 真实实现中不建议在 hot path 用字符串查 pipeline；但早期 debug log 和 graph visualization 可以接受。
+
+## Compiled declaration ownership
+
+`RenderGraphCompileResult::declarationOwner` retains a process-local identity token, together
+with the existing declaration generation. Execute rejects a different owner before invoking
+any callback, even when pass names, counts and mutation counts match. Copy construction and
+copy assignment establish a new owner; moving transfers the owner and existing compiled results.
+The token owns neither graph resources nor callbacks and is not serialized or printed in
+stable diagnostics. A result retained after destruction cannot collide with a later graph.
+
+This adopts the graph-scoped ownership principle of
+[Unreal RDG](https://dev.epicgames.com/documentation/unreal-engine/render-dependency-graph-in-unreal-engine).
+Asharia retains its explicit compile/execute split instead of copying the builder API; the
+additional token is needed because compile results are independently held public CPU values.
+The token is accidental-misuse validation, not authentication of hostile modified structs.

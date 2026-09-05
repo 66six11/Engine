@@ -14,6 +14,7 @@ namespace asharia {
         std::vector<RenderGraphBufferDesc> buffers_;
         std::vector<rendergraph_internal::Pass> passes_;
         std::size_t mutationGeneration_{};
+        std::shared_ptr<const std::byte> owner_ = std::make_shared<const std::byte>();
     };
 
 } // namespace asharia

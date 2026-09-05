@@ -41,8 +41,12 @@ namespace asharia::scene_rendering {
 
         [[nodiscard]] bool validBinding(const SceneMeshProductBinding& binding) noexcept {
             return binding.productHash != 0U && binding.productGeneration != 0U &&
-                   static_cast<bool>(binding.meshResource) &&
-                   static_cast<bool>(binding.materialResource) && validDrawItem(binding.drawItem);
+                   static_cast<bool>(binding.meshResource) && !binding.sections.empty() &&
+                   std::ranges::all_of(binding.sections,
+                                       [](const SceneMeshSectionBinding& section) {
+                                           return static_cast<bool>(section.materialResource) &&
+                                                  validDrawItem(section.drawItem);
+                                       });
         }
 
         [[nodiscard]] const SceneMeshProductBinding*
@@ -55,11 +59,35 @@ namespace asharia::scene_rendering {
             return binding == bindings.end() ? nullptr : std::to_address(binding);
         }
 
-        [[nodiscard]] bool hasAssetGuidBinding(const SceneMeshInstance& instance,
-                                               std::span<const SceneMeshProductBinding> bindings) noexcept {
-            return std::ranges::any_of(bindings, [&instance](const SceneMeshProductBinding& binding) {
-                return binding.asset.guid == instance.mesh.guid;
-            });
+        [[nodiscard]] bool
+        hasAssetGuidBinding(const SceneMeshInstance& instance,
+                            std::span<const SceneMeshProductBinding> bindings) noexcept {
+            return std::ranges::any_of(bindings,
+                                       [&instance](const SceneMeshProductBinding& binding) {
+                                           return binding.asset.guid == instance.mesh.guid;
+                                       });
+        }
+
+        void appendSectionDraws(std::vector<BasicDrawListItem>& drawItems,
+                                const SceneMeshInstance& instance,
+                                const SceneMeshProductBinding& binding) {
+            const auto modelMatrix = makeSceneMeshModelMatrix(instance.transform);
+            for (const SceneMeshSectionBinding& section : binding.sections) {
+                drawItems.push_back(BasicDrawListItem{
+                    .drawItem = section.drawItem,
+                    .modelMatrix = modelMatrix,
+                    .context =
+                        BasicDrawPacketContext{
+                            .sourceObject =
+                                BasicDrawSourceId{
+                                    .index = instance.entity.index,
+                                    .generation = instance.entity.generation,
+                                },
+                            .meshResource = binding.meshResource,
+                            .materialResource = section.materialResource,
+                        },
+                });
+            }
         }
 
     } // namespace
@@ -72,7 +100,8 @@ namespace asharia::scene_rendering {
         return drawItems_;
     }
 
-    std::span<const SceneMeshExtractionDiagnostic> SceneMeshExtraction::diagnostics() const noexcept {
+    std::span<const SceneMeshExtractionDiagnostic>
+    SceneMeshExtraction::diagnostics() const noexcept {
         return diagnostics_;
     }
 
@@ -116,8 +145,8 @@ namespace asharia::scene_rendering {
         extraction.revision_ = input.revision;
         extraction.drawItems_.reserve(input.instances.size());
         const auto appendDiagnostic = [&extraction](SceneMeshExtractionDiagnosticCode code,
-                                                     const SceneMeshInstance& instance,
-                                                     std::string message) {
+                                                    const SceneMeshInstance& instance,
+                                                    std::string message) {
             extraction.diagnostics_.push_back(SceneMeshExtractionDiagnostic{
                 .code = code,
                 .revision = extraction.revision_,
@@ -145,8 +174,9 @@ namespace asharia::scene_rendering {
             }
             if (!static_cast<bool>(instance.mesh) ||
                 instance.mesh.expectedType != scene::kSceneMeshAssetType) {
-                appendDiagnostic(SceneMeshExtractionDiagnosticCode::InvalidMeshReference, instance,
-                                 "Scene mesh extraction rejected a mesh reference with the wrong kind.");
+                appendDiagnostic(
+                    SceneMeshExtractionDiagnosticCode::InvalidMeshReference, instance,
+                    "Scene mesh extraction rejected a mesh reference with the wrong kind.");
                 continue;
             }
 
@@ -157,10 +187,17 @@ namespace asharia::scene_rendering {
                     hasAssetGuidBinding(instance, input.productBindings)
                         ? SceneMeshExtractionDiagnosticCode::WrongProductBindingKind
                         : SceneMeshExtractionDiagnosticCode::MissingProductBinding;
-                appendDiagnostic(code, instance,
-                                 code == SceneMeshExtractionDiagnosticCode::WrongProductBindingKind
-                                     ? "Scene mesh extraction found a product binding with the wrong asset kind."
-                                     : "Scene mesh extraction found no product binding for the mesh asset.");
+                appendDiagnostic(
+                    code, instance,
+                    code == SceneMeshExtractionDiagnosticCode::WrongProductBindingKind
+                        ? "Scene mesh extraction found a product binding with the wrong asset kind."
+                        : "Scene mesh extraction found no product binding for the mesh asset.");
+                continue;
+            }
+            if (std::ranges::count(input.productBindings, instance.mesh,
+                                   &SceneMeshProductBinding::asset) != 1) {
+                appendDiagnostic(SceneMeshExtractionDiagnosticCode::InvalidProductBinding, instance,
+                                 "Scene mesh extraction rejected duplicate mesh product bindings.");
                 continue;
             }
             if (binding->state != SceneMeshProductState::Ready) {
@@ -169,23 +206,13 @@ namespace asharia::scene_rendering {
                 continue;
             }
             if (!validBinding(*binding)) {
-                appendDiagnostic(SceneMeshExtractionDiagnosticCode::InvalidProductBinding, instance,
-                                 "Scene mesh extraction rejected an incomplete mesh product binding.");
+                appendDiagnostic(
+                    SceneMeshExtractionDiagnosticCode::InvalidProductBinding, instance,
+                    "Scene mesh extraction rejected an incomplete mesh product binding.");
                 continue;
             }
 
-            extraction.drawItems_.push_back(BasicDrawListItem{
-                .drawItem = binding->drawItem,
-                .modelMatrix = makeSceneMeshModelMatrix(instance.transform),
-                .context = BasicDrawPacketContext{
-                    .sourceObject = BasicDrawSourceId{
-                        .index = instance.entity.index,
-                        .generation = instance.entity.generation,
-                    },
-                    .meshResource = binding->meshResource,
-                    .materialResource = binding->materialResource,
-                },
-            });
+            appendSectionDraws(extraction.drawItems_, instance, *binding);
         }
 
         return extraction;

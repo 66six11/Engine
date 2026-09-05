@@ -753,3 +753,13 @@ diff；需要把未跟踪文件也纳入本地自检时，显式使用 `-Include
 - 打 tag 前必须确认该阶段的验收标准已在当前机器跑过，并在提交回复中列出关键门禁。
 - 如果阶段仍有 P1/P2 finding、未解释的 validation error、失败 smoke 或未同步文档，不打 tag。
 - 打 tag 后再跑一次 `git tag --list "stage-*"` 或 `git show <tag>` 核实 tag 指向正确提交。
+
+### Fullscreen smoke resource inventory
+
+Fullscreen/offscreen descriptor checks cover all three 16-set rings: fullscreen, composite,
+and selection outline (48 sets in one allocation). These smoke paths drain the graphics queue
+before checking end-of-run diagnostics so a failed assertion cannot destroy in-flight resources.
+This is teardown synchronization, not a render-loop idle wait. Fullscreen's current fixture only
+allocates one debug-line buffer, so its existing exact four-buffer upload assertion remains.
+The renderer package manifest includes the three selection shader order dependencies and is
+checked against the configured CMake File API graph, not just source topology.

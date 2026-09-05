@@ -595,8 +595,9 @@ namespace asharia::editor {
                 .productHash = 0x0EB29D6DE539D278ULL,
                 .productGeneration = 1U,
                 .meshResource = kBasicValidationMeshResourceKey,
-                .materialResource = kBasicDefaultUnlitMaterialResourceKey,
-                .drawItem = basicValidationMeshDrawItem(),
+                .sections = {{.materialSlot = 0U,
+                              .materialResource = kBasicDefaultUnlitMaterialResourceKey,
+                              .drawItem = basicValidationMeshDrawItem()}},
             };
             return scene_rendering::extractSceneMeshDrawList(
                 scene_rendering::SceneMeshExtractionInput{
@@ -624,14 +625,13 @@ namespace asharia::editor {
                 .index = selected->runtimeEntityIndex,
                 .generation = selected->runtimeEntityGeneration,
             };
-            const auto draw = std::ranges::find_if(
-                extraction.drawItems(), [selectedSource](const BasicDrawListItem& item) {
-                    return item.context.sourceObject == selectedSource;
-                });
-            if (draw == extraction.drawItems().end()) {
-                return {};
+            std::vector<BasicDrawListItem> selectedDraws;
+            for (const BasicDrawListItem& item : extraction.drawItems()) {
+                if (item.context.sourceObject == selectedSource) {
+                    selectedDraws.push_back(item);
+                }
             }
-            return {*draw};
+            return selectedDraws;
         }
 
         void populateSceneMeshReceipt(EditorSharedViewportPresentDesc desc,
@@ -639,7 +639,8 @@ namespace asharia::editor {
                                       EditorSharedViewportSceneMeshReceipt& receipt) {
             receipt = EditorSharedViewportSceneMeshReceipt{
                 .inputCount = static_cast<std::uint32_t>(desc.authoredMeshes.size()),
-                .resolvedCount = static_cast<std::uint32_t>(extraction.drawItems().size()),
+                .resolvedCount = static_cast<std::uint32_t>(desc.authoredMeshes.size() -
+                                                            extraction.diagnostics().size()),
                 .rejectedCount = static_cast<std::uint32_t>(extraction.diagnostics().size()),
                 .indexedDrawCount = 0U,
                 .rasterMode = desc.sceneRasterMode,
