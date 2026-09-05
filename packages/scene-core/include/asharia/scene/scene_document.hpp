@@ -141,6 +141,7 @@ namespace asharia::scene {
 
         std::filesystem::path path_;
         SceneDocumentData data_;
+        SceneDocumentData savedData_;
         World world_;
         std::vector<RuntimeEntity> runtimeEntities_;
         std::uint64_t revision_{kInitialSceneDocumentRevision};

@@ -147,10 +147,10 @@ namespace {
                       "Scene validation accepted more than the bounded entity count.");
     }
 
-    [[nodiscard]] bool testTransformReceipts(
-        asharia::scene::SceneDocument& document, asharia::scene::SceneObjectId objectId,
-        const asharia::scene::SceneDocumentSnapshot& renamed,
-        const asharia::TransformComponent& moved) {
+    [[nodiscard]] bool testTransformReceipts(asharia::scene::SceneDocument& document,
+                                             asharia::scene::SceneObjectId objectId,
+                                             const asharia::scene::SceneDocumentSnapshot& renamed,
+                                             const asharia::TransformComponent& moved) {
         auto transformed = document.setEntityTransform(objectId, moved, renamed.revision);
         if (!transformed) {
             std::cerr << transformed.error().message << '\n';
@@ -172,6 +172,60 @@ namespace {
                           unchanged->afterRevision == edited.revision &&
                           document.snapshot().revision == edited.revision,
                       "No-op Scene Transform edit did not preserve revision and values.");
+    }
+
+    [[nodiscard]] bool testExternalSaveChanges() {
+        TestDirectory directory;
+        auto document = asharia::scene::SceneDocument::openOrCreateDefault(
+            directory.path(), asharia::scene::SceneId{.bytes = {3U}});
+        if (!document) {
+            return false;
+        }
+        auto external = document->snapshot().data;
+        external.entities.push_back({.objectId = {.bytes = {4U}}, .name = "external"});
+        if (!asharia::scene::writeSceneDocumentFile(document->path(), external) ||
+            document->save(1U)) {
+            return false;
+        }
+        auto fresh = asharia::scene::SceneDocument::openOrCreateDefault(directory.path(), {});
+        if (!fresh || !fresh->save(1U)) {
+            return false;
+        }
+        auto lockPath = fresh->path();
+        lockPath += ".lock";
+        auto held = asharia::core::tryAcquireExclusiveFileLock(lockPath);
+        if (!held || !held->has_value() || fresh->save(1U)) {
+            return false;
+        }
+        if (!(**held).release() || !fresh->save(1U)) {
+            return false;
+        }
+        if (!asharia::core::writeFileTextAtomically(fresh->path(), "malformed") ||
+            fresh->save(1U)) {
+            return false;
+        }
+        auto after = asharia::core::readFileText(fresh->path(), {.maxBytes = 64U});
+        return expect(after && *after == "malformed", "Save replaced malformed external bytes.");
+    }
+
+    [[nodiscard]] bool testConcurrentSave() {
+        TestDirectory directory;
+        const asharia::scene::SceneId sceneId{.bytes = {1U}};
+        const asharia::scene::SceneObjectId objectId{.bytes = {2U}};
+        auto first = asharia::scene::SceneDocument::openOrCreateDefault(directory.path(), sceneId);
+        auto second = asharia::scene::SceneDocument::openOrCreateDefault(directory.path(), sceneId);
+        if (!first || !second || !first->createEntity(objectId, "first", 1U) ||
+            !second->createEntity(objectId, "second", 1U) || !first->save(2U)) {
+            return false;
+        }
+        const auto conflict = second->save(2U);
+        const auto disk = asharia::scene::readSceneDocumentFile(first->path());
+        return expect(
+            !conflict &&
+                conflict.error().code ==
+                    static_cast<int>(asharia::scene::SceneDocumentErrorCode::RevisionConflict) &&
+                disk && *disk == first->snapshot().data && second->snapshot().savedRevision == 1U,
+            "Stale scene save overwrote another writer or advanced its savepoint.");
     }
 
 } // namespace
@@ -270,7 +324,8 @@ int main() noexcept {
             return 1;
         }
 
-        if (!testSchemaV2HardCut(restored.data, *sceneId)) {
+        if (!testExternalSaveChanges() || !testConcurrentSave() ||
+            !testSchemaV2HardCut(restored.data, *sceneId)) {
             return 1;
         }
 
