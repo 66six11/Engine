@@ -2670,10 +2670,10 @@ namespace {
     [[nodiscard]] bool smokeImportPlanningToolFingerprintBatchCache() {
         const auto firstSource =
             makeShaderSource("69bc6326-c04a-49d8-a4d2-653445a0e423",
-                             "Content/Shaders/First.ashader", 0x1000F00D1234CAFEULL);
+                             "Content/Shaders/First.shader", 0x1000F00D1234CAFEULL);
         const auto secondSource =
             makeShaderSource("79bc6326-c04a-49d8-a4d2-653445a0e424",
-                             "Content/Shaders/Second.ashader", 0x2000F00D1234CAFEULL);
+                             "Content/Shaders/Second.shader", 0x2000F00D1234CAFEULL);
         const std::array sources{firstSource, secondSource};
         const std::array snapshots{
             makeSourceSnapshot(firstSource.source.sourcePath, firstSource.source.sourceHash),
@@ -2725,10 +2725,10 @@ namespace {
     [[nodiscard]] bool smokeImportPlanningToolFingerprintFailureBatchCache() {
         const auto firstSource =
             makeShaderSource("89bc6326-c04a-49d8-a4d2-653445a0e425",
-                             "Content/Shaders/FailFirst.ashader", 0x3000F00D1234CAFEULL);
+                             "Content/Shaders/FailFirst.shader", 0x3000F00D1234CAFEULL);
         const auto secondSource =
             makeShaderSource("99bc6326-c04a-49d8-a4d2-653445a0e426",
-                             "Content/Shaders/FailSecond.ashader", 0x4000F00D1234CAFEULL);
+                             "Content/Shaders/FailSecond.shader", 0x4000F00D1234CAFEULL);
         const std::array sources{firstSource, secondSource};
         const std::array snapshots{
             makeSourceSnapshot(firstSource.source.sourcePath, firstSource.source.sourceHash),
@@ -2774,7 +2774,7 @@ namespace {
         constexpr std::string_view kShaderTypeName = "com.asharia.asset.Shader";
         constexpr std::string_view kImporterName = "com.asharia.importer.shader-compile-reflection";
         auto source = makeDiscoveredSource("69bc6326-c04a-49d8-a4d2-653445a0e423",
-                                           "Content/Shaders/Unlit.ashader", 0x1000F00D1234CAFEULL);
+                                           "Content/Shaders/Unlit.shader", 0x1000F00D1234CAFEULL);
         source.source.assetType = asharia::asset::makeAssetTypeId(kShaderTypeName);
         source.source.assetTypeName = kShaderTypeName;
         source.source.importerId = asharia::asset::makeImporterId(kImporterName);
@@ -2800,7 +2800,7 @@ namespace {
     [[nodiscard]] bool smokeImportPlanningDeclaredOnlyDoesNotResolveTools() {
         const auto source =
             makeShaderSource("69bc6326-c04a-49d8-a4d2-653445a0e423",
-                             "Content/Shaders/DeclaredOnly.ashader", 0x1000F00D1234CAFEULL);
+                             "Content/Shaders/DeclaredOnly.shader", 0x1000F00D1234CAFEULL);
         const std::array sources{source};
         const std::array snapshots{
             makeSourceSnapshot(source.source.sourcePath, source.source.sourceHash),
@@ -2878,7 +2878,7 @@ namespace {
         const asharia::asset::DiscoveredSourceAsset source{
             .entry =
                 asharia::asset::AssetSourceDiscoveryEntry{
-                    .sourcePath = "Content/Shaders/Unlit.ashader",
+                    .sourcePath = "Content/Shaders/Unlit.shader",
                     .metadataPath = {},
                 },
             .source =
@@ -2886,7 +2886,7 @@ namespace {
                     .guid = guid ? *guid : asharia::asset::AssetGuid{},
                     .assetType = asharia::asset::makeAssetTypeId(kShaderTypeName),
                     .assetTypeName = std::string{kShaderTypeName},
-                    .sourcePath = "Content/Shaders/Unlit.ashader",
+                    .sourcePath = "Content/Shaders/Unlit.shader",
                     .importerId = asharia::asset::makeImporterId(kImporterName),
                     .importerName = std::string{kImporterName},
                     .importerVersion = asharia::asset::ImporterVersion{1},
@@ -4361,8 +4361,8 @@ namespace {
         };
     }
 
-    [[nodiscard]] std::string validAshaderText() {
-        return R"ashader(
+    [[nodiscard]] std::string validShaderText() {
+        return R"shader(
 schema 2
 
 shader "asharia.material.unlit" {
@@ -4379,7 +4379,7 @@ shader "asharia.material.unlit" {
     slang "Unlit.slang"
   }
 }
-)ashader";
+)shader";
     }
 
     [[nodiscard]] asharia::asset::SourceAssetRecord
@@ -4392,17 +4392,17 @@ shader "asharia.material.unlit" {
             .guid = guid ? *guid : asharia::asset::AssetGuid{},
             .assetType = asharia::asset::makeAssetTypeId(kShaderTypeName),
             .assetTypeName = std::string{kShaderTypeName},
-            .sourcePath = "Content/Shaders/Unlit.ashader",
+            .sourcePath = "Content/Shaders/Unlit.shader",
             .importerId = asharia::asset::makeImporterId(kImporterName),
             .importerName = std::string{kImporterName},
-            .importerVersion = asharia::asset::ImporterVersion{1},
+            .importerVersion = asharia::asset::ImporterVersion{2},
             .sourceHash = smokeHashBytes(sourceBytes),
             .settingsHash = asharia::asset::hashAssetImportSettings(settings),
         };
     }
 
-    [[nodiscard]] std::string validCompileReflectionAshaderText() {
-        return R"ashader(
+    [[nodiscard]] std::string validCompileReflectionShaderText() {
+        return R"shader(
 schema 2
 
 shader "asharia.material.compile_reflection" {
@@ -4435,11 +4435,11 @@ shader "asharia.material.compile_reflection" {
     }
   }
 }
-)ashader";
+)shader";
     }
 
-    [[nodiscard]] std::string invalidCompileReflectionAshaderText() {
-        return R"ashader(
+    [[nodiscard]] std::string invalidCompileReflectionShaderText() {
+        return R"shader(
 schema 2
 
 shader "asharia.material.compile_reflection" {
@@ -4469,7 +4469,7 @@ shader "asharia.material.compile_reflection" {
     }
   }
 }
-)ashader";
+)shader";
     }
 
     [[nodiscard]] asharia::asset::SourceAssetRecord makeShaderCompileReflectionRecord(
@@ -4482,7 +4482,7 @@ shader "asharia.material.compile_reflection" {
             .guid = guid ? *guid : asharia::asset::AssetGuid{},
             .assetType = asharia::asset::makeAssetTypeId(kShaderTypeName),
             .assetTypeName = std::string{kShaderTypeName},
-            .sourcePath = "Content/Shaders/Unlit.ashader",
+            .sourcePath = "Content/Shaders/Unlit.shader",
             .importerId = asharia::asset::makeImporterId(kImporterName),
             .importerName = std::string{kImporterName},
             .importerVersion = asharia::asset::ImporterVersion{1},
@@ -4642,9 +4642,9 @@ shader "asharia.material.compile_reflection" {
                                          "material instance import failed");
     }
 
-    [[nodiscard]] bool smokeProductExecutionWritesAshaderShaderProduct() {
+    [[nodiscard]] bool smokeProductExecutionWritesShaderShaderProduct() {
         const std::filesystem::path root =
-            smokeRoot("asharia-asset-pipeline-smoke-ashader-shader-product");
+            smokeRoot("asharia-asset-pipeline-smoke-shader-shader-product");
         if (root.empty() || !prepareWorkspace(root)) {
             return false;
         }
@@ -4655,7 +4655,7 @@ shader "asharia.material.compile_reflection" {
                 .value = "generated-slang-v1",
             },
         };
-        const std::vector<std::uint8_t> sourceBytes = bytesFromText(validAshaderText());
+        const std::vector<std::uint8_t> sourceBytes = bytesFromText(validShaderText());
         const asharia::asset::SourceAssetRecord source =
             makeShaderAuthoringRecord(sourceBytes, settings);
         const std::filesystem::path outputRoot = root / "ProductCache";
@@ -4686,7 +4686,7 @@ shader "asharia.material.compile_reflection" {
             *firstText != *secondText ||
             first.writtenProducts.front().product.productHash !=
                 second.writtenProducts.front().product.productHash) {
-            logFailure("Asset product execution smoke failed .ashader shader product write.");
+            logFailure("Asset product execution smoke failed .shader shader product write.");
             return false;
         }
 
@@ -4711,7 +4711,7 @@ shader "asharia.material.compile_reflection" {
                 std::string::npos ||
             payload->generatedSlangText.find("Texture2D<float4> albedoMap;") == std::string::npos ||
             payload->generatedSlangText.find("fragmentMain();") == std::string::npos) {
-            logFailure("Asset product execution smoke could not read .ashader shader product.");
+            logFailure("Asset product execution smoke could not read .shader shader product.");
             return false;
         }
 
@@ -4724,7 +4724,7 @@ shader "asharia.material.compile_reflection" {
         return true;
     }
 
-    [[nodiscard]] bool smokeProductExecutionAshaderDiagnostics() {
+    [[nodiscard]] bool smokeProductExecutionShaderDiagnostics() {
         const std::vector<asharia::asset::AssetImportSetting> settings{
             asharia::asset::AssetImportSetting{
                 .key = "shader.product",
@@ -4765,7 +4765,7 @@ shader "asharia.material.compile_reflection" {
         }
 
         const std::vector<std::uint8_t> sourceBytes =
-            bytesFromText(validCompileReflectionAshaderText());
+            bytesFromText(validCompileReflectionShaderText());
         const std::vector<asharia::asset::AssetImportSetting> authoringSettings{
             asharia::asset::AssetImportSetting{
                 .key = "shader.product",
@@ -4941,7 +4941,7 @@ shader "asharia.material.compile_reflection" {
 
     [[nodiscard]] bool smokeProductExecutionShaderCompileReflectionDiagnostics() {
         const std::vector<std::uint8_t> sourceBytes =
-            bytesFromText(validCompileReflectionAshaderText());
+            bytesFromText(validCompileReflectionShaderText());
         const std::vector<asharia::asset::AssetImportSetting> compileSettings{
             asharia::asset::AssetImportSetting{
                 .key = "shader.product",
@@ -4987,7 +4987,7 @@ shader "asharia.material.compile_reflection" {
         }
 
         const std::vector<std::uint8_t> sourceBytes =
-            bytesFromText(invalidCompileReflectionAshaderText());
+            bytesFromText(invalidCompileReflectionShaderText());
         const std::vector<asharia::asset::AssetImportSetting> authoringSettings{
             asharia::asset::AssetImportSetting{
                 .key = "shader.product",
@@ -5085,7 +5085,7 @@ shader "asharia.material.compile_reflection" {
         }
 
         const std::vector<std::uint8_t> sourceBytes =
-            bytesFromText(validCompileReflectionAshaderText());
+            bytesFromText(validCompileReflectionShaderText());
         const std::vector<asharia::asset::AssetImportSetting> authoringSettings{
             asharia::asset::AssetImportSetting{
                 .key = "shader.product",
@@ -5216,10 +5216,10 @@ shader "asharia.material.compile_reflection" {
     makeBoundedShaderAuthoringProduct(std::uint64_t propertyCount, std::uint64_t passCount,
                                       std::uint64_t bindingCount, std::uint64_t entryCount,
                                       std::uint64_t generatedSlangSize = 0U) {
-        std::string text = "schema=com.asharia.asset.shader-authoring-product.v1\n"
-                           "sourcePath=Content/Shaders/Bounded.ashader\n"
+        std::string text = "schema=com.asharia.asset.shader-authoring-product.v2\n"
+                           "sourcePath=Content/Shaders/Bounded.shader\n"
                            "shader.stableTypeId=asharia.material.bounded\n"
-                           "ashader.schemaVersion=2\n"
+                           "shader.schemaVersion=2\n"
                            "property.count=" +
                            std::to_string(propertyCount) +
                            "\npass.count=" + std::to_string(passCount) +
@@ -5286,7 +5286,7 @@ shader "asharia.material.compile_reflection" {
         const std::vector<std::uint8_t> spirv{0U};
         const std::vector<std::uint8_t> reflection = bytesFromText("{}");
         std::string text = "schema=com.asharia.asset.shader-compile-reflection-product.v1\n"
-                           "sourcePath=Content/Shaders/Bounded.ashader\n"
+                           "sourcePath=Content/Shaders/Bounded.shader\n"
                            "shader.stableTypeId=asharia.material.bounded\n"
                            "authoringProductPath=generated/Bounded.authoring.product\n"
                            "authoringProductHash=0000000000000001\n"
@@ -5828,7 +5828,7 @@ shader "asharia.material.compile_reflection" {
         }
 
         const std::vector<std::uint8_t> noShaderPayload =
-            bytesFromText("schema=com.asharia.asset.shader-authoring-product.v1\n");
+            bytesFromText("schema=com.asharia.asset.shader-authoring-product.v2\n");
         auto missingShaderPayload = asharia::asset::readShaderAuthoringProductPayload(
             std::span<const std::uint8_t>{noShaderPayload.data(), noShaderPayload.size()},
             "shaders/no-generated-slang.product");
@@ -5839,10 +5839,10 @@ shader "asharia.material.compile_reflection" {
         }
 
         const std::vector<std::uint8_t> badShaderPayload =
-            bytesFromText("schema=com.asharia.asset.shader-authoring-product.v1\n"
-                          "sourcePath=Content/Shaders/Unlit.ashader\n"
+            bytesFromText("schema=com.asharia.asset.shader-authoring-product.v2\n"
+                          "sourcePath=Content/Shaders/Unlit.shader\n"
                           "shader.stableTypeId=asharia.material.unlit\n"
-                          "ashader.schemaVersion=2\n"
+                          "shader.schemaVersion=2\n"
                           "property.count=0\n"
                           "pass.count=1\n"
                           "pass.0.name=Forward\n"
@@ -5872,10 +5872,10 @@ shader "asharia.material.compile_reflection" {
         }
 
         const std::vector<std::uint8_t> unterminatedShaderPayload =
-            bytesFromText("schema=com.asharia.asset.shader-authoring-product.v1\n"
-                          "sourcePath=Content/Shaders/Unlit.ashader\n"
+            bytesFromText("schema=com.asharia.asset.shader-authoring-product.v2\n"
+                          "sourcePath=Content/Shaders/Unlit.shader\n"
                           "shader.stableTypeId=asharia.material.unlit\n"
-                          "ashader.schemaVersion=2\n"
+                          "shader.schemaVersion=2\n"
                           "property.count=0\n"
                           "pass.count=1\n"
                           "pass.0.name=Forward\n"
@@ -5907,7 +5907,7 @@ shader "asharia.material.compile_reflection" {
 
         const std::vector<std::uint8_t> badCompileReflectionPayload =
             bytesFromText("schema=com.asharia.asset.shader-compile-reflection-product.v1\n"
-                          "sourcePath=Content/Shaders/Unlit.ashader\n"
+                          "sourcePath=Content/Shaders/Unlit.shader\n"
                           "shader.stableTypeId=asharia.material.unlit\n"
                           "authoringProductPath=generated/Unlit.authoring.product\n"
                           "authoringProductHash=0000000000000001\n"
@@ -5948,7 +5948,7 @@ shader "asharia.material.compile_reflection" {
 
         const std::vector<std::uint8_t> missingCompileReflectionPayload =
             bytesFromText("schema=com.asharia.asset.shader-compile-reflection-product.v1\n"
-                          "sourcePath=Content/Shaders/Unlit.ashader\n"
+                          "sourcePath=Content/Shaders/Unlit.shader\n"
                           "shader.stableTypeId=asharia.material.unlit\n"
                           "authoringProductPath=generated/Unlit.authoring.product\n"
                           "authoringProductHash=0000000000000001\n"
@@ -6085,17 +6085,17 @@ shader "asharia.material.compile_reflection" {
                                     .bytes = invalidPathBytes,
                                 },
                                 asharia::asset::AssetProductDependencyBytes{
-                                    .relativeProductPath = "generated/Unlit.ashader.product",
+                                    .relativeProductPath = "generated/Unlit.shader.product",
                                     .productHash = smokeHashBytes(duplicateBytes),
                                     .bytes = duplicateBytes,
                                 },
                                 asharia::asset::AssetProductDependencyBytes{
-                                    .relativeProductPath = "generated/Unlit.ashader.product",
+                                    .relativeProductPath = "generated/Unlit.shader.product",
                                     .productHash = smokeHashBytes(duplicateBytes),
                                     .bytes = duplicateBytes,
                                 },
                                 asharia::asset::AssetProductDependencyBytes{
-                                    .relativeProductPath = "generated/Mismatch.ashader.product",
+                                    .relativeProductPath = "generated/Mismatch.shader.product",
                                     .productHash = 0x1234ULL,
                                     .bytes = mismatchBytes,
                                 },
@@ -6153,7 +6153,7 @@ shader "asharia.material.compile_reflection" {
                 .dependencyProductBytes =
                     {
                         asharia::asset::AssetProductDependencyBytes{
-                            .relativeProductPath = "generated/Unlit.ashader.product",
+                            .relativeProductPath = "generated/Unlit.shader.product",
                             .productHash = smokeHashBytes(dependencyBytes),
                             .bytes = dependencyBytes,
                         },
@@ -6697,8 +6697,8 @@ int main() noexcept {
             smokeProductExecutionPngTextureDiagnostics() &&
             smokeProductExecutionWritesMatMaterialProduct() &&
             smokeProductExecutionMatDiagnostics() &&
-            smokeProductExecutionWritesAshaderShaderProduct() &&
-            smokeProductExecutionAshaderDiagnostics() &&
+            smokeProductExecutionWritesShaderShaderProduct() &&
+            smokeProductExecutionShaderDiagnostics() &&
             smokeProductExecutionWritesShaderCompileReflectionProduct() &&
             smokeProductExecutionShaderCompileReflectionDiagnostics() &&
             smokeProductExecutionShaderCompileReflectionCompilerDiagnostics() &&

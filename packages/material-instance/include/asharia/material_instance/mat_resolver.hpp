@@ -48,9 +48,9 @@ namespace asharia::material_instance {
     struct MatOverrideDiff {
         MatOverrideDiffKind kind{MatOverrideDiffKind::Defaulted};
         std::string propertyId;
-        shader_authoring::AshaderPropertyType declaredType{
-            shader_authoring::AshaderPropertyType::Float};
-        std::optional<shader_authoring::AshaderPropertyType> overrideType;
+        shader_authoring::ShaderPropertyType declaredType{
+            shader_authoring::ShaderPropertyType::Float};
+        std::optional<shader_authoring::ShaderPropertyType> overrideType;
     };
 
     struct MatResolveOptions {
@@ -71,7 +71,7 @@ namespace asharia::material_instance {
 
     [[nodiscard]] MatResolveResult
     resolveMatOverrides(const MatDocument& document,
-                        const shader_authoring::AshaderDocument& shader,
+                        const shader_authoring::ShaderDocument& shader,
                         const MatResolveOptions& options = {});
 
 } // namespace asharia::material_instance

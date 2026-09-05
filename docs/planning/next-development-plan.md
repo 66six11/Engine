@@ -63,7 +63,7 @@
 | RenderGraph / RHI / Vulkan | 已有 typed pass、slot/schema、abstract access、transient image/buffer、VertexRead/IndexRead、`DrawIndexed`、debug labels、timestamp、Frame Debug replay；`fillModeNonSolid` 是 optional typed capability | 更细 compiler diagnostics、backend lifetime/cache 继续收敛，避免新增 graph 外 GPU work |
 | Renderer / RenderView | 已有 Scene/Game/Preview keyed request、world grid、debug line、offscreen sampled target、多 view diagnostics、真实 validation scene-mesh pass、draw packet context 和 per-view Solid/Wireframe | 把 validation product 升级为 asset/runtime resource-backed mesh/material，再扩 lighting/postprocess feature |
 | Asset / Project | 已有 project descriptor、source scan、metadata discovery、product manifest、dry-run/execute asset-processor baseline、texture product upload smoke、Mesh Product v1 + 受限 `.glb` importer/reader、verified artifact 与 generation-safe typed CPU mesh lease | renderer GPU mesh owner、dependency invalidation、Scene View/thumbnail consumer 收敛 |
-| Material | 已有 CPU-only signature、descriptor contract、pipeline key hash smoke、renderer binding smoke、shader reflection adapter、CPU-only `.ashader` parser/document diagnostics、generated Slang skeleton、generated Slang compile/reflection smoke、generated entry manifest、CPU-only `.mat` minimal IO、#156 deterministic `.mat` product blob 和 #158 deterministic `.ashader` generated Slang product blob | #163 Slang compile/reflection product、material product dependency invalidation、renderer material product 消费和 editor preview |
+| Material | 已有 CPU-only signature、descriptor contract、pipeline key hash smoke、renderer binding smoke、shader reflection adapter、CPU-only `.shader` parser/document diagnostics、generated Slang skeleton、generated Slang compile/reflection smoke、generated entry manifest、CPU-only `.mat` minimal IO、#156 deterministic `.mat` product blob 和 #158 deterministic `.shader` generated Slang product blob | #163 Slang compile/reflection product、material product dependency invalidation、renderer material product 消费和 editor preview |
 | Scene / Editor | 已有 SceneDocument-owned EditWorld、默认场景持久化、Hierarchy/Inspector、逻辑 dirty/savepoint、Transform Undo/Redo、production workbench shell、可见 Scene View、presented-model typed selection、固定 2 px selected-mesh outline、mouse-only orbit/pan/dolly、单选世界轴 Translate/Rotate 与局部轴 Scale Gizmo | plane/center-uniform/local translate-rotate/snap/multi-select gizmo 按独立需求证明；WASD fly、focus-selected 与 navigation preferences 单独接入 |
 | Workflow / Project | Project fields 完整；#20 是 roadmap/docs sync 入口 | 重复 Project item 候选需单独审查，计划变更后同步 #20 |
 
@@ -117,7 +117,7 @@ consumer 起就要定义；第 5 步闭合跨资源传播。公共 IO、Tasks、
 | 编译与反射 | `shader-slang` 已有编译和资源/参数布局反射；尚无公共模块函数目录或签名自动发现 |
 | 材质参数 | #424/#426 已完成 `.mat` numeric packing 与真实 Slang 布局验证；这是 CPU 字节与兼容性证据 |
 | GPU Mesh | #419 的 owner 已复用；#432 允许已解析的 immutable material key/revision，并验证 draw 与绑定一致 |
-| 真实绘制 | #432 新增 `AuthoredUnlit` 路径；真实 `.ashader` 编译/反射与 `.mat` packing 驱动 indexed draw，颜色 readback、共享 program 与帧完成退役已验证 |
+| 真实绘制 | #432 新增 `AuthoredUnlit` 路径；真实 `.shader` 编译/反射与 `.mat` packing 驱动 indexed draw，颜色 readback、共享 program 与帧完成退役已验证 |
 
 首个执行切片 #432：**在现有无光照 Mesh/RenderView 路径消费已验证的 Shader 产物及 `.mat` 数值参数**。以下保留验收边界，提交、PR 与最终门禁证据见 Issue。
 

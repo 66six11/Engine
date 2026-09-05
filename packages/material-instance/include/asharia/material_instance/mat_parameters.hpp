@@ -24,7 +24,7 @@ namespace asharia::material_instance {
 
     struct MatParameterMember {
         std::string propertyId;
-        shader_authoring::AshaderPropertyType type{shader_authoring::AshaderPropertyType::Float};
+        shader_authoring::ShaderPropertyType type{shader_authoring::ShaderPropertyType::Float};
         std::uint32_t byteOffset{};
     };
 
@@ -37,7 +37,7 @@ namespace asharia::material_instance {
     // verify layout against the compiled shader before GPU use; descriptor signature hashes
     // alone do not prove member-layout compatibility. Any failure returns no partial block.
     [[nodiscard]] Result<MatParameterBlock>
-    packMatParameters(const MatDocument& document, const shader_authoring::AshaderDocument& shader,
+    packMatParameters(const MatDocument& document, const shader_authoring::ShaderDocument& shader,
                       std::span<const MatParameterMember> members, std::uint32_t byteSize,
                       const MatResolveOptions& options = {});
 

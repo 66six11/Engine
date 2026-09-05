@@ -9,9 +9,9 @@
 namespace asharia::material_instance {
     namespace {
 
-        using shader_authoring::AshaderDocument;
-        using shader_authoring::AshaderPropertyDecl;
-        using shader_authoring::AshaderPropertyType;
+        using shader_authoring::ShaderDocument;
+        using shader_authoring::ShaderPropertyDecl;
+        using shader_authoring::ShaderPropertyType;
 
         void addDiagnostic(MatResolveResult& result, MatDiagnosticSeverity severity,
                            MatDiagnosticCode code, MatDiagnosticTarget target,
@@ -35,10 +35,10 @@ namespace asharia::material_instance {
             return &*found;
         }
 
-        [[nodiscard]] const AshaderPropertyDecl* findProperty(const AshaderDocument& shader,
+        [[nodiscard]] const ShaderPropertyDecl* findProperty(const ShaderDocument& shader,
                                                               std::string_view propertyId) {
             const auto found =
-                std::ranges::find(shader.properties, propertyId, &AshaderPropertyDecl::name);
+                std::ranges::find(shader.properties, propertyId, &ShaderPropertyDecl::name);
             if (found == shader.properties.end()) {
                 return nullptr;
             }
@@ -107,7 +107,7 @@ namespace asharia::material_instance {
         });
     }
 
-    MatResolveResult resolveMatOverrides(const MatDocument& document, const AshaderDocument& shader,
+    MatResolveResult resolveMatOverrides(const MatDocument& document, const ShaderDocument& shader,
                                          const MatResolveOptions& options) {
         MatResolveResult result;
         if (auto valid = validateMatDocument(document); !valid) {
@@ -122,7 +122,7 @@ namespace asharia::material_instance {
                 result, MatDiagnosticSeverity::Error, MatDiagnosticCode::MaterialTypeMismatch,
                 MatDiagnosticTarget::MaterialType, {},
                 "Mat stableTypeId '" + document.materialType.stableTypeId +
-                    "' does not match .ashader shader type '" + shader.shaderTypeId + "'.");
+                    "' does not match .shader shader type '" + shader.shaderTypeId + "'.");
         }
 
         if (options.currentMaterialTypeHash &&
@@ -142,7 +142,7 @@ namespace asharia::material_instance {
                               document.materialType.stableTypeId + "'.");
         }
 
-        for (const AshaderPropertyDecl& property : shader.properties) {
+        for (const ShaderPropertyDecl& property : shader.properties) {
             const MatPropertyOverride* overrideValue = findOverride(document, property.name);
             if (overrideValue == nullptr) {
                 result.overrides.push_back(MatOverrideDiff{
@@ -160,7 +160,7 @@ namespace asharia::material_instance {
                               MatDiagnosticTarget::Property, overrideValue->propertyId,
                               "Mat property '" + overrideValue->propertyId + "' has type '" +
                                   std::string{shader_authoring::toString(overrideValue->type)} +
-                                  "' but .ashader declares '" +
+                                  "' but .shader declares '" +
                                   std::string{shader_authoring::toString(property.type)} + "'.");
                 result.overrides.push_back(MatOverrideDiff{
                     .kind = MatOverrideDiffKind::Invalid,
@@ -186,7 +186,7 @@ namespace asharia::material_instance {
             addDiagnostic(result, MatDiagnosticSeverity::Error, MatDiagnosticCode::UnknownProperty,
                           MatDiagnosticTarget::Property, overrideValue.propertyId,
                           "Mat property '" + overrideValue.propertyId +
-                              "' does not exist in .ashader shader type '" + shader.shaderTypeId +
+                              "' does not exist in .shader shader type '" + shader.shaderTypeId +
                               "'.");
         }
 

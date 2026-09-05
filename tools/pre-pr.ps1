@@ -116,7 +116,7 @@ function Add-DocHints {
             $_ -match "^shaders/"
         }) {
         Add-Unique $Docs "docs/systems/shader-material-authoring.md"
-        Add-Unique $Docs "docs/specs/ashader-v2.md"
+        Add-Unique $Docs "docs/specs/shader-v2.md"
         Add-Unique $Docs "docs/specs/material-runtime-products-v2.md"
         Add-Unique $Docs "docs/workflow/review.md"
     }

@@ -14,7 +14,7 @@ namespace asharia::shader_material {
     // shader product identity; descriptor signature hashes alone do not identify member layout.
     [[nodiscard]] Result<ReflectedMaterialParameters>
     packReflectedMaterialParameters(const material_instance::MatDocument& document,
-                                    const shader_authoring::AshaderDocument& shader,
+                                    const shader_authoring::ShaderDocument& shader,
                                     const ShaderDescriptorBindingReflection& binding,
                                     const material_instance::MatResolveOptions& options = {});
 

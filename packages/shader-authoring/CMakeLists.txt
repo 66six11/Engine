@@ -12,8 +12,8 @@ asharia_package_init()
 asharia_require_package_target(asharia::core engine/core)
 
 add_library(asharia-shader-authoring STATIC
-    src/ashader_generated_slang.cpp
-    src/ashader_parser.cpp
+    src/shader_generated_slang.cpp
+    src/shader_parser.cpp
 )
 add_library(asharia::shader_authoring ALIAS asharia-shader-authoring)
 
@@ -33,7 +33,7 @@ if(ASHARIA_BUILD_TESTS)
   enable_testing()
 
   add_executable(asharia-shader-authoring-smoke-tests
-      tests/ashader_parser_smoke_tests.cpp
+      tests/shader_parser_smoke_tests.cpp
   )
 
   target_link_libraries(asharia-shader-authoring-smoke-tests

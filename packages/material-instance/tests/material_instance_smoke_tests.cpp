@@ -8,7 +8,7 @@
 #include "asharia/material_instance/mat_io.hpp"
 #include "asharia/material_instance/mat_parameters.hpp"
 #include "asharia/material_instance/mat_resolver.hpp"
-#include "asharia/shader_authoring/ashader_parser.hpp"
+#include "asharia/shader_authoring/shader_parser.hpp"
 
 namespace {
 
@@ -19,8 +19,8 @@ namespace {
         std::cerr << "material-instance smoke failure: " << message << '\n';
     }
 
-    asharia::shader_authoring::AshaderDocument makeShaderDocument() {
-        constexpr std::string_view kSource = R"ashader(
+    asharia::shader_authoring::ShaderDocument makeShaderDocument() {
+        constexpr std::string_view kSource = R"shader(
 schema 2
 
 shader "asharia.material.unlit" {
@@ -37,12 +37,12 @@ shader "asharia.material.unlit" {
     slang "Unlit.slang"
   }
 }
-)ashader";
+)shader";
 
-        auto parsed = asharia::shader_authoring::parseAshaderDocument(
-            kSource, asharia::shader_authoring::AshaderParseOptions{.sourceName = "Unlit.ashader"});
+        auto parsed = asharia::shader_authoring::parseShaderDocument(
+            kSource, asharia::shader_authoring::ShaderParseOptions{.sourceName = "Unlit.shader"});
         if (!parsed.document) {
-            logFailure("failed to parse .ashader fixture.");
+            logFailure("failed to parse .shader fixture.");
             return {};
         }
         return *parsed.document;
@@ -243,7 +243,7 @@ shader "asharia.material.unlit" {
 
     bool smokeProgrammaticValueValidation() {
         using namespace asharia::material_instance;
-        using asharia::shader_authoring::AshaderPropertyType;
+        using asharia::shader_authoring::ShaderPropertyType;
         MatDocument valid;
         valid.materialType.assetGuid.bytes[0] = 1;
         valid.materialType.stableTypeId = "asharia.material.unlit";
@@ -251,7 +251,7 @@ shader "asharia.material.unlit" {
         valid.import.lastCookedSignatureHash = kSignatureHash;
         valid.properties.push_back(
             {.propertyId = "roughness",
-             .type = AshaderPropertyType::Float,
+             .type = ShaderPropertyType::Float,
              .value = {.kind = MatPropertyValueKind::Number, .numberValue = 0.25}});
         const auto shader = makeShaderDocument();
         if (!validateMatDocument(valid) ||
@@ -282,7 +282,7 @@ shader "asharia.material.unlit" {
         auto vector = valid;
         vector.properties[0] = {
             .propertyId = "baseColor",
-            .type = AshaderPropertyType::Color,
+            .type = ShaderPropertyType::Color,
             .value = {.kind = MatPropertyValueKind::Vector, .vectorValue = {1, 0, 0, 1}}};
         if (!validateMatDocument(vector) ||
             hasErrors(resolveMatOverrides(vector, shader).diagnostics)) {
@@ -314,11 +314,11 @@ shader "asharia.material.unlit" {
 
     bool checkParameterFailures(
         const asharia::material_instance::MatDocument& document,
-        const asharia::shader_authoring::AshaderDocument& shader,
+        const asharia::shader_authoring::ShaderDocument& shader,
         const std::vector<asharia::material_instance::MatParameterMember>& members) {
         using namespace asharia::material_instance;
         using namespace asharia::shader_authoring;
-        auto rejected = [&](const MatDocument& input, const AshaderDocument& type,
+        auto rejected = [&](const MatDocument& input, const ShaderDocument& type,
                             const std::vector<MatParameterMember>& layout, std::uint32_t size,
                             MatParameterError code) {
             auto first = packMatParameters(input, type, layout, size);
@@ -349,7 +349,7 @@ shader "asharia.material.unlit" {
             return false;
         }
         invalidLayout = members;
-        invalidLayout[0].type = AshaderPropertyType::Float;
+        invalidLayout[0].type = ShaderPropertyType::Float;
         if (!rejected(document, shader, invalidLayout, 48, MatParameterError::InvalidLayout)) {
             return false;
         }
@@ -394,7 +394,7 @@ shader "asharia.material.unlit" {
         if (!rejected(document, badShader, members, 48, MatParameterError::InvalidValue)) {
             return false;
         }
-        badShader.properties[0].type = AshaderPropertyType::Texture2D;
+        badShader.properties[0].type = ShaderPropertyType::Texture2D;
         if (!rejected(document, badShader, members, 48, MatParameterError::UnsupportedType)) {
             return false;
         }
@@ -404,12 +404,12 @@ shader "asharia.material.unlit" {
     }
 
     bool checkParameterNumericBoundaries(asharia::material_instance::MatDocument document,
-                                         asharia::shader_authoring::AshaderDocument shader) {
+                                         asharia::shader_authoring::ShaderDocument shader) {
         using namespace asharia::material_instance;
         using namespace asharia::shader_authoring;
         shader.properties = {shader.properties[1]};
         const std::vector<MatParameterMember> scalar{
-            {.propertyId = "gain", .type = AshaderPropertyType::Float, .byteOffset = 0}};
+            {.propertyId = "gain", .type = ShaderPropertyType::Float, .byteOffset = 0}};
         for (double value :
              {static_cast<double>(std::numeric_limits<float>::max()),
               -static_cast<double>(std::numeric_limits<float>::max()),
@@ -428,12 +428,12 @@ shader "asharia.material.unlit" {
             return false;
         }
         std::size_t width = 1;
-        for (auto type : {AshaderPropertyType::Float2, AshaderPropertyType::Float3,
-                          AshaderPropertyType::Float4}) {
+        for (auto type : {ShaderPropertyType::Float2, ShaderPropertyType::Float3,
+                          ShaderPropertyType::Float4}) {
             auto& property = shader.properties[0];
             property.type = type;
             ++width;
-            property.defaultValue = {.kind = AshaderPropertyDefaultKind::Vector,
+            property.defaultValue = {.kind = ShaderPropertyDefaultKind::Vector,
                                      .elements = std::vector<std::string>(width, "1")};
             const std::vector<MatParameterMember> layout{
                 {.propertyId = "gain", .type = type, .byteOffset = 0}};
@@ -454,7 +454,7 @@ shader "asharia.material.unlit" {
     bool smokeParameterPacking() {
         using namespace asharia::material_instance;
         using namespace asharia::shader_authoring;
-        auto parsed = parseAshaderDocument(R"(
+        auto parsed = parseShaderDocument(R"(
 schema 2
 shader "asharia.material.unlit" {
  properties {
@@ -480,11 +480,11 @@ shader "asharia.material.unlit" {
             return false;
         }
         std::vector<MatParameterMember> members{
-            {.propertyId = "gain", .type = AshaderPropertyType::Float, .byteOffset = 0},
-            {.propertyId = "tint", .type = AshaderPropertyType::Color, .byteOffset = 16},
-            {.propertyId = "mode", .type = AshaderPropertyType::Int, .byteOffset = 32},
-            {.propertyId = "mask", .type = AshaderPropertyType::UInt, .byteOffset = 36},
-            {.propertyId = "enabled", .type = AshaderPropertyType::Bool, .byteOffset = 40}};
+            {.propertyId = "gain", .type = ShaderPropertyType::Float, .byteOffset = 0},
+            {.propertyId = "tint", .type = ShaderPropertyType::Color, .byteOffset = 16},
+            {.propertyId = "mode", .type = ShaderPropertyType::Int, .byteOffset = 32},
+            {.propertyId = "mask", .type = ShaderPropertyType::UInt, .byteOffset = 36},
+            {.propertyId = "enabled", .type = ShaderPropertyType::Bool, .byteOffset = 40}};
         const auto original = MatDocument{*document};
         auto block = packMatParameters(*document, shader, members, 48);
         // Explicit byte oracle: float 2, padding, float4(1,.5,0,1), -2, UINT_MAX, bool32(1).

@@ -12,8 +12,8 @@
 #include <string_view>
 
 #include "asharia/material_instance/mat_io.hpp"
-#include "asharia/shader_authoring/ashader_generated_slang.hpp"
-#include "asharia/shader_authoring/ashader_parser.hpp"
+#include "asharia/shader_authoring/shader_generated_slang.hpp"
+#include "asharia/shader_authoring/shader_parser.hpp"
 #include "asharia/shader_material_adapter/reflected_parameters.hpp"
 #include "asharia/shader_material_adapter/reflection_to_material_signature.hpp"
 
@@ -88,20 +88,20 @@ namespace {
         return true;
     }
 
-    [[nodiscard]] std::string expectedKind(asharia::shader_authoring::AshaderPropertyType type) {
+    [[nodiscard]] std::string expectedKind(asharia::shader_authoring::ShaderPropertyType type) {
         switch (type) {
-        case asharia::shader_authoring::AshaderPropertyType::Texture2D:
+        case asharia::shader_authoring::ShaderPropertyType::Texture2D:
             return "texture";
-        case asharia::shader_authoring::AshaderPropertyType::Sampler:
+        case asharia::shader_authoring::ShaderPropertyType::Sampler:
             return "sampler";
-        case asharia::shader_authoring::AshaderPropertyType::Float:
-        case asharia::shader_authoring::AshaderPropertyType::Float2:
-        case asharia::shader_authoring::AshaderPropertyType::Float3:
-        case asharia::shader_authoring::AshaderPropertyType::Float4:
-        case asharia::shader_authoring::AshaderPropertyType::Color:
-        case asharia::shader_authoring::AshaderPropertyType::Int:
-        case asharia::shader_authoring::AshaderPropertyType::UInt:
-        case asharia::shader_authoring::AshaderPropertyType::Bool:
+        case asharia::shader_authoring::ShaderPropertyType::Float:
+        case asharia::shader_authoring::ShaderPropertyType::Float2:
+        case asharia::shader_authoring::ShaderPropertyType::Float3:
+        case asharia::shader_authoring::ShaderPropertyType::Float4:
+        case asharia::shader_authoring::ShaderPropertyType::Color:
+        case asharia::shader_authoring::ShaderPropertyType::Int:
+        case asharia::shader_authoring::ShaderPropertyType::UInt:
+        case asharia::shader_authoring::ShaderPropertyType::Bool:
             return "constantBuffer";
         }
         return "unknown";
@@ -191,7 +191,7 @@ namespace {
     }
 
     [[nodiscard]] bool smokeGeneratedSlangCompileReflection(const Options& options) {
-        constexpr std::string_view kSource = R"ashader(
+        constexpr std::string_view kSource = R"shader(
 schema 2
 
 shader "asharia.material.generated_reflection" {
@@ -224,16 +224,16 @@ shader "asharia.material.generated_reflection" {
     }
   }
 }
-)ashader";
+)shader";
 
-        const auto parsed = asharia::shader_authoring::parseAshaderDocument(kSource);
+        const auto parsed = asharia::shader_authoring::parseShaderDocument(kSource);
         if (!parsed.document || asharia::shader_authoring::hasErrors(parsed.diagnostics)) {
             logFailure("Generated Slang reflection smoke fixture failed to parse.");
             return false;
         }
 
         const asharia::shader_authoring::GeneratedSlangOptions generatedOptions{
-            .sourceName = "GeneratedReflection.ashader",
+            .sourceName = "GeneratedReflection.shader",
             .generatedName = "GeneratedReflection.generated.slang",
             .materialSet = 3,
         };
@@ -328,7 +328,7 @@ shader "asharia.material.generated_reflection" {
 
     bool smokeNumericParameters(const Options& options) {
         using namespace asharia;
-        auto shader = shader_authoring::parseAshaderDocument(R"(
+        auto shader = shader_authoring::parseShaderDocument(R"(
 schema 2
 shader "asharia.material.numeric" {
  properties {
@@ -446,7 +446,7 @@ shader "asharia.material.numeric" {
         }
         document->properties.push_back(
             {.propertyId = "gain",
-             .type = shader_authoring::AshaderPropertyType::Float,
+             .type = shader_authoring::ShaderPropertyType::Float,
              .value = {.kind = material_instance::MatPropertyValueKind::Number, .numberValue = 3}});
         const auto overridden =
             shader_material::packReflectedMaterialParameters(*document, *shader.document, binding);

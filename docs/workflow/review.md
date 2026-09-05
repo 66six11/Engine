@@ -789,7 +789,7 @@ with `VK_LAYER_ENABLES=VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_E
 ### Authored numeric GPU material (#432)
 
 `--smoke-gpu-material-resource` includes the GPU Mesh resource regression and uses build-generated
-SPIR-V/reflection from `assets/fixtures/material-authoring/numeric-unlit.ashader`. Production `.mat`
+SPIR-V/reflection from `assets/fixtures/material-authoring/numeric-unlit.shader`. Production `.mat`
 IO and reflected packing load `red.mat` and `green.mat`; readback requires more than 1,000 red/green
 pixels on the same mesh, shared program identity, typed layout/stale/budget/thread rejection and
 frame-completion retirement after all host binding references are released. Run on MSVC and ClangCL

@@ -16,7 +16,7 @@ resolution share the same validator.
 
 ## Authored numeric material native consumption (#432)
 
-`.ashader` parser/emitter (explicit material set 1) → build-time Slang/SPIR-V validation and reflection →
+`.shader` parser/emitter (explicit material set 1) → build-time Slang/SPIR-V validation and reflection →
 `.mat` IO + reflected numeric packing → renderer-owned immutable `BasicGpuMaterialProgram` and
 `BasicGpuMaterialOwner::update` → revisioned binding on `BasicRenderViewSceneDesc` → existing GPU Mesh
 draw with a Fragment ShaderRead parameter buffer and descriptor set 1 → frame completion retention.
@@ -51,7 +51,7 @@ existing behavior. Reference: [Khronos swapchain synchronization examples](https
 
 ### Numeric material parameter CPU flow
 
-`MatDocument + AshaderDocument + explicit numeric member offsets/block size ->
+`MatDocument + ShaderDocument + explicit numeric member offsets/block size ->
 material-instance::packMatParameters -> owned little-endian bytes + existing warnings`.
 The call selects overrides/defaults, rejects invalid values/layouts and zeroes padding within a
 256-property/64-KiB bound. It performs no IO, reflection extraction, GPU binding or resource ownership.

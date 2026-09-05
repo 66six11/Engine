@@ -1,8 +1,8 @@
-# `.ashader` / `.agraph` V2 Authoring Contract
+# `.shader` / `.agraph` V2 Authoring Contract
 
 更新日期：2026-09-06
 
-状态：计划中的 V2 格式合同。V1 `.ashader` / `.agraph` 规格已弃用，不再新增 `ashader-v1.md`
+状态：计划中的 V2 格式合同。V1 `.shader` / `.agraph` 规格已弃用，不再新增 `shader-v1.md`
 或把 V1 schema 作为兼容目标。
 
 本文定义材质类型 authoring contract 和后续 graph authoring IR。Runtime product、`.mat`、binding layout
@@ -12,20 +12,20 @@
 
 V2 第一阶段只要求 code-first 材质类型可导入、可生成 Slang、可编译、可反射并能被 `.mat` 实例绑定。
 
-`.ashader` 负责：
+`.shader` 负责：
 
 - 声明 shader/material type 的稳定名称和 schema version。
 - 声明 properties、pass、render state、entry point 和 code/graph 引用。
 - 为 generated Slang、reflection、diagnostics 和 editor inspector 提供同一份 contract。
 
-`.ashader` 不负责：
+`.shader` 不负责：
 
 - 保存材质实例值。
 - 保存 Vulkan descriptor、pipeline object、GPU handle 或 runtime resource。
 - 替代 Slang 作为 shader language。
 - 保存 editor panel layout、preview camera 或 selection state。
 
-## V2 `.ashader` 范围
+## V2 `.shader` 范围
 
 V2 MVP 支持：
 
@@ -122,7 +122,7 @@ float4 shadeMaterial() {
 
 ## Raw Slang Block
 
-`.ashader` 可以包含 raw `slang { ... }` block，但 parser 不解析 Slang AST，只做：
+`.shader` 可以包含 raw `slang { ... }` block，但 parser 不解析 Slang AST，只做：
 
 ```text
 brace balancing
@@ -161,7 +161,7 @@ shader "asharia.material.debug_color" {
 Parser 产出的 CPU document model 应保持接近 source contract：
 
 ```cpp
-struct AshaderDocument {
+struct ShaderDocument {
     std::uint32_t schemaVersion;
     StableShaderTypeId typeId;
     std::string name;
@@ -179,7 +179,7 @@ struct AshaderDocument {
 
 ## Generated Slang
 
-Generated Slang 必须可读、可 golden-test，并使用 `#line` 把 diagnostics 映射回 `.ashader` 或外部 `.slang`。
+Generated Slang 必须可读、可 golden-test，并使用 `#line` 把 diagnostics 映射回 `.shader` 或外部 `.slang`。
 
 示例：
 
@@ -194,7 +194,7 @@ ConstantBuffer<__AshariaMaterialParams> __ashariaMaterial;
 
 #define Material __ashariaMaterial
 
-#line 22 "Assets/Shaders/Unlit/Unlit.ashader"
+#line 22 "Assets/Shaders/Unlit/Unlit.shader"
 float4 shadeMaterial() {
     return Material.baseColor;
 }
@@ -207,7 +207,7 @@ Current MVP entry strategy:
 
 - Generated output records an entry manifest for each pass-declared `vertex`, `fragment`, and
   `compute` entry.
-- `compileEntryName` is currently the source entry declared in `.ashader`; Slang compile/reflection
+- `compileEntryName` is currently the source entry declared in `.shader`; Slang compile/reflection
   receives that entry name plus the explicit stage.
 - Generated wrapper names are recorded as stable shim hooks, but they are not the final compile ABI
   until a later slice defines return/parameter adaptation for arbitrary user Slang entry shapes.
@@ -223,7 +223,7 @@ edges
 pin values
 layout
 exposed properties
-output binding to .ashader pass/property contract
+output binding to .shader pass/property contract
 ```
 
 第一批 builtin node 建议限制为：
@@ -261,11 +261,11 @@ public float3 blendColors(float3 a, float3 b, float factor) {
 
 ## Diagnostics
 
-`.ashader` / `.agraph` diagnostics 必须至少能定位到：
+`.shader` / `.agraph` diagnostics 必须至少能定位到：
 
 ```text
-.ashader property
-.ashader pass
+.shader property
+.shader pass
 raw Slang line
 external .slang line
 graph node
@@ -286,10 +286,18 @@ V2 MVP 必须覆盖这些错误：
 
 ## 验证
 
-- `AshaderLexerTests`
-- `AshaderParserTests`
-- `AshaderDiagnosticsTests`
+- `ShaderLexerTests`
+- `ShaderParserTests`
+- `ShaderDiagnosticsTests`
 - `GeneratedSlangTests`
 - `BindingLayoutTests`
 - generated `.slang` golden tests
-- `.ashader -> generated Slang -> SPIR-V -> reflection -> signature` integration test
+- `.shader -> generated Slang -> SPIR-V -> reflection -> signature` integration test
+
+## 源格式命名迁移（#434）
+
+源文件后缀统一为 `.shader`，C++ `Shader*`、`parseShaderDocument` 与 `shader_*` 文件同步命名。
+旧 `.ashader` 文件需要重命名；保留其 `.ameta` GUID 并更新外部路径引用，不生成新资产身份。
+不保留旧后缀或旧符号别名。`shader-authoring-product.v2` 使用 `shader.schemaVersion` 字段；
+authoring importer version 升为 2，旧产物必须重新生成，依赖的 compile/reflection product 随输入 hash 失效。
+这是命名及产物字段迁移，不更改 source schema 2 或 Slang 语义；`.agraph` 不在本次变更范围。

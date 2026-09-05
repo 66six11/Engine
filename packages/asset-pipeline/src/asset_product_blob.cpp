@@ -30,7 +30,7 @@ namespace asharia::asset {
         constexpr std::string_view kMaterialInstanceProductSchema =
             "com.asharia.asset.material-instance-product.v1";
         constexpr std::string_view kShaderAuthoringProductSchema =
-            "com.asharia.asset.shader-authoring-product.v1";
+            "com.asharia.asset.shader-authoring-product.v2";
         constexpr std::string_view kShaderCompileReflectionProductSchema =
             "com.asharia.asset.shader-compile-reflection-product.v1";
 
@@ -687,7 +687,7 @@ namespace asharia::asset {
             auto stableTypeId =
                 requireStringField(header, "shader.stableTypeId", relativeProductPath);
             auto schemaVersion =
-                requireUint32Field(header, "ashader.schemaVersion", relativeProductPath);
+                requireUint32Field(header, "shader.schemaVersion", relativeProductPath);
             auto propertyCount = requireUint64Field(header, "property.count", relativeProductPath);
             auto passCount = requireUint64Field(header, "pass.count", relativeProductPath);
             auto bindingCount = requireUint64Field(header, "binding.count", relativeProductPath);
@@ -731,7 +731,7 @@ namespace asharia::asset {
             if (*schemaVersion != 2U) {
                 return std::unexpected{blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
                                                  std::string{relativeProductPath},
-                                                 "has unsupported .ashader schema version")};
+                                                 "has unsupported .shader schema version")};
             }
             if (*passCount == 0 || *entryCount == 0) {
                 return std::unexpected{blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,

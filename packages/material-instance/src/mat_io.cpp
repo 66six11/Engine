@@ -20,7 +20,7 @@ namespace asharia::material_instance {
         using archive::ArchiveMember;
         using archive::ArchiveValue;
         using archive::ArchiveValueKind;
-        using shader_authoring::AshaderPropertyType;
+        using shader_authoring::ShaderPropertyType;
         using namespace std::string_view_literals;
 
         inline constexpr std::uint64_t kMaxMaterialInstanceBytes = 16ULL * 1024ULL * 1024ULL;
@@ -186,59 +186,59 @@ namespace asharia::material_instance {
             });
         }
 
-        [[nodiscard]] Result<AshaderPropertyType> parsePropertyType(std::string_view text,
+        [[nodiscard]] Result<ShaderPropertyType> parsePropertyType(std::string_view text,
                                                                     std::string_view context) {
             if (text == "float") {
-                return AshaderPropertyType::Float;
+                return ShaderPropertyType::Float;
             }
             if (text == "float2") {
-                return AshaderPropertyType::Float2;
+                return ShaderPropertyType::Float2;
             }
             if (text == "float3") {
-                return AshaderPropertyType::Float3;
+                return ShaderPropertyType::Float3;
             }
             if (text == "float4") {
-                return AshaderPropertyType::Float4;
+                return ShaderPropertyType::Float4;
             }
             if (text == "color") {
-                return AshaderPropertyType::Color;
+                return ShaderPropertyType::Color;
             }
             if (text == "int") {
-                return AshaderPropertyType::Int;
+                return ShaderPropertyType::Int;
             }
             if (text == "uint") {
-                return AshaderPropertyType::UInt;
+                return ShaderPropertyType::UInt;
             }
             if (text == "bool") {
-                return AshaderPropertyType::Bool;
+                return ShaderPropertyType::Bool;
             }
             if (text == "texture2D") {
-                return AshaderPropertyType::Texture2D;
+                return ShaderPropertyType::Texture2D;
             }
             if (text == "sampler") {
-                return AshaderPropertyType::Sampler;
+                return ShaderPropertyType::Sampler;
             }
 
             return std::unexpected{matIoError(std::string{context} + " has unknown type '" +
                                               std::string{text} + "'.")};
         }
 
-        [[nodiscard]] std::size_t vectorWidth(AshaderPropertyType type) noexcept {
+        [[nodiscard]] std::size_t vectorWidth(ShaderPropertyType type) noexcept {
             switch (type) {
-            case AshaderPropertyType::Float2:
+            case ShaderPropertyType::Float2:
                 return 2;
-            case AshaderPropertyType::Float3:
+            case ShaderPropertyType::Float3:
                 return 3;
-            case AshaderPropertyType::Float4:
-            case AshaderPropertyType::Color:
+            case ShaderPropertyType::Float4:
+            case ShaderPropertyType::Color:
                 return 4;
             default:
                 return 0;
             }
         }
 
-        [[nodiscard]] bool isAssetValue(AshaderPropertyType type) noexcept {
-            return type == AshaderPropertyType::Texture2D || type == AshaderPropertyType::Sampler;
+        [[nodiscard]] bool isAssetValue(ShaderPropertyType type) noexcept {
+            return type == ShaderPropertyType::Texture2D || type == ShaderPropertyType::Sampler;
         }
 
         [[nodiscard]] Result<asset::AssetGuid> requiredAssetGuid(const ArchiveValue& object,
@@ -381,24 +381,24 @@ namespace asharia::material_instance {
         }
 
         [[nodiscard]] Result<MatPropertyValue> readPropertyValue(const ArchiveValue& object,
-                                                                 AshaderPropertyType type,
+                                                                 ShaderPropertyType type,
                                                                  std::string_view context) {
             switch (type) {
-            case AshaderPropertyType::Float:
+            case ShaderPropertyType::Float:
                 return readNumberPropertyValue(object, context);
-            case AshaderPropertyType::Float2:
-            case AshaderPropertyType::Float3:
-            case AshaderPropertyType::Float4:
-            case AshaderPropertyType::Color:
+            case ShaderPropertyType::Float2:
+            case ShaderPropertyType::Float3:
+            case ShaderPropertyType::Float4:
+            case ShaderPropertyType::Color:
                 return readVectorPropertyValue(object, vectorWidth(type), context);
-            case AshaderPropertyType::Int:
+            case ShaderPropertyType::Int:
                 return readIntegerPropertyValue(object, context);
-            case AshaderPropertyType::UInt:
+            case ShaderPropertyType::UInt:
                 return readUnsignedIntegerPropertyValue(object, context);
-            case AshaderPropertyType::Bool:
+            case ShaderPropertyType::Bool:
                 return readBooleanPropertyValue(object, context);
-            case AshaderPropertyType::Texture2D:
-            case AshaderPropertyType::Sampler:
+            case ShaderPropertyType::Texture2D:
+            case ShaderPropertyType::Sampler:
                 return readAssetPropertyValue(object, context);
             }
             return std::unexpected{
@@ -738,7 +738,7 @@ namespace asharia::material_instance {
 
         [[nodiscard]] VoidResult validateNumericPropertyValue(const MatPropertyOverride& property) {
             const std::size_t width = vectorWidth(property.type);
-            if (property.type == AshaderPropertyType::Float) {
+            if (property.type == ShaderPropertyType::Float) {
                 if (property.value.kind == MatPropertyValueKind::Number &&
                     std::isfinite(property.value.numberValue)) {
                     return {};
@@ -757,14 +757,14 @@ namespace asharia::material_instance {
                     matIoError("Mat property '" + property.propertyId +
                                "' must carry a finite vector of the declared width.")};
             }
-            if (property.type == AshaderPropertyType::Int) {
+            if (property.type == ShaderPropertyType::Int) {
                 if (property.value.kind == MatPropertyValueKind::Integer) {
                     return {};
                 }
                 return std::unexpected{matIoError("Mat property '" + property.propertyId +
                                                   "' must carry an integer value.")};
             }
-            if (property.type == AshaderPropertyType::UInt) {
+            if (property.type == ShaderPropertyType::UInt) {
                 if (property.value.kind == MatPropertyValueKind::UnsignedInteger &&
                     property.value.unsignedIntegerValue <=
                         static_cast<std::uint64_t>(std::numeric_limits<std::uint32_t>::max())) {
@@ -773,7 +773,7 @@ namespace asharia::material_instance {
                 return std::unexpected{matIoError("Mat property '" + property.propertyId +
                                                   "' must carry a uint32 value.")};
             }
-            if (property.type == AshaderPropertyType::Bool) {
+            if (property.type == ShaderPropertyType::Bool) {
                 if (property.value.kind == MatPropertyValueKind::Boolean) {
                     return {};
                 }
