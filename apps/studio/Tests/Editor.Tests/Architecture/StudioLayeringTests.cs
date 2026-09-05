@@ -565,11 +565,11 @@ public sealed class StudioLayeringTests
             StringComparison.Ordinal);
         Assert.DoesNotContain("Console.Error.WriteLine(", viewportControlSource, StringComparison.Ordinal);
         Assert.DoesNotContain("await Task.Delay(1);", viewportControlSource, StringComparison.Ordinal);
-        Assert.Contains(
+        Assert.DoesNotContain(
             "await Task.Delay(1, cancellationToken).ConfigureAwait(false);",
             viewportControlSource,
             StringComparison.Ordinal);
-        Assert.Contains(
+        Assert.DoesNotContain(
             "await Task.Delay(1).ConfigureAwait(false);",
             viewportControlSource,
             StringComparison.Ordinal);

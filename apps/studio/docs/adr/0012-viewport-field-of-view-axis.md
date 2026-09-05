@@ -5,7 +5,7 @@
 
 历史状态说明（2026-09-03）：本 ADR 保留当时 V6→V7 的 FOV 设计与验证记录；production stream
 已先由 #409 的 typed Translate Gizmo packet 硬切至 V8，再由 #411 的 discriminated Transform Gizmo packet 硬切至 V9，
-最后由 #413 的 local-axis Scale packet rotation 硬切至 V10；
+最后由 #413 的 local-axis Scale packet rotation 硬切至 V11；
 本文决定的 projection/FOV 语义未改变。
 
 ## 背景

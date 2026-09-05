@@ -47,6 +47,7 @@ internal static partial class StudioViewportTransactionWindowResizeSmoke
     {
         var exitCode = 1;
         MainWindow? window = null;
+        var timing = new ViewportPreparationTimingRecorder();
         await using var host = new StudioViewportSmokeHost();
         try
         {
@@ -67,6 +68,7 @@ internal static partial class StudioViewportTransactionWindowResizeSmoke
                 testHooks: new ViewportCompositionControlTestHooks
                 {
                     EnableFlashSentinelCorners = true,
+                    PreparationTiming = timing.Record,
                     RequestPublished = options.CapturesProjectionEvidence
                         ? projectionRecorder.ObserveRequest
                         : null,
@@ -683,6 +685,7 @@ internal static partial class StudioViewportTransactionWindowResizeSmoke
                 window.Content = null;
                 window.Close();
             }
+            timing.Write();
             desktop.Shutdown(exitCode);
         }
     }

@@ -292,7 +292,7 @@ raw final by 0–1 candidate, and diagnostics must report both values plus pixel
 `SetWindowPos` removes that additional grow-gap/shrink-crop transition, but does not make drag-time USER32/DWM and Avalonia commits
 physically atomic.
 
-The V10 native stream still keeps at most one executing request, one latest pending replacement and one ready frame per
+The V11 native stream still keeps at most one executing request, one latest pending replacement and one ready frame per
 viewport, with at most three persistent full presentation slots. Each slot keeps its external image, producer/consumer
 semaphores, command resources and retirement proof together across frames. The old three-slot steady front plus the one-frame
 candidate stay within the process-wide four-resource cap; Realtime prefill resumes only after the prepared switch. Snap,
@@ -331,7 +331,7 @@ and blend policy, plus a data-only debug world-line span. It does not use `Edito
 `EditorViewportOverlayFlags`, ImGui ids or Vulkan handles from panels. Grid, gizmo and debug draw passes must consume this
 contract in later slices instead of reading editor panel state directly.
 
-The Studio V10 request carries the view-local FOV axis, selected canonical UUID/`ViewStateRevision` and an optional
+The Studio V11 request carries the view-local FOV axis, selected canonical UUID/`ViewStateRevision` and an optional
   discriminated Translate/Rotate/Scale Gizmo packet. Scale uses the selected object's normalized rotation for local-axis handles;
   selection and tool-mode changes participate in the hard content fence;
 high-frequency Gizmo preview instead uses a
