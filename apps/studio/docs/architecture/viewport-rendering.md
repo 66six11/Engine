@@ -587,3 +587,12 @@ display cadence；exact panel generation 由应用侧 unique gate 证明。后�
 - O3DE viewport resize/update-later: https://github.com/o3de/o3de/blob/1fe32b68a99b83508bed05a6778fef023ad51c2d/Gems/Atom/Tools/AtomToolsFramework/Code/Source/Viewport/RenderViewportWidget.cpp#L229-L248
 - O3DE rejected 150 ms resize debounce: https://github.com/o3de/o3de/pull/19033
 - Vulkan synchronization: https://docs.vulkan.org/spec/latest/chapters/synchronization.html
+
+## Mesh section receipt cardinality
+
+A resolved authored mesh instance can emit multiple section draws. `ResolvedCount` and
+`RejectedCount` partition `InputCount`; they count instances. With available evidence,
+`IndexedDrawCount` is at least `ResolvedCount` for a nonempty result and zero for an empty
+result. Unavailable evidence still requires zero recorded draws. The managed bridge validates
+these separate cardinalities; section draw ranges/materials remain owned by native extraction.
+Selection outline collects every draw belonging to the selected runtime source entity.

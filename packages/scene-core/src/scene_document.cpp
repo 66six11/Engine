@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "asharia/core/error.hpp"
+#include "asharia/core/file_io.hpp"
 #include "asharia/scene/scene_document_io.hpp"
 
 namespace asharia::scene {
@@ -191,6 +192,24 @@ namespace asharia::scene {
             return {};
         }
 
+        [[nodiscard]] Result<core::ExclusiveFileLock>
+        acquireSceneWriteLock(const std::filesystem::path& scenePath) {
+            auto lockPath = scenePath;
+            lockPath += ".lock";
+            auto acquired = core::tryAcquireExclusiveFileLock(lockPath);
+            if (!acquired) {
+                return std::unexpected{sceneDocumentError(SceneDocumentErrorCode::SceneIo,
+                                                          "Could not acquire scene writer lock: " +
+                                                              acquired.error().message)};
+            }
+            if (!acquired->has_value()) {
+                return std::unexpected{sceneDocumentError(
+                    SceneDocumentErrorCode::RevisionConflict,
+                    "Another scene writer is saving this document; retry after it completes.")};
+            }
+            return std::move(**acquired);
+        }
+
         [[nodiscard]] Error invalidObjectError(SceneObjectId objectId, std::string_view operation) {
             return sceneDocumentError(
                 SceneDocumentErrorCode::InvalidObjectId,
@@ -252,8 +271,8 @@ namespace asharia::scene {
 
     SceneDocument::SceneDocument(std::filesystem::path path, SceneDocumentData data, World world,
                                  std::vector<RuntimeEntity> runtimeEntities)
-        : path_(std::move(path)), data_(std::move(data)), world_(std::move(world)),
-          runtimeEntities_(std::move(runtimeEntities)) {}
+        : path_(std::move(path)), data_(std::move(data)), savedData_(data_),
+          world_(std::move(world)), runtimeEntities_(std::move(runtimeEntities)) {}
 
     Result<SceneDocument>
     SceneDocument::openOrCreateDefault(const std::filesystem::path& projectRoot,
@@ -266,8 +285,21 @@ namespace asharia::scene {
                                        pathText(projectRoot) + "'.")};
         }
 
-        const std::filesystem::path scenePath =
-            projectRoot / std::filesystem::path{kDefaultSceneRelativePath};
+        const auto scenePath = std::filesystem::weakly_canonical(
+            projectRoot / std::filesystem::path{kDefaultSceneRelativePath}, filesystemError);
+        if (filesystemError) {
+            return std::unexpected{sceneDocumentError(SceneDocumentErrorCode::SceneIo,
+                                                      "Could not resolve the default scene path.")};
+        }
+        std::filesystem::create_directories(scenePath.parent_path(), filesystemError);
+        if (filesystemError) {
+            return std::unexpected{sceneDocumentError(
+                SceneDocumentErrorCode::SceneIo, "Could not create the default scene directory.")};
+        }
+        auto writer = acquireSceneWriteLock(scenePath);
+        if (!writer) {
+            return std::unexpected{std::move(writer.error())};
+        }
         SceneDocumentData data;
         const bool exists = std::filesystem::exists(scenePath, filesystemError);
         if (filesystemError) {
@@ -286,13 +318,6 @@ namespace asharia::scene {
                 return std::unexpected{sceneDocumentError(
                     SceneDocumentErrorCode::InvalidScene,
                     "A non-zero scene ID is required when creating the default scene.")};
-            }
-            std::filesystem::create_directories(scenePath.parent_path(), filesystemError);
-            if (filesystemError) {
-                return std::unexpected{
-                    sceneDocumentError(SceneDocumentErrorCode::SceneIo,
-                                       "Could not create the default scene directory '" +
-                                           pathText(scenePath.parent_path()) + "'.")};
             }
             data.sceneId = newSceneId;
             if (auto written = writeSceneDocumentFile(scenePath, data); !written) {
@@ -497,9 +522,24 @@ namespace asharia::scene {
         if (auto revision = requireRevision(expectedRevision); !revision) {
             return revision;
         }
+        auto writer = acquireSceneWriteLock(path_);
+        if (!writer) {
+            return std::unexpected{std::move(writer.error())};
+        }
+        auto current = readSceneDocumentFile(path_);
+        if (!current) {
+            return std::unexpected{std::move(current.error())};
+        }
+        if (*current != savedData_) {
+            return std::unexpected{sceneDocumentError(
+                SceneDocumentErrorCode::RevisionConflict,
+                "Scene document changed on disk since open or save; reload before saving.")};
+        }
         if (savedRevision_ == revision_) {
             return {};
         }
+        // Prepare the next baseline before committing so allocation cannot fail after save.
+        SceneDocumentData nextSavedData = data_;
         if (auto written = writeSceneDocumentFile(path_, data_); !written) {
             return written;
         }
@@ -512,6 +552,7 @@ namespace asharia::scene {
                 SceneDocumentErrorCode::SceneIo,
                 "Scene document save verification did not reproduce the authoritative data.")};
         }
+        savedData_ = std::move(nextSavedData);
         savedRevision_ = revision_;
         return {};
     }

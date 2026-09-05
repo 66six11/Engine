@@ -709,3 +709,23 @@ Scene error:
 - Live link / remote scene edit。
 
 这些能力都依赖稳定的 EntityId、component schema/binding、transaction、persistence 和 snapshot 小闭环。
+
+## Scene save writer coordination
+
+`SceneDocument` retains the last opened/saved `SceneDocumentData` as its disk baseline.
+Open/create and save acquire the existing cooperative `core::ExclusiveFileLock` at the
+canonical scene path plus `.lock`. The sentinel remains after release and must not be deleted
+while sessions may be active. Save holds the lock across read/compare/write/verification.
+A stale baseline or busy writer returns `RevisionConflict`; malformed/missing disk data returns
+an IO/validation error without replacing it. Even a clean save checks external changes.
+The next baseline is allocated before commit and installed only after verification; failed save
+does not advance the savepoint. The extra snapshot is bounded by the existing scene limits.
+
+Precedent: [Unreal source control](https://dev.epicgames.com/documentation/unreal-engine/source-control-in-unreal-engine)
+separates write ownership and out-of-sync state; [Godot external scene changes](https://godotengine.org/article/godot-3-3-has-arrived/)
+require an explicit reload/discard decision. Asharia adopts conflict detection but does not add a
+source-control provider, merge UI, or watcher. Comparison is semantic scene data, so whitespace
+changes alone are compatible. The lock coordinates cooperating local writers, not arbitrary
+external programs, hard-link aliases, or distributed writers; uncooperative writes racing after
+comparison remain outside this contract. `writeSceneDocumentFile` stays a low-level IO primitive;
+editable sessions must save through `SceneDocument`.

@@ -51,7 +51,10 @@
       "asharia-renderer-basic-debug-line-frag",
       "asharia-renderer-basic-world-grid-vert",
       "asharia-renderer-basic-world-grid-frag",
-      "asharia-renderer-basic-compute-comp"
+      "asharia-renderer-basic-compute-comp",
+      "asharia-renderer-basic-selection-mask-frag",
+      "asharia-renderer-basic-selection-outline-vert",
+      "asharia-renderer-basic-selection-outline-frag"
     ]
   }
 }

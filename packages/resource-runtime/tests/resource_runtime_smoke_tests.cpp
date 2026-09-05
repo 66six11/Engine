@@ -397,6 +397,49 @@ namespace {
                    "stale handle");
     }
 
+    [[nodiscard]] bool foreignStoreTest(const std::filesystem::path& root) {
+        auto first = asharia::resource::MeshResourceStore::create({.artifactRoot = root});
+        auto second = asharia::resource::MeshResourceStore::create({.artifactRoot = root});
+        if (!first || !second) {
+            return false;
+        }
+        const auto guid = makeGuid(0x77U);
+        auto firstRequest = first->request(makeResourceKey(guid), makeProductKey(guid, 1U), {});
+        auto secondRequest = second->request(makeResourceKey(guid), makeProductKey(guid, 1U), {});
+        if (!firstRequest || !secondRequest || second->inspect(firstRequest->handle) ||
+            second->unload(firstRequest->handle) || !second->inspect(secondRequest->handle)) {
+            std::cerr << "Foreign store handle was accepted.\n";
+            return false;
+        }
+        auto moved = std::move(*first);
+        if (!moved.inspect(firstRequest->handle) || first->inspect(firstRequest->handle) ||
+            first->request(makeResourceKey(guid), makeProductKey(guid, 1U), {})) {
+            std::cerr << "Store move did not transfer exclusive identity.\n";
+            return false;
+        }
+        auto product = writeProduct(root, makeProductKey(guid, 1U), "products/identity.mesh", 1.0F);
+        if (!product) {
+            return false;
+        }
+        auto pending = moved.request(makeResourceKey(guid), makeProductKey(guid, 1U),
+                                     std::span{&*product, 1U});
+        auto other = second->request(makeResourceKey(guid), makeProductKey(guid, 1U),
+                                     std::span{&*product, 1U});
+        if (!pending || !other || !pending->loadPlan) {
+            return false;
+        }
+        auto completion = asharia::resource::loadMeshResourceCandidate(*pending->loadPlan);
+        if (second->publish(completion) || !moved.publish(completion)) {
+            return false;
+        }
+        *second = std::move(moved);
+        // Intentional negative test of the documented moved-from rejection contract.
+        // NOLINTNEXTLINE(bugprone-use-after-move,clang-analyzer-cplusplus.Move)
+        const bool movedFromRejected = !moved.inspect(pending->handle);
+        return !second->inspect(secondRequest->handle) &&
+               static_cast<bool>(second->acquire(pending->handle)) && movedFromRejected;
+    }
+
     [[nodiscard]] bool ownerThreadTest(asharia::resource::MeshResourceStore& store) {
         asharia::Result<asharia::resource::MeshResourceRequestResult> result =
             std::unexpected{asharia::Error{}};
@@ -405,6 +448,24 @@ namespace {
             result = store.request(makeResourceKey(guid), makeProductKey(guid, 0x501U), {});
         });
         worker.join();
+        asharia::Result<asharia::resource::MeshResourceLease> read =
+            std::unexpected{asharia::Error{}};
+        asharia::Result<asharia::resource::MeshResourceSnapshot> snapshot =
+            std::unexpected{asharia::Error{}};
+        std::thread reader([&]() {
+            read = store.acquire({});
+            snapshot = store.inspect({});
+        });
+        reader.join();
+        if (read || snapshot ||
+            !expectDiagnostic(read.error(),
+                              asharia::resource::MeshResourceDiagnosticCode::WrongOwnerThread,
+                              "non-owner thread") ||
+            !expectDiagnostic(snapshot.error(),
+                              asharia::resource::MeshResourceDiagnosticCode::WrongOwnerThread,
+                              "non-owner thread")) {
+            return false;
+        }
         return !result &&
                expectDiagnostic(result.error(),
                                 asharia::resource::MeshResourceDiagnosticCode::WrongOwnerThread,
@@ -425,7 +486,8 @@ int main() noexcept {
             return EXIT_FAILURE;
         }
         if (!invalidAndSelectionTests(*store, directory.path()) ||
-            !lifecycleTests(*store, directory) || !ownerThreadTest(*store)) {
+            !lifecycleTests(*store, directory) || !foreignStoreTest(directory.path()) ||
+            !ownerThreadTest(*store)) {
             return EXIT_FAILURE;
         }
         std::cout << "Mesh resource runtime tests passed\n";

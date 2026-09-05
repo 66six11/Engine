@@ -7,6 +7,8 @@
 #include <utility>
 
 namespace asharia::resource {
+    struct MeshResourceStoreIdentity {};
+
     namespace {
 
         [[nodiscard]] Error resourceError(MeshResourceDiagnosticCode code, std::string message) {
@@ -85,9 +87,15 @@ namespace asharia::resource {
     }
 
     MeshResourceStore::MeshResourceStore(MeshResourceStoreDesc desc)
-        : desc_(std::move(desc)), ownerThread_(std::this_thread::get_id()) {}
+        : desc_(std::move(desc)), identity_(std::make_shared<const MeshResourceStoreIdentity>()),
+          ownerThread_(std::this_thread::get_id()) {}
 
     VoidResult MeshResourceStore::requireOwnerThread() const {
+        if (!identity_) {
+            return std::unexpected{
+                resourceError(MeshResourceDiagnosticCode::InvalidDescriptor,
+                              "Mesh resource operation rejected a moved-from store.")};
+        }
         if (std::this_thread::get_id() != ownerThread_) {
             return std::unexpected{
                 resourceError(MeshResourceDiagnosticCode::WrongOwnerThread,
@@ -126,11 +134,17 @@ namespace asharia::resource {
         return index;
     }
 
-    Result<std::size_t> MeshResourceStore::resolveSlotIndex(MeshResourceHandle handle) const {
+    Result<std::size_t>
+    MeshResourceStore::resolveSlotIndex(const MeshResourceHandle& handle) const {
         if (!handle) {
             return std::unexpected{
                 resourceError(MeshResourceDiagnosticCode::InvalidHandle,
                               "Mesh resource operation rejected invalid handle.")};
+        }
+        if (handle.owner != identity_) {
+            return std::unexpected{
+                resourceError(MeshResourceDiagnosticCode::StoreIdentityMismatch,
+                              "Mesh resource operation rejected a handle from another store.")};
         }
         const auto index = static_cast<std::size_t>(handle.slot - 1U);
         if (index >= slots_.size() || !slots_[index].occupied) {
@@ -186,7 +200,8 @@ namespace asharia::resource {
         const std::size_t slotIndex = existingSlot ? *existingSlot : allocateSlot(key);
         Slot& slot = slots_[slotIndex];
         const MeshResourceHandle handle{.slot = static_cast<std::uint32_t>(slotIndex + 1U),
-                                        .slotGeneration = slot.generation};
+                                        .slotGeneration = slot.generation,
+                                        .owner = identity_};
 
         const asset::AssetProductRecord* exact = nullptr;
         bool foundDuplicateExact = false;
@@ -292,7 +307,8 @@ namespace asharia::resource {
 
         return MeshResourceSnapshot{
             .handle = MeshResourceHandle{.slot = static_cast<std::uint32_t>(slotIndex + 1U),
-                                         .slotGeneration = slot.generation},
+                                         .slotGeneration = slot.generation,
+                                         .owner = identity_},
             .key = slot.key,
             .state = state,
             .activeRevision = slot.active ? slot.active->revision : 0U,
@@ -359,7 +375,10 @@ namespace asharia::resource {
         return makeSnapshot(*slotIndex);
     }
 
-    Result<MeshResourceLease> MeshResourceStore::acquire(MeshResourceHandle handle) const {
+    Result<MeshResourceLease> MeshResourceStore::acquire(const MeshResourceHandle& handle) const {
+        if (auto owner = requireOwnerThread(); !owner) {
+            return std::unexpected{std::move(owner.error())};
+        }
         auto slotIndex = resolveSlotIndex(handle);
         if (!slotIndex) {
             return std::unexpected{std::move(slotIndex.error())};
@@ -377,7 +396,11 @@ namespace asharia::resource {
                                                          .payload = slot.active->payload}};
     }
 
-    Result<MeshResourceSnapshot> MeshResourceStore::inspect(MeshResourceHandle handle) const {
+    Result<MeshResourceSnapshot>
+    MeshResourceStore::inspect(const MeshResourceHandle& handle) const {
+        if (auto owner = requireOwnerThread(); !owner) {
+            return std::unexpected{std::move(owner.error())};
+        }
         auto slotIndex = resolveSlotIndex(handle);
         if (!slotIndex) {
             return std::unexpected{std::move(slotIndex.error())};
@@ -385,7 +408,7 @@ namespace asharia::resource {
         return makeSnapshot(*slotIndex);
     }
 
-    VoidResult MeshResourceStore::unload(MeshResourceHandle handle) {
+    VoidResult MeshResourceStore::unload(const MeshResourceHandle& handle) {
         if (auto owner = requireOwnerThread(); !owner) {
             return std::unexpected{std::move(owner.error())};
         }
@@ -468,6 +491,8 @@ namespace asharia::resource {
             return "ResourceNotPending";
         case MeshResourceDiagnosticCode::InvalidCompletion:
             return "InvalidCompletion";
+        case MeshResourceDiagnosticCode::StoreIdentityMismatch:
+            return "StoreIdentityMismatch";
         case MeshResourceDiagnosticCode::NoActiveResource:
             return "NoActiveResource";
         }

@@ -13,12 +13,13 @@ namespace asharia::rendergraph_internal {
         std::span<const RenderGraphBufferDesc> buffers;
         std::span<const Pass> passes;
         std::size_t mutationGeneration{};
+        const std::byte* owner{};
     };
 
     [[nodiscard]] RenderGraphDeclarationView
     makeRenderGraphDeclarationView(std::span<const RenderGraphImageDesc> images,
                                    std::span<const RenderGraphBufferDesc> buffers,
-                                   std::span<const Pass> passes,
-                                   std::size_t mutationGeneration);
+                                   std::span<const Pass> passes, std::size_t mutationGeneration,
+                                   const std::byte* owner);
 
 } // namespace asharia::rendergraph_internal

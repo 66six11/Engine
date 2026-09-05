@@ -357,7 +357,9 @@ public sealed class ViewportBridge
         receipt.ResolvedCount + receipt.RejectedCount == receipt.InputCount &&
         (receipt.EvidenceAvailable == 0
             ? receipt.IndexedDrawCount == 0
-            : receipt.IndexedDrawCount == receipt.ResolvedCount) &&
+            : receipt.ResolvedCount == 0
+                ? receipt.IndexedDrawCount == 0
+                : receipt.IndexedDrawCount >= receipt.ResolvedCount) &&
         Enum.IsDefined((ViewportSceneRasterMode)receipt.RasterMode) &&
         receipt.SceneRevision == targetRevision &&
         (receipt.ResolvedCount != 0

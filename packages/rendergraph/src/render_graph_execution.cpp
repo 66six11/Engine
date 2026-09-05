@@ -22,7 +22,7 @@ namespace asharia {
                 std::span<const RenderGraphImageDesc>{impl_->images_},
                 std::span<const RenderGraphBufferDesc>{impl_->buffers_},
                 std::span<const rendergraph_internal::Pass>{impl_->passes_},
-                impl_->mutationGeneration_);
+                impl_->mutationGeneration_, impl_->owner_.get());
         return rendergraph_internal::executeRenderGraph(declarations, *compiled, nullptr);
     }
 
@@ -37,7 +37,7 @@ namespace asharia {
                 std::span<const RenderGraphImageDesc>{impl_->images_},
                 std::span<const RenderGraphBufferDesc>{impl_->buffers_},
                 std::span<const rendergraph_internal::Pass>{impl_->passes_},
-                impl_->mutationGeneration_);
+                impl_->mutationGeneration_, impl_->owner_.get());
         return rendergraph_internal::executeRenderGraph(declarations, *compiled, &executorRegistry);
     }
 
@@ -47,7 +47,7 @@ namespace asharia {
                 std::span<const RenderGraphImageDesc>{impl_->images_},
                 std::span<const RenderGraphBufferDesc>{impl_->buffers_},
                 std::span<const rendergraph_internal::Pass>{impl_->passes_},
-                impl_->mutationGeneration_);
+                impl_->mutationGeneration_, impl_->owner_.get());
         return rendergraph_internal::executeRenderGraph(declarations, compiled, nullptr);
     }
 
@@ -58,7 +58,7 @@ namespace asharia {
                 std::span<const RenderGraphImageDesc>{impl_->images_},
                 std::span<const RenderGraphBufferDesc>{impl_->buffers_},
                 std::span<const rendergraph_internal::Pass>{impl_->passes_},
-                impl_->mutationGeneration_);
+                impl_->mutationGeneration_, impl_->owner_.get());
         return rendergraph_internal::executeRenderGraph(declarations, compiled, &executorRegistry);
     }
 
@@ -86,7 +86,8 @@ namespace asharia::rendergraph_internal {
     Result<void> executeRenderGraph(RenderGraphDeclarationView declarations,
                                     const RenderGraphCompileResult& compiled,
                                     const RenderGraphExecutorRegistry* executorRegistry) {
-        if (compiled.declarationGeneration != declarations.mutationGeneration ||
+        if (!compiled.declarationOwner || compiled.declarationOwner.get() != declarations.owner ||
+            compiled.declarationGeneration != declarations.mutationGeneration ||
             compiled.declaredPassCount != declarations.passes.size() ||
             compiled.declaredImageCount != declarations.images.size() ||
             compiled.declaredBufferCount != declarations.buffers.size()) {

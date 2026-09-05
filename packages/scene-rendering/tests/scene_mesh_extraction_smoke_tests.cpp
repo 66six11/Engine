@@ -1,5 +1,5 @@
-﻿#include <cmath>
-#include <array>
+﻿#include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <iostream>
@@ -27,16 +27,12 @@ namespace {
         return true;
     }
 
-    [[nodiscard]] std::array<float, 3>
-    transformPoint(const asharia::BasicTransformMatrix3D& matrix,
-                   std::array<float, 3> point) {
+    [[nodiscard]] std::array<float, 3> transformPoint(const asharia::BasicTransformMatrix3D& matrix,
+                                                      std::array<float, 3> point) {
         return {
-            (matrix[0] * point[0]) + (matrix[1] * point[1]) +
-                (matrix[2] * point[2]) + matrix[3],
-            (matrix[4] * point[0]) + (matrix[5] * point[1]) +
-                (matrix[6] * point[2]) + matrix[7],
-            (matrix[8] * point[0]) + (matrix[9] * point[1]) +
-                (matrix[10] * point[2]) + matrix[11],
+            (matrix[0] * point[0]) + (matrix[1] * point[1]) + (matrix[2] * point[2]) + matrix[3],
+            (matrix[4] * point[0]) + (matrix[5] * point[1]) + (matrix[6] * point[2]) + matrix[7],
+            (matrix[8] * point[0]) + (matrix[9] * point[1]) + (matrix[10] * point[2]) + matrix[11],
         };
     }
 
@@ -52,33 +48,35 @@ namespace {
         return asharia::scene_rendering::SceneMeshInstance{
             .objectId = sceneObjectId(),
             .entity = {.index = 17U, .generation = 3U},
-            .transform = {
-                .position = {.x = 2.0F, .y = 3.0F, .z = 4.0F},
-                .rotation = {.x = 0.0F, .y = 0.0F, .z = 0.0F, .w = 1.0F},
-                .scale = {.x = 2.0F, .y = 3.0F, .z = 4.0F},
-            },
+            .transform =
+                {
+                    .position = {.x = 2.0F, .y = 3.0F, .z = 4.0F},
+                    .rotation = {.x = 0.0F, .y = 0.0F, .z = 0.0F, .w = 1.0F},
+                    .scale = {.x = 2.0F, .y = 3.0F, .z = 4.0F},
+                },
             .mesh = asharia::asset::makeAssetReference(assetGuid(),
-                                                        asharia::scene::kSceneMeshAssetType),
+                                                       asharia::scene::kSceneMeshAssetType),
         };
     }
 
     [[nodiscard]] asharia::scene_rendering::SceneMeshProductBinding validBinding() {
         return asharia::scene_rendering::SceneMeshProductBinding{
             .asset = asharia::asset::makeAssetReference(assetGuid(),
-                                                         asharia::scene::kSceneMeshAssetType),
+                                                        asharia::scene::kSceneMeshAssetType),
             .state = asharia::scene_rendering::SceneMeshProductState::Ready,
             .productHash = 0x0EB29D6DE539D278ULL,
             .productGeneration = 1U,
             .meshResource = asharia::kBasicValidationMeshResourceKey,
-            .materialResource = asharia::kBasicDefaultUnlitMaterialResourceKey,
-            .drawItem = asharia::basicValidationMeshDrawItem(),
+            .sections = {{.materialSlot = 0U,
+                          .materialResource = asharia::kBasicDefaultUnlitMaterialResourceKey,
+                          .drawItem = asharia::basicValidationMeshDrawItem()}},
         };
     }
 
-    [[nodiscard]] bool expectDiagnostic(
-        const asharia::scene_rendering::SceneMeshExtraction& extraction,
-        asharia::scene_rendering::SceneMeshExtractionDiagnosticCode expectedCode,
-        std::uint64_t revision) {
+    [[nodiscard]] bool
+    expectDiagnostic(const asharia::scene_rendering::SceneMeshExtraction& extraction,
+                     asharia::scene_rendering::SceneMeshExtractionDiagnosticCode expectedCode,
+                     std::uint64_t revision) {
         const auto diagnostics = extraction.diagnostics();
         return expect(diagnostics.size() == 1U && diagnostics.front().code == expectedCode &&
                           diagnostics.front().revision == revision &&
@@ -94,7 +92,7 @@ namespace {
             .scale = {.x = 2.0F, .y = 3.0F, .z = 4.0F},
         };
         const asharia::BasicTransformMatrix3D expectedMatrix{
-            0.0F, 0.0F, 4.0F, 10.0F, 0.0F, 3.0F, 0.0F, 20.0F,
+            0.0F,  0.0F, 4.0F, 10.0F, 0.0F, 3.0F, 0.0F, 20.0F,
             -2.0F, 0.0F, 0.0F, 30.0F, 0.0F, 0.0F, 0.0F, 1.0F,
         };
         const auto matrix = asharia::scene_rendering::makeSceneMeshModelMatrix(transformed);
@@ -112,10 +110,10 @@ namespace {
         negatedQuaternion.rotation.y = -negatedQuaternion.rotation.y;
         negatedQuaternion.rotation.z = -negatedQuaternion.rotation.z;
         negatedQuaternion.rotation.w = -negatedQuaternion.rotation.w;
-        if (!expect(matricesNear(
-                        asharia::scene_rendering::makeSceneMeshModelMatrix(negatedQuaternion),
-                        matrix),
-                    "Equivalent q and -q rotations produced different model matrices.")) {
+        if (!expect(
+                matricesNear(asharia::scene_rendering::makeSceneMeshModelMatrix(negatedQuaternion),
+                             matrix),
+                "Equivalent q and -q rotations produced different model matrices.")) {
             return false;
         }
 
@@ -131,11 +129,48 @@ namespace {
             reflectedMatrixIsFinite = reflectedMatrixIsFinite && std::isfinite(element);
         }
         const auto reflectedPoint = transformPoint(reflectedMatrix, {1.0F, 2.0F, 3.0F});
-        return expect(reflectedMatrixIsFinite &&
-                          std::fabs(reflectedPoint[0] + 2.0F) < 1.0e-4F &&
-                          std::fabs(reflectedPoint[1]) < 1.0e-4F &&
-                          std::fabs(reflectedPoint[2] - 12.0F) < 1.0e-4F,
-                      "Finite negative and zero scales did not remain explicit in the model matrix.");
+        return expect(
+            reflectedMatrixIsFinite && std::fabs(reflectedPoint[0] + 2.0F) < 1.0e-4F &&
+                std::fabs(reflectedPoint[1]) < 1.0e-4F &&
+                std::fabs(reflectedPoint[2] - 12.0F) < 1.0e-4F,
+            "Finite negative and zero scales did not remain explicit in the model matrix.");
+    }
+
+    [[nodiscard]] bool expectMultipleSections() {
+        const auto instance = validInstance();
+        auto binding = validBinding();
+        binding.sections = {
+            {.materialSlot = 0U,
+             .materialResource = {.value = 101U},
+             .drawItem = {.indexCount = 3U, .firstIndex = 0U}},
+            {.materialSlot = 2U,
+             .materialResource = {.value = 202U},
+             .drawItem = {.indexCount = 6U, .firstIndex = 3U}},
+        };
+        const auto result = asharia::scene_rendering::extractSceneMeshDrawList(
+            {.revision = 7U, .instances = {&instance, 1U}, .productBindings = {&binding, 1U}});
+        if (!expect(result.drawItems().size() == 2U && result.diagnostics().empty() &&
+                        result.drawItems()[0].context.materialResource.value == 101U &&
+                        result.drawItems()[1].context.materialResource.value == 202U &&
+                        result.drawItems()[1].drawItem.firstIndex == 3U &&
+                        result.drawItems()[1].drawItem.indexCount == 6U &&
+                        result.drawItems()[0].context.sourceObject ==
+                            result.drawItems()[1].context.sourceObject,
+                    "Mesh sections lost material, range, or instance identity.")) {
+            return false;
+        }
+        binding.sections[1].materialResource = {};
+        const auto invalid = asharia::scene_rendering::extractSceneMeshDrawList(
+            {.instances = {&instance, 1U}, .productBindings = {&binding, 1U}});
+        if (!expect(invalid.drawItems().empty() && invalid.diagnostics().size() == 1U,
+                    "Invalid section emitted a partial mesh.")) {
+            return false;
+        }
+        const std::array duplicate{validBinding(), validBinding()};
+        const auto ambiguous = asharia::scene_rendering::extractSceneMeshDrawList(
+            {.instances = {&instance, 1U}, .productBindings = duplicate});
+        return expect(ambiguous.drawItems().empty() && ambiguous.diagnostics().size() == 1U,
+                      "Duplicate product bindings were silently resolved by order.");
     }
 
 } // namespace
@@ -154,21 +189,24 @@ int main() noexcept {
             return 1;
         }
 
-        const auto extracted = asharia::scene_rendering::extractSceneMeshDrawList(
-            {.revision = kRevision, .instances = {&instance, 1U}, .productBindings = {&binding, 1U}});
+        const auto extracted =
+            asharia::scene_rendering::extractSceneMeshDrawList({.revision = kRevision,
+                                                                .instances = {&instance, 1U},
+                                                                .productBindings = {&binding, 1U}});
         const auto items = extracted.drawItems();
-        if (!expect(extracted.revision() == kRevision && items.size() == 1U &&
-                        extracted.diagnostics().empty() &&
-                        items.front().drawItem.indexCount == 72U &&
-                        items.front().context.sourceObject.index == instance.entity.index &&
-                        items.front().context.sourceObject.generation == instance.entity.generation &&
-                        items.front().context.meshResource == asharia::kBasicValidationMeshResourceKey &&
-                        items.front().context.materialResource ==
-                            asharia::kBasicDefaultUnlitMaterialResourceKey &&
-                        items.front().modelMatrix[0] == 2.0F && items.front().modelMatrix[5] == 3.0F &&
-                        items.front().modelMatrix[10] == 4.0F && items.front().modelMatrix[3] == 2.0F &&
-                        items.front().modelMatrix[7] == 3.0F && items.front().modelMatrix[11] == 4.0F,
-                    "Ready validation mesh did not produce the expected row-major T*R*S packet.")) {
+        if (!expect(
+                extracted.revision() == kRevision && items.size() == 1U &&
+                    extracted.diagnostics().empty() && items.front().drawItem.indexCount == 72U &&
+                    items.front().context.sourceObject.index == instance.entity.index &&
+                    items.front().context.sourceObject.generation == instance.entity.generation &&
+                    items.front().context.meshResource ==
+                        asharia::kBasicValidationMeshResourceKey &&
+                    items.front().context.materialResource ==
+                        asharia::kBasicDefaultUnlitMaterialResourceKey &&
+                    items.front().modelMatrix[0] == 2.0F && items.front().modelMatrix[5] == 3.0F &&
+                    items.front().modelMatrix[10] == 4.0F && items.front().modelMatrix[3] == 2.0F &&
+                    items.front().modelMatrix[7] == 3.0F && items.front().modelMatrix[11] == 4.0F,
+                "Ready validation mesh did not produce the expected row-major T*R*S packet.")) {
             return 1;
         }
 
@@ -177,18 +215,21 @@ int main() noexcept {
         const auto staleResult = asharia::scene_rendering::extractSceneMeshDrawList(
             {.revision = kRevision, .instances = {&instance, 1U}, .productBindings = {&stale, 1U}});
         if (!expect(staleResult.drawItems().empty(), "Stale product emitted a fallback draw.") ||
-            !expectDiagnostic(staleResult,
-                              asharia::scene_rendering::SceneMeshExtractionDiagnosticCode::StaleProductBinding,
-                              kRevision)) {
+            !expectDiagnostic(
+                staleResult,
+                asharia::scene_rendering::SceneMeshExtractionDiagnosticCode::StaleProductBinding,
+                kRevision)) {
             return 1;
         }
 
         const auto missingResult = asharia::scene_rendering::extractSceneMeshDrawList(
             {.revision = kRevision, .instances = {&instance, 1U}});
-        if (!expect(missingResult.drawItems().empty(), "Missing product emitted a fallback draw.") ||
-            !expectDiagnostic(missingResult,
-                              asharia::scene_rendering::SceneMeshExtractionDiagnosticCode::MissingProductBinding,
-                              kRevision)) {
+        if (!expect(missingResult.drawItems().empty(),
+                    "Missing product emitted a fallback draw.") ||
+            !expectDiagnostic(
+                missingResult,
+                asharia::scene_rendering::SceneMeshExtractionDiagnosticCode::MissingProductBinding,
+                kRevision)) {
             return 1;
         }
 
@@ -198,28 +239,33 @@ int main() noexcept {
             {.revision = kRevision,
              .instances = {&instance, 1U},
              .productBindings = {&wrongKind, 1U}});
-        if (!expect(wrongKindResult.drawItems().empty(), "Wrong-kind product emitted a fallback draw.") ||
-            !expectDiagnostic(
-                wrongKindResult,
-                asharia::scene_rendering::SceneMeshExtractionDiagnosticCode::WrongProductBindingKind,
-                kRevision)) {
+        if (!expect(wrongKindResult.drawItems().empty(),
+                    "Wrong-kind product emitted a fallback draw.") ||
+            !expectDiagnostic(wrongKindResult,
+                              asharia::scene_rendering::SceneMeshExtractionDiagnosticCode::
+                                  WrongProductBindingKind,
+                              kRevision)) {
             return 1;
         }
 
         auto invalid = binding;
         invalid.productGeneration = 0U;
-        const auto invalidResult = asharia::scene_rendering::extractSceneMeshDrawList(
-            {.revision = kRevision, .instances = {&instance, 1U}, .productBindings = {&invalid, 1U}});
-        if (!expect(invalidResult.drawItems().empty(), "Invalid product emitted a fallback draw.") ||
-            !expectDiagnostic(invalidResult,
-                              asharia::scene_rendering::SceneMeshExtractionDiagnosticCode::InvalidProductBinding,
-                              kRevision)) {
+        const auto invalidResult =
+            asharia::scene_rendering::extractSceneMeshDrawList({.revision = kRevision,
+                                                                .instances = {&instance, 1U},
+                                                                .productBindings = {&invalid, 1U}});
+        if (!expect(invalidResult.drawItems().empty(),
+                    "Invalid product emitted a fallback draw.") ||
+            !expectDiagnostic(
+                invalidResult,
+                asharia::scene_rendering::SceneMeshExtractionDiagnosticCode::InvalidProductBinding,
+                kRevision)) {
             return 1;
         }
 
         auto vertexOnly = binding;
-        vertexOnly.drawItem.vertexCount = 14U;
-        vertexOnly.drawItem.indexCount = 0U;
+        vertexOnly.sections.front().drawItem.vertexCount = 14U;
+        vertexOnly.sections.front().drawItem.indexCount = 0U;
         const auto vertexOnlyResult = asharia::scene_rendering::extractSceneMeshDrawList(
             {.revision = kRevision,
              .instances = {&instance, 1U},
@@ -234,7 +280,7 @@ int main() noexcept {
         }
 
         auto mixedDraw = binding;
-        mixedDraw.drawItem.vertexCount = 14U;
+        mixedDraw.sections.front().drawItem.vertexCount = 14U;
         const auto mixedDrawResult = asharia::scene_rendering::extractSceneMeshDrawList(
             {.revision = kRevision,
              .instances = {&instance, 1U},
@@ -252,17 +298,14 @@ int main() noexcept {
         invalidInstance.objectId.bytes[0] = 0xABU;
         auto invalidAsset = assetGuid();
         invalidAsset.bytes[0] = 0x7DU;
-        invalidInstance.mesh = asharia::asset::makeAssetReference(
-            invalidAsset,
-            asharia::scene::kSceneMeshAssetType);
+        invalidInstance.mesh =
+            asharia::asset::makeAssetReference(invalidAsset, asharia::scene::kSceneMeshAssetType);
         auto invalidMixedBinding = mixedDraw;
         invalidMixedBinding.asset = invalidInstance.mesh;
         const std::array mixedInstances{instance, invalidInstance};
         const std::array mixedBindings{binding, invalidMixedBinding};
         const auto partialResult = asharia::scene_rendering::extractSceneMeshDrawList(
-            {.revision = kRevision,
-             .instances = mixedInstances,
-             .productBindings = mixedBindings});
+            {.revision = kRevision, .instances = mixedInstances, .productBindings = mixedBindings});
         if (!expect(partialResult.drawItems().size() == 1U,
                     "One invalid mesh product suppressed an independent valid draw.") ||
             !expect(partialResult.diagnostics().size() == 1U &&
@@ -275,17 +318,18 @@ int main() noexcept {
             return 1;
         }
 
-        const auto replacement = asharia::scene_rendering::extractSceneMeshDrawList(
-            {.revision = kRevision + 1U,
-             .instances = {&instance, 1U},
-             .productBindings = {&binding, 1U}});
-        if (!expect(replacement.revision() == kRevision + 1U && replacement.drawItems().size() == 1U &&
+        const auto replacement =
+            asharia::scene_rendering::extractSceneMeshDrawList({.revision = kRevision + 1U,
+                                                                .instances = {&instance, 1U},
+                                                                .productBindings = {&binding, 1U}});
+        if (!expect(replacement.revision() == kRevision + 1U &&
+                        replacement.drawItems().size() == 1U &&
                         replacement.drawItems().data() != extracted.drawItems().data(),
                     "Replacement revision shared a previous draw-list allocation.")) {
             return 1;
         }
 
-        if (!expectModelMatrixContracts()) {
+        if (!expectMultipleSections() || !expectModelMatrixContracts()) {
             return 1;
         }
 
