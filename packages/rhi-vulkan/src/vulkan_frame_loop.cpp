@@ -486,7 +486,8 @@ namespace asharia {
                 .image = context.image,
                 .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
                 .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                .srcStageMask = VK_PIPELINE_STAGE_2_NONE,
+                .srcStageMask =
+                    VK_PIPELINE_STAGE_2_TRANSFER_BIT, // Chain to the acquire semaphore wait.
                 .srcAccessMask = 0,
                 .dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
                 .dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,

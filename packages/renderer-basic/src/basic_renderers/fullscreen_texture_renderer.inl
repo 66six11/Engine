@@ -1102,6 +1102,21 @@ Result<VulkanFrameRecordResult> BasicFullscreenTextureRenderer::recordViewFrame(
     std::vector<BasicDebugWorldLine> debugWorldLines(view.overlay.debugWorldLines.begin(),
                                                      view.overlay.debugWorldLines.end());
     view.overlay.debugWorldLines = std::span<const BasicDebugWorldLine>{debugWorldLines};
+    if (view.scene.mesh && view.scene.mesh->device_ != device_) {
+        return std::unexpected{
+            Error{ErrorDomain::RenderGraph, 0, "GPU mesh belongs to another device"}};
+    }
+    if (view.scene.mesh && !view.overlay.selectionOutline.drawItems.empty()) {
+        return std::unexpected{Error{ErrorDomain::RenderGraph, 0,
+                                     "GPU mesh selection overlay is not supported in this slice"}};
+    }
+    if (view.scene.mesh && !view.scene.drawItems.empty()) {
+        if (!frame.frameLoop ||
+            !frame.deferDeletion([keep = view.scene.mesh]() { static_cast<void>(keep); })) {
+            return std::unexpected{Error{ErrorDomain::RenderGraph, 0,
+                                         "GPU mesh draw requires frame completion retention"}};
+        }
+    }
     auto sceneMeshValidated = validateBasicRenderViewSceneMesh(view);
     if (!sceneMeshValidated) {
         return std::unexpected{std::move(sceneMeshValidated.error())};
@@ -1134,7 +1149,7 @@ Result<VulkanFrameRecordResult> BasicFullscreenTextureRenderer::recordViewFrame(
                 "capability; no solid fallback was selected",
             }};
         }
-        auto resources = ensureSceneMeshResources();
+        auto resources = view.scene.mesh ? Result<void>{} : ensureSceneMeshResources();
         if (!resources) {
             return std::unexpected{std::move(resources.error())};
         }
@@ -1207,13 +1222,16 @@ Result<VulkanFrameRecordResult> BasicFullscreenTextureRenderer::recordViewFrame(
         });
     }
 
+    const auto& meshVertices =
+        view.scene.mesh ? view.scene.mesh->vertices_ : sceneMeshVertexBuffer_;
+    const auto& meshIndices = view.scene.mesh ? view.scene.mesh->indices_ : sceneMeshIndexBuffer_;
     RenderGraphBufferHandle sceneVertices{};
     RenderGraphBufferHandle sceneIndices{};
     std::vector<VulkanRenderGraphBufferBinding> bufferBindings;
     if (renderViewPassPolicy.sceneMeshEnabled) {
         sceneVertices = graph.importBuffer(RenderGraphBufferDesc{
             .name = "RenderViewValidationMeshVertices",
-            .byteSize = sceneMeshVertexBuffer_.size(),
+            .byteSize = meshVertices.size(),
             .initialState = RenderGraphBufferState::VertexRead,
             .initialShaderStage = RenderGraphShaderStage::None,
             .finalState = RenderGraphBufferState::VertexRead,
@@ -1221,7 +1239,7 @@ Result<VulkanFrameRecordResult> BasicFullscreenTextureRenderer::recordViewFrame(
         });
         sceneIndices = graph.importBuffer(RenderGraphBufferDesc{
             .name = "RenderViewValidationMeshIndices",
-            .byteSize = sceneMeshIndexBuffer_.size(),
+            .byteSize = meshIndices.size(),
             .initialState = RenderGraphBufferState::IndexRead,
             .initialShaderStage = RenderGraphShaderStage::None,
             .finalState = RenderGraphBufferState::IndexRead,
@@ -1231,9 +1249,9 @@ Result<VulkanFrameRecordResult> BasicFullscreenTextureRenderer::recordViewFrame(
         bufferBindings.reserve(2);
         bufferBindings.push_back(VulkanRenderGraphBufferBinding{
             .buffer = sceneVertices,
-            .vulkanBuffer = sceneMeshVertexBuffer_.handle(),
+            .vulkanBuffer = meshVertices.handle(),
             .offset = 0,
-            .size = sceneMeshVertexBuffer_.size(),
+            .size = meshVertices.size(),
             .debugName = "RenderViewValidationMeshVertices",
         });
         auto namedVertices = setVulkanRenderGraphBufferDebugName(frame, bufferBindings.back());
@@ -1242,9 +1260,9 @@ Result<VulkanFrameRecordResult> BasicFullscreenTextureRenderer::recordViewFrame(
         }
         bufferBindings.push_back(VulkanRenderGraphBufferBinding{
             .buffer = sceneIndices,
-            .vulkanBuffer = sceneMeshIndexBuffer_.handle(),
+            .vulkanBuffer = meshIndices.handle(),
             .offset = 0,
-            .size = sceneMeshIndexBuffer_.size(),
+            .size = meshIndices.size(),
             .debugName = "RenderViewValidationMeshIndices",
         });
         auto namedIndices = setVulkanRenderGraphBufferDebugName(frame, bufferBindings.back());
@@ -1308,6 +1326,7 @@ Result<VulkanFrameRecordResult> BasicFullscreenTextureRenderer::recordViewFrame(
         .colorLoadOp = view.overlay.colorLoadOp,
         .colorStoreOp = view.overlay.colorStoreOp,
         .eventRecorder = eventRecorder,
+        .sceneIndexType = view.scene.mesh ? VK_INDEX_TYPE_UINT32 : VK_INDEX_TYPE_UINT16,
     };
     VkPipeline worldGridPipeline = VK_NULL_HANDLE;
     if (renderViewPassPolicy.worldGridEnabled) {

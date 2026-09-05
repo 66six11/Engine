@@ -329,6 +329,7 @@ $smokes = @(
     "--smoke-offscreen-viewport",
     "--smoke-compute-dispatch",
     "--smoke-buffer-upload",
+    "--smoke-gpu-mesh-resource",
     "--smoke-texture-upload",
     "--smoke-renderer-format-contract",
     "--smoke-deferred-deletion",
@@ -772,3 +773,14 @@ This is teardown synchronization, not a render-loop idle wait. Fullscreen's curr
 allocates one debug-line buffer, so its existing exact four-buffer upload assertion remains.
 The renderer package manifest includes the three selection shader order dependencies and is
 checked against the configured CMake File API graph, not just source topology.
+
+### GPU Mesh resource gate
+
+`--smoke-gpu-mesh-resource` writes a canonical product, loads it through verified artifact/CPU lease,
+checks two submesh indexed draws and pixel replacement, rejects stale/layout/material/budget/thread misuse,
+and checks cancellation and zero resident versions/bytes after final frame retirement. It reuses the
+existing diagnostic-only Scene pixel readback probe; production mesh uploads and transitions remain in
+RenderGraph. Run it with Vulkan validation and synchronization validation enabled; a successful process exit
+is insufficient if the log contains validation errors. On this Windows SDK installation the validation
+manifest can be selected with `VK_LAYER_PATH=C:/VulkanSDK/1.4.321.1/Bin`; enable synchronization validation
+with `VK_LAYER_ENABLES=VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT`.

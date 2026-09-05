@@ -10,6 +10,8 @@ endif()
 include("${ASHARIA_REPOSITORY_ROOT}/cmake/AshariaPackage.cmake")
 asharia_package_init()
 asharia_require_package_target(asharia::asset_pipeline packages/asset-pipeline)
+asharia_require_package_target(asharia::mesh_product_writer packages/mesh-product)
+asharia_require_package_target(asharia::resource_runtime packages/resource-runtime)
 asharia_require_package_target(asharia::profiling packages/profiling)
 asharia_require_package_target(asharia::reflection packages/reflection)
 asharia_require_package_target(asharia::scene_core packages/scene-core)
@@ -30,6 +32,8 @@ add_dependencies(asharia-sample-viewer asharia-renderer-basic-shaders)
 target_link_libraries(asharia-sample-viewer
     PRIVATE
         asharia::asset_pipeline
+        asharia::mesh_product_writer
+        asharia::resource_runtime
         asharia::core
         asharia::profiling
         asharia::reflection
