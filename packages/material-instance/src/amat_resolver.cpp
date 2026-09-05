@@ -4,6 +4,8 @@
 #include <string>
 #include <utility>
 
+#include "asharia/material_instance/amat_io.hpp"
+
 namespace asharia::material_instance {
     namespace {
 
@@ -109,6 +111,12 @@ namespace asharia::material_instance {
                                            const AshaderDocument& shader,
                                            const AmatResolveOptions& options) {
         AmatResolveResult result;
+        if (auto valid = validateAmatDocument(document); !valid) {
+            addDiagnostic(result, AmatDiagnosticSeverity::Error,
+                          AmatDiagnosticCode::InvalidOverride, AmatDiagnosticTarget::Document, {},
+                          std::move(valid.error().message));
+            return result;
+        }
         result.overrides.reserve(shader.properties.size());
 
         if (document.materialType.stableTypeId != shader.shaderTypeId) {

@@ -9,6 +9,11 @@ the existing take/lease path; notification is not GPU completion. Candidate prep
 on UI and retains staged consumer completion and atomic publication.
 See Studio ADR-0011 and ADR-0006 for ownership and scheduling evidence.
 
+Material override validation: mutable CPU `.amat` document → shared `validateAmatDocument`
+(identity, duplicate IDs, value kind/width and finite scalar/vector values) → shader override comparison.
+Invalid documents return an `InvalidOverride` diagnostic without usable diffs. IO serialization and
+resolution share the same validator; renderer/material GPU binding remains a subsequent consumer.
+
 ## 维护规则
 
 - 代码改变了运行流程、包依赖、资源状态、同步路径或 smoke 命令时，必须更新本文档。
