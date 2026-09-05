@@ -1,6 +1,6 @@
 # 整体路线图
 
-更新日期：2026-09-04
+更新日期：2026-09-05
 
 本文是全项目下一阶段的唯一**功能阶段路线图**；目标系统框架、package/target 收敛方向、跨系统契约和架构迁移门禁见 `docs/planning/system-architecture-roadmap.md`，Kernel、Host Runtime、Foundation Systems、scope/activation 和基础门禁见 `docs/architecture/foundation-framework.md`；每项能力的最早/最迟接入窗口、Integration Gates 和 Owner Card 见 `docs/workflow/architecture-health.md`。RenderGraph 当前语义见 `docs/rendergraph/mvp.md` 与 `docs/rendergraph/rhi-boundary.md`，可编程管线边界见 `docs/rendergraph/programmable-pipeline.md`；Editor 当前事实见 `docs/architecture/editor.md`；资产系统见 `docs/systems/asset-architecture.md`；shader/material authoring 见 `docs/systems/shader-material-authoring.md` 及 V2 specs。实际 Slice 顺序、状态、阻塞和 Done evidence 维护在 GitHub Issues / Project，不在本文重复。
 
@@ -59,7 +59,7 @@
 
 | 主线 | 当前状态 | 下一步缺口 |
 | --- | --- | --- |
-| Foundation / Host | `core` 有 error/log/file baseline，`platform` 仍为空 INTERFACE；package/Host/Settings/Storage/Tasks 为目标设计 | inventory + resolver/lock/Host Profiles；Host scope/lease/registry/rollback；Storage/Settings/Tasks/Observability headless smoke |
+| Foundation / Host | 已有 package contracts、resolver/lock、Host planning、artifact verification 与 ProcessScope/static factory/contribution 实现及 synthetic tests；生产包组合与公共服务完整性不能由这些测试直接推定 | 核对真实 consumer 与失败退出边界；按资源链需求补 IO、取消、预算和诊断，避免重建现有控制面 |
 | RenderGraph / RHI / Vulkan | 已有 typed pass、slot/schema、abstract access、transient image/buffer、VertexRead/IndexRead、`DrawIndexed`、debug labels、timestamp、Frame Debug replay；`fillModeNonSolid` 是 optional typed capability | 更细 compiler diagnostics、backend lifetime/cache 继续收敛，避免新增 graph 外 GPU work |
 | Renderer / RenderView | 已有 Scene/Game/Preview keyed request、world grid、debug line、offscreen sampled target、多 view diagnostics、真实 validation scene-mesh pass、draw packet context 和 per-view Solid/Wireframe | 把 validation product 升级为 asset/runtime resource-backed mesh/material，再扩 lighting/postprocess feature |
 | Asset / Project | 已有 project descriptor、source scan、metadata discovery、product manifest、dry-run/execute asset-processor baseline、texture product upload smoke、Mesh Product v1 + 受限 `.glb` importer/reader、verified artifact 与 generation-safe typed CPU mesh lease | renderer GPU mesh owner、dependency invalidation、Scene View/thumbnail consumer 收敛 |
@@ -67,7 +67,44 @@
 | Scene / Editor | 已有 SceneDocument-owned EditWorld、默认场景持久化、Hierarchy/Inspector、逻辑 dirty/savepoint、Transform Undo/Redo、production workbench shell、可见 Scene View、presented-model typed selection、固定 2 px selected-mesh outline、mouse-only orbit/pan/dolly、单选世界轴 Translate/Rotate 与局部轴 Scale Gizmo | plane/center-uniform/local translate-rotate/snap/multi-select gizmo 按独立需求证明；WASD fly、focus-selected 与 navigation preferences 单独接入 |
 | Workflow / Project | Project fields 完整；#20 是 roadmap/docs sync 入口 | 重复 Project item 候选需单独审查，计划变更后同步 #20 |
 
-## 当前执行优先级（2026-09-02）
+## 当前执行优先级（2026-09-05）
+
+当前顺序是基础设施完整性与真实资源消费优先，编辑体验扩展后置。Issue 的 open 状态不能替代主线代码审计：
+#270 的合同实现及后续控制面代码已经进入主线（#336 包含其实现历史），不能再安排一轮 Schema/Resolver 重写。
+更广的 Foundation integration record 仍需逐项核对，不能由 #270 的合同验收推定整个 #264 已完成。
+
+### 当前首个资源切片：CPU Mesh lease 到 renderer-owned GPU Mesh（#419）
+
+- 输入只接受已有 verified `MeshResourceLease` 与 immutable upload facts，复用 Mesh Product v1、双 generation 和
+  active/candidate 语义；不重新实现 importer、CPU store 或直接从 renderer 读取 `.glb`。
+- renderer 定义不含 Vulkan handle 的 resource identity/binding；Vulkan owner 创建 vertex/index buffer 并记录上传，
+  upload/access/barrier 可由 RenderGraph diagnostics 追踪。复用现有固定 validation material 先证明 Mesh lifetime。
+- 同一资源被多个 draw 引用时复用 GPU allocation；新 generation 完成上传后才替换可见 binding，旧资源直到最后一次
+  GPU 使用完成才退役。失败保留 last-known-good；明确首次加载失败与无有效 binding 的 typed/no-draw 行为。
+- 首轮用真实已验证 Mesh Product 在现有 RenderView 边界完成 DrawIndexed/readback；覆盖 submesh/index range、
+  vertex layout 与当前 material input 的兼容性，不把“上传成功”当作“正确绘制”。
+- 负向门禁包括 corrupt/missing input、stale completion、upload failure、替换时在途引用、重复请求与 shutdown drain。
+  显式记录 retained/retired allocation 和 upload bytes，约束单次输入及在途请求，不提前实现通用 streaming/eviction。
+- SceneDocument/Studio 的通用资源解析接入是后继切片；首个 GPU owner 可以在无 Avalonia 的 native smoke 中完整验证。
+  #270 不构成此切片的新 blocker；如发现具体缺失的 IO/lifetime contract，再记录真实依赖。
+
+### 后继基础设施顺序
+
+| 顺序 | 切片边界 | 出口证据 |
+| --- | --- | --- |
+| 1 | Mesh GPU owner、上传、版本替换与延迟退役 | 真实 product indexed draw、像素/命令证据、失败保留旧资源、关闭后清零 |
+| 2 | Shader 编译/反射产物与最小无光照 material binding | layout/signature 兼容诊断；参数变化不重建无关 pipeline；缓存键包含必要编译输入 |
+| 3 | 已有 Texture2D product 的运行时消费 | format/sRGB/mip/sampler 合同、上传/替换/释放与材质采样证据 |
+| 4 | Scene authored GUID 到资源 binding、保存重开 | 不持久化 runtime key；缺失/过期诊断；重开保持引用与绘制结果 |
+| 5 | 跨资源依赖失效与受控替换 | shader/material/texture 依赖变化准确传播；失败保留旧版本；在途帧安全 |
+
+上述是候选拆分顺序，不表示第 5 步之前可以忽略版本与依赖身份：这些字段和本资源的失效/取消边界从第一个
+consumer 起就要定义；第 5 步闭合跨资源传播。公共 IO、Tasks、预算、Host teardown 和诊断随真实 consumer 补齐，
+不把完整 Foundation 框架作为所有现有资源工作的隐式前置，也不为单条路径新建全局服务或另一套生命周期。
+每条资源链都必须有脱离 Editor 的验证；lighting/PBR、材质编辑器、thumbnail、导航偏好与更多 Gizmo 后置。
+
+以下 P0/P0.5 与 Phase 段落保留各能力的既有范围和基线；当前执行顺序以上述资源切片及 GitHub 实际依赖为准。
+
 
 ### P0：可复用 Viewport foundation 与首个可见 Scene View
 
