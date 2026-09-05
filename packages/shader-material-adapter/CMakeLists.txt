@@ -12,9 +12,11 @@ asharia_package_init()
 asharia_require_package_target(asharia::core engine/core)
 asharia_require_package_target(asharia::material_core packages/material-core)
 asharia_require_package_target(asharia::shader_slang packages/shader-slang)
+asharia_require_package_target(asharia::material_instance packages/material-instance)
 
 add_library(asharia-shader-material-adapter STATIC
     src/reflection_to_material_signature.cpp
+    src/reflected_parameters.cpp
 )
 add_library(asharia::shader_material_adapter ALIAS asharia-shader-material-adapter)
 
@@ -28,6 +30,7 @@ target_link_libraries(asharia-shader-material-adapter
         asharia::core
         asharia::material_core
         asharia::shader_slang
+        asharia::material_instance
 )
 
 asharia_configure_target(asharia-shader-material-adapter)

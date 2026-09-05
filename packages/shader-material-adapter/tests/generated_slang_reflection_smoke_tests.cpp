@@ -11,8 +11,10 @@
 #include <string>
 #include <string_view>
 
+#include "asharia/material_instance/amat_io.hpp"
 #include "asharia/shader_authoring/ashader_generated_slang.hpp"
 #include "asharia/shader_authoring/ashader_parser.hpp"
+#include "asharia/shader_material_adapter/reflected_parameters.hpp"
 #include "asharia/shader_material_adapter/reflection_to_material_signature.hpp"
 
 namespace {
@@ -323,6 +325,137 @@ shader "asharia.material.generated_reflection" {
         return true;
     }
 
+    bool smokeNumericParameters(const Options& options) {
+        using namespace asharia;
+        auto shader = shader_authoring::parseAshaderDocument(R"(
+schema 2
+shader "asharia.material.numeric" {
+ properties {
+  float gain = 2
+  float3 direction = [1, 0.5, 0]
+  float alpha = 1
+  float2 uv = [0, 1]
+  int mode = -2
+  uint mask = 7
+  bool enabled = true
+  color tint = [1, 0, 0, 1]
+ }
+ pass "Forward" { fragment fragmentMain }
+ slang {
+  float4 fragmentMain() : SV_Target {
+   return Material.tint * Material.gain + float4(Material.direction, Material.alpha)
+       + float4(Material.uv, float(Material.mode), float(Material.mask))
+       + (Material.enabled ? 1.0 : 0.0);
+  }
+ }
+})");
+        if (!shader.document) {
+            return false;
+        }
+        auto generated = shader_authoring::buildGeneratedSlang(*shader.document);
+        const auto source = options.workDir / "Numeric.generated.slang";
+        if (shader_authoring::hasErrors(generated.diagnostics) || generated.entryPoints.empty() ||
+            !writeTextFile(source, generated.source) ||
+            !compileAndReflectEntry(options, source, generated.entryPoints.front())) {
+            return false;
+        }
+        auto reflection =
+            readShaderReflection(options.workDir / "fragmentMain.fragment.reflection.json");
+        auto document = material_instance::readAmatText(R"({"schemaVersion":2,
+"materialType":{"assetGuid":"11111111-1111-1111-1111-111111111111",
+"stableTypeId":"asharia.material.numeric","expectedTypeHash":"00000000000000aa"},
+"properties":{},"import":{"lastCookedSignatureHash":"00000000000000bb"}})");
+        if (!reflection || !document || reflection->descriptorBindings.size() != 1) {
+            logFailure("numeric reflection/document missing");
+            return false;
+        }
+        const auto& binding = reflection->descriptorBindings.front();
+        auto packed =
+            shader_material::packReflectedMaterialParameters(*document, *shader.document, binding);
+        if (!packed) {
+            logFailure(packed.error().message);
+            return false;
+        }
+        // Fixed SPIR-V uniform-layout oracle for this declaration order; never compute offsets
+        // from the reflected result being tested.
+        const std::vector<std::uint32_t> offsets{0, 16, 28, 32, 40, 44, 48, 64};
+        if (packed->layout.size != 80 || packed->layout.members.size() != offsets.size()) {
+            logFailure("unexpected numeric block size");
+            return false;
+        }
+        for (std::size_t index = 0; index < offsets.size(); ++index) {
+            if (packed->layout.members[index].offset != offsets[index]) {
+                logFailure("unexpected numeric member offset");
+                return false;
+            }
+        }
+        const std::vector<std::uint32_t> words{
+            0x40000000, 0, 0, 0, 0x3f800000, 0x3f000000, 0,          0x3f800000, 0, 0x3f800000,
+            0xfffffffe, 7, 1, 0, 0,          0,          0x3f800000, 0,          0, 0x3f800000};
+        for (std::size_t index = 0; index < words.size(); ++index) {
+            for (std::size_t byte = 0; byte < 4; ++byte) {
+                if (packed->parameters.bytes[(index * 4) + byte] !=
+                    static_cast<std::byte>((words[index] >> (byte * 8)) & 0xffU)) {
+                    logFailure("reflected parameter byte oracle mismatch");
+                    return false;
+                }
+            }
+        }
+        auto missing = binding;
+        missing.parameterBlock.reset();
+        if (shader_material::packReflectedMaterialParameters(*document, *shader.document,
+                                                             missing)) {
+            return false;
+        }
+        auto changed = binding;
+        changed.parameterBlock.emplace(packed->layout).members[0].offset = 16;
+        if (shader_material::packReflectedMaterialParameters(*document, *shader.document,
+                                                             changed)) {
+            return false;
+        }
+        changed = binding;
+        changed.parameterBlock.emplace(packed->layout).members[0].scalarType = "uint32";
+        if (shader_material::packReflectedMaterialParameters(*document, *shader.document,
+                                                             changed)) {
+            return false;
+        }
+        changed = binding;
+        changed.parameterBlock.emplace(packed->layout).members[0].size = 8;
+        if (shader_material::packReflectedMaterialParameters(*document, *shader.document,
+                                                             changed)) {
+            return false;
+        }
+        changed = binding;
+        changed.parameterBlock.emplace(packed->layout).members[0].componentCount = 2;
+        if (shader_material::packReflectedMaterialParameters(*document, *shader.document,
+                                                             changed)) {
+            return false;
+        }
+        changed.parameterBlock.emplace(packed->layout).members[0] = packed->layout.members[1];
+        if (shader_material::packReflectedMaterialParameters(*document, *shader.document,
+                                                             changed)) {
+            return false;
+        }
+        std::array<ShaderReflection, 2> stages{*reflection, *reflection};
+        stages[1].descriptorBindings[0].parameterBlock.emplace(packed->layout).members[0].offset =
+            4;
+        if (mergeShaderResourceSignature(stages)) {
+            logFailure("cross-stage member drift accepted");
+            return false;
+        }
+        document->properties.push_back(
+            {.propertyId = "gain",
+             .type = shader_authoring::AshaderPropertyType::Float,
+             .value = {.kind = material_instance::AmatPropertyValueKind::Number,
+                       .numberValue = 3}});
+        const auto overridden =
+            shader_material::packReflectedMaterialParameters(*document, *shader.document, binding);
+        auto expectedOverride = packed->parameters.bytes;
+        expectedOverride[2] = std::byte{64}; // 3.0f = 0x40400000, only parameter bytes change.
+        return overridden && overridden->layout == packed->layout &&
+               overridden->parameters.bytes == expectedOverride;
+    }
+
 } // namespace
 
 // NOLINTNEXTLINE(bugprone-exception-escape)
@@ -336,6 +469,9 @@ int main(int argc, char** argv) {
         }
 
         if (!smokeGeneratedSlangCompileReflection(*options)) {
+            return EXIT_FAILURE;
+        }
+        if (!smokeNumericParameters(*options)) {
             return EXIT_FAILURE;
         }
         return EXIT_SUCCESS;

@@ -13,6 +13,7 @@
   "dependencies": [
     "com.asharia.core",
     "com.asharia.material-core",
+    "com.asharia.material-instance",
     "com.asharia.shader-authoring",
     "com.asharia.shader-slang"
   ],
@@ -30,6 +31,7 @@
     "asharia-shader-material-adapter": [
       "asharia-core",
       "asharia-material-core",
+      "asharia-material-instance",
       "asharia-shader-slang"
     ],
     "asharia-shader-material-adapter-smoke-tests": [
