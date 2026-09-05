@@ -2,6 +2,40 @@
 
 ## #417: remaining resize latency investigation
 
+### Post-publication paint acknowledgment experiment (2026-09-05)
+
+A diagnostic `ValidateRect(hwnd, null)` in `WindowRectCommit.Accept` removed the
+additional OS paint after publication without adding another visual invalidation.
+Five independent Release height-ABA runs passed the unchanged 33.333 ms catch-up gate:
+12.78, 11.77, 14.32, 17.95 and 20.03 ms. A second variant preserved an update region
+already pending before `SetWindowPos`, using `GetUpdateRect(..., false)`; its three
+height-ABA runs passed at 13.41, 17.39 and 10.81 ms. That guarded variant also passed
+all five existing Window process cases and both grow/shrink release WGC pixel cases.
+These are diagnostic results, not a shipped paint contract or physical scanout evidence.
+
+The experiment was reverted despite those passes. The public Avalonia 12.1.0
+`CompositingRenderer.Resized` implementation is empty; `Paint` separately queues an
+update, calls `CompositionTarget.RequestRedraw`, then requests synchronous rendering.
+A published viewport batch alone does not establish ownership of the entire HWND update
+region. A pre-apply `GetUpdateRect` check cannot identify damage added during nested
+`SetWindowPos` callbacks or an asynchronous publication hook before `Accept`. Furthermore,
+the outer-only acceptance path has no transaction Rendered receipt. The existing WGC
+cases prove release samples, not ordinary expose/occlusion repaint or that outer-only path.
+Clearing the whole region on this evidence would introduce an unverified repaint contract.
+
+The next implementation must first provide a framework-supported asynchronous full-target
+redraw receipt, or an explicitly owned resize-damage region; it must retain normal WM_PAINT
+handling for unrelated damage and fallback. Add real-HWND coverage for pre-existing and
+intervening invalidation, outer-only resize, rollback, cancellation and DPI before adopting
+acknowledgment. Then repeat height-ABA, Window performance, camera/steady cadence and WGC
+release gates. Do not substitute a raw `ValidateRect` call or a dispatch priority change for
+that missing ownership boundary. #417 remains open and #418 remains draft.
+
+Sources: [Avalonia renderer](https://github.com/AvaloniaUI/Avalonia/blob/12.1.0/src/Avalonia.Base/Rendering/Composition/CompositingRenderer.cs),
+[Avalonia full-target redraw](https://github.com/AvaloniaUI/Avalonia/blob/12.1.0/src/Avalonia.Base/Rendering/Composition/CompositionTarget.cs),
+and [Microsoft ValidateRect](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-validaterect).
+
+
 Native V11 notification removes readiness polling, but does not close resize acceptance.
 Bounded test-only timestamps distinguish native-ready observation, UI continuation and
 staged surface completion. The checked Avalonia 12.1.0 source and sampled thread stacks
