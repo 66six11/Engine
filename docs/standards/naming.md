@@ -70,6 +70,10 @@ com.asharia.scene.TransformComponent.scale
 后缀职责是表达文件类型并减少冲突；品牌识别由 `Asharia Engine`、`Asharia Editor` 和 `com.asharia.*`
 schema 承担。
 
+材质实例的代码名与 `.mat` 对应：类型使用 `MatDocument` 等 `Mat*` 名称，方法使用
+`readMatText`、`resolveMatOverrides`、`packMatParameters`，头文件和源文件使用 `mat_*.hpp/.cpp`。
+既有 material-instance product v1 的序列化字段与分隔标记保持原合同，代码重命名不迁移缓存格式。
+
 ## 当前代码命名规则
 
 当前代码使用小写 namespace：

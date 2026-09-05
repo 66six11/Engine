@@ -30,7 +30,7 @@
 #include "asharia/asset_pipeline/asset_texture_import.hpp"
 #include "asharia/core/error.hpp"
 #include "asharia/core/file_io.hpp"
-#include "asharia/material_instance/amat_io.hpp"
+#include "asharia/material_instance/mat_io.hpp"
 #include "asharia/mesh_product/mesh_product_v1.hpp"
 #include "asharia/mesh_product/mesh_product_writer_v1.hpp"
 #include "asharia/shader_authoring/ashader_generated_slang.hpp"
@@ -776,11 +776,11 @@ namespace asharia::asset {
                 sourceText.push_back(static_cast<char>(byte));
             }
 
-            auto document = material_instance::readAmatText(sourceText);
+            auto document = material_instance::readMatText(sourceText);
             if (!document) {
                 return std::unexpected{std::move(document.error())};
             }
-            auto canonicalText = material_instance::writeAmatText(*document);
+            auto canonicalText = material_instance::writeMatText(*document);
             if (!canonicalText) {
                 return std::unexpected{std::move(canonicalText.error())};
             }

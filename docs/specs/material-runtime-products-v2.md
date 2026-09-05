@@ -271,7 +271,7 @@ enum class DiagnosticSource {
     Ashader,
     Slang,
     Graph,
-    Amat,
+    Mat,
     Reflection,
     MaterialSignature,
     AssetPipeline,

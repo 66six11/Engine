@@ -9,7 +9,7 @@ the existing take/lease path; notification is not GPU completion. Candidate prep
 on UI and retains staged consumer completion and atomic publication.
 See Studio ADR-0011 and ADR-0006 for ownership and scheduling evidence.
 
-Material override validation: mutable CPU `.mat` document → shared `validateAmatDocument`
+Material override validation: mutable CPU `.mat` document → shared `validateMatDocument`
 (identity, duplicate IDs, value kind/width and finite scalar/vector values) → shader override comparison.
 Invalid documents return an `InvalidOverride` diagnostic without usable diffs. IO serialization and
 resolution share the same validator; renderer/material GPU binding remains a subsequent consumer.
@@ -33,8 +33,8 @@ existing behavior. Reference: [Khronos swapchain synchronization examples](https
 
 ### Numeric material parameter CPU flow
 
-`AmatDocument + AshaderDocument + explicit numeric member offsets/block size ->
-material-instance::packAmatParameters -> owned little-endian bytes + existing warnings`.
+`MatDocument + AshaderDocument + explicit numeric member offsets/block size ->
+material-instance::packMatParameters -> owned little-endian bytes + existing warnings`.
 The call selects overrides/defaults, rejects invalid values/layouts and zeroes padding within a
 256-property/64-KiB bound. It performs no IO, reflection extraction, GPU binding or resource ownership.
 The reflected adapter below supplies compiler member facts; product identity must still be retained

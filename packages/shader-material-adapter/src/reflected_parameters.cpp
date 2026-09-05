@@ -10,7 +10,7 @@ namespace asharia::shader_material {
 
         Error layoutError(std::string_view property, std::string_view reason) {
             return {ErrorDomain::Material,
-                    static_cast<int>(material_instance::AmatParameterError::InvalidLayout),
+                    static_cast<int>(material_instance::MatParameterError::InvalidLayout),
                     "Reflected material parameter '" + std::string{property} +
                         "': " + std::string{reason}};
         }
@@ -49,21 +49,21 @@ namespace asharia::shader_material {
     } // namespace
 
     Result<ReflectedMaterialParameters>
-    packReflectedMaterialParameters(const material_instance::AmatDocument& document,
+    packReflectedMaterialParameters(const material_instance::MatDocument& document,
                                     const shader_authoring::AshaderDocument& shader,
                                     const ShaderDescriptorBindingReflection& binding,
-                                    const material_instance::AmatResolveOptions& options) {
+                                    const material_instance::MatResolveOptions& options) {
         if (binding.kind != "constantBuffer" || binding.count != 1 || !binding.parameterBlock) {
             return std::unexpected{
                 layoutError(binding.name, "expected one reflected constant buffer")};
         }
         const auto& layout = *binding.parameterBlock;
-        if (layout.members.size() > material_instance::kMaxAmatParameters ||
-            layout.size > material_instance::kMaxAmatParameterBytes ||
+        if (layout.members.size() > material_instance::kMaxMatParameters ||
+            layout.size > material_instance::kMaxMatParameterBytes ||
             layout.members.size() != shader.properties.size()) {
             return std::unexpected{layoutError(binding.name, "layout coverage or budget mismatch")};
         }
-        std::vector<material_instance::AmatParameterMember> members;
+        std::vector<material_instance::MatParameterMember> members;
         members.reserve(layout.members.size());
         for (const auto& member : layout.members) {
             const auto property = std::ranges::find(shader.properties, member.name,
@@ -76,7 +76,7 @@ namespace asharia::shader_material {
                 {.propertyId = member.name, .type = property->type, .byteOffset = member.offset});
         }
         auto packed =
-            material_instance::packAmatParameters(document, shader, members, layout.size, options);
+            material_instance::packMatParameters(document, shader, members, layout.size, options);
         if (!packed) {
             return std::unexpected{std::move(packed.error())};
         }

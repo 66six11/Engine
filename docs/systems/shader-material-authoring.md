@@ -68,9 +68,9 @@ general shader cursor framework: the current consumer only requires one flat num
 
 ### Numeric parameter packing boundary
 
-Original packing-slice evidence: `AmatResolveResult` contains override diffs/diagnostics, not parameter bytes.
+Original packing-slice evidence: `MatResolveResult` contains override diffs/diagnostics, not parameter bytes.
 At that point reflection did not expose member offsets; the reflected adapter above now supplies them,
-while `MaterialResourceSignature` remains descriptor-only. `material-instance::packAmatParameters` resolves numeric defaults
+while `MaterialResourceSignature` remains descriptor-only. `material-instance::packMatParameters` resolves numeric defaults
 and overrides against a caller-supplied property/type/byte-offset layout and block size. This is a CPU
 packing boundary, not evidence of shader-layout compatibility or a GPU binding packet.
 
@@ -87,7 +87,7 @@ be finite and fit float32; nonzero values that convert to zero are rejected, whi
 subnormals and ordinary float32 rounding are allowed. Integers must fit signed/unsigned 32-bit;
 bool occupies one 32-bit word with value 0 or 1. Words are little-endian, vector components contiguous,
 and all padding zero. No color-space conversion occurs. Input/layout/value/type/budget errors return
-`ErrorDomain::Material` with `AmatParameterError` and property context, without a partial block.
+`ErrorDomain::Material` with `MatParameterError` and property context, without a partial block.
 Existing stale-hash warnings are preserved; successful CPU packing does not authorize stale GPU use.
 
 Foundation prerequisite: existing document validation, resolver and standard numeric conversion.
@@ -111,7 +111,7 @@ Current evidence: IO already validates `.mat` identity, duplicate property IDs, 
 widths, but callers can construct mutable documents directly; the resolver previously trusted those values.
 Owner / lifetime / thread: `material-instance` validates borrowed CPU documents synchronously, without
 mutating either input or creating renderer resources. Data / error / budget / diagnostics: reuse
-`validateAmatDocument` at the resolver boundary; reject non-finite scalar/vector values in the shared
+`validateMatDocument` at the resolver boundary; reject non-finite scalar/vector values in the shared
 validator. An invalid document yields one deterministic `InvalidOverride` error and no resolved diffs,
 so an invalid override cannot be interpreted as a usable/defaulted value. Property context is preserved
 in the validation message. Existing shader mismatch and stale-hash diagnostic policy remains intact.

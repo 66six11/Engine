@@ -15,9 +15,9 @@ asharia_require_package_target(asharia::asset_core packages/asset-core)
 asharia_require_package_target(asharia::shader_authoring packages/shader-authoring)
 
 add_library(asharia-material-instance STATIC
-    src/amat_io.cpp
-    src/amat_resolver.cpp
-    src/amat_parameters.cpp
+    src/mat_io.cpp
+    src/mat_resolver.cpp
+    src/mat_parameters.cpp
 )
 
 add_library(asharia::material_instance ALIAS asharia-material-instance)
