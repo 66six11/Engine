@@ -115,7 +115,7 @@ Asharia Engine 当前目标仍是先做一个小而完整的 Vulkan renderer，�
   只发送 command 并投影 authoritative snapshot。当前 UI 提供单文档 Hierarchy、名称/local Transform Inspector、Create
   Entity、Save/Undo/Redo/dirty，以及只读 catalog-backed Resource Browser。首个可见 Scene View 已按
   `StudioScenePanelView -> ViewportCompositionControl -> ViewportSession
-  -> EngineBridge ViewportBridge V10 stream -> editor_native bounded scheduler -> process RenderThread -> renderer_basic_vulkan`
+  -> EngineBridge ViewportBridge V11 stream -> editor_native bounded scheduler -> process RenderThread -> renderer_basic_vulkan`
   接通；Release image 部署 project/scene/editor-content/editor native DLL 与精确 shader closure。Studio 不录制 Vulkan
   command，也不拥有 native handle/GPU resource；Resource Browser 不执行 importer、不创建 runtime/GPU resource。
   #386 已实现并冻结 Mesh Product v1 与受限 `.glb` importer，#394 已把 published artifact 接入 generation-safe
@@ -227,18 +227,18 @@ Asharia Engine 当前目标仍是先做一个小而完整的 Vulkan renderer，�
   与面板 presentation state；只有Ready、非degraded、exact extent且仍current的front才暴露最小interaction context。control不引用
   selection或执行domain picking；它通过
   `ViewportSession`/EngineBridge 消费 frame lease，不拥有 Vulkan resource，也不把 native handle 交给 Shell/ViewModel。
-- `Asharia.Studio.EngineBridge.Viewports.ViewportBridge` 是 managed V10 stream ABI 边界；它复制 view-local FOV axis、最多 256 个
+- `Asharia.Studio.EngineBridge.Viewports.ViewportBridge` 是 managed V11 stream ABI 边界；它复制 view-local FOV axis、最多 256 个
   `{objectId, Transform}` debug proxies、authored meshes 与 optional discriminated Transform Gizmo，异步 submit latest / take ready，并以
   `ViewportFrameLease.Release(NotSubmittedToConsumer | ConsumerAccessed)` exact-once 完成持久 slot 的本轮使用。
   raw external image/semaphore handles 只在 EngineBridge/Presentation handshake 内可见，Shell/ViewModel 与 Application
-  不取得句柄；V1–V9 frame exports 与 managed fallback 均已删除。
+  不取得句柄；V1–V10 frame exports 与 managed fallback 均已删除。
 - `Asharia.Studio.Presentation.Avalonia.Viewports.ViewportPresentationLifetime` 是 managed process composition 的
   admission/drain owner；`StudioCompositionSession` 关闭时先 stop-and-drain presentation，再 dispose Shell ViewModel，
   调用 native viewport shutdown，最后关闭 ProjectSession。
 - `Asharia.Studio.Application` 的 Editor Image inventory lease 是只读 Application 层产品策略：实现使用 .NET BCL
   文件 API；Avalonia `IStorageProvider` 只拥有用户文件选择、bookmark 与平台权限 UI，native Core File IO 继续只服务
   C++ engine/runtime 的低层 IO 与事务。
-- native `EditorSharedViewportRuntime` 是 process singleton，并拥有唯一 RenderThread、有界 V10 stream scheduler、
+- native `EditorSharedViewportRuntime` 是 process singleton，并拥有唯一 RenderThread、有界 V11 stream scheduler、
   Vulkan context/producer、external image/semaphore、RenderView recording 与 deferred GPU lifetime。每个 stream 最多
   一个 executing、一个 pending-latest、一个 ready frame 和三个持久 full slots；Scene/Game/Preview、camera、
   session/target/revision/sequence、bounded Transform proxies 与 optional Transform Gizmo 映射到同一 renderer path。managed Studio 只能观察
@@ -352,7 +352,7 @@ Studio Avalonia `Viewport Presentation Transaction` 的当前路径：
    replacement/resume 以 `Exposed` 恢复一帧；closed session 不再接受 UI invalidation。target/selection/exposed 通过 request-sequence
    hard fence 拒绝旧内容帧；camera-only input 保留 latest-wins request，并允许已经完成的旧 camera frame 单调显示，直到首个携带
    当前 camera 的 sequence 呈现后才重新开放 picking。extent 仍由 geometry generation 独占门控。
-8. 每轮 frame 通过 `editor_viewport_complete_frame_v10(stream, slot, completionKind)` exact-once 完成；compositor submission 前拒绝
+8. 每轮 frame 通过 `editor_viewport_complete_frame_v11(stream, slot, completionKind)` exact-once 完成；compositor submission 前拒绝
    用 `NotSubmittedToConsumer`，update 完成后使用 `ConsumerAccessed`。submission、disposal 或 completion 结果歧义时对应资源进入
    process-lifetime quarantine。control detach 停止 admission 并等待所有 front/candidate frame/surface cleanup；process shutdown
    再 drain native RenderThread 与 Vulkan owner。`--smoke-studio-viewport-cadence` 只保留前台静态 Scene 的 5 秒 Realtime 稳态基线；

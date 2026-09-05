@@ -10,7 +10,7 @@
 
 - 已有 package-first 基线：`rendergraph` 后端无关，`rhi-vulkan` 不依赖 RenderGraph，Vulkan/RG 翻译在 `rhi_vulkan_rendergraph`，`renderer_basic` 不暴露 Vulkan。
 - Vulkan 主路径已覆盖 dynamic rendering、synchronization2 barrier、descriptor/pipeline wrapper、transient image pool、buffer upload、compute dispatch、offscreen RenderView、Frame Debug replay、editor viewport sampled texture，以及真实 RenderView indexed scene-mesh pass。后者使用 Color/Depth + VertexRead/IndexRead、`DrawIndexed` 和 draw packet context，并支持 per-view Solid/Wireframe。
-- native Dear ImGui Editor 已具备 production workbench shell、Scene View camera/grid/debug-line、Live RG View、Frame Debugger、Asset Browser snapshot-backed catalog 和多项 smoke。Avalonia Studio 已完成 R0 硬切；#352 建立真实 ProjectSession，#353 已接通 `SceneDocument -> EditWorld -> Hierarchy/Inspector -> dirty/save/reopen`，#359 建立 UI-neutral `ViewportSession`/EngineBridge typed frame lease，#385 以共享 `editor-content` query 接入只读 catalog-backed Resource Browser，#388 再以 Application-owned typed selection 把资产只读详情接入统一 Inspector，#398 让已呈现的 Transform proxies 可被确定性点击，#402 把实际呈现的 validation model bounds 接入同一 typed selection，#404 把单个可见选中 mesh 投影为固定 2 px 橙色描边，#405 再以 Alt-modified orbit/pan/drag-dolly 与 wheel dolly 建立 mouse-only Scene camera navigation，#409 以一次性 ProjectSession edit 和 renderer-owned V8 packet 接入单选世界轴 Translate Gizmo，#411 再以 V9 discriminated packet 接入世界轴 Rotate Gizmo 与 `W` / `E` 模式切换，#413 以 V10 rotation packet 接入局部轴 Scale Gizmo 与 `R`。当前 Viewport V10、Document ABI v3、Catalog ABI v1 与 Scene schema v2 均为硬切合同；最近项目、模板、Studio 对 cooked model product/runtime CPU lease 的消费、GPU 闭环、thumbnail、多 viewport、plane/center-uniform/local translate-rotate/snap/multi-select gizmo、preview 与 Play Mode 尚未接入。
+- native Dear ImGui Editor 已具备 production workbench shell、Scene View camera/grid/debug-line、Live RG View、Frame Debugger、Asset Browser snapshot-backed catalog 和多项 smoke。Avalonia Studio 已完成 R0 硬切；#352 建立真实 ProjectSession，#353 已接通 `SceneDocument -> EditWorld -> Hierarchy/Inspector -> dirty/save/reopen`，#359 建立 UI-neutral `ViewportSession`/EngineBridge typed frame lease，#385 以共享 `editor-content` query 接入只读 catalog-backed Resource Browser，#388 再以 Application-owned typed selection 把资产只读详情接入统一 Inspector，#398 让已呈现的 Transform proxies 可被确定性点击，#402 把实际呈现的 validation model bounds 接入同一 typed selection，#404 把单个可见选中 mesh 投影为固定 2 px 橙色描边，#405 再以 Alt-modified orbit/pan/drag-dolly 与 wheel dolly 建立 mouse-only Scene camera navigation，#409 以一次性 ProjectSession edit 和 renderer-owned V8 packet 接入单选世界轴 Translate Gizmo，#411 再以 V9 discriminated packet 接入世界轴 Rotate Gizmo 与 `W` / `E` 模式切换，#413 以 V11 rotation packet 接入局部轴 Scale Gizmo 与 `R`。当前 Viewport V11、Document ABI v3、Catalog ABI v1 与 Scene schema v2 均为硬切合同；最近项目、模板、Studio 对 cooked model product/runtime CPU lease 的消费、GPU 闭环、thumbnail、多 viewport、plane/center-uniform/local translate-rotate/snap/multi-select gizmo、preview 与 Play Mode 尚未接入。
 - `asset-core` / `asset-pipeline` / `project-core` / `material-core` / `scene-core` 已是 CPU/headless 数据模型或 baseline package。#367 已闭合 authored typed mesh GUID -> backend-neutral extraction -> validation product binding -> indexed scene raster -> Frame Debug source revision 的受限路径；#386 已把通用 mesh product/受限 source import 闭合到 artifact reader，runtime GPU resource、reload/deferred deletion、material authoring仍未完成。
 - #386 已冻结 canonical Mesh Product v1、受限 `.glb` static importer、真实 artifact/manifest 与 bounded
   reader；#394 已完成 verified artifact 与 generation-safe RuntimeResource typed CPU lease。这仍不等于 GPU mesh、
@@ -77,7 +77,7 @@
 - 每个 session 单 in-flight、dirty-only invalidation 合并与 stale revision completion 拒绝；
 - 最多 256 个 Scene Transform debug proxies，超过上限显式 truncated；
 - EngineBridge exact-once `ViewportFrameLease`，raw handles 不进入 Application/ViewModel；
-- native V10 request 与真实 Vulkan多stream/持久slot、Scene/Game/Preview smoke。
+- native V11 request 与真实 Vulkan多stream/持久slot、Scene/Game/Preview smoke。
 
 #361 已闭合单个可见 Scene View：绑定 `ViewportPresentation`、Avalonia composition capability/import、
 surface generation、resize/detach/drain，并把当前 SceneDocument Transform 轴线呈现在 Studio。该 presentation 保留
@@ -97,7 +97,7 @@ asset/runtime GPU owner 或通用 viewport input framework。
 packet。它不写 document/selection，不引入 Physics、WASD fly、focus-selected 或 settings framework。#409 随后只接入
 world X/Y/Z translate：move sample 是不推进 hard presentation fence 的 transient preview，release 才以 stable ObjectId、起始 revision
 与单个 ProjectEditId 写一次 ProjectSession；Escape/capture/focus/stale revision/failure 均取消或回滚。#411 在相同 transaction
-边界增加 world-axis rotate：有符号角度更新 normalized quaternion，近平行时固定退化到 screen tangent；#413 再以 V10
+边界增加 world-axis rotate：有符号角度更新 normalized quaternion，近平行时固定退化到 screen tangent；#413 再以 V11
 为 discriminated Transform Gizmo packet 增加 normalized rotation，并接入 local-axis non-uniform scale。缩放使用固定起点的
 screen-axis 正比例因子，只改一个 local scale 分量，保留镜像符号且不穿过零；renderer 复用已有 debug world-line route，
 不新增 Vulkan resource/pass/sync。plane/center-uniform/local translate-rotate/snap、多选、Physics、通用工具 registry、
@@ -290,7 +290,7 @@ generation、Basic resource/material key 或 GPU handle；不保留旧 schema/AB
 - #366 已把该合同接到真实 `builtin.render-view-scene-mesh`：RenderGraph 显式声明 Color/Depth attachment、
   VertexRead/IndexRead buffer 和 `DrawIndexed`，Vulkan execution event 保留 draw item index 与
   `BasicDrawPacketContext`；Solid/Wireframe 是 per-view policy。
-- Wireframe 只在 logical device 已启用 optional `fillModeNonSolid` 时使用 `VK_POLYGON_MODE_LINE`；不可用时 V10
+- Wireframe 只在 logical device 已启用 optional `fillModeNonSolid` 时使用 `VK_POLYGON_MODE_LINE`；不可用时 V11
   submit 在复制/入队前返回 typed `FeatureUnavailable`，stream 保持 Open 且可由后续 Solid request 恢复；不让
   capability 成为 context 启动硬要求，不重试稳定失败，不回退 Solid，也不启用 `wideLines`。
 - 当前 directional-wedge OBJ -> deterministic generated product 只属于 repository fixture/tool，用于证明真实
@@ -311,7 +311,7 @@ generation、Basic resource/material key 或 GPU handle；不保留旧 schema/AB
 - `asharia-scene-rendering-smoke-tests` 覆盖空输入、ready、missing/wrong-kind/stale/invalid binding、revision replacement 和
   matrix/diagnostics；`--smoke-render-view-scene-mesh` 验证真实 RenderGraph scene-mesh pass、indexed execution event 与 Vulkan draw。
 - missing/wrong-kind/stale/invalid binding 逐 item no-draw，并保留 scene object/asset/revision context；空 scene 不生成
-  scene-mesh pass。malformed V10 packet 必须拒绝整帧，不提交部分 draw。
+  scene-mesh pass。malformed V11 packet 必须拒绝整帧，不提交部分 draw。
 - 下一 Slice 不再重新定义 mesh product 或 CPU store；应由 renderer 消费 `MeshResourceLease`/immutable upload facts，
   建立 GPU vertex/index owner、revision swap、fence-based deferred deletion 与 material compatibility。不能让 Scene View 或 ThumbnailService
   直接解析 `.glb` 来绕过该链路。

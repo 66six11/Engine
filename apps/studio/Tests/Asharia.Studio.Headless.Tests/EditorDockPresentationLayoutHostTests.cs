@@ -277,7 +277,13 @@ public sealed class EditorDockPresentationLayoutHostTests
 
         public void Rollback() => rollback();
 
-        public void Accept() => accept?.Invoke();
+        public void Accept(bool hasPublishedViewportBatch)
+        {
+            // These fixtures contain no viewport: an outer-only commit must not claim
+            // a compositor receipt that it never requested.
+            Assert.False(hasPublishedViewportBatch);
+            accept?.Invoke();
+        }
 
         public bool IsCurrent() => isCurrent?.Invoke() ?? true;
     }

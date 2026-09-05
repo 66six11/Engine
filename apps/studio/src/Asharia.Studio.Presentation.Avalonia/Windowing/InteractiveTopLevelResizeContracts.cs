@@ -52,7 +52,9 @@ public interface IInteractiveTopLevelResizeCommit
 
     void Rollback();
 
-    void Accept();
+    /// <param name="hasPublishedViewportBatch">True only when an exact viewport transaction
+    /// has queued its composition batch; outer-only layout commits pass false.</param>
+    void Accept(bool hasPublishedViewportBatch);
 
     bool IsCurrent();
 }

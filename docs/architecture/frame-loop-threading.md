@@ -115,9 +115,9 @@ request，并独占该 runtime 的 Vulkan context、render producer、RenderGrap
 submit、present-slot state、GPU epoch polling、retirement 与 shutdown。Avalonia panel、managed
 `ViewportPresentationLifetime` 和单个 `ViewportSession` 都不是 renderer owner，也不得各建线程。
 
-production 已硬切到 V10 stream ABI。caller 把借用字段复制为 owning `RenderFramePacket`，`submit_latest_v10` 原位覆盖
-每 stream 唯一 pending request 并立即返回；RenderThread 在 ready cell 为空且 slot 可推进时消费。`try_take_ready_v10`
-同样不等待 GPU，ready frame 通过 producer-finished semaphore 把完成依赖交给 compositor。旧 V1–V9 frame exports
+production 已硬切到 V11 stream ABI。caller 把借用字段复制为 owning `RenderFramePacket`，`submit_latest_v11` 原位覆盖
+每 stream 唯一 pending request 并立即返回；RenderThread 在 ready cell 为空且 slot 可推进时消费。`try_take_ready_v11`
+同样不等待 GPU，ready frame 通过 producer-finished semaphore 把完成依赖交给 compositor。旧 V1–V10 frame exports
 不再导出，managed 没有 fallback；所有 Vulkan/producer 操作和析构仍只发生在 native RenderThread。
 
 production `StudioCompositionSession` 会在后台 managed worker 上先调用 compatibility query，提前把 device/context
@@ -143,20 +143,20 @@ packet 可以拥有 `std::string`、`std::vector` 和纯值字段；不得保留
 `std::string_view`、managed pointer、Avalonia object、`SceneDocument`/World pointer 或可变 editor object。
 RenderThread 内部可以从 owning packet 临时构造借用 view，但该 view 不得越过当前 dispatch。
 
-V10 packet 带 view-local FOV axis、immutable scene `sourceRevision`、backend-neutral `scene-rendering` 抽取结果与 optional typed
+V11 packet 带 view-local FOV axis、immutable scene `sourceRevision`、backend-neutral `scene-rendering` 抽取结果与 optional typed
 Transform Gizmo；Gizmo 只含 stable object identity、world position、normalized rotation、`Translate | Rotate | Scale` kind、hover/active axis，并复用 renderer debug world-line route。它不携带 scene/runtime
-指针、asset importer state、resource registry reference 或 GPU key。Document ABI v3 与 V10 是硬切边界：旧 v1/v2
+指针、asset importer state、resource registry reference 或 GPU key。Document ABI v3 与 V11 是硬切边界：旧 v1/v2
 document 及 v1--v9 viewport packet 不被转换或降级消费。mesh binding missing/wrong-kind/stale 是逐 item 的 fail-closed
 no-draw diagnostics；packet 本身 malformed 则拒绝整帧，scheduler 不录制部分内容。
 
-control/release mailbox 与 V10 stream scheduler 都有固定上限。互斥只保护队列、stream 状态与 diagnostic snapshot，
+control/release mailbox 与 V11 stream scheduler 都有固定上限。互斥只保护队列、stream 状态与 diagnostic snapshot，
 不跨越 Vulkan record/submit、GPU wait 或 retirement。每 stream 最多 executing 1、pending latest 1、ready 1、persistent
 full slot 3；全局 frame-resource 上限为 4。Studio exact resize 在 extent/generation 改变时立即 retire 不匹配 stream，
 避免旧流三槽长期占满预算，并让 latest exact generation 竞争 retirement 释放的 lane；总量仍不突破该上限。
 
 full slot 一体持有 image、producer-finished/consumer-available semaphore pair、fence、command pool/buffer 与 frame resource。
 `NotSubmittedToConsumer` 清除该帧的 consumer wait；`ConsumerAccessed` 要求下一次复用在 GPU submit 中等待 compositor
-signal。stream close 时，managed 先 dispose persistent imports 并发送 `release_slot_import_v10`；native 再以 producer fence
+signal。stream close 时，managed 先 dispose persistent imports 并发送 `release_slot_import_v11`；native 再以 producer fence
 和必要的 consumer-release fence 驱动 retirement。attach 内单张 drawing surface 与 detach `Processed` 仍不能替代 GPU
 completion proof，producer-fence-only image reuse 继续被拒绝。
 

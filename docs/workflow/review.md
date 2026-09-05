@@ -265,13 +265,13 @@ cmd /c "build\conan\msvc-release\Release\generators\conanbuild.bat && cmake --pr
 ```
 
 Studio build 随后以 `Always` 复制所选 preset 的 `editor_native.dll`，并由
-`ValidateStudioViewportNativeRuntimeContract` 对最终 `$(TargetDir)` sibling 执行完整 V10 required / legacy V1--V9 forbidden
+`ValidateStudioViewportNativeRuntimeContract` 对最终 `$(TargetDir)` sibling 执行完整 V11 required / legacy V1--V9 forbidden
 admission。这个 gate 不允许 V1--V9 fallback，也不从其他 `bin/`、test preset 或历史隔离输出发现“最新”DLL；失败时必须重建显式选择的
 native preset。它只保护普通 build 的实际 sibling，不能替代 `StudioEditorImageProducer` 对发行 publish tree 的静态 PE identity、
 export 与 closed-tree qualification。
 
 显式选择 `msvc-debug-tests` 只用于本地 GPU/fault-injection 验收，其中
-`editor_viewport_open_stream_v10_for_test` 是允许的测试扩展；正式 Release Editor Image 必须拒绝该 export。
+`editor_viewport_open_stream_v11_for_test` 是允许的测试扩展；正式 Release Editor Image 必须拒绝该 export。
 
 涉及`Program`入口、App/process lifecycle、Window close或teardown exit-code时，focused反馈还必须运行真实的
 Windows disposable-child边界（它会启动当前构建输出中的`Editor.exe`，并保证timeout/cancel/fatal路径kill tree后有界reap）：
@@ -357,7 +357,7 @@ foreach ($preset in @("clangcl-debug", "msvc-debug")) {
 policy 或 Vulkan polygon mode capability 时，`--smoke-render-view-scene-mesh` 必须在两个 compiler preset 上运行。
 审查证据至少确认：`builtin.render-view-scene-mesh` 的 Color/Depth + `vertices: BufferVertexRead` +
 `indices: BufferIndexRead` schema、`DrawIndexed` 五参数与 packet context、空 scene 不插入 pass、unknown resource
-保留 typed context，以及同帧 per-view Solid/Wireframe 不互相污染。`fillModeNonSolid` 未启用时，V10 submit 必须在
+保留 typed context，以及同帧 per-view Solid/Wireframe 不互相污染。`fillModeNonSolid` 未启用时，V11 submit 必须在
 复制/入队前返回 typed `FeatureUnavailable`，stream 保持 Open 且不得重试同一 Wireframe request；后续显式 Solid
 request 必须可恢复。实现不得创建非法 line pipeline、静默回退 Solid 或为 1 px 线宽启用 `wideLines`。
 
@@ -512,8 +512,8 @@ Studio R0 删除的旧 `editor_project_*` bridge 仍不得恢复。当前真实 
   并确认 stable `ObjectId` target 不依赖当前 selection、Inspector quaternion/Euler projection 不抖动。
 
 对 schema v2 / Document ABI v3 改动，验收还必须确认 hard cut：不导出或接受旧 schema/ABI fallback，mesh authored GUID/type
-round-trip 后不出现 runtime EntityId、product generation/hash、Basic resource/material key 或 GPU handle。若同时改动 V10
-viewport producer/native ABI，必须证明 malformed V10 packet 被整帧拒绝；item-level asset binding failure 不能被提升为
+round-trip 后不出现 runtime EntityId、product generation/hash、Basic resource/material key 或 GPU handle。若同时改动 V11
+viewport producer/native ABI，必须证明 malformed V11 packet 被整帧拒绝；item-level asset binding failure 不能被提升为
 packet-level partial submit。
 
 涉及 `packages/resource-runtime` runtime handle/status/product-record resolution/diagnostics 时，必须跑
@@ -548,9 +548,9 @@ foreach ($preset in @("clangcl-debug", "msvc-debug")) {
 }
 ```
 
-涉及 V10 scene packet、`BasicRenderViewSceneDesc::sourceRevision` 或 Frame Debug projection 时，`--smoke-editor-frame-debugger`
+涉及 V11 scene packet、`BasicRenderViewSceneDesc::sourceRevision` 或 Frame Debug projection 时，`--smoke-editor-frame-debugger`
 必须断言 capture JSON、panel 与冻结的 RenderView diagnostics 精确记录同一个 `sourceRevision`；旧 ImGui viewport 未绑定
-authoritative SceneDocument 时允许为 `0`。Studio V10 scene-mesh process acceptance 必须另行断言 request、receipt 与实际 scene
+authoritative SceneDocument 时允许为 `0`。Studio V11 scene-mesh process acceptance 必须另行断言 request、receipt 与实际 scene
 snapshot 的 revision 非零且精确相等。Scene/Game 可共享 authored mesh snapshot，但审查必须确认 raster policy 仍按 view
 独立，不能由 Frame Debug 或另一个 viewport 覆盖。
 
@@ -562,6 +562,14 @@ snapshot 的 revision 非零且精确相等。Scene/Game 可共享 authored mesh
 涉及 Studio Scene View camera navigation、camera invalidation 或 picking/presented-frame identity 时，还必须运行真实
 240 Hz camera cadence gate：
 
+Cadence smoke records a separate bounded 4096-sample window after warmup. FPS, p95 and
+maximum interval use that same window; an interval starting before the window is excluded,
+and overflow fails explicitly. Camera output also reports actual input lateness, maximum gap
+and burst count: 240 Hz is the stimulus target, not a claim of uniform input spacing.
+Window resize smoke emits bounded `viewport-preparation-timing` worker/UI completion evidence.
+For latency repairs, run camera, steady and height-only ABA in a fixed three-run sequence,
+record every result and preserve exact-size / catch-up thresholds.
+
 ```powershell
 $env:ASHARIA_RUN_STUDIO_GPU_ACCEPTANCE = "1"
 dotnet test apps\studio\Tests\Editor.Tests\Editor.Tests.csproj -c Release --no-build `
@@ -572,10 +580,10 @@ dotnet test apps\studio\Tests\Editor.Tests\Editor.Tests.csproj -c Release --no-b
 已经成为可交互的 presented frame。它不提供 DWM/physical display evidence，也不能用通用 `Update(dt)`、UI timer 或 Physics
 替代既有 composition cadence owner。
 
-涉及 Studio Transform Gizmo、`GizmoChanged`、`GizmoModeChanged`、V10 Gizmo packet 或 renderer gizmo lines 时，还必须证明：
+涉及 Studio Transform Gizmo、`GizmoChanged`、`GizmoModeChanged`、V11 Gizmo packet 或 renderer gizmo lines 时，还必须证明：
 轴/环命中、局部轴 rotation 和近平行退化数学为 UI-neutral；scale 固定 drag 起点、只改命中分量、保留镜像符号且不穿过零；
 preview sample 不推进 `MinimumPresentableSequence`；240 次连续 preview 仍允许已完成帧呈现；release 恰好一次
-`SetEntityTransformAsync`，no-op/Escape/capture/focus/mode/stale/failure 不提交或回滚；V10 native smoke 拒绝 invalid
+`SetEntityTransformAsync`，no-op/Escape/capture/focus/mode/stale/failure 不提交或回滚；V11 native smoke 拒绝 invalid
 kind/axis/rotation、孤立 flag/payload 和非零未标记 payload，并以 `lastDebugWorldLineCount` 证明匹配 proxy 轴被
 renderer-owned 平移轴、三组 64 段旋转环或局部轴 shaft + endpoint wire cube 替换。最小 focused gate：
 

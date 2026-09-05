@@ -105,7 +105,8 @@ public sealed record ViewportRenderStreamSnapshot(
     uint PresentedSlotCount,
     ulong SubmittedRequests,
     ulong CoalescedRequests,
-    ulong RenderedFrames);
+    ulong RenderedFrames,
+    ulong StateRevision = 0);
 
 [Flags]
 internal enum ViewportRenderDiagnosticOverlay
@@ -121,6 +122,7 @@ public sealed class ViewportRenderStream : IDisposable, IAsyncDisposable
     private readonly ViewportBridge bridge_;
     private bool closeRequested_;
     private bool destroyed_;
+    private Task<ViewportFrameFailure?>? activeWait_;
 
     internal ViewportRenderStream(
         ViewportBridge bridge,
@@ -220,6 +222,43 @@ public sealed class ViewportRenderStream : IDisposable, IAsyncDisposable
         }
     }
 
+    public Task<ViewportFrameFailure?> WaitForChangeAsync(
+        ulong observedRevision, CancellationToken cancellationToken = default)
+    {
+        lock (gate_)
+        {
+            ObjectDisposedException.ThrowIf(destroyed_, this);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (activeWait_ is { IsCompleted: false })
+            {
+                throw new InvalidOperationException("Only one native waiter is allowed per viewport stream.");
+            }
+            // Never hold gate_ across the blocking native wait; close must be able to wake it.
+            activeWait_ = Task.Run(() =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var failure = bridge_.WaitForChange(this, observedRevision);
+                cancellationToken.ThrowIfCancellationRequested();
+                return failure;
+            });
+            return activeWait_;
+        }
+    }
+
+    public Task DrainWaiterAsync()
+    {
+        lock (gate_)
+        {
+            // Observe completion without turning expected waiter cancellation into retirement failure.
+            return activeWait_ is { } wait ? DrainAsync(wait) : Task.CompletedTask;
+        }
+        static async Task DrainAsync(Task wait)
+        {
+            try { await wait.ConfigureAwait(false); }
+            catch (OperationCanceledException) { }
+        }
+    }
+
     public void DestroyClosed()
     {
         lock (gate_)
@@ -227,6 +266,10 @@ public sealed class ViewportRenderStream : IDisposable, IAsyncDisposable
             if (destroyed_)
             {
                 return;
+            }
+            if (activeWait_ is { IsCompleted: false })
+            {
+                throw new InvalidOperationException("Drain the native viewport waiter before destroying its stream.");
             }
             bridge_.DestroyClosed(this);
             destroyed_ = true;
@@ -254,7 +297,7 @@ public sealed class ViewportFrameLease : IDisposable, IAsyncDisposable
 
     internal ViewportFrameLease(
         ViewportRenderStream stream,
-        ViewportNativeReadyFrameV10 frame,
+        ViewportNativeReadyFrameV11 frame,
         ViewportFrameFormat format)
     {
         stream_ = stream;
@@ -348,7 +391,7 @@ public sealed class ViewportFrameLease : IDisposable, IAsyncDisposable
     public void Quarantine() => Interlocked.Exchange(ref completionState_, int.MinValue);
 
     private static ViewportSceneMeshReceipt CreateSceneMeshReceipt(
-        ViewportNativeSceneMeshReceiptV10 receipt)
+        ViewportNativeSceneMeshReceiptV11 receipt)
     {
         var hasResolved = receipt.ResolvedCount != 0;
         return new ViewportSceneMeshReceipt(

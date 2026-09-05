@@ -305,11 +305,15 @@ namespace asharia::editor {
             StreamReadyFrame ready = *stream->readyFrame;
             if (ready.slotIndex >= stream->slots.size()) {
                 stream->faulted = true;
+                ++stream->stateRevision;
+                stream->stateChanged.notify_all();
                 return std::unexpected{vulkanError("Shared viewport ready slot index is invalid")};
             }
             StreamSlot& slot = stream->slots.at(ready.slotIndex);
             if (slot.phase != StreamSlotPhase::Ready || slot.nativeSlot == nullptr) {
                 stream->faulted = true;
+                ++stream->stateRevision;
+                stream->stateChanged.notify_all();
                 return std::unexpected{vulkanError("Shared viewport ready slot state is invalid")};
             }
 
@@ -392,6 +396,8 @@ namespace asharia::editor {
         {
             std::lock_guard lock{stream->mutex};
             stream->closeRequested = true;
+            ++stream->stateRevision;
+            stream->stateChanged.notify_all();
             stream->pendingLatest.reset();
         }
         queueReady_.notify_one();
@@ -431,6 +437,7 @@ namespace asharia::editor {
             .submittedRequests = stream->submittedRequests,
             .coalescedRequests = stream->coalescedRequests,
             .renderedFrames = stream->renderedFrames,
+            .stateRevision = stream->stateRevision,
         };
     }
 
@@ -449,6 +456,26 @@ namespace asharia::editor {
             }
         }
         streams_.erase(stream);
+        return {};
+    }
+
+    asharia::Result<void>
+    EditorSharedViewportRuntime::waitForStreamChange(EditorSharedViewportStreamId streamId,
+                                                     std::chrono::milliseconds timeout,
+                                                     std::uint64_t observedRevision) {
+        if (isOnRenderThread() || timeout < std::chrono::milliseconds::zero() ||
+            timeout > std::chrono::milliseconds{50}) {
+            return std::unexpected{vulkanError("Invalid shared viewport wait context or timeout")};
+        }
+        // Retain the stream independently of registry identity while the mutex is released.
+        auto stream = findStream(streamId);
+        if (!stream) {
+            return std::unexpected{vulkanError("Shared viewport stream does not exist")};
+        }
+        std::unique_lock lock{stream->mutex};
+        stream->stateChanged.wait_for(lock, timeout, [&] {
+            return stream->stateRevision != observedRevision || stream->closed || stream->faulted;
+        });
         return {};
     }
 
@@ -1223,6 +1250,8 @@ namespace asharia::editor {
                     });
                 if (allRetired) {
                     stream.closed = true;
+                    ++stream.stateRevision;
+                    stream.stateChanged.notify_all();
                     return true;
                 }
                 return false;
@@ -1235,6 +1264,8 @@ namespace asharia::editor {
         if (!released) {
             logError(released.error().message);
             stream.faulted = true;
+            ++stream.stateRevision;
+            stream.stateChanged.notify_all();
             return true;
         }
         slot.nativeSlot = nullptr;
@@ -1242,6 +1273,8 @@ namespace asharia::editor {
                 return item.nativeSlot == nullptr || item.phase == StreamSlotPhase::Retired;
             })) {
             stream.closed = true;
+            ++stream.stateRevision;
+            stream.stateChanged.notify_all();
         }
         return true;
     }
@@ -1311,6 +1344,8 @@ namespace asharia::editor {
 
             logError(rendered.error().error.message);
             stream.faulted = true;
+            ++stream.stateRevision;
+            stream.stateChanged.notify_all();
             return true;
         }
 
@@ -1349,6 +1384,8 @@ namespace asharia::editor {
                 },
         };
         ++stream.renderedFrames;
+        ++stream.stateRevision;
+        stream.stateChanged.notify_all();
         return true;
     }
 
@@ -1662,6 +1699,17 @@ namespace asharia::editor {
             publishRuntimeStatsOnRenderThread();
             queueSpaceAvailable_.notify_all();
             lifecycleChanged_.notify_all();
+        }
+        {
+            std::lock_guard registryLock{streamsMutex_};
+            for (auto& [id, stream] : streams_) {
+                std::lock_guard streamLock{stream->mutex};
+                if (!stream->closed) {
+                    stream->faulted = true;
+                    ++stream->stateRevision;
+                    stream->stateChanged.notify_all();
+                }
+            }
         }
         sharedViewportRenderThreadOwner() = nullptr;
     }
