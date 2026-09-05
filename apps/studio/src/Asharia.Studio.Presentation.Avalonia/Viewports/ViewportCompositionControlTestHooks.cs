@@ -75,6 +75,10 @@ internal sealed class ViewportCompositionControlTestHooks
 
     public Action<ViewportRenderRequest>? RequestPublished { get; init; }
 
+    public Action<long>? FramePresented { get; init; }
+
+    public Action<ViewportPreparationTiming>? PreparationTiming { get; init; }
+
     public ValueTask BeforeStageAsyncCore(
         ViewportCompositionControlTestPoint point,
         CancellationToken cancellationToken) =>
@@ -135,3 +139,6 @@ internal readonly record struct ViewportPresentationTestSnapshot(
     long CandidateImagesImported,
     long CandidateSurfaceUpdateAttempts,
     long CandidateCleanupCompletions);
+
+internal readonly record struct ViewportPreparationTiming(
+    ViewportPresentationEndpointId EndpointId, ulong Generation, ulong Sequence, string Stage, long Timestamp, int ThreadId);

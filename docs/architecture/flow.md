@@ -2,6 +2,13 @@
 
 本文档记录当前代码真实流程。每次实现或重构后都需要同步更新，用来帮助审查架构走向、包边界和下一步开发顺序。
 
+Viewport V11 readiness: native stream Ready/close/fault advances a mutex-protected revision
+and wakes its condition variable. EngineBridge permits one bounded asynchronous waiter and
+drains it before stream destruction. Presentation rechecks state and obtains the frame through
+the existing take/lease path; notification is not GPU completion. Candidate preparation resumes
+on UI and retains staged consumer completion and atomic publication.
+See Studio ADR-0011 and ADR-0006 for ownership and scheduling evidence.
+
 ## 维护规则
 
 - 代码改变了运行流程、包依赖、资源状态、同步路径或 smoke 命令时，必须更新本文档。
@@ -239,24 +246,25 @@ flowchart TD
   execution 依赖。
 - `apps/studio` 是 Avalonia managed Studio shell，不属于 C++ CMake target graph。Project/document 产品链为
   `App/Shell -> Application ProjectSession -> EngineBridge project + scene adapters -> project/scene native ABI`；Scene View
-  产品链为 `StudioScenePanelView -> ViewportCompositionControl -> Application ViewportSession -> EngineBridge V9 stream
+  产品链为 `StudioScenePanelView -> ViewportCompositionControl -> Application ViewportSession -> EngineBridge V11 stream
   -> editor_native bounded scheduler -> process-level viewport RenderThread -> shared viewport producer -> renderer_basic_vulkan`。
   Scene View 选择输入链反向停在 managed owner 边界：`presented front identity + DIP/physical extent -> Application
   presented-model bounds picker -> Transform proxy fallback -> IEditorSelectionService -> Hierarchy/Inspector`；picker 不引用
   Avalonia、EngineBridge、Physics 或 native ABI。selection truth 不写回 SceneDocument、dirty 或 Undo/Redo；其渲染投影是独立
   的前向 view state：`Scene panel selection projection -> ViewportSession.SetSelection(ViewStateRevision, ObjectId) -> EngineBridge
-  V9 canonical UUID -> selected draw packet -> Selection Mask -> Outline Composite`。Avalonia content gate 同时核对 target、view-state
+  V11 canonical UUID -> selected draw packet -> Selection Mask -> Outline Composite`。Avalonia content gate 同时核对 target、view-state
   与 request revision，拒绝选择切换前返回的旧像素。
   Scene View 相机导航走另一条瞬态输入链：`Avalonia pointer button/modifier + focus/capture -> logical surface-normalized
   orbit/pan/dolly delta -> Application ViewportSceneCameraNavigation -> ViewportSession.SetCamera -> CameraChanged invalidation ->
-  existing V9 camera packet`。Application 数学不引用 Avalonia，gesture 不写 selection/document；native ABI、renderer 与 RenderGraph
+  existing V11 camera packet`。Application 数学不引用 Avalonia，gesture 不写 selection/document；native ABI、renderer 与 RenderGraph
   无新增相机导航分支。
-  Scene View 世界轴变换走第三条输入链：`presented identity + selected ObjectId -> Application axis/ring hit + drag -> transient
-  ViewportSession GizmoChanged -> V9 discriminated Transform Gizmo packet -> renderer-owned debug world lines -> pointer release -> one
+  Scene View 变换走第三条输入链：`presented identity + selected ObjectId -> Application axis/ring hit + drag -> transient
+  ViewportSession GizmoChanged -> V11 discriminated Transform Gizmo packet -> renderer-owned debug world lines -> pointer release -> one
   ProjectSession transform edit`。move sample 不写 document、不推进 hard presentation fence；Escape/capture/focus/stale revision 取消，
-  mutation failure 回滚 authoritative Transform。`W` / `E` 的模式变更单独推进 presentation fence；Rotate 以 world axis
-  有符号角度更新 normalized quaternion，近平行时固定退化到 screen tangent；没有 Physics、Avalonia overlay 或通用 Update/timer。
-  V1–V8 frame exports 已硬切删除；Vulkan context、producer、queue submit、retirement 与 shutdown 只由 native owner thread
+  mutation failure 回滚 authoritative Transform。`W` / `E` / `R` 的模式变更单独推进 presentation fence；Rotate 以 world axis
+  有符号角度更新 normalized quaternion，近平行时固定退化到 screen tangent；Scale 沿对象 local axis 以固定起点的正比例因子只改
+  一个 scale 分量，保留镜像符号且不穿过零；没有 Physics、Avalonia overlay 或通用 Update/timer。
+  V1–V10 frame exports 已硬切删除；Vulkan context、producer、queue submit、retirement 与 shutdown 只由 native owner thread
   执行。Shell 只选择路径、发命令和投影 snapshot；
   ViewModel、Dock 与 Application 不解析 descriptor/scene JSON，也不持有 native/GPU handle。Windows composition root 优先
   选择 Avalonia Vulkan compositor，由专用 presentation adapter 导入 opaque NT image/semaphore；AngleEgl/Software 只保留
@@ -269,7 +277,7 @@ flowchart TD
   Save/Undo/Redo/dirty、一个可见 Scene View、只读 catalog-backed Resource Browser，以及由 typed selection 驱动的只读
   Asset Inspector；Content 层已有 Mesh Product v1/受限 `.glb` cooked artifact 与 generation-safe runtime CPU mesh
   lease，但 Studio 尚未消费它，仍无 GPU mesh resource、thumbnail/preview service、Play Mode、第二 Viewport、通用 fair scheduler、
-  scale/local/snap/multi-select gizmo 或 GPU ID-buffer/triangle geometry picking。当前 input consumer 已覆盖实际呈现 validation model 的 bounds picking、无模型实体的
+  plane/center-uniform/local translate-rotate/snap/multi-select gizmo 或 GPU ID-buffer/triangle geometry picking。当前 input consumer 已覆盖实际呈现 validation model 的 bounds picking、无模型实体的
   Transform proxy 回退，以及 Alt-modified orbit/pan/drag-dolly 与 wheel dolly；单个可见选中 mesh 已有固定橙色 2 px outline，但无
   x-ray、hover、多选、WASD fly、focus-selected 或 camera collision。
 - Editor panels 仍由 `EditorPanelRegistry::drawPanels(EditorFrameContext)` 适配每帧能力，但内置
@@ -879,7 +887,7 @@ flowchart LR
 
 #359 建立 render-session/native 边界，#361 接入首个 Avalonia Scene View；#367 将其硬切为 V6 异步
 authored-mesh/raster contract，#370 再硬切为携 view-local FOV axis 的 V7，#409 以 V8 增加 typed Translate Gizmo packet，
-#411 再以 V9 增加 discriminated Transform Gizmo packet；
+#411 再以 V9 增加 discriminated Transform Gizmo packet，#413 以 V11 给 packet 增加 normalized rotation 并接入 local-axis Scale；
 stream 仍由同进程 `editor_native.dll` 内唯一 shared viewport RenderThread 调度：
 
 ### Scene mesh revision 到 Frame Debug 证据
@@ -896,14 +904,14 @@ hash/generation、Basic resource/material key 和所有 GPU handle 都不进入 
 Scene schema v2 / Document ABI v3 snapshot
   -> scene-rendering extraction(revision, typed mesh reference, explicit binding)
   -> immutable draw list + item diagnostics
-  -> V9 owning frame packet(source revision + FOV axis + optional Transform Gizmo)
+  -> V11 owning frame packet(source revision + FOV axis + optional Transform Gizmo)
   -> Scene/Game shared authored list, per-view raster policy
   -> RenderView diagnostics.sourceRevision
   -> frozen Frame Debug capture / JSON / panel
 ```
 
 missing、wrong-kind、stale 或 invalid binding 只导致该 object 没有 draw，并在 diagnostics 中保留 scene object、asset 和
-revision context；空输入产生零 draw。相反，malformed V9 packet 是 ABI 边界失败，native scheduler 拒绝整帧而不提交部分内容。
+revision context；空输入产生零 draw。相反，malformed V11 packet 是 ABI 边界失败，native scheduler 拒绝整帧而不提交部分内容。
 Scene 与 Game 可共享同一个 authored mesh snapshot，但它们的 raster policy（包括 Solid/Wireframe）仍按 view 独立计算，
 不修改 scene、material 或 source asset。
 
@@ -917,7 +925,7 @@ sequenceDiagram
     participant Consumer as Avalonia presentation endpoint owner
     participant Session as Application ViewportSession
     participant Bridge as EngineBridge ViewportBridge
-    participant Native as editor_native V9 stream ABI
+    participant Native as editor_native V11 stream ABI
     participant Scheduler as Bounded latest-wins scheduler
     participant Owner as Native viewport RenderThread
     participant Renderer as renderer_basic_vulkan
@@ -966,7 +974,7 @@ sequenceDiagram
         Note over Bridge,Native: do not guess a completion kind
     end
     opt completion kind is known
-        Bridge->>Native: editor_viewport_complete_frame_v9(stream, slot, completionKind)
+        Bridge->>Native: editor_viewport_complete_frame_v11(stream, slot, completionKind)
         Native->>Scheduler: Presented -> Completing
         alt NotSubmittedToConsumer
             Owner->>Owner: poll producer fence
@@ -1053,9 +1061,9 @@ release-stop 是 Asharia 的 package-first/cross-platform 推论，不是外部�
 - Application request 不含 Avalonia、OS/Vulkan handle 或 mutable World pointer；进入 native mailbox 前，借用的
   string/span/proxy 字段会复制为 owning immutable `RenderFramePacket`。Transform proxy array 是当前 Scene View 的
   有界调试表示，不是最终 mesh/material render snapshot；selected ObjectId 也是瞬态 view state，不属于 scene/material 数据。
-- native V9 request/ready frame 是 self-described、owning ABI packet，并携 view-local FOV axis、selected canonical UUID/
-  presence、`ViewStateRevision` 与 optional discriminated Transform Gizmo；V1–V8 frame
-  exports 与 managed fallback 均已删除。V9 smoke 覆盖 burst request 只留下最新 sequence、ready 被占用时不覆盖、
+- native V11 request/ready frame 是 self-described、owning ABI packet，并携 view-local FOV axis、selected canonical UUID/
+  presence、`ViewStateRevision` 与 optional discriminated Transform Gizmo；V1–V10 frame
+  exports 与 managed fallback 均已删除。V11 smoke 覆盖 burst request 只留下最新 sequence、ready 被占用时不覆盖、
   steady-state 最多三个 distinct full slots，第四个请求等待 slot 回收。ABI 保留 logical/allocation 双 extent；Studio
   Scene exact request 对 logical/allocation 使用相同 panel `PixelSize`，并在 surface commit 前再次复验相等；Game fit 与 Frame Debug
   participant 则分别复验 proposal 中冻结的 fit target 或 capture identity/extent。caller 或 managed pump 不是 Vulkan owner。
@@ -1098,6 +1106,9 @@ release-stop 是 Asharia 的 package-first/cross-platform 推论，不是外部�
   退役 replaced stream/surface；publish 后结果歧义进入 Quarantined。Windows precommit publish 还会在同一 UI turn 经 shared outer
   commit 应用/复验实际 HWND/workspace layout，成功 `Published` 后才接受新 RECT。`WM_EXITSIZEMOVE` 使尚未接受的 commit stale 并丢弃
   queued successor；active GPU/consumer candidate 自然返回后按普通 abort/work fence 回收，Window 停在最后 Published exact RECT。
+  Windows paint acknowledgment additionally requires a changed client size, no pre-existing dirty region, an exact viewport
+  batch and no intervening dispatcher turn/native paint. Outer-only commits carry no batch claim. This relies on Avalonia
+  12.1 target-size serialization requesting a full-target redraw; all other paints retain the normal WM_PAINT path (ADR-0006).
   accepted final 相对 raw final 可落后 0–1 candidate，必须输出 lag。Snap、maximize/restore、程序化 Window/Bounds、DPI/跨屏 transition、
   没有 capability 的非 Windows top-level 与其他 geometry source 仍是 exact-only hidden fallback：边界不变，禁止 crop/stretch，但允许
   短暂空白，尚未达到零闪，且不能计入 owned precommit acceptance。
@@ -1147,7 +1158,7 @@ release-stop 是 Asharia 的 package-first/cross-platform 推论，不是外部�
 - native `frameIndex` 只是 render-attempt identity，失败允许留 gap；`EditorSharedViewportRuntime` 在唯一 RenderThread 上采样
   steady-clock elapsed 与上次任意 stream 成功 render delta，形成 immutable frame params。刷新率只改变采样密度，不再通过
   `frameIndex / 60` 改变 shader 时间速度。
-- V9 completion hard cut 只有 `editor_viewport_complete_frame_v9(stream, slot, completionKind)`。未进入
+- V11 completion hard cut 只有 `editor_viewport_complete_frame_v11(stream, slot, completionKind)`。未进入
   `UpdateWithSemaphoresAsync` 的 frame 报告 `NotSubmittedToConsumer`；update 已完成的 frame 报告
   `ConsumerAccessed`，并在 native RenderThread 上提交空 queue wait，把 compositor consumer-done semaphore 转为
   retirement fence。producer 与 consumer proof 都完成后，同一个 full slot 才重新 Available。
@@ -1261,10 +1272,10 @@ sequenceDiagram
 - Windows `VulkanOpaqueNt` is the current validated composition backend. Other
   platforms must map their handle family through compatibility probing and a
   distinct pool key before image reuse.
-- `editor_viewport_query_runtime_stats_v2..v7` 与当前 `v9` 是仅供 native smoke / diagnostics 的版本链，不属于 V9 stream
-  compatibility surface；当前 smoke 使用 v9 记录 epoch、renderer creation/reuse、backpressure、已消费 scene frame、最后
+- `editor_viewport_query_runtime_stats_v2..v7` 与当前 `v11` 是仅供 native smoke / diagnostics 的版本链，不属于 V11 stream
+  compatibility surface；当前 smoke 使用 v11 记录 epoch、renderer creation/reuse、backpressure、已消费 scene frame、最后
   scene revision、Scene/Game/Preview frame count，以及最后一次 session/target/revision/sequence/render-kind/debug-proxy count、
-  Scene world-grid 开关与实际 debug world-line count。V1–V8 stream exports 不再导出，也没有 managed fallback。
+  Scene world-grid 开关与实际 debug world-line count。V1–V10 stream exports 不再导出，也没有 managed fallback。
 - retired `SceneViewPresentationSession` 曾被设计成单 viewport、双 slot 的 latest-wins slice（不是当前合同）：
   相同在途观察去重，变化的
   Bounds 只保留最新 request；Busy/Backpressure 通过 1–16 ms 有界退避或 slot
@@ -1439,7 +1450,7 @@ flowchart TD
   product 进入 renderer-owned vertex/index buffer，`builtin.render-view-scene-mesh` 显式声明
   ColorReadWrite/Depth +
   VertexRead/IndexRead slots，以 `DrawIndexed` execution event 和 `BasicDrawPacketContext` 关联 draw 与资源身份；
-  Solid/Wireframe 与 FOV axis 是独立 per-view policy；Wireframe capability 缺失在 V9 submit 复制/入队前返回 typed
+  Solid/Wireframe 与 FOV axis 是独立 per-view policy；Wireframe capability 缺失在 V11 submit 复制/入队前返回 typed
   `FeatureUnavailable`，stream 保持 Open，并等待显式 Solid request 恢复。
 - `--smoke-mrt` 已接入独立 `BasicMrtRenderer`：使用 `builtin.raster-mrt` schema、两个 named color
   slots、两张 transient color attachments 和 dynamic rendering multi-color clear，验证 transient image

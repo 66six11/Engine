@@ -456,6 +456,9 @@ public sealed class WgcDwmCompositedCaptureAcceptanceTests
         var final = await recorder.WaitForExactFrameAsync(
             completionBaseline,
             observation =>
+                // Delivery sequence can advance for a frame captured before release.
+                // Final evidence must also be newer on the shared compositor/QPC clock.
+                observation.CompositorRenderedTime >= completion.CompositorTime &&
                 observation.Sentinel.Layout.SceneBounds.Width == completion.ExpectedWidth &&
                 observation.Sentinel.Layout.SceneBounds.Height == completion.ExpectedHeight,
             kFrameTimeout);

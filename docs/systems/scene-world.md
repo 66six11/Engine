@@ -105,7 +105,7 @@ changed authored value，并可进入 history。Inspector 把二者当作同姿�
 ABI；selection、project session、scene 或 selected object 变更时丢弃整个 transient 编辑会话。跨会话 winding
 persistence 仍 deferred。
 
-当前完成范围止于 local TRS 经 `SceneDocumentSnapshot`、`ViewportRenderRequest`、native V9 request、
+当前完成范围止于 local TRS 经 `SceneDocumentSnapshot`、`ViewportRenderRequest`、native V11 request、
 scene-rendering extraction 到 draw item 原样传递。以下项目明确 deferred，不能借本合同提前实现：
 
 - hierarchy、parent/world transform、dirty propagation、reparent、shear 或 world-matrix cache；

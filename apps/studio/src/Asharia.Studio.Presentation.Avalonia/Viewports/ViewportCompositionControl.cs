@@ -1565,7 +1565,8 @@ public sealed class ViewportCompositionControl : Control, ICustomHitTest
 
     private static async Task<NativeReadyWaitResult> WaitForReadyFrameAsync(
         ViewportRenderStream stream,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        Action<ViewportFrameLease>? readyObserved = null)
     {
         while (true)
         {
@@ -1573,19 +1574,28 @@ public sealed class ViewportCompositionControl : Control, ICustomHitTest
             var taken = stream.TryTakeReady();
             if (!taken.Succeeded || taken.HasFrame)
             {
+                if (taken.Lease is { } readyLease) readyObserved?.Invoke(readyLease);
                 return new NativeReadyWaitResult(taken, null);
             }
 
             var snapshot = stream.Poll();
-            if (snapshot.Lifecycle == ViewportRenderStreamLifecycle.Faulted ||
+            if (snapshot.Lifecycle != ViewportRenderStreamLifecycle.Open ||
                 (!snapshot.HasPendingLatest && !snapshot.HasReadyFrame &&
                  !snapshot.RenderExecuting))
             {
                 return new NativeReadyWaitResult(taken, snapshot);
             }
 
-            // Never capture AvaloniaSynchronizationContext for the 1 ms native-ready poll.
-            await Task.Delay(1, cancellationToken).ConfigureAwait(false);
+            if (snapshot.HasReadyFrame)
+            {
+                continue;
+            }
+            var failure = await stream.WaitForChangeAsync(snapshot.StateRevision, cancellationToken)
+                .ConfigureAwait(false);
+            if (failure is not null)
+            {
+                return new NativeReadyWaitResult(new ViewportFrameTakeResult(null, failure), snapshot);
+            }
         }
     }
 
@@ -1716,7 +1726,12 @@ public sealed class ViewportCompositionControl : Control, ICustomHitTest
             throw;
         }
 
-        var wait = await WaitForReadyFrameAsync(operation.Stream.Stream, cancellationToken);
+        TracePreparation(operation, request.Sequence, "Submitted");
+        var readyTask = WaitForReadyFrameAsync(operation.Stream.Stream, cancellationToken,
+            testHooks_?.PreparationTiming is null ? null :
+                lease => TracePreparation(operation, lease.RequestSequence, "ReadyWorker"));
+        var wait = await readyTask;
+        TracePreparation(operation, request.Sequence, "ReadyUi");
         if (!wait.Take.Succeeded)
         {
             throw new InvalidOperationException(wait.Take.Failure!.Message);
@@ -1761,6 +1776,7 @@ public sealed class ViewportCompositionControl : Control, ICustomHitTest
                 operation,
                 lease,
                 cancellationToken);
+            TracePreparation(operation, lease.RequestSequence, "UpdateCompletedUi");
             if (result != CompositionCommitResult.ConsumerAccessed)
             {
                 throw new OperationCanceledException(
@@ -1842,7 +1858,9 @@ public sealed class ViewportCompositionControl : Control, ICustomHitTest
                     accessTracker,
                     () => !cancellationToken.IsCancellationRequested &&
                           CanPreparePresentationFrame(operation, lease),
-                    static () => false);
+                    static () => false,
+                    testHooks_?.PreparationTiming is null ? null :
+                        stage => TracePreparation(operation, lease.RequestSequence, stage));
             }
             catch
             {
@@ -1861,6 +1879,11 @@ public sealed class ViewportCompositionControl : Control, ICustomHitTest
             }
         }
     }
+
+    private void TracePreparation(PreparedPresentationOperation operation, ulong sequence, string stage) =>
+        testHooks_?.PreparationTiming?.Invoke(new ViewportPreparationTiming(
+            endpointId_, operation.Handle.Ticket.CandidateGeometryGeneration, sequence, stage,
+            Stopwatch.GetTimestamp(), Environment.CurrentManagedThreadId));
 
     private bool CanPreparePresentationFrame(
         PreparedPresentationOperation operation,
@@ -2026,6 +2049,7 @@ public sealed class ViewportCompositionControl : Control, ICustomHitTest
         }
         stream.ExposedSlots.Clear();
 
+        await stream.Stream.DrainWaiterAsync();
         var snapshot = await WaitForStreamClosedAsync(stream.Stream);
         if (snapshot.Lifecycle == ViewportRenderStreamLifecycle.Faulted)
         {
@@ -2047,9 +2071,11 @@ public sealed class ViewportCompositionControl : Control, ICustomHitTest
                 return snapshot;
             }
 
-            // Candidate generation retirement must not enqueue millisecond continuations
-            // onto Avalonia's dispatcher while the user is resizing a dock panel.
-            await Task.Delay(1).ConfigureAwait(false);
+            var failure = await stream.WaitForChangeAsync(snapshot.StateRevision).ConfigureAwait(false);
+            if (failure is not null)
+            {
+                throw new InvalidOperationException(failure.Message);
+            }
         }
     }
 
@@ -2063,7 +2089,8 @@ public sealed class ViewportCompositionControl : Control, ICustomHitTest
         ICompositionImportedGpuSemaphore signalSemaphore,
         CompositionConsumerAccessTracker accessTracker,
         Func<bool> canPresent,
-        Func<bool> tryMarkPresented)
+        Func<bool> tryMarkPresented,
+        Action<string>? timing = null)
     {
         var visual = compositionVisual_;
         if (visual is null || !canPresent())
@@ -2084,7 +2111,8 @@ public sealed class ViewportCompositionControl : Control, ICustomHitTest
                 waitSemaphore,
                 signalSemaphore,
                 accessTracker,
-                canPresent);
+                canPresent,
+                timing);
         }
 
         var commit = new PendingCompositionCommit(
@@ -2129,13 +2157,15 @@ public sealed class ViewportCompositionControl : Control, ICustomHitTest
         ICompositionImportedGpuSemaphore waitSemaphore,
         ICompositionImportedGpuSemaphore signalSemaphore,
         CompositionConsumerAccessTracker accessTracker,
-        Func<bool> canPresent)
+        Func<bool> canPresent,
+        Action<string>? timing)
     {
         if (!canPresent())
         {
             return CompositionCommitResult.NotSubmittedToConsumer;
         }
 
+        timing?.Invoke("UpdateSubmit");
         var update = targetSurface.UpdateWithSemaphoresAsync(
             image,
             waitSemaphore,
@@ -2153,6 +2183,7 @@ public sealed class ViewportCompositionControl : Control, ICustomHitTest
         }
 
         await update.ConfigureAwait(false);
+        timing?.Invoke("UpdateCompletedWorker");
         accessTracker.MarkConsumerAccessed();
         return CompositionCommitResult.ConsumerAccessed;
     }
@@ -2396,6 +2427,7 @@ public sealed class ViewportCompositionControl : Control, ICustomHitTest
             exactExtentPresentedFrames_++;
             var presentedAt = Stopwatch.GetTimestamp();
             cadenceTracker_.Record(presentedAt);
+            testHooks_?.FramePresented?.Invoke(presentedAt);
             geometryDiagnostics_.MarkExactSurfaceCompleted(
                 geometryGeneration,
                 presentedAt);
@@ -2754,6 +2786,7 @@ public sealed class ViewportCompositionControl : Control, ICustomHitTest
         receipt.IsRendered = true;
         exactExtentPresentedFrames_++;
         cadenceTracker_.Record(renderedAt);
+        testHooks_?.FramePresented?.Invoke(renderedAt);
         geometryDiagnostics_.MarkExactSurfaceCompleted(
             receipt.Operation.Handle.Ticket.CandidateGeometryGeneration,
             renderedAt);

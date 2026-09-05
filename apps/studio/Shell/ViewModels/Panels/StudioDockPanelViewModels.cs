@@ -119,6 +119,18 @@ internal sealed class StudioScenePanelViewModel :
         }
     }
 
+    public bool IsScaleGizmoMode
+    {
+        get => transformGizmoKind_ == ViewportTransformGizmoKind.Scale;
+        set
+        {
+            if (value)
+            {
+                SetTransformGizmoMode(ViewportTransformGizmoKind.Scale);
+            }
+        }
+    }
+
     public ViewportPresentationLifetime PresentationLifetime =>
         Shell.ViewportPresentationLifetime;
 
@@ -197,6 +209,7 @@ internal sealed class StudioScenePanelViewModel :
         session_?.SetTransformGizmoKind(kind);
         OnPropertyChanged(nameof(IsTranslateGizmoMode));
         OnPropertyChanged(nameof(IsRotateGizmoMode));
+        OnPropertyChanged(nameof(IsScaleGizmoMode));
     }
 
     public bool TryBeginTransformGizmo(
@@ -399,6 +412,13 @@ internal sealed class StudioScenePanelViewModel :
                     out var rotate):
                 interaction = rotate;
                 return true;
+            case ViewportTransformGizmoKind.Scale
+                when ViewportScaleGizmoManipulator.TryBegin(
+                    snapshot,
+                    request,
+                    out var scale):
+                interaction = scale;
+                return true;
             default:
                 return false;
         }
@@ -412,6 +432,8 @@ internal sealed class StudioScenePanelViewModel :
                 ViewportTranslateGizmoManipulator.HitTest(snapshot, request),
             ViewportTransformGizmoKind.Rotate =>
                 ViewportRotateGizmoManipulator.HitTest(snapshot, request),
+            ViewportTransformGizmoKind.Scale =>
+                ViewportScaleGizmoManipulator.HitTest(snapshot, request),
             _ => ViewportGizmoAxis.None,
         };
 

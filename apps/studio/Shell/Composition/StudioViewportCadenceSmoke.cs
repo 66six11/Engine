@@ -57,7 +57,9 @@ internal static class StudioViewportCadenceSmoke
         {
             await host.WarmUpRuntimeAsync();
             var session = host.CreateSceneSession("studio-viewport-cadence-smoke.scene.json");
-            var control = host.CreateControl(session, isRealtime: true);
+            var measurement = new ViewportCadenceMeasurement();
+            var control = host.CreateControl(session, isRealtime: true,
+                testHooks: new ViewportCompositionControlTestHooks { FramePresented = measurement.Record });
             var layout = StudioViewportDockSmokeLayout.Create(control);
             host.Show(desktop, layout.Root, "Studio Viewport Realtime Cadence Smoke");
             await StudioViewportSmokeHost.WaitForWarmUpAsync(
@@ -65,8 +67,8 @@ internal static class StudioViewportCadenceSmoke
                 WarmUpFrameCount);
 
             var geometryBefore = control.PresentationGeometryMetrics;
-            var framesBefore = control.PresentationMetrics.TotalPresentedFrames;
             var measuredAt = Stopwatch.GetTimestamp();
+            measurement.Begin(measuredAt);
             WritePhaseMarker(driveCamera ? "camera_begin" : "steady_begin", measuredAt);
             var cameraInputCount = driveCamera
                 ? await Task.Run(() => DriveCameraAsync(session, kMeasurementDuration))
@@ -78,10 +80,10 @@ internal static class StudioViewportCadenceSmoke
             var endedAt = Stopwatch.GetTimestamp();
             WritePhaseMarker(driveCamera ? "camera_end" : "steady_end", endedAt);
 
-            var cadence = control.PresentationMetrics;
+            var cadence = measurement.End(endedAt);
             var geometryAfter = control.PresentationGeometryMetrics;
             var elapsed = Stopwatch.GetElapsedTime(measuredAt, endedAt);
-            var measuredFrames = checked(cadence.TotalPresentedFrames - framesBefore);
+            var measuredFrames = cadence.Frames;
             var measuredRate = elapsed <= TimeSpan.Zero
                 ? 0
                 : measuredFrames / elapsed.TotalSeconds;
@@ -153,6 +155,7 @@ internal static class StudioViewportCadenceSmoke
     {
         var inputCount = checked((int)(duration.TotalSeconds * CameraInputRate));
         var startedAt = Stopwatch.GetTimestamp();
+        var actualInputs = new long[inputCount];
         for (var inputIndex = 0; inputIndex < inputCount; inputIndex++)
         {
             var due = TimeSpan.FromSeconds((inputIndex + 1.0) / CameraInputRate);
@@ -162,6 +165,7 @@ internal static class StudioViewportCadenceSmoke
             }
 
             var camera = session.Camera;
+            actualInputs[inputIndex] = Stopwatch.GetTimestamp();
             session.SetCamera(ViewportSceneCameraNavigation.Apply(
                 camera,
                 new ViewportCameraNavigationDelta(
@@ -170,6 +174,23 @@ internal static class StudioViewportCadenceSmoke
                     verticalFraction: 0,
                     aspectRatio: 16.0f / 9.0f)));
         }
+        var lateness = new double[inputCount];
+        double maximumGapMs = 0;
+        var burstInputs = 0;
+        for (var i = 0; i < inputCount; i++)
+        {
+            lateness[i] = Stopwatch.GetElapsedTime(startedAt, actualInputs[i]).TotalMilliseconds -
+                (i + 1.0) * 1000 / CameraInputRate;
+            if (i == 0) continue;
+            var gapMs = Stopwatch.GetElapsedTime(actualInputs[i - 1], actualInputs[i]).TotalMilliseconds;
+            maximumGapMs = Math.Max(maximumGapMs, gapMs);
+            if (gapMs < 1000.0 / CameraInputRate / 4) burstInputs++;
+        }
+        Array.Sort(lateness);
+        Console.Out.WriteLine($"Camera input timing: targetHz={CameraInputRate}, " +
+            $"actualCount={inputCount}, p95LatenessMs={lateness[(int)Math.Ceiling(inputCount * .95) - 1]:F3}, " +
+            $"maximumGapMs={maximumGapMs:F3}, burstInputs={burstInputs}. " +
+            "Target rate does not imply uniformly spaced input.");
         return inputCount;
     }
 

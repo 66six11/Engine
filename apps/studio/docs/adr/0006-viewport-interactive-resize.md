@@ -1,8 +1,106 @@
-# ADR-0006：Viewport Presentation Transaction 与 V9 多槽呈现
+# ADR-0006：Viewport Presentation Transaction 与 V11 多槽呈现
+
+## #417: remaining resize latency investigation
+
+### Scoped acknowledgment after full-target resize publication
+
+The subsequent source check closes one missing premise: Avalonia 12.1.0 serializes a
+changed `CompositionTarget.Size`, and `ServerCompositionTarget.DeserializeChangesExtra`
+sets both redraw and full-redraw flags. An arbitrary viewport-only batch cannot replace
+an OS paint. Adopt the pinned-version target-size behavior at the Windows adapter boundary,
+following the existing Slate OS-paint owner and Godot UI/server separation references.
+
+The adapter acknowledges resize damage only when there was no pending OS update region,
+the logical client size changed, and the host published an exact viewport composition
+batch. Outer-only acceptance explicitly reports no such batch. A Send-priority revocation
+armed before SetWindowPos rejects later dispatcher turns, and a paint revision detects
+nested synchronous WM_PAINT. The sizing epoch must still be active and the attachment
+alive. Rollback revokes permission. Thus acknowledgment belongs to the same UI execution
+segment as the resize's queued full-target update.
+
+Subsequent invalidation, ordinary expose paints, pre-existing dirty regions, outer-only
+commits, yielded publication, cancellation and DPI fallback retain normal WM_PAINT handling.
+A failed ValidateRect is logged and leaves normal painting pending. No paint handler is
+suppressed, no timer resolution changes, and the publication/consumer barrier stays intact.
+Headless outer-only fixtures assert that the host cannot claim a viewport batch.
+
+This is a local adaptation of the checked 12.1.0 target-size serialization contract, not a
+general asynchronous redraw API. Recheck that implementation before upgrading Avalonia.
+Source: [Avalonia server target](https://github.com/AvaloniaUI/Avalonia/blob/12.1.0/src/Avalonia.Base/Rendering/Composition/Server/ServerCompositionTarget.cs).
+
+Final scoped implementation validation: Window/camera/steady GPU family 7/7; three
+height-ABA runs 18.92 / 10.05 / 10.95 ms; grow/shrink release WGC 2/2; managed tests
+945 passed / 6 opt-in skipped; native MSVC CTest 49/49. An earlier intermediate variant
+failed ABA at 34.18 ms; retain that failure rather than treating all experiments as passes.
+WGC final-frame selection now additionally requires compositor time at or after the
+completion marker: increasing delivery sequence alone can select a delayed pre-release
+frame. This strengthens the pixel evidence gate and does not claim physical scanout.
+Main and Scale final-HEAD comparison remains required before closing #417.
+
+### Post-publication paint acknowledgment experiment (2026-09-05)
+
+A diagnostic `ValidateRect(hwnd, null)` in `WindowRectCommit.Accept` removed the
+additional OS paint after publication without adding another visual invalidation.
+Five independent Release height-ABA runs passed the unchanged 33.333 ms catch-up gate:
+12.78, 11.77, 14.32, 17.95 and 20.03 ms. A second variant preserved an update region
+already pending before `SetWindowPos`, using `GetUpdateRect(..., false)`; its three
+height-ABA runs passed at 13.41, 17.39 and 10.81 ms. That guarded variant also passed
+all five existing Window process cases and both grow/shrink release WGC pixel cases.
+These are diagnostic results, not a shipped paint contract or physical scanout evidence.
+
+The experiment was reverted despite those passes. The public Avalonia 12.1.0
+`CompositingRenderer.Resized` implementation is empty; `Paint` separately queues an
+update, calls `CompositionTarget.RequestRedraw`, then requests synchronous rendering.
+A published viewport batch alone does not establish ownership of the entire HWND update
+region. A pre-apply `GetUpdateRect` check cannot identify damage added during nested
+`SetWindowPos` callbacks or an asynchronous publication hook before `Accept`. Furthermore,
+the outer-only acceptance path has no transaction Rendered receipt. The existing WGC
+cases prove release samples, not ordinary expose/occlusion repaint or that outer-only path.
+Clearing the whole region on this evidence would introduce an unverified repaint contract.
+
+The next implementation must first provide a framework-supported asynchronous full-target
+redraw receipt, or an explicitly owned resize-damage region; it must retain normal WM_PAINT
+handling for unrelated damage and fallback. Add real-HWND coverage for pre-existing and
+intervening invalidation, outer-only resize, rollback, cancellation and DPI before adopting
+acknowledgment. Then repeat height-ABA, Window performance, camera/steady cadence and WGC
+release gates. Do not substitute a raw `ValidateRect` call or a dispatch priority change for
+that missing ownership boundary. #417 remains open and #418 remains draft.
+
+Sources: [Avalonia renderer](https://github.com/AvaloniaUI/Avalonia/blob/12.1.0/src/Avalonia.Base/Rendering/Composition/CompositingRenderer.cs),
+[Avalonia full-target redraw](https://github.com/AvaloniaUI/Avalonia/blob/12.1.0/src/Avalonia.Base/Rendering/Composition/CompositionTarget.cs),
+and [Microsoft ValidateRect](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-validaterect).
+
+
+Native V11 notification removes readiness polling, but does not close resize acceptance.
+Bounded test-only timestamps distinguish native-ready observation, UI continuation and
+staged surface completion. The checked Avalonia 12.1.0 source and sampled thread stacks
+identify `WM_PAINT -> CompositingRenderer.Paint -> MediaContext.SyncCommit -> Task.Wait`
+as a synchronous UI wait during resizing. A 90-input diagnostic trace attributed about
+822 ms to that path; it is not a native frame-generation or image-import delay.
+
+Two experimental scheduling changes were rejected and reverted: a Send-priority Ready
+continuation passed two runs but failed the third at 40.78 ms; delegating a transaction's
+WM_PAINT to asynchronous invalidation removed the long Ready-to-UI span but still failed
+at 33.64 ms and requires additional repaint/lifetime evidence. Neither is a shipped fix.
+Do not suppress ordinary OS paints, remove the publication/consumer barrier, cancel every
+active request, change timer resolution or relax the 33.333 ms gate to close this issue.
+
+The next slice must resolve framework paint scheduling at the Windows integration boundary
+and preserve exact front/outer-window publication, fallback repaint, cancellation and DPI.
+Epic's FSlateApplication exposes explicit OS-paint and draw ownership; Godot separates
+server work from UI mutation. Adopt those ownership boundaries, not their API shapes.
+Asharia's retained-front / Avalonia batch contract needs its own evidence before changing
+the OS-paint owner. #417 and the dependent Scale integration remain incomplete.
+
+Sources: [Avalonia WM_PAINT](https://github.com/AvaloniaUI/Avalonia/blob/12.1.0/src/Windows/Avalonia.Win32/WindowImpl.AppWndProc.cs),
+[Avalonia Compositor](https://github.com/AvaloniaUI/Avalonia/blob/12.1.0/src/Avalonia.Base/Rendering/Composition/Compositor.cs),
+[Epic FSlateApplication](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/Slate/FSlateApplication),
+[Godot thread ownership](https://docs.godotengine.org/en/stable/tutorials/performance/thread_safe_apis.html),
+and [Microsoft painting contract](https://learn.microsoft.com/en-us/windows/win32/learnwin32/painting-the-window).
 
 状态：Accepted / Implemented（platform-neutral capability + Windows integration；physical scanout acceptance pending）
 日期：2026-08-08
-最近修订：2026-08-12（V9 view-local FOV axis 硬切）
+最近修订：2026-08-12（V11 view-local FOV axis 硬切）
 
 ## 背景
 
@@ -63,22 +161,22 @@ host/transaction，以及跨 compositor 或 native Window geometry 的伪原子 
 
 ## 决策
 
-### 1. V9 是 production 硬切 ABI
+### 1. V11 是 production 硬切 ABI
 
 Studio 只调用以下 viewport frame 生命周期入口：
 
 ```text
-editor_viewport_open_stream_v9
-editor_viewport_submit_latest_v9
-editor_viewport_try_take_ready_v9
-editor_viewport_complete_frame_v9
-editor_viewport_release_slot_import_v9
-editor_viewport_close_stream_v9
-editor_viewport_poll_stream_v9
-editor_viewport_destroy_stream_v9
+editor_viewport_open_stream_v11
+editor_viewport_submit_latest_v11
+editor_viewport_try_take_ready_v11
+editor_viewport_complete_frame_v11
+editor_viewport_release_slot_import_v11
+editor_viewport_close_stream_v11
+editor_viewport_poll_stream_v11
+editor_viewport_destroy_stream_v11
 ```
 
-V1–V8 stream symbols 不导出，managed 没有 fallback。兼容性 query、runtime stats 和 shutdown 是独立控制面，
+V1–V10 stream symbols 不导出，managed 没有 fallback。兼容性 query、runtime stats 和 shutdown 是独立控制面，
 不构成旧 frame path。
 
 ### 2. 每个 stream 的队列严格有界
@@ -124,7 +222,7 @@ scanout 时间。下一次复用同一 slot 的 producer submit 等待 consumer-
 `NotSubmittedToConsumer` 明确清除这次 consumer wait，因为对应 signal 永远不会发生。
 
 managed imported wrappers 只在 slot 首次出现时创建，后续 frame 验证 handles 不变并复用 wrapper。stream close 前先 dispose
-wrapper，再调用 `release_slot_import_v9`；native 只有在 import release 和 GPU completion 都成立后才销毁 slot。
+wrapper，再调用 `release_slot_import_v11`；native 只有在 import release 和 GPU completion 都成立后才销毁 slot。
 
 ### 4. Viewport Presentation Transaction 是通用可见提交合同
 
@@ -164,7 +262,7 @@ capture identity 不与实时 Scene/Game front 共用可变 presentation state�
 ### 5. Scene exact policy、dock 与 Window layout adapter
 
 `ViewportCompositionControl` 以 `ceil(Bounds * RenderScaling)` 计算 commit-time panel `PixelSize`。Studio 提交给 native 的
-`logical extent` 与 `allocation extent` 都等于这个物理像素尺寸；V9 ABI 仍保留两个字段，但 Studio presentation 不使用
+`logical extent` 与 `allocation extent` 都等于这个物理像素尺寸；V11 ABI 仍保留两个字段，但 Studio presentation 不使用
 allocation padding。每次成功进入 `CompositionDrawingSurface` 的 frame 必须满足：
 
 ```text
@@ -373,7 +471,7 @@ panel 使用相同 pixel extent，不以 padding/crop 改变网格世界间距�
 
 - native smoke 覆盖：ready/pending latest coalescing、三槽上限、第四请求 backpressure、invalid completion 不消费所有权、
   slot reuse、import release、close/destroy、四 cold stream round-robin 以及 completion/close-before-render；
-- managed tests 覆盖：V9 ABI layout、view-local FOV axis、authored-mesh deep copy、自描述 ready frame/mesh receipt、exact-once completion、persistent slot identity、stream close；
+- managed tests 覆盖：V11 ABI layout、view-local FOV axis、authored-mesh deep copy、自描述 ready frame/mesh receipt、exact-once completion、persistent slot identity、stream close；
 - managed 行为测试覆盖：transaction phase/exact-once publish、atomic-scope mismatch、pre-publish abort、post-publish quarantine、
   render/retirement barrier、exact extent admission、A→B→A generation 不复活旧 surface、同 extent 不新增 generation、旧流退役不阻止新流 pump、pump 同步重入、
   close failure quarantine、content sequence fence、coalesced OnDemand wake、ancestor re-exposure、clean session replacement、
@@ -393,7 +491,7 @@ panel 使用相同 pixel extent，不以 padding/crop 改变网格世界间距�
   `--smoke-viewport-multi-endpoint` 当前覆盖同 compositor 两 endpoint 的同文档双 Scene、Scene+Game ownership，以及实际 immutable
   request 中 Scene `MaintainHorizontal` / Game `MaintainVertical` 的 projection policy 隔离、validation reject
   和 post-publish group quarantine。3–4 realtime endpoint、公平资源预算与 slow-consumer 隔离仍是明确 blocker，不属于当前通过范围；
-- `--smoke-viewport-transaction-flash` 另以 typed V9 diagnostic flag 在 native Scene surface 写四色 corner sentinel，逐 batch 检查
+- `--smoke-viewport-transaction-flash` 另以 typed V11 diagnostic flag 在 native Scene surface 写四色 corner sentinel，逐 batch 检查
   Bounds/front/candidate/visual/surface/opacity/identity 以及 blank/out-of-bounds/stretch/crop；当前没有可靠 window pixel capture，输出
   `pixelEvidenceAvailable=false`，不声称 PhysicalDisplayed；
 - `--smoke-viewport-transaction-window-resize` 使用真实 Win32 HWND、真实 Avalonia compositor 与 Vulkan external surface 驱动
@@ -420,7 +518,7 @@ panel 使用相同 pixel extent，不以 padding/crop 改变网格世界间距�
   只允许 59.94 Hz/QPC 的小于 0.5 ms 采样容差（`<=25.5 ms`），max `<=100 ms`；
 - 各 smoke 分层报告 native producer/resource、transaction phase/identity、Avalonia surface/`Rendered` 与 physical display 指标，禁止把
   surface completion 当作 scanout。物理层另用 PresentMon/ETW 验证，不能从 `UpdateWithSemaphoresAsync` 推断；
-- distribution 要求全部 V9 frame exports；V1–V8 stream exports 缺失是预期硬切结果。
+- distribution 要求全部 V11 frame exports；V1–V10 stream exports 缺失是预期硬切结果。
 
 2026-08-09 的 RTX 4060 / 200 Hz exact-extent 实测中，中间版本因旧 active stream 占住三个全局 lane，只完成 29 个 exact frame / 0.75 s
 （38.72 FPS，p95 32 ms，15 个 stale candidate reject）。旧的“全部 exact frame”计数还能被同一 generation 的第二、第三帧抬高，

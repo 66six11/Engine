@@ -494,6 +494,7 @@ public sealed class StudioLayeringTests
         Assert.Contains("LostFocus=\"OnSceneViewportLostFocus\"", scenePanelXaml);
         Assert.Contains("Key.W", scenePanelCodeBehind, StringComparison.Ordinal);
         Assert.Contains("Key.E", scenePanelCodeBehind, StringComparison.Ordinal);
+        Assert.Contains("Key.R", scenePanelCodeBehind, StringComparison.Ordinal);
         Assert.Contains(
             "SetTransformGizmoMode",
             scenePanelCodeBehind,
@@ -564,11 +565,11 @@ public sealed class StudioLayeringTests
             StringComparison.Ordinal);
         Assert.DoesNotContain("Console.Error.WriteLine(", viewportControlSource, StringComparison.Ordinal);
         Assert.DoesNotContain("await Task.Delay(1);", viewportControlSource, StringComparison.Ordinal);
-        Assert.Contains(
+        Assert.DoesNotContain(
             "await Task.Delay(1, cancellationToken).ConfigureAwait(false);",
             viewportControlSource,
             StringComparison.Ordinal);
-        Assert.Contains(
+        Assert.DoesNotContain(
             "await Task.Delay(1).ConfigureAwait(false);",
             viewportControlSource,
             StringComparison.Ordinal);

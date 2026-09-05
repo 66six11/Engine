@@ -271,6 +271,7 @@ public partial class StudioScenePanelView : UserControl
         {
             Key.W => ViewportTransformGizmoKind.Translate,
             Key.E => ViewportTransformGizmoKind.Rotate,
+            Key.R => ViewportTransformGizmoKind.Scale,
             _ => (ViewportTransformGizmoKind?)null,
         };
         if (mode is null)

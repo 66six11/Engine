@@ -159,6 +159,90 @@ public sealed class StudioScenePanelViewModelTests
     }
 
     [AvaloniaFact]
+    public async Task Scale_gizmo_mode_previews_and_commits_one_local_axis_scale()
+    {
+        var projectSessionId = ProjectSessionId.CreateNew();
+        var sceneId = Guid.NewGuid();
+        var initialTransform = new TransformValue(
+            Float3.Zero,
+            Quaternion.Identity,
+            new Float3(2, 3, 4));
+        var entity = new SceneEntitySnapshot(
+            Guid.NewGuid(),
+            new EntityId(1, 1),
+            "Selected",
+            initialTransform);
+        var original = Ready(
+            projectSessionId,
+            Guid.NewGuid(),
+            sceneId,
+            revision: 3,
+            entity);
+        var selection = new TestEditorSelectionService();
+        Assert.True(selection.Replace(new SceneObjectSelectionTarget(
+            projectSessionId,
+            sceneId,
+            entity.ObjectId)));
+        var projectSession = new TestProjectSession();
+        projectSession.Publish(original);
+        var callCount = 0;
+        TransformValue capturedTransform = default;
+        projectSession.SetTransformHandler = (_, transform, context, _) =>
+        {
+            callCount++;
+            capturedTransform = transform;
+            var scaledEntity = new SceneEntitySnapshot(
+                entity.ObjectId,
+                entity.RuntimeEntityId,
+                entity.Name,
+                transform);
+            return ValueTask.FromResult(ProjectSessionOperationResult.Success(
+                Ready(projectSessionId, original.Project!.ProjectId, sceneId, 4, scaledEntity),
+                "Scaled selected entity.",
+                originatingEditId: context.EditId));
+        };
+        using var shell = new StudioShellViewModel(
+            projectSession,
+            new TestProjectDialogService(),
+            StudioShellTestFactory.CreateDocumentTransitions(projectSession),
+            StudioShellTestFactory.CreateDiagnosticWriter(),
+            StudioShellTestFactory.CreateProjectAssetCatalog(),
+            selection);
+        using var panel = new StudioScenePanelViewModel(shell);
+        var session = Assert.IsType<ViewportSession>(panel.Session);
+        session.SetCamera(GizmoCamera());
+        panel.SetTransformGizmoMode(ViewportTransformGizmoKind.Scale);
+        Assert.False(panel.IsTranslateGizmoMode);
+        Assert.False(panel.IsRotateGizmoMode);
+        Assert.True(panel.IsScaleGizmoMode);
+        var extent = new ViewportExtent(800, 600);
+        var size = new ViewportRenderSize(extent, extent);
+        Assert.True(session.TryPublishLatest(size, out var presented));
+        var context = PresentedContext(session, sceneId, revision: 3, presented, extent);
+
+        Assert.True(panel.TryBeginTransformGizmo(
+            context,
+            new ViewportPickRequest(
+                extent,
+                new ViewportPickPoint(460, 300),
+                8)));
+        Assert.True(panel.TryUpdateTransformGizmo(new ViewportPickPoint(502, 300)));
+        Assert.True(session.TryPublishLatest(size, out var preview));
+        Assert.Equal(ViewportTransformGizmoKind.Scale, preview.TransformGizmo!.Kind);
+        Assert.InRange(preview.TransformGizmo.Transform.Scale.X, 2.9999f, 3.0001f);
+
+        Assert.True(await panel.CompleteTransformGizmoAsync());
+
+        Assert.Equal(1, callCount);
+        Assert.Equal(Float3.Zero, capturedTransform.Position);
+        Assert.Equal(Quaternion.Identity, capturedTransform.Rotation);
+        Assert.InRange(capturedTransform.Scale.X, 2.9999f, 3.0001f);
+        Assert.Equal(3, capturedTransform.Scale.Y);
+        Assert.Equal(4, capturedTransform.Scale.Z);
+        Assert.Equal("Scaled selected entity.", shell.ProjectOperationMessage);
+    }
+
+    [AvaloniaFact]
     public void Presented_transform_proxy_pick_updates_typed_selection_without_editing_document()
     {
         var projectSessionId = ProjectSessionId.CreateNew();

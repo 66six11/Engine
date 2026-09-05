@@ -110,6 +110,7 @@ namespace asharia::editor {
         std::uint64_t submittedRequests{};
         std::uint64_t coalescedRequests{};
         std::uint64_t renderedFrames{};
+        std::uint64_t stateRevision{};
     };
 
     struct EditorSharedViewportDeviceSnapshot {
@@ -195,6 +196,9 @@ namespace asharia::editor {
         pollStream(EditorSharedViewportStreamId streamId);
         [[nodiscard]] asharia::Result<void>
         destroyClosedStream(EditorSharedViewportStreamId streamId);
+        [[nodiscard]] asharia::Result<void>
+        waitForStreamChange(EditorSharedViewportStreamId streamId,
+                            std::chrono::milliseconds timeout, std::uint64_t observedRevision);
         [[nodiscard]] EditorSharedViewportRenderFrameResult
         renderSceneViewFrame(EditorSharedViewportPresentDesc desc);
         [[nodiscard]] EditorSharedViewportRenderFrameResult
@@ -236,6 +240,7 @@ namespace asharia::editor {
                 EditorSharedViewportTransformGizmoKind::Translate};
             std::array<std::uint64_t, 2> transformGizmoObjectId{};
             std::array<float, 3> transformGizmoPosition{};
+            std::array<float, 4> transformGizmoRotation{0.0F, 0.0F, 0.0F, 1.0F};
             EditorSharedViewportGizmoAxis transformGizmoHoveredAxis{
                 EditorSharedViewportGizmoAxis::None};
             EditorSharedViewportGizmoAxis transformGizmoActiveAxis{
@@ -276,6 +281,7 @@ namespace asharia::editor {
 
         struct StreamState {
             mutable std::mutex mutex;
+            std::condition_variable stateChanged;
             std::optional<EditorExtent2D> allocationExtent;
             std::optional<RenderFramePacket> pendingLatest;
             std::optional<StreamReadyFrame> readyFrame;
@@ -288,6 +294,7 @@ namespace asharia::editor {
             std::uint64_t submittedRequests{};
             std::uint64_t coalescedRequests{};
             std::uint64_t renderedFrames{};
+            std::uint64_t stateRevision{};
         };
 
         EditorSharedViewportRuntime();

@@ -530,6 +530,16 @@ public sealed class ViewportSessionTests
         Assert.True(session.TryPublishLatest(size, out var rotate));
         Assert.Equal(ViewportTransformGizmoKind.Rotate, rotate.TransformGizmo!.Kind);
         Assert.True(rotate.Reasons.HasFlag(ViewportInvalidationReason.GizmoModeChanged));
+
+        session.SetTransformGizmoKind(ViewportTransformGizmoKind.Scale);
+
+        Assert.True(session.Current.MinimumPresentableSequence > rotate.Sequence);
+        Assert.False(session.CanPresentPublishedFrame(
+            rotate.Sequence,
+            rotate.TargetRevision));
+        Assert.True(session.TryPublishLatest(size, out var scale));
+        Assert.Equal(ViewportTransformGizmoKind.Scale, scale.TransformGizmo!.Kind);
+        Assert.True(scale.Reasons.HasFlag(ViewportInvalidationReason.GizmoModeChanged));
     }
 
     [Fact]

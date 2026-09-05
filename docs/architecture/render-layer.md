@@ -166,7 +166,7 @@
 - validation product native resolver 只是在 smoke/fixture 中把一个已知 asset identity 映射到显式 product binding；它不是
   importer、asset database 或 runtime resource registry。binding 缺失、type 不符、stale 或自身无效时，`scene-rendering`
   只为该 object 产生 contextual no-draw diagnostic，不能偷换为 fixture 或 fallback mesh。
-- `BasicRenderViewSceneDesc::sourceRevision` 从 V9 scene packet 流入 renderer diagnostics，Frame Debug 在 capture 时冻结该值，
+- `BasicRenderViewSceneDesc::sourceRevision` 从 V11 scene packet 流入 renderer diagnostics，Frame Debug 在 capture 时冻结该值，
   JSON 与 panel 都回显同一 revision；它是 capture 溯源证据，不是 renderer 反向读取 SceneDocument 的通道。
 
 ## 下一步收敛

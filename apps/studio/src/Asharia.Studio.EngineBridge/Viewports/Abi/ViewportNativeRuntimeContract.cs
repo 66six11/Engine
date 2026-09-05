@@ -63,19 +63,28 @@ internal static class ViewportNativeRuntimeContract
     [
         ViewportNativeEntryPoints.QueryCompositionCompatibilityExport,
         ViewportNativeEntryPoints.ReleaseCompatibilityResultExport,
-        ViewportNativeEntryPoints.OpenStreamV9Export,
-        ViewportNativeEntryPoints.SubmitLatestV9Export,
-        ViewportNativeEntryPoints.TryTakeReadyV9Export,
-        ViewportNativeEntryPoints.CompleteFrameV9Export,
-        ViewportNativeEntryPoints.ReleaseSlotImportV9Export,
-        ViewportNativeEntryPoints.CloseStreamV9Export,
-        ViewportNativeEntryPoints.PollStreamV9Export,
-        ViewportNativeEntryPoints.DestroyStreamV9Export,
+        ViewportNativeEntryPoints.OpenStreamV11Export,
+        ViewportNativeEntryPoints.SubmitLatestV11Export,
+        ViewportNativeEntryPoints.TryTakeReadyV11Export,
+        ViewportNativeEntryPoints.CompleteFrameV11Export,
+        ViewportNativeEntryPoints.ReleaseSlotImportV11Export,
+        ViewportNativeEntryPoints.CloseStreamV11Export,
+        ViewportNativeEntryPoints.PollStreamV11Export,
+        ViewportNativeEntryPoints.DestroyStreamV11Export,
+        ViewportNativeEntryPoints.WaitStreamChangeV11Export,
         ViewportNativeEntryPoints.ShutdownExport,
     ];
 
     internal static IReadOnlyList<string> ForbiddenExports { get; } =
     [
+        "editor_viewport_open_stream_v10",
+        "editor_viewport_submit_latest_v10",
+        "editor_viewport_try_take_ready_v10",
+        "editor_viewport_complete_frame_v10",
+        "editor_viewport_release_slot_import_v10",
+        "editor_viewport_close_stream_v10",
+        "editor_viewport_poll_stream_v10",
+        "editor_viewport_destroy_stream_v10",
         "editor_viewport_acquire_present_packet",
         "editor_viewport_release_present_packet",
         "editor_viewport_acquire_present_packet_v2",
@@ -114,6 +123,14 @@ internal static class ViewportNativeRuntimeContract
         "editor_viewport_close_stream_v8",
         "editor_viewport_poll_stream_v8",
         "editor_viewport_destroy_stream_v8",
+        "editor_viewport_open_stream_v9",
+        "editor_viewport_submit_latest_v9",
+        "editor_viewport_try_take_ready_v9",
+        "editor_viewport_complete_frame_v9",
+        "editor_viewport_release_slot_import_v9",
+        "editor_viewport_close_stream_v9",
+        "editor_viewport_poll_stream_v9",
+        "editor_viewport_destroy_stream_v9",
     ];
 
     private static readonly IReadOnlyList<string> InspectedExports =

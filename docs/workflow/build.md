@@ -88,13 +88,13 @@ dotnet build apps\studio\Editor.csproj -c Release -p:StudioNativeBuildPreset=msv
 `CopyToPublishDirectory="Always"`，所以每次 managed build 都从所选 preset 覆盖最终 sibling，而不按目标目录中的旧时间戳保留
 陈旧 DLL。复制完成后，`ValidateStudioViewportNativeRuntimeContract` 在非 design-time `Build` 的
 `AfterTargets` 阶段从 `$(TargetDir)` 执行 `Editor.exe --verify-native-contract`。该入口通过
-`ViewportNativeRuntimeContract` 加载最终 `$(TargetDir)\editor_native.dll`，要求完整 V9 production export set，且拒绝固定的
-legacy V1--V8 entry-point set；缺失 DLL、错误架构、缺失 V9 export 或仍存在 legacy export 都使 build 以非零状态失败。
+`ViewportNativeRuntimeContract` 加载最终 `$(TargetDir)\editor_native.dll`，要求完整 V11 production export set，且拒绝固定的
+legacy V1--V9 entry-point set；缺失 DLL、错误架构、缺失 V11 export 或仍存在 legacy export 都使 build 以非零状态失败。
 
-显式 `msvc-debug-tests` preset 可以额外携带 `editor_viewport_open_stream_v9_for_test`，供 GPU/fault-injection 验收使用；它不属于
+显式 `msvc-debug-tests` preset 可以额外携带 `editor_viewport_open_stream_v11_for_test`，供 GPU/fault-injection 验收使用；它不属于
 managed production imports。普通本地 admission 允许该 test-only 扩展，正式 Editor Image 的静态 PE gate 则拒绝它。
 
-这个 admission 只验证普通 Studio build 最终会实际加载的 sibling，不会重建 native，也不提供 V1--V8 fallback。若失败，修复方式是
+这个 admission 只验证普通 Studio build 最终会实际加载的 sibling，不会重建 native，也不提供 V1--V9 fallback。若失败，修复方式是
 重建所选 preset 的 `editor-native` 后重新运行 managed build；不要手工从历史 `bin/`、测试输出或其他 preset 复制 DLL。
 正式发行仍由 `StudioEditorImageProducer` 的静态 PE/DLL identity 与 export inspector 对全新 publish tree 独立复验，不能用本地
 `--verify-native-contract` 成功替代 Editor Image qualification。
@@ -178,8 +178,8 @@ release contract。使用标准 `dotnet publish` 与 `EditorImage.pubxml` 生成
 Studio publish 目录；`dotnet publish` 不负责清理旧 `PublishDir`。当前 Studio 的 Project、SceneDocument 与 Scene View
 都有 native consumer，因此必须先按本文规则运行 Conan，并构建所选 `msvc-release` preset。publish 精确复制
 `asharia_project_native.dll`、`asharia_scene_native.dll`、`editor_native.dll` 与 22 个 renderer-basic shader/reflection 文件；
-仍不复制 `slang.dll`、Vulkan SDK 或 validation layer。Scene schema v2、Document ABI v3 与 Viewport V9 是 hard-cut
-native consumer contract；发行验证必须拒绝遗留 v1/v2 document 与 v1--v8 viewport exports。shader/reflection closure 必须仍为
+仍不复制 `slang.dll`、Vulkan SDK 或 validation layer。Scene schema v2、Document ABI v3 与 Viewport V11 是 hard-cut
+native consumer contract；发行验证必须拒绝遗留 v1/v2 document 与 v1--v9 viewport exports。shader/reflection closure 必须仍为
 精确 22 个文件，不能因 Scene mesh / Frame Debug / selection outline 改动少复制、重复复制或以旧 shader 代替。
 完整可复制命令、required file set、参数、输出布局、receipt 与失败恢复见
 `tools/studio-distribution/README.md`。

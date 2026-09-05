@@ -4,7 +4,8 @@
 日期：2026-08-12
 
 历史状态说明（2026-09-03）：本 ADR 保留当时 V6→V7 的 FOV 设计与验证记录；production stream
-已先由 #409 的 typed Translate Gizmo packet 硬切至 V8，再由 #411 的 discriminated Transform Gizmo packet 硬切至 V9；
+已先由 #409 的 typed Translate Gizmo packet 硬切至 V8，再由 #411 的 discriminated Transform Gizmo packet 硬切至 V9，
+最后由 #413 的 local-axis Scale packet rotation 硬切至 V11；
 本文决定的 projection/FOV 语义未改变。
 
 ## 背景
@@ -42,7 +43,7 @@ stretch/crop，但投影轴策略与自由编辑视图的构图预期不一致�
 - policy 属于每个 `ViewportSession`，不写入 `SceneDocument`，不同 endpoint 不共享可变 camera state。
 
 这是 V6→V7 硬切。V1–V6 stream exports、managed ABI 类型与 fallback 不保留；历史
-`editor_viewport_query_runtime_stats_v2..v7` 与当前 `v9` 是 diagnostics 版本链，不属于 stream compatibility。
+`editor_viewport_query_runtime_stats_v2..v7` 与当前 `v10` 是 diagnostics 版本链，不属于 stream compatibility。
 
 ## 拒绝方案
 
