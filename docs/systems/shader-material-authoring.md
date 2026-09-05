@@ -1,6 +1,6 @@
 # Shader / Material Authoring V2 架构
 
-更新日期：2026-06-14
+更新日期：2026-09-06
 
 状态：V2 设计合同。旧 V1 authoring 路线已弃用，不再作为实现或文档拆分依据。
 
@@ -14,8 +14,8 @@ Done evidence 只维护在 GitHub Issues / Project；本文不跟踪具体 PR。
 V1 文档中的“第一版 `.ashader` 范围”、graph-first 主路径、`ashader-v1.md`、`amat-v1.md` 和
 `material-product-v1.md` 拆分建议全部弃用。后续不新增 V1 spec 文件，也不把 V1 schema 当成兼容目标。
 
-V2 的当前主线是 code-first MVP：先跑通 `.ashader + .slang/raw slang + .mat` 到 renderer/preview 的闭环，再做
-minimal `.agraph` IR、Hybrid Slang function node discovery 和完整 Material Editor。
+V2 的当前主线是 code-first MVP：先跑通 `.ashader + .slang/raw slang + .mat` 到 renderer/preview 的闭环，再验证
+公共 Slang 函数自动发现、minimal `.agraph` IR 与 Hybrid 调用，最后做完整 Material Editor。
 
 ## 当前事实
 
@@ -42,6 +42,63 @@ minimal `.agraph` IR、Hybrid Slang function node discovery 和完整 Material E
 - RenderGraph pass type 表达 execution model，不表达 material pass tag、LightMode、shader pass 名称或材质业务语义。
 
 ## 核心决定
+
+### 三种创作方式与公共函数自动注册（已确认目标，尚未实现）
+
+2026-09-06 用户确认：同一个 Shader 资产体系支持纯手写、代码与图混合、纯图三种平等创作方式；
+公共 Shader 函数可以自动注册给图使用。code-first 是交付顺序，不表示手写代码只是图的高级扩展入口。
+
+- 纯代码：完整阶段入口可以手写，不要求存在 `.agraph`。
+- 混合：图连接表达式并调用手写函数；同一资产可同时包含代码阶段与图阶段。
+- 纯图：参数、Pass、渲染状态、阶段输入输出均可由编辑器维护，用户不必编写代码。
+- 三者共用 properties、Pass、编译/反射、runtime product、`.mat`、预览与诊断。
+- 统一资产不等于单物理文件；保留 `.ashader` 入口和显式 `.slang` / `.agraph` 依赖。
+- 不承诺任意 Slang 与节点图双向转换。每个函数或阶段实现只有一个权威来源；生成的 Slang 是派生产物，
+  不与图同时作为同一函数体的可编辑真相。未来代码调用图函数也必须使用明确接口，另行验证模块组合。
+
+建议发现范围是项目显式纳入的公共 Shader 库：符合节点接口规则的公开函数自动进入函数目录，无须额外 C++
+节点类或重复填写端口。局部函数仅对当前 Shader 可见，库内部辅助函数不进入公共搜索。
+自动注册发生于导入/工具阶段，运行时不扫描模块、不解释节点。
+
+初始验证子集限定为无重载、非泛型的顶层函数，输入及单个返回值为 float/float2/float3/float4。
+端口来自编译器验证的函数签名；名称、分类、说明是可选元数据。复杂结构、资源参数、out/inout、泛型和重载
+先给出明确的不可节点化诊断，但不因此禁止合法函数在纯代码模式下使用。发现已声明但未被入口调用的公开函数
+必须单独验证，不能以最终 SPIR-V 资源反射代替源码模块声明发现。阶段能力仍由真实调用编译验证。
+
+函数身份必须区分模块与签名，显示名称不是身份；接口变化应使相关连接失效并定位到 pin，不能静默错接。
+名称变更的稳定身份/迁移规则、重新导出与重名规则、元数据语法、源码定位 API、函数数量/源码大小/编译时间预算
+在函数发现切片中验证并冻结。编译器版本与模块依赖参与产物身份；源码变化后失效，过期结果不得覆盖新版本。
+
+聊天中的 `@category` / `@displayName`、`graph entry { source ... }` 等只是呈现草案，不是现有 parser 语法，
+不据此增加第二套 shader language。Slang 模块可见性应采用经本地工具链验证的 public/internal 规则；
+模块辅助函数应使用 internal，不能照搬草案中顶层 private 的写法。现有 `.mat` 命名保持不变。
+
+#### 参考模式与本项目取舍
+
+- 采用 [Unreal Custom Material Expressions](https://dev.epicgames.com/documentation/en-us/unreal-engine/custom-material-expressions-in-unreal-engine)
+  的有类型输入输出与代码嵌入边界，并以
+  [Godot VisualShaderNodeExpression](https://docs.godotengine.org/en/stable/classes/class_visualshadernodeexpression.html)
+  交叉核对图内表达式模式。两者是混合计算的先例，不是公共 Slang 函数自动注册已实现的证据。
+- 采用 [Slang 模块与访问控制](https://docs.shader-slang.org/en/stable/external/slang/docs/user-guide/04-modules-and-access-control.html)
+  与 [编译 API](https://shader-slang.org/docs/compilation-api/) 的模块加载边界；函数声明、可见性、签名和源码位置的
+  实际可发现范围要用仓库所用 Slang 版本证明，不能从最新文档推定现有 reflection JSON 已提供它们。
+- 不要求用户为每个公共函数再手工声明一套节点接口，也不把 PBR、Unlit、后处理做成互不兼容的图语言。
+  本项目采用同一表达式模型与明确的阶段/输出合同，以满足三种创作方式平等、package-first 和 headless 编译要求。
+
+#### 所有权与验证边界
+
+- `shader-authoring` 拥有 CPU 文档、图验证/降低与源码映射；不新增 Slang compiler、Vulkan 或 Avalonia 依赖。
+- `shader-slang` 的工具边界负责真实编译器声明事实；传出自有数据，不传编译器对象或 session 指针。
+- `asset-pipeline` 编排显式模块依赖、生成产物与缓存失效；不创建运行时全局节点注册服务。
+- Studio 拥有节点/代码编辑、事务、撤销与保存。编译任务读取不可变文档快照，按 revision 发布结果；失败保存
+  原始编辑内容，预览保留上一次成功产物并标明失效，文档关闭后不再发布结果。
+- renderer/runtime 仅消费已验证的运行时产物，继续拥有 GPU 上传、绑定和在途帧资源退役。
+
+最小出口证据是同一个纯数值函数：纯代码调用与图调用均经 Slang 编译、spirv-val 和相同输入输出验证；
+修改公共函数后相关产物失效，错误签名/不可见函数/阶段不兼容均定位到调用点。之后再接编辑器与预览，
+不能用手填 JSON 节点目录冒充自动发现，也不能用界面截图代替真实编译和渲染验证。
+
+当前进度评估及交付顺序见[整体路线图](../planning/next-development-plan.md#shader-三种创作方式的接入评估2026-09-06)。
 
 ### Reflected numeric layout adapter
 
@@ -289,15 +346,16 @@ Runtime 只读 product，不读 authoring graph。Editor 可以读 `.ashader`、
 这个阶段证明材质类型、材质实例、shader 编译、reflection adapter、pipeline key、binding packet 和 preview/render
 可以走同一条链路。
 
-### 2. Minimal `.agraph` IR
+### 2. Public Slang Function Discovery
 
-Graph-first 不进入 MVP。第二阶段只做 minimal `.agraph` IR 和 lowering：graph 是 authoring 数据，导入或 cook 时
-lower 到 Slang，runtime 永远不解释 graph。
+第二阶段先验证公共模块的公开函数自动发现与有类型的函数目录，生成一个调用该函数的 Slang 样例完成真实编译。
+这一阶段不需要节点 UI，也不需要先实现整个 graph。发现范围和初始签名子集采用上文的已确认目标与验证门禁。
 
-### 3. Hybrid Slang Function Node Discovery
+### 3. Minimal `.agraph` IR 与 Hybrid 调用
 
-第三阶段允许技术美术或渲染工程师把手写 Slang 函数暴露为 graph node。导入时从 Slang function signature
-生成 typed pins，让 graph 和 code 共享同一套 shader 生态。
+第三阶段做 minimal `.agraph` IR、类型检查与 lowering，复用公共函数目录生成 typed pins 和函数调用。
+graph 是 authoring 数据，导入或 cook 时 lower 到 Slang，runtime 永远不解释 graph。
+用相同输入验证纯代码、图和混合调用结果，之后再扩大表达能力；纯图完整编辑体验不进入 code-first MVP。
 
 ### 4. Full Material Editor
 

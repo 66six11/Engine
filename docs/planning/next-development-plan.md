@@ -1,6 +1,6 @@
 # 整体路线图
 
-更新日期：2026-09-05
+更新日期：2026-09-06
 
 本文是全项目下一阶段的唯一**功能阶段路线图**；目标系统框架、package/target 收敛方向、跨系统契约和架构迁移门禁见 `docs/planning/system-architecture-roadmap.md`，Kernel、Host Runtime、Foundation Systems、scope/activation 和基础门禁见 `docs/architecture/foundation-framework.md`；每项能力的最早/最迟接入窗口、Integration Gates 和 Owner Card 见 `docs/workflow/architecture-health.md`。RenderGraph 当前语义见 `docs/rendergraph/mvp.md` 与 `docs/rendergraph/rhi-boundary.md`，可编程管线边界见 `docs/rendergraph/programmable-pipeline.md`；Editor 当前事实见 `docs/architecture/editor.md`；资产系统见 `docs/systems/asset-architecture.md`；shader/material authoring 见 `docs/systems/shader-material-authoring.md` 及 V2 specs。实际 Slice 顺序、状态、阻塞和 Done evidence 维护在 GitHub Issues / Project，不在本文重复。
 
@@ -73,7 +73,9 @@
 #270 的合同实现及后续控制面代码已经进入主线（#336 包含其实现历史），不能再安排一轮 Schema/Resolver 重写。
 更广的 Foundation integration record 仍需逐项核对，不能由 #270 的合同验收推定整个 #264 已完成。
 
-### 当前首个资源切片：CPU Mesh lease 到 renderer-owned GPU Mesh（#419）
+### 已完成的首个资源切片：CPU Mesh lease 到 renderer-owned GPU Mesh（#419）
+
+#419 已关闭，以下保留其边界；不重新实现 GPU Mesh owner。当前后继优先级见下方 Shader 接入评估。
 
 - 输入只接受已有 verified `MeshResourceLease` 与 immutable upload facts，复用 Mesh Product v1、双 generation 和
   active/candidate 语义；不重新实现 importer、CPU store 或直接从 renderer 读取 `.glb`。
@@ -102,6 +104,38 @@
 consumer 起就要定义；第 5 步闭合跨资源传播。公共 IO、Tasks、预算、Host teardown 和诊断随真实 consumer 补齐，
 不把完整 Foundation 框架作为所有现有资源工作的隐式前置，也不为单条路径新建全局服务或另一套生命周期。
 每条资源链都必须有脱离 Editor 的验证；lighting/PBR、材质编辑器、thumbnail、导航偏好与更多 Gizmo 后置。
+
+### Shader 三种创作方式的接入评估（2026-09-06）
+
+依据主线 `9cc04a6e` 的代码审计，当前适合继续资源消费闭环，暂不开始三种创作方式的整体实现。
+用户确认的目标与取舍已记录在[Shader authoring 架构](../systems/shader-material-authoring.md#三种创作方式与公共函数自动注册已确认目标尚未实现)。
+本段是候选顺序及实施入口条件；实际执行任务与 Done evidence 仍由 GitHub Issues 管理，不提前创建不稳定的远期 Slice。
+
+| 已核对能力 | 当前证据与缺口 |
+| --- | --- |
+| 文档与生成 | `shader-authoring` 有 parser、raw Slang、引用和源码映射；graph reference 不等于 graph lowering |
+| 编译与反射 | `shader-slang` 已有编译和资源/参数布局反射；尚无公共模块函数目录或签名自动发现 |
+| 材质参数 | #424/#426 已完成 `.mat` numeric packing 与真实 Slang 布局验证；这是 CPU 字节与兼容性证据 |
+| GPU Mesh | #419 已完成 owner，但 `BasicGpuMesh::validate` 仍只接受固定默认无光照材质 key |
+| 真实绘制 | RenderView scene mesh 仍检查 `Hidden/RenderViewSceneMesh` / `DefaultUnlit`；未形成 authored Shader/material GPU 消费闭环 |
+
+下一步候选切片：**在现有无光照 Mesh/RenderView 路径消费已验证的 Shader 产物及 `.mat` 数值参数**。
+
+- 先核对已有 product reader/运行时输入是否能组成完整的已验证 Shader binding；若缺最小产物读取/身份合同，
+  先以该合同为首个 PR 出口，不在同一 PR 扩成通用材质资源管理器。
+- GPU 接入前统一 binding layout version：生成器 `GeneratedSlangOptions.materialSet` 默认 0，而 runtime V2 文档
+  规划 material set 1。显式确定并验证采用的合同，不直接修改默认值导致现有测试/产物失配。
+- 复用已有 reflected packing；用 authored fragment + 一个 float4 颜色参数证明 `.mat` 值进入真实 GPU draw。
+  renderer-owned buffer/descriptor/pipeline 管理生命周期，上游只传已验证的 CPU 数据与资源身份。
+- 验收：同一 mesh 使用两个参数值产生可测像素差异；仅数值变化不重新编译 Shader、不重建无关 pipeline；
+  布局错误与过期结果被拒绝；候选失败保留有效旧绑定，在途帧完成后才释放被替换资源。
+- 门禁：参数/布局失败用例、真实 compile/reflection、spirv-val、RenderView 像素 readback、Vulkan validation、
+  相关双编译器和 frame-loop smoke；最终执行范围以新 Slice 验收为准。先不扩 textures、PBR、通用热更新或 Material Editor。
+
+该闭环之后，优先以独立 CPU/编译工具切片验证 **公共模块公开函数 → 自动签名目录 → 生成函数调用 → Slang 编译**；
+包括未被入口引用的公开函数、internal 排除、重名/不支持签名、依赖变化与诊断。它在技术上可以现在独立验证，
+GPU binding 只是基础设施优先的交付顺序，不建立虚假的技术 blocker。发现能力成立后再做最小图的类型检查、
+lowering 与代码/图调用结果一致性，最后接统一 Studio 文档编辑与预览。
 
 以下 P0/P0.5 与 Phase 段落保留各能力的既有范围和基线；当前执行顺序以上述资源切片及 GitHub 实际依赖为准。
 

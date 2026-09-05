@@ -1,6 +1,6 @@
 # `.ashader` / `.agraph` V2 Authoring Contract
 
-更新日期：2026-06-12
+更新日期：2026-09-06
 
 状态：计划中的 V2 格式合同。V1 `.ashader` / `.agraph` 规格已弃用，不再新增 `ashader-v1.md`
 或把 V1 schema 作为兼容目标。
@@ -245,20 +245,19 @@ OutputBaseColor
 
 ## Hybrid Slang Function Nodes
 
-Hybrid 阶段允许手写 Slang 函数暴露为 graph node：
+目标扩展为纯代码、混合、纯图三种平等创作方式与公共函数自动注册，详见
+[`shader-material-authoring.md`](../systems/shader-material-authoring.md#三种创作方式与公共函数自动注册已确认目标尚未实现)。
+当前尚无函数发现或 graph lowering 实现。公共库的公开、可节点化函数应自动成为 typed node；
+显示元数据可选，不要求为每个函数添加节点注册标记或重复声明端口。函数签名示意：
 
 ```hlsl
-[asharia_node("Triplanar Sample")]
-float4 triplanarSample(Texture2D<float4> tex,
-                       SamplerState samp,
-                       float3 worldPos,
-                       float3 normal) {
-    // implementation
+public float3 blendColors(float3 a, float3 b, float factor) {
+    return lerp(a, b, saturate(factor));
 }
 ```
 
-导入时从 Slang function signature 生成 typed pins。Graph 可以调用 handwritten Slang function，但不支持把任意
-handwritten Slang 反编译回 graph。
+以上是 Slang 函数形态，不是对当前 discovery API 的声明。模块发现范围、可见性提取、稳定函数身份与可选元数据
+须经本地 Slang 工具链验证。Graph 调用 handwritten Slang function，不要求把任意 handwritten Slang 反编译回 graph。
 
 ## Diagnostics
 
