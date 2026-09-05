@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <expected>
 #include <filesystem>
@@ -741,19 +742,23 @@ namespace asharia::material_instance {
         validateNumericPropertyValue(const AmatPropertyOverride& property) {
             const std::size_t width = vectorWidth(property.type);
             if (property.type == AshaderPropertyType::Float) {
-                if (property.value.kind == AmatPropertyValueKind::Number) {
+                if (property.value.kind == AmatPropertyValueKind::Number &&
+                    std::isfinite(property.value.numberValue)) {
                     return {};
                 }
                 return std::unexpected{amatIoError("Amat property '" + property.propertyId +
-                                                   "' must carry a number value.")};
+                                                   "' must carry a finite number value.")};
             }
             if (width != 0) {
                 if (property.value.kind == AmatPropertyValueKind::Vector &&
-                    property.value.vectorValue.size() == width) {
+                    property.value.vectorValue.size() == width &&
+                    std::ranges::all_of(property.value.vectorValue,
+                                        [](double value) { return std::isfinite(value); })) {
                     return {};
                 }
-                return std::unexpected{amatIoError("Amat property '" + property.propertyId +
-                                                   "' has an invalid vector value.")};
+                return std::unexpected{
+                    amatIoError("Amat property '" + property.propertyId +
+                                "' must carry a finite vector of the declared width.")};
             }
             if (property.type == AshaderPropertyType::Int) {
                 if (property.value.kind == AmatPropertyValueKind::Integer) {

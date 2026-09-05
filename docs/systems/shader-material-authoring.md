@@ -43,6 +43,29 @@ minimal `.agraph` IR、Hybrid Slang function node discovery 和完整 Material E
 
 ## 核心决定
 
+### Material override validation boundary
+
+Current evidence: IO already validates `.amat` identity, duplicate property IDs, value kinds and vector
+widths, but callers can construct mutable documents directly; the resolver previously trusted those values.
+Owner / lifetime / thread: `material-instance` validates borrowed CPU documents synchronously, without
+mutating either input or creating renderer resources. Data / error / budget / diagnostics: reuse
+`validateAmatDocument` at the resolver boundary; reject non-finite scalar/vector values in the shared
+validator. An invalid document yields one deterministic `InvalidOverride` error and no resolved diffs,
+so an invalid override cannot be interpreted as a usable/defaulted value. Property context is preserved
+in the validation message. Existing shader mismatch and stale-hash diagnostic policy remains intact.
+
+Foundation prerequisite: existing document validator suffices; no new schema, service or package.
+Integration Gate: CPU authoring validation before runtime material parameter consumption. Earliest safe:
+now; latest required: before converting overrides into renderer inputs. Non-goals: no resolved-value
+packing, float32 conversion policy, GPU binding, Material Editor or product format change. Exit evidence:
+programmatic success and failure tests across validation, serialization and resolution.
+
+Adopt typed material parameters from [Unreal material instances](https://dev.epicgames.com/documentation/unreal-engine/instanced-materials-in-unreal-engine)
+and [O3DE material files](https://www.docs.o3de.org/docs/atom-guide/look-dev/materials/material-file-spec/):
+override values must conform to their declared material property types. Do not copy an engine object
+system or introduce implicit numeric conversions; Asharia's current CPU document boundary needs only
+shared validation and explicit diagnostics.
+
 Asharia 不先做完整自定义 shader 语言，也不先复制 Unreal Material Graph 或 Unity Shader Graph。V2 的判断是：
 
 > Slang 是唯一 GPU 代码层；`.ashader` 是材质类型 authoring contract；`.amat` 是材质实例；

@@ -1,5 +1,6 @@
 ﻿#include <algorithm>
 #include <iostream>
+#include <limits>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -239,6 +240,77 @@ shader "asharia.material.unlit" {
         return true;
     }
 
+    bool smokeProgrammaticValueValidation() {
+        using namespace asharia::material_instance;
+        using asharia::shader_authoring::AshaderPropertyType;
+        AmatDocument valid;
+        valid.materialType.assetGuid.bytes[0] = 1;
+        valid.materialType.stableTypeId = "asharia.material.unlit";
+        valid.materialType.expectedTypeHash = kTypeHash;
+        valid.import.lastCookedSignatureHash = kSignatureHash;
+        valid.properties.push_back(
+            {.propertyId = "roughness",
+             .type = AshaderPropertyType::Float,
+             .value = {.kind = AmatPropertyValueKind::Number, .numberValue = 0.25}});
+        const auto shader = makeShaderDocument();
+        if (!validateAmatDocument(valid) ||
+            hasErrors(resolveAmatOverrides(valid, shader).diagnostics)) {
+            logFailure("valid programmatic material was rejected");
+            return false;
+        }
+        const auto rejected = [&](const AmatDocument& document) {
+            const auto resolved = resolveAmatOverrides(document, shader);
+            if (validateAmatDocument(document) || writeAmatText(document) ||
+                !hasDiagnostic(resolved, AmatDiagnosticCode::InvalidOverride) ||
+                !hasErrors(resolved.diagnostics) || !resolved.overrides.empty()) {
+                logFailure("malformed programmatic material escaped a public validation boundary");
+                return false;
+            }
+            const auto repeated = resolveAmatOverrides(document, shader);
+            return resolved.diagnostics.front().message == repeated.diagnostics.front().message;
+        };
+        for (double number :
+             {std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::infinity(),
+              -std::numeric_limits<double>::infinity()}) {
+            auto invalid = valid;
+            invalid.properties[0].value.numberValue = number;
+            if (!rejected(invalid)) {
+                return false;
+            }
+        }
+        auto vector = valid;
+        vector.properties[0] = {
+            .propertyId = "baseColor",
+            .type = AshaderPropertyType::Color,
+            .value = {.kind = AmatPropertyValueKind::Vector, .vectorValue = {1, 0, 0, 1}}};
+        if (!validateAmatDocument(vector) ||
+            hasErrors(resolveAmatOverrides(vector, shader).diagnostics)) {
+            logFailure("valid color override was rejected");
+            return false;
+        }
+        vector.properties[0].value.vectorValue[2] = std::numeric_limits<double>::infinity();
+        if (!rejected(vector)) {
+            return false;
+        }
+        vector.properties[0].value.vectorValue = {1, 0, 0};
+        if (!rejected(vector)) {
+            return false;
+        }
+        auto wrongKind = valid;
+        wrongKind.properties[0].value.kind = AmatPropertyValueKind::Boolean;
+        if (!rejected(wrongKind)) {
+            return false;
+        }
+        auto duplicate = valid;
+        duplicate.properties.push_back(duplicate.properties.front());
+        if (!rejected(duplicate)) {
+            return false;
+        }
+        auto missingIdentity = valid;
+        missingIdentity.materialType.assetGuid = {};
+        return rejected(missingIdentity);
+    }
+
 } // namespace
 
 int main() noexcept {
@@ -246,6 +318,7 @@ int main() noexcept {
         bool testsPassed = true;
         testsPassed = smokeReadWriteResolve() && testsPassed;
         testsPassed = smokeDiagnostics() && testsPassed;
+        testsPassed = smokeProgrammaticValueValidation() && testsPassed;
         return testsPassed ? 0 : 1;
     } catch (...) {
         return 1;
