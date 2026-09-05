@@ -4,6 +4,20 @@
 
 ## Package 边界
 
+### Authored numeric GPU material (#432)
+
+`BasicGpuMaterialProgram` owns validated shader modules, set layouts and a fixed-format Solid pipeline.
+`BasicGpuMaterialOwner` owns one render-thread material key and monotonic parameter revisions; published
+`BasicGpuMaterial` references are immutable and share the program. Draw packet material key/revision
+must match the supplied binding. Renderer imports its buffer as Fragment ShaderRead and retains the
+binding through the existing frame completion queue; it never overwrites descriptors still in use.
+Set 1/binding 0 is explicit, set 0 has an empty layout. Numeric-only updates do not rebuild pipelines.
+The new factory consumes paired compiler-validated SPIR-V/reflection from upstream; no compiler or
+source IO enters renderer. Custom vertex ABI, authored Wireframe, textures, mixed-material batches
+and Studio resolution remain outside this slice. Existing default material behavior remains available.
+Design evidence, bounds and failure rules are in
+[Shader authoring](../systems/shader-material-authoring.md#authored-numeric-gpu-binding432).
+
 ### GPU Mesh lease consumption (#419)
 
 - Current evidence: CPU `MeshResourceLease` and graph buffer copy already exist; RenderView now accepts an explicit immutable GPU mesh binding alongside its existing validation mesh path.
@@ -223,3 +237,13 @@ package topology/contracts, encoding, documentation sync and both Vulkan review 
 Device-loss / hardware allocation exhaustion are not injected by this smoke; Vulkan errors propagate without
 publishing a candidate. Confirm-submission is an explicit host obligation: call it immediately after the
 successful upload frame, and cancel the candidate on any recording/submission failure before another frame.
+
+### Editor acquire regression found during #432
+
+The native Editor ImGui swapchain recorder still used an empty source stage for its first layout
+transition. Synchronization validation reported the same acquire WRITE_AFTER_READ hazard on both
+compilers and the pre-change Editor binary. Its source stage now matches the existing ColorAttachmentOutput
+semaphore wait, extending the #419 correction to this explicit integration adapter. Offscreen RenderView
+barriers and the abstract graph remain unchanged. The adopted execution dependency follows the
+[Vulkan synchronization examples](https://docs.vulkan.org/guide/latest/synchronization_examples.html);
+broad AllCommands waits and device-idle stalls are unnecessary for this first-use dependency.

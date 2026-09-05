@@ -23,13 +23,21 @@
     "com.asharia.serialization",
     "com.asharia.renderer-basic",
     "com.asharia.mesh-product",
-    "com.asharia.resource-runtime"
+    "com.asharia.resource-runtime",
+    "com.asharia.shader-authoring",
+    "com.asharia.shader-material-adapter",
+    "com.asharia.material-instance",
+    "com.asharia.shader-slang"
   ],
   "targets": [
-    "asharia-sample-viewer"
+    "asharia-sample-viewer",
+    "asharia-material-shader-fixture",
+    "asharia-material-fixture-fragment"
   ],
   "targetRoles": {
-    "asharia-sample-viewer": "host"
+    "asharia-sample-viewer": "host",
+    "asharia-material-shader-fixture": "tool",
+    "asharia-material-fixture-fragment": "content-build"
   },
   "targetDependencies": {
     "asharia-sample-viewer": [
@@ -48,7 +56,20 @@
       "asharia-renderer-basic-vulkan",
       "asharia-renderer-basic-shaders",
       "asharia-mesh-product-writer",
-      "asharia-resource-runtime"
+      "asharia-resource-runtime",
+      "asharia-shader-authoring",
+      "asharia-shader-material-adapter",
+      "asharia-material-instance",
+      "asharia-shader-slang",
+      "asharia-material-fixture-fragment"
+    ],
+    "asharia-material-shader-fixture": [
+      "asharia-core",
+      "asharia-shader-authoring"
+    ],
+    "asharia-material-fixture-fragment": [
+      "asharia-slang-reflect",
+      "asharia-material-shader-fixture"
     ]
   }
 }

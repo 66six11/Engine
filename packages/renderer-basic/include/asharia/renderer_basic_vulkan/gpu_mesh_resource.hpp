@@ -37,7 +37,9 @@ namespace asharia {
         [[nodiscard]] const mesh::MeshProductV1& product() const noexcept {
             return lease_.product();
         }
-        [[nodiscard]] VoidResult validate(std::span<const BasicDrawListItem> items) const;
+        [[nodiscard]] VoidResult
+        validate(std::span<const BasicDrawListItem> items,
+                 BasicDrawResourceKey material = kBasicDefaultUnlitMaterialResourceKey) const;
 
     private:
         friend class BasicGpuMeshOwner;

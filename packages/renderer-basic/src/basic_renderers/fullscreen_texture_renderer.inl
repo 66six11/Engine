@@ -1106,6 +1106,26 @@ Result<VulkanFrameRecordResult> BasicFullscreenTextureRenderer::recordViewFrame(
         return std::unexpected{
             Error{ErrorDomain::RenderGraph, 0, "GPU mesh belongs to another device"}};
     }
+    if (view.scene.material) {
+        if (!view.scene.material->program_ || view.scene.material->descriptor_ == VK_NULL_HANDLE) {
+            return std::unexpected{Error{ErrorDomain::Material, 0, "Uninitialized GPU material"}};
+        }
+        const auto& program = *view.scene.material->program_;
+        if (!view.scene.mesh || program.device_ != device_ ||
+            program.colorFormat_ != view.target.format ||
+            program.depthFormat_ != VK_FORMAT_D32_SFLOAT ||
+            view.scene.rasterMode != BasicSceneRasterMode::Solid) {
+            return std::unexpected{Error{
+                ErrorDomain::Material, 0,
+                "Authored material requires GPU mesh, matching device/formats and Solid mode"}};
+        }
+        if (!view.scene.drawItems.empty() &&
+            (!frame.frameLoop ||
+             !frame.deferDeletion([keep = view.scene.material]() { static_cast<void>(keep); }))) {
+            return std::unexpected{Error{ErrorDomain::Material, 0,
+                                         "Authored material requires frame completion retention"}};
+        }
+    }
     if (view.scene.mesh && !view.overlay.selectionOutline.drawItems.empty()) {
         return std::unexpected{Error{ErrorDomain::RenderGraph, 0,
                                      "GPU mesh selection overlay is not supported in this slice"}};
@@ -1154,7 +1174,10 @@ Result<VulkanFrameRecordResult> BasicFullscreenTextureRenderer::recordViewFrame(
             return std::unexpected{std::move(resources.error())};
         }
         auto scenePipeline =
-            ensureSceneMeshPipeline(view.target.format, kSceneDepthFormat, view.scene.rasterMode);
+            view.scene.material
+                ? Result<VkPipeline>{view.scene.material->program_->pipeline_.handle()}
+                : ensureSceneMeshPipeline(view.target.format, kSceneDepthFormat,
+                                          view.scene.rasterMode);
         if (!scenePipeline) {
             return std::unexpected{std::move(scenePipeline.error())};
         }
@@ -1228,6 +1251,23 @@ Result<VulkanFrameRecordResult> BasicFullscreenTextureRenderer::recordViewFrame(
     RenderGraphBufferHandle sceneVertices{};
     RenderGraphBufferHandle sceneIndices{};
     std::vector<VulkanRenderGraphBufferBinding> bufferBindings;
+    RenderGraphBufferHandle materialParameters{};
+    if (renderViewPassPolicy.sceneMeshEnabled && view.scene.material) {
+        const auto& parameters = view.scene.material->parameters_;
+        materialParameters = graph.importBuffer(
+            RenderGraphBufferDesc{.name = "RenderViewMaterialParameters",
+                                  .byteSize = parameters.size(),
+                                  .initialState = RenderGraphBufferState::ShaderRead,
+                                  .initialShaderStage = RenderGraphShaderStage::Fragment,
+                                  .finalState = RenderGraphBufferState::ShaderRead,
+                                  .finalShaderStage = RenderGraphShaderStage::Fragment});
+        bufferBindings.push_back(
+            VulkanRenderGraphBufferBinding{.buffer = materialParameters,
+                                           .vulkanBuffer = parameters.handle(),
+                                           .offset = 0,
+                                           .size = parameters.size(),
+                                           .debugName = "RenderViewMaterialParameters"});
+    }
     if (renderViewPassPolicy.sceneMeshEnabled) {
         sceneVertices = graph.importBuffer(RenderGraphBufferDesc{
             .name = "RenderViewValidationMeshVertices",
@@ -1327,6 +1367,9 @@ Result<VulkanFrameRecordResult> BasicFullscreenTextureRenderer::recordViewFrame(
         .colorStoreOp = view.overlay.colorStoreOp,
         .eventRecorder = eventRecorder,
         .sceneIndexType = view.scene.mesh ? VK_INDEX_TYPE_UINT32 : VK_INDEX_TYPE_UINT16,
+        .materialParameters = materialParameters,
+        .materialDescriptor =
+            view.scene.material ? view.scene.material->descriptor_ : VK_NULL_HANDLE,
     };
     VkPipeline worldGridPipeline = VK_NULL_HANDLE;
     if (renderViewPassPolicy.worldGridEnabled) {
@@ -1417,7 +1460,9 @@ Result<VulkanFrameRecordResult> BasicFullscreenTextureRenderer::recordViewFrame(
 
     if (renderViewPassPolicy.sceneMeshEnabled) {
         addBasicRenderViewSceneMeshPass(renderViewRecording, sceneMeshPipeline,
-                                        sceneMeshPipelineLayout_.handle());
+                                        view.scene.material
+                                            ? view.scene.material->program_->layout_.handle()
+                                            : sceneMeshPipelineLayout_.handle());
         auto debugPreviewAfterSceneMesh = debugPreviewCursor.tryAddPreviewAfterSourcePass();
         if (!debugPreviewAfterSceneMesh) {
             return std::unexpected{std::move(debugPreviewAfterSceneMesh.error())};

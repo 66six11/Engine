@@ -235,6 +235,7 @@ shader "asharia.material.generated_reflection" {
         const asharia::shader_authoring::GeneratedSlangOptions generatedOptions{
             .sourceName = "GeneratedReflection.ashader",
             .generatedName = "GeneratedReflection.generated.slang",
+            .materialSet = 3,
         };
         const auto generated =
             asharia::shader_authoring::buildGeneratedSlang(*parsed.document, generatedOptions);

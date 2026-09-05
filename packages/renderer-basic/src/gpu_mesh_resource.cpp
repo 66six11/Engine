@@ -40,7 +40,8 @@ namespace asharia {
     BasicGpuMesh::BasicGpuMesh(resource::MeshResourceLease lease, BasicDrawResourceKey key)
         : lease_(std::move(lease)), key_(key) {}
 
-    VoidResult BasicGpuMesh::validate(std::span<const BasicDrawListItem> items) const {
+    VoidResult BasicGpuMesh::validate(std::span<const BasicDrawListItem> items,
+                                      BasicDrawResourceKey material) const {
         for (std::size_t i = 0; i < items.size(); ++i) {
             const auto& item = items[i];
             const auto& draw = item.drawItem;
@@ -48,11 +49,11 @@ namespace asharia {
                 return part.firstIndex == draw.firstIndex && part.indexCount == draw.indexCount;
             });
             if (item.context.meshResource != key_ || item.context.meshRevision != revision() ||
-                item.context.materialResource != kBasicDefaultUnlitMaterialResourceKey ||
-                draw.vertexCount != 0 || draw.firstVertex != 0 || draw.vertexOffset != 0 ||
-                draw.instanceCount == 0 || !submesh ||
-                !std::ranges::all_of(item.modelMatrix,
-                                     [](float value) { return std::isfinite(value); })) {
+                !material || item.context.materialResource != material || draw.vertexCount != 0 ||
+                draw.firstVertex != 0 || draw.vertexOffset != 0 || draw.instanceCount == 0 ||
+                !submesh || !std::ranges::all_of(item.modelMatrix, [](float value) {
+                    return std::isfinite(value);
+                })) {
                 return std::unexpected{meshError(BasicGpuMeshError::IncompatibleDraw,
                                                  "incompatible submesh/material/revision at draw " +
                                                      std::to_string(i) +

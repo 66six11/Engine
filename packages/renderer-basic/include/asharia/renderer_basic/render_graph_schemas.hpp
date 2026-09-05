@@ -318,6 +318,12 @@ namespace asharia {
             .resourceSlots =
                 {
                     RenderGraphResourceSlotSchema{
+                        .name = "materialParameters",
+                        .access = RenderGraphSlotAccess::BufferShaderRead,
+                        .shaderStage = RenderGraphShaderStage::Fragment,
+                        .optional = true,
+                    },
+                    RenderGraphResourceSlotSchema{
                         .name = "target",
                         .access = RenderGraphSlotAccess::ColorReadWrite,
                         .shaderStage = RenderGraphShaderStage::None,

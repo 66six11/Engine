@@ -19,6 +19,29 @@ asharia_require_package_target(asharia::scene_rendering packages/scene-rendering
 asharia_require_package_target(asharia::serialization packages/serialization)
 asharia_require_package_target(asharia::window_glfw packages/window-glfw)
 asharia_require_package_target(asharia::renderer_basic_vulkan packages/renderer-basic)
+asharia_require_package_target(asharia::shader_authoring packages/shader-authoring)
+asharia_require_package_target(asharia::shader_material_adapter packages/shader-material-adapter)
+asharia_require_package_target(asharia::material_instance packages/material-instance)
+
+add_executable(asharia-material-shader-fixture src/material_shader_fixture.cpp)
+target_link_libraries(asharia-material-shader-fixture PRIVATE asharia::core asharia::shader_authoring)
+asharia_configure_target(asharia-material-shader-fixture)
+set(material_fixture_dir "${ASHARIA_REPOSITORY_ROOT}/assets/fixtures/material-authoring")
+set(material_generated_dir "${CMAKE_CURRENT_BINARY_DIR}/material-fixture")
+add_custom_command(
+    OUTPUT "${material_generated_dir}/numeric-unlit.slang"
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "${material_generated_dir}"
+    COMMAND "$<TARGET_FILE:asharia-material-shader-fixture>"
+        "${material_fixture_dir}/numeric-unlit.ashader" "${material_generated_dir}/numeric-unlit.slang"
+    DEPENDS asharia-material-shader-fixture "${material_fixture_dir}/numeric-unlit.ashader"
+    VERBATIM
+)
+asharia_add_slang_shader(asharia-material-fixture-fragment
+    SOURCE "${material_generated_dir}/numeric-unlit.slang"
+    ENTRY fragmentMain STAGE fragment PROFILE glsl_450
+    OUTPUT "${material_generated_dir}/numeric-unlit.frag.spv"
+    REFLECTION_OUTPUT "${material_generated_dir}/numeric-unlit.frag.reflection.json"
+)
 
 add_executable(asharia-sample-viewer
     src/main.cpp
@@ -28,6 +51,11 @@ add_executable(asharia-sample-viewer
 add_executable(asharia::sample_viewer ALIAS asharia-sample-viewer)
 
 add_dependencies(asharia-sample-viewer asharia-renderer-basic-shaders)
+add_dependencies(asharia-sample-viewer asharia-material-fixture-fragment)
+target_compile_definitions(asharia-sample-viewer PRIVATE
+    ASHARIA_MATERIAL_FIXTURE_DIR="${material_fixture_dir}"
+    ASHARIA_MATERIAL_GENERATED_DIR="${material_generated_dir}"
+)
 
 target_link_libraries(asharia-sample-viewer
     PRIVATE
@@ -46,6 +74,10 @@ target_link_libraries(asharia-sample-viewer
         asharia::window_glfw
         asharia::renderer_basic
         asharia::renderer_basic_vulkan
+        asharia::shader_authoring
+        asharia::shader_material_adapter
+        asharia::material_instance
+        asharia::shader_slang
 )
 
 asharia_configure_target(asharia-sample-viewer)

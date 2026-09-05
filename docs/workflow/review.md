@@ -330,6 +330,7 @@ $smokes = @(
     "--smoke-compute-dispatch",
     "--smoke-buffer-upload",
     "--smoke-gpu-mesh-resource",
+    "--smoke-gpu-material-resource",
     "--smoke-texture-upload",
     "--smoke-renderer-format-contract",
     "--smoke-deferred-deletion",
@@ -784,3 +785,13 @@ RenderGraph. Run it with Vulkan validation and synchronization validation enable
 is insufficient if the log contains validation errors. On this Windows SDK installation the validation
 manifest can be selected with `VK_LAYER_PATH=C:/VulkanSDK/1.4.321.1/Bin`; enable synchronization validation
 with `VK_LAYER_ENABLES=VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT`.
+
+### Authored numeric GPU material (#432)
+
+`--smoke-gpu-material-resource` includes the GPU Mesh resource regression and uses build-generated
+SPIR-V/reflection from `assets/fixtures/material-authoring/numeric-unlit.ashader`. Production `.mat`
+IO and reflected packing load `red.mat` and `green.mat`; readback requires more than 1,000 red/green
+pixels on the same mesh, shared program identity, typed layout/stale/budget/thread rejection and
+frame-completion retirement after all host binding references are released. Run on MSVC and ClangCL
+with the validation environment above, checking logs as well as exit status. Generated-reflection
+CTest also uses nonzero set 3 to catch internal descriptor-set index versus Vulkan binding-space errors.

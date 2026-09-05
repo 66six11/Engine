@@ -18,6 +18,7 @@
 namespace asharia {
 
     class BasicGpuMesh;
+    class BasicGpuMaterial;
 
     struct BasicOffscreenViewportTarget {
         VkImage image{VK_NULL_HANDLE};
@@ -83,6 +84,7 @@ namespace asharia {
         std::span<const BasicDrawListItem> drawItems{};
         BasicSceneRasterMode rasterMode{BasicSceneRasterMode::Solid};
         std::shared_ptr<const BasicGpuMesh> mesh;
+        std::shared_ptr<const BasicGpuMaterial> material;
     };
 
     struct BasicRenderViewSceneDiagnostics {

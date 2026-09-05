@@ -323,7 +323,18 @@ namespace asharia {
                 return std::unexpected{std::move(rasterMode.error())};
             }
             if (view.scene.mesh) {
-                return view.scene.mesh->validate(view.scene.drawItems);
+                if (view.scene.material) {
+                    for (const auto& item : view.scene.drawItems) {
+                        if (item.context.materialRevision != view.scene.material->revision()) {
+                            return std::unexpected{
+                                renderGraphError("GPU material draw revision mismatch")};
+                        }
+                    }
+                }
+                return view.scene.mesh->validate(view.scene.drawItems,
+                                                 view.scene.material
+                                                     ? view.scene.material->key()
+                                                     : kBasicDefaultUnlitMaterialResourceKey);
             }
             constexpr auto product = validation::directionalWedgeValidationMeshProduct();
             for (std::size_t itemIndex = 0; itemIndex < view.scene.drawItems.size(); ++itemIndex) {
@@ -724,10 +735,9 @@ namespace asharia {
             return {};
         }
 
-        [[nodiscard]] Result<void>
-        validateBasicRenderViewSceneMeshCommands(RenderGraphPassContext pass,
-                                                 BasicRenderViewSceneMeshParams params,
-                                                 std::span<const BasicDrawListItem> drawItems) {
+        [[nodiscard]] Result<void> validateBasicRenderViewSceneMeshCommands(
+            RenderGraphPassContext pass, BasicRenderViewSceneMeshParams params,
+            std::span<const BasicDrawListItem> drawItems, bool authoredMaterial = false) {
             constexpr std::size_t kMetadataCommandCount = 3;
             if (pass.commands.size() != kMetadataCommandCount + drawItems.size()) {
                 return std::unexpected{renderGraphError(
@@ -754,7 +764,7 @@ namespace asharia {
                 return std::unexpected{std::move(rasterModeKind.error())};
             }
             if (shader.name != "Hidden/RenderViewSceneMesh" ||
-                shader.secondaryName != "DefaultUnlit") {
+                shader.secondaryName != (authoredMaterial ? "AuthoredUnlit" : "DefaultUnlit")) {
                 return std::unexpected{renderGraphError(
                     "RenderView scene mesh shader command does not match the current contract")};
             }
@@ -1453,14 +1463,13 @@ namespace asharia {
             vkCmdEndRendering(frame.commandBuffer);
         }
 
-        void recordBasicRenderViewSceneMeshDraw(const VulkanFrameRecordContext& frame,
-                                                BasicRenderViewSceneMeshAttachments attachments,
-                                                VkExtent2D targetExtent, VkPipeline pipeline,
-                                                VkPipelineLayout pipelineLayout,
-                                                BasicDrawBuffers buffers,
-                                                const BasicRenderViewCamera& camera,
-                                                std::span<const BasicDrawListItem> drawItems,
-                                                BasicRenderViewSceneMeshLoadOps loadOps = {}) {
+        void recordBasicRenderViewSceneMeshDraw(
+            const VulkanFrameRecordContext& frame, BasicRenderViewSceneMeshAttachments attachments,
+            VkExtent2D targetExtent, VkPipeline pipeline, VkPipelineLayout pipelineLayout,
+            BasicDrawBuffers buffers, const BasicRenderViewCamera& camera,
+            std::span<const BasicDrawListItem> drawItems,
+            BasicRenderViewSceneMeshLoadOps loadOps = {},
+            VkDescriptorSet materialDescriptor = VK_NULL_HANDLE) {
             VkRenderingAttachmentInfo colorAttachment{};
             colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
             colorAttachment.imageView = attachments.color;
@@ -1504,6 +1513,10 @@ namespace asharia {
 
             vkCmdBeginRendering(frame.commandBuffer, &renderingInfo);
             vkCmdBindPipeline(frame.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+            if (materialDescriptor != VK_NULL_HANDLE) {
+                vkCmdBindDescriptorSets(frame.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                        pipelineLayout, 1, 1, &materialDescriptor, 0, nullptr);
+            }
             vkCmdBindVertexBuffers(frame.commandBuffer, 0, 1, &buffers.vertex,
                                    &buffers.vertexOffset);
             vkCmdBindIndexBuffer(frame.commandBuffer, buffers.index, buffers.indexOffset,
@@ -1965,7 +1978,8 @@ namespace asharia {
             const BasicRenderViewCamera& camera, BasicSceneRasterMode rasterMode,
             VkPipeline pipeline, VkPipelineLayout pipelineLayout,
             std::span<const BasicDrawListItem> drawItems,
-            BasicRenderViewExecutionEventRecorder* eventRecorder, VkIndexType indexType) {
+            BasicRenderViewExecutionEventRecorder* eventRecorder, VkIndexType indexType,
+            VkDescriptorSet materialDescriptor) {
             [[maybe_unused]] const auto timestamp = VulkanTimestampScope::begin(frame, pass.name);
             [[maybe_unused]] const auto debugLabel = VulkanDebugLabelScope::begin(
                 frame, renderGraphPassDebugLabel(pass, imageBindings, bufferBindings));
@@ -1988,7 +2002,8 @@ namespace asharia {
             if (!sceneParams) {
                 return std::unexpected{std::move(sceneParams.error())};
             }
-            auto commands = validateBasicRenderViewSceneMeshCommands(pass, *sceneParams, drawItems);
+            auto commands = validateBasicRenderViewSceneMeshCommands(
+                pass, *sceneParams, drawItems, materialDescriptor != VK_NULL_HANDLE);
             if (!commands) {
                 return std::unexpected{std::move(commands.error())};
             }
@@ -2050,7 +2065,7 @@ namespace asharia {
                                                    .depth = depthBinding->vulkanImageView,
                                                },
                                                targetExtent, pipeline, pipelineLayout, buffers,
-                                               camera, drawItems);
+                                               camera, drawItems, {}, materialDescriptor);
 
             if (eventRecorder != nullptr) {
                 eventRecorder->append(pass, BasicRenderViewExecutionEventKind::RenderViewInput,

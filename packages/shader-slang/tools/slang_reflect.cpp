@@ -333,7 +333,8 @@ namespace {
                 out << "    {\n";
                 out << "      \"name\": \"" << jsonEscape(parameter->getName()) << "\",\n";
                 out << "      \"set\": "
-                    << typeLayout->getBindingRangeDescriptorSetIndex(rangeIndex) << ",\n";
+                    << parameter->getBindingSpace(slang::ParameterCategory::DescriptorTableSlot)
+                    << ",\n";
                 out << "      \"binding\": " << parameter->getBindingIndex() << ",\n";
                 out << "      \"kind\": \"" << jsonEscape(bindingTypeName(bindingType)) << "\",\n";
                 out << "      \"count\": " << typeLayout->getBindingRangeBindingCount(rangeIndex)

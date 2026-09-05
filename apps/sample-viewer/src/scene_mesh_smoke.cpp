@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <expected>
 #include <filesystem>
 #include <functional>
@@ -25,10 +26,12 @@
 
 #include "asharia/core/file_io.hpp"
 #include "asharia/core/log.hpp"
+#include "asharia/material_instance/mat_io.hpp"
 #include "asharia/mesh_product/mesh_product_writer_v1.hpp"
 #include "asharia/renderer_basic/render_graph_schemas.hpp"
 #include "asharia/renderer_basic_vulkan/basic_renderers.hpp"
 #include "asharia/renderer_basic_vulkan/clear_frame.hpp"
+#include "asharia/renderer_basic_vulkan/gpu_material_resource.hpp"
 #include "asharia/renderer_basic_vulkan/gpu_mesh_resource.hpp"
 #include "asharia/rhi_vulkan/vulkan_buffer.hpp"
 #include "asharia/rhi_vulkan/vulkan_context.hpp"
@@ -36,6 +39,8 @@
 #include "asharia/rhi_vulkan/vulkan_frame_loop.hpp"
 #include "asharia/rhi_vulkan/vulkan_image.hpp"
 #include "asharia/scene_rendering/scene_mesh_extraction.hpp"
+#include "asharia/shader_authoring/ashader_parser.hpp"
+#include "asharia/shader_material_adapter/reflected_parameters.hpp"
 #include "asharia/window_glfw/glfw_window.hpp"
 
 namespace asharia::sample_viewer {
@@ -2013,9 +2018,17 @@ namespace asharia::sample_viewer {
         std::vector<std::byte>
         captureGpuSmoke(VulkanFrameLoop& frameLoop, const VulkanContext& context,
                         BasicFullscreenTextureRenderer& renderer, SceneMeshProbe& probe,
-                        const std::shared_ptr<const BasicGpuMesh>& meshResource) {
-            const auto items =
+                        const std::shared_ptr<const BasicGpuMesh>& meshResource,
+                        const std::shared_ptr<const BasicGpuMaterial>& material = {},
+                        const std::function<void()>& afterRecord = {}) {
+            auto items =
                 meshResource ? gpuSmokeDrawItems(meshResource) : std::vector<BasicDrawListItem>{};
+            if (material) {
+                for (auto& item : items) {
+                    item.context.materialResource = material->key();
+                    item.context.materialRevision = material->revision();
+                }
+            }
             static_cast<void>(take(frameLoop.renderFrame(
                 [&](const VulkanFrameRecordContext& frame) -> Result<VulkanFrameRecordResult> {
                     auto ensured =
@@ -2036,11 +2049,15 @@ namespace asharia::sample_viewer {
                                    .format = sampled.format,
                                    .extent = sampled.extent,
                                    .finalUsage = BasicRenderViewTargetFinalUsage::SampledTexture},
-                        .scene = {.drawItems = items, .mesh = meshResource},
+                        .scene = {.drawItems = items, .mesh = meshResource, .material = material},
                         .diagnostics = &probe.diagnostics};
                     auto rendered = renderer.recordViewFrame(frame, view);
                     if (!rendered) {
                         return rendered;
+                    }
+                    view.scene.material.reset();
+                    if (afterRecord) {
+                        afterRecord();
                     }
                     // Reuse the existing diagnostic-only Scene mesh pixel readback probe.
                     auto copied = recordReadbackCopy(frame, sampled.image, probe.readback.handle());
@@ -2055,9 +2072,114 @@ namespace asharia::sample_viewer {
             check(probe.readback.read(probe.pixels));
             return probe.pixels;
         }
+
+        std::vector<std::uint32_t> readMaterialSmokeSpirv(const std::filesystem::path& path) {
+            const auto bytes = take(core::readFileBytes(path, {.maxBytes = 4ULL * 1024ULL * 1024ULL}));
+            require(bytes.size() % 4 == 0, "invalid SPIR-V word size");
+            std::vector<std::uint32_t> words(bytes.size() / 4);
+            std::memcpy(words.data(), bytes.data(), bytes.size());
+            return words;
+        }
+
+        void verifyAuthoredMaterial(VulkanFrameLoop& frameLoop, const VulkanContext& context,
+                                    BasicFullscreenTextureRenderer& renderer, SceneMeshProbe& probe,
+                                    const std::shared_ptr<const BasicGpuMesh>& mesh) {
+            const std::filesystem::path fixtures{ASHARIA_MATERIAL_FIXTURE_DIR};
+            const std::filesystem::path generated{ASHARIA_MATERIAL_GENERATED_DIR};
+            const std::filesystem::path builtins{ASHARIA_RENDERER_BASIC_SHADER_OUTPUT_DIR};
+            const auto vertex = readMaterialSmokeSpirv(builtins / "basic_mesh3d.vert.spv");
+            const auto fragment = readMaterialSmokeSpirv(generated / "numeric-unlit.frag.spv");
+            const auto vertexReflection =
+                take(readShaderReflection(builtins / "basic_mesh3d.vert.reflection.json"));
+            const auto fragmentReflection =
+                take(readShaderReflection(generated / "numeric-unlit.frag.reflection.json"));
+            const BasicGpuMaterialProgramDesc programDesc{.device = context.device(),
+                                                          .colorFormat = kReadbackFormat,
+                                                          .depthFormat = VK_FORMAT_D32_SFLOAT,
+                                                          .vertexCode = vertex,
+                                                          .fragmentCode = fragment,
+                                                          .vertexReflection = &vertexReflection,
+                                                          .fragmentReflection =
+                                                              &fragmentReflection};
+            auto wrongReflection = fragmentReflection;
+            wrongReflection.descriptorBindings.front().set = 0;
+            auto wrongProgram = programDesc;
+            wrongProgram.fragmentReflection = &wrongReflection;
+            require(!BasicGpuMaterialProgram::create(wrongProgram), "wrong binding set accepted");
+            auto program = take(BasicGpuMaterialProgram::create(programDesc));
+            auto parsed = shader_authoring::parseAshaderDocument(
+                take(core::readFileText(fixtures / "numeric-unlit.ashader", {.maxBytes = 65536})));
+            require(parsed.document.has_value(), "shader fixture parse failed");
+            auto red = take(shader_material::packReflectedMaterialParameters(
+                take(material_instance::readMatFile(fixtures / "red.mat")), *parsed.document,
+                program->binding()));
+            auto green = take(shader_material::packReflectedMaterialParameters(
+                take(material_instance::readMatFile(fixtures / "green.mat")), *parsed.document,
+                program->binding()));
+            auto owner = take(BasicGpuMaterialOwner::create({.allocator = context.allocator(),
+                                                             .key = BasicDrawResourceKey{0x432U},
+                                                             .program = program,
+                                                             .maxResidentVersions = 2}));
+            require(!owner.acquire(), "empty material unexpectedly resolved");
+            check(owner.update(1, red.layout, red.parameters.bytes));
+            auto first = take(owner.acquire());
+            const auto redPixels =
+                captureGpuSmoke(frameLoop, context, renderer, probe, mesh, first);
+            require(probe.diagnostics.scene.materialResource == owner.acquire().value()->key(),
+                    "material diagnostics lost identity");
+            auto invalidLayout = red.layout;
+            invalidLayout.members.front().offset += 4;
+            require(!owner.update(2, invalidLayout, green.parameters.bytes),
+                    "layout drift accepted");
+            require(take(owner.acquire()) == first, "failed update replaced active material");
+            require(!owner.update(1, green.layout, green.parameters.bytes),
+                    "stale material accepted");
+            bool wrongThreadRejected = false;
+            std::thread worker([&]() {
+                wrongThreadRejected = !owner.update(2, green.layout, green.parameters.bytes);
+            });
+            worker.join();
+            require(wrongThreadRejected, "wrong-thread material update accepted");
+            check(owner.update(2, green.layout, green.parameters.bytes));
+            auto second = take(owner.acquire());
+            require(first->program() == second->program() && second->program() == program.get(),
+                    "parameter update recreated the shader/pipeline program");
+            require(!owner.update(3, red.layout, red.parameters.bytes), "resident budget ignored");
+            const auto greenPixels =
+                captureGpuSmoke(frameLoop, context, renderer, probe, mesh, second);
+            std::uint64_t redCount = 0;
+            std::uint64_t greenCount = 0;
+            for (std::size_t i = 0; i < redPixels.size(); i += 4) {
+                if (std::to_integer<int>(redPixels[i + 2]) >
+                    std::to_integer<int>(redPixels[i + 1]) + 30) {
+                    ++redCount;
+                }
+                if (std::to_integer<int>(greenPixels[i + 1]) >
+                    std::to_integer<int>(greenPixels[i + 2]) + 30) {
+                    ++greenCount;
+                }
+            }
+            require(redCount > 1000 && greenCount > 1000 && redPixels != greenPixels,
+                    "authored .mat values did not produce expected red/green mesh pixels");
+            first.reset();
+            std::weak_ptr<const BasicGpuMaterial> retired = second;
+            static_cast<void>(
+                captureGpuSmoke(frameLoop, context, renderer, probe, mesh, second, [&]() {
+                    check(owner.clear());
+                    second.reset();
+                    require(!retired.expired(), "binding retired before GPU submission");
+                }));
+            require(retired.expired() && owner.residentVersions() == 0,
+                    "material binding did not retire after GPU completion");
+            require(!owner.update(2, red.layout, red.parameters.bytes),
+                    "clear forgot revision fence");
+            std::cout
+                << "Authored material passed: red=" << redCount << " green=" << greenCount
+                << ", shared program, layout/stale/budget/thread rejection, fence retirement\n";
+        }
     } // namespace
 
-    int runSmokeGpuMeshResource() {
+    int runGpuMeshResourceSmoke(bool authoredMaterial) {
         try {
             auto glfw = take(GlfwInstance::create());
             auto extensions = take(glfwRequiredVulkanInstanceExtensions(glfw));
@@ -2133,6 +2255,9 @@ namespace asharia::sample_viewer {
                 check(owner.publishCompleted(frameLoop));
                 auto active = take(owner.acquire());
                 require(active->productHash() == first.productHash(), "product identity was lost");
+                if (authoredMaterial) {
+                    verifyAuthoredMaterial(frameLoop, context, renderer, probe, active);
+                }
                 const auto empty = captureGpuSmoke(frameLoop, context, renderer, probe, {});
                 const auto full = captureGpuSmoke(frameLoop, context, renderer, probe, active);
                 require(empty != full, "verified product did not change pixels");
@@ -2246,4 +2371,10 @@ namespace asharia::sample_viewer {
         }
     }
 
+    int runSmokeGpuMeshResource() {
+        return runGpuMeshResourceSmoke(false);
+    }
+    int runSmokeGpuMaterialResource() {
+        return runGpuMeshResourceSmoke(true);
+    }
 } // namespace asharia::sample_viewer

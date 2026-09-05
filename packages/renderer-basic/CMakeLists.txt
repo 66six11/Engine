@@ -88,6 +88,7 @@ set_source_files_properties(
 add_library(asharia-renderer-basic-vulkan
     src/basic_renderers.cpp
     src/gpu_mesh_resource.cpp
+    src/gpu_material_resource.cpp
     ${ASHARIA_RENDERER_BASIC_VULKAN_PRIVATE_PARTS}
 )
 add_library(asharia::renderer_basic_vulkan ALIAS asharia-renderer-basic-vulkan)
@@ -459,9 +460,9 @@ target_link_libraries(asharia-renderer-basic-vulkan
         asharia::resource_runtime
         asharia::rhi_vulkan
         asharia::rhi_vulkan_rendergraph
+        asharia::shader_slang
     PRIVATE
         asharia::material_core
-        asharia::shader_slang
 )
 
 target_compile_definitions(asharia-renderer-basic
