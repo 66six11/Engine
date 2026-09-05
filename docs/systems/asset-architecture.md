@@ -271,7 +271,7 @@ flowchart LR
 
 规则：
 
-- Source asset 是用户编辑的源文件，例如 `.png`、`.gltf`、`.fbx`、`.slang`、`.amat`、`.ascene`。
+- Source asset 是用户编辑的源文件，例如 `.png`、`.gltf`、`.fbx`、`.slang`、`.mat`、`.ascene`。
 - `.ameta` 是可提交的 metadata；它保存稳定 GUID、importer 和 import settings。
 - Product asset 是 generated output；它可以被删除并重新生成，默认不提交。
 - Runtime resource 是加载后的 CPU/GPU 对象；它不进入 `.ameta` 或 scene 文件。
@@ -623,7 +623,7 @@ struct MeshResourceLoadTicket {
 ### Schema / Persistence
 
 - `AssetGuid`、`AssetReference` 和常见 import settings 应可被 schema/persistence 描述。
-- `.ascene`、`.amat`、`.ameta` 保存 GUID 和稳定 type name，不保存 runtime pointer。
+- `.ascene`、`.mat`、`.ameta` 保存 GUID 和稳定 type name，不保存 runtime pointer。
 - migration 可以把旧 source path 引用迁移成 GUID，但必须保留诊断和人工修复路径。
 
 ### Scene / World
@@ -1216,7 +1216,7 @@ scan-to-planning bridge baseline 稳定。
 | asset-pipeline / asset-processor product execution | 只消费已有 import plan 和显式 source bytes；PNG Texture2D 与受限 `.glb` static Mesh request 写各自 deterministic product blob/manifest，其他未支持 request 写 placeholder blob/manifest。 | 不做 watcher、dependency invalidation、runtime resource loading、GPU upload，且不接 `.gltf`/OBJ/FBX、KTX/HDR/Basis 或 material importer。 |
 | asset-pipeline product blob read | 只读取当前 deterministic placeholder source payload 或 `texture2d-product.v1` Texture2D payload 并返回稳定 diagnostics。 | 不创建 runtime texture，不拥有 Vulkan/RenderGraph upload，不解释 KTX/HDR/Basis container。 |
 | asset-pipeline CPU texture import contract | 只消费显式 source bytes 和 `.ameta` texture settings，把 raw `.rgba8` fixture 或 PNG source bytes 标准化为 Texture2D RGBA8 CPU payload，并返回稳定 diagnostics。 | 不接 KTX/HDR decoder，不压缩 Basis，不创建 GPU resource 或 editor preview。 |
-| material-core signature / pipeline key | 只定义 CPU-side material resource signature、compatibility diagnostics 和 deterministic pipeline key hash，可用 package-local tests 验证。 | 不做 `.amat` IO、不执行 importer、不写 product cache、不创建 Vulkan pipeline/cache、不做 editor UI。 |
+| material-core signature / pipeline key | 只定义 CPU-side material resource signature、compatibility diagnostics 和 deterministic pipeline key hash，可用 package-local tests 验证。 | 不做 `.mat` IO、不执行 importer、不写 product cache、不创建 Vulkan pipeline/cache、不做 editor UI。 |
 
 等待后再做：
 

@@ -63,7 +63,7 @@ namespace asharia::editor {
                 fixtureSourceRecord(FixtureSourceDesc{
                     .guidText = "b8373128-8e46-44e1-a5a4-df4c2ef9d2ad",
                     .assetTypeName = kMaterialTypeName,
-                    .sourcePath = "Assets/Materials/brushed_metal.amat",
+                    .sourcePath = "Assets/Materials/brushed_metal.mat",
                     .importerName = "asharia.material",
                     .sourceHash = 0x1001ULL,
                     .settingsHash = 0x2001ULL,

@@ -14,7 +14,7 @@ Done evidence 只维护在 GitHub Issues / Project；本文不跟踪具体 PR。
 V1 文档中的“第一版 `.ashader` 范围”、graph-first 主路径、`ashader-v1.md`、`amat-v1.md` 和
 `material-product-v1.md` 拆分建议全部弃用。后续不新增 V1 spec 文件，也不把 V1 schema 当成兼容目标。
 
-V2 的当前主线是 code-first MVP：先跑通 `.ashader + .slang/raw slang + .amat` 到 renderer/preview 的闭环，再做
+V2 的当前主线是 code-first MVP：先跑通 `.ashader + .slang/raw slang + .mat` 到 renderer/preview 的闭环，再做
 minimal `.agraph` IR、Hybrid Slang function node discovery 和完整 Material Editor。
 
 ## 当前事实
@@ -22,7 +22,7 @@ minimal `.agraph` IR、Hybrid Slang function node discovery 和完整 Material E
 - `packages/shader-slang` 已提供 Slang -> SPIR-V 构建、`spirv-val` validation、`.metadata.json`
   和 `.reflection.json` 产物；reflection 当前是可审查构建产物，不自动生成 C++。
 - `packages/material-core` 已提供 CPU-only material resource signature、shader/signature compatibility
-  和 deterministic pipeline key hash；它不拥有 `.amat` IO、asset import、GPU upload、Vulkan pipeline/cache
+  和 deterministic pipeline key hash；它不拥有 `.mat` IO、asset import、GPU upload、Vulkan pipeline/cache
   或 editor UI。
 - `packages/shader-material-adapter` 提供从 `shader-slang` reflection model 到
   `MaterialResourceSignature` / signature hash 的 CPU-only 适配层；它依赖 `shader-slang` 与
@@ -30,15 +30,15 @@ minimal `.agraph` IR、Hybrid Slang function node discovery 和完整 Material E
 - `packages/shader-authoring` 提供 CPU-only `.ashader` document model、parser、source span、基础 diagnostics
   和 generated Slang skeleton / line mapping / entry manifest；它只依赖 `core`，不调用 Slang compiler，
   不生成 SPIR-V，不读取 reflection，也不依赖 asset-pipeline、renderer、RHI 或 editor。
-- `packages/material-instance` 已通过 #154 接入 CPU-only `.amat` document IO、property override model
+- `packages/material-instance` 已通过 #154 接入 CPU-only `.mat` document IO、property override model
   和 material type reference validation；它不进入 renderer、RHI 或 editor。
 - `asset-core` / `asset-pipeline` 已有 source discovery、metadata、product manifest/cache 的基线；#156 已让
-  `asset-pipeline` 私有复用 `material-instance`，把 `.amat` cook 成 deterministic material instance product blob；
+  `asset-pipeline` 私有复用 `material-instance`，把 `.mat` cook 成 deterministic material instance product blob；
   #158 已让 `asset-pipeline` 私有复用 `shader-authoring`，把 `.ashader` cook 成 deterministic generated
   Slang product blob；#163 继续把该 generated Slang payload 和 entry manifest facts cook 成 deterministic
   compile/reflection product facts。
 - editor 已有 Asset Browser / RenderView / Preview view request 等基础，但还没有完整 Material Editor、
-  `.agraph` lowering、`.amat` IO 或 `.ashader` editor workflow。
+  `.agraph` lowering、`.mat` IO 或 `.ashader` editor workflow。
 - RenderGraph pass type 表达 execution model，不表达 material pass tag、LightMode、shader pass 名称或材质业务语义。
 
 ## 核心决定
@@ -107,7 +107,7 @@ boundary, not a replacement shader ABI or a copy of another engine's object/serv
 
 ### Material override validation boundary
 
-Current evidence: IO already validates `.amat` identity, duplicate property IDs, value kinds and vector
+Current evidence: IO already validates `.mat` identity, duplicate property IDs, value kinds and vector
 widths, but callers can construct mutable documents directly; the resolver previously trusted those values.
 Owner / lifetime / thread: `material-instance` validates borrowed CPU documents synchronously, without
 mutating either input or creating renderer resources. Data / error / budget / diagnostics: reuse
@@ -130,13 +130,13 @@ shared validation and explicit diagnostics.
 
 Asharia 不先做完整自定义 shader 语言，也不先复制 Unreal Material Graph 或 Unity Shader Graph。V2 的判断是：
 
-> Slang 是唯一 GPU 代码层；`.ashader` 是材质类型 authoring contract；`.amat` 是材质实例；
+> Slang 是唯一 GPU 代码层；`.ashader` 是材质类型 authoring contract；`.mat` 是材质实例；
 > asset pipeline 生成 runtime product；renderer 只消费 product。
 
 第一阶段目标只解决一条链路：
 
 ```text
-.ashader + .slang/raw slang + .amat
+.ashader + .slang/raw slang + .mat
     -> import/cook
     -> generated Slang
     -> SPIR-V + reflection
@@ -156,7 +156,7 @@ Slang AST 级重写、handwritten Slang -> graph 反编译、复杂 variant matr
 | GPU 源码层 | `.slang` | 手写 shader 函数、entry point、高级 GPU 代码 | 材质实例值、editor layout |
 | 材质类型层 | `.ashader` | properties、pass、render state、graph/code 链接、tool contract | runtime handle、GPU descriptor |
 | Graph 创作层 | `.agraph` | nodes、edges、pin values、layout、exposed property | runtime execution |
-| 材质实例层 | `.amat` | 材质类型引用、参数值、texture/asset handle、override | shader 代码、GPU object |
+| 材质实例层 | `.mat` | 材质类型引用、参数值、texture/asset handle、override | shader 代码、GPU object |
 | Runtime product 层 | generated products | generated Slang、SPIR-V、reflection、signature、pipeline key、diagnostics | 用户编辑入口 |
 
 推荐路径示例：
@@ -165,7 +165,7 @@ Slang AST 级重写、handwritten Slang -> graph 反编译、复杂 variant matr
 Assets/Shaders/Unlit/Unlit.ashader
 Assets/Shaders/Unlit/Unlit.slang
 Assets/Shaders/Unlit/Unlit.agraph
-Assets/Materials/Red.amat
+Assets/Materials/Red.mat
 .asharia/cache/shaders/Unlit.generated.slang
 .asharia/cache/shaders/Unlit.spv
 .asharia/cache/shaders/Unlit.reflection.json
@@ -203,14 +203,14 @@ packages/
     generated Slang skeleton / entry manifest
 
   material-instance/
-    .amat schema
-    .amat read/write
+    .mat schema
+    .mat read/write
     property override model
     material type reference resolution
 
   asset-pipeline/
     .ashader importer
-    .amat importer
+    .mat importer
     dependency tracking
     generated product manifest
     cache invalidation
@@ -255,7 +255,7 @@ editor -> asset-pipeline / preview / renderer
 
 ```mermaid
 flowchart LR
-    Source[".ashader / .slang / .agraph / .amat"]
+    Source[".ashader / .slang / .agraph / .mat"]
     Import["asset-pipeline import / cook"]
     Generated["generated Slang"]
     Slang["shader-slang compile / spirv-val / reflection"]
@@ -275,7 +275,7 @@ flowchart LR
     RG --> RHI
 ```
 
-Runtime 只读 product，不读 authoring graph。Editor 可以读 `.ashader`、`.agraph`、`.amat`、product diagnostics
+Runtime 只读 product，不读 authoring graph。Editor 可以读 `.ashader`、`.agraph`、`.mat`、product diagnostics
 和 preview product。Renderer 只读 SPIR-V、`MaterialResourceSignature`、pipeline key inputs、material binding packet
 和 draw packet。
 
@@ -283,7 +283,7 @@ Runtime 只读 product，不读 authoring graph。Editor 可以读 `.ashader`、
 
 ### 1. Code-first MVP
 
-第一阶段的主路径是 code-first。用户提供 `.ashader`、外部 `.slang` 或 raw `slang {}` block，以及 `.amat`
+第一阶段的主路径是 code-first。用户提供 `.ashader`、外部 `.slang` 或 raw `slang {}` block，以及 `.mat`
 实例。工具生成 material prelude、binding、parameter block 和 pass wrapper，再交给 `shader-slang` 编译。
 
 这个阶段证明材质类型、材质实例、shader 编译、reflection adapter、pipeline key、binding packet 和 preview/render
@@ -310,7 +310,7 @@ Preview service 服务三种入口：
 
 - node preview：临时生成只计算某个 node output 的 Slang。
 - code/function preview：用同一 material context 编译某个函数或 pass。
-- final material preview：使用 `.ashader` + `.amat` 的完整 product。
+- final material preview：使用 `.ashader` + `.mat` 的完整 product。
 
 预览失败时保留上一次成功画面，diagnostics 附着到 node、pin、property 或 code line。Preview 复用 RenderView kind
 `Preview`，不复制独立 renderer 路径。
@@ -343,10 +343,10 @@ Preview service 服务三种入口：
 - `shader-authoring` tests 覆盖 `.ashader` parse 正例、raw Slang span、重复 property、未知类型、
   非法默认值、缺少 pass entry、缺少 Slang 引用、raw block brace 平衡、generated Slang skeleton、
   deterministic binding declarations、entry manifest 和 line mapping。
-- `material-instance` tests 覆盖 `.amat` strict JSON read/write、schema/material type reference、
+- `material-instance` tests 覆盖 `.mat` strict JSON read/write、schema/material type reference、
   property override type validation、deterministic override diff 和 stale signature diagnostics。
 - asset-pipeline tests 覆盖 `.ashader` lowering、generated product、dependency invalidation 和 stale diagnostics。
-- editor smoke 覆盖打开 `.ashader` / `.amat`、修改 property、preview 成功/失败和 diagnostics 定位。
+- editor smoke 覆盖打开 `.ashader` / `.mat`、修改 property、preview 成功/失败和 diagnostics 定位。
 - 文档和格式变更至少运行 `tools/check-text-encoding.ps1` 与 `git diff --check`。
 
 ## 相关文档

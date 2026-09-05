@@ -749,7 +749,7 @@ namespace asharia::asset {
             return request.source.importerName == kMaterialInstanceImporterName &&
                    request.source.importerVersion ==
                        ImporterVersion{kMaterialInstanceImporterVersion} &&
-                   sourceExtension(request.source.sourcePath) == ".amat";
+                   sourceExtension(request.source.sourcePath) == ".mat";
         }
 
         [[nodiscard]] bool isShaderAuthoringProductRequest(const AssetImportRequest& request) {

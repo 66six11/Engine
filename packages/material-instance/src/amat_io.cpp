@@ -408,32 +408,32 @@ namespace asharia::material_instance {
         [[nodiscard]] Result<AmatMaterialTypeReference>
         readMaterialTypeReference(const ArchiveValue& root) {
             auto value =
-                requiredMember(root, "materialType", ArchiveValueKind::Object, ".amat root");
+                requiredMember(root, "materialType", ArchiveValueKind::Object, ".mat root");
             if (!value) {
                 return std::unexpected{std::move(value.error())};
             }
             constexpr std::array materialTypeMembers{"assetGuid"sv, "stableTypeId"sv,
                                                      "expectedTypeHash"sv};
             if (auto valid =
-                    validateObjectMembers(**value, ".amat materialType", materialTypeMembers);
+                    validateObjectMembers(**value, ".mat materialType", materialTypeMembers);
                 !valid) {
                 return std::unexpected{std::move(valid.error())};
             }
 
-            auto assetGuid = requiredAssetGuid(**value, "assetGuid", ".amat materialType");
+            auto assetGuid = requiredAssetGuid(**value, "assetGuid", ".mat materialType");
             if (!assetGuid) {
                 return std::unexpected{std::move(assetGuid.error())};
             }
-            auto stableTypeId = requiredString(**value, "stableTypeId", ".amat materialType");
+            auto stableTypeId = requiredString(**value, "stableTypeId", ".mat materialType");
             if (!stableTypeId) {
                 return std::unexpected{std::move(stableTypeId.error())};
             }
             if (stableTypeId->empty()) {
                 return std::unexpected{
-                    amatIoError(".amat materialType member 'stableTypeId' cannot be empty.")};
+                    amatIoError(".mat materialType member 'stableTypeId' cannot be empty.")};
             }
             auto expectedTypeHash =
-                requiredHash64(**value, "expectedTypeHash", ".amat materialType");
+                requiredHash64(**value, "expectedTypeHash", ".mat materialType");
             if (!expectedTypeHash) {
                 return std::unexpected{std::move(expectedTypeHash.error())};
             }
@@ -447,7 +447,7 @@ namespace asharia::material_instance {
 
         [[nodiscard]] Result<std::vector<AmatPropertyOverride>>
         readPropertyOverrides(const ArchiveValue& root) {
-            auto value = requiredMember(root, "properties", ArchiveValueKind::Object, ".amat root");
+            auto value = requiredMember(root, "properties", ArchiveValueKind::Object, ".mat root");
             if (!value) {
                 return std::unexpected{std::move(value.error())};
             }
@@ -455,7 +455,7 @@ namespace asharia::material_instance {
             std::vector<AmatPropertyOverride> overrides;
             overrides.reserve((*value)->objectValue.size());
             for (const ArchiveMember& member : (*value)->objectValue) {
-                const std::string context = ".amat properties." + member.key;
+                const std::string context = ".mat properties." + member.key;
                 constexpr std::array propertyMembers{"propertyId"sv, "type"sv, "value"sv,
                                                      "assetGuid"sv};
                 if (auto valid = validateObjectMembers(member.value, context, propertyMembers);
@@ -508,18 +508,18 @@ namespace asharia::material_instance {
         }
 
         [[nodiscard]] Result<AmatImportMetadata> readImportMetadata(const ArchiveValue& root) {
-            auto value = requiredMember(root, "import", ArchiveValueKind::Object, ".amat root");
+            auto value = requiredMember(root, "import", ArchiveValueKind::Object, ".mat root");
             if (!value) {
                 return std::unexpected{std::move(value.error())};
             }
             constexpr std::array importMembers{"lastCookedSignatureHash"sv, "lastCookedAt"sv};
-            if (auto valid = validateObjectMembers(**value, ".amat import", importMembers);
+            if (auto valid = validateObjectMembers(**value, ".mat import", importMembers);
                 !valid) {
                 return std::unexpected{std::move(valid.error())};
             }
 
             auto lastCookedSignatureHash =
-                requiredHash64(**value, "lastCookedSignatureHash", ".amat import");
+                requiredHash64(**value, "lastCookedSignatureHash", ".mat import");
             if (!lastCookedSignatureHash) {
                 return std::unexpected{std::move(lastCookedSignatureHash.error())};
             }
@@ -529,7 +529,7 @@ namespace asharia::material_instance {
                 lastCookedAtValue != nullptr) {
                 if (lastCookedAtValue->kind != ArchiveValueKind::String) {
                     return std::unexpected{
-                        amatIoError(".amat import member 'lastCookedAt' has an unexpected type.")};
+                        amatIoError(".mat import member 'lastCookedAt' has an unexpected type.")};
                 }
                 lastCookedAt = lastCookedAtValue->stringValue;
             }
@@ -543,23 +543,23 @@ namespace asharia::material_instance {
         [[nodiscard]] Result<AmatDocument> readAmatArchive(const ArchiveValue& archive) {
             constexpr std::array rootMembers{"schemaVersion"sv, "materialType"sv, "variant"sv,
                                              "properties"sv, "import"sv};
-            if (auto validRoot = validateObjectMembers(archive, ".amat root", rootMembers);
+            if (auto validRoot = validateObjectMembers(archive, ".mat root", rootMembers);
                 !validRoot) {
                 return std::unexpected{std::move(validRoot.error())};
             }
 
-            auto schemaVersion = requiredUint32(archive, "schemaVersion", ".amat root");
+            auto schemaVersion = requiredUint32(archive, "schemaVersion", ".mat root");
             if (!schemaVersion) {
                 return std::unexpected{std::move(schemaVersion.error())};
             }
             if (*schemaVersion != kAmatSchemaVersion) {
-                return std::unexpected{amatIoError(".amat root has unsupported schemaVersion '" +
+                return std::unexpected{amatIoError(".mat root has unsupported schemaVersion '" +
                                                    std::to_string(*schemaVersion) + "'.")};
             }
 
             if (const ArchiveValue* variant = archive.findMemberValue("variant");
                 variant != nullptr && variant->kind != ArchiveValueKind::Object) {
-                return std::unexpected{amatIoError(".amat variant must be a JSON object.")};
+                return std::unexpected{amatIoError(".mat variant must be a JSON object.")};
             }
 
             auto materialType = readMaterialTypeReference(archive);
@@ -842,7 +842,7 @@ namespace asharia::material_instance {
         auto parsedArchive = archive::readJsonArchive(text);
         if (!parsedArchive) {
             return std::unexpected{
-                amatIoError("Failed to read .amat JSON: " + parsedArchive.error().message)};
+                amatIoError("Failed to read .mat JSON: " + parsedArchive.error().message)};
         }
 
         return readAmatArchive(*parsedArchive);
@@ -851,13 +851,13 @@ namespace asharia::material_instance {
     Result<AmatDocument> readAmatFile(const std::filesystem::path& path) {
         auto archive = archive::readJsonArchiveFile(path, {.maxBytes = kMaxMaterialInstanceBytes});
         if (!archive) {
-            return std::unexpected{amatIoError("Failed to parse .amat file '" + path.string() +
+            return std::unexpected{amatIoError("Failed to parse .mat file '" + path.string() +
                                                "': " + archive.error().message)};
         }
 
         auto document = readAmatArchive(*archive);
         if (!document) {
-            return std::unexpected{amatIoError("Failed to validate .amat file '" + path.string() +
+            return std::unexpected{amatIoError("Failed to validate .mat file '" + path.string() +
                                                "': " + document.error().message)};
         }
         return document;
@@ -871,7 +871,7 @@ namespace asharia::material_instance {
         auto text = archive::writeJsonArchive(documentArchiveValue(document));
         if (!text) {
             return std::unexpected{
-                amatIoError("Failed to write .amat JSON: " + text.error().message)};
+                amatIoError("Failed to write .mat JSON: " + text.error().message)};
         }
 
         return *text;
@@ -884,7 +884,7 @@ namespace asharia::material_instance {
 
         auto written = archive::writeJsonArchiveFile(path, documentArchiveValue(document));
         if (!written) {
-            return std::unexpected{amatIoError("Failed to write .amat file '" + path.string() +
+            return std::unexpected{amatIoError("Failed to write .mat file '" + path.string() +
                                                "': " + written.error().message)};
         }
         return {};

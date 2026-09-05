@@ -188,14 +188,14 @@ package 用来承载可选能力：
   `archive` JSON 与 Studio caller-owned bounded C ABI。它不是用户可选安装碎片，不拥有 ImGui/Avalonia UI、
   importer execution、watcher、`resource-runtime`、renderer/RHI 或 GPU resource。
 - `material-core` 提供 CPU-only material resource signature、descriptor contract 和 pipeline key 数据模型；
-  当前只依赖 `core`，不拥有 `.amat` IO、asset import、GPU upload、Vulkan pipeline/cache 或 editor UI。
+  当前只依赖 `core`，不拥有 `.mat` IO、asset import、GPU upload、Vulkan pipeline/cache 或 editor UI。
 - `shader-authoring` 提供 CPU-only `.ashader` document model、parser、source spans、authoring diagnostics、
   generated Slang skeleton 和 line mapping；它只依赖 `core`，不调用 Slang compiler，不生成 SPIR-V，
   不依赖 renderer、RHI、asset-pipeline 或 editor。`asset-pipeline` 可以作为 importer/cook glue 私有复用它。
 - `shader-material-adapter` 提供 Slang reflection JSON 到 material resource signature 的 CPU-only adapter；
   主 target 依赖 `core`、`material-core` 和 `shader-slang`，generated reflection smoke 可额外使用
   `shader-authoring` 和 `asharia-slang-reflect`，但不进入 renderer、RHI、asset-pipeline 或 editor。
-- `material-instance` 提供 CPU-only `.amat` document IO、property override model 和 material type
+- `material-instance` 提供 CPU-only `.mat` document IO、property override model 和 material type
   reference validation；它可依赖 `archive`、`asset-core` 和 `shader-authoring`，但不依赖 asset-pipeline、
   renderer、RHI 或 editor。
 - `tools/asset-processor` 是 root-built offline CLI，组合 `asset_core_io`、`asset_pipeline` 和

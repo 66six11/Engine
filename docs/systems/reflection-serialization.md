@@ -15,7 +15,7 @@ archive 只负责 value tree 和文本/二进制 IO；persistence 才把 schema�
 Editor、scene、asset、scripting 都是消费者，不拥有底层类型事实。
 
 命名遵循 `docs/standards/naming.md`：持久化 schema 使用 `com.asharia`，文件后缀使用 `.ascene`、
-`.aprefab`、`.ameta`、`.amat`、`.agraph`。C++ / CMake 实现名统一使用 `asharia`。
+`.aprefab`、`.ameta`、`.mat`、`.agraph`。C++ / CMake 实现名统一使用 `asharia`。
 
 实施顺序由 `docs/planning/next-development-plan.md` 和 GitHub Issues / Project 维护；本文只定义长期数据合同。
 

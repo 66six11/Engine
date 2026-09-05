@@ -1507,7 +1507,7 @@ namespace asharia::asset {
             header->amatSize > productBytes.size() - payloadBegin) {
             return std::unexpected{blobError(AssetProductBlobDiagnosticCode::UnterminatedPayload,
                                              std::string{relativeProductPath},
-                                             "has an unterminated .amat payload")};
+                                             "has an unterminated .mat payload")};
         }
 
         const auto payloadByteCount = static_cast<std::size_t>(header->amatSize);
@@ -1516,7 +1516,7 @@ namespace asharia::asset {
             productText.substr(payloadEnd, kEnd.size()) != kEnd) {
             return std::unexpected{blobError(AssetProductBlobDiagnosticCode::UnterminatedPayload,
                                              std::string{relativeProductPath},
-                                             "has an unterminated .amat payload")};
+                                             "has an unterminated .mat payload")};
         }
 
         const std::span<const std::uint8_t> payloadBytes{
@@ -1526,7 +1526,7 @@ namespace asharia::asset {
         if (hashBytes(payloadBytes) != header->amatHash) {
             return std::unexpected{blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
                                              std::string{relativeProductPath},
-                                             "has an .amat payload hash mismatch")};
+                                             "has an .mat payload hash mismatch")};
         }
 
         std::string canonicalAmatText;
@@ -1540,7 +1540,7 @@ namespace asharia::asset {
             return std::unexpected{
                 blobError(AssetProductBlobDiagnosticCode::InvalidProductBlob,
                           std::string{relativeProductPath},
-                          "contains invalid canonical .amat payload: " + document.error().message)};
+                          "contains invalid canonical .mat payload: " + document.error().message)};
         }
         if (document->materialType.assetGuid != header->materialTypeAssetGuid ||
             document->materialType.stableTypeId != header->stableTypeId ||

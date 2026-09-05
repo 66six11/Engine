@@ -109,7 +109,7 @@ shader "asharia.material.unlit" {
             document->materialType.stableTypeId != "asharia.material.unlit" ||
             document->materialType.expectedTypeHash != kTypeHash ||
             document->import.lastCookedSignatureHash != kSignatureHash) {
-            logFailure("read .amat document did not preserve expected fields.");
+            logFailure("read .mat document did not preserve expected fields.");
             return false;
         }
 
@@ -121,14 +121,14 @@ shader "asharia.material.unlit" {
         if (written->find(R"("baseColor")") == std::string::npos ||
             written->find(R"("lastCookedSignatureHash": "00000000000000bb")") ==
                 std::string::npos) {
-            logFailure("written .amat text is missing stable fields.");
+            logFailure("written .mat text is missing stable fields.");
             return false;
         }
         auto roundTrip = asharia::material_instance::readAmatText(*written);
         if (!roundTrip || roundTrip->properties.size() != document->properties.size() ||
             roundTrip->materialType != document->materialType ||
             roundTrip->import != document->import) {
-            logFailure("written .amat text did not round-trip.");
+            logFailure("written .mat text did not round-trip.");
             return false;
         }
 
@@ -149,7 +149,7 @@ shader "asharia.material.unlit" {
                      asharia::material_instance::AmatOverrideDiffKind::Overridden) ||
             !hasDiff(result, "useAlpha",
                      asharia::material_instance::AmatOverrideDiffKind::Defaulted)) {
-            logFailure("valid .amat overrides did not resolve deterministically.");
+            logFailure("valid .mat overrides did not resolve deterministically.");
             return false;
         }
 
@@ -211,7 +211,7 @@ shader "asharia.material.unlit" {
                            asharia::material_instance::AmatDiagnosticCode::StaleSignatureHash) ||
             !hasDiff(result, "roughness",
                      asharia::material_instance::AmatOverrideDiffKind::Invalid)) {
-            logFailure("invalid .amat fixture did not produce deterministic diagnostics.");
+            logFailure("invalid .mat fixture did not produce deterministic diagnostics.");
             return false;
         }
 

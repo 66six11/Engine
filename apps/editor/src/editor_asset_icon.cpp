@@ -45,7 +45,7 @@ namespace asharia::editor {
             const std::string importProfile = normalizeEditorAssetIconToken(query.importProfile);
             const std::string assetRole = normalizeEditorAssetIconToken(query.assetRole);
 
-            if (anyOf(assetType, {"material", "asharia.material"}) || extension == ".amat" ||
+            if (anyOf(assetType, {"material", "asharia.material"}) || extension == ".mat" ||
                 importerId.contains("material")) {
                 return icon("lucide.palette", tint(0.78F, 0.58F, 0.92F), "icon.material",
                             "Material");
