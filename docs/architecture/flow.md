@@ -2388,3 +2388,24 @@ resource lifetime. Reuse the existing store's tickets, load plans and leases ins
 global manager or another job system; the editor owns scheduling and never moves source import
 into resource-runtime. Earliest safe integration is after catalog exact-key selection; latest
 required is before Scene GPU resource publication.
+
+### Native catalog tool input boundary
+
+Native catalog requests own explicit importer/tool-name/fingerprint declarations; snapshots retain
+those inputs when recreating a refresh request. The catalog passes them to the existing DeclaredOnly
+planner. Missing Shader tools remain unresolved, while changed fingerprints change expected keys.
+Validation rejects duplicate identities and bounds input before source IO. Asset pipeline remains
+the dependency/key owner; the editor only transports facts from its host. Public target visibility
+now matches the reused public AssetImportToolVersionDependency type.
+
+This adopts [Unreal Shader caching](https://dev.epicgames.com/documentation/unreal-engine/shader-development-in-unreal-engine)
+including compile inputs in cache identity, cross-checked against
+[O3DE source asset invalidation](https://www.docs.o3de.org/docs/user-guide/assets/pipeline/source-assets/)
+using builder fingerprints. Asharia rejects inferring tool facts from candidate products or probing
+executables while browsing: that would let a stale cache validate itself or introduce environment IO
+into a metadata query. No new tool registry or cache layer is needed.
+
+The new CPU regression scans a Shader metadata fixture and proves declared-input planning and
+refresh identity only. It does not compile the fixture or establish complete compiled Shader
+product identity: authoring-product dependencies must still enter generic planning, and the Studio
+C ABI has no tool input field yet. Those remain required before a real compile/catalog/runtime proof.

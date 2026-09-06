@@ -46,10 +46,13 @@ and ambiguous records. Identical repeated expected keys are harmless; duplicate 
 are rejected. The query never selects by timestamps, file names or manifest order.
 
 A snapshot is point-in-time data: after source/settings/tool facts or manifest changes, refresh
-before requesting another load. Declared-only planning remains in force, and the current snapshot query supplies no tool-version
-facts. Metadata does not carry them either: compiled Shader sources remain unresolved. Explicit
-host tool inputs and compiled-product dependency planning are pending; browsing must not discover
-tools or trust cached candidates as the source of those facts.
+before requesting another load. Declared-only planning remains in force. Native callers can supply
+`toolVersions` in `EditorAssetCatalogSnapshotRequest`; snapshots retain them for refresh. At most
+256 unique importer/name pairs are accepted, with nonzero importer/hash and 1-128 byte names.
+The host must obtain these fingerprints outside browsing; neither metadata nor cached candidate
+records supply them. An omitted/partial Shader declaration remains unresolved without probing tools.
+Compiled-product authoring dependency planning and a real cook/catalog/runtime proof are still
+pending. Studio C ABI/JSON inputs remain unchanged and currently provide no tool declarations.
 Any error diagnostic blocks selection for the whole snapshot (the browser can still display its
 partial rows). Warnings alone do not block an otherwise uniquely matched product.
 

@@ -15,16 +15,21 @@
     "com.asharia.asset-pipeline",
     "com.asharia.project-core"
   ],
-  "targets": ["asharia-editor-content", "asharia-editor-content-native"],
+  "targets": [
+    "asharia-editor-content",
+    "asharia-editor-content-native"
+  ],
   "testTargets": [
     "asharia-editor-content-native-smoke-tests",
-    "asharia-editor-content-native-c-header-smoke"
+    "asharia-editor-content-native-c-header-smoke",
+    "asharia-editor-content-tool-input-tests"
   ],
   "targetRoles": {
     "asharia-editor-content": "runtime",
     "asharia-editor-content-native": "adapter",
     "asharia-editor-content-native-smoke-tests": "test",
-    "asharia-editor-content-native-c-header-smoke": "test"
+    "asharia-editor-content-native-c-header-smoke": "test",
+    "asharia-editor-content-tool-input-tests": "test"
   },
   "targetDependencies": {
     "asharia-editor-content": [
@@ -33,11 +38,17 @@
       "asharia-asset-pipeline",
       "asharia-project-core-io"
     ],
-    "asharia-editor-content-native": ["asharia-editor-content"],
+    "asharia-editor-content-native": [
+      "asharia-editor-content"
+    ],
     "asharia-editor-content-native-smoke-tests": [
       "asharia-editor-content-native",
       "asharia-project-core-io"
     ],
-    "asharia-editor-content-native-c-header-smoke": []
+    "asharia-editor-content-native-c-header-smoke": [],
+    "asharia-editor-content-tool-input-tests": [
+      "asharia-editor-content",
+      "asharia-asset-core-io"
+    ]
   }
 }

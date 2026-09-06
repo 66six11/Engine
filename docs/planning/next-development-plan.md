@@ -520,11 +520,11 @@ The editor now has a catalog-to-MeshResourceStore request adapter and a headless
 scan/cook/catalog/worker-load/owner-publish/lease smoke. This validates CPU resource reuse and
 replacement safety. Scene/Studio GPU consumption remains the next host integration step.
 
-Shader prerequisite found during integration: editor catalog planning passes an empty toolVersions
-list under DeclaredOnly. The compiled Shader importer requires slangc and spirv-val fingerprints,
-so it cannot produce a current expected key through that query. Metadata does not currently carry
-these facts. In addition, the existing compiled Shader cook proof assembles its authoring-product
+Shader prerequisite found during integration: native catalog requests now accept explicit host
+toolVersions under DeclaredOnly and preserve them across refresh. The compiled Shader importer
+requires slangc and spirv-val fingerprints; absent inputs remain unresolved, including the current
+Studio C ABI caller. Metadata does not carry these facts. The compiled Shader cook proof still assembles its authoring-product
 dependency explicitly; generic planning must reproduce that dependency before its selected key
-can agree with a compiled product. First add explicit host tool/dependency inputs and verify a real
+can agree with a compiled product. Next connect host declarations and dependency planning and verify a real
 scan-to-compiled-product-to-catalog-to-runtime test; do not infer fingerprints from a cached
 candidate or probe tools while browsing. This is not solved by #438's generic selection helper.
