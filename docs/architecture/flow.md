@@ -2419,3 +2419,18 @@ The editor-content dependency belongs only to this test executable; asharia-reso
 its editor-independent library dependencies. Root CMake orders editor-content first to avoid duplicate
 package inclusion when the standalone-capable test requires it. Host dependency discovery and Studio
 C ABI declaration transport remain pending; no general scheduler or second resource registry is added.
+
+## Native shared viewport GPU Mesh handoff
+
+The native host can pass a CPU Mesh lease to BasicGpuMeshOwner and record its upload in a shared
+viewport packet. VulkanSubmission retains staging/device resources before recording, performs the
+actual host queue submit and exposes a read-only receipt. Packet fence polling completes that receipt;
+only then can the Mesh owner publish. Subsequent shared viewport frames bind the explicit immutable
+GPU Mesh, derive submesh sections and propagate product generation into draw packet meshRevision.
+The draw scope retains its Mesh through its own fence, independent of later replacement/owner clear.
+
+The editor smoke compiles the same shared producer/pool/epoch sources as editor-native and exercises
+GLB cook -> catalog selection -> worker artifact read -> CPU lease -> upload -> indexed draw. This
+native handoff is not yet the managed catalog/project-session-to-viewport request path. One explicit
+Mesh batch, fixed unlit material and no GPU Mesh selection outline are the current limits. See
+[the submission/lifetime decision](adr-shared-viewport-gpu-mesh.md).

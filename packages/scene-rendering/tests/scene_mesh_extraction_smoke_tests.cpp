@@ -197,6 +197,7 @@ int main() noexcept {
         if (!expect(
                 extracted.revision() == kRevision && items.size() == 1U &&
                     extracted.diagnostics().empty() && items.front().drawItem.indexCount == 72U &&
+                    items.front().context.meshRevision == binding.productGeneration &&
                     items.front().context.sourceObject.index == instance.entity.index &&
                     items.front().context.sourceObject.generation == instance.entity.generation &&
                     items.front().context.meshResource ==

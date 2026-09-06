@@ -12,6 +12,7 @@
 
 #include "asharia/core/log.hpp"
 #include "asharia/rhi_vulkan/vulkan_error.hpp"
+#include "asharia/rhi_vulkan/vulkan_submission.hpp"
 
 #include "vulkan_enumeration.hpp"
 
@@ -584,11 +585,10 @@ namespace asharia {
     }
 
     bool VulkanFrameRecordContext::deferDeletion(VulkanDeferredDeletionCallback callback) const {
-        if (frameLoop == nullptr) {
-            return false;
+        if (submission != nullptr) {
+            return frameLoop == nullptr && submission->retain(commandBuffer, std::move(callback));
         }
-
-        return frameLoop->deferDeletion(std::move(callback));
+        return frameLoop != nullptr && frameLoop->deferDeletion(std::move(callback));
     }
 
     bool VulkanFrameRecordContext::beginDebugLabel(std::string_view name) const {

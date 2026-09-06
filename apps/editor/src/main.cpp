@@ -250,6 +250,12 @@ namespace {
     }
 
     [[nodiscard]] std::optional<int> runEditorSmokeCommand(std::span<char*> args) {
+        if (hasArg(args, "--smoke-shared-viewport-gpu-mesh")) {
+            if (!validateSingleSmokeArg(args, "--smoke-shared-viewport-gpu-mesh")) {
+                return EXIT_FAILURE;
+            }
+            return asharia::editor::runEditorMeshResourceSmoke(true) ? EXIT_SUCCESS : EXIT_FAILURE;
+        }
         if (hasArg(args, "--smoke-editor-mesh-resource")) {
             if (!validateSingleSmokeArg(args, "--smoke-editor-mesh-resource")) {
                 return EXIT_FAILURE;

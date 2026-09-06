@@ -45,6 +45,7 @@
       "asharia-renderer-basic-shaders",
       "asharia-rhi-vulkan",
       "asharia-scene-core",
+      "asharia-scene-rendering",
       "asharia-window-glfw",
       "asharia-editor-imgui-shaders",
       "asharia-resource-runtime"

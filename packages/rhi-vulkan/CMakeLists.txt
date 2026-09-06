@@ -18,6 +18,7 @@ find_package(VulkanMemoryAllocator CONFIG REQUIRED)
 
 add_library(asharia-rhi-vulkan STATIC
     src/vulkan_frame_loop.cpp
+    src/vulkan_submission.cpp
     src/vulkan_context.cpp
     src/vulkan_pipeline.cpp
     src/vulkan_buffer.cpp

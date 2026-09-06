@@ -9,5 +9,5 @@ namespace asharia::editor {
     [[nodiscard]] Result<resource::MeshResourceRequestResult>
     requestEditorMeshResource(const EditorAssetCatalogSnapshot& snapshot, asset::AssetGuid guid,
                               resource::MeshResourceStore& store);
-    [[nodiscard]] bool runEditorMeshResourceSmoke();
+    [[nodiscard]] bool runEditorMeshResourceSmoke(bool withSharedGpu = false);
 } // namespace asharia::editor

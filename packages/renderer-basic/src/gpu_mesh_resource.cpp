@@ -193,11 +193,12 @@ namespace asharia {
         if (auto thread = requireOwnerThread(); !thread) {
             return thread;
         }
-        if (!pending_ || pending_->recorded || frame.frameLoop == nullptr ||
+        if (!pending_ || pending_->recorded ||
+            (frame.frameLoop == nullptr && frame.submission == nullptr) ||
             frame.commandBuffer == VK_NULL_HANDLE) {
             return std::unexpected{
                 meshError(BasicGpuMeshError::InvalidSubmission,
-                          "upload requires an unrecorded candidate and frame loop")};
+                          "upload requires an unrecorded candidate and submission owner")};
         }
         RenderGraph graph;
         std::vector<VulkanRenderGraphBufferBinding> bindings;
@@ -257,7 +258,11 @@ namespace asharia {
         }
         pending_->recorded = true;
         pending_->frameLoop = frame.frameLoop;
-        pending_->epoch = frame.frameLoop->submittedFrameEpoch() + 1;
+        if (frame.frameLoop != nullptr) {
+            pending_->epoch = frame.frameLoop->submittedFrameEpoch() + 1;
+        } else {
+            pending_->submission = frame.submission->receipt();
+        }
         if (auto execute = graph.execute(*compiled); !execute) {
             return execute;
         }
@@ -296,6 +301,33 @@ namespace asharia {
             frameLoop.completedFrameEpoch() < pending_->epoch) {
             return std::unexpected{
                 meshError(BasicGpuMeshError::NotReady, "upload has no confirmed GPU completion")};
+        }
+        active_ = pending_->mesh;
+        pending_.reset();
+        ++published_;
+        return {};
+    }
+
+    VoidResult BasicGpuMeshOwner::confirmUploadSubmission() {
+        if (auto thread = requireOwnerThread(); !thread) {
+            return thread;
+        }
+        if (!pending_ || pending_->frameLoop != nullptr || !pending_->recordingSucceeded ||
+            pending_->confirmed || !pending_->submission.submitted()) {
+            return std::unexpected{meshError(BasicGpuMeshError::InvalidSubmission,
+                                             "upload has no matching successful host submission")};
+        }
+        pending_->confirmed = true;
+        return {};
+    }
+    VoidResult BasicGpuMeshOwner::publishCompleted() {
+        if (auto thread = requireOwnerThread(); !thread) {
+            return thread;
+        }
+        if (!pending_ || pending_->frameLoop != nullptr || !pending_->confirmed ||
+            !pending_->submission.completed()) {
+            return std::unexpected{meshError(BasicGpuMeshError::NotReady,
+                                             "upload has no observed host fence completion")};
         }
         active_ = pending_->mesh;
         pending_.reset();
