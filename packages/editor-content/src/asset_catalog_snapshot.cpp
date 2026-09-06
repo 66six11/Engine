@@ -964,6 +964,8 @@ namespace asharia::editor {
             .project = {},
             .catalogView = {},
             .diagnostics = {},
+            .expectedProductKeys = {},
+            .products = {},
         };
 
         if (!request) {
@@ -993,7 +995,7 @@ namespace asharia::editor {
         const std::filesystem::path projectDirectory = projectDirectoryFor(resolvedProjectFile);
         snapshot.productManifestFile =
             productManifestFileFor(request, projectDirectory, snapshot.project);
-        const asharia::asset::AssetProductManifestDocument productManifest =
+        asharia::asset::AssetProductManifestDocument productManifest =
             readProductManifest(snapshot.productManifestFile, snapshot, request.maxDiagnostics);
         asharia::asset::AssetCatalog catalog;
         std::vector<asharia::asset::AssetProductKey> expectedProductKeys;
@@ -1041,7 +1043,88 @@ namespace asharia::editor {
         sortCatalogViewEntries(snapshot.catalogView.entries);
         appendCatalogViewDiagnostics(snapshot, snapshot.catalogView.diagnostics,
                                      request.maxDiagnostics);
+        snapshot.expectedProductKeys = std::move(expectedProductKeys);
+        snapshot.products = std::move(productManifest.products);
         return snapshot;
+    }
+
+    Result<asharia::asset::AssetProductRecord>
+    selectEditorAssetProduct(const EditorAssetCatalogSnapshot& snapshot,
+                             asharia::asset::AssetGuid guid,
+                             asharia::asset::AssetTypeId expectedType) {
+        const auto fail =
+            [&](EditorAssetProductSelectionError code,
+                std::string_view reason) -> Result<asharia::asset::AssetProductRecord> {
+            return std::unexpected{Error{ErrorDomain::Asset, static_cast<int>(code),
+                                         "Asset " + asharia::asset::formatAssetGuid(guid) +
+                                             " in target '" + snapshot.targetProfile +
+                                             "': " + std::string{reason}}};
+        };
+        if (!guid || !expectedType || snapshot.targetProfile.empty()) {
+            return fail(EditorAssetProductSelectionError::InvalidRequest,
+                        "selection requires a GUID, asset type and target profile.");
+        }
+        if (!snapshot.succeeded()) {
+            return fail(EditorAssetProductSelectionError::IncompleteSnapshot,
+                        "resolve catalog diagnostics and refresh before loading products.");
+        }
+        const asharia::asset::AssetCatalogViewEntry* source = nullptr;
+        for (const auto& entry : snapshot.catalogView.entries) {
+            if (entry.guid != guid) {
+                continue;
+            }
+            if (source != nullptr) {
+                return fail(EditorAssetProductSelectionError::AmbiguousProduct,
+                            "multiple source rows own this GUID; fix duplicate metadata.");
+            }
+            source = &entry;
+        }
+        if (source == nullptr) {
+            return fail(EditorAssetProductSelectionError::AssetNotFound,
+                        "GUID is absent from the catalog; refresh or repair the reference.");
+        }
+        if (source->assetType != expectedType) {
+            return fail(EditorAssetProductSelectionError::TypeMismatch,
+                        "source asset type does not match the requested resource type.");
+        }
+        const auto targetHash = asharia::asset::makeAssetTargetProfileHash(snapshot.targetProfile);
+        const asharia::asset::AssetProductKey* expected = nullptr;
+        for (const auto& key : snapshot.expectedProductKeys) {
+            if (key.guid != guid || key.assetType != expectedType ||
+                key.targetProfileHash != targetHash || key.importerId != source->importerId ||
+                key.importerVersion != source->importerVersion || !key) {
+                continue;
+            }
+            if (expected != nullptr && *expected != key) {
+                return fail(EditorAssetProductSelectionError::AmbiguousProduct,
+                            "multiple current product keys exist; select a single source product.");
+            }
+            expected = &key;
+        }
+        if (expected == nullptr) {
+            return fail(EditorAssetProductSelectionError::ExpectedProductUnavailable,
+                        "no current import-plan key exists; repair source/planning diagnostics.");
+        }
+        const asharia::asset::AssetProductRecord* selected = nullptr;
+        for (const auto& product : snapshot.products) {
+            if (product.key != *expected) {
+                continue;
+            }
+            if (selected != nullptr) {
+                return fail(EditorAssetProductSelectionError::AmbiguousProduct,
+                            "duplicate current product records exist; rebuild the manifest.");
+            }
+            selected = &product;
+        }
+        if (selected == nullptr) {
+            return fail(EditorAssetProductSelectionError::ProductUnavailable,
+                        "current product is missing or stale; cook this asset and refresh.");
+        }
+        if (!*selected) {
+            return fail(EditorAssetProductSelectionError::InvalidProduct,
+                        "current product record is invalid; rebuild the manifest.");
+        }
+        return *selected;
     }
 
     std::filesystem::path

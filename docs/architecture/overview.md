@@ -83,6 +83,10 @@ Asharia Engine 当前目标仍是先做一个小而完整的 Vulkan renderer，�
 - `packages/editor-content`：editor-owned、UI-neutral 的 project asset catalog query source boundary。
   `asharia::editor_content` 只读组合 project descriptor、source scan/discovery/snapshot/import planning、product manifest
   与 `AssetCatalogView`；`asharia::editor_content_native` 以严格有界 C ABI/JSON 向 Studio 投影 immutable snapshot。
+  Native snapshot 保留同次 import plan 的完整 expected keys 与 manifest records；`selectEditorAssetProduct`
+  按 GUID/type 唯一选择当前产物，返回 owning record。失败扫描禁止选择；文件验证与加载仍由 runtime 负责。
+  采用 UE/O3DE 的 metadata lookup 与加载分离边界，保留本地完整缓存键，不引入全局 bus 或自动注册；
+  [依据与快照时效约束](../../packages/editor-content/README.md#native-product-selection)。
   它不拥有 Avalonia/ImGui presentation、import execution、watcher、`ResourceRuntime`、renderer 或 GPU resource。
 - `packages/material-core`：material resource signature、descriptor contract、shader/signature compatibility
   validation 和 pipeline key hash 的 CPU 数据模型；不拥有 `.mat` IO、GPU resource、Vulkan pipeline/cache
