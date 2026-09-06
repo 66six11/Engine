@@ -528,6 +528,10 @@ public sealed class ProjectDocumentTransitionCoordinatorTests
             CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
 
+        public ValueTask<ProjectSessionOperationResult> SetEntityMeshAsync(
+            Guid objectId, SceneMeshReference? mesh, ProjectSessionEditContext context,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
         public ValueTask<ProjectSessionOperationResult> SetEntityTransformAsync(
             Guid objectId,
             TransformValue transform,

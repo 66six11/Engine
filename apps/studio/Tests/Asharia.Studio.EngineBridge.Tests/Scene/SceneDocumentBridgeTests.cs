@@ -15,6 +15,64 @@ namespace Asharia.Studio.EngineBridge.Tests.Scene;
 public sealed class SceneDocumentBridgeTests
 {
     [Fact]
+    public async Task Mesh_receipts_round_trip_add_replace_noop_and_remove_on_owner_lane()
+    {
+        var api = new StubSceneDocumentNativeApi();
+        var opened = await new SceneDocumentBridge(api).OpenDefaultAsync("C:\\Projects\\Sample", Guid.NewGuid());
+        await using var connection = opened.Connection!;
+        var id = Guid.NewGuid();
+        await connection.CreateEntityAsync(id, "Entity", 1);
+        SceneMeshReference? before = null;
+        ulong revision = 2;
+        var replacement = new SceneMeshReference(Guid.NewGuid());
+        foreach (var target in new SceneMeshReference?[] { new(Guid.NewGuid()), replacement, replacement, null })
+        {
+            var result = await connection.SetEntityMeshAsync(id, target, revision);
+            Assert.True(result.Succeeded, result.Failure?.Message);
+            var receipt = Assert.IsType<SceneEntityMeshReceipt>(result.MeshReceipt);
+            Assert.Equal(before, receipt.BeforeMesh);
+            Assert.Equal(target, receipt.AfterMesh);
+            Assert.Equal(before != target, receipt.Changed);
+            Assert.Equal(revision + (before != target ? 1UL : 0UL), result.Current.Revision);
+            Assert.Equal(target, result.Current.Entities[0].Mesh);
+            before = target;
+            revision = result.Current.Revision;
+        }
+        Assert.Single(api.CallThreadIds);
+        Assert.Equal(4, api.MeshEditCalls);
+        Assert.Equal(56, Marshal.SizeOf<SceneNativeDocumentSetEntityMeshRequest>());
+        Assert.Equal(112, Marshal.SizeOf<SceneNativeDocumentMeshOperationResult>());
+        Assert.Equal(48, OffsetOf<SceneNativeDocumentMeshOperationResult>(nameof(SceneNativeDocumentMeshOperationResult.BeforeMeshGuid)));
+        Assert.Equal(96, OffsetOf<SceneNativeDocumentMeshOperationResult>(nameof(SceneNativeDocumentMeshOperationResult.MessageUtf8)));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Mesh_bad_receipt_or_buffer_result_fails_without_replaying_mutation(bool buffer)
+    {
+        var api = new StubSceneDocumentNativeApi { AmbiguousMeshResult = buffer, CorruptMeshReceipt = !buffer };
+        var opened = await new SceneDocumentBridge(api).OpenDefaultAsync("C:\\Projects\\Sample", Guid.NewGuid());
+        await using var connection = opened.Connection!;
+        var id = Guid.NewGuid();
+        await connection.CreateEntityAsync(id, "Entity", 1);
+        var result = await connection.SetEntityMeshAsync(id, new SceneMeshReference(Guid.NewGuid()), 2);
+        Assert.False(result.Succeeded);
+        Assert.Null(result.MeshReceipt);
+        Assert.Equal(1, api.MeshEditCalls);
+    }
+
+    [Fact]
+    public async Task Mesh_empty_asset_id_is_rejected_before_native_call()
+    {
+        var api = new StubSceneDocumentNativeApi();
+        var opened = await new SceneDocumentBridge(api).OpenDefaultAsync("C:\\Projects\\Sample", Guid.NewGuid());
+        await using var connection = opened.Connection!;
+        await Assert.ThrowsAsync<ArgumentException>(() => connection.SetEntityMeshAsync(Guid.NewGuid(), default(SceneMeshReference), 1).AsTask());
+        Assert.Equal(0, api.MeshEditCalls);
+    }
+
+    [Fact]
     public async Task Owner_lane_edits_snapshots_saves_and_closes_one_document()
     {
         var api = new StubSceneDocumentNativeApi();
@@ -598,6 +656,32 @@ public sealed class SceneDocumentBridgeTests
                 revision_,
                 default);
             return SceneNativeStatus.Success;
+        }
+
+        public int MeshEditCalls { get; private set; }
+        public bool AmbiguousMeshResult { get; set; }
+        public bool CorruptMeshReceipt { get; set; }
+
+        public SceneNativeStatus SetEntityMesh(
+            in SceneNativeDocumentSetEntityMeshRequest request,
+            nint responseBuffer, ulong responseCapacity,
+            out SceneNativeDocumentMeshOperationResult result)
+        {
+            RecordThread();
+            MeshEditCalls++;
+            var text = Read(request.MeshAssetGuidUtf8);
+            Guid? target = text.Length == 0 ? null : Guid.Parse(text);
+            var before = meshAssetId_;
+            var beforeRevision = revision_;
+            var changed = before != target;
+            meshAssetId_ = target;
+            if (changed) revision_++;
+            result = new SceneNativeDocumentMeshOperationResult(
+                SceneNativeStatus.Success, changed ? 1U : 0U, 0,
+                revision_, savedRevision_, EncodeObjectId(objectId_),
+                EncodeObjectId(CorruptMeshReceipt ? Guid.NewGuid() : before ?? Guid.Empty),
+                EncodeObjectId(target ?? Guid.Empty), beforeRevision, revision_, default);
+            return AmbiguousMeshResult ? SceneNativeStatus.BufferTooSmall : SceneNativeStatus.Success;
         }
 
         public SceneNativeStatus Save(

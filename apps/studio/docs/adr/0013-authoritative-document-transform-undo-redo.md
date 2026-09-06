@@ -253,3 +253,26 @@ Shell 提供 document Undo/Redo command、toolbar affordance 和平台中立的 
   改变丢弃 Inspector 草稿但不影响 history target。
 - 端到端：真实 project/scene DLL 执行 Apply/Undo/Redo/Save/close/reopen，最终 Transform 与 clean state 一致。
 - 回归：Inspector quaternion/Euler presentation 不因 Undo/Redo receipt 产生字段抖动；Viewport revision/presentation fence 保持通过。
+
+## 2026-09-06：Mesh reference 编辑接入同一文档历史
+
+在 native `set_entity_mesh` 已提供原子 mutation 与 before/after receipt 后，managed bridge 和
+`IProjectSession.SetEntityMeshAsync` 接入添加、替换与移除 optional Mesh reference。null 表示移除；
+非空引用必须具有非零 asset GUID。SceneDocument 仍拥有持久化、revision 与验证，Studio 不直接写 scene JSON。
+
+继续采用上面的 Unreal 显式 transaction scope 和 Godot per-scene history 先例。复核公共合同：
+[FScopedTransaction](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Editor/UnrealEd/FScopedTransaction)、
+[EditorUndoRedoManager](https://docs.godotengine.org/en/stable/classes/class_editorundoredomanager.html)。
+拒绝为 Mesh 新建独立撤销栈，也不引入对象反射、方法名回调或隐式 scene 推断：当前只有一个显式 active document，
+跨 native/managed 边界需要 typed receipt 才能判断 mutation 是否成功。
+
+- Owner/lifetime/thread：ProjectSession 的现有 operation gate 串行接纳编辑；bridge owner lane 执行 native 调用。
+  `SceneTransformHistoryEntry` 与 `SceneMeshHistoryEntry` 共用单一有界队列、cursor 和 ContentStateId。
+- Data/error/budget：Mesh entry 只记录 GUID/null 与逻辑状态，不持有 GPU 对象；继续使用 256 entries / 16 MiB 上限。
+  执行前检查当前对象属性与 entry，执行后验证 receipt、snapshot 和 revision，再推进 cursor。
+- 无变化操作不入栈、不截断 redo；stale revision 被拒绝。异常、丢失回执或无法确认状态的结果沿用恢复 snapshot、
+  清除不可信 history 和标记 dirty 的策略。Mesh mutation 不为获取较长诊断而重试，避免重复执行。
+- Integration gate：这是 Scene/Studio GPU 消费前的文档编辑基础。native API 已落地后可接入，Inspector Mesh
+  编辑入口接入前必须完成；不新增 UI picker、material overrides、MeshRenderer runtime component 或 GPU publication。
+- Exit evidence：managed 单测覆盖混合 Transform/Mesh undo/redo、保存点、no-op、stale 与不确定完成；
+  real native probe 覆盖 managed P/Invoke 添加 Mesh、回执、Save/reopen 与移除。前端 Mesh 修改控件留待后续 slice。

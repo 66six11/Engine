@@ -514,6 +514,10 @@ public sealed class ProjectAssetCatalogTests
         public ValueTask<ProjectSessionOperationResult> CreateEntityAsync(string name, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public ValueTask<ProjectSessionOperationResult> CreateMeshEntityAsync(string name, SceneMeshReference mesh, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public ValueTask<ProjectSessionOperationResult> SetEntityNameAsync(Guid objectId, string name, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<ProjectSessionOperationResult> SetEntityMeshAsync(
+            Guid objectId, SceneMeshReference? mesh, ProjectSessionEditContext context,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
         public ValueTask<ProjectSessionOperationResult> SetEntityTransformAsync(Guid objectId, TransformValue transform, ProjectSessionEditContext context, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public ValueTask<ProjectSessionOperationResult> UndoAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public ValueTask<ProjectSessionOperationResult> RedoAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();

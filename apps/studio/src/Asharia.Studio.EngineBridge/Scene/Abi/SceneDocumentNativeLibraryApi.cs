@@ -82,6 +82,17 @@ internal sealed class SceneDocumentNativeLibraryApi : ISceneDocumentNativeApi
             responseCapacity,
             out result);
 
+    public SceneNativeStatus SetEntityMesh(
+        in SceneNativeDocumentSetEntityMeshRequest request,
+        nint responseBuffer,
+        ulong responseCapacity,
+        out SceneNativeDocumentMeshOperationResult result) =>
+        (SceneNativeStatus)SceneDocumentNativeEntryPoints.SetEntityMesh(
+            in request,
+            responseBuffer,
+            responseCapacity,
+            out result);
+
     public SceneNativeStatus Save(
         in SceneNativeDocumentSaveRequest request,
         nint responseBuffer,
@@ -150,6 +161,14 @@ internal static partial class SceneDocumentNativeEntryPoints
         nint responseBuffer,
         ulong responseCapacity,
         out SceneNativeDocumentTransformOperationResult result);
+
+    [LibraryImport(LibraryName, EntryPoint = "asharia_scene_document_set_entity_mesh")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    internal static partial uint SetEntityMesh(
+        in SceneNativeDocumentSetEntityMeshRequest request,
+        nint responseBuffer,
+        ulong responseCapacity,
+        out SceneNativeDocumentMeshOperationResult result);
 
     [LibraryImport(LibraryName, EntryPoint = "asharia_scene_document_save")]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]

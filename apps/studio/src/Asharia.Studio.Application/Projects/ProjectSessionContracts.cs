@@ -502,6 +502,12 @@ public interface IProjectSession : IAsyncDisposable
         ProjectSessionEditContext context,
         CancellationToken cancellationToken = default);
 
+    ValueTask<ProjectSessionOperationResult> SetEntityMeshAsync(
+        Guid objectId,
+        SceneMeshReference? mesh,
+        ProjectSessionEditContext context,
+        CancellationToken cancellationToken = default);
+
     ValueTask<ProjectSessionOperationResult> UndoAsync(
         CancellationToken cancellationToken = default);
 

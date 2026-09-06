@@ -12,6 +12,100 @@ namespace Asharia.Studio.Application.Tests.Projects;
 
 public sealed class ProjectSessionTests
 {
+    [Fact]
+    public async Task Mesh_and_transform_share_history_and_saved_content_state()
+    {
+        var gateway = new ControlledSceneGateway();
+        await using var session = new ProjectSession(OpenableProjectGateway(), gateway);
+        await session.OpenProjectAsync("C:\\Projects\\Sample", Transition(session));
+        var created = await session.CreateEntityAsync("Entity");
+        var id = created.CreatedObjectId!.Value;
+        var mesh = new SceneMeshReference(Guid.NewGuid());
+        var transform = new TransformValue(new Float3(2, 3, 4), Quaternion.Identity, Float3.One);
+        Assert.True((await EditMeshAsync(session, id, mesh)).Succeeded);
+        Assert.True((await session.SaveSceneAsync()).Succeeded);
+        Assert.True((await EditTransformAsync(session, id, transform)).Succeeded);
+        Assert.True((await EditMeshAsync(session, id, null)).Succeeded);
+        Assert.True((await session.UndoAsync()).Succeeded);
+        Assert.Equal(mesh, session.Current.Document!.Entities.Single().Mesh);
+        Assert.Equal(transform, session.Current.Document.Entities.Single().Transform);
+        Assert.True((await session.UndoAsync()).Succeeded);
+        Assert.False(session.Current.IsDirty);
+        Assert.True((await session.RedoAsync()).Succeeded);
+        Assert.True((await session.RedoAsync()).Succeeded);
+        Assert.Null(session.Current.Document.Entities.Single().Mesh);
+        Assert.Equal(transform, session.Current.Document.Entities.Single().Transform);
+        Assert.True(session.Current.IsDirty);
+    }
+
+    [Fact]
+    public async Task Mesh_noop_and_stale_rejection_preserve_redo()
+    {
+        var gateway = new ControlledSceneGateway();
+        await using var session = new ProjectSession(OpenableProjectGateway(), gateway);
+        await session.OpenProjectAsync("C:\\Projects\\Sample", Transition(session));
+        var created = await session.CreateEntityAsync("Entity");
+        var id = created.CreatedObjectId!.Value;
+        var mesh = new SceneMeshReference(Guid.NewGuid());
+        await EditMeshAsync(session, id, mesh);
+        await session.UndoAsync();
+        var before = session.Current;
+        Assert.True((await EditMeshAsync(session, id, null)).Succeeded);
+        Assert.Equal(before.CurrentContentStateId, session.Current.CurrentContentStateId);
+        var stale = await session.SetEntityMeshAsync(id, mesh,
+            new ProjectSessionEditContext(ProjectEditId.CreateNew(), 1));
+        Assert.False(stale.Succeeded);
+        Assert.True((await session.RedoAsync()).Succeeded);
+        Assert.Equal(mesh, session.Current.Document!.Entities.Single().Mesh);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Mesh_uncertain_completion_recovers_snapshot_and_discards_history(bool throws)
+    {
+        var gateway = new ControlledSceneGateway();
+        await using var session = new ProjectSession(OpenableProjectGateway(), gateway);
+        await session.OpenProjectAsync("C:\\Projects\\Sample", Transition(session));
+        var created = await session.CreateEntityAsync("Entity");
+        var id = created.CreatedObjectId!.Value;
+        await EditMeshAsync(session, id, new SceneMeshReference(Guid.NewGuid()));
+        gateway.Connection.ThrowAfterNextMeshMutation = throws;
+        gateway.Connection.OmitMeshReceipt = !throws;
+        var result = await EditMeshAsync(session, id, null);
+        Assert.False(result.Succeeded);
+        Assert.Null(session.Current.Document!.Entities.Single().Mesh);
+        Assert.False((await session.UndoAsync()).Succeeded);
+        Assert.True(session.Current.IsDirty);
+    }
+
+    [Fact]
+    public async Task Mesh_cancelled_admission_and_failed_undo_do_not_advance_history()
+    {
+        var gateway = new ControlledSceneGateway();
+        await using var session = new ProjectSession(OpenableProjectGateway(), gateway);
+        await session.OpenProjectAsync("C:\\Projects\\Sample", Transition(session));
+        var created = await session.CreateEntityAsync("Entity");
+        var id = created.CreatedObjectId!.Value;
+        var mesh = new SceneMeshReference(Guid.NewGuid());
+        await EditMeshAsync(session, id, mesh);
+        var before = session.Current;
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => session.SetEntityMeshAsync(
+            id, null, new ProjectSessionEditContext(ProjectEditId.CreateNew(), before.Document!.Revision),
+            new CancellationToken(canceled: true)).AsTask());
+        Assert.Same(before, session.Current);
+        gateway.Connection.NextMeshFailure = RevisionConflict();
+        Assert.False((await session.UndoAsync()).Succeeded);
+        Assert.Equal(before.CurrentContentStateId, session.Current.CurrentContentStateId);
+        Assert.True((await session.UndoAsync()).Succeeded);
+        Assert.Null(session.Current.Document!.Entities.Single().Mesh);
+    }
+
+    private static ValueTask<ProjectSessionOperationResult> EditMeshAsync(
+        ProjectSession session, Guid id, SceneMeshReference? mesh) =>
+        session.SetEntityMeshAsync(id, mesh,
+            new ProjectSessionEditContext(ProjectEditId.CreateNew(), session.Current.Document!.Revision));
+
     private static ProjectDocumentTransitionExpectation Transition(
         IProjectSession session) =>
         ProjectDocumentTransitionExpectation.Capture(session.Current);
@@ -482,7 +576,7 @@ public sealed class ProjectSessionTests
         for (ulong index = 0; index < 3; index++)
         {
             var after = new ContentStateId(index + 2);
-            history.Commit(new SceneEditHistoryEntry(
+            history.Commit(new SceneTransformHistoryEntry(
                 sceneId,
                 Guid.NewGuid(),
                 $"Edit {index}",
@@ -707,7 +801,7 @@ public sealed class ProjectSessionTests
             SceneDocumentFailureKind.RevisionConflict,
             "The expected scene revision is stale.");
 
-    private static SceneEditHistoryEntry HistoryEntry(
+    private static SceneTransformHistoryEntry HistoryEntry(
         Guid sceneId,
         ulong index,
         ContentStateId before,
@@ -793,16 +887,21 @@ public sealed class ProjectSessionTests
         public bool RejectMeshCreate { get; set; }
 
         public SceneDocumentFailure? NextTransformFailure { get; set; }
+        public SceneDocumentFailure? NextMeshFailure { get; set; }
 
         public bool OmitTransformReceipt { get; set; }
+        public bool OmitMeshReceipt { get; set; }
 
         public bool ThrowAfterNextTransformMutation { get; set; }
+        public bool ThrowAfterNextMeshMutation { get; set; }
 
         public bool ReportUnknownAfterNextTransformMutation { get; set; }
+        public bool ReportUnknownAfterNextMeshMutation { get; set; }
 
         public bool RejectRefresh { get; set; }
 
         public ulong? LastSetTransformExpectedRevision { get; private set; }
+        public ulong? LastSetMeshExpectedRevision { get; private set; }
 
         public ValueTask<SceneDocumentOperationResult> RefreshAsync(
             CancellationToken cancellationToken = default)
@@ -941,6 +1040,77 @@ public sealed class ProjectSessionTests
                 throw new InvalidOperationException("Transport completion was lost.");
             }
             return ValueTask.FromResult(OmitTransformReceipt
+                ? SceneDocumentOperationResult.Success(Current)
+                : SceneDocumentOperationResult.Success(Current, receipt));
+        }
+
+        public ValueTask<SceneDocumentOperationResult> SetEntityMeshAsync(
+            Guid objectId,
+            SceneMeshReference? mesh,
+            ulong expectedRevision,
+            CancellationToken cancellationToken = default)
+        {
+            LastSetMeshExpectedRevision = expectedRevision;
+            if (NextMeshFailure is SceneDocumentFailure configuredFailure)
+            {
+                NextMeshFailure = null;
+                return ValueTask.FromResult(SceneDocumentOperationResult.Failed(
+                    Current,
+                    configuredFailure));
+            }
+            if (expectedRevision != Current.Revision)
+            {
+                return ValueTask.FromResult(SceneDocumentOperationResult.Failed(
+                    Current,
+                    new SceneDocumentFailure(
+                        SceneDocumentFailureKind.RevisionConflict,
+                        "The expected scene revision is stale.")));
+            }
+            var entity = entities_.Single(value => value.ObjectId == objectId);
+            var beforeMesh = entity.Mesh;
+            if (beforeMesh == mesh)
+            {
+                var noOpReceipt = new SceneEntityMeshReceipt(
+                    objectId,
+                    changed: false,
+                    beforeMesh,
+                    mesh,
+                    Current.Revision,
+                    Current.Revision);
+                return ValueTask.FromResult(OmitMeshReceipt
+                    ? SceneDocumentOperationResult.Success(Current)
+                    : SceneDocumentOperationResult.Success(Current, noOpReceipt));
+            }
+            var beforeRevision = Current.Revision;
+            entities_[entities_.IndexOf(entity)] = new SceneEntitySnapshot(
+                entity.ObjectId,
+                entity.RuntimeEntityId,
+                entity.Name,
+                entity.Transform,
+                mesh);
+            Advance();
+            var receipt = new SceneEntityMeshReceipt(
+                objectId,
+                changed: true,
+                beforeMesh,
+                mesh,
+                beforeRevision,
+                Current.Revision);
+            if (ReportUnknownAfterNextMeshMutation)
+            {
+                ReportUnknownAfterNextMeshMutation = false;
+                return ValueTask.FromResult(SceneDocumentOperationResult.Failed(
+                    Snapshot(beforeRevision, Current.SavedRevision, entities_),
+                    new SceneDocumentFailure(
+                        SceneDocumentFailureKind.AuthoritativeStateUnknown,
+                        "The post-operation snapshot was unavailable.")));
+            }
+            if (ThrowAfterNextMeshMutation)
+            {
+                ThrowAfterNextMeshMutation = false;
+                throw new InvalidOperationException("Transport completion was lost.");
+            }
+            return ValueTask.FromResult(OmitMeshReceipt
                 ? SceneDocumentOperationResult.Success(Current)
                 : SceneDocumentOperationResult.Success(Current, receipt));
         }
