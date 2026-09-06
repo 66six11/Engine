@@ -27,17 +27,25 @@ internal static class EditorDockTabReorderResolver
         }
 
         var targetIndex = currentTargetIndex >= 0 ? currentTargetIndex : sourceIndex;
-        while (TryResolveAdjacentTargetIndex(
-                   draggedTabCenterX,
-                   sourceIndex,
-                   targetIndex,
-                   tabCount,
-                   ResolvePlaceholderWidth(sourceIndex, draggedTabWidth, entries),
-                   entries,
-                   switchHysteresis,
-                   out var nextTargetIndex)
-               && nextTargetIndex != targetIndex)
+        var placeholderWidth = ResolvePlaceholderWidth(sourceIndex, draggedTabWidth, entries);
+        // A fixed pointer can cross each tab at most once. Keep UI work bounded even if
+        // inconsistent geometry is supplied during a layout transition.
+        for (var step = 0; step < tabCount; step++)
         {
+            if (!TryResolveAdjacentTargetIndex(
+                    draggedTabCenterX,
+                    sourceIndex,
+                    targetIndex,
+                    tabCount,
+                    placeholderWidth,
+                    entries,
+                    switchHysteresis,
+                    out var nextTargetIndex)
+                || nextTargetIndex == targetIndex)
+            {
+                break;
+            }
+
             targetIndex = nextTargetIndex;
         }
 
@@ -58,17 +66,25 @@ internal static class EditorDockTabReorderResolver
         }
 
         var targetIndex = currentTargetIndex >= 0 ? currentTargetIndex : 0;
-        while (TryResolveAdjacentTargetIndex(
-                   draggedTabCenterX,
-                   sourceIndex: null,
-                   targetIndex,
-                   tabCount,
-                   ResolvePlaceholderWidth(sourceIndex: null, draggedTabWidth, entries),
-                   entries,
-                   switchHysteresis,
-                   out var nextTargetIndex)
-               && nextTargetIndex != targetIndex)
+        var placeholderWidth = ResolvePlaceholderWidth(sourceIndex: null, draggedTabWidth, entries);
+        // A fixed pointer can cross each tab at most once. Keep UI work bounded even if
+        // inconsistent geometry is supplied during a layout transition.
+        for (var step = 0; step < tabCount; step++)
         {
+            if (!TryResolveAdjacentTargetIndex(
+                    draggedTabCenterX,
+                    sourceIndex: null,
+                    targetIndex,
+                    tabCount,
+                    placeholderWidth,
+                    entries,
+                    switchHysteresis,
+                    out var nextTargetIndex)
+                || nextTargetIndex == targetIndex)
+            {
+                break;
+            }
+
             targetIndex = nextTargetIndex;
         }
 
@@ -88,7 +104,6 @@ internal static class EditorDockTabReorderResolver
         nextTargetIndex = targetIndex;
         var clampedTargetIndex = System.Math.Clamp(targetIndex, 0, tabCount);
         var currentX = entries[0].Bounds.X;
-        var placeholderCenterX = 0d;
         var hasPlaceholder = false;
         var hasPrevious = false;
         var previousCenterX = 0d;
@@ -101,7 +116,6 @@ internal static class EditorDockTabReorderResolver
         {
             if (clampedTargetIndex == tabIndex)
             {
-                placeholderCenterX = currentX + (placeholderWidth / 2);
                 hasPlaceholder = true;
                 currentX += placeholderWidth;
             }
@@ -140,7 +154,9 @@ internal static class EditorDockTabReorderResolver
 
         if (hasPrevious)
         {
-            var leftBoundary = (previousCenterX + placeholderCenterX) / 2;
+            // Both sides of swapping this pair use pairStart + (tabWidth + placeholderWidth)/2.
+            // Averaging the current centers instead moves the boundary when unequal tabs swap.
+            var leftBoundary = previousCenterX + (placeholderWidth / 2);
             if (draggedTabCenterX < leftBoundary - switchHysteresis)
             {
                 nextTargetIndex = previousTabIndex;
@@ -150,7 +166,7 @@ internal static class EditorDockTabReorderResolver
 
         if (hasNext)
         {
-            var rightBoundary = (placeholderCenterX + nextCenterX) / 2;
+            var rightBoundary = nextCenterX - (placeholderWidth / 2);
             if (draggedTabCenterX >= rightBoundary + switchHysteresis)
             {
                 nextTargetIndex = nextTabIndex + 1;

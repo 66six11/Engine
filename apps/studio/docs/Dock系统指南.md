@@ -294,3 +294,35 @@ Dock.Avalonia 类型只允许出现在 Shell/Docking 或后续 Infrastructure �
 ## 2026-07-04 Frame Debugger snapshot v0（已退役）
 
 历史上的 `frame-debugger` Code-first tool panel只消费fixture snapshot，没有真实Studio viewport、native session或render-lane owner，已随R0 hard-cut连同public/managed合同删除。当前不得注册Frame Debugger panel或以独立C++ smoke冒充Studio capture能力；未来只有真实viewport与同一render lane先通过I3，才可重新按独立Slice接入。
+
+
+## Unequal-width Tab crossing invariant (#442)
+
+Tab reorder and cross-window insertion remain synchronous, Shell-owned UI geometry queries.
+No dispatcher jobs, mutable cache, renderer dependency or layout persistence format is added.
+For a neighboring pair starting at `L`, dragged placeholder width `P` and other tab width `W`,
+both directions use the same boundary `B = L + (P + W) / 2`. Move right only at `x >= B + H`
+and move left only at `x < B - H`, where the current switch hysteresis `H` is 5 logical pixels.
+The current insertion index is retained within the hysteresis band. Equal-width behavior is
+preserved. Both resolver traversals perform at most `tabCount` adjacent steps per invocation;
+geometry transitions cannot keep a pointer event in an unbounded convergence loop.
+
+The previous midpoint-of-current-centers formula moved the boundary when unequal tabs swapped.
+The captured case (`L=743`, `P=101`, `W=128`, `x=856.5`) had conflicting thresholds 855.75 and
+859.25, causing index 0/1 oscillation on the UI thread. The corrected common boundary is 857.5,
+with thresholds 852.5 and 862.5. Captured-input and repeated-pointer tests cover both entry paths,
+unequal widths in both directions, multiple tabs and the actual drop hit-test adapter.
+
+Engine reference check: Epic's
+[SDockTab](https://dev.epicgames.com/documentation/unreal-engine/API/Runtime/Slate/SDockTab?lang=en-US)
+provides drag-over/relocation hooks; Godot's
+[TabBar](https://docs.godotengine.org/en/4.4/classes/class_tabbar.html)
+provides intra/inter-bar tab rearrangement. Keep that view-owned interaction boundary. These
+public contracts do not prescribe this placeholder/hysteresis algorithm; the shared threshold
+above follows from Asharia's existing pair geometry. Do not copy a foreign docking framework or
+replace synchronous hit testing with background work to mask a non-terminating calculation.
+
+Validation boundary: exact live-dump inputs reproduce the old hang in a disposable process and
+return under the fix; resolver/drop tests exercise idempotence and crossing thresholds. Headless
+UI tests cover existing docking host behavior. They do not replace manual physical-pointer
+verification across every native window, DPI, scroll and layout combination.
