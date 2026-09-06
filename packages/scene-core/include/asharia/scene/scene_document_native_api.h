@@ -83,6 +83,15 @@ typedef struct AshariaSceneNativeDocumentSaveRequest {
     uint64_t expectedRevision;
 } AshariaSceneNativeDocumentSaveRequest;
 
+/* Additive ABI v3 entry point. Empty meshAssetGuidUtf8 removes the reference. */
+typedef struct AshariaSceneNativeDocumentSetEntityMeshRequest {
+    AshariaSceneNativeAbiHeader header;
+    AshariaSceneNativeDocumentHandle document;
+    uint64_t expectedRevision;
+    AshariaSceneNativeStringView objectIdUtf8;
+    AshariaSceneNativeStringView meshAssetGuidUtf8;
+} AshariaSceneNativeDocumentSetEntityMeshRequest;
+
 /*
  * operationStatus preserves the underlying result when the function returns
  * BufferTooSmall. requiredBufferSize is the exact response size to retry with.
@@ -117,6 +126,31 @@ typedef struct AshariaSceneNativeDocumentTransformOperationResult {
     uint64_t afterRevision;
     AshariaSceneNativeTextSpan messageUtf8;
 } AshariaSceneNativeDocumentTransformOperationResult;
+
+/* Canonical UUID byte order; all-zero before/after GUID means no Mesh.
+ * Receipt fields are zero on failure. Success needs no response buffer.
+ * Never replay a mutation merely to retrieve a message: operationStatus reports
+ * the operation outcome even when the return value is BufferTooSmall.
+ */
+typedef struct AshariaSceneNativeDocumentMeshOperationResult {
+    AshariaSceneNativeStatus operationStatus;
+    uint32_t changed;
+    uint64_t requiredBufferSize;
+    uint64_t revision;
+    uint64_t savedRevision;
+    AshariaSceneNativeObjectId objectId;
+    AshariaSceneNativeObjectId beforeMeshGuid;
+    AshariaSceneNativeObjectId afterMeshGuid;
+    uint64_t beforeRevision;
+    uint64_t afterRevision;
+    AshariaSceneNativeTextSpan messageUtf8;
+} AshariaSceneNativeDocumentMeshOperationResult;
+
+ASHARIA_SCENE_NATIVE_API AshariaSceneNativeStatus ASHARIA_SCENE_NATIVE_CALL
+asharia_scene_document_set_entity_mesh(
+    const AshariaSceneNativeDocumentSetEntityMeshRequest* request, void* responseBuffer,
+    uint64_t responseCapacity,
+    AshariaSceneNativeDocumentMeshOperationResult* result) ASHARIA_SCENE_NATIVE_NOEXCEPT;
 
 typedef struct AshariaSceneNativeDocumentEntitySnapshot {
     AshariaSceneNativeTextSpan objectIdUtf8;

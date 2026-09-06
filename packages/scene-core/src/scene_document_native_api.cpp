@@ -225,6 +225,41 @@ namespace {
         return operationStatus;
     }
 
+    [[nodiscard]] AshariaSceneNativeStatus
+    finishMeshOperation(AshariaSceneNativeStatus operationStatus, std::string_view message,
+                        DocumentRevisionState revisionState,
+                        const asharia::scene::SceneEntityMeshReceipt* receipt, void* responseBuffer,
+                        std::uint64_t responseCapacity,
+                        AshariaSceneNativeDocumentMeshOperationResult& result) {
+        result.operationStatus = operationStatus;
+        result.requiredBufferSize = static_cast<std::uint64_t>(message.size());
+        result.revision = revisionState.revision;
+        result.savedRevision = revisionState.savedRevision;
+        result.messageUtf8 = {.offset = 0U,
+                              .byteLength = static_cast<std::uint64_t>(message.size())};
+        if (receipt != nullptr) {
+            result.changed = receipt->changed ? 1U : 0U;
+            std::memcpy(result.objectId.bytes, receipt->objectId.bytes.data(),
+                        receipt->objectId.bytes.size());
+            if (receipt->before) {
+                std::memcpy(result.beforeMeshGuid.bytes, receipt->before->guid.bytes.data(), 16U);
+            }
+            if (receipt->after) {
+                std::memcpy(result.afterMeshGuid.bytes, receipt->after->guid.bytes.data(), 16U);
+            }
+            result.beforeRevision = receipt->beforeRevision;
+            result.afterRevision = receipt->afterRevision;
+        }
+        if (responseCapacity < result.requiredBufferSize ||
+            (result.requiredBufferSize != 0U && responseBuffer == nullptr)) {
+            return AshariaSceneNativeStatus_BufferTooSmall;
+        }
+        if (!message.empty()) {
+            std::memcpy(responseBuffer, message.data(), message.size());
+        }
+        return operationStatus;
+    }
+
     [[nodiscard]] DocumentSlot* findDocumentSlot(AshariaSceneNativeDocumentHandle handle,
                                                  AshariaSceneNativeStatus& status) noexcept {
         if (handle.index == 0U || handle.generation == 0U ||
@@ -415,6 +450,10 @@ namespace {
     static_assert(sizeof(AshariaSceneNativeDocumentSaveRequest) == 24U);
     static_assert(sizeof(AshariaSceneNativeDocumentOperationResult) == 48U);
     static_assert(sizeof(AshariaSceneNativeObjectId) == 16U);
+    static_assert(sizeof(AshariaSceneNativeDocumentSetEntityMeshRequest) == 56U);
+    static_assert(sizeof(AshariaSceneNativeDocumentMeshOperationResult) == 112U);
+    static_assert(offsetof(AshariaSceneNativeDocumentMeshOperationResult, beforeMeshGuid) == 48U);
+    static_assert(offsetof(AshariaSceneNativeDocumentMeshOperationResult, afterRevision) == 88U);
     static_assert(sizeof(AshariaSceneNativeDocumentTransformOperationResult) == 160U);
     static_assert(offsetof(AshariaSceneNativeDocumentTransformOperationResult, objectId) == 32U);
     static_assert(offsetof(AshariaSceneNativeDocumentTransformOperationResult, beforeTransform) ==
@@ -793,6 +832,76 @@ AshariaSceneNativeStatus ASHARIA_SCENE_NATIVE_CALL asharia_scene_document_set_en
             AshariaSceneNativeStatus_InternalError,
             "Native scene Transform edit failed unexpectedly.", kEmptyRevisionState, nullptr,
             responseBuffer, responseCapacity, *result);
+    }
+}
+
+AshariaSceneNativeStatus ASHARIA_SCENE_NATIVE_CALL asharia_scene_document_set_entity_mesh(
+    const AshariaSceneNativeDocumentSetEntityMeshRequest* request, void* responseBuffer,
+    std::uint64_t responseCapacity,
+    AshariaSceneNativeDocumentMeshOperationResult* result) noexcept {
+    if (result == nullptr) {
+        return AshariaSceneNativeStatus_InvalidArgument;
+    }
+    *result = {};
+    if (invalidResponseBuffer(responseBuffer, responseCapacity) || request == nullptr) {
+        result->operationStatus = AshariaSceneNativeStatus_InvalidArgument;
+        return AshariaSceneNativeStatus_InvalidArgument;
+    }
+    if (!hasSupportedHeader(request->header,
+                            sizeof(AshariaSceneNativeDocumentSetEntityMeshRequest))) {
+        result->operationStatus = AshariaSceneNativeStatus_UnsupportedAbi;
+        return AshariaSceneNativeStatus_UnsupportedAbi;
+    }
+    std::string_view objectIdText;
+    std::string_view meshText;
+    AshariaSceneNativeStatus inputStatus = makeUtf8View(request->objectIdUtf8, 36U, objectIdText);
+    if (inputStatus == AshariaSceneNativeStatus_Success) {
+        inputStatus = makeUtf8View(request->meshAssetGuidUtf8, 36U, meshText);
+    }
+    if (inputStatus != AshariaSceneNativeStatus_Success) {
+        result->operationStatus = inputStatus;
+        return inputStatus;
+    }
+    try {
+        auto objectId = asharia::scene::parseSceneObjectId(objectIdText);
+        if (!objectId) {
+            return finishMeshOperation(AshariaSceneNativeStatus_InvalidObject,
+                                       objectId.error().message, kEmptyRevisionState, nullptr,
+                                       responseBuffer, responseCapacity, *result);
+        }
+        std::scoped_lock lock{documentRegistry().mutex};
+        AshariaSceneNativeStatus status = AshariaSceneNativeStatus_Success;
+        DocumentSlot* slot = findDocumentSlot(request->document, status);
+        if (slot == nullptr) {
+            return finishMeshOperation(status, "Scene document handle is invalid for this call.",
+                                       kEmptyRevisionState, nullptr, responseBuffer,
+                                       responseCapacity, *result);
+        }
+        const auto before = slot->document->snapshot();
+        std::optional<asharia::asset::AssetReference> mesh;
+        if (!meshText.empty()) {
+            auto guid = asharia::asset::parseAssetGuid(meshText);
+            if (!guid) {
+                return finishMeshOperation(
+                    AshariaSceneNativeStatus_InvalidAssetReference, guid.error().message,
+                    {.revision = before.revision, .savedRevision = before.savedRevision}, nullptr,
+                    responseBuffer, responseCapacity, *result);
+            }
+            mesh = asharia::asset::makeAssetReference(*guid, asharia::scene::kSceneMeshAssetType);
+        }
+        auto changed = slot->document->setEntityMesh(*objectId, mesh, request->expectedRevision);
+        const auto snapshot = slot->document->snapshot();
+        const DocumentRevisionState revisionState{.revision = snapshot.revision,
+                                                  .savedRevision = snapshot.savedRevision};
+        return changed ? finishMeshOperation(AshariaSceneNativeStatus_Success, {}, revisionState,
+                                             &*changed, responseBuffer, responseCapacity, *result)
+                       : finishMeshOperation(statusFromError(changed.error()),
+                                             changed.error().message, revisionState, nullptr,
+                                             responseBuffer, responseCapacity, *result);
+    } catch (...) {
+        return finishMeshOperation(
+            AshariaSceneNativeStatus_InternalError, "Native scene Mesh edit failed unexpectedly.",
+            kEmptyRevisionState, nullptr, responseBuffer, responseCapacity, *result);
     }
 }
 
