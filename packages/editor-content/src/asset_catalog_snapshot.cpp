@@ -701,6 +701,7 @@ namespace asharia::editor {
                     .toolFingerprintResolver = {},
                     .toolDependencyPolicy =
                         asharia::asset::AssetImportToolDependencyPolicy::DeclaredOnly,
+                    .productDependencies = request.productDependencies,
                 });
             appendImportPlanDiagnostics(snapshot, plan.diagnostics, request.maxDiagnostics);
             appendTextureProfileFacets(sourceFacets, discovery.manifest.records);
@@ -716,6 +717,7 @@ namespace asharia::editor {
             .productManifestFile = snapshot.productManifestFile,
             .targetProfile = snapshot.targetProfile,
             .toolVersions = snapshot.toolVersions,
+            .productDependencies = snapshot.productDependencies,
         };
     }
 
@@ -997,6 +999,13 @@ namespace asharia::editor {
             }
         }
         snapshot.toolVersions = request.toolVersions;
+        if (request.productDependencies.size() > 4096U) {
+            addDiagnostic(snapshot, EditorAssetCatalogDiagnosticCode::InvalidRequest,
+                          EditorAssetCatalogDiagnosticSeverity::Error, {}, resolvedProjectFile,
+                          "Catalog product dependencies exceed the limit of 4096.");
+            return snapshot;
+        }
+        snapshot.productDependencies = request.productDependencies;
 
         auto project = asharia::project::readAshariaProjectDescriptorFile(resolvedProjectFile);
         if (!project) {

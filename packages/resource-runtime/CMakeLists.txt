@@ -44,9 +44,10 @@ asharia_configure_target(asharia-resource-runtime)
 
 if(ASHARIA_BUILD_TESTS)
   enable_testing()
+  asharia_require_package_target(asharia::editor_content packages/editor-content)
   add_executable(asharia-shader-resource-tests tests/shader_resource_tests.cpp)
   target_link_libraries(asharia-shader-resource-tests PRIVATE
-      asharia::resource_runtime asharia::asset_pipeline)
+      asharia::resource_runtime asharia::asset_pipeline asharia::editor_content asharia::asset_core_io)
   target_compile_definitions(asharia-shader-resource-tests PRIVATE
       ASHARIA_SHADER_RESOURCE_TEST_ROOT="${CMAKE_CURRENT_BINARY_DIR}/shader-resource-fixture")
   asharia_configure_target(asharia-shader-resource-tests)

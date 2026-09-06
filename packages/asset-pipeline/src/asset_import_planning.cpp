@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <map>
 #include <optional>
+#include <set>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -514,6 +515,58 @@ namespace asharia::asset {
             return valid;
         }
 
+        [[nodiscard]] bool
+        validateProductDependencies(AssetImportPlanResult& result,
+                                    std::span<const AssetDependency> declarations) {
+            if (declarations.size() > 4096U) {
+                addDiagnostic(result, AssetImportPlanDiagnosticCode::InvalidProductDependency, {},
+                              "Declared product dependencies exceed the limit of 4096.");
+                return false;
+            }
+            std::set<std::pair<std::array<std::uint8_t, 16>, std::string>> dependencyIds;
+            for (const auto& dependency : declarations) {
+                if (!dependency.owner || dependency.kind != AssetDependencyKind::AssetReference ||
+                    dependency.hash == 0U || !validateAssetProductPath(dependency.path) ||
+                    !dependencyIds.emplace(dependency.owner.bytes, dependency.path).second) {
+                    addDiagnostic(
+                        result, AssetImportPlanDiagnosticCode::InvalidProductDependency,
+                        dependency.path,
+                        "Product dependencies require a nonzero owner/hash, a valid product "
+                        "path, AssetReference kind and unique owner/path pairs.");
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        [[nodiscard]] bool appendProductDependencies(AssetImportPlanResult& result,
+                                                     const DiscoveredSourceAsset& discovered,
+                                                     std::span<const AssetDependency> declarations,
+                                                     std::vector<AssetDependency>& dependencies) {
+            for (const auto& dependency : declarations) {
+                if (dependency.owner == discovered.source.guid) {
+                    dependencies.push_back(dependency);
+                }
+            }
+            if (isShaderCompileReflectionSource(discovered.source)) {
+                const auto setting = std::ranges::find(
+                    discovered.settings, "shader.authoringProductPath", &AssetImportSetting::key);
+                if (setting != discovered.settings.end() &&
+                    !std::ranges::any_of(dependencies, [&](const auto& dependency) {
+                        return dependency.kind == AssetDependencyKind::AssetReference &&
+                               dependency.path == setting->value;
+                    })) {
+                    addDiagnostic(
+                        result, AssetImportPlanDiagnosticCode::UnresolvedProductDependency,
+                        discovered.source.sourcePath,
+                        "Shader authoring product dependency was not declared: " + setting->value,
+                        AssetImportPlanDiagnosticSeverity::Warning);
+                    return false;
+                }
+            }
+            return true;
+        }
+
         void populatePlanIndex(std::span<const AssetSourceSnapshot> snapshots,
                                std::span<const AssetProductRecord> products,
                                SnapshotsBySourcePath& snapshotsBySourcePath,
@@ -569,6 +622,9 @@ namespace asharia::asset {
         const bool validSources = validatePlanSources(result, sources);
         const bool validSnapshots = validatePlanSnapshots(result, snapshots);
         if (!validSources || !validSnapshots) {
+            return result;
+        }
+        if (!validateProductDependencies(result, options.productDependencies)) {
             return result;
         }
         SnapshotsBySourcePath snapshotsBySourcePath;
@@ -642,6 +698,10 @@ namespace asharia::asset {
                 continue;
             }
             std::vector<AssetDependency> dependencies = std::move(*dependencyResult);
+            if (!appendProductDependencies(result, discovered, options.productDependencies,
+                                           dependencies)) {
+                continue;
+            }
             const std::uint64_t dependencyHash = hashAssetDependencies(dependencies);
             AssetProductKey productKey =
                 makeAssetProductKey(plannedSource, dependencyHash, result.targetProfileHash);

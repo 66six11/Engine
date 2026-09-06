@@ -2405,7 +2405,17 @@ using builder fingerprints. Asharia rejects inferring tool facts from candidate 
 executables while browsing: that would let a stale cache validate itself or introduce environment IO
 into a metadata query. No new tool registry or cache layer is needed.
 
-The new CPU regression scans a Shader metadata fixture and proves declared-input planning and
-refresh identity only. It does not compile the fixture or establish complete compiled Shader
-product identity: authoring-product dependencies must still enter generic planning, and the Studio
-C ABI has no tool input field yet. Those remain required before a real compile/catalog/runtime proof.
+Generic/scanned planning and native catalog requests additionally accept upstream product facts as
+AssetReference dependencies (owner/path/hash), bounded to 4096 and validated for path/identity and
+duplicate owner/path pairs. These are independently supplied by the host, not recovered from the
+compiled candidate. Configured shader.authoringProductPath requires a matching declaration;
+unconfigured records remain planning metadata and are not evidence of an executable compile request.
+The planner hashes these alongside source/settings/tool inputs; catalog refresh retains both sets.
+
+The Shader resource integration test now uses generic planning to cook authoring and compiled
+products, scans real source/metadata using declared tools and upstream facts, verifies exact catalog
+selection, then exercises the runtime reader. Upstream hash changes reject the old compiled record.
+The editor-content dependency belongs only to this test executable; asharia-resource-runtime retains
+its editor-independent library dependencies. Root CMake orders editor-content first to avoid duplicate
+package inclusion when the standalone-capable test requires it. Host dependency discovery and Studio
+C ABI declaration transport remain pending; no general scheduler or second resource registry is added.
