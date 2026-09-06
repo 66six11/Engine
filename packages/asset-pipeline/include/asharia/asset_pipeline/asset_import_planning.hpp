@@ -41,6 +41,8 @@ namespace asharia::asset {
         MetadataSourceHashDrift,
         ToolFingerprintFailed,
         UnresolvedToolDependency,
+        InvalidProductDependency,
+        UnresolvedProductDependency,
     };
 
     struct AssetImportToolVersionDependency {
@@ -65,6 +67,8 @@ namespace asharia::asset {
         AssetToolFingerprintResolver toolFingerprintResolver{};
         AssetImportToolDependencyPolicy toolDependencyPolicy{
             AssetImportToolDependencyPolicy::ResolveImplicit};
+        // Current upstream product facts supplied by the host, never inferred from the candidate.
+        std::vector<AssetDependency> productDependencies;
 
         [[nodiscard]] friend bool operator==(const AssetImportPlanOptions&,
                                              const AssetImportPlanOptions&) = default;

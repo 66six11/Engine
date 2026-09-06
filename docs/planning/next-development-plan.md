@@ -523,8 +523,12 @@ replacement safety. Scene/Studio GPU consumption remains the next host integrati
 Shader prerequisite found during integration: native catalog requests now accept explicit host
 toolVersions under DeclaredOnly and preserve them across refresh. The compiled Shader importer
 requires slangc and spirv-val fingerprints; absent inputs remain unresolved, including the current
-Studio C ABI caller. Metadata does not carry these facts. The compiled Shader cook proof still assembles its authoring-product
-dependency explicitly; generic planning must reproduce that dependency before its selected key
-can agree with a compiled product. Next connect host declarations and dependency planning and verify a real
-scan-to-compiled-product-to-catalog-to-runtime test; do not infer fingerprints from a cached
-candidate or probe tools while browsing. This is not solved by #438's generic selection helper.
+Studio C ABI caller. Metadata does not carry these facts. Generic and scanned planning now accept
+explicit upstream product dependencies; catalog refresh retains the same facts. A configured
+shader.authoringProductPath must match a declaration before a compiled key can be produced.
+The Shader resource test now uses generic authoring/compile plans, real Slang compilation,
+source/metadata scanning and catalog selection of the resulting compiled record before runtime
+reader validation. Changing the upstream hash rejects the old record. Remaining host work is to
+resolve current upstream products and provide both declaration sets through Studio's boundary;
+the planner does not discover a dependency DAG or synthesize authoring settings. No cached candidate
+supplies its own validity facts, and browsing still never probes tools.

@@ -13,6 +13,7 @@ namespace asharia::asset {
         AssetProductManifestDocument productManifest;
         std::string targetProfile;
         std::vector<AssetImportToolVersionDependency> toolVersions;
+        std::vector<AssetDependency> productDependencies;
 
         [[nodiscard]] friend bool operator==(const AssetScannedImportPlanRequest&,
                                              const AssetScannedImportPlanRequest&) = default;

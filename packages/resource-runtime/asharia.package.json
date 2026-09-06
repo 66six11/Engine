@@ -16,7 +16,8 @@
     "com.asharia.asset-core",
     "com.asharia.mesh-product",
     "com.asharia.asset-pipeline",
-    "com.asharia.shader-slang"
+    "com.asharia.shader-slang",
+    "com.asharia.editor-content"
   ],
   "targets": [
     "asharia-resource-runtime"
@@ -45,7 +46,9 @@
     ],
     "asharia-shader-resource-tests": [
       "asharia-resource-runtime",
-      "asharia-asset-pipeline"
+      "asharia-asset-pipeline",
+      "asharia-editor-content",
+      "asharia-asset-core-io"
     ]
   }
 }

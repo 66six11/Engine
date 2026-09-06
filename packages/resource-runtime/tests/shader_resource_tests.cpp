@@ -1,11 +1,15 @@
-﻿#include <cstdio>
+﻿#include <array>
+#include <cstdio>
 #include <cstdlib>
 #include <exception>
 #include <stdexcept>
 
 #include "asharia/asset_artifact/asset_artifact_v1.hpp"
+#include "asharia/asset_core/asset_metadata_io.hpp"
 #include "asharia/asset_pipeline/asset_product_execution.hpp"
 #include "asharia/core/file_io.hpp"
+#include "asharia/editor_content/asset_catalog_snapshot.hpp"
+#include "asharia/project/project_descriptor_io.hpp"
 #include "asharia/resource_runtime/shader_resource.hpp"
 
 namespace {
@@ -30,6 +34,53 @@ namespace {
         return hashAssetArtifactBytesV1(std::as_bytes(bytes));
     }
 
+    void verifyCatalog(const std::filesystem::path& root, const SourceAssetRecord& source,
+                       const std::vector<AssetImportSetting>& settings,
+                       const std::vector<std::uint8_t>& bytes, const AssetImportRequest& planned,
+                       const std::vector<AssetDependency>& productDependencies,
+                       const AssetProductRecord& product) {
+        std::filesystem::create_directories(root / "Content");
+        require(core::writeFileBytesAtomically(root / source.sourcePath,
+                                               std::as_bytes(std::span{bytes}))
+                    .has_value(),
+                "Could not write catalog source");
+        require(writeAssetMetadataFile(root / (source.sourcePath + ".ameta"),
+                                       {.source = source, .settings = settings})
+                    .has_value(),
+                "Could not write catalog metadata");
+        require(
+            project::writeAshariaProjectDescriptorFile(
+                root / "asharia.project.json",
+                {.projectName = "ShaderCatalog",
+                 .projectId = take(project::parseProjectId("11111111-2222-3333-4444-555555555555")),
+                 .assetSourceRoots = {{.rootName = "Content",
+                                       .directory = "Content",
+                                       .sourcePathPrefix = "Content"}},
+                 .assetCacheRoot = "Cache"})
+                .has_value(),
+            "Could not write catalog project");
+        editor::EditorAssetCatalogSnapshotRequest request{
+            .projectFile = root / "asharia.project.json",
+            .productManifestFile = root / "compiled.json",
+            .targetProfile = "test-native",
+            .productDependencies = productDependencies};
+        for (const auto& dependency : planned.dependencies) {
+            if (dependency.kind == AssetDependencyKind::ToolVersion) {
+                request.toolVersions.push_back({.importerId = source.importerId,
+                                                .toolName = dependency.path,
+                                                .versionHash = dependency.hash});
+            }
+        }
+        const auto snapshot = editor::loadEditorAssetCatalogSnapshot(request);
+        const auto selected =
+            take(editor::selectEditorAssetProduct(snapshot, source.guid, source.assetType));
+        require(selected == product, "Catalog selection differs from the compiled product");
+        request.productDependencies.front().hash++;
+        const auto stale = editor::loadEditorAssetCatalogSnapshot(request);
+        require(!editor::selectEditorAssetProduct(stale, source.guid, source.assetType),
+                "Catalog accepted compiled product after upstream dependency changed");
+    }
+
     AssetProductWrite cook(const std::filesystem::path& root,
                            const std::vector<std::uint8_t>& sourceBytes,
                            const AssetProductWrite* dependency = nullptr) {
@@ -52,22 +103,13 @@ namespace {
             .sourceHash = hash(sourceBytes),
             .settingsHash = hashAssetImportSettings(settings),
         };
-        std::vector<AssetDependency> dependencies{
-            {.owner = source.guid,
-             .kind = AssetDependencyKind::SourceFile,
-             .path = source.sourcePath,
-             .hash = source.sourceHash},
-            {.owner = source.guid,
-             .kind = AssetDependencyKind::ImportSettings,
-             .path = {},
-             .hash = source.settingsHash},
-        };
+        std::vector<AssetDependency> productDependencies;
         std::vector<AssetProductDependencyBytes> dependencyBytes;
         if (dependency != nullptr) {
-            dependencies.push_back({.owner = source.guid,
-                                    .kind = AssetDependencyKind::AssetReference,
-                                    .path = dependency->product.relativeProductPath,
-                                    .hash = dependency->product.productHash});
+            productDependencies.push_back({.owner = source.guid,
+                                           .kind = AssetDependencyKind::AssetReference,
+                                           .path = dependency->product.relativeProductPath,
+                                           .hash = dependency->product.productHash});
             const auto input = take(core::readFileBytes(dependency->productFilePath,
                                                         {.maxBytes = 64ULL * 1024ULL * 1024ULL}));
             std::vector<std::uint8_t> bytes;
@@ -80,21 +122,41 @@ namespace {
                  .productHash = dependency->product.productHash,
                  .bytes = std::move(bytes)});
         }
-        const auto targetHash = makeAssetTargetProfileHash("test-native");
-        const auto key =
-            makeAssetProductKey(source, hashAssetDependencies(dependencies), targetHash);
-        const AssetImportPlanResult plan{
-            .targetProfile = "test-native",
-            .targetProfileHash = targetHash,
-            .requests = {{.source = source,
-                          .settings = settings,
-                          .dependencies = dependencies,
-                          .productKey = key,
-                          .relativeProductPath = makeAssetImportProductPath(key, "test-native"),
-                          .reason = AssetImportRequestReason::DependencyChanged}},
-            .cacheHits = {},
-            .diagnostics = {},
-        };
+        const std::array sources{
+            DiscoveredSourceAsset{.entry = {.sourcePath = source.sourcePath, .metadataPath = {}},
+                                  .source = source,
+                                  .settings = settings}};
+        const std::array snapshots{AssetSourceSnapshot{.sourcePath = source.sourcePath,
+                                                       .sourceFilePath = {},
+                                                       .sourceHash = source.sourceHash}};
+        const auto plan = planAssetImports(sources, snapshots, {}, "test-native",
+                                           {.productDependencies = productDependencies});
+        require(plan.succeeded() && plan.requests.size() == 1U,
+                "Generic planner did not produce the shader cook request");
+        if (dependency != nullptr) {
+            const auto missing = planAssetImports(sources, snapshots, {}, "test-native");
+            require(missing.requests.empty() && missing.cacheHits.empty(),
+                    "Planner proved a compiled key without the authoring product dependency");
+            auto changedDependencies = productDependencies;
+            changedDependencies.front().hash++;
+            const auto changedPlan = planAssetImports(sources, snapshots, {}, "test-native",
+                                                      {.productDependencies = changedDependencies});
+            require(changedPlan.requests.size() == 1U &&
+                        changedPlan.requests.front().productKey != plan.requests.front().productKey,
+                    "Changed authoring product did not invalidate compiled key");
+            changedDependencies = productDependencies;
+            changedDependencies.push_back(changedDependencies.front());
+            const auto duplicate = planAssetImports(sources, snapshots, {}, "test-native",
+                                                    {.productDependencies = changedDependencies});
+            require(!duplicate.succeeded() && duplicate.requests.empty(),
+                    "Duplicate product dependency was accepted");
+            changedDependencies = productDependencies;
+            changedDependencies.front().path = "../escape.product";
+            const auto invalid = planAssetImports(sources, snapshots, {}, "test-native",
+                                                  {.productDependencies = changedDependencies});
+            require(!invalid.succeeded() && invalid.requests.empty(),
+                    "Escaping product dependency path was accepted");
+        }
         const auto result = executeAssetProducts({
             .plan = plan,
             .existingManifest = {},
@@ -108,6 +170,10 @@ namespace {
             throw std::runtime_error(result.diagnostics.front().message);
         }
         require(result.writtenProducts.size() == 1, "expected one cooked shader product");
+        if (dependency != nullptr) {
+            verifyCatalog(root, source, settings, sourceBytes, plan.requests.front(),
+                          productDependencies, result.writtenProducts.front().product);
+        }
         return result.writtenProducts.front();
     }
 

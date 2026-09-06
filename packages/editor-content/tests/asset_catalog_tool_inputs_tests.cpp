@@ -50,6 +50,8 @@ namespace {
             return false;
         }
         constexpr auto importer = "com.asharia.importer.shader-compile-reflection";
+        const std::vector<asset::AssetImportSetting> settings{
+            {.key = "shader.authoringProductPath", .value = "generated/authoring.product"}};
         return asset::writeAssetMetadataFile(
                    root / "Assets/test.shader.ameta",
                    {.source = {.guid = *guid,
@@ -60,7 +62,8 @@ namespace {
                                .importerName = importer,
                                .importerVersion = {1U},
                                .sourceHash = hashed.snapshots.front().sourceHash,
-                               .settingsHash = asset::hashAssetImportSettings({})}})
+                               .settingsHash = asset::hashAssetImportSettings(settings)},
+                    .settings = settings})
             .has_value();
     }
 
@@ -121,6 +124,14 @@ namespace {
         }
         request.toolVersions.push_back(
             {.importerId = importer, .toolName = "spirv-val", .versionHash = 22U});
+        if (!loadEditorAssetCatalogSnapshot(request).expectedProductKeys.empty()) {
+            return false;
+        }
+        request.productDependencies = {
+            {.owner = *asset::parseAssetGuid("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"),
+             .kind = asset::AssetDependencyKind::AssetReference,
+             .path = "generated/authoring.product",
+             .hash = 33U}};
         const auto declared = loadEditorAssetCatalogSnapshot(request);
         if (!declared.succeeded() || declared.expectedProductKeys.size() != 1U ||
             makeEditorAssetCatalogSnapshotRequest(declared).toolVersions != request.toolVersions ||
@@ -137,6 +148,11 @@ namespace {
         const auto changed = loadEditorAssetCatalogSnapshot(request);
         if (!changed.succeeded() || changed.expectedProductKeys.size() != 1U ||
             changed.expectedProductKeys == declared.expectedProductKeys) {
+            return false;
+        }
+        request.productDependencies.front().hash++;
+        if (loadEditorAssetCatalogSnapshot(request).expectedProductKeys ==
+            changed.expectedProductKeys) {
             return false;
         }
         return invalidInputs(request);

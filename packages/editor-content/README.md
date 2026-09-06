@@ -51,8 +51,13 @@ before requesting another load. Declared-only planning remains in force. Native 
 256 unique importer/name pairs are accepted, with nonzero importer/hash and 1-128 byte names.
 The host must obtain these fingerprints outside browsing; neither metadata nor cached candidate
 records supply them. An omitted/partial Shader declaration remains unresolved without probing tools.
-Compiled-product authoring dependency planning and a real cook/catalog/runtime proof are still
-pending. Studio C ABI/JSON inputs remain unchanged and currently provide no tool declarations.
+Native `productDependencies` also carries current upstream AssetReference owner/path/hash facts
+into planning and survives refresh. At most 4096 are accepted; the planner rejects invalid paths,
+zero owner/hash and duplicate owner/path pairs. Configured Shader authoring product paths require
+a matching declaration; changing its hash changes the expected compiled key. The Shader resource
+integration test verifies generic cook, catalog selection and runtime reading of a real product.
+The host still resolves current upstream facts; this is not automatic dependency discovery.
+Studio C ABI/JSON inputs remain unchanged and provide neither declaration set yet.
 Any error diagnostic blocks selection for the whole snapshot (the browser can still display its
 partial rows). Warnings alone do not block an otherwise uniquely matched product.
 

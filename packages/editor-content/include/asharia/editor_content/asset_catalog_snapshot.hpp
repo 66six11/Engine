@@ -54,6 +54,7 @@ namespace asharia::editor {
         std::uint64_t maxDiagnostics{10'000U};
         // Host-supplied fingerprints; catalog queries never probe compiler executables.
         std::vector<asharia::asset::AssetImportToolVersionDependency> toolVersions;
+        std::vector<asharia::asset::AssetDependency> productDependencies;
 
         [[nodiscard]] friend bool operator==(const EditorAssetCatalogSnapshotRequest&,
                                              const EditorAssetCatalogSnapshotRequest&) = default;
@@ -75,6 +76,7 @@ namespace asharia::editor {
         std::vector<asharia::asset::AssetProductRecord> products;
         // Preserve query identity when reconstructing a native refresh request.
         std::vector<asharia::asset::AssetImportToolVersionDependency> toolVersions;
+        std::vector<asharia::asset::AssetDependency> productDependencies;
 
         [[nodiscard]] friend bool operator==(const EditorAssetCatalogSnapshot&,
                                              const EditorAssetCatalogSnapshot&) = default;
