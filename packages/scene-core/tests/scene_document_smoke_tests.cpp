@@ -208,6 +208,69 @@ namespace {
         return expect(after && *after == "malformed", "Save replaced malformed external bytes.");
     }
 
+    [[nodiscard]] bool testMeshEdits() {
+        TestDirectory directory;
+        const asharia::scene::SceneObjectId objectId{.bytes = {2U}};
+        auto document =
+            asharia::scene::SceneDocument::openOrCreateDefault(directory.path(), {.bytes = {1U}});
+        if (!document || !document->createEntity(objectId, "Mesh edits", 1U)) {
+            return false;
+        }
+        const auto baseline = document->snapshot();
+        const auto meshA = asharia::asset::makeAssetReference({.bytes = {3U}},
+                                                              asharia::scene::kSceneMeshAssetType);
+        const auto meshB = asharia::asset::makeAssetReference({.bytes = {4U}},
+                                                              asharia::scene::kSceneMeshAssetType);
+        auto attached = document->setEntityMesh(objectId, meshA, 2U);
+        auto unchanged = document->setEntityMesh(objectId, meshA, 3U);
+        if (!attached || !attached->changed || attached->before || attached->after != meshA ||
+            attached->beforeRevision != 2U || attached->afterRevision != 3U || !unchanged ||
+            unchanged->changed || unchanged->before != meshA || unchanged->after != meshA ||
+            unchanged->afterRevision != 3U) {
+            return expect(false, "Mesh attach or no-op receipt differed.");
+        }
+        const auto beforeFailure = document->snapshot();
+        auto wrongType = meshB;
+        wrongType.expectedType = asharia::asset::makeAssetTypeId("Wrong");
+        const auto invalid = document->setEntityMesh(objectId, wrongType, 3U);
+        const auto empty = document->setEntityMesh(objectId, asharia::asset::AssetReference{}, 3U);
+        const auto missing = document->setEntityMesh({.bytes = {9U}}, meshB, 3U);
+        const auto stale = document->setEntityMesh(objectId, meshB, 2U);
+        const auto afterFailure = document->snapshot();
+        if (invalid || empty || missing || stale || afterFailure.data != beforeFailure.data ||
+            afterFailure.revision != beforeFailure.revision ||
+            afterFailure.savedRevision != beforeFailure.savedRevision) {
+            return expect(false, "Failed Mesh edits modified authoritative data.");
+        }
+        auto replaced = document->setEntityMesh(objectId, meshB, 3U);
+        if (!replaced || replaced->before != meshA || replaced->after != meshB ||
+            replaced->afterRevision != 4U) {
+            return false;
+        }
+        // The receipt supports revision-checked inverse/reapply operations without owning history.
+        auto inverse = document->setEntityMesh(objectId, replaced->before, 4U);
+        auto reapplied = document->setEntityMesh(objectId, replaced->after, 5U);
+        if (!inverse || !reapplied || !document->save(6U)) {
+            return false;
+        }
+        auto reopened = asharia::scene::SceneDocument::openOrCreateDefault(directory.path(), {});
+        if (!reopened || reopened->snapshot().data != document->snapshot().data) {
+            return expect(false, "Replaced Mesh did not survive save/reopen.");
+        }
+        auto removed = document->setEntityMesh(objectId, std::nullopt, 6U);
+        auto absent = document->setEntityMesh(objectId, std::nullopt, 7U);
+        if (!removed || !removed->changed || removed->before != meshB || removed->after ||
+            !absent || absent->changed || absent->afterRevision != 7U || !document->save(7U)) {
+            return false;
+        }
+        auto removedOnDisk = asharia::scene::readSceneDocumentFile(document->path());
+        const auto final = document->snapshot();
+        return expect(removedOnDisk && *removedOnDisk == baseline.data &&
+                          final.runtimeEntities == baseline.runtimeEntities &&
+                          final.savedRevision == 7U,
+                      "Mesh removal changed entity identity or failed persistence.");
+    }
+
     [[nodiscard]] bool testConcurrentSave() {
         TestDirectory directory;
         const asharia::scene::SceneId sceneId{.bytes = {1U}};
@@ -324,7 +387,7 @@ int main() noexcept {
             return 1;
         }
 
-        if (!testExternalSaveChanges() || !testConcurrentSave() ||
+        if (!testMeshEdits() || !testExternalSaveChanges() || !testConcurrentSave() ||
             !testSchemaV2HardCut(restored.data, *sceneId)) {
             return 1;
         }

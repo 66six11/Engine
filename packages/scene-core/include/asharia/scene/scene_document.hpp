@@ -85,6 +85,18 @@ namespace asharia::scene {
         std::uint64_t savedRevision{};
     };
 
+    struct SceneEntityMeshReceipt {
+        SceneObjectId objectId{};
+        bool changed{};
+        std::optional<asset::AssetReference> before;
+        std::optional<asset::AssetReference> after;
+        std::uint64_t beforeRevision{};
+        std::uint64_t afterRevision{};
+
+        [[nodiscard]] friend bool operator==(const SceneEntityMeshReceipt&,
+                                             const SceneEntityMeshReceipt&) = default;
+    };
+
     struct SceneEntityTransformReceipt {
         SceneObjectId objectId{};
         bool changed{};
@@ -122,6 +134,10 @@ namespace asharia::scene {
         setEntityTransform(SceneObjectId objectId, const TransformComponent& transform,
                            std::uint64_t expectedRevision);
         [[nodiscard]] VoidResult save(std::uint64_t expectedRevision);
+        // Null removes the authored mesh. Resource resolution belongs to the consuming host.
+        [[nodiscard]] Result<SceneEntityMeshReceipt>
+        setEntityMesh(SceneObjectId objectId, std::optional<asset::AssetReference> mesh,
+                      std::uint64_t expectedRevision);
 
     private:
         struct RuntimeEntity {

@@ -518,6 +518,44 @@ namespace asharia::scene {
         };
     }
 
+    Result<SceneEntityMeshReceipt>
+    SceneDocument::setEntityMesh(SceneObjectId objectId, std::optional<asset::AssetReference> mesh,
+                                 std::uint64_t expectedRevision) {
+        if (auto revision = requireRevision(expectedRevision); !revision) {
+            return std::unexpected{revision.error()};
+        }
+        if (mesh && (!static_cast<bool>(*mesh) || mesh->expectedType != kSceneMeshAssetType)) {
+            return std::unexpected{
+                sceneDocumentError(SceneDocumentErrorCode::InvalidAssetReference,
+                                   "setEntityMesh for object '" + formatSceneObjectId(objectId) +
+                                       "' requires a non-zero Mesh asset reference or null.")};
+        }
+        auto persisted = std::ranges::find(data_.entities, objectId, &SceneEntityData::objectId);
+        if (persisted == data_.entities.end() || findRuntimeEntity(objectId) == nullptr) {
+            return std::unexpected{invalidObjectError(objectId, "setEntityMesh")};
+        }
+        SceneEntityMeshReceipt receipt{
+            .objectId = objectId,
+            .changed = persisted->mesh != mesh,
+            .before = persisted->mesh,
+            .after = mesh,
+            .beforeRevision = revision_,
+            .afterRevision = revision_,
+        };
+        if (!receipt.changed) {
+            return receipt;
+        }
+        if (revision_ == std::numeric_limits<std::uint64_t>::max()) {
+            return std::unexpected{sceneDocumentError(
+                SceneDocumentErrorCode::RevisionExhausted,
+                "Scene document revision space is exhausted; Mesh was not changed.")};
+        }
+        persisted->mesh = mesh;
+        advanceRevision();
+        receipt.afterRevision = revision_;
+        return receipt;
+    }
+
     VoidResult SceneDocument::save(std::uint64_t expectedRevision) {
         if (auto revision = requireRevision(expectedRevision); !revision) {
             return revision;
