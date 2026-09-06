@@ -2360,3 +2360,31 @@ a mesh may need multiple material/range draws. Asharia uses resolved backend-neu
 keys rather than engine-specific material objects. This corrects extraction cardinality only;
 the fixed validation mesh remains the current viewport producer, and real resource/GPU upload
 integration remains a separate product slice.
+
+
+### Editor Mesh CPU resource handoff (#440)
+
+The native editor host composes `editor-content` and `resource-runtime` through
+`requestEditorMeshResource(snapshot, guid, store)`. It selects the Mesh using the snapshot's exact
+current product key, then forwards the record to the existing store. The function performs no IO.
+The caller transfers an owning `MeshResourceLoadPlan` to a worker, then publishes the completion
+on the store owner thread and acquires an immutable lease. Catalog selection errors do not mutate
+the store; callers retain existing handles and decide whether an old resource should remain visible.
+Resource failures preserve the store's existing failure dispositions and active revision.
+
+`asharia-editor --smoke-editor-mesh-resource` runs before window/Vulkan initialization. It writes
+a small real GLB and metadata, scans/plans/cooks it, reloads the catalog, requests the selected Mesh,
+loads on a worker and publishes on the owner thread. It proves pending/ready request reuse,
+failed artifact reload retaining the active lease, successful replacement and lease survival after
+unload. This is a native host integration proof; the interactive Scene/Studio resource consumer and
+GPU publication are still pending. The test alone uses a blocking future join; no frame callback
+or production loader waits for file IO. The executable still links its normal editor dependencies.
+
+Reference decision: Epic's
+[asynchronous asset loading](https://dev.epicgames.com/documentation/unreal-engine/asynchronous-asset-loading-in-unreal-engine?lang=en-US)
+and O3DE's [runtime asset system](https://www.docs.o3de.org/docs/user-guide/assets/runtime/) separate
+asset identity/catalog lookup from runtime resource ownership. Adopt that split and retained
+resource lifetime. Reuse the existing store's tickets, load plans and leases instead of adding a
+global manager or another job system; the editor owns scheduling and never moves source import
+into resource-runtime. Earliest safe integration is after catalog exact-key selection; latest
+required is before Scene GPU resource publication.

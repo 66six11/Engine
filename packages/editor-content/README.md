@@ -46,8 +46,10 @@ and ambiguous records. Identical repeated expected keys are harmless; duplicate 
 are rejected. The query never selects by timestamps, file names or manifest order.
 
 A snapshot is point-in-time data: after source/settings/tool facts or manifest changes, refresh
-before requesting another load. Declared-only planning remains in force: tool-version facts must
-be supplied through the existing metadata contract; catalog browsing does not discover tools.
+before requesting another load. Declared-only planning remains in force, and the current snapshot query supplies no tool-version
+facts. Metadata does not carry them either: compiled Shader sources remain unresolved. Explicit
+host tool inputs and compiled-product dependency planning are pending; browsing must not discover
+tools or trust cached candidates as the source of those facts.
 Any error diagnostic blocks selection for the whole snapshot (the browser can still display its
 partial rows). Warnings alone do not block an otherwise uniquely matched product.
 

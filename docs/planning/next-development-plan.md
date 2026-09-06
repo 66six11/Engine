@@ -512,3 +512,19 @@ owning result; incomplete scans and ambiguous/missing/stale records fail explici
 the catalog selection metadata bridge only. Next remains the Scene/Studio host consumer that passes
 selected records and artifact roots into runtime readers, then safely publishes mesh/material GPU
 resources. Graph editing, Material Inspector and live Shader replacement remain later slices.
+
+
+### Native Mesh CPU host integration (#440)
+
+The editor now has a catalog-to-MeshResourceStore request adapter and a headless real-GLB
+scan/cook/catalog/worker-load/owner-publish/lease smoke. This validates CPU resource reuse and
+replacement safety. Scene/Studio GPU consumption remains the next host integration step.
+
+Shader prerequisite found during integration: editor catalog planning passes an empty toolVersions
+list under DeclaredOnly. The compiled Shader importer requires slangc and spirv-val fingerprints,
+so it cannot produce a current expected key through that query. Metadata does not currently carry
+these facts. In addition, the existing compiled Shader cook proof assembles its authoring-product
+dependency explicitly; generic planning must reproduce that dependency before its selected key
+can agree with a compiled product. First add explicit host tool/dependency inputs and verify a real
+scan-to-compiled-product-to-catalog-to-runtime test; do not infer fingerprints from a cached
+candidate or probe tools while browsing. This is not solved by #438's generic selection helper.
