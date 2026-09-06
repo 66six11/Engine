@@ -93,3 +93,10 @@ automation 都通过编辑器拥有的实体/组件操作修改场景。Asharia 
 - [Godot：Running code in the editor](https://docs.godotengine.org/en/stable/tutorials/plugins/running_code_in_the_editor.html)
 - [O3DE：Entity Inspector](https://docs.o3de.org/docs/user-guide/editor/entity-inspector/)
 - [O3DE：Editor automation](https://docs.o3de.org/docs/user-guide/editor/editor-automation/)
+
+## 2026-09-06：已有实体的 Mesh reference 修改
+
+`ISceneDocumentConnection.SetEntityMeshAsync` 通过 native `asharia_scene_document_set_entity_mesh` 修改可选引用，
+返回 typed before/after Mesh receipt。Application 的同名 ProjectSession 命令接入现有 operation gate、逻辑保存点
+与共享 Transform/Mesh Undo/Redo，详见 [ADR-0013](0013-authoritative-document-transform-undo-redo.md)。
+此处完成 managed 命令边界；Inspector 修改控件与 asset-backed viewport GPU 消费尚未接入。

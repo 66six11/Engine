@@ -439,6 +439,51 @@ public sealed class SceneDocumentBridge : ISceneDocumentGateway
         }
     }
 
+    private unsafe NativeMeshOperationOutcome InvokeMeshOperation(
+        NativeMeshOperationCall call)
+    {
+        var response = new byte[InitialResponseCapacity];
+        SceneNativeStatus status;
+        SceneNativeDocumentMeshOperationResult result;
+        fixed (byte* responsePointer = response)
+        {
+            status = call(
+                (nint)responsePointer,
+                (ulong)response.Length,
+                out result);
+        }
+        if (status == SceneNativeStatus.BufferTooSmall)
+        {
+            // A mutation is never replayed to retrieve a longer diagnostic.
+            var metadata = result with { RequiredByteLength = 0, MessageUtf8 = default };
+            var invalid = result.OperationStatus is SceneNativeStatus.Success or SceneNativeStatus.BufferTooSmall
+                ? InvalidNativeResponse("Mesh mutation returned an ambiguous buffer result.")
+                : ValidateMeshOperation(result.OperationStatus, metadata, []);
+            return NativeMeshOperationOutcome.Failed(
+                invalid ?? Failure(result.OperationStatus, "Mesh edit failed; diagnostic exceeded response capacity."),
+                result.Revision, result.SavedRevision);
+        }
+
+        var validation = ValidateMeshOperation(status, result, response);
+        if (validation is not null)
+        {
+            return NativeMeshOperationOutcome.Failed(
+                validation,
+                result.Revision,
+                result.SavedRevision);
+        }
+        var message = Decode(response, result.MessageUtf8, result.RequiredByteLength);
+        return status == SceneNativeStatus.Success
+            ? NativeMeshOperationOutcome.Success(
+                result.Revision,
+                result.SavedRevision,
+                result)
+            : NativeMeshOperationOutcome.Failed(
+                Failure(status, message),
+                result.Revision,
+                result.SavedRevision);
+    }
+
     private static SceneDocumentFailure? ValidateOperation(
         SceneNativeStatus status,
         SceneNativeDocumentOperationResult result,
@@ -536,6 +581,69 @@ public sealed class SceneDocumentBridge : ISceneDocumentGateway
         }
         return null;
     }
+
+    private static SceneDocumentFailure? ValidateMeshOperation(
+        SceneNativeStatus status,
+        SceneNativeDocumentMeshOperationResult result,
+        byte[] response)
+    {
+        if (!Enum.IsDefined(status) || result.OperationStatus != status ||
+            result.RequiredByteLength > (ulong)response.Length)
+        {
+            return InvalidNativeResponse(
+                "The scene adapter returned inconsistent Mesh operation metadata.");
+        }
+        if (status == SceneNativeStatus.Success)
+        {
+            if (result.Changed > 1 || result.Revision == 0 || result.SavedRevision == 0 ||
+                result.SavedRevision > result.Revision || result.MessageUtf8.ByteLength != 0 ||
+                result.BeforeRevision == 0 || result.AfterRevision != result.Revision ||
+                (result.Changed == 0
+                    ? result.AfterRevision != result.BeforeRevision ||
+                      result.BeforeMeshGuid != result.AfterMeshGuid
+                    : result.BeforeRevision == ulong.MaxValue ||
+                      result.AfterRevision != result.BeforeRevision + 1 ||
+                      result.BeforeMeshGuid == result.AfterMeshGuid))
+            {
+                return InvalidNativeResponse(
+                    "The scene adapter returned an invalid authoritative Mesh receipt.");
+            }
+            try
+            {
+                _ = DecodeNativeMesh(result.BeforeMeshGuid);
+                _ = DecodeNativeMesh(result.AfterMeshGuid);
+                _ = DecodeNativeObjectId(result.ObjectId);
+            }
+            catch (ArgumentException exception)
+            {
+                return InvalidNativeResponse(
+                    $"The scene adapter returned an invalid Mesh receipt: {exception.Message}");
+            }
+        }
+        else if ((result.Revision == 0) != (result.SavedRevision == 0) ||
+                 result.SavedRevision > result.Revision || result.Changed != 0 ||
+                 result.BeforeRevision != 0 || result.AfterRevision != 0 ||
+                 result.ObjectId != default || result.BeforeMeshGuid != default ||
+                 result.AfterMeshGuid != default)
+        {
+            return InvalidNativeResponse(
+                "The scene adapter returned typed Mesh receipt data for a failed operation.");
+        }
+        try
+        {
+            _ = Decode(response, result.MessageUtf8, result.RequiredByteLength);
+        }
+        catch (Exception exception) when (
+            exception is ArgumentOutOfRangeException or DecoderFallbackException)
+        {
+            return InvalidNativeResponse(
+                $"The scene adapter returned an invalid Mesh message: {exception.Message}");
+        }
+        return null;
+    }
+
+    private static SceneMeshReference? DecodeNativeMesh(SceneNativeObjectId value) =>
+        value == default ? null : new SceneMeshReference(DecodeNativeObjectId(value));
 
     private static Guid DecodeNativeObjectId(SceneNativeObjectId value)
     {
@@ -635,6 +743,11 @@ public sealed class SceneDocumentBridge : ISceneDocumentGateway
         ulong responseCapacity,
         out SceneNativeDocumentTransformOperationResult result);
 
+    private delegate SceneNativeStatus NativeMeshOperationCall(
+        nint responseBuffer,
+        ulong responseCapacity,
+        out SceneNativeDocumentMeshOperationResult result);
+
     private sealed record NativeOpenOutcome(
         SceneNativeDocumentHandle Handle,
         SceneDocumentSnapshot? Document,
@@ -696,6 +809,27 @@ public sealed class SceneDocumentBridge : ISceneDocumentGateway
             new(revision, savedRevision, receipt, Failure: null);
 
         public static NativeTransformOperationOutcome Failed(
+            SceneDocumentFailure failure,
+            ulong revision = 0,
+            ulong savedRevision = 0) =>
+            new(revision, savedRevision, default, failure);
+    }
+
+    private sealed record NativeMeshOperationOutcome(
+        ulong Revision,
+        ulong SavedRevision,
+        SceneNativeDocumentMeshOperationResult Receipt,
+        SceneDocumentFailure? Failure)
+    {
+        public bool Succeeded => Failure is null;
+
+        public static NativeMeshOperationOutcome Success(
+            ulong revision,
+            ulong savedRevision,
+            SceneNativeDocumentMeshOperationResult receipt) =>
+            new(revision, savedRevision, receipt, Failure: null);
+
+        public static NativeMeshOperationOutcome Failed(
             SceneDocumentFailure failure,
             ulong revision = 0,
             ulong savedRevision = 0) =>
@@ -793,6 +927,23 @@ public sealed class SceneDocumentBridge : ISceneDocumentGateway
             ThrowIfDisposed();
             return new ValueTask<SceneDocumentOperationResult>(lane_.InvokeAsync(
                 () => SetEntityTransformCore(objectId, transform, expectedRevision)));
+        }
+
+        public ValueTask<SceneDocumentOperationResult> SetEntityMeshAsync(
+            Guid objectId,
+            SceneMeshReference? mesh,
+            ulong expectedRevision,
+            CancellationToken cancellationToken = default)
+        {
+            ValidateObjectId(objectId);
+            if (mesh?.AssetId == Guid.Empty)
+            {
+                throw new ArgumentException("Mesh asset id must not be empty.", nameof(mesh));
+            }
+            cancellationToken.ThrowIfCancellationRequested();
+            ThrowIfDisposed();
+            return new ValueTask<SceneDocumentOperationResult>(lane_.InvokeAsync(
+                () => SetEntityMeshCore(objectId, mesh, expectedRevision)));
         }
 
         public ValueTask<SceneDocumentOperationResult> SaveAsync(
@@ -1014,6 +1165,46 @@ public sealed class SceneDocumentBridge : ISceneDocumentGateway
             }
         }
 
+        private unsafe SceneDocumentOperationResult SetEntityMeshCore(
+            Guid objectId,
+            SceneMeshReference? mesh,
+            ulong expectedRevision)
+        {
+            try
+            {
+                var objectIdBytes = StrictUtf8.GetBytes(objectId.ToString("D"));
+                var meshBytes = StrictUtf8.GetBytes(mesh?.AssetId.ToString("D") ?? string.Empty);
+                fixed (byte* meshId = meshBytes)
+                fixed (byte* id = objectIdBytes)
+                {
+                    var request = new SceneNativeDocumentSetEntityMeshRequest(
+                        new SceneNativeAbiHeader(
+                            SceneDocumentNativeAbi.Version,
+                            SceneNativeDocumentSetEntityMeshRequest.StructSize),
+                        handle_,
+                        expectedRevision,
+                        new SceneNativeStringView((nint)id, (ulong)objectIdBytes.Length),
+                        new SceneNativeStringView((nint)meshId, (ulong)meshBytes.Length));
+                    return FinishMeshEdit(
+                        bridge_.InvokeMeshOperation(
+                            (nint response, ulong capacity,
+                             out SceneNativeDocumentMeshOperationResult result) =>
+                                bridge_.nativeApi_.SetEntityMesh(
+                                    in request,
+                                    response,
+                                    capacity,
+                                    out result)),
+                        objectId,
+                        mesh,
+                        expectedRevision);
+                }
+            }
+            catch (Exception exception) when (IsNativeBindingFailure(exception))
+            {
+                return NativeUnavailableCurrent(exception);
+            }
+        }
+
         private SceneDocumentOperationResult SaveCore(ulong expectedRevision)
         {
             try
@@ -1098,6 +1289,73 @@ public sealed class SceneDocumentBridge : ISceneDocumentGateway
                     receipt.Changed != 0,
                     receipt.BeforeTransform,
                     receipt.AfterTransform,
+                    receipt.BeforeRevision,
+                    receipt.AfterRevision));
+        }
+
+        private SceneDocumentOperationResult FinishMeshEdit(
+            NativeMeshOperationOutcome operation,
+            Guid requestedObjectId,
+            SceneMeshReference? requestedMesh,
+            ulong expectedRevision)
+        {
+            var previous = current_;
+            NativeSnapshotOutcome snapshot;
+            try
+            {
+                snapshot = bridge_.SnapshotNative(handle_, projectRoot_);
+            }
+            catch (Exception exception) when (IsNativeBindingFailure(exception))
+            {
+                return UnknownOperationOutcome(
+                    $"The Mesh operation completed, but its authoritative snapshot " +
+                    $"could not be read: {exception.Message}");
+            }
+            if (!snapshot.Succeeded)
+            {
+                return UnknownOperationOutcome(
+                    "The Mesh operation completed, but its authoritative snapshot " +
+                    $"could not be read: {snapshot.Failure!.Message}");
+            }
+            current_ = snapshot.Document!;
+            if (operation.Revision != 0 &&
+                (operation.Revision != current_.Revision ||
+                 operation.SavedRevision != current_.SavedRevision))
+            {
+                return SceneDocumentOperationResult.Failed(
+                    current_,
+                    InvalidNativeResponse(
+                        "The scene Mesh receipt does not match the authoritative snapshot."));
+            }
+            if (!operation.Succeeded)
+            {
+                return SceneDocumentOperationResult.Failed(current_, operation.Failure!);
+            }
+
+            var receipt = operation.Receipt;
+            var objectId = DecodeNativeObjectId(receipt.ObjectId);
+            var previousEntity = previous.Entities.FirstOrDefault(
+                candidate => candidate.ObjectId == objectId);
+            var entity = current_.Entities.FirstOrDefault(candidate => candidate.ObjectId == objectId);
+            if (objectId != requestedObjectId || receipt.BeforeRevision != expectedRevision ||
+                previous.Revision != receipt.BeforeRevision ||
+                receipt.AfterRevision != current_.Revision ||
+                DecodeNativeMesh(receipt.AfterMeshGuid) != requestedMesh ||
+                previousEntity is null || previousEntity.Mesh != DecodeNativeMesh(receipt.BeforeMeshGuid) ||
+                entity is null || entity.Mesh != DecodeNativeMesh(receipt.AfterMeshGuid))
+            {
+                return SceneDocumentOperationResult.Failed(
+                    current_,
+                    InvalidNativeResponse(
+                        "The authoritative Mesh receipt does not match its scene entity."));
+            }
+            return SceneDocumentOperationResult.Success(
+                current_,
+                new SceneEntityMeshReceipt(
+                    objectId,
+                    receipt.Changed != 0,
+                    DecodeNativeMesh(receipt.BeforeMeshGuid),
+                    DecodeNativeMesh(receipt.AfterMeshGuid),
                     receipt.BeforeRevision,
                     receipt.AfterRevision));
         }

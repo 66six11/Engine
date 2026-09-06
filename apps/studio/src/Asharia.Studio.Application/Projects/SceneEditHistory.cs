@@ -1,25 +1,38 @@
 using System;
 using System.Collections.Generic;
 using Asharia.Runtime;
+using Asharia.Studio.Application.Scenes;
 
 namespace Asharia.Studio.Application.Projects;
 
-internal sealed record SceneEditHistoryEntry(
-    Guid SceneId,
-    Guid ObjectId,
-    string Label,
-    ProjectEditId InteractionId,
-    TransformValue BeforeTransform,
-    TransformValue AfterTransform,
-    ContentStateId BeforeContentStateId,
-    ContentStateId AfterContentStateId,
+internal abstract record SceneEditHistoryEntry(
+    Guid SceneId, Guid ObjectId, string Label, ProjectEditId InteractionId,
+    ContentStateId BeforeContentStateId, ContentStateId AfterContentStateId,
     long EstimatedBytes);
+
+internal sealed record SceneTransformHistoryEntry(
+    Guid SceneId, Guid ObjectId, string Label, ProjectEditId InteractionId,
+    TransformValue BeforeTransform, TransformValue AfterTransform,
+    ContentStateId BeforeContentStateId, ContentStateId AfterContentStateId,
+    long EstimatedBytes)
+    : SceneEditHistoryEntry(SceneId, ObjectId, Label, InteractionId,
+        BeforeContentStateId, AfterContentStateId, EstimatedBytes);
+
+internal sealed record SceneMeshHistoryEntry(
+    Guid SceneId, Guid ObjectId, string Label, ProjectEditId InteractionId,
+    SceneMeshReference? BeforeMesh,
+    SceneMeshReference? AfterMesh,
+    ContentStateId BeforeContentStateId, ContentStateId AfterContentStateId,
+    long EstimatedBytes)
+    : SceneEditHistoryEntry(SceneId, ObjectId, Label, InteractionId,
+        BeforeContentStateId, AfterContentStateId, EstimatedBytes);
 
 internal sealed class SceneEditHistory
 {
     internal const int DefaultEntryLimit = 256;
     internal const long DefaultByteLimit = 16L * 1024L * 1024L;
     internal const long TransformEntryEstimatedBytes = 256;
+    internal const long MeshEntryEstimatedBytes = 256;
 
     private readonly int entryLimit_;
     private readonly long byteLimit_;

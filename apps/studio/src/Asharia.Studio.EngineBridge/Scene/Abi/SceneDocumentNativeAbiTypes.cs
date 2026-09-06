@@ -90,6 +90,17 @@ internal readonly record struct SceneNativeDocumentSetEntityNameRequest(
     public const uint StructSize = 56;
 }
 
+[StructLayout(LayoutKind.Explicit, Size = 56)]
+internal readonly record struct SceneNativeDocumentSetEntityMeshRequest(
+    [field: FieldOffset(0)] SceneNativeAbiHeader Header,
+    [field: FieldOffset(8)] SceneNativeDocumentHandle Document,
+    [field: FieldOffset(16)] ulong ExpectedRevision,
+    [field: FieldOffset(24)] SceneNativeStringView ObjectIdUtf8,
+    [field: FieldOffset(40)] SceneNativeStringView MeshAssetGuidUtf8)
+{
+    public const uint StructSize = 56;
+}
+
 [StructLayout(LayoutKind.Explicit, Size = 80)]
 internal readonly record struct SceneNativeDocumentSetEntityTransformRequest(
     [field: FieldOffset(0)] SceneNativeAbiHeader Header,
@@ -132,6 +143,20 @@ internal readonly record struct SceneNativeDocumentTransformOperationResult(
     [field: FieldOffset(128)] ulong BeforeRevision,
     [field: FieldOffset(136)] ulong AfterRevision,
     [field: FieldOffset(144)] SceneNativeTextSpan MessageUtf8);
+
+[StructLayout(LayoutKind.Explicit, Size = 112)]
+internal readonly record struct SceneNativeDocumentMeshOperationResult(
+    [field: FieldOffset(0)] SceneNativeStatus OperationStatus,
+    [field: FieldOffset(4)] uint Changed,
+    [field: FieldOffset(8)] ulong RequiredByteLength,
+    [field: FieldOffset(16)] ulong Revision,
+    [field: FieldOffset(24)] ulong SavedRevision,
+    [field: FieldOffset(32)] SceneNativeObjectId ObjectId,
+    [field: FieldOffset(48)] SceneNativeObjectId BeforeMeshGuid,
+    [field: FieldOffset(64)] SceneNativeObjectId AfterMeshGuid,
+    [field: FieldOffset(80)] ulong BeforeRevision,
+    [field: FieldOffset(88)] ulong AfterRevision,
+    [field: FieldOffset(96)] SceneNativeTextSpan MessageUtf8);
 
 [StructLayout(LayoutKind.Explicit, Size = 96)]
 internal readonly record struct SceneNativeDocumentEntitySnapshot(

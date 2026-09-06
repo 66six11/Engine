@@ -240,13 +240,40 @@ public sealed class ProjectSession : IProjectSession
             cancellationToken);
     }
 
+    public ValueTask<ProjectSessionOperationResult> SetEntityMeshAsync(
+        Guid objectId,
+        SceneMeshReference? mesh,
+        ProjectSessionEditContext context,
+        CancellationToken cancellationToken = default)
+    {
+        if (objectId == Guid.Empty)
+        {
+            throw new ArgumentException("Scene object id must not be empty.", nameof(objectId));
+        }
+        if (mesh?.AssetId == Guid.Empty)
+        {
+            throw new ArgumentException("Mesh asset id must not be empty.", nameof(mesh));
+        }
+        if (!context.EditId.IsValid)
+        {
+            throw new ArgumentException(
+                "Project edit id must be valid.",
+                nameof(context));
+        }
+        return SetEntityMeshCoreAsync(
+            objectId,
+            mesh,
+            context,
+            cancellationToken);
+    }
+
     public ValueTask<ProjectSessionOperationResult> UndoAsync(
         CancellationToken cancellationToken = default) =>
-        ReplayTransformAsync(isUndo: true, cancellationToken);
+        ReplaySceneEditAsync(isUndo: true, cancellationToken);
 
     public ValueTask<ProjectSessionOperationResult> RedoAsync(
         CancellationToken cancellationToken = default) =>
-        ReplayTransformAsync(isUndo: false, cancellationToken);
+        ReplaySceneEditAsync(isUndo: false, cancellationToken);
 
     public ValueTask<ProjectSessionOperationResult> SaveSceneAsync(
         CancellationToken cancellationToken = default) =>
@@ -600,7 +627,7 @@ public sealed class ProjectSession : IProjectSession
 
             if (!result.Succeeded)
             {
-                return await FinishTypedTransformFailureAsync(
+                return await FinishTypedSceneEditFailureAsync(
                     document,
                     before,
                     result,
@@ -617,7 +644,7 @@ public sealed class ProjectSession : IProjectSession
                     requireChanged: false,
                     out var receipt))
             {
-                return await FinishUncertainTransformResultAsync(
+                return await FinishUncertainSceneEditResultAsync(
                     document,
                     before,
                     result.Current,
@@ -637,7 +664,7 @@ public sealed class ProjectSession : IProjectSession
             }
 
             var afterContentStateId = AllocateContentStateId();
-            editHistory_.Commit(new SceneEditHistoryEntry(
+            editHistory_.Commit(new SceneTransformHistoryEntry(
                 before.Document.SceneId,
                 objectId,
                 TransformLabel(beforeEntity),
@@ -664,7 +691,124 @@ public sealed class ProjectSession : IProjectSession
         }
     }
 
-    private async ValueTask<ProjectSessionOperationResult> ReplayTransformAsync(
+    private async ValueTask<ProjectSessionOperationResult> SetEntityMeshCoreAsync(
+        Guid objectId,
+        SceneMeshReference? mesh,
+        ProjectSessionEditContext context,
+        CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+        using var linkedCancellation = CreateLinkedCancellation(cancellationToken);
+        await operationGate_.WaitAsync(linkedCancellation.Token).ConfigureAwait(false);
+        try
+        {
+            ThrowIfDisposed();
+            linkedCancellation.Token.ThrowIfCancellationRequested();
+            if (exitPrepared_)
+            {
+                return ExitPreparedFailure(context.EditId);
+            }
+            var before = Current;
+            var document = activeDocument_;
+            if (document is null || before.Project is null || before.Document is null)
+            {
+                return ProjectSessionOperationResult.Failed(
+                    before,
+                    ProjectSessionFailureKind.NoProject,
+                    "No editable scene document is open.",
+                    context.EditId);
+            }
+
+            var beforeEntity = FindEntity(before.Document, objectId);
+            SceneDocumentOperationResult result;
+            try
+            {
+                result = await document.SetEntityMeshAsync(
+                    objectId,
+                    mesh,
+                    context.ExpectedRevision,
+                    CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception exception)
+            {
+                return await RecoverFromUncertainOperationAsync(
+                    document,
+                    before,
+                    context.EditId,
+                    contentMayHaveChanged: true,
+                    DiagnosticMessage(
+                        exception,
+                        "The scene Mesh edit failed without a diagnostic."))
+                    .ConfigureAwait(false);
+            }
+
+            if (!result.Succeeded)
+            {
+                return await FinishTypedSceneEditFailureAsync(
+                    document,
+                    before,
+                    result,
+                    context.EditId).ConfigureAwait(false);
+            }
+
+            if (!TryValidateMeshReceipt(
+                    before.Document,
+                    beforeEntity,
+                    objectId,
+                    mesh,
+                    context.ExpectedRevision,
+                    result,
+                    requireChanged: false,
+                    out var receipt))
+            {
+                return await FinishUncertainSceneEditResultAsync(
+                    document,
+                    before,
+                    result.Current,
+                    context.EditId,
+                    "The successful scene Mesh receipt did not match the request and authoritative snapshot.")
+                    .ConfigureAwait(false);
+            }
+
+            if (!receipt.Changed)
+            {
+                var unchanged = SnapshotWithDocument(before, result.Current);
+                Publish(unchanged, context.EditId, originatingEditSucceeded: true);
+                return ProjectSessionOperationResult.Success(
+                    unchanged,
+                    "The scene entity Mesh was already current.",
+                    originatingEditId: context.EditId);
+            }
+
+            var afterContentStateId = AllocateContentStateId();
+            editHistory_.Commit(new SceneMeshHistoryEntry(
+                before.Document.SceneId,
+                objectId,
+                MeshLabel(beforeEntity),
+                context.EditId,
+                receipt.BeforeMesh,
+                receipt.AfterMesh,
+                before.CurrentContentStateId,
+                afterContentStateId,
+                SceneEditHistory.MeshEntryEstimatedBytes));
+            var next = SnapshotWithState(
+                before,
+                result.Current,
+                afterContentStateId,
+                before.SavedContentStateId);
+            Publish(next, context.EditId, originatingEditSucceeded: true);
+            return ProjectSessionOperationResult.Success(
+                next,
+                "Updated the scene entity Mesh.",
+                originatingEditId: context.EditId);
+        }
+        finally
+        {
+            operationGate_.Release();
+        }
+    }
+
+    private async ValueTask<ProjectSessionOperationResult> ReplaySceneEditAsync(
         bool isUndo,
         CancellationToken cancellationToken)
     {
@@ -699,14 +843,19 @@ public sealed class ProjectSession : IProjectSession
             }
 
             var operationEditId = ProjectEditId.CreateNew();
-            var expectedTransform = isUndo ? entry.AfterTransform : entry.BeforeTransform;
-            var targetTransform = isUndo ? entry.BeforeTransform : entry.AfterTransform;
+            var transformEntry = entry as SceneTransformHistoryEntry;
+            var meshEntry = entry as SceneMeshHistoryEntry;
+            var expectedTransform = isUndo ? transformEntry?.AfterTransform : transformEntry?.BeforeTransform;
+            var targetTransform = isUndo ? transformEntry?.BeforeTransform : transformEntry?.AfterTransform;
+            var expectedMesh = isUndo ? meshEntry?.AfterMesh : meshEntry?.BeforeMesh;
+            var targetMesh = isUndo ? meshEntry?.BeforeMesh : meshEntry?.AfterMesh;
             var beforeEntity = FindEntity(before.Document, entry.ObjectId);
             if (entry.SceneId != before.Document.SceneId ||
                 beforeEntity is null ||
-                beforeEntity.Transform != expectedTransform)
+                (transformEntry is not null ? beforeEntity.Transform != expectedTransform :
+                    meshEntry is null || beforeEntity.Mesh != expectedMesh))
             {
-                return await FinishUncertainTransformResultAsync(
+                return await FinishUncertainSceneEditResultAsync(
                     document,
                     before,
                     before.Document,
@@ -718,11 +867,11 @@ public sealed class ProjectSession : IProjectSession
             SceneDocumentOperationResult result;
             try
             {
-                result = await document.SetEntityTransformAsync(
-                    entry.ObjectId,
-                    targetTransform,
-                    before.Document.Revision,
-                    CancellationToken.None).ConfigureAwait(false);
+                result = transformEntry is not null
+                    ? await document.SetEntityTransformAsync(entry.ObjectId, targetTransform!.Value,
+                        before.Document.Revision, CancellationToken.None).ConfigureAwait(false)
+                    : await document.SetEntityMeshAsync(entry.ObjectId, targetMesh,
+                        before.Document.Revision, CancellationToken.None).ConfigureAwait(false);
             }
             catch (Exception exception)
             {
@@ -737,24 +886,21 @@ public sealed class ProjectSession : IProjectSession
 
             if (!result.Succeeded)
             {
-                return await FinishTypedTransformFailureAsync(
+                return await FinishTypedSceneEditFailureAsync(
                     document,
                     before,
                     result,
                     operationEditId).ConfigureAwait(false);
             }
 
-            if (!TryValidateTransformReceipt(
-                    before.Document,
-                    beforeEntity,
-                    entry.ObjectId,
-                    targetTransform,
-                    before.Document.Revision,
-                    result,
-                    requireChanged: true,
-                    out _))
+            var validReceipt = transformEntry is not null
+                ? TryValidateTransformReceipt(before.Document, beforeEntity, entry.ObjectId,
+                    targetTransform!.Value, before.Document.Revision, result, requireChanged: true, out _)
+                : TryValidateMeshReceipt(before.Document, beforeEntity, entry.ObjectId,
+                    targetMesh, before.Document.Revision, result, requireChanged: true, out _);
+            if (!validReceipt)
             {
-                return await FinishUncertainTransformResultAsync(
+                return await FinishUncertainSceneEditResultAsync(
                     document,
                     before,
                     result.Current,
@@ -791,7 +937,7 @@ public sealed class ProjectSession : IProjectSession
         }
     }
 
-    private async ValueTask<ProjectSessionOperationResult> FinishTypedTransformFailureAsync(
+    private async ValueTask<ProjectSessionOperationResult> FinishTypedSceneEditFailureAsync(
         ISceneDocumentConnection document,
         ProjectSessionSnapshot before,
         SceneDocumentOperationResult result,
@@ -811,12 +957,12 @@ public sealed class ProjectSession : IProjectSession
             !IsSameDocument(before.Document, result.Current) ||
             result.Current.Revision != before.Document.Revision)
         {
-            return await FinishUncertainTransformResultAsync(
+            return await FinishUncertainSceneEditResultAsync(
                 document,
                 before,
                 result.Current,
                 editId,
-                "The failed scene Transform operation returned a mutated or inconsistent snapshot.")
+                "The failed scene edit returned a mutated or inconsistent snapshot.")
                 .ConfigureAwait(false);
         }
 
@@ -863,7 +1009,7 @@ public sealed class ProjectSession : IProjectSession
             "Studio shutdown has already committed; project mutations are no longer accepted.",
             originatingEditId);
 
-    private async ValueTask<ProjectSessionOperationResult> FinishUncertainTransformResultAsync(
+    private async ValueTask<ProjectSessionOperationResult> FinishUncertainSceneEditResultAsync(
         ISceneDocumentConnection document,
         ProjectSessionSnapshot before,
         SceneDocumentSnapshot resultDocument,
@@ -1044,6 +1190,47 @@ public sealed class ProjectSession : IProjectSession
                result.Current.Revision == beforeDocument.Revision;
     }
 
+    private static bool TryValidateMeshReceipt(
+        SceneDocumentSnapshot beforeDocument,
+        SceneEntitySnapshot? beforeEntity,
+        Guid objectId,
+        SceneMeshReference? requestedMesh,
+        ulong expectedRevision,
+        SceneDocumentOperationResult result,
+        bool requireChanged,
+        out SceneEntityMeshReceipt receipt)
+    {
+        receipt = result.MeshReceipt!;
+        if (!result.Succeeded || receipt is null || beforeEntity is null ||
+            expectedRevision != beforeDocument.Revision ||
+            receipt.ObjectId != objectId ||
+            receipt.BeforeRevision != expectedRevision ||
+            receipt.BeforeMesh != beforeEntity.Mesh ||
+            receipt.AfterMesh != requestedMesh ||
+            (requireChanged && !receipt.Changed) ||
+            !IsSameDocument(beforeDocument, result.Current) ||
+            result.Current.Revision != receipt.AfterRevision)
+        {
+            return false;
+        }
+
+        var afterEntity = FindEntity(result.Current, objectId);
+        if (afterEntity is null || afterEntity.Mesh != receipt.AfterMesh)
+        {
+            return false;
+        }
+
+        if (receipt.Changed)
+        {
+            return receipt.BeforeMesh != receipt.AfterMesh &&
+                   receipt.AfterRevision == receipt.BeforeRevision + 1;
+        }
+
+        return receipt.BeforeMesh == receipt.AfterMesh &&
+               receipt.BeforeRevision == receipt.AfterRevision &&
+               result.Current.Revision == beforeDocument.Revision;
+    }
+
     private static SceneEntitySnapshot? FindEntity(
         SceneDocumentSnapshot snapshot,
         Guid objectId)
@@ -1075,6 +1262,11 @@ public sealed class ProjectSession : IProjectSession
         entity is null || string.IsNullOrWhiteSpace(entity.Name)
             ? "Edit Transform"
             : $"Edit Transform '{entity.Name}'";
+
+    private static string MeshLabel(SceneEntitySnapshot? entity) =>
+        entity is null || string.IsNullOrWhiteSpace(entity.Name)
+            ? "Edit Mesh"
+            : $"Edit Mesh '{entity.Name}'";
 
     private void Publish(
         ProjectSessionSnapshot snapshot,

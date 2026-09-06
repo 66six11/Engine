@@ -41,6 +41,12 @@ internal interface ISceneDocumentNativeApi
         ulong responseCapacity,
         out SceneNativeDocumentTransformOperationResult result);
 
+    SceneNativeStatus SetEntityMesh(
+        in SceneNativeDocumentSetEntityMeshRequest request,
+        nint responseBuffer,
+        ulong responseCapacity,
+        out SceneNativeDocumentMeshOperationResult result);
+
     SceneNativeStatus Save(
         in SceneNativeDocumentSaveRequest request,
         nint responseBuffer,
