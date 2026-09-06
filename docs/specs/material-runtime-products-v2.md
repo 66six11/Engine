@@ -145,15 +145,15 @@ binding packet。
 compile/reflection cook 消费该输入契约，而不是从 cache 路径或 `dependencyHash` 反推上游 product
 内容。
 
-同日的第二步新增 `com.asharia.importer.shader-compile-reflection` / `shader-compile-reflection-product.v1`：
+同日的第二步新增 `com.asharia.importer.shader-compile-reflection` / `shader-compile-reflection-product.v2`：
 compile request 通过 `shader.authoringProductPath` 指向上游 `shader-authoring-product.v2`，读取其 generated
-Slang payload 和 entry manifest facts，逐 entry 调用 `slangc -reflection-json` 生成 SPIR-V 与 reflection
-JSON，并用 `spirv-val` 验证 SPIR-V。产品 blob 记录 profile/target、上游 authoring product path/hash、
+Slang payload 和 entry manifest facts，逐 entry 调用 `slangc` 生成 SPIR-V、`spirv-val` 验证，
+并复用 `asharia-slang-reflect` 生成项目格式 reflection JSON（#436 的 v2 hard cut）。产品 blob 记录 profile/target、上游 authoring product path/hash、
 generated Slang hash、entry manifest、SPIR-V bytes/hash/size 和 reflection JSON/hash/size；reader 会复核
 payload size/hash。该层仍不生成 material signature product、cross-asset dependency invalidation、renderer
 binding packet 或 editor UI。
 
-同日第三步把 compiler/validator diagnostics 纳入 `shader-compile-reflection-product.v1` entry facts：
+同日第三步把 compiler/validator diagnostics 纳入 `shader-compile-reflection-product.v2` entry facts：
 每个 entry 记录 `slangc` exit code、diagnostic text size/hash/payload，以及 `spirv-val` exit code、
 diagnostic text size/hash/payload；reader 会像校验 SPIR-V/reflection payload 一样复核 diagnostic payload
 size/hash。Slang 官方命令行资料列出更结构化的诊断选项，但当前 Vulkan SDK 1.4.321.1 附带的
@@ -172,7 +172,7 @@ reflection JSON/hash 和 diagnostic facts。该证据覆盖 #163 的 determinist
 manifest。该证据限定在 generated product contract validation，不把 stage 纠正、material signature 或
 renderer/RHI fallback 纳入 #163。
 
-同日第六步把 `productKeyHash` 纳入 `shader-compile-reflection-product.v1` reader contract：writer 已记录
+同日第六步把 `productKeyHash` 纳入 `shader-compile-reflection-product.v2` reader contract：writer 已记录
 该字段，reader 现在将其作为必需 header 读回到 payload，asset-pipeline smoke 会断言它等于当前 compile
 request 的 `hashAssetProductKey(productKey)`。这补齐 #163 对 product facts / reader facts 中 product key
 hash 的验收证据，仍不扩展到 material signature 或 renderer/RHI 消费。
@@ -352,3 +352,7 @@ BrokenMissingEntry
 BrokenPropertyTypeMismatch
 BrokenBindingConflict
 ```
+
+#436 将 compiled importer version 提升为 2；v1 raw Slang JSON 产物必须重新 cook。
+`readShaderResource` 消费已选 record 的 verified v2 bytes；预算与错误合同见
+[Resource Runtime](../../packages/resource-runtime/README.md)。

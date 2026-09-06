@@ -14,6 +14,18 @@ Material override validation: mutable CPU `.mat` document → shared `validateMa
 Invalid documents return an `InvalidOverride` diagnostic without usable diffs. IO serialization and
 resolution share the same validator.
 
+## Verified cooked Shader entry (#436)
+
+Host-selected AssetProductRecord + expected GUID/type/target/entry -> asset-artifact bounded size/hash read
+-> asset_product_reader compiled blob v2 -> shader_slang in-memory reflection parse -> resource_runtime
+owned SPIR-V words/reflection. Host can hand this CPU result to the existing GPU program factory; catalog
+GUID lookup, Scene/Studio packet consumption and automatic GPU publication remain outside this slice.
+
+asset_pipeline links the separate asset_product_reader target for its existing blob APIs. resource_runtime
+links that reader privately and exposes shader_slang reflection types publicly. The cook tool invokes the
+existing asharia-slang-reflect executable with a stable source label, so cooked and build-time shaders share
+one reflection format. Runtime invokes no tool and writes no files.
+
 ## Authored numeric material native consumption (#432)
 
 `.shader` parser/emitter (explicit material set 1) → build-time Slang/SPIR-V validation and reflection →

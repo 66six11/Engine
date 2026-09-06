@@ -4485,7 +4485,7 @@ shader "asharia.material.compile_reflection" {
             .sourcePath = "Content/Shaders/Unlit.shader",
             .importerId = asharia::asset::makeImporterId(kImporterName),
             .importerName = std::string{kImporterName},
-            .importerVersion = asharia::asset::ImporterVersion{1},
+            .importerVersion = asharia::asset::ImporterVersion{2},
             .sourceHash = smokeHashBytes(sourceBytes),
             .settingsHash = asharia::asset::hashAssetImportSettings(settings),
         };
@@ -5285,7 +5285,7 @@ shader "asharia.material.compile_reflection" {
                                     const BoundedCompiledPayloadFields& payloads = {}) {
         const std::vector<std::uint8_t> spirv{0U};
         const std::vector<std::uint8_t> reflection = bytesFromText("{}");
-        std::string text = "schema=com.asharia.asset.shader-compile-reflection-product.v1\n"
+        std::string text = "schema=com.asharia.asset.shader-compile-reflection-product.v2\n"
                            "sourcePath=Content/Shaders/Bounded.shader\n"
                            "shader.stableTypeId=asharia.material.bounded\n"
                            "authoringProductPath=generated/Bounded.authoring.product\n"
@@ -5906,7 +5906,7 @@ shader "asharia.material.compile_reflection" {
         }
 
         const std::vector<std::uint8_t> badCompileReflectionPayload =
-            bytesFromText("schema=com.asharia.asset.shader-compile-reflection-product.v1\n"
+            bytesFromText("schema=com.asharia.asset.shader-compile-reflection-product.v2\n"
                           "sourcePath=Content/Shaders/Unlit.shader\n"
                           "shader.stableTypeId=asharia.material.unlit\n"
                           "authoringProductPath=generated/Unlit.authoring.product\n"
@@ -5947,7 +5947,7 @@ shader "asharia.material.compile_reflection" {
         }
 
         const std::vector<std::uint8_t> missingCompileReflectionPayload =
-            bytesFromText("schema=com.asharia.asset.shader-compile-reflection-product.v1\n"
+            bytesFromText("schema=com.asharia.asset.shader-compile-reflection-product.v2\n"
                           "sourcePath=Content/Shaders/Unlit.shader\n"
                           "shader.stableTypeId=asharia.material.unlit\n"
                           "authoringProductPath=generated/Unlit.authoring.product\n"

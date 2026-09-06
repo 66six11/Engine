@@ -20,6 +20,7 @@ namespace {
 
     struct Options {
         std::filesystem::path source;
+        std::string sourceName;
         std::string entry;
         std::string stage;
         std::string profile;
@@ -205,6 +206,8 @@ namespace {
             const std::string value{args[++index]};
             if (key == "--source") {
                 options.source = value;
+            } else if (key == "--source-name") {
+                options.sourceName = value;
             } else if (key == "--entry") {
                 options.entry = value;
             } else if (key == "--stage") {
@@ -476,7 +479,7 @@ namespace {
 
         std::ostringstream out;
         out << "{\n";
-        out << "  \"source\": \"" << jsonEscape(sourcePath.string()) << "\",\n";
+        out << "  \"source\": \"" << jsonEscape(options.sourceName.empty() ? sourcePath.string() : options.sourceName) << "\",\n";
         out << "  \"entry\": \"" << jsonEscape(options.entry) << "\",\n";
         out << "  \"stage\": \"" << jsonEscape(options.stage) << "\",\n";
         out << "  \"profile\": \"" << jsonEscape(options.profile) << "\",\n";
@@ -514,7 +517,7 @@ int main(int argc, char** argv) { // NOLINT(bugprone-exception-escape)
         if (!options) {
             std::cerr
                 << "Usage: asharia-slang-reflect --source <file> --entry <name> --stage <stage> "
-                   "--profile <profile> --target <target> --output <file>\n";
+                   "--profile <profile> --target <target> --output <file> [--source-name <label>]\n";
             return 1;
         }
 

@@ -14,8 +14,12 @@ asharia_require_package_target(asharia::asset_artifact packages/asset-artifact)
 asharia_require_package_target(asharia::asset_core packages/asset-core)
 asharia_require_package_target(asharia::mesh_product packages/mesh-product)
 
+asharia_require_package_target(asharia::asset_product_reader packages/asset-pipeline)
+asharia_require_package_target(asharia::shader_slang packages/shader-slang)
+
 add_library(asharia-resource-runtime STATIC
     src/mesh_resource_store.cpp
+    src/shader_resource.cpp
 )
 
 add_library(asharia::resource_runtime ALIAS asharia-resource-runtime)
@@ -31,12 +35,23 @@ target_link_libraries(asharia-resource-runtime
         asharia::asset_core
         asharia::core
         asharia::mesh_product
+        asharia::shader_slang
+    PRIVATE
+        asharia::asset_product_reader
 )
 
 asharia_configure_target(asharia-resource-runtime)
 
 if(ASHARIA_BUILD_TESTS)
   enable_testing()
+  add_executable(asharia-shader-resource-tests tests/shader_resource_tests.cpp)
+  target_link_libraries(asharia-shader-resource-tests PRIVATE
+      asharia::resource_runtime asharia::asset_pipeline)
+  target_compile_definitions(asharia-shader-resource-tests PRIVATE
+      ASHARIA_SHADER_RESOURCE_TEST_ROOT="${CMAKE_CURRENT_BINARY_DIR}/shader-resource-fixture")
+  asharia_configure_target(asharia-shader-resource-tests)
+  add_test(NAME asharia-shader-resource-tests COMMAND asharia-shader-resource-tests)
+
 
   add_executable(asharia-resource-runtime-smoke-tests
       tests/resource_runtime_smoke_tests.cpp
