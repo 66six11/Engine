@@ -87,7 +87,7 @@ public sealed class StudioShellViewModelTests
     {
         using var viewModel = StudioShellTestFactory.Create();
 
-        Assert.Equal(15, viewModel.ActionCatalog.Length);
+        Assert.Equal(16, viewModel.ActionCatalog.Length);
         Assert.Equal(
             viewModel.CreateProjectCommand,
             viewModel.GetActionCommand(Editor.Shell.Actions.StudioShellActionIds.CreateProject));

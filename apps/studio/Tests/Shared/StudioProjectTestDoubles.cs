@@ -287,9 +287,14 @@ internal sealed class TestProjectSession : IProjectSession
         SetNameHandler?.Invoke(objectId, name, cancellationToken)
         ?? throw new InvalidOperationException("No set-name result was configured.");
 
+    public Func<Guid, SceneMeshReference?, ProjectSessionEditContext, CancellationToken,
+        ValueTask<ProjectSessionOperationResult>>? SetMeshHandler { get; set; }
+
     public ValueTask<ProjectSessionOperationResult> SetEntityMeshAsync(
             Guid objectId, SceneMeshReference? mesh, ProjectSessionEditContext context,
-            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+            CancellationToken cancellationToken = default) =>
+        SetMeshHandler?.Invoke(objectId, mesh, context, cancellationToken)
+        ?? throw new InvalidOperationException("No set-Mesh result was configured.");
 
     public ValueTask<ProjectSessionOperationResult> SetEntityTransformAsync(
         Guid objectId,

@@ -22,6 +22,8 @@ internal static class StudioShellActionIds
         new("studio.scene.create-mesh-entity");
     public static StudioActionId ApplyEntityName { get; } =
         new("studio.scene.apply-entity-name");
+    public static StudioActionId ApplyEntityMesh { get; } =
+        new("studio.scene.apply-entity-mesh");
     public static StudioActionId ApplyEntityTransform { get; } =
         new("studio.scene.apply-entity-transform");
     public static StudioActionId OpenHierarchyPanel { get; } =

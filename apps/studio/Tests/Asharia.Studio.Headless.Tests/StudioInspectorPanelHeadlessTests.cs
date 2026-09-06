@@ -15,6 +15,7 @@ using Avalonia.Headless.XUnit;
 using Avalonia.LogicalTree;
 using Avalonia.Threading;
 using Editor.Shell.ViewModels.Panels;
+using Editor.Shell.ViewModels.Windowing;
 using Editor.Shell.Views.Panels;
 using Editor.Shell.Views.Windowing;
 using Xunit;
@@ -23,6 +24,104 @@ namespace Asharia.Studio.Headless.Tests;
 
 public sealed class StudioInspectorPanelHeadlessTests
 {
+    [AvaloniaFact]
+    public async Task Mesh_picker_filters_assets_and_routes_apply_and_remove_through_document_command()
+    {
+        var session = new TestProjectSession();
+        var id = Guid.NewGuid();
+        var entity = new SceneEntitySnapshot(id, new EntityId(1, 1), "Entity", TransformValue.Identity);
+        var initial = Ready(Guid.NewGuid(), 1, entity);
+        var meshId = Guid.NewGuid();
+        var duplicateId = Guid.NewGuid();
+        var replacementId = Guid.NewGuid();
+        var snapshot = AssetSnapshot(initial.Project!.ProjectId,
+            AssetEntry(meshId, assetType: "com.asharia.asset.Mesh"),
+            AssetEntry(replacementId, assetType: "com.asharia.asset.Mesh"),
+            AssetEntry(Guid.NewGuid()),
+            AssetEntry(duplicateId, assetType: "com.asharia.asset.Mesh"),
+            AssetEntry(duplicateId));
+        await using var catalog = new ProjectAssetCatalog(session,
+            new SingleAssetCatalogGateway(AssetCatalogQueryResult.Success(snapshot)));
+        using var shell = new StudioShellViewModel(session, new TestProjectDialogService(),
+            StudioShellTestFactory.CreateDocumentTransitions(session),
+            StudioShellTestFactory.CreateDiagnosticWriter(), catalog,
+            StudioShellTestFactory.CreateEditorSelectionService());
+        session.Publish(initial);
+        shell.MarkReady();
+        shell.SelectedEntity = entity;
+        await WaitUntilAsync(() => catalog.Current.State == AssetCatalogSessionState.Ready);
+        Assert.Equal(3, shell.MeshChoices.Count);
+        Assert.Contains(shell.MeshChoices, choice => choice.AssetId == meshId);
+        using var model = new StudioInspectorPanelViewModel(shell, catalog, shell.EditorSelection);
+        var view = new StudioInspectorPanelView { DataContext = model, Width = 244 };
+        var window = new MainWindow { Width = 260, Height = 480, Content = view };
+        var calls = 0;
+        session.SetMeshHandler = (objectId, mesh, context, _) =>
+        {
+            Assert.Equal(id, objectId);
+            Assert.Equal(session.Current.Document!.Revision, context.ExpectedRevision);
+            var updatedEntity = new SceneEntitySnapshot(id, entity.RuntimeEntityId, entity.Name,
+                entity.Transform, mesh);
+            var updated = ProjectSessionSnapshot.Ready(initial.Project!,
+                new SceneDocumentSnapshot(initial.Document!.SceneId, initial.Document.Path,
+                    context.ExpectedRevision + 1, 1, [updatedEntity]),
+                new ContentStateId((ulong)++calls + 1), new ContentStateId(1),
+                canUndo: true, canRedo: false, undoLabel: "Edit Mesh", redoLabel: null);
+            session.Publish(updated, context.EditId, originatingEditSucceeded: true);
+            return ValueTask.FromResult(ProjectSessionOperationResult.Success(updated, "Mesh updated",
+                originatingEditId: context.EditId));
+        };
+        try
+        {
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+            var picker = Assert.IsType<ComboBox>(view.FindControl<ComboBox>("InspectorMeshChoice"));
+            var apply = Assert.IsType<Button>(view.FindControl<Button>("ApplyMeshButton"));
+            picker.SelectedItem = shell.MeshChoices.Single(choice => choice.AssetId == meshId);
+            Dispatcher.UIThread.RunJobs();
+            Assert.Equal(meshId, shell.SelectedMeshChoice!.AssetId);
+            Assert.True(apply.Command!.CanExecute(apply.CommandParameter));
+            apply.Command.Execute(apply.CommandParameter);
+            await WaitUntilAsync(() => calls == 1 && !shell.IsProjectOperationRunning);
+            Assert.Equal(meshId, session.Current.Document!.Entities.Single().Mesh!.Value.AssetId);
+            picker.SelectedItem = shell.MeshChoices.Single(choice => choice.AssetId == replacementId);
+            Dispatcher.UIThread.RunJobs();
+            apply.Command.Execute(apply.CommandParameter);
+            await WaitUntilAsync(() => calls == 2 && !shell.IsProjectOperationRunning);
+            Assert.Equal(replacementId, session.Current.Document!.Entities.Single().Mesh!.Value.AssetId);
+            picker.SelectedItem = shell.MeshChoices.Single(choice => choice.AssetId is null);
+            Dispatcher.UIThread.RunJobs();
+            apply.Command.Execute(apply.CommandParameter);
+            await WaitUntilAsync(() => calls == 3 && !shell.IsProjectOperationRunning);
+            Assert.Null(session.Current.Document!.Entities.Single().Mesh);
+            Assert.True(picker.Bounds.Width <= 244);
+            Assert.Equal("Mesh asset", picker.GetValue(AutomationProperties.NameProperty));
+        }
+        finally { window.Close(); }
+    }
+
+    [AvaloniaFact]
+    public void Missing_mesh_reference_remains_visible_and_selection_change_discards_draft()
+    {
+        using var shell = StudioShellTestFactory.Create(out var session, out _);
+        var mesh = new SceneMeshReference(Guid.NewGuid());
+        var first = new SceneEntitySnapshot(Guid.NewGuid(), new EntityId(1, 1), "First", TransformValue.Identity, mesh);
+        var second = new SceneEntitySnapshot(Guid.NewGuid(), new EntityId(2, 1), "Second", TransformValue.Identity);
+        session.Publish(Ready(Guid.NewGuid(), 1, first, second));
+        shell.MarkReady();
+        shell.SelectedEntity = first;
+        Assert.Equal(mesh.AssetId, shell.SelectedMeshChoice!.AssetId);
+        Assert.Contains(mesh.AssetId.ToString("D"), shell.SelectedMeshChoice.Label);
+        var apply = shell.GetActionCommand(Editor.Shell.Actions.StudioShellActionIds.ApplyEntityMesh);
+        Assert.False(apply.CanExecute(null));
+        shell.SelectedMeshChoice = shell.MeshChoices.Single(choice => choice.AssetId is null);
+        Assert.True(apply.CanExecute(null));
+        shell.SelectedEntity = second;
+        Assert.Null(shell.SelectedMeshChoice!.AssetId);
+        shell.SelectedEntity = first;
+        Assert.Equal(mesh.AssetId, shell.SelectedMeshChoice!.AssetId);
+    }
+
     [AvaloniaFact]
     public async Task Asset_selection_shows_structured_read_only_catalog_facts()
     {
@@ -357,7 +456,7 @@ public sealed class StudioInspectorPanelHeadlessTests
 
     private static AssetCatalogSnapshot AssetSnapshot(
         Guid projectId,
-        AssetCatalogEntry entry) =>
+        params AssetCatalogEntry[] entries) =>
         new(
             AssetCatalogSnapshotState.Ready,
             revision: 9,
@@ -372,12 +471,13 @@ public sealed class StudioInspectorPanelHeadlessTests
                 "Assets",
                 "C:\\Projects\\Sample\\Assets")],
             ImmutableArray<AssetCatalogNavigationEntry>.Empty,
-            [entry],
+            entries.ToImmutableArray(),
             ImmutableArray<AssetCatalogDiagnostic>.Empty);
 
     private static AssetCatalogEntry AssetEntry(
         Guid guid,
-        AssetCatalogProductState productState = AssetCatalogProductState.Current) =>
+        AssetCatalogProductState productState = AssetCatalogProductState.Current,
+        string assetType = "Model") =>
         new(
             new AssetSelectionKey(guid, "Assets/Models/Wedge.glb"),
             guid,
@@ -390,7 +490,7 @@ public sealed class StudioInspectorPanelHeadlessTests
             "C:\\Projects\\Sample\\Assets\\Models\\Wedge.glb.ameta",
             "Wedge",
             ".glb",
-            "Model",
+            assetType,
             "GlbImporter",
             importerVersion: 1,
             "default",
