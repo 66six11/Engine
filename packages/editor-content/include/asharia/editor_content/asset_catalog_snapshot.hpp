@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "asharia/asset_core/asset_catalog_view.hpp"
+#include "asharia/asset_pipeline/asset_import_planning.hpp"
 #include "asharia/core/result.hpp"
 #include "asharia/project/project_descriptor.hpp"
 
@@ -51,6 +52,8 @@ namespace asharia::editor {
         std::uint64_t maxSourceFiles{10'000U};
         std::uint64_t maxTotalSourceBytes{8ULL * 1024ULL * 1024ULL * 1024ULL};
         std::uint64_t maxDiagnostics{10'000U};
+        // Host-supplied fingerprints; catalog queries never probe compiler executables.
+        std::vector<asharia::asset::AssetImportToolVersionDependency> toolVersions;
 
         [[nodiscard]] friend bool operator==(const EditorAssetCatalogSnapshotRequest&,
                                              const EditorAssetCatalogSnapshotRequest&) = default;
@@ -70,6 +73,8 @@ namespace asharia::editor {
         // Native selection facts from the same scan/plan as catalogView; not serialized to UI JSON.
         std::vector<asharia::asset::AssetProductKey> expectedProductKeys;
         std::vector<asharia::asset::AssetProductRecord> products;
+        // Preserve query identity when reconstructing a native refresh request.
+        std::vector<asharia::asset::AssetImportToolVersionDependency> toolVersions;
 
         [[nodiscard]] friend bool operator==(const EditorAssetCatalogSnapshot&,
                                              const EditorAssetCatalogSnapshot&) = default;

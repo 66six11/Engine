@@ -697,7 +697,7 @@ namespace asharia::editor {
                 discovery.manifest.records, sourceSnapshot.snapshots, productManifest,
                 targetProfile,
                 asharia::asset::AssetImportPlanOptions{
-                    .toolVersions = {},
+                    .toolVersions = request.toolVersions,
                     .toolFingerprintResolver = {},
                     .toolDependencyPolicy =
                         asharia::asset::AssetImportToolDependencyPolicy::DeclaredOnly,
@@ -715,6 +715,7 @@ namespace asharia::editor {
             .projectFile = snapshot.projectFile,
             .productManifestFile = snapshot.productManifestFile,
             .targetProfile = snapshot.targetProfile,
+            .toolVersions = snapshot.toolVersions,
         };
     }
 
@@ -975,6 +976,27 @@ namespace asharia::editor {
                           "target profile.");
             return snapshot;
         }
+
+        // Bound both validation work and retained input. Reject ambiguity before filesystem IO.
+        if (request.toolVersions.size() > 256U) {
+            addDiagnostic(snapshot, EditorAssetCatalogDiagnosticCode::InvalidRequest,
+                          EditorAssetCatalogDiagnosticSeverity::Error, {}, resolvedProjectFile,
+                          "Catalog tool dependencies exceed the limit of 256 entries.");
+            return snapshot;
+        }
+        std::set<std::pair<std::uint64_t, std::string>> toolKeys;
+        for (const auto& tool : request.toolVersions) {
+            if (!tool.importerId || tool.versionHash == 0U || tool.toolName.empty() ||
+                tool.toolName.size() > 128U ||
+                !toolKeys.emplace(tool.importerId.value, tool.toolName).second) {
+                addDiagnostic(snapshot, EditorAssetCatalogDiagnosticCode::InvalidRequest,
+                              EditorAssetCatalogDiagnosticSeverity::Error, {}, resolvedProjectFile,
+                              "Catalog tool dependencies require a nonzero importer/hash, a "
+                              "1-128 byte name and unique importer/name pairs.");
+                return snapshot;
+            }
+        }
+        snapshot.toolVersions = request.toolVersions;
 
         auto project = asharia::project::readAshariaProjectDescriptorFile(resolvedProjectFile);
         if (!project) {

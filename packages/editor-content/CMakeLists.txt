@@ -21,8 +21,8 @@ add_library(asharia::editor_content ALIAS asharia-editor-content)
 set_target_properties(asharia-editor-content PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_include_directories(asharia-editor-content PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(asharia-editor-content
-    PUBLIC asharia::asset_core asharia::project_core_io
-    PRIVATE asharia::asset_core_io asharia::asset_pipeline
+    PUBLIC asharia::asset_core asharia::project_core_io asharia::asset_pipeline
+    PRIVATE asharia::asset_core_io
 )
 asharia_configure_target(asharia-editor-content)
 
@@ -39,6 +39,11 @@ asharia_configure_target(asharia-editor-content-native)
 
 if(ASHARIA_BUILD_TESTS)
   enable_testing()
+  add_executable(asharia-editor-content-tool-input-tests tests/asset_catalog_tool_inputs_tests.cpp)
+  target_link_libraries(asharia-editor-content-tool-input-tests
+      PRIVATE asharia::editor_content asharia::asset_core_io)
+  asharia_configure_target(asharia-editor-content-tool-input-tests)
+  add_test(NAME asharia-editor-content-tool-input-tests COMMAND asharia-editor-content-tool-input-tests)
   if(NOT CMAKE_C_COMPILER_LOADED)
     enable_language(C)
   endif()
