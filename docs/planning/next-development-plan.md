@@ -502,3 +502,13 @@ System Package 的 `asharia.packages.json`、`asharia.packages.lock.json`、reso
 已有 selected cooked Shader entry 的 bounded CPU reader，统一 cook/build-time reflection；不再安排第二套
 runtime reflection JSON parser 或让运行时写临时文件。尚需 host 的 catalog GUID -> product record 选择、材质与 Mesh
 引用解析、Scene/Studio packet 到 GPU owner 的消费。公共函数目录仍是独立 CPU/编译路线，这不代表 Studio UI 已接入。
+
+
+### Catalog GUID product selection (#438)
+
+Native `editor-content` snapshots retain source-derived expected product keys and manifest records.
+`selectEditorAssetProduct` provides a typed GUID/type query with exact-key/target matching and an
+owning result; incomplete scans and ambiguous/missing/stale records fail explicitly. This completes
+the catalog selection metadata bridge only. Next remains the Scene/Studio host consumer that passes
+selected records and artifact roots into runtime readers, then safely publishes mesh/material GPU
+resources. Graph editing, Material Inspector and live Shader replacement remain later slices.

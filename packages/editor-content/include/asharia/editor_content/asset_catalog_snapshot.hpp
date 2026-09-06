@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "asharia/asset_core/asset_catalog_view.hpp"
+#include "asharia/core/result.hpp"
 #include "asharia/project/project_descriptor.hpp"
 
 namespace asharia::editor {
@@ -66,11 +67,31 @@ namespace asharia::editor {
         asharia::project::AshariaProjectDescriptor project;
         asharia::asset::AssetCatalogView catalogView;
         std::vector<EditorAssetCatalogDiagnostic> diagnostics;
+        // Native selection facts from the same scan/plan as catalogView; not serialized to UI JSON.
+        std::vector<asharia::asset::AssetProductKey> expectedProductKeys;
+        std::vector<asharia::asset::AssetProductRecord> products;
 
         [[nodiscard]] friend bool operator==(const EditorAssetCatalogSnapshot&,
                                              const EditorAssetCatalogSnapshot&) = default;
         [[nodiscard]] bool succeeded() const noexcept;
     };
+
+    enum class EditorAssetProductSelectionError : int {
+        InvalidRequest = 1,
+        IncompleteSnapshot,
+        AssetNotFound,
+        TypeMismatch,
+        ExpectedProductUnavailable,
+        ProductUnavailable,
+        AmbiguousProduct,
+        InvalidProduct,
+    };
+
+    // Returns an owning record. Does no IO, import, artifact verification or runtime publication.
+    [[nodiscard]] Result<asharia::asset::AssetProductRecord>
+    selectEditorAssetProduct(const EditorAssetCatalogSnapshot& snapshot,
+                             asharia::asset::AssetGuid guid,
+                             asharia::asset::AssetTypeId expectedType);
 
     struct EditorAssetCatalogResolvedSourceRoot {
         bool matched{false};

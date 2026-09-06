@@ -327,6 +327,95 @@ namespace asharia::editor {
             return true;
         }
 
+        [[nodiscard]] bool expectProductSelection(const EditorAssetCatalogSnapshot& snapshot) {
+            const auto& row = snapshot.catalogView.entries.front();
+            const auto selected = selectEditorAssetProduct(snapshot, row.guid, row.assetType);
+            if (!selected || snapshot.products.size() != 1U ||
+                *selected != snapshot.products.front() || snapshot.expectedProductKeys.empty()) {
+                asharia::logError("Catalog GUID selection did not preserve the current record.");
+                return false;
+            }
+            const auto rejects = [&](const EditorAssetCatalogSnapshot& candidate,
+                                     EditorAssetProductSelectionError code) {
+                const auto result = selectEditorAssetProduct(candidate, row.guid, row.assetType);
+                return !result && result.error().domain == ErrorDomain::Asset &&
+                       result.error().code == static_cast<int>(code) &&
+                       result.error().message.find(row.guidText) != std::string::npos;
+            };
+            auto candidate = snapshot;
+            candidate.products.clear();
+            if (!rejects(candidate, EditorAssetProductSelectionError::ProductUnavailable)) {
+                return false;
+            }
+            candidate = snapshot;
+            ++candidate.products.front().key.sourceHash;
+            if (!rejects(candidate, EditorAssetProductSelectionError::ProductUnavailable)) {
+                return false;
+            }
+            // A stale record may coexist with exactly one current record.
+            candidate.products.push_back(*selected);
+            if (!selectEditorAssetProduct(candidate, row.guid, row.assetType)) {
+                return false;
+            }
+            candidate = snapshot;
+            candidate.products.push_back(*selected);
+            if (!rejects(candidate, EditorAssetProductSelectionError::AmbiguousProduct)) {
+                return false;
+            }
+            candidate = snapshot;
+            candidate.products.front().productHash = 0U;
+            if (!rejects(candidate, EditorAssetProductSelectionError::InvalidProduct)) {
+                return false;
+            }
+            candidate = snapshot;
+            candidate.expectedProductKeys.clear();
+            if (!rejects(candidate, EditorAssetProductSelectionError::ExpectedProductUnavailable)) {
+                return false;
+            }
+            candidate = snapshot;
+            candidate.targetProfile = "other-target";
+            if (!rejects(candidate, EditorAssetProductSelectionError::ExpectedProductUnavailable)) {
+                return false;
+            }
+            candidate = snapshot;
+            auto conflictingKey = candidate.expectedProductKeys.front();
+            ++conflictingKey.dependencyHash;
+            candidate.expectedProductKeys.push_back(conflictingKey);
+            if (!rejects(candidate, EditorAssetProductSelectionError::AmbiguousProduct)) {
+                return false;
+            }
+            candidate = snapshot;
+            candidate.catalogView.entries.clear();
+            if (!rejects(candidate, EditorAssetProductSelectionError::AssetNotFound)) {
+                return false;
+            }
+            candidate = snapshot;
+            candidate.catalogView.entries.push_back(row);
+            if (!rejects(candidate, EditorAssetProductSelectionError::AmbiguousProduct)) {
+                return false;
+            }
+            candidate = snapshot;
+            candidate.diagnostics.push_back(
+                {.code = EditorAssetCatalogDiagnosticCode::SourceScan,
+                 .severity = EditorAssetCatalogDiagnosticSeverity::Error,
+                 .sourcePath = {},
+                 .path = {},
+                 .message = "incomplete scan"});
+            if (!rejects(candidate, EditorAssetProductSelectionError::IncompleteSnapshot)) {
+                return false;
+            }
+            const auto wrongType = selectEditorAssetProduct(
+                snapshot, row.guid, asharia::asset::makeAssetTypeId("com.asharia.asset.WrongType"));
+            const auto invalid = selectEditorAssetProduct(snapshot, {}, row.assetType);
+            return !wrongType &&
+                   wrongType.error().code ==
+                       static_cast<int>(EditorAssetProductSelectionError::TypeMismatch) &&
+                   !invalid &&
+                   invalid.error().code ==
+                       static_cast<int>(EditorAssetProductSelectionError::InvalidRequest) &&
+                   *selected == snapshot.products.front();
+        }
+
         [[nodiscard]] bool expectReadySnapshot(const std::filesystem::path& projectFile,
                                                const std::filesystem::path& manifestFile) {
             const EditorAssetCatalogSnapshot snapshot =
@@ -348,7 +437,32 @@ namespace asharia::editor {
                 asharia::logError("Editor asset catalog smoke produced an invalid ready row.");
                 return false;
             }
-            return true;
+            return expectProductSelection(snapshot);
+        }
+
+        [[nodiscard]] bool
+        expectSourceChangeRejectsProduct(const std::filesystem::path& projectFile,
+                                         const std::filesystem::path& manifestFile) {
+            const EditorAssetCatalogSnapshotRequest request{.projectFile = projectFile,
+                                                            .productManifestFile = manifestFile,
+                                                            .targetProfile =
+                                                                std::string{kTargetProfile}};
+            const auto before = loadEditorAssetCatalogSnapshot(request);
+            if (before.catalogView.entries.size() != 1U) {
+                return false;
+            }
+            const auto& row = before.catalogView.entries.front();
+            const auto sourcePath = resolveEditorAssetCatalogSourceFilePath(before, row.sourcePath);
+            // This dedicated fixture is removed by the smoke's workspace cleanup.
+            if (!writeTextFile(sourcePath, "changed source bytes for stale product proof")) {
+                return false;
+            }
+            const auto after = loadEditorAssetCatalogSnapshot(request);
+            const auto oldSelection = selectEditorAssetProduct(before, row.guid, row.assetType);
+            const auto refreshed = selectEditorAssetProduct(after, row.guid, row.assetType);
+            return oldSelection && !refreshed &&
+                   refreshed.error().code ==
+                       static_cast<int>(EditorAssetProductSelectionError::ProductUnavailable);
         }
 
         [[nodiscard]] bool expectMissingProductSnapshot(const std::filesystem::path& projectFile) {
@@ -1252,7 +1366,13 @@ namespace asharia::editor {
             return false;
         }
 
+        const auto changedFixture = prepareCatalogSmokeFixture(root / "ChangedSource");
+        if (!changedFixture) {
+            return false;
+        }
         const bool passed =
+            expectSourceChangeRejectsProduct(changedFixture->projectFile,
+                                             changedFixture->manifestFile) &&
             expectReadySnapshot(fixture->projectFile, fixture->manifestFile) &&
             expectMissingProductSnapshot(missingFixture->projectFile) &&
             expectUntrackedDefaultAssetSnapshot(untrackedFixture->projectFile,
