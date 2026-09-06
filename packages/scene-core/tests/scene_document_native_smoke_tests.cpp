@@ -313,6 +313,109 @@ namespace {
                       "Native no-op Transform receipt did not preserve its revision and values.");
     }
 
+    [[nodiscard]] bool testMeshFailures(AshariaSceneNativeDocumentSetEntityMeshRequest request) {
+        std::array<std::byte, 4096> buffer{};
+        auto rejects = [&](AshariaSceneNativeDocumentSetEntityMeshRequest candidate,
+                           AshariaSceneNativeStatus expected) {
+            AshariaSceneNativeDocumentMeshOperationResult result{};
+            result.changed = 1U;
+            result.afterRevision = 99U;
+            const auto status = asharia_scene_document_set_entity_mesh(&candidate, buffer.data(),
+                                                                       buffer.size(), &result);
+            return status == expected && result.operationStatus == expected &&
+                   result.changed == 0U && result.afterRevision == 0U &&
+                   result.beforeMeshGuid.bytes[0] == 0U && result.afterMeshGuid.bytes[0] == 0U;
+        };
+        auto invalid = request;
+        invalid.header.abiVersion = 0U;
+        if (!rejects(invalid, AshariaSceneNativeStatus_UnsupportedAbi)) {
+            return false;
+        }
+        invalid = request;
+        invalid.expectedRevision = 1U;
+        if (!rejects(invalid, AshariaSceneNativeStatus_RevisionConflict)) {
+            return false;
+        }
+        invalid = request;
+        invalid.meshAssetGuidUtf8 = view("invalid");
+        if (!rejects(invalid, AshariaSceneNativeStatus_InvalidAssetReference)) {
+            return false;
+        }
+        invalid.meshAssetGuidUtf8 = view("00000000-0000-0000-0000-000000000000");
+        if (!rejects(invalid, AshariaSceneNativeStatus_InvalidAssetReference)) {
+            return false;
+        }
+        invalid = request;
+        invalid.objectIdUtf8 = view(kSceneId);
+        if (!rejects(invalid, AshariaSceneNativeStatus_InvalidObject)) {
+            return false;
+        }
+        invalid = request;
+        invalid.document = {};
+        if (!rejects(invalid, AshariaSceneNativeStatus_StaleHandle)) {
+            return false;
+        }
+        bool rejected = false;
+        std::thread wrongThread{
+            [&] { rejected = rejects(request, AshariaSceneNativeStatus_WrongThread); }};
+        wrongThread.join();
+        AshariaSceneNativeDocumentMeshOperationResult shortResult{};
+        invalid = request;
+        invalid.expectedRevision = 1U;
+        const auto shortStatus =
+            asharia_scene_document_set_entity_mesh(&invalid, nullptr, 0U, &shortResult);
+        return rejected && shortStatus == AshariaSceneNativeStatus_BufferTooSmall &&
+               shortResult.operationStatus == AshariaSceneNativeStatus_RevisionConflict &&
+               shortResult.requiredBufferSize != 0U && shortResult.revision == 2U &&
+               shortResult.changed == 0U && shortResult.afterRevision == 0U;
+    }
+
+    [[nodiscard]] bool testMeshEdits(AshariaSceneNativeDocumentHandle document) {
+        AshariaSceneNativeDocumentSetEntityMeshRequest request{
+            .header = header(sizeof(AshariaSceneNativeDocumentSetEntityMeshRequest)),
+            .document = document,
+            .expectedRevision = 1U,
+            .objectIdUtf8 = view(kObjectId),
+            .meshAssetGuidUtf8 = view(kMeshAssetGuid),
+        };
+        AshariaSceneNativeDocumentMeshOperationResult attached{};
+        if (asharia_scene_document_set_entity_mesh(&request, nullptr, 0U, &attached) !=
+                AshariaSceneNativeStatus_Success ||
+            attached.changed != 1U || attached.beforeRevision != 1U ||
+            attached.afterRevision != 2U || attached.beforeMeshGuid.bytes[0] != 0U ||
+            attached.afterMeshGuid.bytes[0] != 0x7cU || attached.afterMeshGuid.bytes[15] != 0x3eU ||
+            attached.objectId.bytes[0] != 0xaaU) {
+            return false;
+        }
+        request.expectedRevision = 2U;
+        if (!testMeshFailures(request)) {
+            return false;
+        }
+        AshariaSceneNativeDocumentMeshOperationResult noop{};
+        if (asharia_scene_document_set_entity_mesh(&request, nullptr, 0U, &noop) !=
+                AshariaSceneNativeStatus_Success ||
+            noop.changed != 0U || noop.afterRevision != 2U ||
+            std::memcmp(noop.beforeMeshGuid.bytes, noop.afterMeshGuid.bytes, 16U) != 0) {
+            return false;
+        }
+        request.meshAssetGuidUtf8 = view(kSceneId);
+        AshariaSceneNativeDocumentMeshOperationResult replaced{};
+        if (asharia_scene_document_set_entity_mesh(&request, nullptr, 0U, &replaced) !=
+                AshariaSceneNativeStatus_Success ||
+            replaced.afterRevision != 3U || replaced.beforeMeshGuid.bytes[0] != 0x7cU ||
+            replaced.afterMeshGuid.bytes[0] != 0x11U) {
+            return false;
+        }
+        request.expectedRevision = 3U;
+        request.meshAssetGuidUtf8 = {};
+        AshariaSceneNativeDocumentMeshOperationResult removed{};
+        return asharia_scene_document_set_entity_mesh(&request, nullptr, 0U, &removed) ==
+                   AshariaSceneNativeStatus_Success &&
+               removed.changed == 1U && removed.afterRevision == 4U &&
+               removed.beforeMeshGuid.bytes[0] == 0x11U && removed.afterMeshGuid.bytes[0] == 0U &&
+               snapshotDocument(document, 4U, 1U, kName, kNegativeYPointOneTransform, true);
+    }
+
 } // namespace
 
 int main() noexcept {
@@ -487,6 +590,7 @@ int main() noexcept {
                         document.generation != staleHandle.generation &&
                         snapshotDocument(document, 1U, 1U, kName,
                                          kNegativeYPointOneTransform, true) &&
+                        testMeshEdits(document) &&
                         asharia_scene_document_close(&document) == AshariaSceneNativeStatus_Success,
                     "Saved native scene did not survive close and reopen.")) {
             return 1;

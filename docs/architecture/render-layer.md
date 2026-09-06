@@ -157,6 +157,16 @@ Transform identity, returns before/after values and revisions, and advances revi
 change. The receipt enables a caller to issue a revision-checked inverse/reapply; it does not create
 an undo stack or resolve asset existence. Schema v2 and its current load policy remain unchanged.
 
+`asharia_scene_document_set_entity_mesh` exposes that edit as an additive document ABI v3 export.
+An empty GUID string removes the reference; nonempty input must be a valid nonzero asset GUID.
+Receipt GUIDs use canonical display byte order, with all-zero bytes representing absence. Existing
+request/snapshot layouts remain unchanged. New consumers must require this export from their
+packaged native library; ABI version alone does not advertise the added symbol. Failure clears
+receipt fields, while `operationStatus` preserves the actual result if a diagnostic buffer is too
+small. Success needs no message buffer: consumers must not replay successful mutations to resize
+one. The owner-thread/handle checks remain in the native registry. C and C++ boundary tests cover
+this contract; managed bindings and application undo are not yet implemented.
+
 Before adding the complete component, implement a versioned replacement for the existing `mesh`
 field with explicit v2 migration and rejection of conflicting representations; update native/managed
 snapshots, edit receipts and viewport extraction together. Validate disabled instances producing no

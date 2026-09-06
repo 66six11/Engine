@@ -13,6 +13,16 @@ int main(void) {
     _Static_assert(sizeof(AshariaSceneNativeDocumentEntitySnapshot) == 96U,
                    "Unexpected C SceneDocument entity snapshot layout.");
     (void)&asharia_scene_document_create_mesh_entity;
+    _Static_assert(sizeof(AshariaSceneNativeDocumentSetEntityMeshRequest) == 56U,
+                   "Unexpected C Mesh edit request layout.");
+    _Static_assert(sizeof(AshariaSceneNativeDocumentMeshOperationResult) == 112U,
+                   "Unexpected C Mesh receipt layout.");
+    AshariaSceneNativeDocumentMeshOperationResult meshEditResult = {0};
+    if (asharia_scene_document_set_entity_mesh(NULL, NULL, 0U, &meshEditResult) !=
+            AshariaSceneNativeStatus_InvalidArgument ||
+        meshEditResult.operationStatus != AshariaSceneNativeStatus_InvalidArgument) {
+        return EXIT_FAILURE;
+    }
 
     AshariaSceneNativeDocumentHandle document = {0U, 0U};
     if (document.index != 0U || document.generation != 0U) {
