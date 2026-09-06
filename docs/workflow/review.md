@@ -815,3 +815,15 @@ build\cmake\clangcl-debug-tests\apps\editor\asharia-editor.exe --smoke-editor-me
 The smoke creates no window or Vulkan context. Its GLB scan/cook/catalog/worker-read/publication
 proof must cover redundant requests, failed reload preserving an active lease, successful
 replacement and unload lifetime. GPU/Studio integration needs separate real consumer evidence.
+
+## Shared viewport GPU Mesh native gate
+
+Run `asharia-editor --smoke-shared-viewport-gpu-mesh` from both `msvc-debug-tests` and
+`clangcl-debug-tests`. Set `VK_LAYER_PATH=C:/VulkanSDK/1.4.321.1/Bin` and
+`VK_LAYER_ENABLES=VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT` when using that SDK.
+The gate cooks a real project GLB, reads a catalog-selected CPU lease, records upload through the
+production shared producer, rejects aborted/unobserved publication, draws indexed Solid then a
+replacement Wireframe product, and checks old-draw retention until observed GPU completion.
+It creates offscreen resources without a visible window. It does not test Avalonia composition or
+managed automatic catalog handoff. Changes to submission lifetime also run the full sample-viewer
+smoke family above on both compilers.

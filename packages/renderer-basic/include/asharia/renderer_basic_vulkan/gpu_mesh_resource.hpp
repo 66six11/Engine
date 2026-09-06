@@ -10,6 +10,7 @@
 #include "asharia/resource_runtime/mesh_resource_store.hpp"
 #include "asharia/rhi_vulkan/vulkan_buffer.hpp"
 #include "asharia/rhi_vulkan/vulkan_frame_loop.hpp"
+#include "asharia/rhi_vulkan/vulkan_submission.hpp"
 
 namespace asharia {
     enum class BasicGpuMeshError : int {
@@ -84,6 +85,9 @@ namespace asharia {
         // frame.
         [[nodiscard]] VoidResult confirmUploadSubmission(const VulkanFrameLoop& frameLoop);
         [[nodiscard]] VoidResult publishCompleted(const VulkanFrameLoop& frameLoop);
+        // For explicit host submissions, receipt derives from the scope which retained the upload.
+        [[nodiscard]] VoidResult confirmUploadSubmission();
+        [[nodiscard]] VoidResult publishCompleted();
         [[nodiscard]] Result<std::shared_ptr<const BasicGpuMesh>> acquire() const;
         [[nodiscard]] VoidResult cancelUpload();
         [[nodiscard]] VoidResult clear();
@@ -96,6 +100,7 @@ namespace asharia {
             VulkanBuffer indexStaging;
             const VulkanFrameLoop* frameLoop{};
             std::uint64_t epoch{};
+            VulkanSubmissionReceipt submission;
             bool recorded{};
             bool recordingSucceeded{};
             bool confirmed{};

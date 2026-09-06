@@ -16,6 +16,7 @@
 namespace asharia {
 
     class VulkanFrameLoop;
+    class VulkanSubmission;
 
     struct VulkanFrameLoopDesc {
         std::uint32_t width{1280};
@@ -39,6 +40,7 @@ namespace asharia {
         VkExtent2D extent{};
         VkClearColorValue clearColor{};
         VulkanFrameLoop* frameLoop{};
+        VulkanSubmission* submission{};
 
         [[nodiscard]] bool deferDeletion(VulkanDeferredDeletionCallback callback) const;
         [[nodiscard]] bool beginDebugLabel(std::string_view name) const;

@@ -85,6 +85,7 @@ namespace asharia::scene_rendering {
                                 },
                             .meshResource = binding.meshResource,
                             .materialResource = section.materialResource,
+                            .meshRevision = binding.productGeneration,
                         },
                 });
             }

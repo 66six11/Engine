@@ -12,6 +12,7 @@
 
 #include "asharia/core/result.hpp"
 #include "asharia/renderer_basic_vulkan/fullscreen_texture_renderer.hpp"
+#include "asharia/renderer_basic_vulkan/gpu_mesh_resource.hpp"
 #include "asharia/rhi_vulkan/vma_fwd.hpp"
 #include "asharia/rhi_vulkan/vulkan_external_memory.hpp"
 #include "asharia/rhi_vulkan/vulkan_external_semaphore.hpp"
@@ -83,6 +84,10 @@ namespace asharia::editor {
         std::span<const EditorSharedViewportAuthoredMeshSnapshot> authoredMeshes;
         EditorSharedViewportSceneRasterMode sceneRasterMode{
             EditorSharedViewportSceneRasterMode::Solid};
+        // Native host handoff: one immutable batch; loading/cooking stays outside the frame path.
+        std::shared_ptr<const BasicGpuMesh> gpuMesh;
+        asset::AssetGuid gpuMeshAsset;
+        BasicGpuMeshOwner* meshUpload{}; // Borrowed only for synchronous record/submit.
         bool captureSceneMeshEvidence{};
         bool flashSentinelCorners{};
         bool hasSelectionOutline{};
@@ -182,6 +187,7 @@ namespace asharia::editor {
         bool reusable{false};
         bool waitForCompositionRelease{false};
         EditorSharedViewportFrameEpochLease frameEpoch;
+        std::optional<VulkanSubmission> submission;
         std::optional<BasicRenderFrameResourceContext> frameResources;
         VulkanTransientImagePool transientImagePool;
         std::vector<VulkanTransientImageResource> transientImages;
@@ -213,12 +219,14 @@ namespace asharia::editor {
 
         [[nodiscard]] Result<std::unique_ptr<EditorSharedViewportPacketState>>
         renderSceneViewFrame(BasicRenderViewFrameParams frameParams,
-                             EditorSharedViewportPresentDesc desc, std::size_t frameResourceIndex);
+                             const EditorSharedViewportPresentDesc& desc,
+                             std::size_t frameResourceIndex);
         [[nodiscard]] Result<std::unique_ptr<EditorSharedViewportPacketState>>
         createPresentSlot(BasicRenderViewFrameParams frameParams,
-                          EditorSharedViewportPresentDesc desc, std::size_t frameResourceIndex);
+                          const EditorSharedViewportPresentDesc& desc,
+                          std::size_t frameResourceIndex);
         [[nodiscard]] Result<void> renderPresentSlot(EditorSharedViewportPacketState& state,
-                                                     EditorSharedViewportPresentDesc desc,
+                                                     const EditorSharedViewportPresentDesc& desc,
                                                      BasicRenderViewFrameParams frameParams);
 
         [[nodiscard]] EditorSharedViewportRenderProducerStats stats() const;

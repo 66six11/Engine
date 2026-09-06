@@ -134,6 +134,9 @@ add_executable(asharia-editor
     src/editor_asset_catalog_smoke.cpp
     src/editor_mesh_resource.cpp
     src/editor_mesh_resource_smoke.cpp
+    src/editor_shared_viewport_render_producer.cpp
+    src/editor_shared_viewport_frame_epoch.cpp
+    src/editor_shared_viewport_external_image_pool.cpp
     src/editor_asset_catalog_store.cpp
     src/editor_asset_import_settings_command.cpp
     src/editor_asset_icon.cpp
@@ -238,6 +241,7 @@ target_link_libraries(asharia-editor
         asharia::project_core_io
         asharia::renderer_basic_vulkan
         asharia::rhi_vulkan
+        asharia::scene_rendering
         asharia::scene_core
         asharia::window_glfw
         glm::glm

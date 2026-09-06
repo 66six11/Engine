@@ -159,7 +159,7 @@ namespace asharia::editor {
         }
 
         [[nodiscard]] std::optional<float>
-        transformGizmoWorldLength(EditorSharedViewportPresentDesc desc,
+        transformGizmoWorldLength(const EditorSharedViewportPresentDesc& desc,
                                   const EditorViewportCamera& camera) {
             constexpr float kGizmoLengthPixels = 84.0F;
             const auto forward = normalized(subtract(camera.target, camera.position));
@@ -183,7 +183,7 @@ namespace asharia::editor {
         }
 
         void appendTranslateGizmoAxes(std::vector<BasicDebugWorldLine>& lines,
-                                      EditorSharedViewportPresentDesc desc,
+                                      const EditorSharedViewportPresentDesc& desc,
                                       const EditorViewportCamera& camera) {
             const std::optional<float> worldLength = transformGizmoWorldLength(desc, camera);
             if (!worldLength) {
@@ -204,7 +204,7 @@ namespace asharia::editor {
         }
 
         void appendRotateGizmoRings(std::vector<BasicDebugWorldLine>& lines,
-                                    EditorSharedViewportPresentDesc desc,
+                                    const EditorSharedViewportPresentDesc& desc,
                                     const EditorViewportCamera& camera) {
             constexpr std::uint32_t kRingSegmentCount = 64U;
             const std::optional<float> radius = transformGizmoWorldLength(desc, camera);
@@ -250,7 +250,7 @@ namespace asharia::editor {
         }
 
         void appendScaleGizmoAxes(std::vector<BasicDebugWorldLine>& lines,
-                                  EditorSharedViewportPresentDesc desc,
+                                  const EditorSharedViewportPresentDesc& desc,
                                   const EditorViewportCamera& camera) {
             constexpr float kHandleHalfExtentRatio = 5.0F / 84.0F;
             constexpr std::array<std::array<std::uint32_t, 2>, 12> kCubeEdges{
@@ -302,7 +302,7 @@ namespace asharia::editor {
         }
 
         void appendTransformGizmo(std::vector<BasicDebugWorldLine>& lines,
-                                  EditorSharedViewportPresentDesc desc,
+                                  const EditorSharedViewportPresentDesc& desc,
                                   const EditorViewportCamera& camera) {
             if (!desc.hasTransformGizmo) {
                 return;
@@ -320,7 +320,7 @@ namespace asharia::editor {
             }
         }
 
-        [[nodiscard]] bool hasFlashSentinel(EditorSharedViewportPresentDesc desc) {
+        [[nodiscard]] bool hasFlashSentinel(const EditorSharedViewportPresentDesc& desc) {
             return desc.flashSentinelCorners && desc.hasScene &&
                    desc.kind == EditorViewportKind::Scene;
         }
@@ -452,7 +452,7 @@ namespace asharia::editor {
         }
 
         void recordRenderedViewStats(EditorSharedViewportRenderProducerStats& stats,
-                                     EditorSharedViewportPresentDesc desc,
+                                     const EditorSharedViewportPresentDesc& desc,
                                      const EditorSharedViewportPacketState& state) {
             if (desc.hasScene) {
                 switch (desc.kind) {
@@ -530,7 +530,7 @@ namespace asharia::editor {
         [[nodiscard]] Result<void> initializePresentState(
             VkDevice device, VmaAllocator allocator, std::uint32_t graphicsQueueFamily,
             EditorSharedViewportExternalImagePool& externalImagePool,
-            EditorSharedViewportPacketState& state, EditorSharedViewportPresentDesc desc) {
+            EditorSharedViewportPacketState& state, const EditorSharedViewportPresentDesc& desc) {
             auto imageLease = externalImagePool.acquire(
                 desc.imageHandleFamily,
                 VulkanExternalImageDesc{
@@ -608,7 +608,7 @@ namespace asharia::editor {
         }
 
         [[nodiscard]] scene_rendering::SceneMeshExtraction
-        extractAuthoredMeshes(EditorSharedViewportPresentDesc desc) {
+        extractAuthoredMeshes(const EditorSharedViewportPresentDesc& desc) {
             std::vector<scene_rendering::SceneMeshInstance> instances;
             instances.reserve(desc.authoredMeshes.size());
             for (const EditorSharedViewportAuthoredMeshSnapshot& snapshot : desc.authoredMeshes) {
@@ -654,16 +654,35 @@ namespace asharia::editor {
                               .materialResource = kBasicDefaultUnlitMaterialResourceKey,
                               .drawItem = basicValidationMeshDrawItem()}},
             };
+            auto binding = validationBinding;
+            if (desc.gpuMesh) {
+                binding = scene_rendering::SceneMeshProductBinding{
+                    .asset = {.guid = desc.gpuMeshAsset,
+                              .expectedType = scene::kSceneMeshAssetType},
+                    .state = scene_rendering::SceneMeshProductState::Ready,
+                    .productHash = desc.gpuMesh->productHash(),
+                    .productGeneration = desc.gpuMesh->revision(),
+                    .meshResource = desc.gpuMesh->key(),
+                    .sections = {},
+                };
+                for (const auto& part : desc.gpuMesh->product().submeshes()) {
+                    binding.sections.push_back(
+                        {.materialSlot = part.materialSlot,
+                         .materialResource = kBasicDefaultUnlitMaterialResourceKey,
+                         .drawItem = {.indexCount = part.indexCount,
+                                      .firstIndex = part.firstIndex}});
+                }
+            }
             return scene_rendering::extractSceneMeshDrawList(
                 scene_rendering::SceneMeshExtractionInput{
                     .revision = desc.sceneRevision,
                     .instances = instances,
-                    .productBindings = std::span{&validationBinding, 1U},
+                    .productBindings = std::span{&binding, 1U},
                 });
         }
 
         [[nodiscard]] std::vector<BasicDrawListItem>
-        selectionOutlineDrawItems(EditorSharedViewportPresentDesc desc,
+        selectionOutlineDrawItems(const EditorSharedViewportPresentDesc& desc,
                                   const scene_rendering::SceneMeshExtraction& extraction) {
             if (!desc.hasSelectionOutline || desc.kind != EditorViewportKind::Scene) {
                 return {};
@@ -689,7 +708,7 @@ namespace asharia::editor {
             return selectedDraws;
         }
 
-        void populateSceneMeshReceipt(EditorSharedViewportPresentDesc desc,
+        void populateSceneMeshReceipt(const EditorSharedViewportPresentDesc& desc,
                                       const scene_rendering::SceneMeshExtraction& extraction,
                                       EditorSharedViewportSceneMeshReceipt& receipt) {
             receipt = EditorSharedViewportSceneMeshReceipt{
@@ -711,7 +730,8 @@ namespace asharia::editor {
             receipt.representativeSourceEntityGeneration = context.sourceObject.generation;
             receipt.meshResourceKey = context.meshResource.value;
             receipt.materialResourceKey = context.materialResource.value;
-            receipt.productHash = 0x0EB29D6DE539D278ULL;
+            receipt.productHash =
+                desc.gpuMesh ? desc.gpuMesh->productHash() : 0x0EB29D6DE539D278ULL;
             for (const EditorSharedViewportAuthoredMeshSnapshot& source : desc.authoredMeshes) {
                 if (source.runtimeEntityIndex != receipt.representativeSourceEntityIndex ||
                     source.runtimeEntityGeneration !=
@@ -724,7 +744,7 @@ namespace asharia::editor {
             }
         }
 
-        void configureSceneCameraAndOverlay(EditorSharedViewportPresentDesc desc,
+        void configureSceneCameraAndOverlay(const EditorSharedViewportPresentDesc& desc,
                                             BasicRenderViewDesc& view,
                                             std::vector<BasicDebugWorldLine>& debugLines) {
             if (!desc.hasScene) {
@@ -791,7 +811,7 @@ namespace asharia::editor {
         recordSharedViewportFrame(VkQueue graphicsQueue, BasicFullscreenTextureRenderer& renderer,
                                   EditorSharedViewportFrameEpochTracker& frameEpochTracker,
                                   EditorSharedViewportPacketState& state,
-                                  EditorSharedViewportPresentDesc desc,
+                                  const EditorSharedViewportPresentDesc& desc,
                                   BasicRenderViewFrameParams frameParams) {
             if (!state.frameResources) {
                 return std::unexpected{
@@ -809,6 +829,12 @@ namespace asharia::editor {
                 return std::unexpected{std::move(result.error())};
             }
 
+            auto submission = VulkanSubmission::create(state.device, state.commandBuffer);
+            if (!submission) {
+                return std::unexpected{std::move(submission.error())};
+            }
+            state.submission.emplace(std::move(*submission));
+
             const VulkanFrameRecordContext frame{
                 .commandBuffer = state.commandBuffer,
                 .image = targetImage.image(),
@@ -825,7 +851,14 @@ namespace asharia::editor {
                     },
                 .clearColor = VkClearColorValue{{0.12F, 0.12F, 0.13F, 1.0F}},
                 .frameLoop = nullptr,
+                .submission = &*state.submission,
             };
+
+            if (desc.meshUpload != nullptr) {
+                if (auto upload = desc.meshUpload->recordUpload(frame); !upload) {
+                    return std::unexpected{std::move(upload.error())};
+                }
+            }
 
             auto viewKind = basicRenderViewKind(desc.kind);
             if (!viewKind) {
@@ -856,6 +889,7 @@ namespace asharia::editor {
                 .sourceRevision = extraction.revision(),
                 .drawItems = extraction.drawItems(),
                 .rasterMode = basicRasterMode(desc.sceneRasterMode),
+                .mesh = desc.gpuMesh,
             };
             std::vector<BasicDebugWorldLine> debugLines;
             configureSceneCameraAndOverlay(desc, view, debugLines);
@@ -918,13 +952,17 @@ namespace asharia::editor {
             submitInfo.signalSemaphoreInfoCount = 1;
             submitInfo.pSignalSemaphoreInfos = &signalInfo;
 
-            result = checkVk(vkQueueSubmit2(graphicsQueue, 1, &submitInfo, state.fence),
-                             "Failed to submit shared viewport frame");
+            result = state.submission->submit(graphicsQueue, submitInfo, state.fence);
             if (!result) {
                 return std::unexpected{std::move(result.error())};
             }
             state.frameEpoch = frameEpochTracker.submit();
             state.submitted = true;
+            if (desc.meshUpload != nullptr) {
+                if (auto confirmed = desc.meshUpload->confirmUploadSubmission(); !confirmed) {
+                    return std::unexpected{std::move(confirmed.error())};
+                }
+            }
             state.waitForCompositionRelease = true;
             state.frameIndex = frameParams.frameIndex;
 
@@ -1008,13 +1046,15 @@ namespace asharia::editor {
                     vulkanError("Shared viewport present slot has no submission fence")};
             }
 
-            const VkResult status = vkGetFenceStatus(device, fence);
-            if (status == VK_NOT_READY) {
-                return false;
+            if (!submission) {
+                return std::unexpected{vulkanError("Missing shared viewport submission scope")};
             }
-            if (status != VK_SUCCESS) {
-                return std::unexpected{
-                    vulkanError("Failed to query shared viewport present slot fence", status)};
+            auto completed = submission->poll();
+            if (!completed) {
+                return std::unexpected{std::move(completed.error())};
+            }
+            if (!*completed) {
+                return false;
             }
 
             frameEpoch.complete();
@@ -1111,9 +1151,9 @@ namespace asharia::editor {
     }
 
     Result<std::unique_ptr<EditorSharedViewportPacketState>>
-    EditorSharedViewportRenderProducer::renderSceneViewFrame(BasicRenderViewFrameParams frameParams,
-                                                             EditorSharedViewportPresentDesc desc,
-                                                             std::size_t frameResourceIndex) {
+    EditorSharedViewportRenderProducer::renderSceneViewFrame(
+        BasicRenderViewFrameParams frameParams, const EditorSharedViewportPresentDesc& desc,
+        std::size_t frameResourceIndex) {
         auto state = std::make_unique<EditorSharedViewportPacketState>();
         auto frameResources = renderer_.createFrameResourceContext(frameResourceIndex);
         if (!frameResources) {
@@ -1139,9 +1179,9 @@ namespace asharia::editor {
     }
 
     Result<std::unique_ptr<EditorSharedViewportPacketState>>
-    EditorSharedViewportRenderProducer::createPresentSlot(BasicRenderViewFrameParams frameParams,
-                                                          EditorSharedViewportPresentDesc desc,
-                                                          std::size_t frameResourceIndex) {
+    EditorSharedViewportRenderProducer::createPresentSlot(
+        BasicRenderViewFrameParams frameParams, const EditorSharedViewportPresentDesc& desc,
+        std::size_t frameResourceIndex) {
         auto state = std::make_unique<EditorSharedViewportPacketState>();
         state->reusable = true;
         auto frameResources = renderer_.createFrameResourceContext(frameResourceIndex);
@@ -1167,10 +1207,9 @@ namespace asharia::editor {
         return state;
     }
 
-    Result<void>
-    EditorSharedViewportRenderProducer::renderPresentSlot(EditorSharedViewportPacketState& state,
-                                                          EditorSharedViewportPresentDesc desc,
-                                                          BasicRenderViewFrameParams frameParams) {
+    Result<void> EditorSharedViewportRenderProducer::renderPresentSlot(
+        EditorSharedViewportPacketState& state, const EditorSharedViewportPresentDesc& desc,
+        BasicRenderViewFrameParams frameParams) {
         if (!state.reusable) {
             return std::unexpected{
                 vulkanError("Shared viewport present packet is not a reusable slot")};

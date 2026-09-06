@@ -1120,8 +1120,7 @@ Result<VulkanFrameRecordResult> BasicFullscreenTextureRenderer::recordViewFrame(
                 "Authored material requires GPU mesh, matching device/formats and Solid mode"}};
         }
         if (!view.scene.drawItems.empty() &&
-            (!frame.frameLoop ||
-             !frame.deferDeletion([keep = view.scene.material]() { static_cast<void>(keep); }))) {
+            !frame.deferDeletion([keep = view.scene.material]() { static_cast<void>(keep); })) {
             return std::unexpected{Error{ErrorDomain::Material, 0,
                                          "Authored material requires frame completion retention"}};
         }
@@ -1131,8 +1130,7 @@ Result<VulkanFrameRecordResult> BasicFullscreenTextureRenderer::recordViewFrame(
                                      "GPU mesh selection overlay is not supported in this slice"}};
     }
     if (view.scene.mesh && !view.scene.drawItems.empty()) {
-        if (!frame.frameLoop ||
-            !frame.deferDeletion([keep = view.scene.mesh]() { static_cast<void>(keep); })) {
+        if (!frame.deferDeletion([keep = view.scene.mesh]() { static_cast<void>(keep); })) {
             return std::unexpected{Error{ErrorDomain::RenderGraph, 0,
                                          "GPU mesh draw requires frame completion retention"}};
         }
