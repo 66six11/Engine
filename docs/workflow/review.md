@@ -800,3 +800,18 @@ CTest also uses nonzero set 3 to catch internal descriptor-set index versus Vulk
 涉及 cooked Shader 读取时，`asharia-shader-resource-tests` 必须通过（生产 cook/Slang/spirv-val/reflection、跨输出根
 一致性、错误身份/预算/损坏/配对校验）。File API target truth 应确认 resource_runtime 只链接 asset_product_reader，
 import execution/asharia-slang-reflect 仅为 tool/test 依赖。运行时不得写临时 reflection 文件。
+
+
+### Editor Mesh resource host boundary
+
+For catalog-to-runtime Mesh handoff changes, run the CPU-only host smoke on both compiler test
+builds (also registered as `asharia-editor-mesh-resource-smoke` in CTest):
+
+```powershell
+build\cmake\msvc-debug-tests\apps\editor\asharia-editor.exe --smoke-editor-mesh-resource
+build\cmake\clangcl-debug-tests\apps\editor\asharia-editor.exe --smoke-editor-mesh-resource
+```
+
+The smoke creates no window or Vulkan context. Its GLB scan/cook/catalog/worker-read/publication
+proof must cover redundant requests, failed reload preserving an active lease, successful
+replacement and unload lifetime. GPU/Studio integration needs separate real consumer evidence.

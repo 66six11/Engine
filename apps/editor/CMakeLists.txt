@@ -14,6 +14,7 @@ asharia_require_package_target(asharia::asset_core packages/asset-core)
 asharia_require_package_target(asharia::asset_core_io packages/asset-core)
 asharia_require_package_target(asharia::asset_pipeline packages/asset-pipeline)
 asharia_require_package_target(asharia::editor_content packages/editor-content)
+asharia_require_package_target(asharia::resource_runtime packages/resource-runtime)
 asharia_require_package_target(asharia::project_core_io packages/project-core)
 asharia_require_package_target(asharia::renderer_basic_vulkan packages/renderer-basic)
 asharia_require_package_target(asharia::rhi_vulkan packages/rhi-vulkan)
@@ -131,6 +132,8 @@ add_executable(asharia-editor
     src/editor_app_services.cpp
     src/editor_asset_catalog_report.cpp
     src/editor_asset_catalog_smoke.cpp
+    src/editor_mesh_resource.cpp
+    src/editor_mesh_resource_smoke.cpp
     src/editor_asset_catalog_store.cpp
     src/editor_asset_import_settings_command.cpp
     src/editor_asset_icon.cpp
@@ -230,6 +233,7 @@ target_link_libraries(asharia-editor
         asharia::asset_pipeline
         asharia::core
         asharia::editor_content
+        asharia::resource_runtime
         asharia::editor_native
         asharia::project_core_io
         asharia::renderer_basic_vulkan
@@ -251,3 +255,8 @@ if(ASHARIA_BUILD_TESTS)
 endif()
 
 asharia_configure_target(asharia-editor)
+
+if(ASHARIA_BUILD_TESTS)
+    add_test(NAME asharia-editor-mesh-resource-smoke
+        COMMAND asharia-editor --smoke-editor-mesh-resource)
+endif()

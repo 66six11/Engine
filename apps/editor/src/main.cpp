@@ -17,6 +17,7 @@
 
 #include "editor_app.hpp"
 #include "editor_asset_catalog_report.hpp"
+#include "editor_mesh_resource.hpp"
 #include "native_bridge/frame_debugger_native_smoke.hpp"
 #include "native_bridge/viewport_native_smoke.hpp"
 
@@ -248,36 +249,12 @@ namespace {
                   << asharia::kEngineVersion.minor << '.' << asharia::kEngineVersion.patch << '\n';
     }
 
-    void printUsage() {
-        std::cout
-            << "Usage: asharia-editor [--help] [--version] [--smoke-editor-shell] "
-               "[--smoke-editor-asset-browser] [--smoke-editor-viewport] "
-               "[--smoke-editor-viewport-resize] [--smoke-editor-frame-debugger] "
-               "[--smoke-editor-native-bridge] [--smoke-editor-viewport-native]\n"
-               "       asharia-editor [--project <asharia.project.json|project-dir>] "
-               "[--product-manifest <products.aproducts.json>] "
-               "[--asset-target-profile <profile>]\n"
-               "       asharia-editor --check-project <asharia.project.json|project-dir> "
-               "[--json] [--product-manifest <products.aproducts.json>] "
-               "[--asset-target-profile <profile>]\n"
-               "       asharia-editor --check-project-json <asharia.project.json|project-dir> "
-               "[--product-manifest <products.aproducts.json>] "
-               "[--asset-target-profile <profile>]\n";
-    }
-
-} // namespace
-
-int main(int argc, char** argv) {
-    try {
-        std::span<char*> args{argv, static_cast<std::size_t>(argc)};
-        if (hasArg(args, "--help")) {
-            printUsage();
-            return EXIT_SUCCESS;
-        }
-
-        if (hasArg(args, "--version")) {
-            printVersion();
-            return EXIT_SUCCESS;
+    [[nodiscard]] std::optional<int> runEditorSmokeCommand(std::span<char*> args) {
+        if (hasArg(args, "--smoke-editor-mesh-resource")) {
+            if (!validateSingleSmokeArg(args, "--smoke-editor-mesh-resource")) {
+                return EXIT_FAILURE;
+            }
+            return asharia::editor::runEditorMeshResourceSmoke() ? EXIT_SUCCESS : EXIT_FAILURE;
         }
 
         if (hasArg(args, "--smoke-editor-shell")) {
@@ -313,6 +290,46 @@ int main(int argc, char** argv) {
                 return EXIT_FAILURE;
             }
             return asharia::editor::runEditor(asharia::editor::EditorRunMode::SmokeFrameDebugger);
+        }
+
+        return std::nullopt;
+    }
+
+    void printUsage() {
+        std::cout
+            << "Usage: asharia-editor [--help] [--version] [--smoke-editor-shell] "
+               "[--smoke-editor-mesh-resource] [--smoke-editor-asset-browser] "
+               "[--smoke-editor-viewport] "
+               "[--smoke-editor-viewport-resize] [--smoke-editor-frame-debugger] "
+               "[--smoke-editor-native-bridge] [--smoke-editor-viewport-native]\n"
+               "       asharia-editor [--project <asharia.project.json|project-dir>] "
+               "[--product-manifest <products.aproducts.json>] "
+               "[--asset-target-profile <profile>]\n"
+               "       asharia-editor --check-project <asharia.project.json|project-dir> "
+               "[--json] [--product-manifest <products.aproducts.json>] "
+               "[--asset-target-profile <profile>]\n"
+               "       asharia-editor --check-project-json <asharia.project.json|project-dir> "
+               "[--product-manifest <products.aproducts.json>] "
+               "[--asset-target-profile <profile>]\n";
+    }
+
+} // namespace
+
+int main(int argc, char** argv) {
+    try {
+        std::span<char*> args{argv, static_cast<std::size_t>(argc)};
+        if (hasArg(args, "--help")) {
+            printUsage();
+            return EXIT_SUCCESS;
+        }
+
+        if (hasArg(args, "--version")) {
+            printVersion();
+            return EXIT_SUCCESS;
+        }
+
+        if (const auto smoke = runEditorSmokeCommand(args)) {
+            return *smoke;
         }
 
         if (hasArg(args, "--smoke-editor-native-bridge")) {

@@ -18,11 +18,12 @@
     "com.asharia.editor-content",
     "com.asharia.project-core",
     "com.asharia.renderer-basic",
+    "com.asharia.resource-runtime",
+    "com.asharia.rhi-vulkan",
     "com.asharia.scene-core",
     "com.asharia.scene-rendering",
     "com.asharia.shader-slang",
-    "com.asharia.window-glfw",
-    "com.asharia.rhi-vulkan"
+    "com.asharia.window-glfw"
   ],
   "targets": ["asharia-editor", "editor-native", "asharia-editor-imgui-shaders"],
   "targetRoles": {
@@ -45,7 +46,8 @@
       "asharia-rhi-vulkan",
       "asharia-scene-core",
       "asharia-window-glfw",
-      "asharia-editor-imgui-shaders"
+      "asharia-editor-imgui-shaders",
+      "asharia-resource-runtime"
     ],
     "editor-native": [
       "asharia-archive",
