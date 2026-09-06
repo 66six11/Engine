@@ -119,6 +119,32 @@ public sealed class EditorDockHitTestServiceTests
         Assert.Equal(EditorDockDropOperation.InsertWorkspaceBottom, target.Operation);
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    public void HitTest_cross_window_drag_with_captured_widths_preserves_stable_preview(int current)
+    {
+        var window = new EditorDockWindowBounds(
+            "captured-target", EditorDockArea.Bottom,
+            new Rect(743, 771, 300, 200), new Rect(743, 771, 300, 22), 1,
+            [new EditorDockTabBounds("target-tab", 0, new Rect(743, 771, 128, 22), false)],
+            DragSourceTabIndex: null, AllowsWindowInsertion: true, IsDragSource: false,
+            TabContentOriginX: 743);
+
+        for (var repeat = 0; repeat < 10; repeat++)
+        {
+            var target = EditorDockHitTestService.HitTest(
+                new Point(845, 782), new Rect(0, 0, 1400, 1000), [window], [],
+                tabInsertProbeX: 856.5,
+                tabInsertPreviewWindowId: window.WindowId,
+                tabInsertCurrentTargetIndex: current,
+                tabInsertDraggedTabWidth: 101);
+
+            Assert.Equal(EditorDockDropOperation.InsertTabAtIndex, target.Operation);
+            Assert.Equal(current, target.TargetIndex);
+        }
+    }
+
     private static EditorDockDropTarget HitTestTabWell(
         EditorDockWindowBounds window,
         double tabInsertProbeX,
