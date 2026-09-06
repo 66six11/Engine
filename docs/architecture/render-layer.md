@@ -132,6 +132,39 @@ Design evidence, bounds and failure rules are in
   view policy 并消费 sampled output/typed diagnostics；source→product 属于工具/asset 层，product→GPU 属于
   renderer/resource owner。
 
+## MeshRenderer authoring direction (#444)
+
+Current code has no Scene `Renderable` or `MeshRenderer` component type. `SceneEntityData.mesh`
+is an optional typed asset reference in schema v2; `SceneMeshInstance` is extraction input, and
+`SceneMeshProductBinding` is a host-resolved product binding. Neither is a second authored component.
+Studio mirrors the reference as `SceneMeshReference`; its viewport currently resolves the built-in
+validation model only. These are partial foundations, not a complete MeshRenderer implementation.
+
+The intended MeshRenderer is one optional, data-only instance description: Mesh reference,
+enabled state, and bounded material overrides identified by product material-slot index. An absent
+override uses the product's material binding; a missing referenced material must produce an explicit
+diagnostic rather than silently select an unrelated asset. Transform stays on the entity. Resource
+loads, GPU handles, product revisions, upload state and per-view wireframe policy do not belong in
+the serialized component. This adopts instance-owned mesh/material references from
+[Unreal StaticMeshComponent](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/Engine/UStaticMeshComponent)
+and [Godot MeshInstance3D](https://docs.godotengine.org/en/stable/classes/class_meshinstance3d.html).
+It rejects duplicating their object/node inheritance and introducing a parallel Renderable field:
+Asharia needs one headless authored source and immutable extraction across the Studio boundary.
+
+The first prerequisite is `SceneDocument::setEntityMesh`: add, replace or remove the existing
+reference with an expected document revision. It validates typed references, preserves entity and
+Transform identity, returns before/after values and revisions, and advances revision only on a
+change. The receipt enables a caller to issue a revision-checked inverse/reapply; it does not create
+an undo stack or resolve asset existence. Schema v2 and its current load policy remain unchanged.
+
+Before adding the complete component, implement a versioned replacement for the existing `mesh`
+field with explicit v2 migration and rejection of conflicting representations; update native/managed
+snapshots, edit receipts and viewport extraction together. Validate disabled instances producing no
+draws, duplicate/out-of-range material slots, typed material references, migration, save/reopen and
+undo through the application boundary. Do not add unused material/enable fields that the existing
+viewport cannot consume. The separate shared-viewport upload completion integration remains required
+before project Mesh assets can render; this native editing slice does not satisfy that gate.
+
 ## Public Header 布局
 
 - `basic_renderers.hpp` 是兼容聚合头，保留旧调用方的单入口。
