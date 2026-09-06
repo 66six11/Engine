@@ -276,3 +276,27 @@ Shell 提供 document Undo/Redo command、toolbar affordance 和平台中立的 
   编辑入口接入前必须完成；不新增 UI picker、material overrides、MeshRenderer runtime component 或 GPU publication。
 - Exit evidence：managed 单测覆盖混合 Transform/Mesh undo/redo、保存点、no-op、stale 与不确定完成；
   real native probe 覆盖 managed P/Invoke 添加 Mesh、回执、Save/reopen 与移除。前端 Mesh 修改控件留待后续 slice。
+
+## 2026-09-06：Inspector Mesh 编辑入口
+
+Current evidence / prerequisite：typed Mesh mutation、managed bridge 与混合 history 已由 #452 落地。
+本切片在现有 Inspector 提供 Mesh ComboBox 与 Apply Mesh，None 表示移除；选择本身不提交、不产生 dirty。
+owner 继续是 ProjectSession/native SceneDocument；UI thread 只维护候选列表，动作路由冻结 entity target，提交捕获
+expected revision 和 EditId。无需新的 picker service、持久化模型或 renderer dependency。
+
+采用 Unreal [Static Mesh Actors](https://dev.epicgames.com/documentation/en-us/unreal-engine/static-mesh-actors-in-unreal-engine)
+的 Details 中编辑资产引用，以及 Godot [MeshInstance3D](https://docs.godotengine.org/en/4.4/classes/class_meshinstance3d.html)
+的 Mesh resource property 分离。拒绝把引擎对象指针、源文件路径或即时 GPU 实例作为 authored Mesh identity，
+Asharia 的场景仍保存 stable GUID，UI 只消费当前项目 catalog。
+
+候选只包含 `com.asharia.asset.Mesh` 且 GUID 唯一的顶层资产；重复 GUID（包括跨类型冲突）不允许指派。
+不根据扩展名、显示名、asset role 或 sub-asset 名称推断 Mesh 类型。缺失引用显示 Unavailable 与原 GUID，
+只有显式选择 None 或其他候选并 Apply 才会修改。项目 scope 不匹配、catalog loading/failed 时不提供新资产候选，
+仍允许移除引用；已有引用不会自动回退为示例 Mesh。
+
+selection/document snapshot/catalog 变化将候选选择同步回 authoritative entity，丢弃尚未 Apply 的选择，避免将旧草稿
+应用到新对象。catalog 事件在 UI thread 投影，Dispose 解订阅。真实控件测试覆盖添加、替换、移除、缺失引用、
+重复身份过滤、选择切换和 244 DIP 面板宽度；Undo/Redo、保存点与恢复由 #452 的 Application/native 门禁覆盖。
+
+Integration gate：这是已有实体的 authored 引用编辑闭环，不证明该资产已被 viewport GPU 消费。
+暂不包含子资产选择、拖放赋值、material overrides、MeshRenderer runtime component 和 asset-backed GPU publication。

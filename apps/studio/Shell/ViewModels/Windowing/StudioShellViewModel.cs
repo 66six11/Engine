@@ -85,7 +85,7 @@ internal readonly record struct StudioActionCommandProjectionKey(
     StudioPresentationId TopLevelId,
     StudioPresentationId? FocusedPanelId);
 
-internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
+internal sealed partial class StudioShellViewModel : INotifyPropertyChanged, IDisposable
 {
     private const string UnclassifiedActionFailureMessage =
         "The Studio action failed unexpectedly.";
@@ -176,6 +176,7 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
         dockWorkspace_.DockContentChanged += OnDockContentChanged;
         EditorDockFloatingWindowRegistry.DockContentChanged += OnDockContentChanged;
         projectSession_.SnapshotChanged += OnProjectSnapshotChanged;
+        projectAssetCatalog_.SnapshotChanged += OnMeshCatalogChanged;
         editorSelection_.Changed += OnEditorSelectionChanged;
     }
 
@@ -678,6 +679,7 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
         isDisposed_ = true;
         editorSelection_.Changed -= OnEditorSelectionChanged;
         projectSession_.SnapshotChanged -= OnProjectSnapshotChanged;
+        projectAssetCatalog_.SnapshotChanged -= OnMeshCatalogChanged;
         dockWorkspace_.DockContentChanged -= OnDockContentChanged;
         EditorDockFloatingWindowRegistry.DockContentChanged -= OnDockContentChanged;
         dockWorkspace_.Dispose();
@@ -932,6 +934,16 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
                 "apply",
                 40));
 
+        RegisterAction(
+            StudioShellActionIds.ApplyEntityMesh,
+            "Apply Entity Mesh",
+            "Apply the selected Mesh reference to the selected entity.",
+            "Scene",
+            EvaluateMeshAction,
+            HandleApplyEntityMeshAsync,
+            Menu(StudioShellActionIds.ApplyEntityMesh, "Scene/Apply Entity Mesh", "apply", 30050),
+            Toolbar(StudioShellActionIds.ApplyEntityMesh, "Inspector/Apply Mesh", "apply", 50));
+
         RegisterPanelAction(
             StudioShellActionIds.OpenHierarchyPanel,
             "Hierarchy",
@@ -1016,7 +1028,8 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
         StudioPresentationId? focusedPanelId = null)
     {
         var target = actionId == StudioShellActionIds.ApplyEntityName ||
-            actionId == StudioShellActionIds.ApplyEntityTransform
+            actionId == StudioShellActionIds.ApplyEntityTransform ||
+            actionId == StudioShellActionIds.ApplyEntityMesh
                 ? CurrentSelectionTarget()
                 : IsPanelAction(actionId)
                     ? PanelTarget(actionId)
@@ -1858,6 +1871,7 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
 
     private void LoadInspector(SceneEntitySnapshot? entity)
     {
+        RefreshMeshChoices(entity);
         pendingTransformApply_ = null;
         transformDirtyFields_ = TransformFieldMask.None;
         transformEditVersion_ = 0;
@@ -1906,6 +1920,7 @@ internal sealed class StudioShellViewModel : INotifyPropertyChanged, IDisposable
         bool? originatingEditSucceeded)
     {
         var transform = entity.Transform;
+        RefreshMeshChoices(entity);
         var previousTransform = authoritativeTransform_;
         inspectorName_ = entity.Name;
 

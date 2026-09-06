@@ -24,6 +24,16 @@
                 <Button HorizontalAlignment="Left"
                         commands:StudioActionButton.ActionId="{x:Static actions:StudioShellActionIds.ApplyEntityName}"
                         Content="Apply Name" />
+                <TextBlock Margin="0,8,0,0" FontWeight="SemiBold" Text="Mesh" />
+                <ComboBox x:Name="InspectorMeshChoice"
+                          HorizontalAlignment="Stretch"
+                          AutomationProperties.Name="Mesh asset"
+                          ItemsSource="{Binding Shell.MeshChoices}"
+                          SelectedItem="{Binding Shell.SelectedMeshChoice, Mode=TwoWay}" />
+                <Button x:Name="ApplyMeshButton"
+                        HorizontalAlignment="Left"
+                        commands:StudioActionButton.ActionId="{x:Static actions:StudioShellActionIds.ApplyEntityMesh}"
+                        Content="Apply Mesh" />
                 <TextBlock Margin="0,8,0,0" FontWeight="SemiBold" Text="Transform" />
                 <TextBlock Foreground="{DynamicResource EditorBrushTextMuted}" Text="Position (X / Y / Z)" />
                 <Grid ColumnDefinitions="*,*,*" ColumnSpacing="4">
